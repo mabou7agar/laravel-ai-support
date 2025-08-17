@@ -1,16 +1,16 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Services;
+namespace LaravelAIEngine\Tests\Unit\Services;
 
 use Orchestra\Testbench\TestCase;
-use MagicAI\LaravelAIEngine\Services\QueuedAIProcessor;
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
-use MagicAI\LaravelAIEngine\Jobs\ProcessAIRequestJob;
-use MagicAI\LaravelAIEngine\Jobs\ProcessLongRunningAITaskJob;
-use MagicAI\LaravelAIEngine\Jobs\BatchProcessAIRequestsJob;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\QueuedAIProcessor;
+use LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Jobs\ProcessAIRequestJob;
+use LaravelAIEngine\Jobs\ProcessLongRunningAITaskJob;
+use LaravelAIEngine\Jobs\BatchProcessAIRequestsJob;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 

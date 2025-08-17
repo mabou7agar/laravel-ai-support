@@ -1,9 +1,9 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Services;
+namespace LaravelAIEngine\Tests\Unit\Services;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\Services\BrandVoiceManager;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\Services\BrandVoiceManager;
 use Illuminate\Support\Facades\Storage;
 
 class BrandVoiceManagerTest extends TestCase

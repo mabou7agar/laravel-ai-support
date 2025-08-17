@@ -1,11 +1,11 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\DTOs;
+namespace LaravelAIEngine\Tests\Unit\DTOs;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 
 class AIResponseTest extends TestCase
 {

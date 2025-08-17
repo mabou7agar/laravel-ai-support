@@ -1,13 +1,13 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Services;
+namespace LaravelAIEngine\Tests\Unit\Services;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\Services\CreditManager;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\Exceptions\InsufficientCreditsException;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class CreditManagerTest extends TestCase

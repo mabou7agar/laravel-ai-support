@@ -1,15 +1,15 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Jobs;
+namespace LaravelAIEngine\Tests\Unit\Jobs;
 
 use Orchestra\Testbench\TestCase;
-use MagicAI\LaravelAIEngine\Jobs\ProcessLongRunningAITaskJob;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\Services\AIEngineService;
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Jobs\ProcessLongRunningAITaskJob;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\JobStatusTracker;
 use Illuminate\Support\Facades\Event;
 use Mockery;
 

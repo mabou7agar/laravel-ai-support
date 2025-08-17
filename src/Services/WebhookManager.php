@@ -1,12 +1,12 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Services;
+namespace LaravelAIEngine\Services;
 
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Events\AIRequestStarted;
-use MagicAI\LaravelAIEngine\Events\AIRequestCompleted;
-use MagicAI\LaravelAIEngine\Jobs\SendWebhookNotificationJob;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Events\AIRequestStarted;
+use LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\Jobs\SendWebhookNotificationJob;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Log;
@@ -26,7 +26,7 @@ class WebhookManager
             'timeout' => $this->config['timeout'] ?? 10,
             'headers' => [
                 'Content-Type' => 'application/json',
-                'User-Agent' => 'MagicAI-Laravel-Engine/1.0',
+                'User-Agent' => 'LaravelAIEngine/1.0',
             ],
         ]);
     }
@@ -220,7 +220,7 @@ class WebhookManager
             'event' => 'webhook_test',
             'timestamp' => now()->toISOString(),
             'test_data' => [
-                'message' => 'This is a test webhook from MagicAI Laravel Engine',
+                'message' => 'This is a test webhook from Laravel AI Engine',
                 'version' => '1.0.0',
             ],
         ];

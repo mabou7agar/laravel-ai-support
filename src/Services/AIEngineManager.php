@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Services;
+namespace LaravelAIEngine\Services;
 
 use Illuminate\Contracts\Foundation\Application;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Contracts\EngineDriverInterface;
-use MagicAI\LaravelAIEngine\Exceptions\EngineNotSupportedException;
-use MagicAI\LaravelAIEngine\Exceptions\ModelNotSupportedException;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Contracts\EngineDriverInterface;
+use LaravelAIEngine\Exceptions\EngineNotSupportedException;
+use LaravelAIEngine\Exceptions\ModelNotSupportedException;
 
 class AIEngineManager
 {
@@ -127,7 +127,7 @@ class AIEngineManager
 
             // Check credits
             if ($request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
-                throw new \MagicAI\LaravelAIEngine\Exceptions\InsufficientCreditsException();
+                throw new \LaravelAIEngine\Exceptions\InsufficientCreditsException();
             }
 
             // Check cache
@@ -193,7 +193,7 @@ class AIEngineManager
             $this->rateLimitManager->checkRateLimit($request->engine, $request->userId);
             
             if ($request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
-                throw new \MagicAI\LaravelAIEngine\Exceptions\InsufficientCreditsException();
+                throw new \LaravelAIEngine\Exceptions\InsufficientCreditsException();
             }
 
             $driver = $this->getEngineDriver($request->engine);

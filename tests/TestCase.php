@@ -1,10 +1,10 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests;
+namespace LaravelAIEngine\Tests;
 
 use Orchestra\Testbench\TestCase as Orchestra;
-use MagicAI\LaravelAIEngine\LaravelAIEngineServiceProvider;
-use MagicAI\LaravelAIEngine\Tests\Models\User;
+use LaravelAIEngine\LaravelAIEngineServiceProvider;
+use LaravelAIEngine\Tests\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 

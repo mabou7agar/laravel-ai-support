@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Services;
+namespace LaravelAIEngine\Services;
 
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Http\UploadedFile;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\AIResponse;
 
 class StorageManager
 {

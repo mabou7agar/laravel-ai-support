@@ -1,10 +1,10 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Enums;
+namespace LaravelAIEngine\Tests\Unit\Enums;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Enums\EngineEnum;
 
 class EntityEnumTest extends TestCase
 {
@@ -108,12 +108,19 @@ class EntityEnumTest extends TestCase
         }
     }
 
-    public function test_all_entities_have_positive_credit_indices()
+    public function test_all_entities_have_valid_credit_indices()
     {
         foreach (EntityEnum::cases() as $entity) {
             $creditIndex = $entity->creditIndex();
             $this->assertIsFloat($creditIndex);
-            $this->assertGreaterThan(0, $creditIndex, "Entity {$entity->value} should have positive credit index");
+            $this->assertGreaterThanOrEqual(0, $creditIndex, "Entity {$entity->value} should have non-negative credit index");
+            
+            // Free models should have 0.0 credit index
+            if (str_contains($entity->value, ':free')) {
+                $this->assertEquals(0.0, $creditIndex, "Free model {$entity->value} should have 0.0 credit index");
+            } else {
+                $this->assertGreaterThan(0, $creditIndex, "Non-free entity {$entity->value} should have positive credit index");
+            }
         }
     }
 

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Services;
+namespace LaravelAIEngine\Services;
 
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Exceptions\InsufficientCreditsException;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 
 class CreditManager
 {

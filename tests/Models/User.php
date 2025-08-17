@@ -1,6 +1,6 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Models;
+namespace LaravelAIEngine\Tests\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 

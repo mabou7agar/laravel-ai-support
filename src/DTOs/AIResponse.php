@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\DTOs;
+namespace LaravelAIEngine\DTOs;
 
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 
 class AIResponse
 {

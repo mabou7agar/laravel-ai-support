@@ -1,16 +1,16 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Drivers;
+namespace LaravelAIEngine\Tests\Unit\Drivers;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
 
 class OpenAIEngineDriverTest extends TestCase
 {
@@ -70,7 +70,7 @@ class OpenAIEngineDriverTest extends TestCase
     
     public function test_missing_api_key_throws_exception()
     {
-        $this->expectException(\MagicAI\LaravelAIEngine\Exceptions\AIEngineException::class);
+        $this->expectException(\LaravelAIEngine\Exceptions\AIEngineException::class);
         
         $driver = new OpenAIEngineDriver([]);
         

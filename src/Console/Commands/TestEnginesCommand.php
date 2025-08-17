@@ -1,13 +1,13 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Console\Commands;
+namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Facades\AIEngine;
-use MagicAI\LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Facades\AIEngine;
+use LaravelAIEngine\Exceptions\AIEngineException;
 
 class TestEnginesCommand extends Command
 {

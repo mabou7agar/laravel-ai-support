@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Drivers\ElevenLabs;
+namespace LaravelAIEngine\Drivers\ElevenLabs;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
-use MagicAI\LaravelAIEngine\Drivers\BaseEngineDriver;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Drivers\BaseEngineDriver;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 
 class ElevenLabsEngineDriver extends BaseEngineDriver
 {

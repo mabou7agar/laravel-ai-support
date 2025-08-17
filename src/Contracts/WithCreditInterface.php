@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Contracts;
+namespace LaravelAIEngine\Contracts;
 
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 
 interface WithCreditInterface
 {

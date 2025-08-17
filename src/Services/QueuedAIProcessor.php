@@ -1,11 +1,11 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Services;
+namespace LaravelAIEngine\Services;
 
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Jobs\ProcessAIRequestJob;
-use MagicAI\LaravelAIEngine\Jobs\ProcessLongRunningAITaskJob;
-use MagicAI\LaravelAIEngine\Jobs\BatchProcessAIRequestsJob;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Jobs\ProcessAIRequestJob;
+use LaravelAIEngine\Jobs\ProcessLongRunningAITaskJob;
+use LaravelAIEngine\Jobs\BatchProcessAIRequestsJob;
 
 class QueuedAIProcessor
 {

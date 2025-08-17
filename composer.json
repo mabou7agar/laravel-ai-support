@@ -1,5 +1,5 @@
 {
-    "name": "magicai/laravel-ai-engine",
+    "name": "m-tech-stack/laravel-ai-engine",
     "description": "A comprehensive Laravel package for multi-AI engine integration with credit management, streaming, and advanced features",
     "type": "library",
     "license": "MIT",
@@ -16,8 +16,8 @@
     ],
     "authors": [
         {
-            "name": "MagicAI Team",
-            "email": "support@magicai.com"
+            "name": "Mohamed Abou Hagar",
+            "email": "m.abou7agar@gmail.com"
         }
     ],
     "require": {
@@ -37,21 +37,21 @@
     },
     "autoload": {
         "psr-4": {
-            "MagicAI\\LaravelAIEngine\\": "src/"
+            "LaravelAIEngine\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "MagicAI\\LaravelAIEngine\\Tests\\": "tests/"
+            "LaravelAIEngine\\Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "MagicAI\\LaravelAIEngine\\AIEngineServiceProvider"
+                "LaravelAIEngine\\AIEngineServiceProvider"
             ],
             "aliases": {
-                "AIEngine": "MagicAI\\LaravelAIEngine\\Facades\\AIEngine"
+                "AIEngine": "LaravelAIEngine\\Facades\\AIEngine"
             }
         }
     },

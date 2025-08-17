@@ -2,25 +2,25 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine;
+namespace LaravelAIEngine;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Event;
-use MagicAI\LaravelAIEngine\Services\AIEngineService;
-use MagicAI\LaravelAIEngine\Services\CreditManager;
-use MagicAI\LaravelAIEngine\Services\BrandVoiceManager;
-use MagicAI\LaravelAIEngine\Services\WebhookManager;
-use MagicAI\LaravelAIEngine\Services\TemplateManager;
-use MagicAI\LaravelAIEngine\Services\ContentModerationService;
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
-use MagicAI\LaravelAIEngine\Services\QueuedAIProcessor;
-use MagicAI\LaravelAIEngine\Console\Commands\TestEnginesCommand;
-use MagicAI\LaravelAIEngine\Console\Commands\UsageReportCommand;
-use MagicAI\LaravelAIEngine\Console\Commands\ClearCacheCommand;
-use MagicAI\LaravelAIEngine\Events\AIRequestStarted;
-use MagicAI\LaravelAIEngine\Events\AIRequestCompleted;
-use MagicAI\LaravelAIEngine\Listeners\LogAIRequest;
-use MagicAI\LaravelAIEngine\Listeners\SendWebhookNotification;
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\Services\BrandVoiceManager;
+use LaravelAIEngine\Services\WebhookManager;
+use LaravelAIEngine\Services\TemplateManager;
+use LaravelAIEngine\Services\ContentModerationService;
+use LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Services\QueuedAIProcessor;
+use LaravelAIEngine\Console\Commands\TestEnginesCommand;
+use LaravelAIEngine\Console\Commands\UsageReportCommand;
+use LaravelAIEngine\Console\Commands\ClearCacheCommand;
+use LaravelAIEngine\Events\AIRequestStarted;
+use LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\Listeners\LogAIRequest;
+use LaravelAIEngine\Listeners\SendWebhookNotification;
 
 class LaravelAIEngineServiceProvider extends ServiceProvider
 {

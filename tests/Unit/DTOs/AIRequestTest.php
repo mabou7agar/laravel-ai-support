@@ -1,11 +1,11 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\DTOs;
+namespace LaravelAIEngine\Tests\Unit\DTOs;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 
 class AIRequestTest extends TestCase
 {

@@ -1,6 +1,6 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Jobs;
+namespace LaravelAIEngine\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -8,13 +8,13 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Event;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Events\AIRequestStarted;
-use MagicAI\LaravelAIEngine\Events\AIRequestCompleted;
-use MagicAI\LaravelAIEngine\Services\AIEngineService;
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
-use MagicAI\LaravelAIEngine\Traits\HandlesRateLimiting;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Events\AIRequestStarted;
+use LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Traits\HandlesRateLimiting;
 use Exception;
 
 class ProcessAIRequestJob implements ShouldQueue

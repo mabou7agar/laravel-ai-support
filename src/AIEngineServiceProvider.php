@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine;
+namespace LaravelAIEngine;
 
 use Illuminate\Support\ServiceProvider;
-use MagicAI\LaravelAIEngine\Services\AIEngineManager;
-use MagicAI\LaravelAIEngine\Services\CreditManager;
-use MagicAI\LaravelAIEngine\Services\CacheManager;
-use MagicAI\LaravelAIEngine\Services\RateLimitManager;
-use MagicAI\LaravelAIEngine\Services\AnalyticsManager;
+use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\Services\CacheManager;
+use LaravelAIEngine\Services\RateLimitManager;
+use LaravelAIEngine\Services\AnalyticsManager;
 
 class AIEngineServiceProvider extends ServiceProvider
 {

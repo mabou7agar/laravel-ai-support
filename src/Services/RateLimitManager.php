@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Services;
+namespace LaravelAIEngine\Services;
 
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Cache;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Exceptions\RateLimitExceededException;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Exceptions\RateLimitExceededException;
 
 class RateLimitManager
 {

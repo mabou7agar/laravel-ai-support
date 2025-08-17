@@ -1,15 +1,15 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Feature;
+namespace LaravelAIEngine\Tests\Feature;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\Services\AIEngineService;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\Events\AIRequestStarted;
-use MagicAI\LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Events\AIRequestStarted;
+use LaravelAIEngine\Events\AIRequestCompleted;
 use Illuminate\Support\Facades\Event;
 
 class AIEngineIntegrationTest extends TestCase
@@ -46,7 +46,7 @@ class AIEngineIntegrationTest extends TestCase
         $this->assertEquals($user->id, $request->userId);
 
         // Test that the AI engine service can be instantiated
-        $this->assertInstanceOf(\MagicAI\LaravelAIEngine\Services\AIEngineService::class, $this->aiEngineService);
+        $this->assertInstanceOf(\LaravelAIEngine\Services\AIEngineService::class, $this->aiEngineService);
         
         // Test that events can be created properly
         $startedEvent = new AIRequestStarted($request, 'test-123');
@@ -119,7 +119,7 @@ class AIEngineIntegrationTest extends TestCase
         ]);
 
         // Test credit manager functionality
-        $creditManager = app(\MagicAI\LaravelAIEngine\Services\CreditManager::class);
+        $creditManager = app(\LaravelAIEngine\Services\CreditManager::class);
         
         // Test getting initial credits
         $initialCredits = $creditManager->getUserCredits($user->id, EngineEnum::OPENAI, EntityEnum::GPT_4O);
@@ -341,7 +341,7 @@ class AIEngineIntegrationTest extends TestCase
 
     public function test_brand_voice_integration()
     {
-        $brandVoiceManager = app(\MagicAI\LaravelAIEngine\Services\BrandVoiceManager::class);
+        $brandVoiceManager = app(\LaravelAIEngine\Services\BrandVoiceManager::class);
         $user = $this->createTestUser();
 
         // Create a brand voice
@@ -423,11 +423,11 @@ class AIEngineIntegrationTest extends TestCase
         );
 
         // Test that webhook manager can be instantiated and configured
-        $webhookManager = new \MagicAI\LaravelAIEngine\Services\WebhookManager();
-        $this->assertInstanceOf(\MagicAI\LaravelAIEngine\Services\WebhookManager::class, $webhookManager);
+        $webhookManager = new \LaravelAIEngine\Services\WebhookManager();
+        $this->assertInstanceOf(\LaravelAIEngine\Services\WebhookManager::class, $webhookManager);
         
         // Test that events can be created properly
-        $startedEvent = new \MagicAI\LaravelAIEngine\Events\AIRequestStarted($request, 'test-123');
+        $startedEvent = new \LaravelAIEngine\Events\AIRequestStarted($request, 'test-123');
         $this->assertEquals('test-123', $startedEvent->requestId);
         $this->assertEquals($request, $startedEvent->request);
         

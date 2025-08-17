@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Services;
+namespace LaravelAIEngine\Services;
 
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Contracts\EngineDriverInterface;
-use MagicAI\LaravelAIEngine\Events\AIRequestStarted;
-use MagicAI\LaravelAIEngine\Events\AIRequestCompleted;
-use MagicAI\LaravelAIEngine\Exceptions\AIEngineException;
-use MagicAI\LaravelAIEngine\Exceptions\InsufficientCreditsException;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Contracts\EngineDriverInterface;
+use LaravelAIEngine\Events\AIRequestStarted;
+use LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use Illuminate\Support\Facades\Event;
 
 class AIEngineService
@@ -140,8 +140,8 @@ class AIEngineService
         $config = config("ai-engine.engines.{$engine->value}", []);
         
         // For OpenAI and Anthropic drivers, inject HTTP client if available in container
-        if ($driverClass === \MagicAI\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class ||
-            $driverClass === \MagicAI\LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver::class) {
+        if ($driverClass === \LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class ||
+            $driverClass === \LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver::class) {
             try {
                 $httpClient = app(\GuzzleHttp\Client::class);
                 return new $driverClass($config, $httpClient);
@@ -176,7 +176,7 @@ class AIEngineService
         }
 
         $model = array_key_first($defaultModels);
-        $entityEnum = \MagicAI\LaravelAIEngine\Enums\EntityEnum::from($model);
+        $entityEnum = \LaravelAIEngine\Enums\EntityEnum::from($model);
 
         $request = new AIRequest(
             prompt: $prompt,

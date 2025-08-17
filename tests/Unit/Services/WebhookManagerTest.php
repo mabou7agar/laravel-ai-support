@@ -1,14 +1,14 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Services;
+namespace LaravelAIEngine\Tests\Unit\Services;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\Services\WebhookManager;
-use MagicAI\LaravelAIEngine\Events\AIRequestStarted;
-use MagicAI\LaravelAIEngine\Events\AIRequestCompleted;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\Services\WebhookManager;
+use LaravelAIEngine\Events\AIRequestStarted;
+use LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use GuzzleHttp\Client;
@@ -49,7 +49,7 @@ class WebhookManagerTest extends TestCase
         $this->app->instance(Client::class, $mockClient);
 
         // Create mock AIRequest object
-        $request = new \MagicAI\LaravelAIEngine\DTOs\AIRequest(
+        $request = new \LaravelAIEngine\DTOs\AIRequest(
             prompt: 'Test prompt',
             engine: EngineEnum::OPENAI,
             model: EntityEnum::GPT_4O,
@@ -80,7 +80,7 @@ class WebhookManagerTest extends TestCase
         $this->app->instance(Client::class, $mockClient);
 
         // Create mock AIRequest and AIResponse objects
-        $request = new \MagicAI\LaravelAIEngine\DTOs\AIRequest(
+        $request = new \LaravelAIEngine\DTOs\AIRequest(
             prompt: 'Test prompt',
             engine: EngineEnum::OPENAI,
             model: EntityEnum::GPT_4O,
@@ -88,7 +88,7 @@ class WebhookManagerTest extends TestCase
             userId: 'user-456'
         );
         
-        $response = new \MagicAI\LaravelAIEngine\DTOs\AIResponse(
+        $response = new \LaravelAIEngine\DTOs\AIResponse(
             content: 'Generated response text',
             engine: EngineEnum::OPENAI,
             model: EntityEnum::GPT_4O

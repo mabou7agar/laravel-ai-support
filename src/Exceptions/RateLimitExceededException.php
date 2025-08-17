@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Exceptions;
+namespace LaravelAIEngine\Exceptions;
 
 use Exception;
 

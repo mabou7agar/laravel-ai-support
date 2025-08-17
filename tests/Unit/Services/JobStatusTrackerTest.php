@@ -1,9 +1,9 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Services;
+namespace LaravelAIEngine\Tests\Unit\Services;
 
 use Orchestra\Testbench\TestCase;
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Services\JobStatusTracker;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;

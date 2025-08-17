@@ -2,14 +2,15 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Enums;
+namespace LaravelAIEngine\Enums;
 
-use MagicAI\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
-use MagicAI\LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
-use MagicAI\LaravelAIEngine\Drivers\Gemini\GeminiEngineDriver;
-use MagicAI\LaravelAIEngine\Drivers\StableDiffusion\StableDiffusionEngineDriver;
-use MagicAI\LaravelAIEngine\Drivers\ElevenLabs\ElevenLabsEngineDriver;
-use MagicAI\LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
+use LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
+use LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
+use LaravelAIEngine\Drivers\Gemini\GeminiEngineDriver;
+use LaravelAIEngine\Drivers\StableDiffusion\StableDiffusionEngineDriver;
+use LaravelAIEngine\Drivers\ElevenLabs\ElevenLabsEngineDriver;
+use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
+use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 
 enum EngineEnum: string
 {
@@ -28,6 +29,7 @@ enum EngineEnum: string
     case PLAGIARISM_CHECK = 'plagiarism_check';
     case UNSPLASH = 'unsplash';
     case PEXELS = 'pexels';
+    case OPENROUTER = 'openrouter';
 
     /**
      * Get the driver class for this engine
@@ -50,6 +52,7 @@ enum EngineEnum: string
             self::PLAGIARISM_CHECK => OpenAIEngineDriver::class, // Custom service
             self::UNSPLASH => OpenAIEngineDriver::class, // Custom image search
             self::PEXELS => OpenAIEngineDriver::class, // Custom image search
+            self::OPENROUTER => OpenRouterEngineDriver::class,
         };
     }
 
@@ -74,6 +77,7 @@ enum EngineEnum: string
             self::PLAGIARISM_CHECK => 'Plagiarism Check',
             self::UNSPLASH => 'Unsplash',
             self::PEXELS => 'Pexels',
+            self::OPENROUTER => 'OpenRouter',
         };
     }
 
@@ -106,6 +110,7 @@ enum EngineEnum: string
             self::PLAGIARISM_CHECK => ['plagiarism'],
             self::UNSPLASH => ['images', 'search'],
             self::PEXELS => ['images', 'search'],
+            self::OPENROUTER => ['text', 'chat', 'images', 'vision', 'embeddings'],
         };
     }
 
@@ -176,6 +181,15 @@ enum EngineEnum: string
             ],
             self::PEXELS => [
                 EntityEnum::UNSPLASH_SEARCH, // Using similar search functionality
+            ],
+            self::OPENROUTER => [
+                EntityEnum::OPENROUTER_GPT_5,
+                EntityEnum::OPENROUTER_GEMINI_2_5_PRO,
+                EntityEnum::OPENROUTER_CLAUDE_4_OPUS,
+                EntityEnum::OPENROUTER_CLAUDE_4_SONNET,
+                EntityEnum::OPENROUTER_GPT_5_MINI,
+                EntityEnum::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL,
+                EntityEnum::OPENROUTER_LLAMA_3_3_70B,
             ],
         };
     }

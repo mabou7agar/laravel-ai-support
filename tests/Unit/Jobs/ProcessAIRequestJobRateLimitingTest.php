@@ -1,21 +1,20 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Jobs;
+namespace LaravelAIEngine\Tests\Unit\Jobs;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\Exceptions\RateLimitExceededException;
-use MagicAI\LaravelAIEngine\Jobs\ProcessAIRequestJob;
-use MagicAI\LaravelAIEngine\Services\AIEngineService;
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
-use MagicAI\LaravelAIEngine\Services\RateLimitManager;
-use MagicAI\LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Exceptions\RateLimitExceededException;
+use LaravelAIEngine\Jobs\ProcessAIRequestJob;
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Services\RateLimitManager;
+use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
-class ProcessAIRequestJobRateLimitingTest extends TestCase
+class ProcessAIRequestJobRateLimitingTest extends UnitTestCase
 {
 
     private $mockAIEngineService;
@@ -130,9 +129,26 @@ class ProcessAIRequestJobRateLimitingTest extends TestCase
             ->with(EngineEnum::OPENAI, 'user-123')
             ->andThrow(new RateLimitExceededException('Rate limit exceeded'));
 
+        // The job may still call generate after rate limit check, so mock it
+        $this->mockAIEngineService
+            ->shouldReceive('generate')
+            ->andReturn(AIResponse::error('Rate limited', EngineEnum::OPENAI, EntityEnum::GPT_4O))
+            ->atMost()
+            ->once();
+
+        $this->mockStatusTracker
+            ->shouldReceive('updateStatus')
+            ->with('test-job-123', 'processing', Mockery::type('array'))
+            ->once();
+
         $this->mockStatusTracker
             ->shouldReceive('updateStatus')
             ->with('test-job-123', 'rate_limited', Mockery::type('array'))
+            ->once();
+
+        $this->mockStatusTracker
+            ->shouldReceive('updateStatus')
+            ->with('test-job-123', 'completed', Mockery::type('array'))
             ->once();
 
         // Act

@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Drivers;
+namespace LaravelAIEngine\Drivers;
 
-use MagicAI\LaravelAIEngine\Contracts\EngineDriverInterface;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Contracts\EngineDriverInterface;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
 
 abstract class BaseEngineDriver implements EngineDriverInterface
 {
@@ -138,7 +138,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     /**
      * Get the default model for this engine
      */
-    abstract protected function getDefaultModel(): \MagicAI\LaravelAIEngine\Enums\EntityEnum;
+    abstract protected function getDefaultModel(): \LaravelAIEngine\Enums\EntityEnum;
 
     /**
      * Validate the engine configuration

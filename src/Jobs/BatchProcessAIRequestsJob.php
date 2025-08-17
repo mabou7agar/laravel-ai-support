@@ -1,15 +1,15 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Jobs;
+namespace LaravelAIEngine\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
-use MagicAI\LaravelAIEngine\Traits\HandlesRateLimiting;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Traits\HandlesRateLimiting;
 use Exception;
 
 class BatchProcessAIRequestsJob implements ShouldQueue

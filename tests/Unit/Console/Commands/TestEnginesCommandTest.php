@@ -1,11 +1,11 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Console\Commands;
+namespace LaravelAIEngine\Tests\Unit\Console\Commands;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\Console\Commands\TestEnginesCommand;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\Console\Commands\TestEnginesCommand;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 use Illuminate\Support\Facades\Artisan;
 
 class TestEnginesCommandTest extends TestCase

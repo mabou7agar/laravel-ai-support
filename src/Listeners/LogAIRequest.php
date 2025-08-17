@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Listeners;
+namespace LaravelAIEngine\Listeners;
 
-use MagicAI\LaravelAIEngine\Events\AIRequestStarted;
-use MagicAI\LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\Events\AIRequestStarted;
+use LaravelAIEngine\Events\AIRequestCompleted;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 

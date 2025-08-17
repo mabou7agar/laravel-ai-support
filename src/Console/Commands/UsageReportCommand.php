@@ -1,10 +1,10 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Console\Commands;
+namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use MagicAI\LaravelAIEngine\Services\CreditManager;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\Enums\EngineEnum;
 use Carbon\Carbon;
 
 class UsageReportCommand extends Command

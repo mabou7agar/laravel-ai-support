@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Events;
+namespace LaravelAIEngine\Events;
 
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
 
 class AIRequestCompleted
 {

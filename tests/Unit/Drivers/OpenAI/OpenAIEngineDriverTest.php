@@ -1,15 +1,15 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Drivers\OpenAI;
+namespace LaravelAIEngine\Tests\Unit\Drivers\OpenAI;
 
-use MagicAI\LaravelAIEngine\Contracts\EngineDriverInterface;
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Contracts\EngineDriverInterface;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Exceptions\AIEngineException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Handler\MockHandler;
@@ -80,7 +80,7 @@ class OpenAIEngineDriverTest extends TestCase
         $this->assertEquals(0.7, $request->parameters['temperature']);
 
         // Test that the driver can be instantiated and supports the model
-        $this->assertInstanceOf(\MagicAI\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class, $this->driver);
+        $this->assertInstanceOf(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class, $this->driver);
         $this->assertTrue($this->driver->supports('text'));
 
         // This test verifies text generation infrastructure without requiring actual API calls

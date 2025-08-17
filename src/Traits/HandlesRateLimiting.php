@@ -1,11 +1,11 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Traits;
+namespace LaravelAIEngine\Traits;
 
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Exceptions\RateLimitExceededException;
-use MagicAI\LaravelAIEngine\Services\RateLimitManager;
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Exceptions\RateLimitExceededException;
+use LaravelAIEngine\Services\RateLimitManager;
+use LaravelAIEngine\Services\JobStatusTracker;
 
 trait HandlesRateLimiting
 {

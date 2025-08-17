@@ -1,9 +1,9 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Jobs;
+namespace LaravelAIEngine\Tests\Unit\Jobs;
 
 use Orchestra\Testbench\TestCase;
-use MagicAI\LaravelAIEngine\Jobs\SendWebhookNotificationJob;
+use LaravelAIEngine\Jobs\SendWebhookNotificationJob;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Psr7\Response;
@@ -89,7 +89,7 @@ class SendWebhookNotificationJobTest extends TestCase
         
         $expectedHeaders = [
             'Content-Type' => 'application/json',
-            'User-Agent' => 'MagicAI-LaravelAIEngine/1.0',
+            'User-Agent' => 'LaravelAIEngine/1.0',
             'X-Webhook-Event' => 'ai_request_completed',
             'X-Webhook-Delivery' => Mockery::pattern('/^delivery_/'),
             'X-Webhook-Timestamp' => Mockery::type('string'),

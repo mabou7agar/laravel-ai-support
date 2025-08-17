@@ -1,6 +1,6 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Jobs;
+namespace LaravelAIEngine\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -35,7 +35,7 @@ class SendWebhookNotificationJob implements ShouldQueue
 
         $defaultHeaders = [
             'Content-Type' => 'application/json',
-            'User-Agent' => 'MagicAI-LaravelAIEngine/1.0',
+            'User-Agent' => 'LaravelAIEngine/1.0',
             'X-Webhook-Event' => $this->event,
             'X-Webhook-Delivery' => uniqid('delivery_'),
             'X-Webhook-Timestamp' => now()->toISOString(),

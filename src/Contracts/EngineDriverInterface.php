@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace MagicAI\LaravelAIEngine\Contracts;
+namespace LaravelAIEngine\Contracts;
 
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EngineEnum;
 
 interface EngineDriverInterface
 {

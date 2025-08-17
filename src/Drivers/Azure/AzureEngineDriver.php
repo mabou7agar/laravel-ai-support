@@ -1,13 +1,13 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Drivers\Azure;
+namespace LaravelAIEngine\Drivers\Azure;
 
-use MagicAI\LaravelAIEngine\Contracts\EngineDriverInterface;
-use MagicAI\LaravelAIEngine\DTOs\AIRequest;
-use MagicAI\LaravelAIEngine\DTOs\AIResponse;
-use MagicAI\LaravelAIEngine\Enums\EntityEnum;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Contracts\EngineDriverInterface;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Exceptions\AIEngineException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Storage;
@@ -79,7 +79,7 @@ class AzureEngineDriver implements EngineDriverInterface
             'headers' => [
                 'Content-Type' => 'application/ssml+xml',
                 'X-Microsoft-OutputFormat' => $payload['output_format'],
-                'User-Agent' => 'MagicAI-Laravel-Engine',
+                'User-Agent' => 'LaravelAIEngine/1.0',
             ],
             'body' => $ssml,
         ]);

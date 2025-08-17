@@ -1,10 +1,10 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Console\Commands;
+namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EngineEnum;
 
 class ClearCacheCommand extends Command
 {

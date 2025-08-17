@@ -1,11 +1,11 @@
 <?php
 
-namespace MagicAI\LaravelAIEngine\Tests\Unit\Enums;
+namespace LaravelAIEngine\Tests\Unit\Enums;
 
-use MagicAI\LaravelAIEngine\Tests\TestCase;
-use MagicAI\LaravelAIEngine\Enums\EngineEnum;
-use MagicAI\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
-use MagicAI\LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
+use LaravelAIEngine\Tests\TestCase;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
+use LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
 
 class EngineEnumTest extends TestCase
 {

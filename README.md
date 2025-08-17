@@ -35,7 +35,7 @@ A comprehensive Laravel package for multi-AI engine integration with advanced jo
 ## Installation
 
 ```bash
-composer require magicai/laravel-ai-engine
+composer require m-tech-stack/laravel-ai-engine
 ```
 
 Publish the configuration file:
@@ -89,7 +89,7 @@ AI_RATE_LIMITING_APPLY_TO_JOBS=true
 ### Basic Text Generation
 
 ```php
-use MagicAI\LaravelAIEngine\Facades\AIEngine;
+use LaravelAIEngine\Facades\AIEngine;
 
 // Simple text generation
 $response = AIEngine::engine('openai')
@@ -244,7 +244,7 @@ The package includes a comprehensive job queue system for processing AI requests
 Queue individual AI requests for background processing:
 
 ```php
-use MagicAI\LaravelAIEngine\Services\QueuedAIProcessor;
+use LaravelAIEngine\Services\QueuedAIProcessor;
 
 $processor = app(QueuedAIProcessor::class);
 
@@ -303,7 +303,7 @@ echo "Progress: {$progress['percentage']}% - {$progress['message']}";
 Monitor job status and progress in real-time:
 
 ```php
-use MagicAI\LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Services\JobStatusTracker;
 
 $tracker = app(JobStatusTracker::class);
 
@@ -322,6 +322,168 @@ $stats = $tracker->getStatistics($userId);
 echo "Total jobs: {$stats['total_jobs']}";
 echo "Completed: {$stats['completed_jobs']}";
 ```
+
+## OpenRouter Fallback Integration
+
+The package includes comprehensive OpenRouter support as a fallback engine, providing access to multiple AI models through a unified API with competitive pricing and high availability.
+
+### Using OpenRouter as Fallback
+
+OpenRouter serves as an excellent fallback engine because it provides access to multiple AI providers (OpenAI, Anthropic, Google, Meta, Mistral, etc.) through a single API:
+
+```php
+use LaravelAIEngine\Facades\AIEngine;
+
+// Configure OpenRouter as fallback for primary engines
+$response = AIEngine::engine('openai')
+    ->model('gpt-4o')
+    ->fallbackTo('openrouter') // Will use OpenRouter if OpenAI fails
+    ->withRetry(3)
+    ->generate('Your prompt here');
+```
+
+### OpenRouter Configuration
+
+Add OpenRouter configuration to your `.env` file:
+
+```bash
+# OpenRouter API Configuration
+OPENROUTER_API_KEY=your_openrouter_api_key
+OPENROUTER_SITE_URL=https://yourapp.com
+OPENROUTER_SITE_NAME="Your App Name"
+```
+
+### Available OpenRouter Models
+
+OpenRouter provides access to popular models from multiple providers:
+
+```php
+// Use latest GPT-5 models through OpenRouter (August 2025)
+$response = AIEngine::engine('openrouter')
+    ->model('openai/gpt-5') // GPT-5 - Latest generation AI model
+    ->generate('Your prompt');
+
+$response = AIEngine::engine('openrouter')
+    ->model('openai/gpt-5-mini') // GPT-5 Mini - Efficient latest model
+    ->generate('Your prompt');
+
+// Latest Gemini 2.5 models with thinking capabilities (March 2025)
+$response = AIEngine::engine('openrouter')
+    ->model('google/gemini-2.5-pro') // Gemini 2.5 Pro - Most intelligent AI with thinking
+    ->generate('Your prompt');
+
+$response = AIEngine::engine('openrouter')
+    ->model('google/gemini-2.5-pro-experimental') // Gemini 2.5 Pro Experimental
+    ->generate('Your prompt');
+
+// Claude 4 models - World's best coding models
+$response = AIEngine::engine('openrouter')
+    ->model('anthropic/claude-4-opus') // Claude 4 Opus - World's best coding model
+    ->generate('Your prompt');
+
+$response = AIEngine::engine('openrouter')
+    ->model('anthropic/claude-4-sonnet') // Claude 4 Sonnet - Advanced reasoning
+    ->generate('Your prompt');
+
+// Free Models - Perfect for testing and cost-effective usage
+$response = AIEngine::engine('openrouter')
+    ->model('meta-llama/llama-3.1-8b-instruct:free') // Llama 3.1 8B - Free tier
+    ->generate('Your prompt');
+
+$response = AIEngine::engine('openrouter')
+    ->model('google/gemma-2-9b-it:free') // Gemma 2 9B - Free tier
+    ->generate('Your prompt');
+
+$response = AIEngine::engine('openrouter')
+    ->model('mistralai/mistral-7b-instruct:free') // Mistral 7B - Free tier
+    ->generate('Your prompt');
+```
+
+### Automatic Fallback Configuration
+
+The package automatically configures OpenRouter as the primary fallback for all engines:
+
+```php
+// In config/ai-engine.php - automatically configured
+'error_handling' => [
+    'fallback_engines' => [
+        'openai' => ['openrouter', 'anthropic', 'gemini'],
+        'anthropic' => ['openrouter', 'openai', 'gemini'],
+        'gemini' => ['openrouter', 'openai', 'anthropic'],
+        'openrouter' => ['openai', 'anthropic', 'gemini'],
+    ],
+],
+```
+
+### Queue-Based Fallback
+
+OpenRouter fallback works seamlessly with the job queue system:
+
+```php
+use LaravelAIEngine\Services\QueuedAIProcessor;
+
+$processor = app(QueuedAIProcessor::class);
+
+// If primary engine fails, jobs automatically fallback to OpenRouter
+$jobId = $processor->queueRequest(
+    request: $aiRequest,
+    callbackUrl: 'https://example.com/callback',
+    userId: 'user-123'
+);
+
+// Monitor fallback usage in job status
+$status = $processor->getJobStatus($jobId);
+if (isset($status['fallback_used'])) {
+    echo "Used fallback engine: {$status['fallback_engine']}";
+}
+```
+
+### Cost-Effective Fallback Strategy
+
+OpenRouter often provides competitive pricing and can serve as a cost-effective fallback:
+
+```php
+// OpenRouter models with competitive pricing (2025 latest models)
+$models = [
+    // Free Models (Perfect for Testing & Development)
+    'meta-llama/llama-3.1-8b-instruct:free' => 0.0, // Llama 3.1 8B - Free
+    'meta-llama/llama-3.2-3b-instruct:free' => 0.0, // Llama 3.2 3B - Free
+    'google/gemma-2-9b-it:free' => 0.0, // Gemma 2 9B - Free
+    'mistralai/mistral-7b-instruct:free' => 0.0, // Mistral 7B - Free
+    'qwen/qwen-2.5-7b-instruct:free' => 0.0, // Qwen 2.5 7B - Free
+    'microsoft/phi-3-mini-128k-instruct:free' => 0.0, // Phi-3 Mini - Free
+    'openchat/openchat-3.5-1210:free' => 0.0, // OpenChat 3.5 - Free
+    
+    // GPT-5 Models (Latest Generation - August 2025)
+    'openai/gpt-5' => 5.0, // Premium GPT-5 - Latest generation
+    'openai/gpt-5-mini' => 2.5, // GPT-5 Mini - Efficient latest model
+    'openai/gpt-5-nano' => 1.0, // GPT-5 Nano - Ultra-efficient
+    
+    // Gemini 2.5 Models (Latest Generation - March 2025)
+    'google/gemini-2.5-pro' => 3.0, // Most intelligent AI with thinking
+    'google/gemini-2.5-pro-experimental' => 3.2, // Experimental version
+    
+    // Claude 4 Models (Latest Generation)
+    'anthropic/claude-4-opus' => 4.5, // Premium Claude 4 - World's best coding
+    'anthropic/claude-4-sonnet' => 3.5, // Claude 4 Sonnet - Advanced reasoning
+    
+    // Previous Generation Models (Still Competitive)
+    'openai/gpt-4o-2024-11-20' => 2.3, // Latest GPT-4o version
+    'anthropic/claude-3.5-sonnet-20241022' => 2.1, // Latest Claude 3.5 Sonnet
+    'google/gemini-2.0-flash' => 1.9, // Previous Gemini generation
+    'meta-llama/llama-3.3-70b-instruct' => 1.3, // Latest Llama 3.3
+    'deepseek/deepseek-r1' => 0.4, // Latest DeepSeek R1
+];
+```
+
+### Benefits of OpenRouter as Fallback
+
+- **High Availability**: Access to multiple providers reduces downtime
+- **Model Diversity**: Access to models not available through direct APIs
+- **Competitive Pricing**: Often lower costs than direct API access
+- **Unified Interface**: Single API for multiple providers
+- **Rate Limit Resilience**: Higher rate limits through unified API
+- **Geographic Availability**: Better global coverage
 
 ## Intelligent Rate Limiting
 
@@ -410,7 +572,7 @@ The package includes reliable webhook delivery with automatic retries and expone
 ### Queued Webhook Delivery
 
 ```php
-use MagicAI\LaravelAIEngine\Services\WebhookManager;
+use LaravelAIEngine\Services\WebhookManager;
 
 $webhookManager = app(WebhookManager::class);
 
@@ -488,6 +650,11 @@ ANTHROPIC_API_KEY=your_anthropic_key
 # Google Gemini
 GOOGLE_AI_API_KEY=your_google_key
 
+# OpenRouter
+OPENROUTER_API_KEY=your_openrouter_key
+OPENROUTER_SITE_URL=https://yourapp.com
+OPENROUTER_SITE_NAME="Your App Name"
+
 # Credit System
 AI_CREDITS_ENABLED=true
 AI_DEFAULT_CREDITS=100.0
@@ -561,7 +728,7 @@ echo "Total estimated credits: " . $estimate['total_credits'];
 ### User Credits
 
 ```php
-use MagicAI\LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\Services\CreditManager;
 
 $creditManager = app(CreditManager::class);
 
@@ -592,7 +759,7 @@ echo "Total credits used: " . $stats['total_credits_used'];
 ## Analytics
 
 ```php
-use MagicAI\LaravelAIEngine\Services\AnalyticsManager;
+use LaravelAIEngine\Services\AnalyticsManager;
 
 $analytics = app(AnalyticsManager::class);
 
@@ -638,7 +805,7 @@ The package dispatches several events you can listen to:
 
 ```php
 // Listen for AI request completion
-Event::listen(\MagicAI\LaravelAIEngine\Events\AIRequestCompleted::class, function ($event) {
+Event::listen(\LaravelAIEngine\Events\AIRequestCompleted::class, function ($event) {
     // Handle completion
     Log::info('AI request completed', [
         'user_id' => $event->request->userId,
@@ -648,7 +815,7 @@ Event::listen(\MagicAI\LaravelAIEngine\Events\AIRequestCompleted::class, functio
 });
 
 // Listen for errors
-Event::listen(\MagicAI\LaravelAIEngine\Events\AIRequestFailed::class, function ($event) {
+Event::listen(\LaravelAIEngine\Events\AIRequestFailed::class, function ($event) {
     // Handle error
     Log::error('AI request failed', [
         'error' => $event->exception->getMessage(),
@@ -664,7 +831,7 @@ Event::listen(\MagicAI\LaravelAIEngine\Events\AIRequestFailed::class, function (
 1. Create a new engine driver:
 
 ```php
-use MagicAI\LaravelAIEngine\Drivers\BaseEngineDriver;
+use LaravelAIEngine\Drivers\BaseEngineDriver;
 
 class CustomEngineDriver extends BaseEngineDriver
 {
