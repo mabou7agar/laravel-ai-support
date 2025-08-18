@@ -1,6 +1,7 @@
 {
     "name": "m-tech-stack/laravel-ai-engine",
-    "description": "A comprehensive Laravel package for multi-AI engine integration with credit management, streaming, and advanced features",
+    "description": "A comprehensive Laravel package for multi-AI engine integration with credit management, streaming, interactive chat components, and advanced features",
+    "version": "2.1.0",
     "type": "library",
     "license": "MIT",
     "keywords": [
@@ -12,7 +13,12 @@
         "stable-diffusion",
         "multi-engine",
         "streaming",
-        "credits"
+        "credits",
+        "chat",
+        "blade-component",
+        "websocket",
+        "interactive-actions",
+        "real-time"
     ],
     "authors": [
         {
