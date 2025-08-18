@@ -167,14 +167,14 @@ class AIEngineServiceProvider extends ServiceProvider
             ], 'ai-engine-migrations');
 
             $this->commands([
-                Commands\TestEnginesCommand::class,
-                Commands\SyncModelsCommand::class,
-                Commands\UsageReportCommand::class,
-                Commands\ClearCacheCommand::class,
-                Commands\AnalyticsReportCommand::class,
-                Commands\FailoverStatusCommand::class,
-                Commands\StreamingServerCommand::class,
-                Commands\SystemHealthCommand::class,
+                Console\Commands\TestEnginesCommand::class,
+                Console\Commands\SyncModelsCommand::class,
+                Console\Commands\UsageReportCommand::class,
+                Console\Commands\ClearCacheCommand::class,
+                Console\Commands\AnalyticsReportCommand::class,
+                Console\Commands\FailoverStatusCommand::class,
+                Console\Commands\StreamingServerCommand::class,
+                Console\Commands\SystemHealthCommand::class,
             ]);
         }
 
