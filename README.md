@@ -24,6 +24,14 @@ A comprehensive Laravel package for multi-AI engine integration with advanced jo
 - **Batch Intelligence**: Intelligent splitting of batch requests when rate limited
 - **Configurable Delays**: Exponential backoff with jitter to prevent thundering herd
 
+### 🧠 **Conversation Memory**
+- **Persistent Conversations**: Store and manage conversation history across sessions
+- **Context-Aware Responses**: AI responses that remember previous conversation context
+- **Message Management**: User and assistant message tracking with metadata
+- **Conversation Settings**: Configurable conversation parameters (max messages, temperature, etc.)
+- **Auto-Title Generation**: Automatic conversation title generation from first user message
+- **Message Trimming**: Automatic conversation history trimming to stay within limits
+
 ### 💰 **Enterprise Features**
 - **Credit System**: Built-in usage tracking and billing management
 - **Analytics**: Comprehensive usage analytics and monitoring
@@ -86,7 +94,126 @@ AI_RATE_LIMITING_APPLY_TO_JOBS=true
 
 ## Quick Start
 
-### Basic Text Generation
+### Unified Engine Facade (Bupple-Style API)
+
+The unified `Engine` facade provides a simple, elegant API inspired by Bupple's Laravel AI Engine:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+// Simple chat completion
+$response = Engine::send([
+    ['role' => 'user', 'content' => 'Hello, how are you?']
+]);
+
+echo $response->content; // "Hello! I'm doing well, thank you for asking..."
+
+// Stream responses in real-time
+$stream = Engine::stream([
+    ['role' => 'user', 'content' => 'Tell me a story about Laravel']
+]);
+
+foreach ($stream as $chunk) {
+    echo $chunk; // Output each chunk as it arrives
+}
+```
+
+### Fluent Engine Configuration
+
+```php
+// Configure engine, model, and parameters with method chaining
+$response = Engine::engine('openai')
+    ->model('gpt-4o')
+    ->temperature(0.8)
+    ->maxTokens(1000)
+    ->user('user-123')
+    ->send([
+        ['role' => 'system', 'content' => 'You are a helpful assistant'],
+        ['role' => 'user', 'content' => 'Explain quantum computing']
+    ]);
+
+// Stream with configuration
+$stream = Engine::engine('anthropic')
+    ->model('claude-3-5-sonnet-20240620')
+    ->temperature(0.7)
+    ->stream([
+        ['role' => 'user', 'content' => 'Write a poem about AI']
+    ]);
+```
+
+### Memory Management (Bupple-Style)
+
+```php
+// Add messages to conversation memory
+Engine::memory()
+    ->conversation('conv-123')
+    ->addUserMessage('Hello!')
+    ->addAssistantMessage('Hi there! How can I help you?');
+
+// Get conversation context
+$messages = Engine::memory()
+    ->conversation('conv-123')
+    ->getMessages();
+
+// Set parent context like Bupple
+Engine::memory()
+    ->conversation('conv-123')
+    ->setParent('conversation', 'parent-conv-456');
+
+// Send with automatic conversation context
+$response = Engine::conversation('conv-123')
+    ->send([
+        ['role' => 'user', 'content' => 'What did we discuss earlier?']
+    ]);
+```
+
+### Multiple Memory Storage Drivers
+
+```php
+// Use Redis for high-performance storage
+Engine::memory('redis')
+    ->conversation('conv-123')
+    ->addUserMessage('Hello from Redis!');
+
+// Use file storage for simple persistence
+Engine::memory('file')
+    ->conversation('conv-456')
+    ->addUserMessage('Hello from file storage!');
+
+// Use database storage (default)
+Engine::memory('database')
+    ->conversation('conv-789')
+    ->addUserMessage('Hello from database!');
+```
+
+### Advanced Memory Operations
+
+```php
+// Create conversation with metadata
+Engine::memory()
+    ->createConversation('conv-123', [
+        'title' => 'Customer Support Chat',
+        'user_id' => 'user-456',
+        'metadata' => ['department' => 'support']
+    ]);
+
+// Get conversation statistics
+$stats = Engine::memory()
+    ->conversation('conv-123')
+    ->getStats();
+
+// Clear conversation history
+Engine::memory()
+    ->conversation('conv-123')
+    ->clear();
+
+// Check if conversation exists
+$exists = Engine::memory()
+    ->conversation('conv-123')
+    ->exists();
+```
+
+### Basic Text Generation (Traditional API)
 
 ```php
 use LaravelAIEngine\Facades\AIEngine;
@@ -484,6 +611,158 @@ $models = [
 - **Unified Interface**: Single API for multiple providers
 - **Rate Limit Resilience**: Higher rate limits through unified API
 - **Geographic Availability**: Better global coverage
+
+## Conversation Memory
+
+The package provides comprehensive conversation memory support for building chat applications and maintaining context across AI interactions.
+
+### Creating and Managing Conversations
+
+```php
+use LaravelAIEngine\Services\ConversationManager;
+
+$conversationManager = app(ConversationManager::class);
+
+// Create a new conversation
+$conversation = $conversationManager->createConversation(
+    userId: 'user-123',
+    title: 'Customer Support Chat',
+    systemPrompt: 'You are a helpful customer support assistant.',
+    settings: [
+        'max_messages' => 100,
+        'temperature' => 0.7,
+        'auto_title' => true
+    ]
+);
+
+// Get conversation by ID
+$conversation = $conversationManager->getConversation($conversationId);
+
+// Get all conversations for a user
+$conversations = $conversationManager->getUserConversations('user-123');
+```
+
+### Context-Aware AI Generation
+
+```php
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+
+$aiEngine = app(AIEngineService::class);
+
+// Generate response with conversation context
+$response = $aiEngine->generateWithConversation(
+    message: 'What was my previous question?',
+    conversationId: $conversation->conversation_id,
+    engine: EngineEnum::OPENAI,
+    model: EntityEnum::GPT_4O,
+    userId: 'user-123'
+);
+
+// The AI will have access to the full conversation history
+echo $response->content; // "Your previous question was about..."
+```
+
+### Manual Message Management
+
+```php
+// Add user message
+$userMessage = $conversationManager->addUserMessage(
+    $conversationId,
+    'Hello, I need help with my order',
+    ['metadata' => 'support_ticket_123']
+);
+
+// Add assistant message with AI response
+$assistantMessage = $conversationManager->addAssistantMessage(
+    $conversationId,
+    'I\'d be happy to help with your order!',
+    $aiResponse
+);
+```
+
+### Conversation Settings and Management
+
+```php
+// Update conversation settings
+$conversationManager->updateConversationSettings($conversationId, [
+    'max_messages' => 200,
+    'temperature' => 0.8,
+    'auto_title' => false
+]);
+
+// Get conversation statistics
+$stats = $conversationManager->getConversationStats($conversationId);
+// Returns: total_messages, user_messages, assistant_messages, created_at, last_activity
+
+// Clear conversation history
+$conversationManager->clearConversationHistory($conversationId);
+
+// Delete conversation (marks as inactive)
+$conversationManager->deleteConversation($conversationId);
+```
+
+### Advanced Conversation Features
+
+#### Auto-Title Generation
+```php
+// Conversations with auto_title enabled automatically generate titles
+$conversation = $conversationManager->createConversation(
+    userId: 'user-123',
+    settings: ['auto_title' => true]
+);
+
+// After first user message, title is auto-generated
+$conversationManager->addUserMessage($conversationId, 'What is machine learning?');
+// Title becomes: "What is machine learning?"
+```
+
+#### Message Trimming
+```php
+// Conversations automatically trim old messages when limit is reached
+$conversation = $conversationManager->createConversation(
+    userId: 'user-123',
+    settings: ['max_messages' => 50]
+);
+
+// When 51st message is added, oldest message is automatically deleted
+```
+
+#### Context Retrieval
+```php
+// Get conversation context for AI requests
+$context = $conversationManager->getConversationContext($conversationId);
+// Returns array of messages in format: [{'role': 'user', 'content': '...'}, ...]
+
+// Enhanced AI request with context
+$enhancedRequest = $conversationManager->enhanceRequestWithContext(
+    $baseRequest,
+    $conversationId
+);
+```
+
+### Database Schema
+
+The conversation memory system uses two main tables:
+
+#### ai_conversations
+- `conversation_id` (string, unique identifier)
+- `user_id` (string, user identifier)
+- `title` (string, nullable, conversation title)
+- `system_prompt` (text, nullable, system instructions)
+- `settings` (json, conversation configuration)
+- `is_active` (boolean, soft deletion flag)
+- `last_activity_at` (timestamp, last message time)
+
+#### ai_messages
+- `conversation_id` (string, foreign key)
+- `role` (enum: user, assistant, system)
+- `content` (text, message content)
+- `metadata` (json, additional message data)
+- `tokens_used` (integer, nullable, token count)
+- `credits_used` (decimal, nullable, credit cost)
+- `sent_at` (timestamp, message timestamp)
 
 ## Intelligent Rate Limiting
 

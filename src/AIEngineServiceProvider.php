@@ -10,6 +10,7 @@ use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Services\CacheManager;
 use LaravelAIEngine\Services\RateLimitManager;
 use LaravelAIEngine\Services\AnalyticsManager;
+use LaravelAIEngine\Services\ConversationManager;
 
 class AIEngineServiceProvider extends ServiceProvider
 {
@@ -43,7 +44,23 @@ class AIEngineServiceProvider extends ServiceProvider
             return new AnalyticsManager($app);
         });
 
+        $this->app->singleton(ConversationManager::class, function ($app) {
+            return new ConversationManager();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\Memory\MemoryManager();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\UnifiedEngineManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\UnifiedEngineManager(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+                $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class)
+            );
+        });
+
         $this->app->alias(AIEngineManager::class, 'ai-engine');
+        $this->app->alias(\LaravelAIEngine\Services\UnifiedEngineManager::class, 'unified-engine');
     }
 
     /**

@@ -7,18 +7,23 @@ namespace LaravelAIEngine\Services;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Contracts\EngineDriverInterface;
 use LaravelAIEngine\Events\AIRequestStarted;
 use LaravelAIEngine\Events\AIRequestCompleted;
 use LaravelAIEngine\Exceptions\AIEngineException;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
+use LaravelAIEngine\Services\ConversationManager;
 use Illuminate\Support\Facades\Event;
 
 class AIEngineService
 {
     public function __construct(
-        protected CreditManager $creditManager
-    ) {}
+        protected CreditManager $creditManager,
+        protected ?ConversationManager $conversationManager = null
+    ) {
+        $this->conversationManager = $conversationManager ?? app(ConversationManager::class);
+    }
 
     /**
      * Generate AI content using the specified request.
@@ -99,6 +104,51 @@ class AIEngineService
                 error: $e->getMessage()
             );
         }
+    }
+
+    /**
+     * Generate AI content with conversation context.
+     */
+    public function generateWithConversation(
+        string $message,
+        string $conversationId,
+        EngineEnum $engine,
+        EntityEnum $model,
+        ?string $userId = null,
+        array $parameters = []
+    ): AIResponse {
+        // Add user message to conversation
+        $this->conversationManager->addUserMessage($conversationId, $message);
+
+        // Create base request
+        $baseRequest = new AIRequest(
+            prompt: $message,
+            engine: $engine,
+            model: $model,
+            parameters: $parameters,
+            userId: $userId,
+            metadata: ['conversation_id' => $conversationId]
+        );
+
+        // Enhance request with conversation context
+        $contextualRequest = $this->conversationManager->enhanceRequestWithContext(
+            $baseRequest,
+            $conversationId
+        );
+
+        // Generate response
+        $response = $this->generate($contextualRequest);
+
+        // Add assistant message to conversation if successful
+        if ($response->success) {
+            $this->conversationManager->addAssistantMessage(
+                $conversationId,
+                $response->content,
+                $response
+            );
+        }
+
+        return $response;
     }
 
     /**

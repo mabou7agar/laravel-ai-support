@@ -259,4 +259,44 @@ return [
         ],
         'secret' => env('AI_WEBHOOK_SECRET'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Memory Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure memory storage drivers for conversation persistence.
+    | Supported drivers: database, redis, file
+    |
+    */
+    'memory' => [
+        'default_driver' => env('AI_MEMORY_DRIVER', 'database'),
+        
+        'database' => [
+            'connection' => env('AI_MEMORY_DB_CONNECTION', null),
+            'max_messages' => env('AI_MEMORY_DB_MAX_MESSAGES', 100),
+        ],
+        
+        'redis' => [
+            'connection' => env('AI_MEMORY_REDIS_CONNECTION', 'default'),
+            'prefix' => env('AI_MEMORY_REDIS_PREFIX', 'ai_engine:'),
+            'max_messages' => env('AI_MEMORY_REDIS_MAX_MESSAGES', 100),
+        ],
+        
+        'file' => [
+            'path' => env('AI_MEMORY_FILE_PATH', storage_path('ai-engine/conversations')),
+            'max_messages' => env('AI_MEMORY_FILE_MAX_MESSAGES', 100),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Unified Engine Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure default settings for the unified Engine facade.
+    |
+    */
+    'default_engine' => env('AI_DEFAULT_ENGINE', 'openai'),
+    'default_model' => env('AI_DEFAULT_MODEL', 'gpt-4o'),
 ];
