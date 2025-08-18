@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2025-08-18
+
+### Fixed
+- **Command Registration** - Fixed PSR-4 autoloading violations causing command registration failures
+- **Missing Commands** - Added missing SyncModelsCommand for model synchronization
+- **Service Provider** - Corrected command namespace registration from Commands\ to Console\Commands\
+- **Event Classes** - Separated multi-class files to comply with PSR-4 autoloading standards
+- **Route Registration** - Fixed AI Chat demo page route and view accessibility
+- **Local Development** - Improved local package development configuration
+
+### Technical Improvements
+- Removed problematic StreamingEvents.php with multiple classes
+- Added proper AIResponseChunk event class
+- Fixed composer autoloading issues
+- Enhanced error handling for command registration
+
 ## [2.1.0] - 2025-08-18
 
 ### Added
