@@ -34,7 +34,13 @@ A comprehensive Laravel package for multi-AI engine integration with advanced jo
 
 ### 💰 **Enterprise Features**
 - **Credit System**: Built-in usage tracking and billing management
-- **Analytics**: Comprehensive usage analytics and monitoring
+- **Interactive Actions**: Buttons, forms, quick replies, and other interactive elements in AI responses
+- **Automatic Failover**: Circuit breaker pattern with automatic provider switching for reliability
+- **WebSocket Streaming**: Real-time AI response streaming with WebSocket support
+- **Advanced Analytics**: Comprehensive usage monitoring, cost tracking, and performance analytics
+- **Memory Storage**: Multiple storage drivers (Redis, Database, File, MongoDB) for conversation persistence
+- **Event System**: Real-time events and listeners for streaming, failover, and analytics
+- **Console Commands**: Management commands for monitoring, health checks, and system administration
 - **Retry & Fallback**: Automatic retry mechanisms with fallback engines
 - **Caching**: Response caching to reduce costs and improve performance
 - **Error Handling**: Robust error handling and logging
@@ -211,6 +217,196 @@ Engine::memory()
 $exists = Engine::memory()
     ->conversation('conv-123')
     ->exists();
+```
+
+### Interactive Actions
+
+Add interactive buttons, forms, and other UI elements to AI responses:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+use LaravelAIEngine\DTOs\InteractiveAction;
+
+// Create interactive buttons
+$actions = [
+    InteractiveAction::button('approve', 'Approve Request', [
+        'action' => ['type' => 'callback', 'callback' => 'handleApproval']
+    ]),
+    InteractiveAction::button('reject', 'Reject Request', [
+        'action' => ['type' => 'callback', 'callback' => 'handleRejection']
+    ], 'Reject this request', ['variant' => 'danger'])
+];
+
+// Send response with actions
+$response = Engine::send([
+    ['role' => 'user', 'content' => 'Please review this request']
+]);
+
+$responseWithActions = $response->withActions($actions);
+
+// Create quick reply actions
+$quickReplies = [
+    InteractiveAction::quickReply('yes', 'Yes', 'Yes, I agree'),
+    InteractiveAction::quickReply('no', 'No', 'No, I disagree'),
+    InteractiveAction::quickReply('maybe', 'Maybe', 'I need more information')
+];
+
+// Create form action
+$formAction = InteractiveAction::form('feedback', 'Submit Feedback', [
+    ['name' => 'rating', 'type' => 'select', 'label' => 'Rating', 'options' => [1,2,3,4,5]],
+    ['name' => 'comment', 'type' => 'textarea', 'label' => 'Comment', 'required' => true]
+]);
+
+// Create link action
+$linkAction = InteractiveAction::link('docs', 'View Documentation', 
+    'https://docs.example.com', 'Learn more about this feature', true);
+
+// Create file upload action
+$uploadAction = InteractiveAction::fileUpload('upload', 'Upload File', 
+    ['image/*', 'application/pdf'], 5242880, false, 'Upload supporting documents');
+```
+
+### Advanced Interactive Actions
+
+```php
+// Create card with embedded actions
+$cardAction = InteractiveAction::card('product', 'Product Recommendation', 
+    'Based on your preferences, we recommend this product.', 
+    'https://example.com/product-image.jpg',
+    [
+        InteractiveAction::button('buy', 'Buy Now', [
+            'action' => ['type' => 'url', 'url' => 'https://store.example.com/buy']
+        ]),
+        InteractiveAction::button('details', 'View Details', [
+            'action' => ['type' => 'callback', 'callback' => 'showProductDetails']
+        ])
+    ]
+);
+
+// Create confirmation action
+$confirmAction = InteractiveAction::confirm('delete', 'Delete Item', 
+    'Are you sure you want to delete this item? This action cannot be undone.',
+    ['item_id' => 123]
+);
+
+// Create menu/dropdown action
+$menuAction = InteractiveAction::menu('category', 'Select Category', [
+    ['value' => 'tech', 'label' => 'Technology'],
+    ['value' => 'business', 'label' => 'Business'],
+    ['value' => 'health', 'label' => 'Health']
+]);
+```
+
+### Executing Interactive Actions
+
+```php
+// Execute an action when user interacts
+$action = Engine::createAction([
+    'id' => 'approve_request',
+    'type' => 'button',
+    'label' => 'Approve',
+    'data' => [
+        'action' => [
+            'type' => 'callback',
+            'callback' => 'handleApproval'
+        ]
+    ]
+]);
+
+$response = Engine::executeAction($action, [
+    'request_id' => 123,
+    'user_id' => 456
+]);
+
+if ($response->success) {
+    echo "Action executed successfully: " . $response->message;
+} else {
+    echo "Action failed: " . $response->message;
+}
+
+// Validate action before execution
+$errors = Engine::validateAction($action, ['request_id' => 123]);
+if (empty($errors)) {
+    $response = Engine::executeAction($action, ['request_id' => 123]);
+}
+
+// Get supported action types
+$supportedTypes = Engine::getSupportedActionTypes();
+// Returns: ['button', 'quick_reply', 'form', 'link', 'file_upload', etc.]
+```
+
+### Action Event Handling
+
+```php
+// Listen for action events in your EventServiceProvider
+Event::listen('ai.action.button.clicked', function ($data) {
+    $action = $data['action'];
+    $payload = $data['payload'];
+    
+    // Handle button click
+    Log::info('Button clicked', ['action_id' => $action->id]);
+});
+
+Event::listen('ai.action.form.submit', function ($data) {
+    $formId = $data['form_id'];
+    $payload = $data['payload'];
+    
+    // Handle form submission
+    // Process form data...
+});
+
+Event::listen('ai.action.callback', function ($data) {
+    $callback = $data['callback'];
+    $action = $data['action'];
+    $payload = $data['payload'];
+    
+    // Handle custom callback
+    if ($callback === 'handleApproval') {
+        // Process approval logic
+        return ['status' => 'approved', 'timestamp' => now()];
+    }
+});
+```
+
+### Custom Action Handlers
+
+```php
+use LaravelAIEngine\Contracts\ActionHandlerInterface;
+use LaravelAIEngine\DTOs\InteractiveAction;
+use LaravelAIEngine\DTOs\ActionResponse;
+
+class CustomActionHandler implements ActionHandlerInterface
+{
+    public function handle(InteractiveAction $action, array $payload = []): ActionResponse
+    {
+        // Custom action handling logic
+        return ActionResponse::success(
+            $action->id,
+            $action->type,
+            'Custom action executed successfully',
+            $payload
+        );
+    }
+
+    public function validate(InteractiveAction $action, array $payload = []): array
+    {
+        // Custom validation logic
+        return [];
+    }
+
+    public function supports(string $actionType): bool
+    {
+        return $actionType === 'custom';
+    }
+
+    public function priority(): int
+    {
+        return 50;
+    }
+}
+
+// Register custom handler
+app(ActionManager::class)->registerHandler(new CustomActionHandler());
 ```
 
 ### Basic Text Generation (Traditional API)
@@ -1103,6 +1299,289 @@ Event::listen(\LaravelAIEngine\Events\AIRequestFailed::class, function ($event) 
 });
 ```
 
+## Enterprise Features
+
+### 🎯 Interactive Actions
+
+Add interactive elements to AI responses for enhanced user engagement:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+use LaravelAIEngine\DTOs\InteractiveAction;
+use LaravelAIEngine\Enums\ActionTypeEnum;
+
+// Generate AI response with interactive actions
+$response = Engine::send('What would you like to do next?');
+
+// Add interactive buttons
+$response->addAction(new InteractiveAction(
+    id: 'continue_chat',
+    type: ActionTypeEnum::BUTTON,
+    label: 'Continue Conversation',
+    data: ['action' => 'continue']
+));
+
+$response->addAction(new InteractiveAction(
+    id: 'new_topic',
+    type: ActionTypeEnum::BUTTON,
+    label: 'New Topic',
+    data: ['action' => 'new_topic']
+));
+
+// Add quick reply options
+$response->addAction(new InteractiveAction(
+    id: 'quick_reply',
+    type: ActionTypeEnum::QUICK_REPLY,
+    label: 'Yes, please!',
+    data: ['reply' => 'yes']
+));
+
+// Execute action when triggered
+$actionResponse = Engine::executeAction($action, $payload);
+```
+
+### 🔄 Automatic Failover
+
+Ensure high availability with automatic provider failover:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+// Execute with automatic failover
+$response = Engine::executeWithFailover(
+    callback: fn($provider) => Engine::engine($provider)->send('Hello world'),
+    providers: ['openai', 'anthropic', 'gemini'],
+    strategy: 'priority', // or 'round_robin'
+    options: ['timeout' => 30]
+);
+
+// Check provider health
+$health = Engine::getProviderHealth('openai');
+// Returns: ['status' => 'healthy', 'failure_count' => 0, 'last_check' => '...']
+
+// Get system health overview
+$systemHealth = Engine::getSystemHealth();
+```
+
+### 🌊 WebSocket Streaming
+
+Real-time AI response streaming with WebSocket support:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+// Start streaming server
+Engine::streamResponse(
+    sessionId: 'user-session-123',
+    generator: function() {
+        yield 'Hello ';
+        yield 'world ';
+        yield 'from AI!';
+    },
+    options: ['chunk_size' => 10]
+);
+
+// Stream with interactive actions
+Engine::streamWithActions(
+    sessionId: 'user-session-123',
+    generator: $responseGenerator,
+    actions: [
+        ['type' => 'button', 'label' => 'Continue', 'action' => 'continue']
+    ]
+);
+
+// Get streaming statistics
+$stats = Engine::getStreamingStats();
+```
+
+### 📊 Advanced Analytics
+
+Comprehensive usage monitoring and analytics:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+// Track custom events
+Engine::trackRequest([
+    'engine' => 'openai',
+    'model' => 'gpt-4o',
+    'tokens' => 150,
+    'cost' => 0.003,
+    'user_id' => auth()->id()
+]);
+
+// Get dashboard data
+$dashboard = Engine::getDashboardData([
+    'date_from' => '2024-01-01',
+    'date_to' => '2024-01-31',
+    'engine' => 'openai'
+]);
+
+// Get real-time metrics
+$metrics = Engine::getRealTimeMetrics();
+
+// Generate reports
+$report = Engine::generateReport([
+    'type' => 'monthly',
+    'format' => 'json',
+    'include_charts' => true
+]);
+```
+
+### 🧠 Memory Storage Drivers
+
+Multiple storage options for conversation persistence:
+
+```php
+// Configure in config/ai-engine.php
+'memory' => [
+    'driver' => 'redis', // redis, database, file, mongodb
+    
+    'drivers' => [
+        'redis' => [
+            'connection' => 'default',
+            'prefix' => 'ai_memory:',
+            'ttl' => 3600,
+        ],
+        
+        'mongodb' => [
+            'connection_string' => env('AI_MEMORY_MONGODB_CONNECTION'),
+            'database' => env('AI_MEMORY_MONGODB_DATABASE', 'ai_engine'),
+            'max_messages' => 1000,
+        ],
+        
+        'database' => [
+            'table' => 'ai_conversations',
+            'max_messages' => 100,
+        ],
+    ],
+],
+```
+
+### 📡 Event System
+
+Real-time events for streaming, failover, and analytics:
+
+```php
+use LaravelAIEngine\Events\AIResponseChunk;
+use LaravelAIEngine\Events\AIFailoverTriggered;
+
+// Listen to streaming events
+Event::listen(AIResponseChunk::class, function ($event) {
+    // Handle streaming chunk
+    broadcast(new StreamingUpdate($event->sessionId, $event->chunk));
+});
+
+// Listen to failover events
+Event::listen(AIFailoverTriggered::class, function ($event) {
+    // Send alert when failover occurs
+    Log::warning("Provider failover: {$event->fromProvider} → {$event->toProvider}");
+});
+```
+
+## Console Commands
+
+### Analytics Reports
+
+```bash
+# Generate analytics report
+php artisan ai-engine:analytics-report --period=monthly --format=table
+
+# Export report to file
+php artisan ai-engine:analytics-report --export=/path/to/report.json
+
+# Filter by engine
+php artisan ai-engine:analytics-report --engine=openai
+```
+
+### Failover Management
+
+```bash
+# Check failover status
+php artisan ai-engine:failover-status
+
+# Check specific provider
+php artisan ai-engine:failover-status --provider=openai
+
+# Reset provider health
+php artisan ai-engine:failover-status --reset=openai
+```
+
+### Streaming Server
+
+```bash
+# Start WebSocket server
+php artisan ai-engine:streaming-server start --host=0.0.0.0 --port=8080
+
+# Check server status
+php artisan ai-engine:streaming-server status
+
+# Get server statistics
+php artisan ai-engine:streaming-server stats
+
+# Stop server
+php artisan ai-engine:streaming-server stop
+```
+
+### System Health
+
+```bash
+# Check overall system health
+php artisan ai-engine:system-health
+
+# Detailed health information
+php artisan ai-engine:system-health --detailed
+
+# JSON output
+php artisan ai-engine:system-health --format=json
+```
+
+## Configuration
+
+### Enterprise Features Configuration
+
+```php
+// config/ai-engine.php
+
+// Automatic Failover
+'failover' => [
+    'enabled' => env('AI_FAILOVER_ENABLED', true),
+    'strategy' => env('AI_FAILOVER_STRATEGY', 'priority'),
+    'circuit_breaker' => [
+        'failure_threshold' => env('AI_FAILOVER_FAILURE_THRESHOLD', 5),
+        'timeout' => env('AI_FAILOVER_TIMEOUT', 60),
+        'retry_timeout' => env('AI_FAILOVER_RETRY_TIMEOUT', 300),
+    ],
+],
+
+// WebSocket Streaming
+'streaming' => [
+    'enabled' => env('AI_STREAMING_ENABLED', true),
+    'websocket' => [
+        'host' => env('AI_WEBSOCKET_HOST', '0.0.0.0'),
+        'port' => env('AI_WEBSOCKET_PORT', 8080),
+        'max_connections' => env('AI_WEBSOCKET_MAX_CONNECTIONS', 1000),
+    ],
+],
+
+// Analytics
+'analytics' => [
+    'enabled' => env('AI_ANALYTICS_ENABLED', true),
+    'driver' => env('AI_ANALYTICS_DRIVER', 'database'),
+    'retention_days' => env('AI_ANALYTICS_RETENTION_DAYS', 90),
+    'real_time_metrics' => env('AI_ANALYTICS_REAL_TIME', true),
+],
+
+// Interactive Actions
+'actions' => [
+    'enabled' => env('AI_ACTIONS_ENABLED', true),
+    'max_actions_per_response' => env('AI_ACTIONS_MAX_PER_RESPONSE', 10),
+    'validation' => [
+        'strict_mode' => env('AI_ACTIONS_STRICT_VALIDATION', true),
+    ],
+],
+```
+
 ## Extending the Package
 
 ### Adding Custom Engines
@@ -1137,13 +1616,50 @@ public function driverClass(): string
 }
 ```
 
-### Custom Content Filters
+### Custom Action Handlers
 
 ```php
-AIEngine::addContentFilter(function($input, $output) {
-    // Return false to block the content
-    return !str_contains($output, 'inappropriate_content');
-});
+use LaravelAIEngine\Services\Actions\Contracts\ActionHandlerInterface;
+
+class CustomActionHandler implements ActionHandlerInterface
+{
+    public function handle(InteractiveAction $action, array $payload): ActionResponse
+    {
+        // Implement custom action logic
+        return new ActionResponse(
+            success: true,
+            data: ['result' => 'Custom action executed'],
+            message: 'Action completed successfully'
+        );
+    }
+    
+    public function supports(string $actionType): bool
+    {
+        return $actionType === 'custom_action';
+    }
+}
+
+// Register in service provider
+Engine::registerActionHandler(new CustomActionHandler());
+```
+
+### Custom Analytics Drivers
+
+```php
+use LaravelAIEngine\Services\Analytics\Contracts\AnalyticsDriverInterface;
+
+class CustomAnalyticsDriver implements AnalyticsDriverInterface
+{
+    public function track(string $type, array $data): bool
+    {
+        // Implement custom tracking logic
+    }
+    
+    public function query(string $type, array $filters = []): array
+    {
+        // Implement custom querying logic
+    }
+}
 ```
 
 ## Testing

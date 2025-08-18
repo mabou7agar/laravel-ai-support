@@ -6,6 +6,7 @@ namespace LaravelAIEngine\DTOs;
 
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\DTOs\InteractiveAction;
 
 class AIResponse
 {
@@ -22,6 +23,7 @@ class AIResponse
         public readonly bool $cached = false,
         public readonly ?string $finishReason = null,
         public readonly array $files = [],
+        public readonly array $actions = [],
         public readonly ?string $error = null,
         public readonly bool $success = true
     ) {}
@@ -33,13 +35,15 @@ class AIResponse
         string $content,
         EngineEnum $engine,
         EntityEnum $model,
-        array $metadata = []
+        array $metadata = [],
+        array $actions = []
     ): self {
         return new self(
             content: $content,
             engine: $engine,
             model: $model,
             metadata: $metadata,
+            actions: $actions,
             success: true
         );
     }
@@ -153,6 +157,31 @@ class AIResponse
             cached: $this->cached,
             finishReason: $this->finishReason,
             files: $files,
+            actions: $this->actions,
+            error: $this->error,
+            success: $this->success
+        );
+    }
+
+    /**
+     * Add interactive actions to the response
+     */
+    public function withActions(array $actions): self
+    {
+        return new self(
+            content: $this->content,
+            engine: $this->engine,
+            model: $this->model,
+            metadata: $this->metadata,
+            tokensUsed: $this->tokensUsed,
+            creditsUsed: $this->creditsUsed,
+            latency: $this->latency,
+            requestId: $this->requestId,
+            usage: $this->usage,
+            cached: $this->cached,
+            finishReason: $this->finishReason,
+            files: $this->files,
+            actions: $actions,
             error: $this->error,
             success: $this->success
         );
@@ -274,6 +303,38 @@ class AIResponse
     public function isAudioResponse(): bool
     {
         return $this->getContentType() === 'audio';
+    }
+
+    /**
+     * Check if this response has interactive actions
+     */
+    public function hasActions(): bool
+    {
+        return !empty($this->actions);
+    }
+
+    /**
+     * Get the interactive actions
+     */
+    public function getActions(): array
+    {
+        return $this->actions;
+    }
+
+    /**
+     * Get actions of a specific type
+     */
+    public function getActionsByType(string $type): array
+    {
+        return array_filter($this->actions, function($action) use ($type) {
+            if (is_array($action)) {
+                return ($action['type'] ?? null) === $type;
+            }
+            if ($action instanceof InteractiveAction) {
+                return $action->type->value === $type;
+            }
+            return false;
+        });
     }
 
     /**

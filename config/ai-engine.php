@@ -266,7 +266,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | Configure memory storage drivers for conversation persistence.
-    | Supported drivers: database, redis, file
+    | Supported drivers: database, redis, file, mongodb
     |
     */
     'memory' => [
@@ -287,6 +287,12 @@ return [
             'path' => env('AI_MEMORY_FILE_PATH', storage_path('ai-engine/conversations')),
             'max_messages' => env('AI_MEMORY_FILE_MAX_MESSAGES', 100),
         ],
+        
+        'mongodb' => [
+            'connection_string' => env('AI_MEMORY_MONGODB_CONNECTION', 'mongodb://localhost:27017'),
+            'database' => env('AI_MEMORY_MONGODB_DATABASE', 'ai_engine'),
+            'max_messages' => env('AI_MEMORY_MONGODB_MAX_MESSAGES', 1000),
+        ],
     ],
 
     /*
@@ -299,4 +305,129 @@ return [
     */
     'default_engine' => env('AI_DEFAULT_ENGINE', 'openai'),
     'default_model' => env('AI_DEFAULT_MODEL', 'gpt-4o'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Enterprise Features Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for advanced enterprise features including failover,
+    | streaming, and analytics
+    |
+    */
+
+    /*
+    |--------------------------------------------------------------------------
+    | Automatic Failover Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure automatic failover between AI providers for reliability
+    |
+    */
+    'failover' => [
+        'enabled' => env('AI_FAILOVER_ENABLED', true),
+        'strategy' => env('AI_FAILOVER_STRATEGY', 'priority'), // priority, round_robin
+        'circuit_breaker' => [
+            'failure_threshold' => env('AI_FAILOVER_FAILURE_THRESHOLD', 5),
+            'timeout' => env('AI_FAILOVER_TIMEOUT', 60), // seconds
+            'retry_timeout' => env('AI_FAILOVER_RETRY_TIMEOUT', 300), // seconds
+        ],
+        'providers' => [
+            'openai' => [
+                'priority' => 1,
+                'timeout' => 30,
+                'retry_attempts' => 3,
+            ],
+            'anthropic' => [
+                'priority' => 2,
+                'timeout' => 30,
+                'retry_attempts' => 3,
+            ],
+            'gemini' => [
+                'priority' => 3,
+                'timeout' => 30,
+                'retry_attempts' => 3,
+            ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | WebSocket Streaming Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure real-time AI response streaming via WebSockets
+    |
+    */
+    'streaming' => [
+        'enabled' => env('AI_STREAMING_ENABLED', true),
+        'websocket' => [
+            'host' => env('AI_WEBSOCKET_HOST', '0.0.0.0'),
+            'port' => env('AI_WEBSOCKET_PORT', 8080),
+            'max_connections' => env('AI_WEBSOCKET_MAX_CONNECTIONS', 1000),
+            'heartbeat_interval' => env('AI_WEBSOCKET_HEARTBEAT', 30), // seconds
+        ],
+        'events' => [
+            'response_chunk' => 'ai.response.chunk',
+            'response_complete' => 'ai.response.complete',
+            'action_triggered' => 'ai.action.triggered',
+            'error' => 'ai.error',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Analytics and Monitoring Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure comprehensive analytics and monitoring system
+    |
+    */
+    'analytics' => [
+        'enabled' => env('AI_ANALYTICS_ENABLED', true),
+        'driver' => env('AI_ANALYTICS_DRIVER', 'database'), // database, redis
+        'retention_days' => env('AI_ANALYTICS_RETENTION_DAYS', 90),
+        'real_time_metrics' => env('AI_ANALYTICS_REAL_TIME', true),
+        
+        'drivers' => [
+            'database' => [
+                'table_prefix' => 'ai_analytics_',
+                'batch_size' => 100,
+            ],
+            'redis' => [
+                'prefix' => 'ai_analytics:',
+                'ttl' => 7776000, // 90 days in seconds
+            ],
+        ],
+        
+        'metrics' => [
+            'track_requests' => true,
+            'track_streaming' => true,
+            'track_actions' => true,
+            'track_errors' => true,
+            'track_performance' => true,
+            'track_costs' => true,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Interactive Actions Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure interactive actions system for AI responses
+    |
+    */
+    'actions' => [
+        'enabled' => env('AI_ACTIONS_ENABLED', true),
+        'max_actions_per_response' => env('AI_ACTIONS_MAX_PER_RESPONSE', 10),
+        'validation' => [
+            'strict_mode' => env('AI_ACTIONS_STRICT_VALIDATION', true),
+            'allowed_domains' => env('AI_ACTIONS_ALLOWED_DOMAINS', ''),
+        ],
+        'handlers' => [
+            'button' => \LaravelAIEngine\Services\Actions\Handlers\ButtonActionHandler::class,
+            'quick_reply' => \LaravelAIEngine\Services\Actions\Handlers\QuickReplyActionHandler::class,
+        ],
+    ],
 ];
