@@ -180,6 +180,20 @@ class AIEngineServiceProvider extends ServiceProvider
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         
+        // Load routes
+        $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
+        
+        // Register views
+        $this->loadViewsFrom(__DIR__.'/../resources/views', 'ai-engine');
+        
+        // Publish assets
+        $this->publishes([
+            __DIR__.'/../resources/js' => public_path('vendor/ai-engine/js'),
+        ], 'ai-engine-assets');
+        
+        // Register Blade components
+        $this->registerBladeComponents();
+        
         // Register event listeners
         $this->registerEventListeners();
     }
@@ -253,6 +267,14 @@ class AIEngineServiceProvider extends ServiceProvider
             \LaravelAIEngine\Events\AIProviderHealthChanged::class,
             [\LaravelAIEngine\Listeners\StreamingNotificationListener::class, 'handleProviderHealthChanged']
         );
+    }
+
+    /**
+     * Register Blade components
+     */
+    protected function registerBladeComponents(): void
+    {
+        $this->app->make('blade.compiler')->component('ai-chat', \LaravelAIEngine\View\Components\AiChat::class);
     }
 
     /**
