@@ -12,48 +12,71 @@ use LaravelAIEngine\Drivers\ElevenLabs\ElevenLabsEngineDriver;
 use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 
-enum EngineEnum: string
+/**
+ * Engine enumeration class (PHP 8.0 compatible)
+ * Replaces native enum for Laravel 9 compatibility
+ */
+class EngineEnum
 {
-    case OPENAI = 'openai';
-    case ANTHROPIC = 'anthropic';
-    case GEMINI = 'gemini';
-    case STABLE_DIFFUSION = 'stable_diffusion';
-    case ELEVEN_LABS = 'eleven_labs';
-    case FAL_AI = 'fal_ai';
-    case DEEPSEEK = 'deepseek';
-    case PERPLEXITY = 'perplexity';
-    case MIDJOURNEY = 'midjourney';
-    case AZURE = 'azure';
-    case GOOGLE_TTS = 'google_tts';
-    case SERPER = 'serper';
-    case PLAGIARISM_CHECK = 'plagiarism_check';
-    case UNSPLASH = 'unsplash';
-    case PEXELS = 'pexels';
-    case OPENROUTER = 'openrouter';
+    public const OPENAI = 'openai';
+    public const ANTHROPIC = 'anthropic';
+    public const GEMINI = 'gemini';
+    public const STABLE_DIFFUSION = 'stable_diffusion';
+    public const ELEVEN_LABS = 'eleven_labs';
+    public const FAL_AI = 'fal_ai';
+    public const DEEPSEEK = 'deepseek';
+    public const PERPLEXITY = 'perplexity';
+    public const MIDJOURNEY = 'midjourney';
+    public const AZURE = 'azure';
+    public const GOOGLE_TTS = 'google_tts';
+    public const SERPER = 'serper';
+    public const PLAGIARISM_CHECK = 'plagiarism_check';
+    public const UNSPLASH = 'unsplash';
+    public const PEXELS = 'pexels';
+    public const OPENROUTER = 'openrouter';
+
+    public string $value;
+
+    public function __construct(string $value)
+    {
+        $this->value = $value;
+    }
 
     /**
      * Get the driver class for this engine
      */
     public function driverClass(): string
     {
-        return match ($this) {
-            self::OPENAI => OpenAIEngineDriver::class,
-            self::ANTHROPIC => AnthropicEngineDriver::class,
-            self::GEMINI => GeminiEngineDriver::class,
-            self::STABLE_DIFFUSION => StableDiffusionEngineDriver::class,
-            self::ELEVEN_LABS => ElevenLabsEngineDriver::class,
-            self::FAL_AI => FalAIEngineDriver::class,
-            self::DEEPSEEK => OpenAIEngineDriver::class, // Uses OpenAI-compatible API
-            self::PERPLEXITY => OpenAIEngineDriver::class, // Uses OpenAI-compatible API
-            self::MIDJOURNEY => FalAIEngineDriver::class, // Uses FAL AI for Midjourney
-            self::AZURE => OpenAIEngineDriver::class, // Uses OpenAI-compatible API
-            self::GOOGLE_TTS => GeminiEngineDriver::class, // Uses Google API
-            self::SERPER => OpenAIEngineDriver::class, // Custom search engine
-            self::PLAGIARISM_CHECK => OpenAIEngineDriver::class, // Custom service
-            self::UNSPLASH => OpenAIEngineDriver::class, // Custom image search
-            self::PEXELS => OpenAIEngineDriver::class, // Custom image search
-            self::OPENROUTER => OpenRouterEngineDriver::class,
-        };
+        switch ($this->value) {
+            case self::OPENAI:
+                return OpenAIEngineDriver::class;
+            case self::ANTHROPIC:
+                return AnthropicEngineDriver::class;
+            case self::GEMINI:
+                return GeminiEngineDriver::class;
+            case self::STABLE_DIFFUSION:
+                return StableDiffusionEngineDriver::class;
+            case self::ELEVEN_LABS:
+                return ElevenLabsEngineDriver::class;
+            case self::FAL_AI:
+                return FalAIEngineDriver::class;
+            case self::DEEPSEEK:
+            case self::PERPLEXITY:
+            case self::AZURE:
+            case self::SERPER:
+            case self::PLAGIARISM_CHECK:
+            case self::UNSPLASH:
+            case self::PEXELS:
+                return OpenAIEngineDriver::class;
+            case self::MIDJOURNEY:
+                return FalAIEngineDriver::class;
+            case self::GOOGLE_TTS:
+                return GeminiEngineDriver::class;
+            case self::OPENROUTER:
+                return OpenRouterEngineDriver::class;
+            default:
+                throw new \InvalidArgumentException("Unknown engine: {$this->value}");
+        }
     }
 
     /**
