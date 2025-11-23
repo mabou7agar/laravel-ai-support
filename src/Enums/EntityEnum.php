@@ -97,6 +97,10 @@ class EntityEnum
     public const AZURE_STT = 'azure-stt';
     public const AZURE_TRANSLATOR = 'azure-translator';
     public const AZURE_TEXT_ANALYTICS = 'azure-text-analytics';
+    public const AZURE_COMPUTER_VISION = 'azure-computer-vision';
+
+    // Google TTS
+    public const GOOGLE_TTS = 'google-tts';
 
     // OpenRouter Models (Latest models available through OpenRouter)
     // GPT-5 Models (Latest Generation - August 2025)
@@ -153,7 +157,6 @@ class EntityEnum
     public const OPENROUTER_QWEN_2_5_7B_FREE = 'qwen/qwen-2.5-7b-instruct:free';
     public const OPENROUTER_PHI_3_MINI_FREE = 'microsoft/phi-3-mini-128k-instruct:free';
     public const OPENROUTER_OPENCHAT_3_5_FREE = 'openchat/openchat-3.5-1210:free';
-    public const AZURE_COMPUTER_VISION = 'azure-computer-vision';
 
     public string $value;
 
