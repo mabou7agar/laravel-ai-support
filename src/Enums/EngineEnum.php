@@ -48,30 +48,27 @@ class EngineEnum
     public function driverClass(): string
     {
         switch ($this->value) {
+            case self::PEXELS:
+            case self::UNSPLASH:
+            case self::PLAGIARISM_CHECK:
+            case self::SERPER:
+            case self::AZURE:
+            case self::PERPLEXITY:
+            case self::DEEPSEEK:
             case self::OPENAI:
                 return OpenAIEngineDriver::class;
             case self::ANTHROPIC:
                 return AnthropicEngineDriver::class;
+            case self::GOOGLE_TTS:
             case self::GEMINI:
                 return GeminiEngineDriver::class;
             case self::STABLE_DIFFUSION:
                 return StableDiffusionEngineDriver::class;
             case self::ELEVEN_LABS:
                 return ElevenLabsEngineDriver::class;
+            case self::MIDJOURNEY:
             case self::FAL_AI:
                 return FalAIEngineDriver::class;
-            case self::DEEPSEEK:
-            case self::PERPLEXITY:
-            case self::AZURE:
-            case self::SERPER:
-            case self::PLAGIARISM_CHECK:
-            case self::UNSPLASH:
-            case self::PEXELS:
-                return OpenAIEngineDriver::class;
-            case self::MIDJOURNEY:
-                return FalAIEngineDriver::class;
-            case self::GOOGLE_TTS:
-                return GeminiEngineDriver::class;
             case self::OPENROUTER:
                 return OpenRouterEngineDriver::class;
             default:
