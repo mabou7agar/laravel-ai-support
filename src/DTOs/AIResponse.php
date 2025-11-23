@@ -10,23 +10,56 @@ use LaravelAIEngine\DTOs\InteractiveAction;
 
 class AIResponse
 {
+    private string $content;
+    private EngineEnum $engine;
+    private EntityEnum $model;
+    private array $metadata;
+    private ?int $tokensUsed;
+    private ?float $creditsUsed;
+    private ?float $latency;
+    private ?string $requestId;
+    private ?array $usage;
+    private bool $cached;
+    private ?string $finishReason;
+    private array $files;
+    private array $actions;
+    private ?string $error;
+    private bool $success;
+
     public function __construct(
-        public readonly string $content,
-        public readonly EngineEnum $engine,
-        public readonly EntityEnum $model,
-        public readonly array $metadata = [],
-        public readonly ?int $tokensUsed = null,
-        public readonly ?float $creditsUsed = null,
-        public readonly ?float $latency = null,
-        public readonly ?string $requestId = null,
-        public readonly ?array $usage = null,
-        public readonly bool $cached = false,
-        public readonly ?string $finishReason = null,
-        public readonly array $files = [],
-        public readonly array $actions = [],
-        public readonly ?string $error = null,
-        public readonly bool $success = true
-    ) {}
+        string $content,
+        EngineEnum $engine,
+        EntityEnum $model,
+        array $metadata = [],
+        ?int $tokensUsed = null,
+        ?float $creditsUsed = null,
+        ?float $latency = null,
+        ?string $requestId = null,
+        ?array $usage = null,
+        bool $cached = false,
+        ?string $finishReason = null,
+        array $files = [],
+        array $actions = [],
+        ?string $error = null,
+        bool $success = true
+    
+    ) {
+        $this->content = $content;
+        $this->engine = $engine;
+        $this->model = $model;
+        $this->metadata = $metadata;
+        $this->tokensUsed = $tokensUsed;
+        $this->creditsUsed = $creditsUsed;
+        $this->latency = $latency;
+        $this->requestId = $requestId;
+        $this->usage = $usage;
+        $this->cached = $cached;
+        $this->finishReason = $finishReason;
+        $this->files = $files;
+        $this->actions = $actions;
+        $this->error = $error;
+        $this->success = $success;
+    }
 
     /**
      * Create a successful response
@@ -39,12 +72,12 @@ class AIResponse
         array $actions = []
     ): self {
         return new self(
-            content: $content,
-            engine: $engine,
-            model: $model,
-            metadata: $metadata,
-            actions: $actions,
-            success: true
+            $content,
+            $engine,
+            $model,
+            $metadata,
+            $actions,
+            true
         );
     }
 
@@ -58,12 +91,12 @@ class AIResponse
         array $metadata = []
     ): self {
         return new self(
-            content: '',
-            engine: $engine,
-            model: $model,
-            metadata: $metadata,
-            error: $error,
-            success: false
+            '',
+            $engine,
+            $model,
+            $metadata,
+            $error,
+            false
         );
     }
 
@@ -76,20 +109,20 @@ class AIResponse
         ?float $latency = null
     ): self {
         return new self(
-            content: $this->content,
-            engine: $this->engine,
-            model: $this->model,
-            metadata: $this->metadata,
-            tokensUsed: $tokensUsed ?? $this->tokensUsed,
-            creditsUsed: $creditsUsed ?? $this->creditsUsed,
-            latency: $latency ?? $this->latency,
-            requestId: $this->requestId,
-            usage: $this->usage,
-            cached: $this->cached,
-            finishReason: $this->finishReason,
-            files: $this->files,
-            error: $this->error,
-            success: $this->success
+            $this->content,
+            $this->engine,
+            $this->model,
+            $this->metadata,
+            $tokensUsed ?? $this->tokensUsed,
+            $creditsUsed ?? $this->creditsUsed,
+            $latency ?? $this->latency,
+            $this->requestId,
+            $this->usage,
+            $this->cached,
+            $this->finishReason,
+            $this->files,
+            $this->error,
+            $this->success
         );
     }
 
@@ -99,20 +132,20 @@ class AIResponse
     public function withRequestId(string $requestId): self
     {
         return new self(
-            content: $this->content,
-            engine: $this->engine,
-            model: $this->model,
-            metadata: $this->metadata,
-            tokensUsed: $this->tokensUsed,
-            creditsUsed: $this->creditsUsed,
-            latency: $this->latency,
-            requestId: $requestId,
-            usage: $this->usage,
-            cached: $this->cached,
-            finishReason: $this->finishReason,
-            files: $this->files,
-            error: $this->error,
-            success: $this->success
+            $this->content,
+            $this->engine,
+            $this->model,
+            $this->metadata,
+            $this->tokensUsed,
+            $this->creditsUsed,
+            $this->latency,
+            $requestId,
+            $this->usage,
+            $this->cached,
+            $this->finishReason,
+            $this->files,
+            $this->error,
+            $this->success
         );
     }
 
@@ -122,20 +155,20 @@ class AIResponse
     public function markAsCached(): self
     {
         return new self(
-            content: $this->content,
-            engine: $this->engine,
-            model: $this->model,
-            metadata: $this->metadata,
-            tokensUsed: $this->tokensUsed,
-            creditsUsed: $this->creditsUsed,
-            latency: $this->latency,
-            requestId: $this->requestId,
-            usage: $this->usage,
-            cached: true,
-            finishReason: $this->finishReason,
-            files: $this->files,
-            error: $this->error,
-            success: $this->success
+            $this->content,
+            $this->engine,
+            $this->model,
+            $this->metadata,
+            $this->tokensUsed,
+            $this->creditsUsed,
+            $this->latency,
+            $this->requestId,
+            $this->usage,
+            true,
+            $this->finishReason,
+            $this->files,
+            $this->error,
+            $this->success
         );
     }
 
@@ -145,21 +178,21 @@ class AIResponse
     public function withFiles(array $files): self
     {
         return new self(
-            content: $this->content,
-            engine: $this->engine,
-            model: $this->model,
-            metadata: $this->metadata,
-            tokensUsed: $this->tokensUsed,
-            creditsUsed: $this->creditsUsed,
-            latency: $this->latency,
-            requestId: $this->requestId,
-            usage: $this->usage,
-            cached: $this->cached,
-            finishReason: $this->finishReason,
-            files: $files,
-            actions: $this->actions,
-            error: $this->error,
-            success: $this->success
+            $this->content,
+            $this->engine,
+            $this->model,
+            $this->metadata,
+            $this->tokensUsed,
+            $this->creditsUsed,
+            $this->latency,
+            $this->requestId,
+            $this->usage,
+            $this->cached,
+            $this->finishReason,
+            $files,
+            $this->actions,
+            $this->error,
+            $this->success
         );
     }
 
@@ -169,21 +202,21 @@ class AIResponse
     public function withActions(array $actions): self
     {
         return new self(
-            content: $this->content,
-            engine: $this->engine,
-            model: $this->model,
-            metadata: $this->metadata,
-            tokensUsed: $this->tokensUsed,
-            creditsUsed: $this->creditsUsed,
-            latency: $this->latency,
-            requestId: $this->requestId,
-            usage: $this->usage,
-            cached: $this->cached,
-            finishReason: $this->finishReason,
-            files: $this->files,
-            actions: $actions,
-            error: $this->error,
-            success: $this->success
+            $this->content,
+            $this->engine,
+            $this->model,
+            $this->metadata,
+            $this->tokensUsed,
+            $this->creditsUsed,
+            $this->latency,
+            $this->requestId,
+            $this->usage,
+            $this->cached,
+            $this->finishReason,
+            $this->files,
+            $actions,
+            $this->error,
+            $this->success
         );
     }
 
@@ -193,20 +226,20 @@ class AIResponse
     public function withFinishReason(?string $finishReason): self
     {
         return new self(
-            content: $this->content,
-            engine: $this->engine,
-            model: $this->model,
-            metadata: $this->metadata,
-            tokensUsed: $this->tokensUsed,
-            creditsUsed: $this->creditsUsed,
-            latency: $this->latency,
-            requestId: $this->requestId,
-            usage: $this->usage,
-            cached: $this->cached,
-            finishReason: $finishReason,
-            files: $this->files,
-            error: $this->error,
-            success: $this->success
+            $this->content,
+            $this->engine,
+            $this->model,
+            $this->metadata,
+            $this->tokensUsed,
+            $this->creditsUsed,
+            $this->latency,
+            $this->requestId,
+            $this->usage,
+            $this->cached,
+            $finishReason,
+            $this->files,
+            $this->error,
+            $this->success
         );
     }
 
@@ -216,20 +249,20 @@ class AIResponse
     public function withDetailedUsage(array $usage): self
     {
         return new self(
-            content: $this->content,
-            engine: $this->engine,
-            model: $this->model,
-            metadata: $this->metadata,
-            tokensUsed: $this->tokensUsed,
-            creditsUsed: $this->creditsUsed,
-            latency: $this->latency,
-            requestId: $this->requestId,
-            usage: $usage,
-            cached: $this->cached,
-            finishReason: $this->finishReason,
-            files: $this->files,
-            error: $this->error,
-            success: $this->success
+            $this->content,
+            $this->engine,
+            $this->model,
+            $this->metadata,
+            $this->tokensUsed,
+            $this->creditsUsed,
+            $this->latency,
+            $this->requestId,
+            $usage,
+            $this->cached,
+            $this->finishReason,
+            $this->files,
+            $this->error,
+            $this->success
         );
     }
 
@@ -316,10 +349,7 @@ class AIResponse
     /**
      * Get the interactive actions
      */
-    public function getActions(): array
-    {
-        return $this->actions;
-    }
+    
 
     /**
      * Get actions of a specific type
@@ -448,20 +478,104 @@ class AIResponse
     public static function fromArray(array $data): self
     {
         return new self(
-            content: $data['content'] ?? '',
-            engine: $data['engine'] ?? null,
-            model: $data['model'] ?? null,
-            metadata: $data['metadata'] ?? [],
-            tokensUsed: $data['tokensUsed'] ?? null,
-            creditsUsed: $data['creditsUsed'] ?? null,
-            latency: $data['latency'] ?? null,
-            requestId: $data['requestId'] ?? null,
-            usage: $data['usage'] ?? [],
-            cached: $data['cached'] ?? false,
-            finishReason: $data['finishReason'] ?? null,
-            files: $data['files'] ?? [],
-            error: $data['error'] ?? null,
-            success: $data['success'] ?? true
+            $data['content'] ?? '',
+            $data['engine'] ?? null,
+            $data['model'] ?? null,
+            $data['metadata'] ?? [],
+            $data['tokensUsed'] ?? null,
+            $data['creditsUsed'] ?? null,
+            $data['latency'] ?? null,
+            $data['requestId'] ?? null,
+            $data['usage'] ?? [],
+            $data['cached'] ?? false,
+            $data['finishReason'] ?? null,
+            $data['files'] ?? [],
+            $data['error'] ?? null,
+            $data['success'] ?? true
         );
+    }
+
+    public function getContent(): string
+    {
+        return $this->content;
+    }
+
+    public function getEngine(): EngineEnum
+    {
+        return $this->engine;
+    }
+
+    public function getModel(): EntityEnum
+    {
+        return $this->model;
+    }
+
+    public function getMetadata(): array
+    {
+        return $this->metadata;
+    }
+
+    
+
+    
+
+    public function getLatency(): ?float
+    {
+        return $this->latency;
+    }
+
+    public function getRequestId(): ?string
+    {
+        return $this->requestId;
+    }
+
+    public function getUsage(): ?array
+    {
+        return $this->usage;
+    }
+
+    public function getCached(): bool
+    {
+        return $this->cached;
+    }
+
+    public function getFinishReason(): ?string
+    {
+        return $this->finishReason;
+    }
+
+    public function getFiles(): array
+    {
+        return $this->files;
+    }
+
+    public function getActions(): array
+    {
+        return $this->actions;
+    }
+
+    public function getError(): ?string
+    {
+        return $this->error;
+    }
+
+    public function getSuccess(): bool
+    {
+        return $this->success;
+    }
+
+    /**
+     * Magic getter for backward compatibility
+     */
+    public function __get(string $name)
+    {
+        $getter = 'get' . ucfirst($name);
+        if (method_exists($this, $getter)) {
+            return $this->$getter();
+        }
+        if (property_exists($this, $name)) {
+            return $this->$name;
+        }
+        throw new \InvalidArgumentException("Property {$name} does not exist");
     }
 }

@@ -6,21 +6,50 @@ use LaravelAIEngine\Enums\ActionTypeEnum;
 
 class InteractiveAction
 {
+    private string $id;
+    private ActionTypeEnum $type;
+    private string $label;
+    private ?string $description;
+    private array $data;
+    private array $style;
+    private bool $disabled;
+    private bool $loading;
+    private ?string $confirmMessage;
+    private ?string $successMessage;
+    private ?string $errorMessage;
+    private array $validation;
+    private array $metadata;
+
     public function __construct(
-        public readonly string $id,
-        public readonly ActionTypeEnum $type,
-        public readonly string $label,
-        public readonly ?string $description = null,
-        public readonly array $data = [],
-        public readonly array $style = [],
-        public readonly bool $disabled = false,
-        public readonly bool $loading = false,
-        public readonly ?string $confirmMessage = null,
-        public readonly ?string $successMessage = null,
-        public readonly ?string $errorMessage = null,
-        public readonly array $validation = [],
-        public readonly array $metadata = []
-    ) {}
+        string $id,
+        ActionTypeEnum $type,
+        string $label,
+        ?string $description = null,
+        array $data = [],
+        array $style = [],
+        bool $disabled = false,
+        bool $loading = false,
+        ?string $confirmMessage = null,
+        ?string $successMessage = null,
+        ?string $errorMessage = null,
+        array $validation = [],
+        array $metadata = []
+    
+    ) {
+        $this->id = $id;
+        $this->type = $type;
+        $this->label = $label;
+        $this->description = $description;
+        $this->data = $data;
+        $this->style = $style;
+        $this->disabled = $disabled;
+        $this->loading = $loading;
+        $this->confirmMessage = $confirmMessage;
+        $this->successMessage = $successMessage;
+        $this->errorMessage = $errorMessage;
+        $this->validation = $validation;
+        $this->metadata = $metadata;
+    }
 
     /**
      * Create a button action
@@ -33,12 +62,12 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            id: $id,
-            type: ActionTypeEnum::BUTTON,
-            label: $label,
-            description: $description,
-            data: $data,
-            style: $style
+            $id,
+            ActionTypeEnum::BUTTON,
+            $label,
+            $description,
+            $data,
+            $style
         );
     }
 
@@ -54,16 +83,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            id: $id,
-            type: ActionTypeEnum::LINK,
-            label: $label,
-            description: $description,
-            data: [
+            $id,
+            ActionTypeEnum::LINK,
+            $label,
+            $description,
+            [
                 'url' => $url,
                 'external' => $external,
                 'target' => $external ? '_blank' : '_self'
             ],
-            style: $style
+            $style
         );
     }
 
@@ -79,16 +108,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            id: $id,
-            type: ActionTypeEnum::FORM,
-            label: $label,
-            description: $description,
-            data: [
+            $id,
+            ActionTypeEnum::FORM,
+            $label,
+            $description,
+            [
                 'fields' => $fields,
                 'method' => 'POST'
             ],
-            style: $style,
-            validation: $validation
+            $style,
+            $validation
         );
     }
 
@@ -103,15 +132,15 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            id: $id,
-            type: ActionTypeEnum::QUICK_REPLY,
-            label: $label,
-            description: $description,
-            data: [
+            $id,
+            ActionTypeEnum::QUICK_REPLY,
+            $label,
+            $description,
+            [
                 'message' => $message,
                 'auto_send' => true
             ],
-            style: $style
+            $style
         );
     }
 
@@ -128,16 +157,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            id: $id,
-            type: ActionTypeEnum::FILE_UPLOAD,
-            label: $label,
-            description: $description,
-            data: [
+            $id,
+            ActionTypeEnum::FILE_UPLOAD,
+            $label,
+            $description,
+            [
                 'allowed_types' => $allowedTypes,
                 'max_size' => $maxSize,
                 'multiple' => $multiple
             ],
-            style: $style
+            $style
         );
     }
 
@@ -153,13 +182,13 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            id: $id,
-            type: ActionTypeEnum::CONFIRM,
-            label: $label,
-            description: $description,
-            data: $data,
-            style: $style,
-            confirmMessage: $confirmMessage
+            $id,
+            ActionTypeEnum::CONFIRM,
+            $label,
+            $description,
+            $data,
+            $style,
+            $confirmMessage
         );
     }
 
@@ -174,15 +203,15 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            id: $id,
-            type: ActionTypeEnum::MENU,
-            label: $label,
-            description: $description,
-            data: [
+            $id,
+            ActionTypeEnum::MENU,
+            $label,
+            $description,
+            [
                 'options' => $options,
                 'multiple' => false
             ],
-            style: $style
+            $style
         );
     }
 
@@ -198,16 +227,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            id: $id,
-            type: ActionTypeEnum::CARD,
-            label: $title,
-            data: [
+            $id,
+            ActionTypeEnum::CARD,
+            $title,
+            [
                 'title' => $title,
                 'content' => $content,
                 'image_url' => $imageUrl,
                 'actions' => $actions
             ],
-            style: $style
+            $style
         );
     }
 
@@ -217,19 +246,19 @@ class InteractiveAction
     public function disabled(bool $disabled = true): self
     {
         return new self(
-            id: $this->id,
-            type: $this->type,
-            label: $this->label,
-            description: $this->description,
-            data: $this->data,
-            style: $this->style,
-            disabled: $disabled,
-            loading: $this->loading,
-            confirmMessage: $this->confirmMessage,
-            successMessage: $this->successMessage,
-            errorMessage: $this->errorMessage,
-            validation: $this->validation,
-            metadata: $this->metadata
+            $this->id,
+            $this->type,
+            $this->label,
+            $this->description,
+            $this->data,
+            $this->style,
+            $disabled,
+            $this->loading,
+            $this->confirmMessage,
+            $this->successMessage,
+            $this->errorMessage,
+            $this->validation,
+            $this->metadata
         );
     }
 
@@ -239,19 +268,19 @@ class InteractiveAction
     public function loading(bool $loading = true): self
     {
         return new self(
-            id: $this->id,
-            type: $this->type,
-            label: $this->label,
-            description: $this->description,
-            data: $this->data,
-            style: $this->style,
-            disabled: $this->disabled,
-            loading: $loading,
-            confirmMessage: $this->confirmMessage,
-            successMessage: $this->successMessage,
-            errorMessage: $this->errorMessage,
-            validation: $this->validation,
-            metadata: $this->metadata
+            $this->id,
+            $this->type,
+            $this->label,
+            $this->description,
+            $this->data,
+            $this->style,
+            $this->disabled,
+            $loading,
+            $this->confirmMessage,
+            $this->successMessage,
+            $this->errorMessage,
+            $this->validation,
+            $this->metadata
         );
     }
 
@@ -261,19 +290,19 @@ class InteractiveAction
     public function withConfirmation(string $message): self
     {
         return new self(
-            id: $this->id,
-            type: $this->type,
-            label: $this->label,
-            description: $this->description,
-            data: $this->data,
-            style: $this->style,
-            disabled: $this->disabled,
-            loading: $this->loading,
-            confirmMessage: $message,
-            successMessage: $this->successMessage,
-            errorMessage: $this->errorMessage,
-            validation: $this->validation,
-            metadata: $this->metadata
+            $this->id,
+            $this->type,
+            $this->label,
+            $this->description,
+            $this->data,
+            $this->style,
+            $this->disabled,
+            $this->loading,
+            $message,
+            $this->successMessage,
+            $this->errorMessage,
+            $this->validation,
+            $this->metadata
         );
     }
 
@@ -305,19 +334,99 @@ class InteractiveAction
     public static function fromArray(array $data): self
     {
         return new self(
-            id: $data['id'],
-            type: ActionTypeEnum::from($data['type']),
-            label: $data['label'],
-            description: $data['description'] ?? null,
-            data: $data['data'] ?? [],
-            style: $data['style'] ?? [],
-            disabled: $data['disabled'] ?? false,
-            loading: $data['loading'] ?? false,
-            confirmMessage: $data['confirm_message'] ?? null,
-            successMessage: $data['success_message'] ?? null,
-            errorMessage: $data['error_message'] ?? null,
-            validation: $data['validation'] ?? [],
-            metadata: $data['metadata'] ?? []
+            $data['id'],
+            ActionTypeEnum::from($data['type']),
+            $data['label'],
+            $data['description'] ?? null,
+            $data['data'] ?? [],
+            $data['style'] ?? [],
+            $data['disabled'] ?? false,
+            $data['loading'] ?? false,
+            $data['confirm_message'] ?? null,
+            $data['success_message'] ?? null,
+            $data['error_message'] ?? null,
+            $data['validation'] ?? [],
+            $data['metadata'] ?? []
         );
+    }
+
+    public function getId(): string
+    {
+        return $this->id;
+    }
+
+    public function getType(): ActionTypeEnum
+    {
+        return $this->type;
+    }
+
+    public function getLabel(): string
+    {
+        return $this->label;
+    }
+
+    public function getDescription(): ?string
+    {
+        return $this->description;
+    }
+
+    public function getData(): array
+    {
+        return $this->data;
+    }
+
+    public function getStyle(): array
+    {
+        return $this->style;
+    }
+
+    public function getDisabled(): bool
+    {
+        return $this->disabled;
+    }
+
+    public function getLoading(): bool
+    {
+        return $this->loading;
+    }
+
+    public function getConfirmMessage(): ?string
+    {
+        return $this->confirmMessage;
+    }
+
+    public function getSuccessMessage(): ?string
+    {
+        return $this->successMessage;
+    }
+
+    public function getErrorMessage(): ?string
+    {
+        return $this->errorMessage;
+    }
+
+    public function getValidation(): array
+    {
+        return $this->validation;
+    }
+
+    public function getMetadata(): array
+    {
+        return $this->metadata;
+    }
+
+    /**
+     * Magic getter for backward compatibility
+     */
+    public function __get(string $name)
+    {
+        $getter = 'get' . ucfirst($name);
+        if (method_exists($this, $getter)) {
+            return $this->$getter();
+        }
+        if (property_exists($this, $name)) {
+            return $this->$name;
+        }
+        throw new \InvalidArgumentException("Property {$name} does not exist");
     }
 }
