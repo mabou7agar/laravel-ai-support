@@ -179,6 +179,14 @@ class AIEngineServiceProvider extends ServiceProvider
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'ai-engine-migrations');
 
+            $this->publishes([
+                __DIR__.'/../resources/views' => resource_path('views/vendor/ai-engine'),
+            ], 'ai-engine-views');
+
+            $this->publishes([
+                __DIR__.'/../resources/js' => public_path('vendor/ai-engine/js'),
+            ], 'ai-engine-assets');
+
             $this->commands([
                 Console\Commands\TestEnginesCommand::class,
                 Console\Commands\SyncModelsCommand::class,
@@ -188,6 +196,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\FailoverStatusCommand::class,
                 Console\Commands\StreamingServerCommand::class,
                 Console\Commands\SystemHealthCommand::class,
+                Console\Commands\TestPackageCommand::class,
             ]);
         }
 
@@ -198,11 +207,6 @@ class AIEngineServiceProvider extends ServiceProvider
         
         // Register views
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'ai-engine');
-        
-        // Publish assets
-        $this->publishes([
-            __DIR__.'/../resources/js' => public_path('vendor/ai-engine/js'),
-        ], 'ai-engine-assets');
         
         // Register Blade components
         $this->registerBladeComponents();

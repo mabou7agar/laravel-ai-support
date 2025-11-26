@@ -1,6 +1,43 @@
 # Laravel AI Engine
 
+[![Latest Version](https://img.shields.io/packagist/v/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
+[![Total Downloads](https://img.shields.io/packagist/dt/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
+[![License](https://img.shields.io/packagist/l/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
+[![PHP Version](https://img.shields.io/packagist/php-v/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
+
 A comprehensive Laravel package for multi-AI engine integration with advanced job queue processing, intelligent rate limiting, credit management, streaming, analytics, and enterprise-grade features.
+
+**✨ Fully compatible with Laravel 9, 10, 11, and 12**
+
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+  - [Publishing Assets](#publishing-assets)
+  - [Run Migrations](#run-migrations)
+- [Configuration](#configuration)
+- [Quick Start](#quick-start)
+- [Usage Examples](#usage-examples)
+  - [Basic Text Generation](#basic-text-generation)
+  - [Streaming Responses](#streaming-responses)
+  - [Conversation Memory](#conversation-memory)
+  - [Job Queue Processing](#job-queue-processing)
+  - [Batch Operations](#batch-operations)
+  - [Interactive Actions](#interactive-actions)
+- [Advanced Features](#advanced-features)
+  - [Failover System](#failover-system)
+  - [WebSocket Streaming](#websocket-streaming)
+  - [Analytics & Monitoring](#analytics--monitoring)
+- [Version Compatibility](#version-compatibility)
+- [Troubleshooting](#troubleshooting)
+- [Performance Optimization](#performance-optimization)
+- [Artisan Commands](#artisan-commands)
+- [Testing](#testing)
+- [Security Best Practices](#security-best-practices)
+- [Contributing](#contributing)
+- [License](#license)
+- [Support](#support)
 
 ## Features
 
@@ -46,23 +83,70 @@ A comprehensive Laravel package for multi-AI engine integration with advanced jo
 - **Error Handling**: Robust error handling and logging
 - **Laravel Integration**: Seamless Laravel integration with Artisan commands
 
+## Requirements
+
+- PHP 8.0 or higher
+- Laravel 9.x, 10.x, 11.x, or 12.x
+- OpenAI PHP Client ^0.8, ^0.9, or ^0.10
+
 ## Installation
+
+Install the package via Composer:
 
 ```bash
 composer require m-tech-stack/laravel-ai-engine
 ```
 
-Publish the configuration file:
+### Publishing Assets
 
+The package provides several publishable resources. You can publish them individually or all at once.
+
+#### Publish All Resources
+
+```bash
+php artisan vendor:publish --provider="LaravelAIEngine\AIEngineServiceProvider"
+```
+
+#### Publish Individual Resources
+
+**Configuration File** (Required)
 ```bash
 php artisan vendor:publish --tag=ai-engine-config
 ```
+This publishes `config/ai-engine.php` with all configuration options.
 
-Run the migrations:
+**Database Migrations** (Required)
+```bash
+php artisan vendor:publish --tag=ai-engine-migrations
+```
+This publishes migration files for credits, conversations, and analytics tables.
+
+**Views** (Optional - for customization)
+```bash
+php artisan vendor:publish --tag=ai-engine-views
+```
+This publishes Blade views to `resources/views/vendor/ai-engine/` for customization.
+
+**JavaScript Assets** (Optional - for interactive chat)
+```bash
+php artisan vendor:publish --tag=ai-engine-assets
+```
+This publishes JavaScript files to `public/vendor/ai-engine/js/` for the interactive chat component.
+
+### Run Migrations
+
+After publishing the configuration and migrations:
 
 ```bash
 php artisan migrate
 ```
+
+This will create the following tables:
+- `ai_credits` - User credit management
+- `ai_conversations` - Conversation storage
+- `ai_conversation_messages` - Message history
+- `ai_requests` - Request analytics
+- `ai_errors` - Error tracking
 
 ## Configuration
 
@@ -1662,24 +1746,260 @@ class CustomAnalyticsDriver implements AnalyticsDriverInterface
 }
 ```
 
+## Version Compatibility
+
+| Laravel Version | PHP Version | Package Version | OpenAI Client |
+|----------------|-------------|-----------------|---------------|
+| 12.x | 8.2+ | 2.1.1+ | ^0.8\|^0.9\|^0.10 |
+| 11.x | 8.2+ | 2.1.1+ | ^0.8\|^0.9\|^0.10 |
+| 10.x | 8.1+ | 2.1.1+ | ^0.8\|^0.9\|^0.10 |
+| 9.x | 8.0+ | 2.1.1+ | ^0.8\|^0.9\|^0.10 |
+
+### Laravel 9 Support
+
+This package fully supports Laravel 9 with backward-compatible features. See [README-LARAVEL9.md](README-LARAVEL9.md) for Laravel 9 specific documentation.
+
+## Troubleshooting
+
+### Common Issues
+
+#### Issue: "Too few arguments to function AIEngineManager::__construct()"
+
+**Solution**: Update to version 2.1.1+ which includes proper dependency injection fixes.
+
+```bash
+composer update m-tech-stack/laravel-ai-engine
+php artisan config:clear
+php artisan cache:clear
+```
+
+#### Issue: "No publishable resources for tag [ai-engine-views]"
+
+**Solution**: Update to version 2.1.1+ which includes views publishing configuration.
+
+```bash
+composer update m-tech-stack/laravel-ai-engine
+php artisan vendor:publish --tag=ai-engine-views
+```
+
+#### Issue: "Class 'OpenAI\Client' not found"
+
+**Solution**: Ensure OpenAI PHP client is installed:
+
+```bash
+composer require openai-php/client
+```
+
+#### Issue: Rate Limiting Not Working
+
+**Solution**: Ensure rate limiting is enabled in config and cache driver is configured:
+
+```env
+AI_RATE_LIMITING_ENABLED=true
+CACHE_DRIVER=redis  # or database
+```
+
+#### Issue: Conversation Memory Not Persisting
+
+**Solution**: Run migrations and check memory driver configuration:
+
+```bash
+php artisan migrate
+php artisan config:cache
+```
+
+### Debug Mode
+
+Enable debug logging for troubleshooting:
+
+```env
+AI_DEBUG_MODE=true
+LOG_LEVEL=debug
+```
+
+Check logs at `storage/logs/laravel.log` for detailed error information.
+
+## Performance Optimization
+
+### Caching
+
+Enable response caching to reduce API calls and costs:
+
+```env
+AI_CACHE_ENABLED=true
+AI_CACHE_TTL=3600  # 1 hour
+CACHE_DRIVER=redis  # Recommended for production
+```
+
+### Queue Workers
+
+For optimal performance with job queues, run multiple workers:
+
+```bash
+# Run 3 queue workers for AI jobs
+php artisan queue:work --queue=ai-requests --tries=3 --timeout=300 &
+php artisan queue:work --queue=ai-requests --tries=3 --timeout=300 &
+php artisan queue:work --queue=ai-requests --tries=3 --timeout=300 &
+```
+
+### Database Optimization
+
+Add indexes for better query performance:
+
+```sql
+-- Add indexes to conversation tables
+CREATE INDEX idx_conversations_user_id ON ai_conversations(user_id);
+CREATE INDEX idx_messages_conversation_id ON ai_conversation_messages(conversation_id);
+CREATE INDEX idx_requests_user_id ON ai_requests(user_id);
+CREATE INDEX idx_requests_created_at ON ai_requests(created_at);
+```
+
+## Artisan Commands
+
+The package includes several helpful Artisan commands:
+
+### Test AI Engines
+
+Test connectivity and configuration for all engines:
+
+```bash
+php artisan ai-engine:test
+```
+
+### Usage Reports
+
+Generate usage and cost reports:
+
+```bash
+php artisan ai-engine:usage-report
+php artisan ai-engine:usage-report --user=123
+php artisan ai-engine:usage-report --from=2024-01-01 --to=2024-01-31
+```
+
+### Analytics Reports
+
+View analytics and performance metrics:
+
+```bash
+php artisan ai-engine:analytics-report
+php artisan ai-engine:analytics-report --format=json
+```
+
+### System Health Check
+
+Check system health and provider status:
+
+```bash
+php artisan ai-engine:health
+```
+
+### Failover Status
+
+View failover configuration and circuit breaker status:
+
+```bash
+php artisan ai-engine:failover-status
+```
+
+### Clear Cache
+
+Clear AI response cache:
+
+```bash
+php artisan ai-engine:clear-cache
+php artisan ai-engine:clear-cache --user=123
+```
+
+### Sync Models
+
+Sync available models from AI providers:
+
+```bash
+php artisan ai-engine:sync-models
+```
+
 ## Testing
+
+Run the test suite:
 
 ```bash
 composer test
 ```
 
+Run specific test suites:
+
+```bash
+# Unit tests only
+composer test -- --testsuite=Unit
+
+# Feature tests only
+composer test -- --testsuite=Feature
+
+# With coverage
+composer test -- --coverage
+```
+
+## Security Best Practices
+
+### API Key Management
+
+- **Never commit API keys** to version control
+- Use environment variables for all sensitive credentials
+- Rotate API keys regularly
+- Use different keys for development and production
+
+### Rate Limiting
+
+- Enable rate limiting to prevent abuse
+- Set appropriate limits per user/IP
+- Monitor rate limit violations
+
+### Credit System
+
+- Implement credit limits per user
+- Monitor credit usage patterns
+- Set up alerts for unusual activity
+
+### Input Validation
+
+- Validate and sanitize all user inputs
+- Implement content filtering for sensitive content
+- Set maximum token limits
+
 ## Contributing
 
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-## Security
+### Development Setup
 
-If you discover any security related issues, please email security@magicai.com instead of using the issue tracker.
+1. Clone the repository
+2. Install dependencies: `composer install`
+3. Copy `.env.example` to `.env` and configure
+4. Run tests: `composer test`
+
+## Security Vulnerabilities
+
+If you discover any security related issues, please email m.abou7agar@gmail.com instead of using the issue tracker.
+
+## Credits
+
+- [Mohamed Abou Hagar](https://github.com/mabou7agar)
+- [All Contributors](../../contributors)
 
 ## License
 
-The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
+The MIT License (MIT). Please see [License File](LICENSE) for more information.
 
 ## Changelog
 
-Please see [CHANGELOG.md](CHANGELOG.md) for more information on what has changed recently.
+Please see [CHANGELOG.md](CHANGELOG.md) and [BUGFIX-CHANGELOG.md](BUGFIX-CHANGELOG.md) for more information on what has changed recently.
+
+## Support
+
+- 📧 Email: m.abou7agar@gmail.com
+- 🐛 Issues: [GitHub Issues](https://github.com/mabou7agar/laravel-ai-engine/issues)
+- 📖 Documentation: [Full Documentation](https://github.com/mabou7agar/laravel-ai-engine/wiki)
+
+---
+
+**Made with ❤️ for the Laravel community**
