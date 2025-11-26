@@ -11,6 +11,7 @@ use LaravelAIEngine\Services\CacheManager;
 use LaravelAIEngine\Services\RateLimitManager;
 use LaravelAIEngine\Services\ConversationManager;
 use LaravelAIEngine\Services\ActionManager;
+use LaravelAIEngine\Services\AnalyticsManager;
 use LaravelAIEngine\Services\ActionHandlers\ButtonActionHandler;
 use LaravelAIEngine\Services\ActionHandlers\QuickReplyActionHandler;
 use LaravelAIEngine\Services\Failover\FailoverManager;
@@ -50,10 +51,7 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function registerCoreServices(): void
     {
-        $this->app->singleton(AIEngineManager::class, function ($app) {
-            return new AIEngineManager($app);
-        });
-
+        // Register dependencies first
         $this->app->singleton(CreditManager::class, function ($app) {
             return new CreditManager($app);
         });
@@ -64,6 +62,21 @@ class AIEngineServiceProvider extends ServiceProvider
 
         $this->app->singleton(RateLimitManager::class, function ($app) {
             return new RateLimitManager($app);
+        });
+
+        $this->app->singleton(AnalyticsManager::class, function ($app) {
+            return new AnalyticsManager($app);
+        });
+
+        // Register AIEngineManager with all dependencies
+        $this->app->singleton(AIEngineManager::class, function ($app) {
+            return new AIEngineManager(
+                $app,
+                $app->make(CreditManager::class),
+                $app->make(CacheManager::class),
+                $app->make(RateLimitManager::class),
+                $app->make(AnalyticsManager::class)
+            );
         });
 
         $this->app->singleton(ConversationManager::class, function ($app) {
