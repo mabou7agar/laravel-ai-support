@@ -89,13 +89,18 @@ $cheapest = $registry
 - **OpenRouter** - 🔥 **150+ models** from all major providers (GPT-5, Claude 4, Llama 3.3, Grok 2, etc.)
 - **Automatic Failover** - Seamless switching between providers
 
-### 🔍 Intelligent RAG & Vector Search
+### 🔍 Intelligent RAG & Vector Search (NEW v2.1!)
 - **🤖 Intelligent RAG** - AI autonomously decides when to search knowledge base
+- **🔗 Relationship Indexing** - Index models with their relationships for richer context
+- **🔍 Auto-Detection** - Automatically detect indexable fields and relationships
+- **📊 Schema Analysis** - Smart analysis of your models for optimal indexing
+- **⚡ Efficient Loading** - N+1 prevention with smart batch loading
+- **🎯 Test Suite** - Complete journey testing from discovery to search
 - **Semantic Search** - Find content by meaning, not keywords
 - **Qdrant Integration** - Production-ready vector database support
-- **Auto-Indexing** - Automatic model indexing with observers
 - **Source Citations** - Transparent source attribution in responses
 - **Analytics** - Track search performance and usage
+- **11 CLI Commands** - Comprehensive command-line tools
 
 ### 💬 Conversations & Memory
 - **Persistent Conversations** - Store and manage chat history
@@ -647,6 +652,245 @@ foreach ($response['sources'] as $source) {
 }
 ```
 
+---
+
+## 🔍 Vector Indexing & Search (NEW v2.1!)
+
+### Quick Start
+
+```php
+use LaravelAIEngine\Traits\Vectorizable;
+
+class Post extends Model
+{
+    use Vectorizable;
+    
+    // Fields to index
+    public array $vectorizable = ['title', 'content'];
+    
+    // Relationships to include
+    protected array $vectorRelationships = ['author', 'tags'];
+    protected int $maxRelationshipDepth = 1;
+}
+```
+
+```bash
+# Index your models
+php artisan ai-engine:vector-index "App\Models\Post" --with-relationships
+
+# Search
+$posts = Post::vectorSearch('Laravel tips');
+```
+
+### Discovery & Analysis
+
+```bash
+# List all vectorizable models
+php artisan ai-engine:list-models --stats
+
+# Analyze a model
+php artisan ai-engine:analyze-model "App\Models\Post"
+
+# Output:
+# ✨ Recommended Configuration:
+# 
+# class Post extends Model
+# {
+#     use Vectorizable;
+#     
+#     public array $vectorizable = ['title', 'content', 'excerpt'];
+#     protected array $vectorRelationships = ['author', 'tags'];
+#     protected int $maxRelationshipDepth = 1;
+# }
+```
+
+### Generate Configuration
+
+```bash
+# Generate ready-to-use code
+php artisan ai-engine:generate-config "App\Models\Post" --show
+
+# Copy the output to your model file
+```
+
+### Indexing with Relationships
+
+```bash
+# Index with relationships for richer context
+php artisan ai-engine:vector-index "App\Models\Post" --with-relationships
+
+# Custom depth
+php artisan ai-engine:vector-index "App\Models\Post" \
+    --with-relationships \
+    --relationship-depth=2
+
+# Batch processing
+php artisan ai-engine:vector-index "App\Models\Post" \
+    --batch=500 \
+    --queue
+```
+
+### Monitor Status
+
+```bash
+# Check indexing status
+php artisan ai-engine:vector-status "App\Models\Post"
+
+# Output:
+# ┌──────────────────────────────────────┐
+# │ App\Models\Post                      │
+# ├──────────────────────────────────────┤
+# │ Total Records:    1,234              │
+# │ Indexed:          1,234              │
+# │ Pending:          0                  │
+# │ Status:           ✓ Complete         │
+# │ Relationships:    author, tags       │
+# └──────────────────────────────────────┘
+```
+
+### Test Complete Journey
+
+```bash
+# Test everything from discovery to RAG
+php artisan ai-engine:test-vector-journey "App\Models\Post"
+
+# Quick mode (no confirmations)
+php artisan ai-engine:test-vector-journey "App\Models\Post" --quick
+
+# Tests:
+# ✓ Model Discovery
+# ✓ Model Analysis
+# ✓ Configuration Check
+# ✓ Vector Indexing
+# ✓ Vector Search
+# ✓ RAG Test
+```
+
+### Search with Filters
+
+```php
+// Simple search
+$posts = Post::vectorSearch('Laravel tips');
+
+// With filters
+$posts = Post::vectorSearch('Laravel tips', filters: [
+    'status' => 'published',
+    'author_id' => $userId,
+]);
+
+// With limit and threshold
+$posts = Post::vectorSearch('Laravel tips', 
+    limit: 10, 
+    threshold: 0.7
+);
+
+// Get relevance scores
+foreach ($posts as $post) {
+    echo "{$post->title} - Score: {$post->_vector_score}\n";
+}
+```
+
+### Intelligent Chat with Vector Search
+
+```php
+// AI automatically searches when needed
+$response = Post::intelligentChat(
+    'What are the best Laravel performance tips?',
+    sessionId: 'user-123'
+);
+
+echo $response->content;
+
+// Manual vector chat
+$response = Post::vectorChat(
+    'Tell me about caching strategies',
+    sessionId: 'user-123'
+);
+```
+
+### Advanced Configuration
+
+```php
+class Post extends Model
+{
+    use Vectorizable;
+    
+    // Fields to index
+    public array $vectorizable = ['title', 'content', 'excerpt'];
+    
+    // Relationships to include
+    protected array $vectorRelationships = ['author', 'tags', 'comments'];
+    
+    // Maximum depth (1-2 recommended)
+    protected int $maxRelationshipDepth = 1;
+    
+    // RAG priority (0-100, higher = searched first)
+    protected int $ragPriority = 80;
+    
+    // Custom vector content
+    public function getVectorContent(): string
+    {
+        return implode(' ', [
+            $this->title,
+            $this->content,
+            $this->author->name ?? '',
+            $this->tags->pluck('name')->implode(' '),
+        ]);
+    }
+    
+    // Control what gets indexed
+    public function shouldBeIndexed(): bool
+    {
+        return $this->status === 'published';
+    }
+}
+```
+
+### Available Commands
+
+```bash
+# Discovery
+php artisan ai-engine:list-models [--stats] [--detailed]
+php artisan ai-engine:analyze-model {model} [--all]
+php artisan ai-engine:generate-config {model} [--show] [--depth=1]
+
+# Indexing
+php artisan ai-engine:vector-index {model?} [--with-relationships] [--relationship-depth=1] [--batch=100] [--queue]
+php artisan ai-engine:vector-status {model?}
+
+# Testing
+php artisan ai-engine:test-vector-journey {model?} [--quick]
+
+# Search & Analytics
+php artisan ai-engine:vector-search {model} {query}
+php artisan ai-engine:vector-analytics
+php artisan ai-engine:vector-clean
+```
+
+### Performance Tips
+
+1. **Use Relationships Wisely**
+   - Keep `maxRelationshipDepth` low (1-2)
+   - Only include relevant relationships
+   - Avoid many-to-many with large datasets
+
+2. **Batch Processing**
+   - Use `--batch=500` for large datasets
+   - Use `--queue` for background processing
+   - Monitor with `vector-status`
+
+3. **Optimize Queries**
+   - Use filters to narrow results
+   - Set appropriate thresholds (0.7-0.8)
+   - Limit results to what you need
+
+4. **Monitor Performance**
+   ```bash
+   php artisan ai-engine:vector-analytics
+   ```
+
+---
+
 ### Image Generation
 
 ```php
@@ -1141,24 +1385,31 @@ php artisan ai-engine:vector-index "App\Models\Post" --queue
 
 ## 📈 Roadmap
 
-### ✅ Completed (v1.0)
+### ✅ Completed (v2.1) - Latest!
 - [x] **Dynamic Model Registry** - Future-proof model management
 - [x] **Auto-Discovery** - Automatically detect new models from APIs
+- [x] **Relationship Indexing** - Index models with their relationships
+- [x] **Schema Analysis** - Auto-detect indexable fields and relationships
+- [x] **Model Analyzer** - Comprehensive model analysis
+- [x] **Data Loader Service** - Efficient batch loading with N+1 prevention
+- [x] **11 CLI Commands** - Complete command-line toolset
+- [x] **Test Suite** - Complete journey testing
 - [x] Intelligent RAG with autonomous decision-making
 - [x] Smart memory with optimization
 - [x] Centralized driver architecture
 - [x] Qdrant vector database integration
-- [x] Multi-engine support (OpenAI, Gemini, Anthropic, DeepSeek, Perplexity)
+- [x] Multi-engine support (OpenAI, Gemini, Anthropic, DeepSeek, Perplexity, OpenRouter)
 - [x] Comprehensive conversation management
-- [x] 12+ pre-configured AI models
+- [x] 150+ AI models via OpenRouter
 - [x] Cost estimation and tracking
 
-### 🚧 In Progress (v1.1)
-- [ ] Comprehensive test suite
-- [ ] Performance optimizations (caching, rate limiting middleware)
-- [ ] Enhanced documentation with video tutorials
+### 🚧 In Progress (v2.2)
+- [ ] Multi-tenant support for vector search
+- [ ] Queue support for background indexing
+- [ ] Dynamic observers for auto-indexing
+- [ ] Enhanced RAG context formatting
 
-### 🔮 Planned (v2.0)
+### 🔮 Planned (v3.0)
 - [ ] GraphQL API support
 - [ ] Real-time collaboration features
 - [ ] Advanced analytics dashboard
@@ -1216,11 +1467,18 @@ This package is open-sourced software licensed under the [MIT license](LICENSE.m
 
 ## 📚 Additional Resources
 
+### Core Documentation
 - **[DYNAMIC_MODEL_REGISTRY.md](DYNAMIC_MODEL_REGISTRY.md)** - 🚀 Future-proof model management guide
 - **[INTELLIGENT_RAG_IMPLEMENTATION.md](INTELLIGENT_RAG_IMPLEMENTATION.md)** - Intelligent RAG deep dive
 - **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Complete implementation details
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history
 - **[.env.example](.env.example)** - Environment configuration template
+
+### Vector Indexing (NEW v2.1!)
+- **[FINAL_SUMMARY.md](FINAL_SUMMARY.md)** - 🔍 Complete vector indexing guide
+- **[FEATURES_COMPLETED.md](FEATURES_COMPLETED.md)** - All implemented features
+- **[GENERATE_CONFIG_COMPARISON.md](GENERATE_CONFIG_COMPARISON.md)** - Config approach comparison
+- **[RAG_COMPARISON.md](RAG_COMPARISON.md)** - RAG implementation analysis
 
 ### Quick Links
 - 🚀 [Dynamic Model Registry](#-dynamic-model-registry) - Auto-support GPT-5, GPT-6
