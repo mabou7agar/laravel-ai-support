@@ -120,25 +120,104 @@
                         </div>
                     </div>
                     
-                    <!-- Memory Stats -->
-                    <div class="glass-effect rounded-lg px-4 py-2 text-sm">
-                        <div class="flex items-center space-x-4">
-                            <div>
-                                <span class="text-purple-200">Messages:</span>
-                                <span class="font-bold" x-text="memoryStats.total_messages"></span>
-                            </div>
-                            <div>
-                                <span class="text-purple-200">Tokens:</span>
-                                <span class="font-bold" x-text="memoryStats.estimated_tokens"></span>
+                    <div class="flex items-center space-x-4">
+                        <!-- User Info -->
+                        <div x-show="isAuthenticated" class="glass-effect rounded-lg px-4 py-2 text-sm">
+                            <div class="flex items-center space-x-2">
+                                <svg class="w-4 h-4 text-purple-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                </svg>
+                                <span class="text-purple-200">User:</span>
+                                <span class="font-bold" x-text="userId"></span>
                             </div>
                         </div>
+                        
+                        <!-- Memory Stats -->
+                        <div x-show="isAuthenticated" class="glass-effect rounded-lg px-4 py-2 text-sm">
+                            <div class="flex items-center space-x-4">
+                                <div>
+                                    <span class="text-purple-200">Messages:</span>
+                                    <span class="font-bold" x-text="memoryStats.total_messages"></span>
+                                </div>
+                                <div>
+                                    <span class="text-purple-200">Tokens:</span>
+                                    <span class="font-bold" x-text="memoryStats.estimated_tokens"></span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Logout Button -->
+                        <button 
+                            x-show="isAuthenticated"
+                            @click="logout()"
+                            class="glass-effect rounded-lg px-4 py-2 text-sm font-medium hover:bg-white hover:bg-opacity-20 transition-all"
+                        >
+                            <div class="flex items-center space-x-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                                </svg>
+                                <span>Logout</span>
+                            </div>
+                        </button>
                     </div>
                 </div>
             </div>
         </header>
 
+        <!-- Authentication Modal -->
+        <div x-show="showAuthModal" 
+             x-cloak
+             class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+             @click.self="showAuthModal = false">
+            <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6" @click.stop>
+                <div class="text-center mb-6">
+                    <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                        </svg>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800">Welcome to AI Chat</h2>
+                    <p class="text-gray-600 mt-2">Please enter your User ID to continue</p>
+                </div>
+
+                <form @submit.prevent="authenticate" class="space-y-4">
+                    <div>
+                        <label for="userId" class="block text-sm font-medium text-gray-700 mb-2">
+                            User ID
+                        </label>
+                        <input 
+                            type="text" 
+                            id="userId"
+                            x-model="userId"
+                            placeholder="Enter your user ID"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            required
+                            autofocus
+                        >
+                    </div>
+
+                    <div x-show="authError" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                        <span x-text="authError"></span>
+                    </div>
+
+                    <button 
+                        type="submit"
+                        class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-3 px-4 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                    >
+                        Authenticate
+                    </button>
+                </form>
+
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <p class="text-xs text-gray-500 text-center">
+                        💡 Your session will be saved and you can continue your conversation later
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <!-- Main Content -->
-        <div class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div x-show="isAuthenticated" class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
                 
                 <!-- Sidebar - Available Actions -->
@@ -369,10 +448,99 @@
                     estimated_tokens: 0
                 },
                 contextSummary: 'No conversation yet',
+                
+                // Authentication
+                isAuthenticated: false,
+                showAuthModal: false,
+                userId: '',
+                authToken: null,
+                authError: '',
 
                 async init() {
-                    await this.loadAvailableActions();
-                    await this.updateMemoryStats();
+                    // Check if already authenticated
+                    const storedToken = localStorage.getItem('ai_demo_token');
+                    const storedUserId = localStorage.getItem('ai_demo_user_id');
+                    
+                    if (storedToken && storedUserId) {
+                        this.authToken = storedToken;
+                        this.userId = storedUserId;
+                        this.isAuthenticated = true;
+                    } else {
+                        this.showAuthModal = true;
+                    }
+                    
+                    if (this.isAuthenticated) {
+                        await this.loadAvailableActions();
+                        await this.updateMemoryStats();
+                    }
+                },
+                
+                async authenticate() {
+                    if (!this.userId.trim()) {
+                        this.authError = 'Please enter a user ID';
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch('/api/auth/token', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                            },
+                            body: JSON.stringify({
+                                user_id: this.userId
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success && data.token) {
+                            this.authToken = data.token;
+                            this.isAuthenticated = true;
+                            this.showAuthModal = false;
+                            this.authError = '';
+                            
+                            // Store in localStorage
+                            localStorage.setItem('ai_demo_token', data.token);
+                            localStorage.setItem('ai_demo_user_id', this.userId);
+                            
+                            // Update session ID with user ID
+                            this.sessionId = `user-${this.userId}-session`;
+                            
+                            await this.loadAvailableActions();
+                            await this.updateMemoryStats();
+                        } else {
+                            this.authError = data.error || 'Authentication failed';
+                        }
+                    } catch (error) {
+                        console.error('Auth error:', error);
+                        this.authError = 'Failed to authenticate. Please try again.';
+                    }
+                },
+                
+                logout() {
+                    this.isAuthenticated = false;
+                    this.authToken = null;
+                    this.userId = '';
+                    this.messages = [];
+                    this.showAuthModal = true;
+                    
+                    localStorage.removeItem('ai_demo_token');
+                    localStorage.removeItem('ai_demo_user_id');
+                },
+                
+                getAuthHeaders() {
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    };
+                    
+                    if (this.authToken) {
+                        headers['Authorization'] = `Bearer ${this.authToken}`;
+                    }
+                    
+                    return headers;
                 },
 
                 async sendMessage() {
@@ -394,10 +562,7 @@
                     try {
                         const response = await fetch('/ai-demo/chat/send', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                            },
+                            headers: this.getAuthHeaders(),
                             body: JSON.stringify({
                                 message: userMessage,
                                 session_id: this.sessionId,

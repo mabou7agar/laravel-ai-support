@@ -24,7 +24,7 @@ return [
     'enable_demo_routes' => env('AI_ENGINE_ENABLE_DEMO_ROUTES', false),
     'demo_route_prefix' => env('AI_ENGINE_DEMO_PREFIX', 'ai-demo'),
     'demo_route_middleware' => ['web'],
-    
+
     /*
     |--------------------------------------------------------------------------
     | Default AI Engine
@@ -126,41 +126,41 @@ return [
                 'openai/gpt-5' => ['enabled' => true, 'credit_index' => 5.0],
                 'openai/gpt-5-mini' => ['enabled' => true, 'credit_index' => 2.5],
                 'openai/gpt-5-nano' => ['enabled' => true, 'credit_index' => 1.0],
-                
+
                 // GPT-4o Models
                 'openai/gpt-4o' => ['enabled' => true, 'credit_index' => 2.2],
                 'openai/gpt-4o-2024-11-20' => ['enabled' => true, 'credit_index' => 2.3],
                 'openai/gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.6],
                 'openai/gpt-4o-mini-2024-07-18' => ['enabled' => true, 'credit_index' => 0.6],
-                
+
                 // Claude 4 Models (Latest Generation)
                 'anthropic/claude-4-opus' => ['enabled' => true, 'credit_index' => 4.5],
                 'anthropic/claude-4-sonnet' => ['enabled' => true, 'credit_index' => 3.5],
-                
+
                 // Claude 3.5 Models
                 'anthropic/claude-3.5-sonnet' => ['enabled' => true, 'credit_index' => 2.0],
                 'anthropic/claude-3.5-sonnet-20241022' => ['enabled' => true, 'credit_index' => 2.1],
                 'anthropic/claude-3.5-haiku' => ['enabled' => true, 'credit_index' => 1.0],
-                
+
                 // Claude 3 Models
                 'anthropic/claude-3-opus' => ['enabled' => true, 'credit_index' => 3.2],
                 'anthropic/claude-3-haiku' => ['enabled' => true, 'credit_index' => 0.9],
-                
+
                 // Gemini 2.5 Models (Latest Generation - March 2025)
                 'google/gemini-2.5-pro' => ['enabled' => true, 'credit_index' => 3.0],
                 'google/gemini-2.5-pro-experimental' => ['enabled' => true, 'credit_index' => 3.2],
-                
+
                 // Previous Google Models
                 'google/gemini-pro' => ['enabled' => true, 'credit_index' => 1.7],
                 'google/gemini-1.5-pro' => ['enabled' => true, 'credit_index' => 1.8],
                 'google/gemini-2.0-flash' => ['enabled' => true, 'credit_index' => 1.9],
-                
+
                 // Meta Llama Models
                 'meta-llama/llama-3.1-405b-instruct' => ['enabled' => true, 'credit_index' => 3.0],
                 'meta-llama/llama-3.1-70b-instruct' => ['enabled' => true, 'credit_index' => 1.2],
                 'meta-llama/llama-3.2-90b-instruct' => ['enabled' => true, 'credit_index' => 1.4],
                 'meta-llama/llama-3.3-70b-instruct' => ['enabled' => true, 'credit_index' => 1.3],
-                
+
                 // Free Models (OpenRouter Free Tier - 0 Credits)
                 'meta-llama/llama-3.1-8b-instruct:free' => ['enabled' => true, 'credit_index' => 0.0],
                 'meta-llama/llama-3.2-3b-instruct:free' => ['enabled' => true, 'credit_index' => 0.0],
@@ -169,7 +169,7 @@ return [
                 'qwen/qwen-2.5-7b-instruct:free' => ['enabled' => true, 'credit_index' => 0.0],
                 'microsoft/phi-3-mini-128k-instruct:free' => ['enabled' => true, 'credit_index' => 0.0],
                 'openchat/openchat-3.5-1210:free' => ['enabled' => true, 'credit_index' => 0.0],
-                
+
                 // Other Popular Models
                 'mistralai/mixtral-8x7b-instruct' => ['enabled' => true, 'credit_index' => 0.8],
                 'qwen/qwen-2.5-72b-instruct' => ['enabled' => true, 'credit_index' => 1.0],
@@ -311,7 +311,7 @@ return [
         'enabled' => env('AI_MEMORY_ENABLED', true),
         'default_driver' => env('AI_MEMORY_DRIVER', 'database'),
         'max_messages' => env('AI_MEMORY_MAX_MESSAGES', 50),
-        
+
         // Memory Optimization Settings
         'optimization' => [
             'enabled' => env('AI_MEMORY_OPTIMIZATION_ENABLED', true),
@@ -319,23 +319,23 @@ return [
             'summary_threshold' => env('AI_MEMORY_SUMMARY_THRESHOLD', 20), // When to start summarizing
             'cache_ttl' => env('AI_MEMORY_CACHE_TTL', 300), // 5 minutes
         ],
-        
+
         'database' => [
             'connection' => env('AI_MEMORY_DB_CONNECTION', null),
             'max_messages' => env('AI_MEMORY_DB_MAX_MESSAGES', 100),
         ],
-        
+
         'redis' => [
             'connection' => env('AI_MEMORY_REDIS_CONNECTION', 'default'),
             'prefix' => env('AI_MEMORY_REDIS_PREFIX', 'ai_engine:'),
             'max_messages' => env('AI_MEMORY_REDIS_MAX_MESSAGES', 100),
         ],
-        
+
         'file' => [
             'path' => env('AI_MEMORY_FILE_PATH', storage_path('ai-engine/conversations')),
             'max_messages' => env('AI_MEMORY_FILE_MAX_MESSAGES', 100),
         ],
-        
+
         'mongodb' => [
             'connection_string' => env('AI_MEMORY_MONGODB_CONNECTION', 'mongodb://localhost:27017'),
             'database' => env('AI_MEMORY_MONGODB_DATABASE', 'ai_engine'),
@@ -436,7 +436,7 @@ return [
         'driver' => env('AI_ANALYTICS_DRIVER', 'database'), // database, redis
         'retention_days' => env('AI_ANALYTICS_RETENTION_DAYS', 90),
         'real_time_metrics' => env('AI_ANALYTICS_REAL_TIME', true),
-        
+
         'drivers' => [
             'database' => [
                 'table_prefix' => 'ai_analytics_',
@@ -447,7 +447,7 @@ return [
                 'ttl' => 7776000, // 90 days in seconds
             ],
         ],
-        
+
         'metrics' => [
             'track_requests' => true,
             'track_streaming' => true,
@@ -521,7 +521,7 @@ return [
         'batch_size' => env('VECTOR_BATCH_SIZE', 100),
 
         // Auto-indexing
-        'auto_index' => env('VECTOR_AUTO_INDEX', false),
+        'auto_index' => env('VECTOR_AUTO_INDEX', true),
         'auto_delete' => env('VECTOR_AUTO_DELETE', true),
 
         // Queue configuration
@@ -550,7 +550,7 @@ return [
             'enabled' => env('VECTOR_MEDIA_ENABLED', true),
             'vision_model' => env('OPENAI_VISION_MODEL', 'gpt-4o'),
             'whisper_model' => env('OPENAI_WHISPER_MODEL', 'whisper-1'),
-            
+
             // Supported file formats
             'supported_formats' => [
                 'images' => ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'heic', 'heif'],
@@ -578,12 +578,12 @@ return [
             'filter_by_visibility' => env('VECTOR_AUTH_FILTER_BY_VISIBILITY', true),
             'filter_by_status' => env('VECTOR_AUTH_FILTER_BY_STATUS', true),
             'log_events' => env('VECTOR_AUTH_LOG_EVENTS', false),
-            
+
             // Row-level security rules
             'row_level_security' => [
                 // Example: ['field' => 'user_id', 'operator' => '==', 'value' => '{user_id}']
             ],
-            
+
             // Collection access control
             'restricted_collections' => [],
             'accessible_collections' => [],
@@ -602,14 +602,14 @@ return [
     */
     'intelligent_rag' => [
         'enabled' => env('INTELLIGENT_RAG_ENABLED', true),
-        
+
         // Default collections to search (model class names)
         // If empty, the system will AUTO-DISCOVER all models with:
         // - Vectorizable trait
         // - RAGgable trait
-        // 
+        //
         // Simply add 'use Vectorizable;' or 'use RAGgable;' to your models!
-        'default_collections' => env('INTELLIGENT_RAG_COLLECTIONS') 
+        'default_collections' => env('INTELLIGENT_RAG_COLLECTIONS')
             ? explode(',', env('INTELLIGENT_RAG_COLLECTIONS'))
             : [
                 // Leave empty for auto-discovery, or specify manually:
@@ -618,24 +618,24 @@ return [
                 // 'App\\Models\\Email',
                 // 'App\\Models\\Article',
             ],
-        
+
         // Auto-discovery settings
         'auto_discover' => env('INTELLIGENT_RAG_AUTO_DISCOVER', true),
         'discovery_cache_ttl' => env('INTELLIGENT_RAG_DISCOVERY_CACHE', 3600), // 1 hour
-        
+
         // Maximum context items to retrieve
         'max_context_items' => env('INTELLIGENT_RAG_MAX_CONTEXT', 5),
-        
+
         // Minimum relevance score (0-1) - Lower = more results, Higher = more precise
         // 0.3 = balanced (recommended), 0.5 = moderate, 0.7+ = strict/precise
         'min_relevance_score' => env('INTELLIGENT_RAG_MIN_SCORE', 0.3),
-        
+
         // Fallback threshold when no results found (0.0 = return anything, null = no fallback)
         'fallback_threshold' => env('INTELLIGENT_RAG_FALLBACK_THRESHOLD', 0.0),
-        
+
         // Model to use for query analysis (can use gpt-4o, gpt-4o-mini, or any available model)
         'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o'),
-        
+
         // Include source citations in response
         'include_sources' => env('INTELLIGENT_RAG_INCLUDE_SOURCES', true),
     ],
