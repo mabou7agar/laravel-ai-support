@@ -90,7 +90,7 @@ class ConfigureAllModelsCommand extends Command
         if (!empty($schema['text_fields'])) {
             $this->line("📝 Text Fields:");
             foreach ($schema['text_fields'] as $field) {
-                $recommended = $field['recommended'] ? '✓' : ' ';
+                $recommended = ($field['recommended'] ?? false) ? '✓' : ' ';
                 $this->line("   [{$recommended}] {$field['name']} ({$field['type']})");
             }
             $this->newLine();
@@ -100,7 +100,7 @@ class ConfigureAllModelsCommand extends Command
         if (!empty($relationships['relationships'])) {
             $this->line("🔗 Relationships:");
             foreach ($relationships['relationships'] as $rel) {
-                $recommended = $rel['recommended'] ? '✓' : ' ';
+                $recommended = ($rel['recommended'] ?? false) ? '✓' : ' ';
                 $this->line("   [{$recommended}] {$rel['name']} ({$rel['type']})");
             }
             $this->newLine();
@@ -115,7 +115,7 @@ class ConfigureAllModelsCommand extends Command
         // Get recommended text fields
         $vectorizable = [];
         foreach ($schema['text_fields'] ?? [] as $field) {
-            if ($field['recommended']) {
+            if ($field['recommended'] ?? false) {
                 $vectorizable[] = $field['name'];
             }
         }
@@ -123,7 +123,7 @@ class ConfigureAllModelsCommand extends Command
         // Get recommended relationships
         $vectorRelationships = [];
         foreach ($relationships['relationships'] ?? [] as $rel) {
-            if ($rel['recommended']) {
+            if ($rel['recommended'] ?? false) {
                 $vectorRelationships[] = $rel['name'];
             }
         }
