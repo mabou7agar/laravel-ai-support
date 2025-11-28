@@ -430,20 +430,39 @@ PROMPT;
         array $conversationHistory = [],
         array $options = []
     ): string {
-        if ($context->isEmpty()) {
-            return $message;
-        }
-
         $systemPrompt = $options['system_prompt'] ?? $this->getDefaultSystemPrompt();
-        $contextText = $this->formatContext($context);
-
+        
         $prompt = "{$systemPrompt}\n\n";
-        $prompt .= "RELEVANT CONTEXT FROM KNOWLEDGE BASE:\n";
-        $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-        $prompt .= "{$contextText}\n";
-        $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-        $prompt .= "USER QUESTION: {$message}\n\n";
-        $prompt .= "Please answer based on the context above. If the context doesn't fully answer the question, acknowledge what you can answer and what you cannot.";
+        
+        // Add conversation history if available
+        if (!empty($conversationHistory)) {
+            $prompt .= "CONVERSATION HISTORY:\n";
+            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            foreach ($conversationHistory as $msg) {
+                $role = ucfirst($msg['role'] ?? 'user');
+                $content = $msg['content'] ?? '';
+                $prompt .= "{$role}: {$content}\n\n";
+            }
+            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        }
+        
+        // Add context if available
+        if ($context->isNotEmpty()) {
+            $contextText = $this->formatContext($context);
+            $prompt .= "RELEVANT CONTEXT FROM KNOWLEDGE BASE:\n";
+            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            $prompt .= "{$contextText}\n";
+            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        }
+        
+        $prompt .= "CURRENT QUESTION: {$message}\n\n";
+        
+        if ($context->isNotEmpty()) {
+            $prompt .= "Please answer based on the context above and our conversation history. ";
+            $prompt .= "If the context doesn't fully answer the question, acknowledge what you can answer and what you cannot.";
+        } else {
+            $prompt .= "Please answer based on our conversation history.";
+        }
 
         return $prompt;
     }
