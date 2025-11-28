@@ -299,6 +299,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\AnalyzeModelCommand::class,
                 Console\Commands\VectorStatusCommand::class,
                 Console\Commands\ListVectorizableModelsCommand::class,
+                Console\Commands\GenerateVectorConfigCommand::class,
             ]);
         }
 
