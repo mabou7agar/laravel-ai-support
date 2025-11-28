@@ -12,7 +12,7 @@ class TestRAGFeaturesCommand extends Command
     protected $signature = 'ai-engine:test-rag
                             {--model= : Specific model class to test}
                             {--quick : Run quick tests only}
-                            {--verbose : Show detailed output}
+                            {--detailed : Show detailed output}
                             {--skip-interactive : Skip interactive prompts}';
 
     protected $description = 'Comprehensive RAG testing suite (discovery, search, chat, context, relationships)';
@@ -475,14 +475,14 @@ class TestRAGFeaturesCommand extends Command
                 $depth3 = $instance->getIndexableRelationships(3);
 
                 $this->line("Depth 1: " . count($depth1) . " relationships");
-                if (!empty($depth1) && $this->option('verbose')) {
+                if (!empty($depth1) && $this->option('detailed')) {
                     foreach ($depth1 as $rel) {
                         $this->line("   - {$rel}");
                     }
                 }
 
                 $this->line("Depth 2: " . count($depth2) . " relationships");
-                if (!empty($depth2) && $this->option('verbose')) {
+                if (!empty($depth2) && $this->option('detailed')) {
                     foreach ($depth2 as $rel) {
                         $this->line("   - {$rel}");
                     }
