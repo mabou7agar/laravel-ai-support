@@ -14,15 +14,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Demo Routes Configuration
+    | Demo Routes
     |--------------------------------------------------------------------------
     |
-    | Control whether demo routes are enabled. By default, they are only
-    | enabled in local environment. Set AI_ENGINE_ENABLE_DEMO_ROUTES=true
-    | in your .env file to enable in other environments.
+    | Control whether demo routes are enabled. Set AI_ENGINE_ENABLE_DEMO_ROUTES=true
+    | in your .env file to enable demo routes.
     |
     */
-    'enable_demo_routes' => env('AI_ENGINE_ENABLE_DEMO_ROUTES', app()->environment('local')),
+    'enable_demo_routes' => env('AI_ENGINE_ENABLE_DEMO_ROUTES', false),
     'demo_route_prefix' => env('AI_ENGINE_DEMO_PREFIX', 'ai-demo'),
     'demo_route_middleware' => ['web'],
     
