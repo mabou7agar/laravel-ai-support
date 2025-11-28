@@ -300,6 +300,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\VectorStatusCommand::class,
                 Console\Commands\ListVectorizableModelsCommand::class,
                 Console\Commands\GenerateVectorConfigCommand::class,
+                Console\Commands\TestVectorJourneyCommand::class,
             ]);
         }
 
