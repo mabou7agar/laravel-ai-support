@@ -63,6 +63,14 @@ class MemoryManager
     }
 
     /**
+     * Get conversation data
+     */
+    public function getConversation(string $conversationId, ?string $driver = null): ?array
+    {
+        return $this->driver($driver)->getConversation($conversationId);
+    }
+
+    /**
      * Clear conversation history
      */
     public function clearConversation(string $conversationId, ?string $driver = null): void
@@ -116,6 +124,10 @@ class MemoryManager
         $this->drivers['database'] = app(DatabaseMemoryDriver::class);
         $this->drivers['redis'] = app(RedisMemoryDriver::class);
         $this->drivers['file'] = app(FileMemoryDriver::class);
-        $this->drivers['mongodb'] = app(MongoMemoryDriver::class);
+        
+        // Only register MongoDB driver if the extension is available
+        if (class_exists(\MongoDB\Client::class)) {
+            $this->drivers['mongodb'] = app(MongoMemoryDriver::class);
+        }
     }
 }

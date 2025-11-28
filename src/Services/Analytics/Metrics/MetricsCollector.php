@@ -173,8 +173,8 @@ class MetricsCollector
     protected function incrementCounter(string $key, int $amount = 1): void
     {
         $cacheKey = $this->cachePrefix . $key;
-        Cache::increment($cacheKey, $amount);
-        Cache::expire($cacheKey, $this->ttl);
+        $current = Cache::get($cacheKey, 0);
+        Cache::put($cacheKey, $current + $amount, $this->ttl);
     }
 
     /**

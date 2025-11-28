@@ -1,57 +1,92 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Enums;
 
-enum ActionTypeEnum: string
+/**
+ * Action Type enumeration class (PHP 8.0 compatible)
+ * Replaces native enum for Laravel 9 compatibility
+ */
+class ActionTypeEnum
 {
-    case BUTTON = 'button';
-    case LINK = 'link';
-    case FORM = 'form';
-    case QUICK_REPLY = 'quick_reply';
-    case FILE_UPLOAD = 'file_upload';
-    case CONFIRM = 'confirm';
-    case MENU = 'menu';
-    case CARD = 'card';
-    case CAROUSEL = 'carousel';
-    case LIST = 'list';
-    case CALENDAR = 'calendar';
-    case LOCATION = 'location';
-    case PAYMENT = 'payment';
-    case SHARE = 'share';
-    case DOWNLOAD = 'download';
-    case COPY = 'copy';
-    case VOTE = 'vote';
-    case RATING = 'rating';
-    case SURVEY = 'survey';
-    case CUSTOM = 'custom';
+    public const BUTTON = 'button';
+    public const LINK = 'link';
+    public const FORM = 'form';
+    public const QUICK_REPLY = 'quick_reply';
+    public const FILE_UPLOAD = 'file_upload';
+    public const CONFIRM = 'confirm';
+    public const MENU = 'menu';
+    public const CARD = 'card';
+    public const CAROUSEL = 'carousel';
+    public const LIST = 'list';
+    public const CALENDAR = 'calendar';
+    public const LOCATION = 'location';
+    public const PAYMENT = 'payment';
+    public const SHARE = 'share';
+    public const DOWNLOAD = 'download';
+    public const COPY = 'copy';
+    public const VOTE = 'vote';
+    public const RATING = 'rating';
+    public const SURVEY = 'survey';
+    public const CUSTOM = 'custom';
+
+    public string $value;
+
+    public function __construct(string $value)
+    {
+        $this->value = $value;
+    }
 
     /**
      * Get action type description
      */
     public function description(): string
     {
-        return match($this) {
-            self::BUTTON => 'Clickable button that triggers an action',
-            self::LINK => 'Navigation link to internal or external URL',
-            self::FORM => 'Interactive form with input fields',
-            self::QUICK_REPLY => 'Pre-defined quick response option',
-            self::FILE_UPLOAD => 'File upload interface',
-            self::CONFIRM => 'Confirmation dialog with yes/no options',
-            self::MENU => 'Dropdown menu with multiple options',
-            self::CARD => 'Rich card with content and embedded actions',
-            self::CAROUSEL => 'Horizontal scrollable card collection',
-            self::LIST => 'Vertical list of selectable items',
-            self::CALENDAR => 'Date/time picker interface',
-            self::LOCATION => 'Location picker or map interface',
-            self::PAYMENT => 'Payment processing interface',
-            self::SHARE => 'Social sharing options',
-            self::DOWNLOAD => 'File download action',
-            self::COPY => 'Copy text to clipboard',
-            self::VOTE => 'Voting interface (thumbs up/down, stars)',
-            self::RATING => 'Rating scale (1-5 stars, 1-10 scale)',
-            self::SURVEY => 'Multi-question survey form',
-            self::CUSTOM => 'Custom action type with developer-defined behavior'
-        };
+        switch ($this->value) {
+            case self::BUTTON:
+                return 'Clickable button that triggers an action';
+            case self::LINK:
+                return 'Navigation link to internal or external URL';
+            case self::FORM:
+                return 'Interactive form with input fields';
+            case self::QUICK_REPLY:
+                return 'Pre-defined quick response option';
+            case self::FILE_UPLOAD:
+                return 'File upload interface';
+            case self::CONFIRM:
+                return 'Confirmation dialog with yes/no options';
+            case self::MENU:
+                return 'Dropdown menu with multiple options';
+            case self::CARD:
+                return 'Rich card with content and embedded actions';
+            case self::CAROUSEL:
+                return 'Horizontal scrollable card collection';
+            case self::LIST:
+                return 'Vertical list of selectable items';
+            case self::CALENDAR:
+                return 'Date/time picker interface';
+            case self::LOCATION:
+                return 'Location picker or map interface';
+            case self::PAYMENT:
+                return 'Payment processing interface';
+            case self::SHARE:
+                return 'Social sharing options';
+            case self::DOWNLOAD:
+                return 'File download action';
+            case self::COPY:
+                return 'Copy text to clipboard';
+            case self::VOTE:
+                return 'Voting interface (thumbs up/down, stars)';
+            case self::RATING:
+                return 'Rating scale (1-5 stars, 1-10 scale)';
+            case self::SURVEY:
+                return 'Multi-question survey form';
+            case self::CUSTOM:
+                return 'Custom action type with developer-defined behavior';
+            default:
+                return 'Unknown action type';
+        }
     }
 
     /**
@@ -59,28 +94,50 @@ enum ActionTypeEnum: string
      */
     public function requiredFields(): array
     {
-        return match($this) {
-            self::BUTTON => ['action'],
-            self::LINK => ['url'],
-            self::FORM => ['fields'],
-            self::QUICK_REPLY => ['message'],
-            self::FILE_UPLOAD => ['allowed_types'],
-            self::CONFIRM => ['confirm_action', 'cancel_action'],
-            self::MENU => ['options'],
-            self::CARD => ['title', 'content'],
-            self::CAROUSEL => ['cards'],
-            self::LIST => ['items'],
-            self::CALENDAR => ['date_format'],
-            self::LOCATION => ['map_provider'],
-            self::PAYMENT => ['amount', 'currency'],
-            self::SHARE => ['content'],
-            self::DOWNLOAD => ['file_url'],
-            self::COPY => ['text'],
-            self::VOTE => ['vote_type'],
-            self::RATING => ['scale', 'min_value', 'max_value'],
-            self::SURVEY => ['questions'],
-            self::CUSTOM => ['handler']
-        };
+        switch ($this->value) {
+            case self::BUTTON:
+                return ['action'];
+            case self::LINK:
+                return ['url'];
+            case self::FORM:
+                return ['fields'];
+            case self::QUICK_REPLY:
+                return ['message'];
+            case self::FILE_UPLOAD:
+                return ['allowed_types'];
+            case self::CONFIRM:
+                return ['confirm_action', 'cancel_action'];
+            case self::MENU:
+                return ['options'];
+            case self::CARD:
+                return ['title', 'content'];
+            case self::CAROUSEL:
+                return ['cards'];
+            case self::LIST:
+                return ['items'];
+            case self::CALENDAR:
+                return ['date_format'];
+            case self::LOCATION:
+                return ['map_provider'];
+            case self::PAYMENT:
+                return ['amount', 'currency'];
+            case self::SHARE:
+                return ['content'];
+            case self::DOWNLOAD:
+                return ['file_url'];
+            case self::COPY:
+                return ['text'];
+            case self::VOTE:
+                return ['vote_type'];
+            case self::RATING:
+                return ['scale', 'min_value', 'max_value'];
+            case self::SURVEY:
+                return ['questions'];
+            case self::CUSTOM:
+                return ['handler'];
+            default:
+                return [];
+        }
     }
 
     /**
@@ -88,28 +145,50 @@ enum ActionTypeEnum: string
      */
     public function optionalFields(): array
     {
-        return match($this) {
-            self::BUTTON => ['icon', 'variant', 'size'],
-            self::LINK => ['target', 'external', 'icon'],
-            self::FORM => ['method', 'validation', 'submit_text'],
-            self::QUICK_REPLY => ['auto_send', 'icon'],
-            self::FILE_UPLOAD => ['max_size', 'multiple', 'preview'],
-            self::CONFIRM => ['title', 'icon', 'variant'],
-            self::MENU => ['multiple', 'searchable', 'placeholder'],
-            self::CARD => ['image_url', 'actions', 'footer'],
-            self::CAROUSEL => ['auto_scroll', 'indicators'],
-            self::LIST => ['multiple', 'searchable', 'icons'],
-            self::CALENDAR => ['min_date', 'max_date', 'time_picker'],
-            self::LOCATION => ['default_location', 'zoom_level'],
-            self::PAYMENT => ['description', 'metadata'],
-            self::SHARE => ['platforms', 'title', 'description'],
-            self::DOWNLOAD => ['filename', 'file_type'],
-            self::COPY => ['success_message'],
-            self::VOTE => ['allow_change', 'show_results'],
-            self::RATING => ['labels', 'show_value'],
-            self::SURVEY => ['title', 'description', 'submit_text'],
-            self::CUSTOM => ['config', 'metadata']
-        };
+        switch ($this->value) {
+            case self::BUTTON:
+                return ['icon', 'variant', 'size'];
+            case self::LINK:
+                return ['target', 'external', 'icon'];
+            case self::FORM:
+                return ['method', 'validation', 'submit_text'];
+            case self::QUICK_REPLY:
+                return ['auto_send', 'icon'];
+            case self::FILE_UPLOAD:
+                return ['max_size', 'multiple', 'preview'];
+            case self::CONFIRM:
+                return ['title', 'icon', 'variant'];
+            case self::MENU:
+                return ['multiple', 'searchable', 'placeholder'];
+            case self::CARD:
+                return ['image_url', 'actions', 'footer'];
+            case self::CAROUSEL:
+                return ['auto_scroll', 'indicators'];
+            case self::LIST:
+                return ['multiple', 'searchable', 'icons'];
+            case self::CALENDAR:
+                return ['min_date', 'max_date', 'time_picker'];
+            case self::LOCATION:
+                return ['default_location', 'zoom_level'];
+            case self::PAYMENT:
+                return ['description', 'metadata'];
+            case self::SHARE:
+                return ['platforms', 'title', 'description'];
+            case self::DOWNLOAD:
+                return ['filename', 'file_type'];
+            case self::COPY:
+                return ['success_message'];
+            case self::VOTE:
+                return ['allow_change', 'show_results'];
+            case self::RATING:
+                return ['labels', 'show_value'];
+            case self::SURVEY:
+                return ['title', 'description', 'submit_text'];
+            case self::CUSTOM:
+                return ['config', 'metadata'];
+            default:
+                return [];
+        }
     }
 
     /**
@@ -117,13 +196,15 @@ enum ActionTypeEnum: string
      */
     public function supportsMultiple(): bool
     {
-        return match($this) {
-            self::BUTTON, self::LINK, self::QUICK_REPLY, self::CARD => true,
-            self::FORM, self::FILE_UPLOAD, self::CONFIRM, self::MENU,
-            self::CAROUSEL, self::LIST, self::CALENDAR, self::LOCATION,
-            self::PAYMENT, self::SHARE, self::DOWNLOAD, self::COPY,
-            self::VOTE, self::RATING, self::SURVEY, self::CUSTOM => false
-        };
+        switch ($this->value) {
+            case self::BUTTON:
+            case self::LINK:
+            case self::QUICK_REPLY:
+            case self::CARD:
+                return true;
+            default:
+                return false;
+        }
     }
 
     /**
@@ -131,10 +212,15 @@ enum ActionTypeEnum: string
      */
     public function requiresInteraction(): bool
     {
-        return match($this) {
-            self::LINK, self::DOWNLOAD, self::COPY, self::SHARE => false,
-            default => true
-        };
+        switch ($this->value) {
+            case self::LINK:
+            case self::DOWNLOAD:
+            case self::COPY:
+            case self::SHARE:
+                return false;
+            default:
+                return true;
+        }
     }
 
     /**
@@ -142,48 +228,105 @@ enum ActionTypeEnum: string
      */
     public function defaultStyle(): array
     {
-        return match($this) {
-            self::BUTTON => [
-                'variant' => 'primary',
-                'size' => 'medium',
-                'full_width' => false
-            ],
-            self::LINK => [
-                'variant' => 'link',
-                'underline' => true,
-                'color' => 'blue'
-            ],
-            self::FORM => [
-                'layout' => 'vertical',
-                'spacing' => 'medium',
-                'border' => true
-            ],
-            self::QUICK_REPLY => [
-                'variant' => 'outline',
-                'size' => 'small',
-                'rounded' => true
-            ],
-            self::FILE_UPLOAD => [
-                'variant' => 'dashed',
-                'size' => 'large',
-                'drag_drop' => true
-            ],
-            self::CONFIRM => [
-                'variant' => 'modal',
-                'size' => 'medium',
-                'backdrop' => true
-            ],
-            self::MENU => [
-                'variant' => 'dropdown',
-                'size' => 'medium',
-                'searchable' => false
-            ],
-            self::CARD => [
-                'variant' => 'elevated',
-                'border_radius' => 'medium',
-                'shadow' => 'small'
-            ],
-            default => []
-        };
+        switch ($this->value) {
+            case self::BUTTON:
+                return [
+                    'variant' => 'primary',
+                    'size' => 'medium',
+                    'full_width' => false
+                ];
+            case self::LINK:
+                return [
+                    'variant' => 'link',
+                    'underline' => true,
+                    'color' => 'blue'
+                ];
+            case self::FORM:
+                return [
+                    'layout' => 'vertical',
+                    'spacing' => 'medium',
+                    'border' => true
+                ];
+            case self::QUICK_REPLY:
+                return [
+                    'variant' => 'outline',
+                    'size' => 'small',
+                    'rounded' => true
+                ];
+            case self::FILE_UPLOAD:
+                return [
+                    'variant' => 'dashed',
+                    'size' => 'large',
+                    'drag_drop' => true
+                ];
+            case self::CONFIRM:
+                return [
+                    'variant' => 'modal',
+                    'size' => 'medium',
+                    'backdrop' => true
+                ];
+            case self::MENU:
+                return [
+                    'variant' => 'dropdown',
+                    'size' => 'medium',
+                    'searchable' => false
+                ];
+            case self::CARD:
+                return [
+                    'variant' => 'elevated',
+                    'border_radius' => 'medium',
+                    'shadow' => 'small'
+                ];
+            default:
+                return [];
+        }
+    }
+
+    /**
+     * Get all available action types
+     */
+    public static function all(): array
+    {
+        return [
+            self::BUTTON,
+            self::LINK,
+            self::FORM,
+            self::QUICK_REPLY,
+            self::FILE_UPLOAD,
+            self::CONFIRM,
+            self::MENU,
+            self::CARD,
+            self::CAROUSEL,
+            self::LIST,
+            self::CALENDAR,
+            self::LOCATION,
+            self::PAYMENT,
+            self::SHARE,
+            self::DOWNLOAD,
+            self::COPY,
+            self::VOTE,
+            self::RATING,
+            self::SURVEY,
+            self::CUSTOM,
+        ];
+    }
+
+    /**
+     * Get all available action type instances
+     */
+    public static function cases(): array
+    {
+        return array_map(fn($value) => new self($value), self::all());
+    }
+
+    /**
+     * Create action type from value
+     */
+    public static function from(string $value): self
+    {
+        if (!in_array($value, self::all())) {
+            throw new \InvalidArgumentException("Invalid action type value: {$value}");
+        }
+        return new self($value);
     }
 }

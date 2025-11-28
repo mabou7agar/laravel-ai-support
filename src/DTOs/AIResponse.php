@@ -10,23 +10,56 @@ use LaravelAIEngine\DTOs\InteractiveAction;
 
 class AIResponse
 {
+    private string $content;
+    private EngineEnum $engine;
+    private EntityEnum $model;
+    private array $metadata;
+    private ?int $tokensUsed;
+    private ?float $creditsUsed;
+    private ?float $latency;
+    private ?string $requestId;
+    private ?array $usage;
+    private bool $cached;
+    private ?string $finishReason;
+    private array $files;
+    private array $actions;
+    private ?string $error;
+    private bool $success;
+
     public function __construct(
-        public readonly string $content,
-        public readonly EngineEnum $engine,
-        public readonly EntityEnum $model,
-        public readonly array $metadata = [],
-        public readonly ?int $tokensUsed = null,
-        public readonly ?float $creditsUsed = null,
-        public readonly ?float $latency = null,
-        public readonly ?string $requestId = null,
-        public readonly ?array $usage = null,
-        public readonly bool $cached = false,
-        public readonly ?string $finishReason = null,
-        public readonly array $files = [],
-        public readonly array $actions = [],
-        public readonly ?string $error = null,
-        public readonly bool $success = true
-    ) {}
+        string $content,
+        EngineEnum $engine,
+        EntityEnum $model,
+        array $metadata = [],
+        ?int $tokensUsed = null,
+        ?float $creditsUsed = null,
+        ?float $latency = null,
+        ?string $requestId = null,
+        ?array $usage = null,
+        bool $cached = false,
+        ?string $finishReason = null,
+        array $files = [],
+        array $actions = [],
+        ?string $error = null,
+        bool $success = true
+    
+    ) {
+        $this->content = $content;
+        $this->engine = $engine;
+        $this->model = $model;
+        $this->metadata = $metadata;
+        $this->tokensUsed = $tokensUsed;
+        $this->creditsUsed = $creditsUsed;
+        $this->latency = $latency;
+        $this->requestId = $requestId;
+        $this->usage = $usage;
+        $this->cached = $cached;
+        $this->finishReason = $finishReason;
+        $this->files = $files;
+        $this->actions = $actions;
+        $this->error = $error;
+        $this->success = $success;
+    }
 
     /**
      * Create a successful response
@@ -88,6 +121,7 @@ class AIResponse
             cached: $this->cached,
             finishReason: $this->finishReason,
             files: $this->files,
+            actions: $this->actions,
             error: $this->error,
             success: $this->success
         );
@@ -111,6 +145,7 @@ class AIResponse
             cached: $this->cached,
             finishReason: $this->finishReason,
             files: $this->files,
+            actions: $this->actions,
             error: $this->error,
             success: $this->success
         );
@@ -134,6 +169,7 @@ class AIResponse
             cached: true,
             finishReason: $this->finishReason,
             files: $this->files,
+            actions: $this->actions,
             error: $this->error,
             success: $this->success
         );
@@ -205,6 +241,7 @@ class AIResponse
             cached: $this->cached,
             finishReason: $finishReason,
             files: $this->files,
+            actions: $this->actions,
             error: $this->error,
             success: $this->success
         );
@@ -228,6 +265,7 @@ class AIResponse
             cached: $this->cached,
             finishReason: $this->finishReason,
             files: $this->files,
+            actions: $this->actions,
             error: $this->error,
             success: $this->success
         );
@@ -316,10 +354,7 @@ class AIResponse
     /**
      * Get the interactive actions
      */
-    public function getActions(): array
-    {
-        return $this->actions;
-    }
+    
 
     /**
      * Get actions of a specific type
@@ -448,20 +483,104 @@ class AIResponse
     public static function fromArray(array $data): self
     {
         return new self(
-            content: $data['content'] ?? '',
-            engine: $data['engine'] ?? null,
-            model: $data['model'] ?? null,
-            metadata: $data['metadata'] ?? [],
-            tokensUsed: $data['tokensUsed'] ?? null,
-            creditsUsed: $data['creditsUsed'] ?? null,
-            latency: $data['latency'] ?? null,
-            requestId: $data['requestId'] ?? null,
-            usage: $data['usage'] ?? [],
-            cached: $data['cached'] ?? false,
-            finishReason: $data['finishReason'] ?? null,
-            files: $data['files'] ?? [],
-            error: $data['error'] ?? null,
-            success: $data['success'] ?? true
+            $data['content'] ?? '',
+            $data['engine'] ?? null,
+            $data['model'] ?? null,
+            $data['metadata'] ?? [],
+            $data['tokensUsed'] ?? null,
+            $data['creditsUsed'] ?? null,
+            $data['latency'] ?? null,
+            $data['requestId'] ?? null,
+            $data['usage'] ?? [],
+            $data['cached'] ?? false,
+            $data['finishReason'] ?? null,
+            $data['files'] ?? [],
+            $data['error'] ?? null,
+            $data['success'] ?? true
         );
+    }
+
+    public function getContent(): string
+    {
+        return $this->content;
+    }
+
+    public function getEngine(): EngineEnum
+    {
+        return $this->engine;
+    }
+
+    public function getModel(): EntityEnum
+    {
+        return $this->model;
+    }
+
+    public function getMetadata(): array
+    {
+        return $this->metadata;
+    }
+
+    
+
+    
+
+    public function getLatency(): ?float
+    {
+        return $this->latency;
+    }
+
+    public function getRequestId(): ?string
+    {
+        return $this->requestId;
+    }
+
+    public function getUsage(): ?array
+    {
+        return $this->usage;
+    }
+
+    public function getCached(): bool
+    {
+        return $this->cached;
+    }
+
+    public function getFinishReason(): ?string
+    {
+        return $this->finishReason;
+    }
+
+    public function getFiles(): array
+    {
+        return $this->files;
+    }
+
+    public function getActions(): array
+    {
+        return $this->actions;
+    }
+
+    public function getError(): ?string
+    {
+        return $this->error;
+    }
+
+    public function getSuccess(): bool
+    {
+        return $this->success;
+    }
+
+    /**
+     * Magic getter for backward compatibility
+     */
+    public function __get(string $name)
+    {
+        $getter = 'get' . ucfirst($name);
+        if (method_exists($this, $getter)) {
+            return $this->$getter();
+        }
+        if (property_exists($this, $name)) {
+            return $this->$name;
+        }
+        throw new \InvalidArgumentException("Property {$name} does not exist");
     }
 }

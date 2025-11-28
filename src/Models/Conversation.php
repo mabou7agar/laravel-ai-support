@@ -85,12 +85,18 @@ class Conversation extends Model
     {
         $limit = $limit ?? $this->max_messages;
         
+        // Get total message count
+        $totalMessages = $this->messages()->count();
+        
+        // Calculate offset to get the last N messages in chronological order
+        $offset = max(0, $totalMessages - $limit);
+        
+        // Get messages in chronological order (oldest to newest)
         $messages = $this->messages()
-            ->latest('sent_at')
+            ->orderBy('sent_at', 'asc')
+            ->skip($offset)
             ->limit($limit)
-            ->get()
-            ->reverse()
-            ->values();
+            ->get();
 
         return $messages->map(function ($message) {
             return [

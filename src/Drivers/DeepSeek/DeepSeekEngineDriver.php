@@ -105,55 +105,32 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     public function generateText(AIRequest $request): AIResponse
     {
         try {
-            $messages = $this->buildMessages($request);
+            $this->logApiRequest('generateText', $request);
             
-            $payload = [
-                'model' => $request->model->value,
-                'messages' => $messages,
-                'max_tokens' => $request->maxTokens ?? 4096,
-                'temperature' => $request->temperature ?? 0.7,
+            $messages = $this->buildMessages($request);
+            $payload = $this->buildChatPayload($request, $messages, [
                 'top_p' => $request->parameters['top_p'] ?? 1.0,
                 'frequency_penalty' => $request->parameters['frequency_penalty'] ?? 0.0,
                 'presence_penalty' => $request->parameters['presence_penalty'] ?? 0.0,
                 'stream' => false,
-            ];
+            ]);
 
             $response = $this->httpClient->post('/chat/completions', [
                 'json' => $payload,
             ]);
 
-            $data = json_decode($response->getBody()->getContents(), true);
-            
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
             $content = $data['choices'][0]['message']['content'] ?? '';
-            $tokensUsed = $data['usage']['total_tokens'] ?? $this->calculateTokensUsed($content);
 
-            return AIResponse::success(
+            return $this->buildSuccessResponse(
                 $content,
-                $request->engine,
-                $request->model
-            )->withUsage(
-                tokensUsed: $tokensUsed,
-                creditsUsed: $tokensUsed * $request->model->creditIndex()
-            )->withRequestId($data['id'] ?? null)
-             ->withFinishReason($data['choices'][0]['finish_reason'] ?? null)
-             ->withDetailedUsage([
-                 'prompt_tokens' => $data['usage']['prompt_tokens'] ?? 0,
-                 'completion_tokens' => $data['usage']['completion_tokens'] ?? 0,
-                 'total_tokens' => $tokensUsed,
-             ]);
+                $request,
+                $data,
+                'deepseek'
+            );
 
-        } catch (RequestException $e) {
-            return AIResponse::error(
-                'DeepSeek API error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
-            );
         } catch (\Exception $e) {
-            return AIResponse::error(
-                'Unexpected error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
-            );
+            return $this->handleApiError($e, $request, 'text generation');
         }
     }
 
@@ -318,28 +295,8 @@ class DeepSeekEngineDriver extends BaseEngineDriver
      */
     private function buildMessages(AIRequest $request): array
     {
-        $messages = [];
-
-        // Add system message if provided
-        if ($request->systemPrompt) {
-            $messages[] = [
-                'role' => 'system',
-                'content' => $request->systemPrompt,
-            ];
-        }
-
-        // Add conversation history if provided
-        if (!empty($request->messages)) {
-            $messages = array_merge($messages, $request->messages);
-        }
-
-        // Add the main prompt
-        $messages[] = [
-            'role' => 'user',
-            'content' => $request->prompt,
-        ];
-
-        return $messages;
+        // Use centralized method from BaseEngineDriver
+        return $this->buildStandardMessages($request);
     }
 
     /**

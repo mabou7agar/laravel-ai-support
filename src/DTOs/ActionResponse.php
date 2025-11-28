@@ -6,19 +6,44 @@ use LaravelAIEngine\Enums\ActionTypeEnum;
 
 class ActionResponse
 {
+    private string $actionId;
+    private ActionTypeEnum $actionType;
+    private bool $success;
+    private ?string $message;
+    private array $data;
+    private array $errors;
+    private ?string $redirectUrl;
+    private bool $closeModal;
+    private bool $refreshPage;
+    private ?string $nextAction;
+    private array $metadata;
+
     public function __construct(
-        public readonly string $actionId,
-        public readonly ActionTypeEnum $actionType,
-        public readonly bool $success,
-        public readonly ?string $message = null,
-        public readonly array $data = [],
-        public readonly array $errors = [],
-        public readonly ?string $redirectUrl = null,
-        public readonly bool $closeModal = false,
-        public readonly bool $refreshPage = false,
-        public readonly ?string $nextAction = null,
-        public readonly array $metadata = []
-    ) {}
+        string $actionId,
+        ActionTypeEnum $actionType,
+        bool $success,
+        ?string $message = null,
+        array $data = [],
+        array $errors = [],
+        ?string $redirectUrl = null,
+        bool $closeModal = false,
+        bool $refreshPage = false,
+        ?string $nextAction = null,
+        array $metadata = []
+    
+    ) {
+        $this->actionId = $actionId;
+        $this->actionType = $actionType;
+        $this->success = $success;
+        $this->message = $message;
+        $this->data = $data;
+        $this->errors = $errors;
+        $this->redirectUrl = $redirectUrl;
+        $this->closeModal = $closeModal;
+        $this->refreshPage = $refreshPage;
+        $this->nextAction = $nextAction;
+        $this->metadata = $metadata;
+    }
 
     /**
      * Create a successful action response
@@ -31,12 +56,12 @@ class ActionResponse
         array $metadata = []
     ): self {
         return new self(
-            actionId: $actionId,
-            actionType: $actionType,
-            success: true,
-            message: $message,
-            data: $data,
-            metadata: $metadata
+            $actionId,
+            $actionType,
+            true,
+            $message,
+            $data,
+            $metadata
         );
     }
 
@@ -51,12 +76,12 @@ class ActionResponse
         array $metadata = []
     ): self {
         return new self(
-            actionId: $actionId,
-            actionType: $actionType,
-            success: false,
-            message: $message,
-            errors: $errors,
-            metadata: $metadata
+            $actionId,
+            $actionType,
+            false,
+            $message,
+            $errors,
+            $metadata
         );
     }
 
@@ -71,12 +96,12 @@ class ActionResponse
         array $data = []
     ): self {
         return new self(
-            actionId: $actionId,
-            actionType: $actionType,
-            success: true,
-            message: $message,
-            data: $data,
-            redirectUrl: $url
+            $actionId,
+            $actionType,
+            true,
+            $message,
+            $data,
+            $url
         );
     }
 
@@ -90,12 +115,12 @@ class ActionResponse
         array $data = []
     ): self {
         return new self(
-            actionId: $actionId,
-            actionType: $actionType,
-            success: true,
-            message: $message,
-            data: $data,
-            closeModal: true
+            $actionId,
+            $actionType,
+            true,
+            $message,
+            $data,
+            true
         );
     }
 
@@ -109,12 +134,12 @@ class ActionResponse
         array $data = []
     ): self {
         return new self(
-            actionId: $actionId,
-            actionType: $actionType,
-            success: true,
-            message: $message,
-            data: $data,
-            refreshPage: true
+            $actionId,
+            $actionType,
+            true,
+            $message,
+            $data,
+            true
         );
     }
 
@@ -129,12 +154,12 @@ class ActionResponse
         array $data = []
     ): self {
         return new self(
-            actionId: $actionId,
-            actionType: $actionType,
-            success: true,
-            message: $message,
-            data: $data,
-            nextAction: $nextActionId
+            $actionId,
+            $actionType,
+            true,
+            $message,
+            $data,
+            $nextActionId
         );
     }
 
@@ -144,17 +169,17 @@ class ActionResponse
     public function withRedirect(string $url): self
     {
         return new self(
-            actionId: $this->actionId,
-            actionType: $this->actionType,
-            success: $this->success,
-            message: $this->message,
-            data: $this->data,
-            errors: $this->errors,
-            redirectUrl: $url,
-            closeModal: $this->closeModal,
-            refreshPage: $this->refreshPage,
-            nextAction: $this->nextAction,
-            metadata: $this->metadata
+            $this->actionId,
+            $this->actionType,
+            $this->success,
+            $this->message,
+            $this->data,
+            $this->errors,
+            $url,
+            $this->closeModal,
+            $this->refreshPage,
+            $this->nextAction,
+            $this->metadata
         );
     }
 
@@ -164,17 +189,17 @@ class ActionResponse
     public function withCloseModal(): self
     {
         return new self(
-            actionId: $this->actionId,
-            actionType: $this->actionType,
-            success: $this->success,
-            message: $this->message,
-            data: $this->data,
-            errors: $this->errors,
-            redirectUrl: $this->redirectUrl,
-            closeModal: true,
-            refreshPage: $this->refreshPage,
-            nextAction: $this->nextAction,
-            metadata: $this->metadata
+            $this->actionId,
+            $this->actionType,
+            $this->success,
+            $this->message,
+            $this->data,
+            $this->errors,
+            $this->redirectUrl,
+            true,
+            $this->refreshPage,
+            $this->nextAction,
+            $this->metadata
         );
     }
 
@@ -184,17 +209,17 @@ class ActionResponse
     public function withRefresh(): self
     {
         return new self(
-            actionId: $this->actionId,
-            actionType: $this->actionType,
-            success: $this->success,
-            message: $this->message,
-            data: $this->data,
-            errors: $this->errors,
-            redirectUrl: $this->redirectUrl,
-            closeModal: $this->closeModal,
-            refreshPage: true,
-            nextAction: $this->nextAction,
-            metadata: $this->metadata
+            $this->actionId,
+            $this->actionType,
+            $this->success,
+            $this->message,
+            $this->data,
+            $this->errors,
+            $this->redirectUrl,
+            $this->closeModal,
+            true,
+            $this->nextAction,
+            $this->metadata
         );
     }
 
@@ -224,17 +249,87 @@ class ActionResponse
     public static function fromArray(array $data): self
     {
         return new self(
-            actionId: $data['action_id'],
-            actionType: ActionTypeEnum::from($data['action_type']),
-            success: $data['success'],
-            message: $data['message'] ?? null,
-            data: $data['data'] ?? [],
-            errors: $data['errors'] ?? [],
-            redirectUrl: $data['redirect_url'] ?? null,
-            closeModal: $data['close_modal'] ?? false,
-            refreshPage: $data['refresh_page'] ?? false,
-            nextAction: $data['next_action'] ?? null,
-            metadata: $data['metadata'] ?? []
+            $data['action_id'],
+            ActionTypeEnum::from($data['action_type']),
+            $data['success'],
+            $data['message'] ?? null,
+            $data['data'] ?? [],
+            $data['errors'] ?? [],
+            $data['redirect_url'] ?? null,
+            $data['close_modal'] ?? false,
+            $data['refresh_page'] ?? false,
+            $data['next_action'] ?? null,
+            $data['metadata'] ?? []
         );
+    }
+
+    public function getActionId(): string
+    {
+        return $this->actionId;
+    }
+
+    public function getActionType(): ActionTypeEnum
+    {
+        return $this->actionType;
+    }
+
+    public function getSuccess(): bool
+    {
+        return $this->success;
+    }
+
+    public function getMessage(): ?string
+    {
+        return $this->message;
+    }
+
+    public function getData(): array
+    {
+        return $this->data;
+    }
+
+    public function getErrors(): array
+    {
+        return $this->errors;
+    }
+
+    public function getRedirectUrl(): ?string
+    {
+        return $this->redirectUrl;
+    }
+
+    public function getCloseModal(): bool
+    {
+        return $this->closeModal;
+    }
+
+    public function getRefreshPage(): bool
+    {
+        return $this->refreshPage;
+    }
+
+    public function getNextAction(): ?string
+    {
+        return $this->nextAction;
+    }
+
+    public function getMetadata(): array
+    {
+        return $this->metadata;
+    }
+
+    /**
+     * Magic getter for backward compatibility
+     */
+    public function __get(string $name)
+    {
+        $getter = 'get' . ucfirst($name);
+        if (method_exists($this, $getter)) {
+            return $this->$getter();
+        }
+        if (property_exists($this, $name)) {
+            return $this->$name;
+        }
+        throw new \InvalidArgumentException("Property {$name} does not exist");
     }
 }

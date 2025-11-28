@@ -38,6 +38,11 @@ interface MemoryDriverInterface
     ): string;
 
     /**
+     * Get conversation data
+     */
+    public function getConversation(string $conversationId): ?array;
+
+    /**
      * Clear conversation history
      */
     public function clearConversation(string $conversationId): void;

@@ -129,6 +129,20 @@ class MemoryProxy
     }
 
     /**
+     * Get conversation data
+     */
+    public function getConversation(?string $conversationId = null): ?array
+    {
+        $id = $conversationId ?? $this->conversationId;
+        
+        if (!$id) {
+            return null;
+        }
+        
+        return $this->memoryManager->getConversation($id, $this->driver);
+    }
+
+    /**
      * Clear conversation history
      */
     public function clear(): self
@@ -139,6 +153,14 @@ class MemoryProxy
         );
         
         return $this;
+    }
+
+    /**
+     * Clear specific conversation
+     */
+    public function clearConversation(string $conversationId): bool
+    {
+        return $this->memoryManager->clearConversation($conversationId, $this->driver);
     }
 
     /**

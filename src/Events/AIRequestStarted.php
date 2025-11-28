@@ -16,8 +16,16 @@ class AIRequestStarted
     public function __construct(
         public AIRequest $request,
         public string $requestId,
+        public ?string $userId = null,
         public array $metadata = []
-    ) {}
+    ) {
+        // Set convenience properties from request
+        $this->engine = $request->getEngine()->value;
+        $this->model = $request->getModel()->value;
+    }
+    
+    public string $engine;
+    public string $model;
 
     /**
      * Get the channels the event should broadcast on.

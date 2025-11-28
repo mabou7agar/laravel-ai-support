@@ -70,7 +70,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
     public function validateRequest(AIRequest $request): bool
     {
         // Check if the prompt is empty
-        if (empty($request->prompt)) {
+        if (empty($request->getPrompt())) {
             throw new AIEngineException('Prompt is required');
         }
 
@@ -84,8 +84,8 @@ class OpenAIEngineDriver extends BaseEngineDriver
             EntityEnum::WHISPER_1,
         ];
 
-        if (!in_array($request->model, $supportedModels)) {
-            throw new AIEngineException('Unsupported model: ' . $request->model->value . ' for engine: ' . $this->getEngine()->value);
+        if (!in_array($request->getModel()->value, $supportedModels)) {
+            throw new AIEngineException('Unsupported model: ' . $request->getModel()->value . ' for engine: ' . $this->getEngine()->value);
         }
 
         return true;
@@ -96,7 +96,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::OPENAI;
+        return EngineEnum::from(EngineEnum::OPENAI);
     }
 
     /**
@@ -110,14 +110,12 @@ class OpenAIEngineDriver extends BaseEngineDriver
     /**
      * Test the engine connection
      */
-    public function test(): bool
+    public function testConnection(): bool
     {
-        try {
-            $this->openAIClient->models()->list();
-            return true;
-        } catch (\Exception $e) {
-            return false;
-        }
+        return $this->safeConnectionTest(
+            AIRequest::create('test'),
+            fn() => $this->openAIClient->models()->list()
+        );
     }
 
     /**
@@ -126,41 +124,25 @@ class OpenAIEngineDriver extends BaseEngineDriver
     public function generateText(AIRequest $request): AIResponse
     {
         try {
-            $messages = $this->buildMessages($request);
+            $this->logApiRequest('generateText', $request);
             
-            $response = $this->openAIClient->chat()->create([
-                'model' => $request->model->value,
-                'messages' => $messages,
-                'max_tokens' => $request->maxTokens,
-                'temperature' => $request->temperature ?? 0.7,
+            $messages = $this->buildMessages($request);
+            $payload = $this->buildChatPayload($request, $messages, [
                 'seed' => $request->seed,
             ]);
-
+            
+            $response = $this->openAIClient->chat()->create($payload);
             $content = $response->choices[0]->message->content;
-            $tokensUsed = $response->usage->totalTokens ?? $this->calculateTokensUsed($content);
 
-            return AIResponse::success(
+            return $this->buildSuccessResponse(
                 $content,
-                $request->engine,
-                $request->model
-            )->withUsage(
-                tokensUsed: $tokensUsed,
-                creditsUsed: $tokensUsed * $request->model->creditIndex()
-            )->withRequestId($response->id ?? null)
-             ->withFinishReason($response->choices[0]->finishReason ?? null);
+                $request,
+                $response->toArray(),
+                'openai'
+            );
 
-        } catch (RequestException $e) {
-            return AIResponse::error(
-                'OpenAI API error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
-            );
         } catch (\Exception $e) {
-            return AIResponse::error(
-                'Unexpected error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
-            );
+            return $this->handleApiError($e, $request, 'text generation');
         }
     }
 
@@ -362,27 +344,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     private function buildMessages(AIRequest $request): array
     {
-        $messages = [];
-
-        // Add system message if provided
-        if ($request->systemPrompt) {
-            $messages[] = [
-                'role' => 'system',
-                'content' => $request->systemPrompt,
-            ];
-        }
-
-        // Add conversation history if provided
-        if (!empty($request->messages)) {
-            $messages = array_merge($messages, $request->messages);
-        }
-
-        // Add the main prompt
-        $messages[] = [
-            'role' => 'user',
-            'content' => $request->prompt,
-        ];
-
-        return $messages;
+        // Use centralized method from BaseEngineDriver
+        return $this->buildStandardMessages($request);
     }
 }
