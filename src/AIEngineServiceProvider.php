@@ -309,6 +309,7 @@ class AIEngineServiceProvider extends ServiceProvider
         
         // Load routes
         $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
+        $this->loadRoutesFrom(__DIR__.'/../routes/auth.php');
         
         // Load demo routes conditionally (safe for config cache)
         if (config('ai-engine.enable_demo_routes', false)) {
