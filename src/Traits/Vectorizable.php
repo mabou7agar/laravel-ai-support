@@ -30,13 +30,18 @@ trait Vectorizable
 {
     /**
      * Boot the Vectorizable trait for a model.
-     * This automatically registers the VectorIndexObserver.
+     * This automatically registers observers.
      */
     public static function bootVectorizable(): void
     {
-        // Only register observer if auto_index is enabled
+        // Register VectorIndexObserver if auto_index is enabled
         if (config('ai-engine.vector.auto_index', false)) {
             static::observe(\LaravelAIEngine\Observers\VectorIndexObserver::class);
+        }
+        
+        // Register ContextLimitationObserver if auto_update_limitations is enabled
+        if (config('ai-engine.rag.auto_update_limitations', true)) {
+            static::observe(\LaravelAIEngine\Observers\ContextLimitationObserver::class);
         }
     }
 

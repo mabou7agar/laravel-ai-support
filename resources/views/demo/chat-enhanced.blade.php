@@ -5,100 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title ?? 'AI Chat Assistant' }}</title>
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
+
     <style>
         [x-cloak] { display: none !important; }
-        
+
         .message-fade-in {
             animation: fadeIn 0.3s ease-in;
         }
-        
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        
+
         .typing-dot {
             animation: typing 1.4s infinite;
         }
-        
+
         .typing-dot:nth-child(2) {
             animation-delay: 0.2s;
         }
-        
+
         .typing-dot:nth-child(3) {
             animation-delay: 0.4s;
         }
-        
+
         @keyframes typing {
             0%, 60%, 100% { opacity: 0.3; }
             30% { opacity: 1; }
         }
-        
+
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
-        
+
         .glass-effect {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
-        }
-        
-        /* Option Cards */
-        .options-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 12px;
-            margin-top: 16px;
-        }
-        
-        .option-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            padding: 16px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border: 2px solid transparent;
-            position: relative;
-        }
-        
-        .option-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-        
-        .option-number {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 50%;
-            font-weight: 700;
-            font-size: 16px;
-            color: white;
-            margin-bottom: 8px;
-        }
-        
-        .option-text {
-            color: white;
-            font-size: 15px;
-            font-weight: 500;
-            line-height: 1.5;
-        }
-        
-        @media (max-width: 768px) {
-            .options-grid {
-                grid-template-columns: 1fr;
-            }
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
     </style>
 </head>
@@ -119,7 +69,7 @@
                             <p class="text-sm text-purple-100">Powered by Laravel AI Engine</p>
                         </div>
                     </div>
-                    
+
                     <div class="flex items-center space-x-4">
                         <!-- User Info -->
                         <div x-show="isAuthenticated" class="glass-effect rounded-lg px-4 py-2 text-sm">
@@ -131,7 +81,7 @@
                                 <span class="font-bold" x-text="userId"></span>
                             </div>
                         </div>
-                        
+
                         <!-- Memory Stats -->
                         <div x-show="isAuthenticated" class="glass-effect rounded-lg px-4 py-2 text-sm">
                             <div class="flex items-center space-x-4">
@@ -145,9 +95,9 @@
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Logout Button -->
-                        <button 
+                        <button
                             x-show="isAuthenticated"
                             @click="logout()"
                             class="glass-effect rounded-lg px-4 py-2 text-sm font-medium hover:bg-white hover:bg-opacity-20 transition-all"
@@ -165,7 +115,7 @@
         </header>
 
         <!-- Authentication Modal -->
-        <div x-show="showAuthModal" 
+        <div x-show="showAuthModal"
              x-cloak
              class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
              @click.self="showAuthModal = false">
@@ -185,8 +135,8 @@
                         <label for="userId" class="block text-sm font-medium text-gray-700 mb-2">
                             User ID
                         </label>
-                        <input 
-                            type="text" 
+                        <input
+                            type="text"
                             id="userId"
                             x-model="userId"
                             placeholder="Enter your user ID"
@@ -200,7 +150,7 @@
                         <span x-text="authError"></span>
                     </div>
 
-                    <button 
+                    <button
                         type="submit"
                         class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-3 px-4 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
                     >
@@ -219,7 +169,7 @@
         <!-- Main Content -->
         <div x-show="isAuthenticated" class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
-                
+
                 <!-- Sidebar - Available Actions -->
                 <div class="lg:col-span-1 space-y-4">
                     <!-- Settings Panel -->
@@ -231,7 +181,7 @@
                             </svg>
                             Settings
                         </h3>
-                        
+
                         <div class="space-y-3">
                             <!-- Memory Toggle -->
                             <label class="flex items-center justify-between cursor-pointer">
@@ -245,7 +195,7 @@
                             <!-- RAG Mode Toggle -->
                             <div class="space-y-2">
                                 <label class="text-sm font-medium text-gray-700 block">RAG Mode</label>
-                                
+
                                 <!-- Intelligent RAG Option -->
                                 <label class="flex items-center justify-between cursor-pointer p-3 border rounded-lg" :class="!forceRAG ? 'bg-purple-50 border-purple-300' : 'bg-gray-50 border-gray-200'">
                                     <div class="flex items-center space-x-2">
@@ -293,10 +243,10 @@
                             </svg>
                             Available Actions
                         </h3>
-                        
+
                         <div class="space-y-2 max-h-64 overflow-y-auto">
                             <template x-for="action in availableActions" :key="action.id">
-                                <button 
+                                <button
                                     @click="suggestAction(action)"
                                     class="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-50 transition-colors border border-gray-200"
                                 >
@@ -317,7 +267,7 @@
                 <!-- Chat Area -->
                 <div class="lg:col-span-3">
                     <div class="bg-white rounded-lg shadow-md flex flex-col h-[calc(100vh-200px)]">
-                        
+
                         <!-- Chat Messages -->
                         <div class="flex-1 overflow-y-auto p-6 space-y-4" x-ref="messagesContainer">
                             <!-- Welcome Message -->
@@ -344,27 +294,27 @@
 
                             <!-- Messages -->
                             <template x-for="(message, index) in messages" :key="index">
-                                <div 
+                                <div
                                     class="flex items-start space-x-3 message-fade-in"
                                     :class="message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''"
                                 >
-                                    <div 
+                                    <div
                                         class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
                                         :class="message.role === 'user' ? 'bg-blue-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'"
                                     >
                                         <span x-text="message.role === 'user' ? 'You' : 'AI'"></span>
                                     </div>
-                                    <div 
+                                    <div
                                         class="flex-1 rounded-lg p-4 max-w-3xl"
                                         :class="message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'"
                                     >
                                         <p class="whitespace-pre-wrap" x-html="formatMessage(message.content, message.numbered_options)"></p>
-                                        
+
                                         <!-- Option Cards -->
                                         <template x-if="message.numbered_options && message.numbered_options.length > 0">
                                             <div class="options-grid">
                                                 <template x-for="option in message.numbered_options" :key="option.number">
-                                                    <div 
+                                                    <div
                                                         class="option-card"
                                                         @click="selectOption(option.text)"
                                                     >
@@ -374,12 +324,12 @@
                                                 </template>
                                             </div>
                                         </template>
-                                        
+
                                         <!-- Actions -->
                                         <template x-if="message.actions && message.actions.length > 0">
                                             <div class="mt-3 flex flex-wrap gap-2">
                                                 <template x-for="action in message.actions" :key="action.id">
-                                                    <button 
+                                                    <button
                                                         @click="executeAction(action)"
                                                         class="px-3 py-1 text-xs rounded-full border transition-colors"
                                                         :class="message.role === 'user' ? 'border-white text-white hover:bg-white hover:text-blue-500' : 'border-purple-500 text-purple-600 hover:bg-purple-500 hover:text-white'"
@@ -411,7 +361,7 @@
                         <div class="border-t border-gray-200 p-4">
                             <form @submit.prevent="sendMessage" class="flex items-end space-x-3">
                                 <div class="flex-1">
-                                    <textarea 
+                                    <textarea
                                         x-model="currentMessage"
                                         @keydown.enter.prevent="if(!$event.shiftKey) sendMessage()"
                                         placeholder="Type your message... (Shift+Enter for new line)"
@@ -420,7 +370,7 @@
                                         :disabled="isTyping"
                                     ></textarea>
                                 </div>
-                                <button 
+                                <button
                                     type="submit"
                                     :disabled="!currentMessage.trim() || isTyping"
                                     class="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
@@ -430,7 +380,7 @@
                                     </svg>
                                 </button>
                             </form>
-                            
+
                             <!-- Quick Actions -->
                             <div class="mt-3 flex items-center justify-between text-sm text-gray-500">
                                 <div class="flex space-x-4">
@@ -470,7 +420,7 @@
                     estimated_tokens: 0
                 },
                 contextSummary: 'No conversation yet',
-                
+
                 // Authentication
                 isAuthenticated: false,
                 showAuthModal: false,
@@ -482,7 +432,7 @@
                     // Check if already authenticated
                     const storedToken = localStorage.getItem('ai_demo_token');
                     const storedUserId = localStorage.getItem('ai_demo_user_id');
-                    
+
                     if (storedToken && storedUserId) {
                         this.authToken = storedToken;
                         this.userId = storedUserId;
@@ -492,20 +442,20 @@
                     } else {
                         this.showAuthModal = true;
                     }
-                    
+
                     if (this.isAuthenticated) {
                         await this.loadAvailableActions();
                         await this.updateMemoryStats();
                         await this.loadHistory();
                     }
                 },
-                
+
                 async authenticate() {
                     if (!this.userId.trim()) {
                         this.authError = 'Please enter a user ID';
                         return;
                     }
-                    
+
                     try {
                         const response = await fetch('/api/auth/token', {
                             method: 'POST',
@@ -517,22 +467,22 @@
                                 user_id: this.userId
                             })
                         });
-                        
+
                         const data = await response.json();
-                        
+
                         if (data.success && data.token) {
                             this.authToken = data.token;
                             this.isAuthenticated = true;
                             this.showAuthModal = false;
                             this.authError = '';
-                            
+
                             // Store in localStorage
                             localStorage.setItem('ai_demo_token', data.token);
                             localStorage.setItem('ai_demo_user_id', this.userId);
-                            
+
                             // Update session ID with user ID
                             this.sessionId = `user-${this.userId}-session`;
-                            
+
                             await this.loadAvailableActions();
                             await this.updateMemoryStats();
                         } else {
@@ -543,28 +493,28 @@
                         this.authError = 'Failed to authenticate. Please try again.';
                     }
                 },
-                
+
                 logout() {
                     this.isAuthenticated = false;
                     this.authToken = null;
                     this.userId = '';
                     this.messages = [];
                     this.showAuthModal = true;
-                    
+
                     localStorage.removeItem('ai_demo_token');
                     localStorage.removeItem('ai_demo_user_id');
                 },
-                
+
                 getAuthHeaders() {
                     const headers = {
                         'Content-Type': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
                     };
-                    
+
                     if (this.authToken) {
                         headers['Authorization'] = `Bearer ${this.authToken}`;
                     }
-                    
+
                     return headers;
                 },
 
@@ -720,7 +670,7 @@
                     this.currentMessage = value;
                     this.sendMessage();
                 },
-                
+
                 stripMarkdown(text) {
                     // Remove markdown formatting from text
                     return text
@@ -733,7 +683,7 @@
 
                 formatMessage(content, numberedOptions = []) {
                     let formatted = content;
-                    
+
                     // Remove numbered options from content if they exist
                     if (numberedOptions && numberedOptions.length > 0) {
                         numberedOptions.forEach(option => {
@@ -743,7 +693,7 @@
                         // Clean up extra newlines
                         formatted = formatted.replace(/\n{3,}/g, '\n\n').trim();
                     }
-                    
+
                     // Basic markdown-like formatting
                     return formatted
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')

@@ -566,6 +566,42 @@ return [
             'max_context_items' => env('VECTOR_RAG_MAX_CONTEXT', 5),
             'include_sources' => env('VECTOR_RAG_INCLUDE_SOURCES', true),
             'min_relevance_score' => env('VECTOR_RAG_MIN_SCORE', 0.5),
+            
+            // Dynamic Context Limitations
+            'auto_update_limitations' => env('RAG_AUTO_UPDATE_LIMITATIONS', true),
+            'limitations_cache_ttl' => env('RAG_LIMITATIONS_CACHE_TTL', 300), // 5 minutes
+            
+            // Access Level Limits
+            'access_levels' => [
+                'admin' => [
+                    'max_results' => 20,
+                    'max_tokens' => 8000,
+                    'time_range_days' => null, // unlimited
+                ],
+                'premium' => [
+                    'max_results' => 15,
+                    'max_tokens' => 6000,
+                    'time_range_days' => null,
+                ],
+                'basic' => [
+                    'max_results' => 10,
+                    'max_tokens' => 4000,
+                    'time_range_days' => 30,
+                ],
+                'guest' => [
+                    'max_results' => 5,
+                    'max_tokens' => 2000,
+                    'time_range_days' => 7,
+                ],
+            ],
+            
+            // Data Volume Adjustments
+            'volume_thresholds' => [
+                'low' => 100,      // < 100 records
+                'medium' => 1000,  // < 1,000 records
+                'high' => 10000,   // < 10,000 records
+                // >= 10,000 = very_high
+            ],
         ],
 
         // Authorization & Security
