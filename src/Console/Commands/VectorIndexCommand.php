@@ -81,15 +81,37 @@ class VectorIndexCommand extends Command
     protected function discoverVectorizableModels(): array
     {
         $models = [];
-        $modelsPath = app_path('Models');
         
-        if (!is_dir($modelsPath)) {
-            return $models;
+        // Define paths to scan for models
+        $searchPaths = [
+            app_path('Models'),           // app/Models
+            base_path('modules'),         // modules/*/Models
+            base_path('Modules'),         // Modules/*/Models (capitalized)
+            app_path(),                   // app/* (for custom structures)
+        ];
+        
+        foreach ($searchPaths as $basePath) {
+            if (!is_dir($basePath)) {
+                continue;
+            }
+            
+            $models = array_merge($models, $this->scanPathForVectorizableModels($basePath));
         }
         
-        $files = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($modelsPath)
-        );
+        return array_unique($models);
+    }
+
+    protected function scanPathForVectorizableModels(string $basePath): array
+    {
+        $models = [];
+        
+        try {
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($basePath, \RecursiveDirectoryIterator::SKIP_DOTS)
+            );
+        } catch (\Exception $e) {
+            return $models;
+        }
         
         foreach ($files as $file) {
             if ($file->isFile() && $file->getExtension() === 'php') {
@@ -100,16 +122,34 @@ class VectorIndexCommand extends Command
                 if (preg_match('/use\s+LaravelAIEngine\\\\Traits\\\\Vectorizable\s*;/i', $content) ||
                     preg_match('/use\s+Vectorizable\s*;/i', $content)) {
                     
-                    // Extract namespace and class name
-                    $relativePath = str_replace($modelsPath . '/', '', $file->getPathname());
-                    $className = 'App\\Models\\' . str_replace(['/', '.php'], ['\\', ''], $relativePath);
+                    // Extract the fully qualified class name from the file
+                    $className = $this->extractClassNameFromFile($file->getPathname(), $content);
                     
-                    $models[] = $className;
+                    if ($className) {
+                        $models[] = $className;
+                    }
                 }
             }
         }
         
         return $models;
+    }
+
+    protected function extractClassNameFromFile(string $filePath, string $content): ?string
+    {
+        // Extract namespace
+        if (preg_match('/namespace\s+([^;]+);/', $content, $namespaceMatches)) {
+            $namespace = trim($namespaceMatches[1]);
+            
+            // Extract class name
+            if (preg_match('/class\s+(\w+)/', $content, $classMatches)) {
+                $className = trim($classMatches[1]);
+                
+                return $namespace . '\\' . $className;
+            }
+        }
+        
+        return null;
     }
 
     protected function indexModel(string $modelClass, VectorSearchService $vectorSearch, bool $showHeader = true): int
