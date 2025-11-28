@@ -89,6 +89,7 @@ trait Vectorizable
      */
     public function getVectorContent(): string
     {
+        // If vectorizable is explicitly set, use it
         if (!empty($this->vectorizable)) {
             $content = [];
             
@@ -101,7 +102,22 @@ trait Vectorizable
             return implode(' ', $content);
         }
 
-        // Default behavior: use common text fields
+        // Auto-detect vectorizable fields if not set
+        $autoFields = $this->autoDetectVectorizableFields();
+        
+        if (!empty($autoFields)) {
+            $content = [];
+            
+            foreach ($autoFields as $field) {
+                if (isset($this->$field)) {
+                    $content[] = $this->$field;
+                }
+            }
+            
+            return implode(' ', $content);
+        }
+
+        // Fallback: use common text fields
         $commonFields = ['title', 'name', 'content', 'description', 'body', 'text'];
         $content = [];
         
@@ -112,6 +128,207 @@ trait Vectorizable
         }
 
         return implode(' ', $content);
+    }
+
+    /**
+     * Auto-detect which fields should be vectorized using AI
+     * 
+     * @return array
+     */
+    protected function autoDetectVectorizableFields(): array
+    {
+        // Check cache first
+        $cacheKey = 'vectorizable_fields_' . $this->getTable();
+        
+        if (\Cache::has($cacheKey)) {
+            return \Cache::get($cacheKey);
+        }
+
+        try {
+            // Get table columns
+            $columns = \Schema::getColumnListing($this->getTable());
+            
+            if (empty($columns)) {
+                return [];
+            }
+
+            // Get column types
+            $columnInfo = [];
+            foreach ($columns as $column) {
+                try {
+                    $type = \Schema::getColumnType($this->getTable(), $column);
+                    $columnInfo[$column] = $type;
+                } catch (\Exception $e) {
+                    // Skip columns that cause errors
+                    continue;
+                }
+            }
+
+            // Filter to text-based columns only
+            $textColumns = array_filter($columnInfo, function($type, $column) {
+                // Skip common non-vectorizable columns
+                $skipColumns = ['id', 'created_at', 'updated_at', 'deleted_at', 'password', 'remember_token', 'email_verified_at'];
+                if (in_array($column, $skipColumns)) {
+                    return false;
+                }
+                
+                // Include text-based types
+                $textTypes = ['string', 'text', 'longtext', 'mediumtext', 'varchar', 'char'];
+                return in_array(strtolower($type), $textTypes);
+            }, ARRAY_FILTER_USE_BOTH);
+
+            $textColumnNames = array_keys($textColumns);
+
+            // If no text columns found, return empty
+            if (empty($textColumnNames)) {
+                return [];
+            }
+
+            // Use AI to decide which fields to vectorize
+            $selectedFields = $this->useAIToSelectFields($textColumnNames, $columnInfo);
+
+            // Cache for 24 hours
+            \Cache::put($cacheKey, $selectedFields, now()->addDay());
+
+            return $selectedFields;
+
+        } catch (\Exception $e) {
+            \Log::warning('Failed to auto-detect vectorizable fields', [
+                'model' => get_class($this),
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Use AI to intelligently select which fields should be vectorized
+     * 
+     * @param array $textColumns
+     * @param array $columnInfo
+     * @return array
+     */
+    protected function useAIToSelectFields(array $textColumns, array $columnInfo): array
+    {
+        try {
+            $modelClass = get_class($this);
+            $tableName = $this->getTable();
+
+            // Build column description
+            $columnDescriptions = [];
+            foreach ($textColumns as $column) {
+                $type = $columnInfo[$column] ?? 'unknown';
+                $columnDescriptions[] = "- {$column} ({$type})";
+            }
+
+            $prompt = <<<PROMPT
+You are analyzing a database table to determine which text fields should be included in vector search indexing.
+
+Model: {$modelClass}
+Table: {$tableName}
+
+Available text columns:
+{implode("\n", $columnDescriptions)}
+
+Task: Select which columns should be vectorized for semantic search. Consider:
+1. Fields containing meaningful text content (descriptions, messages, titles, names, etc.)
+2. Fields users would want to search by semantic meaning
+3. Exclude: IDs, tokens, hashes, technical codes, URLs (unless they're the main content)
+4. Include: Subject lines, body text, names, descriptions, comments, messages, titles
+
+Respond with ONLY a JSON array of column names, nothing else.
+Example: ["subject", "body", "description"]
+
+Selected columns:
+PROMPT;
+
+            // Use AI to analyze
+            $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                engine: new \LaravelAIEngine\Enums\EngineEnum(config('ai-engine.default', 'openai')),
+                model: new \LaravelAIEngine\Enums\EntityEnum('gpt-4o-mini')
+            );
+
+            $response = app(\LaravelAIEngine\Services\AIEngineManager::class)->processRequest($aiRequest);
+            $content = trim($response->getContent());
+
+            // Extract JSON from response
+            if (preg_match('/\[.*\]/s', $content, $matches)) {
+                $selectedFields = json_decode($matches[0], true);
+                
+                if (is_array($selectedFields)) {
+                    // Validate that selected fields exist in our text columns
+                    $validFields = array_intersect($selectedFields, $textColumns);
+                    
+                    if (!empty($validFields)) {
+                        \Log::info('AI selected vectorizable fields', [
+                            'model' => $modelClass,
+                            'fields' => $validFields
+                        ]);
+                        return array_values($validFields);
+                    }
+                }
+            }
+
+            // Fallback: use heuristic selection
+            return $this->heuristicFieldSelection($textColumns);
+
+        } catch (\Exception $e) {
+            \Log::warning('AI field selection failed, using heuristic', [
+                'model' => get_class($this),
+                'error' => $e->getMessage()
+            ]);
+            
+            return $this->heuristicFieldSelection($textColumns);
+        }
+    }
+
+    /**
+     * Heuristic-based field selection as fallback
+     * 
+     * @param array $textColumns
+     * @return array
+     */
+    protected function heuristicFieldSelection(array $textColumns): array
+    {
+        $priorityPatterns = [
+            '/^(subject|title|name|heading)$/i' => 10,
+            '/^(body|content|text|message|description|summary)$/i' => 9,
+            '/^(comment|note|remark|caption)$/i' => 8,
+            '/_?(text|content|body|description)$/i' => 7,
+            '/^(from|to)_?(name|address)$/i' => 6,
+        ];
+
+        $scoredFields = [];
+        
+        foreach ($textColumns as $column) {
+            $score = 0;
+            
+            foreach ($priorityPatterns as $pattern => $points) {
+                if (preg_match($pattern, $column)) {
+                    $score = max($score, $points);
+                }
+            }
+            
+            if ($score > 0) {
+                $scoredFields[$column] = $score;
+            }
+        }
+
+        // Sort by score descending
+        arsort($scoredFields);
+
+        // Take top fields (max 5 to avoid too much content)
+        $selectedFields = array_slice(array_keys($scoredFields), 0, 5);
+
+        if (!empty($selectedFields)) {
+            \Log::info('Heuristic selected vectorizable fields', [
+                'model' => get_class($this),
+                'fields' => $selectedFields
+            ]);
+        }
+
+        return $selectedFields;
     }
 
     /**
