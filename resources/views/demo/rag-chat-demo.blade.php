@@ -146,13 +146,21 @@
                 :memory="true"
                 :actions="true"
                 :useIntelligentRAG="true"
-                :ragCollections="['App\\Models\\Post']"
+                :ragCollections="[]"
                 placeholder="Ask me about Laravel..."
                 :showSources="true"
                 :showActions="true"
                 :showOptions="true"
             />
         </div>
+        
+        {{-- 
+            Note: ragCollections is set to [] for auto-discovery.
+            The system will automatically find models with Vectorizable trait.
+            
+            To manually specify collections, use:
+            :ragCollections="['App\\Models\\YourModel']"
+        --}}
     </div>
 </body>
 </html>
