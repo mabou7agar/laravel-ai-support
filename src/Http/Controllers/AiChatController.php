@@ -31,8 +31,31 @@ class AiChatController extends Controller
         protected RAGCollectionDiscovery $ragDiscovery,
         protected VectorAuthorizationService $authService
     ) {
-        // Apply auth middleware to protected routes
-        $this->middleware('auth:sanctum')->except(['index', 'rag', 'getEngines']);
+        // Apply auth middleware only if Sanctum or JWT is available
+        $this->applyAuthMiddleware();
+    }
+    
+    /**
+     * Apply authentication middleware if available
+     */
+    protected function applyAuthMiddleware(): void
+    {
+        $guards = config('auth.guards', []);
+        
+        // Check if Sanctum is available
+        if (isset($guards['sanctum'])) {
+            $this->middleware('auth:sanctum')->except(['index', 'rag', 'getEngines']);
+            return;
+        }
+        
+        // Check if JWT is available
+        if (isset($guards['jwt']) || isset($guards['api'])) {
+            $guard = isset($guards['jwt']) ? 'jwt' : 'api';
+            $this->middleware("auth:{$guard}")->except(['index', 'rag', 'getEngines']);
+            return;
+        }
+        
+        // No authentication guard available - skip middleware
     }
     /**
      * Display the enhanced chat demo
