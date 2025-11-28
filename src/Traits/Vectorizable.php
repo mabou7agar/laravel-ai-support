@@ -66,6 +66,24 @@ trait Vectorizable
     protected int $ragPriority = 50;
 
     /**
+     * Get the collection name for vector storage
+     * Override this method for custom collection names
+     * 
+     * @return string
+     */
+    public function getVectorCollectionName(): string
+    {
+        // Use table name as collection name by default
+        if (property_exists($this, 'table') && !empty($this->table)) {
+            return $this->table;
+        }
+        
+        // Fallback to class name
+        $className = class_basename($this);
+        return strtolower(str_replace('\\', '_', $className));
+    }
+
+    /**
      * Get content to be vectorized
      * Override this method for custom content generation
      */
