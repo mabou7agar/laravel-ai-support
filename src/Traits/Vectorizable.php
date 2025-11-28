@@ -29,6 +29,16 @@ use LaravelAIEngine\DTOs\AIResponse;
 trait Vectorizable
 {
     /**
+     * Boot the Vectorizable trait
+     * Automatically registers this model in the VectorizableModelsRegistry
+     */
+    protected static function bootVectorizable(): void
+    {
+        // Register this model class in the global registry
+        \LaravelAIEngine\Services\VectorizableModelsRegistry::register(static::class);
+    }
+
+    /**
      * Define which fields should be vectorized
      * Override this in your model
      */
