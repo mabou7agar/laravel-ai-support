@@ -465,6 +465,8 @@
                         this.authToken = storedToken;
                         this.userId = storedUserId;
                         this.isAuthenticated = true;
+                        // Update session ID with user ID
+                        this.sessionId = `user-${storedUserId}-session`;
                     } else {
                         this.showAuthModal = true;
                     }
@@ -472,6 +474,7 @@
                     if (this.isAuthenticated) {
                         await this.loadAvailableActions();
                         await this.updateMemoryStats();
+                        await this.loadHistory();
                     }
                 },
                 
@@ -606,7 +609,9 @@
 
                 async loadAvailableActions() {
                     try {
-                        const response = await fetch('/ai-demo/chat/actions');
+                        const response = await fetch('/ai-demo/chat/actions', {
+                            headers: this.getAuthHeaders()
+                        });
                         const data = await response.json();
                         if (data.success) {
                             this.availableActions = data.actions.slice(0, 10);
@@ -618,7 +623,9 @@
 
                 async updateMemoryStats() {
                     try {
-                        const response = await fetch(`/ai-demo/chat/memory-stats/${this.sessionId}`);
+                        const response = await fetch(`/ai-demo/chat/memory-stats/${this.sessionId}`, {
+                            headers: this.getAuthHeaders()
+                        });
                         const data = await response.json();
                         if (data.success) {
                             this.memoryStats = data.stats;
@@ -630,7 +637,9 @@
 
                 async updateContextSummary() {
                     try {
-                        const response = await fetch(`/ai-demo/chat/context-summary/${this.sessionId}`);
+                        const response = await fetch(`/ai-demo/chat/context-summary/${this.sessionId}`, {
+                            headers: this.getAuthHeaders()
+                        });
                         const data = await response.json();
                         if (data.success) {
                             this.contextSummary = data.summary;
@@ -646,10 +655,7 @@
                     try {
                         await fetch('/ai-demo/chat/clear', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                            },
+                            headers: this.getAuthHeaders(),
                             body: JSON.stringify({
                                 session_id: this.sessionId
                             })
@@ -665,7 +671,9 @@
 
                 async loadHistory() {
                     try {
-                        const response = await fetch(`/ai-demo/chat/history/${this.sessionId}`);
+                        const response = await fetch(`/ai-demo/chat/history/${this.sessionId}`, {
+                            headers: this.getAuthHeaders()
+                        });
                         const data = await response.json();
                         if (data.success && data.messages.length > 0) {
                             this.messages = data.messages;
