@@ -19,6 +19,7 @@ use LaravelAIEngine\Services\DynamicActionService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use LaravelAIEngine\DTOs\InteractiveAction;
 use LaravelAIEngine\Enums\ActionTypeEnum;
+use LaravelAIEngine\Services\Vector\VectorAuthorizationService;
 
 class AiChatController extends Controller
 {
@@ -27,8 +28,12 @@ class AiChatController extends Controller
         protected ConversationService $conversationService,
         protected ActionService $actionService,
         protected DynamicActionService $dynamicActionService,
-        protected RAGCollectionDiscovery $ragDiscovery
-    ) {}
+        protected RAGCollectionDiscovery $ragDiscovery,
+        protected VectorAuthorizationService $authService
+    ) {
+        // Apply auth middleware to protected routes
+        $this->middleware('auth:sanctum')->except(['index', 'rag', 'getEngines']);
+    }
     /**
      * Display the enhanced chat demo
      */
@@ -217,6 +222,16 @@ class AiChatController extends Controller
     public function getHistory(string $sessionId, Request $request): JsonResponse
     {
         try {
+            // Authorization: Check if user owns this session
+            $userId = $request->user()?->id ?? $request->input('user_id');
+            
+            if ($userId && !$this->canAccessSession($userId, $sessionId)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthorized access to this conversation',
+                ], 403);
+            }
+
             $limit = $request->input('limit', 50);
 
             // Get conversation history using ConversationService
@@ -251,6 +266,16 @@ class AiChatController extends Controller
     {
         try {
             $dto = $request->toDTO();
+            
+            // Authorization: Check if user owns this session
+            $userId = $request->user()?->id ?? $dto->userId;
+            
+            if ($userId && !$this->canAccessSession($userId, $dto->sessionId)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthorized: Cannot clear this conversation',
+                ], 403);
+            }
 
             // Clear conversation using ConversationService
             $cleared = $this->conversationService->clearConversation($dto->sessionId);
@@ -510,9 +535,19 @@ class AiChatController extends Controller
     /**
      * Get conversation context summary
      */
-    public function getContextSummary(string $sessionId): JsonResponse
+    public function getContextSummary(string $sessionId, Request $request): JsonResponse
     {
         try {
+            // Authorization: Check if user owns this session
+            $userId = $request->user()?->id ?? $request->input('user_id');
+            
+            if ($userId && !$this->canAccessSession($userId, $sessionId)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthorized access to this conversation',
+                ], 403);
+            }
+
             $messages = $this->conversationService->getConversationHistory($sessionId, 50);
             
             if (empty($messages)) {
@@ -543,5 +578,38 @@ class AiChatController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Check if user can access a session
+     */
+    protected function canAccessSession(string $userId, string $sessionId): bool
+    {
+        // Session ID format: user-{userId}-{timestamp} or custom format
+        // Check if session belongs to user
+        if (str_contains($sessionId, "user-{$userId}-")) {
+            return true;
+        }
+        
+        // Check if session is stored with user metadata
+        try {
+            $conversation = $this->conversationService->getConversation($sessionId);
+            if ($conversation && isset($conversation['user_id'])) {
+                return $conversation['user_id'] == $userId;
+            }
+        } catch (\Exception $e) {
+            \Log::warning("Failed to check session ownership: {$e->getMessage()}");
+        }
+        
+        // Allow access if authorization is disabled
+        return config('ai-engine.chat.authorization.enabled', false) === false;
+    }
+
+    /**
+     * Check if user can access RAG collection
+     */
+    protected function canAccessRAGCollection(string $userId, string $collectionName): bool
+    {
+        return $this->authService->canAccessCollection($userId, $collectionName);
     }
 }
