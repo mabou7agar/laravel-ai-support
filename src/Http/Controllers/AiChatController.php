@@ -40,56 +40,12 @@ class AiChatController extends Controller
     }
 
     /**
-     * Display the basic chat demo
-     */
-    public function basic()
-    {
-        return view('ai-engine::demo.chat', [
-            'title' => 'AI Chat Demo',
-            'enableRAG' => false,
-        ]);
-    }
-
-    /**
      * Display the RAG chat demo
      */
     public function rag()
     {
-        return view('ai-engine::demo.chat-rag', [
+        return view('ai-engine::demo.rag-chat-demo', [
             'title' => 'RAG Chat Demo',
-            'enableRAG' => true,
-        ]);
-    }
-
-    /**
-     * Display the voice chat demo
-     */
-    public function voice()
-    {
-        return view('ai-engine::demo.chat-voice', [
-            'title' => 'Voice Chat Demo',
-            'enableVoice' => true,
-        ]);
-    }
-
-    /**
-     * Display the multi-modal chat demo
-     */
-    public function multimodal()
-    {
-        return view('ai-engine::demo.chat-multimodal', [
-            'title' => 'Multi-Modal Chat Demo',
-            'enableFileUpload' => true,
-        ]);
-    }
-
-    /**
-     * Display the vector search demo
-     */
-    public function vectorSearch()
-    {
-        return view('ai-engine::demo.vector-search', [
-            'title' => 'Vector Search Demo',
         ]);
     }
 
