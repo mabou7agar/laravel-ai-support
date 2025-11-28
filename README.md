@@ -89,13 +89,17 @@ $cheapest = $registry
 - **OpenRouter** - 🔥 **150+ models** from all major providers (GPT-5, Claude 4, Llama 3.3, Grok 2, etc.)
 - **Automatic Failover** - Seamless switching between providers
 
-### 🔍 Intelligent RAG & Vector Search (NEW v2.1!)
+### 🔍 Intelligent RAG & Vector Search (NEW v2.2!)
 - **🤖 Intelligent RAG** - AI autonomously decides when to search knowledge base
-- **🔗 Relationship Indexing** - Index models with their relationships for richer context
-- **🔍 Auto-Detection** - Automatically detect indexable fields and relationships
+- **🎯 Dynamic Context Limitations** - Auto-adjusts based on data volume and user permissions
+- **🔄 Real-time Updates** - Observer-based cache invalidation on data changes
+- **🔗 Deep Relationship Traversal** - Index nested relationships (depth 1-3)
+- **🔍 Auto-Detection** - Automatically detect indexable fields using AI
+- **📏 Content Truncation** - Smart truncation to prevent token limit errors
+- **🎨 Rich Context Enhancement** - Metadata-enriched search results
 - **📊 Schema Analysis** - Smart analysis of your models for optimal indexing
 - **⚡ Efficient Loading** - N+1 prevention with smart batch loading
-- **🎯 Test Suite** - Complete journey testing from discovery to search
+- **🎯 Comprehensive Test Suite** - 12 tests covering all RAG features
 - **Semantic Search** - Find content by meaning, not keywords
 - **Qdrant Integration** - Production-ready vector database support
 - **Source Citations** - Transparent source attribution in responses
@@ -628,6 +632,76 @@ if ($response->getMetadata()['rag_enabled'] ?? false) {
 - "What's 2+2?"
 - "Tell me a joke"
 
+### 🎯 Dynamic Context Limitations (NEW!)
+
+**Intelligent, adaptive context windows that adjust automatically!**
+
+The system analyzes your vector database and user permissions to generate optimal context limitations in real-time.
+
+```php
+use LaravelAIEngine\Services\RAG\ContextLimitationService;
+
+$service = app(ContextLimitationService::class);
+
+// Get limitations for user and model
+$limitations = $service->getContextLimitations($userId, $modelClass);
+
+// Returns:
+[
+    'max_results' => 7,           // Adjusted for data volume
+    'max_tokens' => 3000,         // Adjusted for user level
+    'max_content_length' => 32000,
+    'filters' => ['user_id' => '123'],
+    'time_range' => ['from' => '...', 'to' => '...'],
+    'access_level' => 'basic',
+]
+```
+
+**Features:**
+- **📊 Data Volume Analysis** - Adjusts limits based on total records (low/medium/high/very_high)
+- **👥 User Permissions** - Different limits per access level (admin/premium/basic/guest)
+- **🔄 Real-time Updates** - Observer automatically invalidates cache on data changes
+- **⚡ Smart Caching** - 5-minute cache with auto-invalidation
+- **🎯 Model-Specific** - Custom constraints per model
+- **⏱️ Time Restrictions** - Optional time-range filtering per user level
+
+**Access Level Matrix:**
+
+| Level | Max Results | Max Tokens | Time Range | Use Case |
+|-------|-------------|------------|------------|----------|
+| Admin | 20 | 8,000 | Unlimited | Full access |
+| Premium | 15 | 6,000 | Unlimited | Power users |
+| Basic | 10 | 4,000 | 30 days | Standard users |
+| Guest | 5 | 2,000 | 7 days | Limited access |
+
+**Auto-Update Example:**
+```php
+// User creates new email
+Email::create([...]);
+
+// Observer automatically:
+// 1. Detects data change
+// 2. Invalidates cache
+// 3. Next request regenerates with new stats
+// 4. Limits adjust if data volume changed
+```
+
+**Configuration:**
+```php
+// config/ai-engine.php
+'rag' => [
+    'auto_update_limitations' => true,
+    'limitations_cache_ttl' => 300, // 5 minutes
+    
+    'access_levels' => [
+        'admin' => ['max_results' => 20, 'max_tokens' => 8000],
+        'premium' => ['max_results' => 15, 'max_tokens' => 6000],
+        'basic' => ['max_results' => 10, 'max_tokens' => 4000],
+        'guest' => ['max_results' => 5, 'max_tokens' => 2000],
+    ],
+],
+```
+
 ### RAG (Manual Context Retrieval)
 
 ```php
@@ -748,22 +822,88 @@ php artisan ai-engine:vector-status "App\Models\Post"
 # └──────────────────────────────────────┘
 ```
 
-### Test Complete Journey
+### Comprehensive RAG Testing (NEW!)
 
 ```bash
-# Test everything from discovery to RAG
-php artisan ai-engine:test-vector-journey "App\Models\Post"
+# Test ALL RAG features (12 comprehensive tests)
+php artisan ai-engine:test-rag
 
-# Quick mode (no confirmations)
-php artisan ai-engine:test-vector-journey "App\Models\Post" --quick
+# Test specific model
+php artisan ai-engine:test-rag --model="App\Models\Post"
 
-# Tests:
-# ✓ Model Discovery
-# ✓ Model Analysis
-# ✓ Configuration Check
-# ✓ Vector Indexing
-# ✓ Vector Search
-# ✓ RAG Test
+# Quick mode (skip detailed tests)
+php artisan ai-engine:test-rag --quick
+
+# Non-interactive (for CI/CD)
+php artisan ai-engine:test-rag --skip-interactive
+
+# Detailed output
+php artisan ai-engine:test-rag --detailed
+
+# Tests performed:
+# ✓ 1. Collection Discovery
+# ✓ 2. Vector Search
+# ✓ 3. Intelligent RAG (AI decides)
+# ✓ 4. Manual RAG (always searches)
+# ✓ 5. Instance Methods (ask, summarize, tags, similar)
+# ✓ 6. Chat Service Integration (both modes)
+# ✓ 7. Context Enhancement
+# ✓ 8. Auto-Detection Features
+# ✓ 9. Relationship Traversal (depth 1-3)
+# ✓ 10. Content Truncation
+# ✓ 11. Vector Status
+```
+
+**Example Output:**
+```
+🧪 Testing Laravel AI Engine RAG Features
+
+📋 Test 1: Collection Discovery
+─────────────────────────────────
+✅ Found 3 RAG collection(s):
+   - App\Models\Post
+   - App\Models\Document
+   - App\Models\Email
+
+🎯 Test 8: Context Enhancement
+─────────────────────────────────
+✅ Testing context enhancement:
+   Model: Post
+   ID: 5
+   Subject: Laravel Tips
+   From: John Doe
+   Date: 2024-11-28
+   Content Length: 1,234 chars
+
+📊 Test 11: Vector Status
+─────────────────────────────────
+┌─────────────────┬────────┐
+│ Metric          │ Value  │
+├─────────────────┼────────┤
+│ Total Records   │ 50     │
+│ Indexed         │ 50     │
+│ Pending         │ 0      │
+│ Percentage      │ 100%   │
+└─────────────────┴────────┘
+✅ All records indexed
+
+═══════════════════════════════════
+📋 Test Summary
+═══════════════════════════════════
+✅ Collection Discovery
+✅ Vector Search
+✅ Intelligent RAG
+✅ Manual RAG
+✅ Instance Methods
+✅ Chat Service Integration
+✅ Context Enhancement
+✅ Auto-Detection
+✅ Relationship Traversal
+✅ Content Truncation
+✅ Vector Status
+
+🎉 All RAG features tested successfully!
+═══════════════════════════════════
 ```
 
 ### Search with Filters
