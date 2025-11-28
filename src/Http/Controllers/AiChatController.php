@@ -616,7 +616,7 @@ class AiChatController extends Controller
         
         // Check if session is stored with user metadata
         try {
-            $conversation = $this->conversationService->getConversation($sessionId);
+            $conversation = Engine::memory()->getConversation($sessionId);
             if ($conversation && isset($conversation['user_id'])) {
                 return $conversation['user_id'] == $userId;
             }
