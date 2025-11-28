@@ -11,9 +11,11 @@ class ConfigureAllModelsCommand extends Command
     protected $signature = 'ai-engine:configure-all
                             {--analyze : Show detailed analysis for each model}
                             {--export= : Export configurations to a file}
-                            {--format=php : Export format (php, json, markdown)}';
+                            {--format=php : Export format (php, json, markdown)}
+                            {--index : Run vector indexing after configuration}
+                            {--with-relationships : Include relationships when indexing}';
 
-    protected $description = 'Analyze and generate configuration for all vectorizable models';
+    protected $description = 'Analyze, configure, and optionally index all vectorizable models';
 
     public function handle(SchemaAnalyzer $schemaAnalyzer, ModelAnalyzer $modelAnalyzer): int
     {
@@ -67,7 +69,68 @@ class ConfigureAllModelsCommand extends Command
 
         $this->displaySummary(count($models), count($configurations));
 
+        // Run indexing if requested
+        if ($this->option('index')) {
+            $this->runIndexing($models);
+        }
+
         return self::SUCCESS;
+    }
+
+    protected function runIndexing(array $models): void
+    {
+        $this->newLine();
+        $this->line("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        $this->newLine();
+        $this->line('╔════════════════════════════════════════════════════════════╗');
+        $this->line('║                    VECTOR INDEXING                         ║');
+        $this->line('╚════════════════════════════════════════════════════════════╝');
+        $this->newLine();
+
+        $withRelationships = $this->option('with-relationships');
+        $indexed = 0;
+        $failed = 0;
+
+        foreach ($models as $modelClass) {
+            $this->info("🔄 Indexing: " . class_basename($modelClass));
+
+            try {
+                $options = ['--model' => $modelClass];
+                if ($withRelationships) {
+                    $options['--with-relationships'] = true;
+                }
+
+                $exitCode = $this->call('ai-engine:vector-index', $options);
+
+                if ($exitCode === 0) {
+                    $this->line("   ✅ Successfully indexed");
+                    $indexed++;
+                } else {
+                    $this->error("   ❌ Failed to index");
+                    $failed++;
+                }
+            } catch (\Exception $e) {
+                $this->error("   ❌ Error: {$e->getMessage()}");
+                $failed++;
+            }
+
+            $this->newLine();
+        }
+
+        // Indexing summary
+        $this->line("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        $this->newLine();
+        $this->line('╔════════════════════════════════════════════════════════════╗');
+        $this->line('║                   INDEXING SUMMARY                         ║');
+        $this->line('╚════════════════════════════════════════════════════════════╝');
+        $this->newLine();
+
+        $this->info("  Total Models:        " . count($models));
+        $this->info("  Successfully Indexed: {$indexed}");
+        if ($failed > 0) {
+            $this->error("  Failed:              {$failed}");
+        }
+        $this->newLine();
     }
 
     protected function displayHeader(): void
@@ -267,10 +330,15 @@ class ConfigureAllModelsCommand extends Command
         $this->info("  Configurations Generated: {$configured}");
         $this->newLine();
 
-        $this->line("💡 Next Steps:");
-        $this->line("   1. Copy the generated configurations to your model files");
-        $this->line("   2. Customize the configurations as needed");
-        $this->line("   3. Run: php artisan ai-engine:vector-index --with-relationships");
-        $this->newLine();
+        if (!$this->option('index')) {
+            $this->line("💡 Next Steps:");
+            $this->line("   1. Copy the generated configurations to your model files");
+            $this->line("   2. Customize the configurations as needed");
+            $this->line("   3. Run: php artisan ai-engine:configure-all --index --with-relationships");
+            $this->newLine();
+            $this->line("💡 Or run with --index flag to index immediately:");
+            $this->line("   php artisan ai-engine:configure-all --index --with-relationships");
+            $this->newLine();
+        }
     }
 }
