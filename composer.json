@@ -67,7 +67,8 @@
     "extra": {
         "laravel": {
             "providers": [
-                "LaravelAIEngine\\AIEngineServiceProvider"
+                "LaravelAIEngine\\AIEngineServiceProvider",
+                "LaravelAIEngine\\LaravelAIEngineServiceProvider"
             ],
             "aliases": {
                 "AIEngine": "LaravelAIEngine\\Facades\\AIEngine"
