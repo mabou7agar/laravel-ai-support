@@ -95,12 +95,13 @@ class ConfigureAllModelsCommand extends Command
             $this->info("🔄 Indexing: " . class_basename($modelClass));
 
             try {
-                $options = ['--model' => $modelClass];
+                $arguments = ['model' => $modelClass];
+                $options = [];
                 if ($withRelationships) {
                     $options['--with-relationships'] = true;
                 }
 
-                $exitCode = $this->call('ai-engine:vector-index', $options);
+                $exitCode = $this->call('ai-engine:vector-index', array_merge($arguments, $options));
 
                 if ($exitCode === 0) {
                     $this->line("   ✅ Successfully indexed");
