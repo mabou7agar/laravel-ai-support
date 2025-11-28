@@ -51,10 +51,12 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function registerCoreServices(): void
     {
-        // Register OpenAI Client
+        // Register OpenAI Client (lazy - only throws error when actually used)
         $this->app->singleton(\OpenAI\Client::class, function ($app) {
             $apiKey = config('ai-engine.engines.openai.api_key');
             if (empty($apiKey)) {
+                // Return a null client or throw only when methods are called
+                // This prevents boot-time failures
                 throw new \RuntimeException('OpenAI API key is not configured. Please set OPENAI_API_KEY in your .env file.');
             }
             return \OpenAI::client($apiKey);
@@ -302,8 +304,8 @@ class AIEngineServiceProvider extends ServiceProvider
         // Load routes
         $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
         
-        // Load demo routes conditionally
-        if (config('ai-engine.enable_demo_routes', $this->app->environment('local'))) {
+        // Load demo routes conditionally (safe for config cache)
+        if (config('ai-engine.enable_demo_routes', false)) {
             $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
         }
         

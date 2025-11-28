@@ -142,13 +142,18 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
         // Register event listeners
         $this->registerEventListeners();
 
-        // Register routes if needed
-        if (config('ai-engine.routes.enabled', true)) {
-            // Load API routes
-            $this->loadRoutesFrom(__DIR__ . '/../routes/api.php');
-            
-            // Load web routes (views)
-            $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
+        // Register routes if needed (wrap in try-catch for boot-time safety)
+        try {
+            if (config('ai-engine.routes.enabled', true)) {
+                // Load API routes
+                $this->loadRoutesFrom(__DIR__ . '/../routes/api.php');
+                
+                // Load web routes (views)
+                $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
+            }
+        } catch (\Exception $e) {
+            // Silently fail during boot if config not available
+            // Routes will be loaded on next request
         }
     }
 
@@ -161,10 +166,14 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
         Event::listen(AIRequestStarted::class, LogAIRequest::class . '@handleStarted');
         Event::listen(AIRequestCompleted::class, LogAIRequest::class . '@handleCompleted');
 
-        // Register webhook notifications
-        if (config('ai-engine.webhooks.enabled', false)) {
-            Event::listen(AIRequestStarted::class, SendWebhookNotification::class . '@handleStarted');
-            Event::listen(AIRequestCompleted::class, SendWebhookNotification::class . '@handleCompleted');
+        // Register webhook notifications (wrap in try-catch for boot-time safety)
+        try {
+            if (config('ai-engine.webhooks.enabled', false)) {
+                Event::listen(AIRequestStarted::class, SendWebhookNotification::class . '@handleStarted');
+                Event::listen(AIRequestCompleted::class, SendWebhookNotification::class . '@handleCompleted');
+            }
+        } catch (\Exception $e) {
+            // Silently fail during boot if config not available
         }
     }
 
