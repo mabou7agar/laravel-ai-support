@@ -243,6 +243,6 @@ class SchemaAnalyzer
      */
     public function discoverVectorizableModels(): array
     {
-        return discover_vectorizable_models();
+        return \discover_vectorizable_models();
     }
 }

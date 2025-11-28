@@ -67,7 +67,7 @@ class VectorStatusCommand extends Command
         $this->info("📊 All Vectorizable Models Status");
         $this->newLine();
         
-        $models = discover_vectorizable_models();
+        $models = \discover_vectorizable_models();
         
         if (empty($models)) {
             $this->warn('No vectorizable models found.');
