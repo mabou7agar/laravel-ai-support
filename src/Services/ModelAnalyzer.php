@@ -29,7 +29,7 @@ class ModelAnalyzer
     public function analyze(string $modelClass): array
     {
         // Get schema analysis
-        $schemaAnalysis = $this->schemaAnalyzer->analyzeModel($modelClass);
+        $schemaAnalysis = $this->schemaAnalyzer->analyze($modelClass);
         
         // Get relationship analysis
         $relationshipAnalysis = $this->relationshipAnalyzer->analyzeRelationships($modelClass);
