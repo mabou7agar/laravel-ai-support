@@ -7,18 +7,18 @@ use LaravelAIEngine\DTOs\AIResponse;
 
 /**
  * Vectorizable Trait
- * 
+ *
  * All-in-one trait for vector search, RAG, and AI chat capabilities.
  * Combines functionality from: Vectorizable, HasVectorSearch, HasVectorChat, RAGgable
- * 
+ *
  * Usage:
  * ```php
  * class Document extends Model
  * {
  *     use Vectorizable;
- *     
+ *
  *     protected $ragPriority = 80;
- *     
+ *
  *     public function toVectorContent(): string
  *     {
  *         return $this->title . "\n\n" . $this->content;
@@ -45,21 +45,21 @@ trait Vectorizable
      * Override this in your model
      */
     public array $vectorizable = [];
-    
+
     /**
      * Define which relationships to include in vector content
      * Override this in your model
-     * 
+     *
      * Example: protected array $vectorRelationships = ['author', 'tags', 'comments'];
      */
     protected array $vectorRelationships = [];
-    
+
     /**
      * Maximum relationship depth to traverse
      * Override this in your model
      */
     protected int $maxRelationshipDepth = 1;
-    
+
     /**
      * RAG priority (0-100, higher = searched first)
      */
@@ -68,7 +68,7 @@ trait Vectorizable
     /**
      * Get the collection name for vector storage
      * Override this method for custom collection names
-     * 
+     *
      * @return string
      */
     public function getVectorCollectionName(): string
@@ -77,7 +77,7 @@ trait Vectorizable
         if (property_exists($this, 'table') && !empty($this->table)) {
             return $this->table;
         }
-        
+
         // Fallback to class name
         $className = class_basename($this);
         return strtolower(str_replace('\\', '_', $className));
@@ -92,29 +92,29 @@ trait Vectorizable
         // If vectorizable is explicitly set, use it
         if (!empty($this->vectorizable)) {
             $content = [];
-            
+
             foreach ($this->vectorizable as $field) {
                 if (isset($this->$field)) {
                     $content[] = $this->$field;
                 }
             }
-            
+
             $fullContent = implode(' ', $content);
             return $this->truncateContent($fullContent);
         }
 
         // Auto-detect vectorizable fields if not set
         $autoFields = $this->autoDetectVectorizableFields();
-        
+
         if (!empty($autoFields)) {
             $content = [];
-            
+
             foreach ($autoFields as $field) {
                 if (isset($this->$field)) {
                     $content[] = $this->$field;
                 }
             }
-            
+
             $fullContent = implode(' ', $content);
             return $this->truncateContent($fullContent);
         }
@@ -122,7 +122,7 @@ trait Vectorizable
         // Fallback: use common text fields
         $commonFields = ['title', 'name', 'content', 'description', 'body', 'text'];
         $content = [];
-        
+
         foreach ($commonFields as $field) {
             if (isset($this->$field)) {
                 $content[] = $this->$field;
@@ -136,7 +136,7 @@ trait Vectorizable
     /**
      * Truncate content to safe size for vector embedding
      * Most embedding models have token limits (e.g., OpenAI: 8191 tokens)
-     * 
+     *
      * @param string $content
      * @return string
      */
@@ -145,19 +145,19 @@ trait Vectorizable
         // Get max length from config or use default
         // ~4 chars per token on average, so 8000 tokens ≈ 32000 chars
         $maxChars = config('ai-engine.vector.max_content_length', 32000);
-        
+
         if (strlen($content) <= $maxChars) {
             return $content;
         }
 
         // Truncate and add indicator
         $truncated = substr($content, 0, $maxChars);
-        
+
         // Try to cut at last complete sentence
         $lastPeriod = strrpos($truncated, '.');
         $lastNewline = strrpos($truncated, "\n");
         $cutPoint = max($lastPeriod, $lastNewline);
-        
+
         if ($cutPoint !== false && $cutPoint > $maxChars * 0.8) {
             $truncated = substr($truncated, 0, $cutPoint + 1);
         }
@@ -174,14 +174,14 @@ trait Vectorizable
 
     /**
      * Auto-detect which fields should be vectorized using AI
-     * 
+     *
      * @return array
      */
     protected function autoDetectVectorizableFields(): array
     {
         // Check cache first
         $cacheKey = 'vectorizable_fields_' . $this->getTable();
-        
+
         if (\Cache::has($cacheKey)) {
             return \Cache::get($cacheKey);
         }
@@ -189,7 +189,7 @@ trait Vectorizable
         try {
             // Get table columns
             $columns = \Schema::getColumnListing($this->getTable());
-            
+
             if (empty($columns)) {
                 return [];
             }
@@ -213,7 +213,7 @@ trait Vectorizable
                 if (in_array($column, $skipColumns)) {
                     return false;
                 }
-                
+
                 // Include text-based types
                 $textTypes = ['string', 'text', 'longtext', 'mediumtext', 'varchar', 'char'];
                 return in_array(strtolower($type), $textTypes);
@@ -245,7 +245,7 @@ trait Vectorizable
 
     /**
      * Use AI to intelligently select which fields should be vectorized
-     * 
+     *
      * @param array $textColumns
      * @param array $columnInfo
      * @return array
@@ -260,7 +260,7 @@ trait Vectorizable
             $columnDescriptions = [];
             $maxColumns = 50; // Limit columns in prompt
             $columnsToAnalyze = array_slice($textColumns, 0, $maxColumns);
-            
+
             foreach ($columnsToAnalyze as $column) {
                 $type = $columnInfo[$column] ?? 'unknown';
                 $columnDescriptions[] = "- {$column} ({$type})";
@@ -271,7 +271,7 @@ trait Vectorizable
             }
 
             $prompt = <<<PROMPT
-You are analyzing a database table to determine which text fields should be included in vector search indexing.
+You are analyzing a database table to determine which fields should be included in vector search indexing.
 
 Model: {$modelClass}
 Table: {$tableName}
@@ -305,11 +305,11 @@ PROMPT;
             // Extract JSON from response
             if (preg_match('/\[.*\]/s', $content, $matches)) {
                 $selectedFields = json_decode($matches[0], true);
-                
+
                 if (is_array($selectedFields)) {
                     // Validate that selected fields exist in our text columns
                     $validFields = array_intersect($selectedFields, $textColumns);
-                    
+
                     if (!empty($validFields)) {
                         \Log::info('AI selected vectorizable fields', [
                             'model' => $modelClass,
@@ -328,14 +328,14 @@ PROMPT;
                 'model' => get_class($this),
                 'error' => $e->getMessage()
             ]);
-            
+
             return $this->heuristicFieldSelection($textColumns);
         }
     }
 
     /**
      * Heuristic-based field selection as fallback
-     * 
+     *
      * @param array $textColumns
      * @return array
      */
@@ -350,16 +350,16 @@ PROMPT;
         ];
 
         $scoredFields = [];
-        
+
         foreach ($textColumns as $column) {
             $score = 0;
-            
+
             foreach ($priorityPatterns as $pattern => $points) {
                 if (preg_match($pattern, $column)) {
                     $score = max($score, $points);
                 }
             }
-            
+
             if ($score > 0) {
                 $scoredFields[$column] = $score;
             }
@@ -435,27 +435,27 @@ PROMPT;
 
     /**
      * Get vector content with relationships included
-     * 
+     *
      * @param array|null $relationships Relationships to include (null = use $vectorRelationships)
      * @return string
      */
     public function getVectorContentWithRelationships(?array $relationships = null): string
     {
         $relationships = $relationships ?? $this->vectorRelationships;
-        
+
         if (empty($relationships)) {
             return $this->getVectorContent();
         }
-        
+
         // Load relationships if not already loaded
         $this->loadMissing($relationships);
-        
+
         $content = [$this->getVectorContent()];
-        
+
         foreach ($relationships as $relation) {
             if ($this->relationLoaded($relation)) {
                 $related = $this->$relation;
-                
+
                 if ($related instanceof \Illuminate\Database\Eloquent\Collection) {
                     foreach ($related as $item) {
                         if (method_exists($item, 'getVectorContent')) {
@@ -471,24 +471,24 @@ PROMPT;
                 }
             }
         }
-        
+
         return implode("\n\n---\n\n", array_filter($content));
     }
 
     /**
      * Get all relationships to index (respects depth)
-     * 
+     *
      * @param int|null $depth Maximum depth to traverse
      * @return array
      */
     public function getIndexableRelationships(?int $depth = null): array
     {
         $depth = $depth ?? $this->maxRelationshipDepth;
-        
+
         if ($depth === 0 || empty($this->vectorRelationships)) {
             return [];
         }
-        
+
         // For now, just return direct relationships
         // TODO: Implement nested relationship traversal for depth > 1
         return $this->vectorRelationships;
@@ -497,7 +497,7 @@ PROMPT;
     /**
      * Convert model to vector array format
      * Used for indexing in vector database
-     * 
+     *
      * @return array
      */
     public function toVectorArray(): array
@@ -519,7 +519,7 @@ PROMPT;
     /**
      * Apply user-specific filters to query
      * Override this to implement row-level security
-     * 
+     *
      * @param \Illuminate\Database\Eloquent\Builder $query
      * @param string|null $userId
      * @return \Illuminate\Database\Eloquent\Builder
@@ -550,7 +550,7 @@ PROMPT;
 
     /**
      * Get RAG priority for this model
-     * 
+     *
      * @return int
      */
     public function getRAGPriority(): int
@@ -560,7 +560,7 @@ PROMPT;
 
     /**
      * Determine if this model should be included in RAG
-     * 
+     *
      * @param string $query
      * @param array $context
      * @return bool
@@ -576,7 +576,7 @@ PROMPT;
 
     /**
      * Search using vector similarity
-     * 
+     *
      * @param string $query
      * @param int $limit
      * @param float $threshold
@@ -592,7 +592,7 @@ PROMPT;
         ?string $userId = null
     ): \Illuminate\Support\Collection {
         $vectorSearch = app(\LaravelAIEngine\Services\Vector\VectorSearchService::class);
-        
+
         return $vectorSearch->search(
             static::class,
             $query,
@@ -605,7 +605,7 @@ PROMPT;
 
     /**
      * Find similar items to this model
-     * 
+     *
      * @param int $limit
      * @return \Illuminate\Support\Collection
      */
@@ -623,7 +623,7 @@ PROMPT;
 
     /**
      * Intelligent RAG chat - AI decides when to search
-     * 
+     *
      * @param string $query
      * @param string $sessionId
      * @param array $options Options:
@@ -638,10 +638,10 @@ PROMPT;
         array $options = []
     ): AIResponse {
         $intelligentRAG = app(IntelligentRAGService::class);
-        
+
         // Determine which collections to search
         $restrictToModel = $options['restrict_to_model'] ?? false;
-        
+
         if ($restrictToModel) {
             // Strict mode: Only search this specific model
             $collections = [static::class];
@@ -657,7 +657,7 @@ PROMPT;
             $discovery = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
             $collections = $discovery->discover();
         }
-        
+
         return $intelligentRAG->processMessage(
             $query,
             $sessionId,
@@ -669,7 +669,7 @@ PROMPT;
 
     /**
      * Manual RAG chat - Always searches
-     * 
+     *
      * @param string $query
      * @param string|null $userId
      * @param array $options
@@ -681,7 +681,7 @@ PROMPT;
         array $options = []
     ): array {
         $intelligentRAG = app(IntelligentRAGService::class);
-        
+
         $response = $intelligentRAG->processMessage(
             $query,
             $userId ?? 'default',
@@ -689,7 +689,7 @@ PROMPT;
             [],
             array_merge($options, ['intelligent' => false])
         );
-        
+
         return [
             'response' => $response->getContent(),
             'sources' => $response->getMetadata()['sources'] ?? [],
@@ -700,7 +700,7 @@ PROMPT;
 
     /**
      * Streaming RAG chat
-     * 
+     *
      * @param string $query
      * @param callable $callback
      * @param string|null $userId
@@ -714,7 +714,7 @@ PROMPT;
         array $options = []
     ): array {
         $intelligentRAG = app(IntelligentRAGService::class);
-        
+
         return $intelligentRAG->processMessageStream(
             $query,
             $userId ?? 'default',
@@ -731,7 +731,7 @@ PROMPT;
 
     /**
      * Ask a question about this specific model instance
-     * 
+     *
      * @param string $question
      * @param array $options
      * @return string
@@ -739,7 +739,7 @@ PROMPT;
     public function ask(string $question, array $options = []): string
     {
         $content = $this->getVectorContent();
-        
+
         $prompt = <<<PROMPT
 Based on the following information:
 
@@ -760,13 +760,13 @@ PROMPT;
         );
 
         $response = app(\LaravelAIEngine\Services\AIEngineManager::class)->processRequest($request);
-        
+
         return $response->getContent();
     }
 
     /**
      * Summarize this model's content
-     * 
+     *
      * @param int $maxWords
      * @param array $options
      * @return string
@@ -774,7 +774,7 @@ PROMPT;
     public function summarize(int $maxWords = 100, array $options = []): string
     {
         $content = $this->getVectorContent();
-        
+
         $prompt = "Summarize the following in {$maxWords} words or less:\n\n{$content}";
 
         $engine = $options['engine'] ?? config('ai-engine.default');
@@ -787,13 +787,13 @@ PROMPT;
         );
 
         $response = app(\LaravelAIEngine\Services\AIEngineManager::class)->processRequest($request);
-        
+
         return $response->getContent();
     }
 
     /**
      * Generate tags/keywords for this model
-     * 
+     *
      * @param int $maxTags
      * @param array $options
      * @return array
@@ -801,7 +801,7 @@ PROMPT;
     public function generateTags(int $maxTags = 5, array $options = []): array
     {
         $content = $this->getVectorContent();
-        
+
         $prompt = "Extract {$maxTags} relevant tags/keywords from the following text. Return only the tags as a comma-separated list:\n\n{$content}";
 
         $engine = $options['engine'] ?? config('ai-engine.default');

@@ -458,12 +458,88 @@ PROMPT;
         foreach ($context as $index => $item) {
             $content = $this->extractContent($item);
             $score = round(($item->vector_score ?? 0) * 100, 1);
-            $source = $item->title ?? $item->name ?? "Document " . ($index + 1);
+            $source = $item->title ?? $item->subject ?? $item->name ?? "Document " . ($index + 1);
 
-            $formatted[] = "[Source {$index}: {$source}] (Relevance: {$score}%)\n{$content}";
+            // Build metadata section
+            $metadata = $this->buildMetadataSection($item);
+
+            // Format with enhanced context
+            $formattedItem = "[Source {$index}: {$source}] (Relevance: {$score}%)";
+            
+            if (!empty($metadata)) {
+                $formattedItem .= "\n{$metadata}";
+            }
+            
+            $formattedItem .= "\n{$content}";
+
+            $formatted[] = $formattedItem;
         }
 
-        return implode("\n\n", $formatted);
+        return implode("\n\n---\n\n", $formatted);
+    }
+
+    /**
+     * Build metadata section for context item
+     * 
+     * @param mixed $item
+     * @return string
+     */
+    protected function buildMetadataSection($item): string
+    {
+        $metadata = [];
+
+        // Add date information
+        if (isset($item->email_date)) {
+            $metadata[] = "Date: {$item->email_date}";
+        } elseif (isset($item->created_at)) {
+            $metadata[] = "Date: {$item->created_at}";
+        }
+
+        // Add sender information for emails
+        if (isset($item->from_name) && isset($item->from_address)) {
+            $metadata[] = "From: {$item->from_name} <{$item->from_address}>";
+        } elseif (isset($item->from_address)) {
+            $metadata[] = "From: {$item->from_address}";
+        }
+
+        // Add recipient information
+        if (isset($item->to_addresses) && is_array($item->to_addresses)) {
+            $toList = array_map(function($addr) {
+                if (isset($addr['name']) && $addr['name']) {
+                    return "{$addr['name']} <{$addr['email']}>";
+                }
+                return $addr['email'] ?? '';
+            }, array_slice($item->to_addresses, 0, 3));
+            
+            if (!empty($toList)) {
+                $metadata[] = "To: " . implode(', ', $toList);
+                if (count($item->to_addresses) > 3) {
+                    $metadata[] = "... and " . (count($item->to_addresses) - 3) . " more recipients";
+                }
+            }
+        }
+
+        // Add folder/category
+        if (isset($item->folder_name)) {
+            $metadata[] = "Folder: {$item->folder_name}";
+        } elseif (isset($item->category)) {
+            $metadata[] = "Category: {$item->category}";
+        }
+
+        // Add type/status
+        if (isset($item->type)) {
+            $metadata[] = "Type: {$item->type}";
+        }
+        if (isset($item->status)) {
+            $metadata[] = "Status: {$item->status}";
+        }
+
+        // Add thread context
+        if (isset($item->in_reply_to) && !empty($item->in_reply_to)) {
+            $metadata[] = "Part of conversation thread";
+        }
+
+        return !empty($metadata) ? implode(' | ', $metadata) : '';
     }
 
     /**
