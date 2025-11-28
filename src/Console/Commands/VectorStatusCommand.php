@@ -110,21 +110,39 @@ class VectorStatusCommand extends Command
     {
         $total = $modelClass::count();
         
-        // For now, assume all are indexed if collection exists
-        // TODO: Track actual indexed count
-        $indexed = $total;
-        $pending = 0;
+        // Get actual indexed count from vector database
+        try {
+            $collectionName = $this->getCollectionName($modelClass);
+            $indexed = $vectorSearch->getIndexedCount($modelClass);
+            $pending = max(0, $total - $indexed);
+        } catch (\Exception $e) {
+            // Fallback if vector service fails
+            $this->warn("Could not get indexed count for {$modelClass}: {$e->getMessage()}");
+            $indexed = 0;
+            $pending = $total;
+        }
         
         $model = new $modelClass;
         $hasRelationships = property_exists($model, 'vectorRelationships') && 
                            !empty($model->vectorRelationships);
         
+        // Determine status
+        if ($indexed === 0 && $total > 0) {
+            $status = '<fg=red>Not Indexed</>';
+        } elseif ($indexed === $total) {
+            $status = '<fg=green>Complete</>';
+        } elseif ($indexed > 0) {
+            $status = '<fg=yellow>Partial</>';
+        } else {
+            $status = '<fg=gray>Empty</>';
+        }
+        
         return [
-            'collection' => $this->getCollectionName($modelClass),
+            'collection' => $collectionName,
             'total_records' => $total,
             'indexed' => $indexed,
             'pending' => $pending,
-            'status' => $indexed === $total ? '<fg=green>Complete</>' : '<fg=yellow>Partial</>',
+            'status' => $status,
             'has_relationships' => $hasRelationships,
             'relationships' => $hasRelationships ? $model->vectorRelationships : [],
         ];
