@@ -18,25 +18,37 @@ class SchemaAnalyzer
      * 
      * @param string $modelClass
      * @return array
-     * @throws \InvalidArgumentException
      */
-    public function analyzeModel(string $modelClass): array
+    public function analyze(string $modelClass): array
     {
-        if (!class_exists($modelClass)) {
-            throw new \InvalidArgumentException("Model class not found: {$modelClass}");
+        try {
+            if (!class_exists($modelClass)) {
+                throw new \InvalidArgumentException("Model class not found: {$modelClass}");
+            }
+            
+            $model = new $modelClass;
+            $table = $model->getTable();
+            
+            return [
+                'model' => $modelClass,
+                'table' => $table,
+                'text_fields' => $this->getTextFields($table),
+                'relationships' => $this->getRelationships($modelClass),
+                'recommended_config' => $this->getRecommendedConfig($modelClass),
+                'estimated_size' => $this->estimateIndexSize($table),
+            ];
+        } catch (\Exception $e) {
+            // Return partial analysis on error
+            return [
+                'model' => $modelClass,
+                'table' => null,
+                'text_fields' => [],
+                'relationships' => $this->getRelationships($modelClass),
+                'recommended_config' => [],
+                'estimated_size' => 0,
+                'error' => $e->getMessage(),
+            ];
         }
-        
-        $model = new $modelClass;
-        $table = $model->getTable();
-        
-        return [
-            'model' => $modelClass,
-            'table' => $table,
-            'text_fields' => $this->getTextFields($table),
-            'relationships' => $this->getRelationships($modelClass),
-            'recommended_config' => $this->getRecommendedConfig($modelClass),
-            'estimated_size' => $this->estimateIndexSize($table),
-        ];
     }
     
     /**
@@ -55,14 +67,26 @@ class SchemaAnalyzer
         $textFields = [];
         
         foreach ($columns as $column) {
-            $type = Schema::getColumnType($table, $column);
-            
-            if (in_array($type, ['string', 'text', 'longtext', 'mediumtext'])) {
-                $textFields[] = [
-                    'name' => $column,
-                    'type' => $type,
-                    'recommended' => $this->isRecommendedField($column),
-                ];
+            try {
+                $type = Schema::getColumnType($table, $column);
+                
+                if (in_array($type, ['string', 'text', 'longtext', 'mediumtext'])) {
+                    $textFields[] = [
+                        'name' => $column,
+                        'type' => $type,
+                        'recommended' => $this->isRecommendedField($column),
+                    ];
+                }
+            } catch (\Exception $e) {
+                // Skip columns with unsupported types (e.g., enum)
+                // Check if it's likely a text field by name
+                if ($this->isRecommendedField($column)) {
+                    $textFields[] = [
+                        'name' => $column,
+                        'type' => 'unknown',
+                        'recommended' => true,
+                    ];
+                }
             }
         }
         
