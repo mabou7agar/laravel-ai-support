@@ -50,6 +50,54 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
         }
+        
+        /* Numbered Options Styling */
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+        
+        .option-card {
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: start;
+            gap: 0.75rem;
+        }
+        
+        .option-card:hover {
+            border-color: #8b5cf6;
+            background: #f5f3ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .option-number {
+            flex-shrink: 0;
+            width: 2rem;
+            height: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.875rem;
+        }
+        
+        .option-text {
+            flex: 1;
+            color: #374151;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body class="bg-gray-50">
