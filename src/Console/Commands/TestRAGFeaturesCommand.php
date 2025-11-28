@@ -350,33 +350,26 @@ class TestRAGFeaturesCommand extends Command
             $this->line("   Response: " . substr($response->getContent(), 0, 150) . '...');
             $this->newLine();
 
-            // Test 6b: Force RAG (always searches)
-            $this->line('Test 6b: Forced RAG (always searches knowledge base)');
+            // Test 6b: Manual RAG (always searches via model method)
+            $this->line('Test 6b: Manual RAG (always searches knowledge base)');
             $message2 = $this->option('skip-interactive') 
-                ? 'Tell me about the content' 
-                : $this->ask('Enter another message', 'Tell me about the content');
+                ? 'Tell me about Laravel' 
+                : $this->ask('Enter another message', 'Tell me about Laravel');
 
-            $response2 = $chatService->processMessage(
-                message: $message2,
-                sessionId: 'test-session-integration-forced',
-                engine: 'openai',
-                model: 'gpt-4o-mini',
-                useMemory: true,
-                useActions: false,
-                useIntelligentRAG: false,  // Force RAG
-                forceRAG: true,
-                ragCollections: [],  // Auto-discover
-                userId: 'test-user'
-            );
+            // Get the model class from earlier test
+            $modelClass = $this->option('model') ?? 'App\Models\Post';
+            
+            // Use vectorChat which always searches
+            $ragResult = $modelClass::vectorChat($message2, 'test-user');
 
-            $contextCount2 = $response2->getMetadata()['context_count'] ?? 0;
-            $sources = $response2->getMetadata()['sources'] ?? [];
+            $contextCount2 = $ragResult['context_count'] ?? 0;
+            $sources = $ragResult['sources'] ?? [];
 
             $this->line("   Message: '{$message2}'");
-            $this->line("   RAG: Forced ✅");
+            $this->line("   RAG: Always Searches ✅");
             $this->line("   Context Items: {$contextCount2}");
             $this->line("   Sources: " . count($sources));
-            $this->line("   Response: " . substr($response2->getContent(), 0, 150) . '...');
+            $this->line("   Response: " . substr($ragResult['response'], 0, 150) . '...');
 
             $this->newLine();
             $this->info('✅ Chat service integration working');
