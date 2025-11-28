@@ -73,7 +73,8 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\IntelligentRAGService(
                 $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
-                $app->make(\LaravelAIEngine\Services\AIEngineManager::class)
+                $app->make(\LaravelAIEngine\Services\AIEngineManager::class),
+                $app->make(\LaravelAIEngine\Services\ConversationService::class)
             );
         });
 
@@ -85,6 +86,11 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
         // Register RAG Collection Discovery
         $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery();
+        });
+
+        // Register Model Resolver (bridges database models with EntityEnum)
+        $this->app->singleton(\LaravelAIEngine\Services\ModelResolver::class, function ($app) {
+            return new \LaravelAIEngine\Services\ModelResolver();
         });
 
         // Register aliases
@@ -126,6 +132,7 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
                 \LaravelAIEngine\Console\Commands\ListAIModelsCommand::class,
                 \LaravelAIEngine\Console\Commands\AddAIModelCommand::class,
                 \LaravelAIEngine\Console\Commands\ListRAGCollectionsCommand::class,
+                \LaravelAIEngine\Console\Commands\TestRAGFeaturesCommand::class,
             ]);
         }
 

@@ -57,9 +57,11 @@ class EmbeddingService
 
             $embedding = $response->embeddings[0]->embedding;
             
+            // Get tokens used
+            $tokensUsed = $response->usage->totalTokens ?? $this->estimateTokens($text);
+            
             // Track credits (only if userId is provided)
             if ($userId) {
-                $tokensUsed = $response->usage->totalTokens ?? $this->estimateTokens($text);
                 // Create a simple request object for credit tracking
                 $request = new \LaravelAIEngine\Models\AIRequest([
                     'engine' => 'openai',

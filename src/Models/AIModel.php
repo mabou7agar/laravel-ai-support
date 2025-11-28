@@ -195,6 +195,62 @@ class AIModel extends Model
     }
 
     /**
+     * Clear all model cache
+     */
+    protected static function clearAllCache(): void
+    {
+        Cache::forget('ai_models:all');
+        Cache::forget('ai_models:active');
+        Cache::tags(['ai_models'])->flush();
+    }
+
+    /**
+     * Convert to EntityEnum if it exists
+     * 
+     * @return \LaravelAIEngine\Enums\EntityEnum|null
+     */
+    public function toEntityEnum(): ?\LaravelAIEngine\Enums\EntityEnum
+    {
+        try {
+            // Try to find matching EntityEnum constant
+            $enumClass = \LaravelAIEngine\Enums\EntityEnum::class;
+            $reflection = new \ReflectionClass($enumClass);
+            $constants = $reflection->getConstants();
+
+            // Check if this model_id matches any EntityEnum constant
+            foreach ($constants as $name => $value) {
+                if ($value === $this->model_id) {
+                    return new \LaravelAIEngine\Enums\EntityEnum($value);
+                }
+            }
+
+            return null;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get EngineEnum for this model
+     * 
+     * @return \LaravelAIEngine\Enums\EngineEnum
+     */
+    public function getEngineEnum(): \LaravelAIEngine\Enums\EngineEnum
+    {
+        return new \LaravelAIEngine\Enums\EngineEnum($this->provider);
+    }
+
+    /**
+     * Check if this model has a corresponding EntityEnum
+     * 
+     * @return bool
+     */
+    public function hasEntityEnum(): bool
+    {
+        return $this->toEntityEnum() !== null;
+    }
+
+    /**
      * Boot method
      */
     protected static function boot()

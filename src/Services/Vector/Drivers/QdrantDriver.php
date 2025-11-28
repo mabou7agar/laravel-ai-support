@@ -86,10 +86,17 @@ class QdrantDriver implements VectorDriverInterface
     {
         try {
             $points = array_map(function ($vector) {
+                // Qdrant accepts UUIDs or unsigned integers as point IDs
+                // We'll use a combination: model_class + model_id as a unique string
+                $pointId = md5($vector['metadata']['model_class'] . '_' . $vector['id']);
+                
                 return [
-                    'id' => $vector['id'],
+                    'id' => $pointId,
                     'vector' => $vector['vector'],
-                    'payload' => $vector['metadata'] ?? [],
+                    'payload' => array_merge(
+                        $vector['metadata'] ?? [],
+                        ['point_id' => $pointId] // Store point ID for reference
+                    ),
                 ];
             }, $vectors);
 
@@ -140,7 +147,7 @@ class QdrantDriver implements VectorDriverInterface
             
             return array_map(function ($result) {
                 return [
-                    'id' => $result['id'],
+                    'id' => $result['payload']['model_id'] ?? $result['id'], // Use model_id from payload
                     'score' => $result['score'],
                     'metadata' => $result['payload'] ?? [],
                 ];

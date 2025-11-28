@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\AIChatController;
+use LaravelAIEngine\Http\Controllers\Api\RagChatApiController;
 
 /*
 |--------------------------------------------------------------------------
@@ -13,6 +14,40 @@ use LaravelAIEngine\Http\Controllers\AIChatController;
 |
 */
 
+// RAG Chat API Routes (v1)
+Route::prefix('api/v1/rag')
+    ->middleware(['api'])
+    ->name('ai-engine.rag.api.')
+    ->group(function () {
+        
+        // Chat endpoints
+        Route::post('/chat', [RagChatApiController::class, 'sendMessage'])
+            ->name('chat.send');
+        
+        Route::get('/chat/history/{session_id}', [RagChatApiController::class, 'getHistory'])
+            ->name('chat.history');
+        
+        Route::post('/chat/clear', [RagChatApiController::class, 'clearHistory'])
+            ->name('chat.clear');
+        
+        // Action endpoints
+        Route::post('/actions/execute', [RagChatApiController::class, 'executeAction'])
+            ->name('actions.execute');
+        
+        // RAG endpoints
+        Route::get('/collections', [RagChatApiController::class, 'getCollections'])
+            ->name('collections');
+        
+        // Configuration endpoints
+        Route::get('/engines', [RagChatApiController::class, 'getEngines'])
+            ->name('engines');
+        
+        // System endpoints
+        Route::get('/health', [RagChatApiController::class, 'health'])
+            ->name('health');
+    });
+
+// Legacy AI Demo Routes
 Route::prefix('ai-demo')
     ->middleware(['api'])
     ->name('ai-engine.api.')

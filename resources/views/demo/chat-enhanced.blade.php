@@ -48,7 +48,57 @@
         .glass-effect {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        /* Option Cards */
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        
+        .option-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            position: relative;
+        }
+        
+        .option-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .option-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            font-weight: 700;
+            font-size: 16px;
+            color: white;
+            margin-bottom: 8px;
+        }
+        
+        .option-text {
+            color: white;
+            font-size: 15px;
+            font-weight: 500;
+            line-height: 1.5;
+        }
+        
+        @media (max-width: 768px) {
+            .options-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -208,7 +258,22 @@
                                         class="flex-1 rounded-lg p-4 max-w-3xl"
                                         :class="message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'"
                                     >
-                                        <p class="whitespace-pre-wrap" x-html="formatMessage(message.content)"></p>
+                                        <p class="whitespace-pre-wrap" x-html="formatMessage(message.content, message.numbered_options)"></p>
+                                        
+                                        <!-- Option Cards -->
+                                        <template x-if="message.numbered_options && message.numbered_options.length > 0">
+                                            <div class="options-grid">
+                                                <template x-for="option in message.numbered_options" :key="option.number">
+                                                    <div 
+                                                        class="option-card"
+                                                        @click="selectOption(option.text)"
+                                                    >
+                                                        <div class="option-number" x-text="option.number"></div>
+                                                        <p class="option-text" x-text="stripMarkdown(option.text)"></p>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
                                         
                                         <!-- Actions -->
                                         <template x-if="message.actions && message.actions.length > 0">
@@ -348,7 +413,8 @@
                             this.messages.push({
                                 role: 'assistant',
                                 content: data.response,
-                                actions: data.actions || []
+                                actions: data.actions || [],
+                                numbered_options: data.numbered_options || []
                             });
 
                             await this.updateMemoryStats();
@@ -454,9 +520,36 @@
                     // Implement action execution
                 },
 
-                formatMessage(content) {
+                selectOption(value) {
+                    this.currentMessage = value;
+                    this.sendMessage();
+                },
+                
+                stripMarkdown(text) {
+                    // Remove markdown formatting from text
+                    return text
+                        .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove bold
+                        .replace(/\*(.*?)\*/g, '$1')      // Remove italic
+                        .replace(/`(.*?)`/g, '$1')        // Remove code
+                        .replace(/#{1,6}\s+/g, '')        // Remove headers
+                        .replace(/\[(.*?)\]\(.*?\)/g, '$1'); // Remove links
+                },
+
+                formatMessage(content, numberedOptions = []) {
+                    let formatted = content;
+                    
+                    // Remove numbered options from content if they exist
+                    if (numberedOptions && numberedOptions.length > 0) {
+                        numberedOptions.forEach(option => {
+                            const pattern = new RegExp(`^${option.number}\\.\\s+.+?(?=\\n\\n|\\n(?=\\d+\\.)|$)`, 'gms');
+                            formatted = formatted.replace(pattern, '');
+                        });
+                        // Clean up extra newlines
+                        formatted = formatted.replace(/\n{3,}/g, '\n\n').trim();
+                    }
+                    
                     // Basic markdown-like formatting
-                    return content
+                    return formatted
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                         .replace(/\*(.*?)\*/g, '<em>$1</em>')
                         .replace(/`(.*?)`/g, '<code class="bg-gray-200 px-1 rounded">$1</code>');

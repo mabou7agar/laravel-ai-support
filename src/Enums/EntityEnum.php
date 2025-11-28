@@ -178,53 +178,53 @@ class EntityEnum
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::WHISPER_1:
-                return EngineEnum::OPENAI;
+                return new EngineEnum(EngineEnum::OPENAI);
             case self::CLAUDE_3_5_SONNET:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
-                return EngineEnum::ANTHROPIC;
+                return new EngineEnum(EngineEnum::ANTHROPIC);
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
-                return EngineEnum::GEMINI;
+                return new EngineEnum(EngineEnum::GEMINI);
             case self::SD3_LARGE:
             case self::SD3_MEDIUM:
             case self::SDXL_1024:
-                return EngineEnum::STABLE_DIFFUSION;
+                return new EngineEnum(EngineEnum::STABLE_DIFFUSION);
             case self::ELEVEN_MULTILINGUAL_V2:
-                return EngineEnum::ELEVEN_LABS;
+                return new EngineEnum(EngineEnum::ELEVEN_LABS);
             case self::FLUX_PRO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
-                return EngineEnum::FAL_AI;
+                return new EngineEnum(EngineEnum::FAL_AI);
             case self::DEEPSEEK_CHAT:
             case self::DEEPSEEK_REASONER:
-                return EngineEnum::DEEPSEEK;
+                return new EngineEnum(EngineEnum::DEEPSEEK);
             case self::PERPLEXITY_SONAR_LARGE:
             case self::PERPLEXITY_SONAR_MEDIUM:
             case self::PERPLEXITY_SONAR_SMALL:
-                return EngineEnum::PERPLEXITY;
+                return new EngineEnum(EngineEnum::PERPLEXITY);
             case self::SERPER_SEARCH:
             case self::SERPER_NEWS:
             case self::SERPER_IMAGES:
-                return EngineEnum::SERPER;
+                return new EngineEnum(EngineEnum::SERPER);
             case self::UNSPLASH_SEARCH:
-                return EngineEnum::UNSPLASH;
+                return new EngineEnum(EngineEnum::UNSPLASH);
             case self::PLAGIARISM_BASIC:
             case self::PLAGIARISM_ADVANCED:
             case self::PLAGIARISM_ACADEMIC:
-                return EngineEnum::PLAGIARISM_CHECK;
+                return new EngineEnum(EngineEnum::PLAGIARISM_CHECK);
             case self::MIDJOURNEY_V6:
             case self::MIDJOURNEY_V5:
             case self::MIDJOURNEY_NIJI:
-                return EngineEnum::MIDJOURNEY;
+                return new EngineEnum(EngineEnum::MIDJOURNEY);
             case self::AZURE_TEXT_ANALYTICS:
             case self::AZURE_COMPUTER_VISION:
-                return EngineEnum::AZURE;
+                return new EngineEnum(EngineEnum::AZURE);
             case self::OPENROUTER_MISTRAL_7B_FREE:
             case self::OPENROUTER_QWEN_2_5_7B_FREE:
             case self::OPENROUTER_PHI_3_MINI_FREE:
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
-                return EngineEnum::OPENROUTER;
+                return new EngineEnum(EngineEnum::OPENROUTER);
             default:
                 throw new \InvalidArgumentException("Unknown model: {$this->value}");
         }

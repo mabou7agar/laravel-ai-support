@@ -627,11 +627,15 @@ return [
         // Maximum context items to retrieve
         'max_context_items' => env('INTELLIGENT_RAG_MAX_CONTEXT', 5),
         
-        // Minimum relevance score (0-1)
-        'min_relevance_score' => env('INTELLIGENT_RAG_MIN_SCORE', 0.7),
+        // Minimum relevance score (0-1) - Lower = more results, Higher = more precise
+        // 0.3 = balanced (recommended), 0.5 = moderate, 0.7+ = strict/precise
+        'min_relevance_score' => env('INTELLIGENT_RAG_MIN_SCORE', 0.3),
         
-        // Model to use for query analysis
-        'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'),
+        // Fallback threshold when no results found (0.0 = return anything, null = no fallback)
+        'fallback_threshold' => env('INTELLIGENT_RAG_FALLBACK_THRESHOLD', 0.0),
+        
+        // Model to use for query analysis (can use gpt-4o, gpt-4o-mini, or any available model)
+        'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o'),
         
         // Include source citations in response
         'include_sources' => env('INTELLIGENT_RAG_INCLUDE_SOURCES', true),

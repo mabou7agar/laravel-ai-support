@@ -38,9 +38,12 @@ class ChatService
         array $ragCollections = [],
         ?string $userId = null
     ): AIResponse {
+        // Preprocess message to detect numbered selections
+        $processedMessage = $this->preprocessMessage($message, $sessionId, $useMemory);
+        
         // Create AI request
         $aiRequest = Engine::createRequest(
-            prompt: $message,
+            prompt: $processedMessage,
             engine: $engine,
             model: $model,
             maxTokens: 1000,
@@ -158,9 +161,16 @@ class ChatService
     protected function getSystemPrompt(bool $useActions): string
     {
         $prompt = "You are a helpful AI assistant. Provide clear, accurate, and helpful responses to user questions.";
+        
+        // Add numbered selection handling
+        $prompt .= "\n\nIMPORTANT: When you provide numbered lists or options:";
+        $prompt .= "\n- If the user responds with JUST a number (like '1', '2', etc.), they are selecting that option from your previous response";
+        $prompt .= "\n- Look at your previous message and expand on the selected option";
+        $prompt .= "\n- For example, if you listed '1. Introduction to Laravel' and user says '1', provide detailed information about introducing Laravel";
+        $prompt .= "\n- NEVER say the question is incomplete when user sends a number - they're making a selection!";
 
         if ($useActions) {
-            $prompt .= " When appropriate, suggest follow-up actions or questions that might be helpful to the user.";
+            $prompt .= "\n\nWhen appropriate, suggest follow-up actions or questions that might be helpful to the user.";
             
             // Add available actions context
             try {
@@ -181,5 +191,54 @@ class ChatService
         }
 
         return $prompt;
+    }
+    
+    /**
+     * Preprocess message to detect numbered selections
+     */
+    protected function preprocessMessage(string $message, string $sessionId, bool $useMemory): string
+    {
+        // Check if message is just a number (numbered selection)
+        if (preg_match('/^\s*(\d+)\s*$/', trim($message), $matches)) {
+            $selectedNumber = $matches[1];
+            
+            // Try to get the last assistant message to find context
+            if ($useMemory) {
+                try {
+                    $conversationId = $this->conversationService->getOrCreateConversation(
+                        $sessionId,
+                        null,
+                        'openai',
+                        'gpt-4o-mini'
+                    );
+                    
+                    $messages = $this->memoryOptimization->getOptimizedHistory($conversationId, 5);
+                    
+                    // Find the last assistant message
+                    $lastAssistantMessage = null;
+                    for ($i = count($messages) - 1; $i >= 0; $i--) {
+                        if (($messages[$i]['role'] ?? '') === 'assistant') {
+                            $lastAssistantMessage = $messages[$i]['content'] ?? '';
+                            break;
+                        }
+                    }
+                    
+                    // If we found a message with numbered list, extract the selected option
+                    if ($lastAssistantMessage && preg_match('/^\s*' . $selectedNumber . '\.\s+(.+?)(?:\n|$)/m', $lastAssistantMessage, $optionMatch)) {
+                        $selectedOption = trim($optionMatch[1]);
+                        
+                        // Enrich the message with context
+                        return "I'm selecting option {$selectedNumber}: \"{$selectedOption}\". Please provide more details about this.";
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Failed to preprocess numbered selection: ' . $e->getMessage());
+                }
+            }
+            
+            // Fallback: Just add context that it's a selection
+            return "I'm selecting option {$selectedNumber} from your previous response. Please provide more details about that option.";
+        }
+        
+        return $message;
     }
 }

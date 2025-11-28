@@ -7,6 +7,17 @@ use LaravelAIEngine\Services\AIEngineManager;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * VectorRAGBridge - Manual RAG Service
+ * 
+ * This service ALWAYS performs vector search for every query.
+ * Use this when you want guaranteed context retrieval.
+ * 
+ * For intelligent RAG where AI decides when to search,
+ * use IntelligentRAGService instead.
+ * 
+ * @see IntelligentRAGService For AI-powered decision making
+ */
 class VectorRAGBridge
 {
     protected VectorSearchService $vectorSearch;

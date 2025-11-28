@@ -147,13 +147,17 @@ class AiChatController extends Controller
                 userId: $dto->userId
             );
 
+            // Get RAG metadata
+            $metadata = $response->getMetadata();
+            
             // Add interactive actions if enabled
             $actions = [];
             if ($useActions) {
                 try {
                     $actions = $this->actionService->generateSuggestedActions(
                         $response->getContent(),
-                        $dto->sessionId
+                        $dto->sessionId,
+                        $metadata  // Pass RAG metadata to generate context-aware actions
                     );
                 } catch (\Exception $e) {
                     \Log::warning('Failed to generate actions: ' . $e->getMessage());
@@ -174,13 +178,19 @@ class AiChatController extends Controller
             } catch (\Exception $e) {
                 \Log::warning('Failed to track analytics: ' . $e->getMessage());
             }
-
+            
             return response()->json([
                 'success' => true,
                 'response' => $response->getContent(),
                 'actions' => array_map(fn($action) => $action->toArray(), $actions),
                 'usage' => $response->getUsage() ?? [],
                 'session_id' => $dto->sessionId,
+                // RAG metadata
+                'rag_enabled' => $metadata['rag_enabled'] ?? false,
+                'context_count' => $metadata['context_count'] ?? 0,
+                'sources' => $metadata['sources'] ?? [],
+                'numbered_options' => $metadata['numbered_options'] ?? [],
+                'has_options' => $metadata['has_options'] ?? false,
             ]);
 
         } catch (\Exception $e) {

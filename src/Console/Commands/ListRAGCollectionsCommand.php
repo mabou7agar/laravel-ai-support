@@ -27,26 +27,30 @@ class ListRAGCollectionsCommand extends Command
         if (empty($collections)) {
             $this->warn('⚠️  No RAG collections found!');
             $this->newLine();
-            $this->line('To make a model RAG-enabled, add one of these traits:');
-            $this->line('  - use LaravelAIEngine\Traits\Vectorizable;');
-            $this->line('  - use LaravelAIEngine\Traits\RAGgable;');
+            $this->line('To make a model RAG-enabled, add the Vectorizable trait:');
+            $this->line('  use LaravelAIEngine\Traits\Vectorizable;');
             $this->newLine();
             $this->line('Example:');
             $this->line('  class Document extends Model');
             $this->line('  {');
-            $this->line('      use Vectorizable, RAGgable;');
+            $this->line('      use Vectorizable;');
+            $this->line('      ');
+            $this->line('      public function toVectorContent(): string');
+            $this->line('      {');
+            $this->line('          return $this->title . "\\n\\n" . $this->content;');
+            $this->line('      }');
             $this->line('  }');
             return self::SUCCESS;
         }
-
-        $this->info("✅ Found {count($collections)} RAG collection(s):");
+$count = count($collections);
+        $this->info("✅ Found {$count} RAG collection(s):");
         $this->newLine();
 
         $tableData = [];
         foreach ($collections as $index => $collection) {
             $priority = $this->getModelPriority($collection);
             $isIndexed = $this->checkIfIndexed($collection);
-            
+
             $tableData[] = [
                 $index + 1,
                 class_basename($collection),
@@ -97,7 +101,7 @@ class ListRAGCollectionsCommand extends Command
             $instance = new $className();
             $tableName = $instance->getTable();
             $collectionName = config('ai-engine.vector.collection_prefix', 'vec_') . $tableName;
-            
+
             // Check if collection exists in vector database
             $driver = app(\LaravelAIEngine\Services\Vector\VectorDriverManager::class)->driver();
             return $driver->collectionExists($collectionName);
