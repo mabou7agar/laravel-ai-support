@@ -84,17 +84,23 @@ class RelationshipAnalyzer
             
             // Check if it's a relationship
             if (str_contains($returnTypeName, 'Illuminate\Database\Eloquent\Relations')) {
-                $relationType = class_basename($returnTypeName);
-                
-                $relationships[] = [
-                    'name' => $methodName,
-                    'type' => $relationType,
-                    'related_model' => $this->getRelatedModel($modelClass, $methodName),
-                    'is_one_to_many' => $this->isOneToMany($relationType),
-                    'is_many_to_many' => $this->isManyToMany($relationType),
-                    'recommended_for_indexing' => $this->isRecommendedForIndexing($relationType),
-                    'estimated_count' => $this->estimateRelatedCount($modelClass, $methodName),
-                ];
+                try {
+                    $relationType = class_basename($returnTypeName);
+                    
+                    $relationships[] = [
+                        'name' => $methodName,
+                        'type' => $relationType,
+                        'related_model' => $this->getRelatedModel($modelClass, $methodName),
+                        'is_one_to_many' => $this->isOneToMany($relationType),
+                        'is_many_to_many' => $this->isManyToMany($relationType),
+                        'recommended_for_indexing' => $this->isRecommendedForIndexing($relationType),
+                        'estimated_count' => $this->estimateRelatedCount($modelClass, $methodName),
+                    ];
+                } catch (\Exception $e) {
+                    // Skip relationships with missing related models
+                    // This happens when related model class doesn't exist
+                    continue;
+                }
             }
         }
         
