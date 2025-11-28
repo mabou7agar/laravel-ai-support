@@ -323,11 +323,15 @@ class TestRAGFeaturesCommand extends Command
         $this->line('─────────────────────────────────');
 
         try {
-            $message = $this->ask('Enter message for chat service', 'Hello, how are you?');
+            // Test 6a: Intelligent RAG (AI decides)
+            $this->line('Test 6a: Intelligent RAG (AI decides when to search)');
+            $message = $this->option('skip-interactive') 
+                ? 'What is Laravel?' 
+                : $this->ask('Enter message for chat service', 'What is Laravel?');
 
             $response = $chatService->processMessage(
                 message: $message,
-                sessionId: 'test-session-integration',
+                sessionId: 'test-session-integration-intelligent',
                 engine: 'openai',
                 model: 'gpt-4o-mini',
                 useMemory: true,
@@ -337,13 +341,45 @@ class TestRAGFeaturesCommand extends Command
                 userId: 'test-user'
             );
 
-            $this->info('✅ Chat service response:');
+            $ragEnabled = $response->getMetadata()['rag_enabled'] ?? false;
+            $contextCount = $response->getMetadata()['context_count'] ?? 0;
+
             $this->line("   Message: '{$message}'");
+            $this->line("   RAG Enabled: " . ($ragEnabled ? 'Yes ✅' : 'No ❌'));
+            $this->line("   Context Items: {$contextCount}");
             $this->line("   Response: " . substr($response->getContent(), 0, 150) . '...');
-            $this->line("   RAG Enabled: " . ($response->getMetadata()['rag_enabled'] ?? false ? 'Yes' : 'No'));
-            $this->line("   Session ID: " . ($response->getMetadata()['session_id'] ?? 'N/A'));
+            $this->newLine();
+
+            // Test 6b: Force RAG (always searches)
+            $this->line('Test 6b: Forced RAG (always searches knowledge base)');
+            $message2 = $this->option('skip-interactive') 
+                ? 'Tell me about the content' 
+                : $this->ask('Enter another message', 'Tell me about the content');
+
+            $response2 = $chatService->processMessage(
+                message: $message2,
+                sessionId: 'test-session-integration-forced',
+                engine: 'openai',
+                model: 'gpt-4o-mini',
+                useMemory: true,
+                useActions: false,
+                useIntelligentRAG: false,  // Force RAG
+                forceRAG: true,
+                ragCollections: [],  // Auto-discover
+                userId: 'test-user'
+            );
+
+            $contextCount2 = $response2->getMetadata()['context_count'] ?? 0;
+            $sources = $response2->getMetadata()['sources'] ?? [];
+
+            $this->line("   Message: '{$message2}'");
+            $this->line("   RAG: Forced ✅");
+            $this->line("   Context Items: {$contextCount2}");
+            $this->line("   Sources: " . count($sources));
+            $this->line("   Response: " . substr($response2->getContent(), 0, 150) . '...');
 
             $this->newLine();
+            $this->info('✅ Chat service integration working');
 
         } catch (\Exception $e) {
             $this->error("❌ Chat service integration failed: {$e->getMessage()}");
