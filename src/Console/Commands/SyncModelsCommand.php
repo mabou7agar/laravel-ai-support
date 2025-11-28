@@ -8,11 +8,11 @@ use LaravelAIEngine\Facades\AIEngine;
 
 class SyncModelsCommand extends Command
 {
-    protected $signature = 'ai-engine:sync-models 
+    protected $signature = 'ai-engine:sync-engine-models 
                            {--engine= : Sync models for specific engine only}
                            {--force : Force sync even if models exist}';
 
-    protected $description = 'Sync available models from AI providers';
+    protected $description = 'Sync available models from AI providers (simple list)';
 
     public function handle(): int
     {
