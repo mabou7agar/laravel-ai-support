@@ -69,6 +69,24 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
             return new QueuedAIProcessor($app->make(JobStatusTracker::class));
         });
 
+        // Register Intelligent RAG Service
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\IntelligentRAGService(
+                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+                $app->make(\LaravelAIEngine\Services\AIEngineManager::class)
+            );
+        });
+
+        // Register AI Model Registry
+        $this->app->singleton(\LaravelAIEngine\Services\AIModelRegistry::class, function ($app) {
+            return new \LaravelAIEngine\Services\AIModelRegistry();
+        });
+
+        // Register RAG Collection Discovery
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery();
+        });
+
         // Register aliases
         $this->app->alias(AIEngineService::class, 'ai-engine');
         $this->app->alias(CreditManager::class, 'ai-engine.credits');
@@ -101,6 +119,13 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
                 TestEnginesCommand::class,
                 UsageReportCommand::class,
                 ClearCacheCommand::class,
+                \LaravelAIEngine\Console\Commands\TestAiChatCommand::class,
+                \LaravelAIEngine\Console\Commands\TestEmailAssistantCommand::class,
+                \LaravelAIEngine\Console\Commands\TestDynamicActionsCommand::class,
+                \LaravelAIEngine\Console\Commands\SyncAIModelsCommand::class,
+                \LaravelAIEngine\Console\Commands\ListAIModelsCommand::class,
+                \LaravelAIEngine\Console\Commands\AddAIModelCommand::class,
+                \LaravelAIEngine\Console\Commands\ListRAGCollectionsCommand::class,
             ]);
         }
 
@@ -111,8 +136,12 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
         $this->registerEventListeners();
 
         // Register routes if needed
-        if (config('ai-engine.routes.enabled', false)) {
+        if (config('ai-engine.routes.enabled', true)) {
+            // Load API routes
             $this->loadRoutesFrom(__DIR__ . '/../routes/api.php');
+            
+            // Load web routes (views)
+            $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
         }
     }
 

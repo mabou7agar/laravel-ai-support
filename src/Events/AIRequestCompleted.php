@@ -19,8 +19,49 @@ class AIRequestCompleted
         public AIResponse $response,
         public string $requestId,
         public float $executionTime,
+        public ?string $userId = null,
         public array $metadata = []
-    ) {}
+    ) {
+        // Set convenience properties from request and response
+        $this->engine = $request->getEngine()->value;
+        $this->model = $request->getModel()->value;
+        
+        // Set token usage properties
+        $usage = $response->usage ?? [];
+        $this->inputTokens = $usage['prompt_tokens'] ?? $usage['input_tokens'] ?? 0;
+        $this->outputTokens = $usage['completion_tokens'] ?? $usage['output_tokens'] ?? 0;
+        $this->totalTokens = $usage['total_tokens'] ?? ($this->inputTokens + $this->outputTokens);
+        
+        // Set timing properties
+        $this->responseTime = $executionTime;
+        
+        // Set cost and credits properties (use property_exists to avoid errors)
+        $this->creditsUsed = property_exists($response, 'creditsUsed') ? ($response->creditsUsed ?? 0) : 0;
+        $this->cost = $this->creditsUsed * 0.001; // Calculate cost from credits
+        
+        // Set status properties
+        $this->success = method_exists($response, 'isSuccess') ? $response->isSuccess() : true;
+        $this->finishReason = property_exists($response, 'finishReason') ? ($response->finishReason ?? 'complete') : 'complete';
+        $this->errorMessage = property_exists($response, 'error') ? $response->error : null;
+        
+        // Set content properties
+        $this->content = property_exists($response, 'content') ? ($response->content ?? '') : '';
+        $this->contentLength = strlen($this->content);
+    }
+    
+    public string $engine;
+    public string $model;
+    public int $inputTokens;
+    public int $outputTokens;
+    public int $totalTokens;
+    public float $responseTime;
+    public float $cost;
+    public float $creditsUsed;  // Changed from int to float
+    public bool $success;
+    public string $finishReason;
+    public ?string $errorMessage;
+    public string $content;
+    public int $contentLength;
 
     /**
      * Get the channels the event should broadcast on.

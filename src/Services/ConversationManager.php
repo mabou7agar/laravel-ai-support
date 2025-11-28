@@ -6,10 +6,20 @@ use LaravelAIEngine\Models\Conversation;
 use LaravelAIEngine\Models\Message;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Services\RAG\VectorRAGBridge;
 use Illuminate\Support\Collection;
 
 class ConversationManager
 {
+    protected ?VectorRAGBridge $ragBridge = null;
+
+    public function __construct()
+    {
+        // Inject RAG bridge if available
+        if (class_exists(VectorRAGBridge::class)) {
+            $this->ragBridge = app(VectorRAGBridge::class);
+        }
+    }
     public function createConversation(
         ?string $userId = null,
         ?string $title = null,
@@ -78,13 +88,11 @@ class ConversationManager
         ]);
 
         // Update usage statistics
-        $message->updateUsageStats([
-            'tokens_used' => $response->tokensUsed,
-            'credits_used' => $response->creditsUsed,
-            'latency_ms' => $response->latency,
-            'engine' => $response->engine->value,
-            'model' => $response->model->value,
-        ]);
+        $usage = $response->getUsage();
+        $message->updateUsageStats(
+            $usage['total_tokens'] ?? null,
+            null // credits_used - not available in usage array
+        );
 
         // Auto-generate title if this is the first assistant message
         if ($conversation->settings['auto_title'] ?? true) {
@@ -241,6 +249,124 @@ class ConversationManager
         }
 
         return $title ?: 'New Conversation';
+    }
+
+    /**
+     * Chat with RAG (Retrieval Augmented Generation)
+     */
+    public function chatWithRAG(
+        string $conversationId,
+        string $query,
+        string $modelClass,
+        array $options = []
+    ): array {
+        if (!$this->ragBridge) {
+            throw new \RuntimeException('RAG bridge is not available');
+        }
+
+        $conversation = $this->getConversation($conversationId);
+        if (!$conversation) {
+            throw new \InvalidArgumentException("Conversation not found: {$conversationId}");
+        }
+
+        // Add user message
+        $this->addUserMessage($conversationId, $query);
+
+        // Get RAG response
+        $result = $this->ragBridge->chat(
+            $query,
+            $modelClass,
+            $conversation->user_id,
+            $options
+        );
+
+        // Add assistant message with sources
+        $conversation->addMessage('assistant', $result['response'], [
+            'sources' => $result['sources'],
+            'context_count' => $result['context_count'],
+            'rag_enabled' => true,
+        ]);
+
+        $conversation->touch('last_activity_at');
+
+        return $result;
+    }
+
+    /**
+     * Stream chat with RAG
+     */
+    public function streamChatWithRAG(
+        string $conversationId,
+        string $query,
+        string $modelClass,
+        callable $callback,
+        array $options = []
+    ): array {
+        if (!$this->ragBridge) {
+            throw new \RuntimeException('RAG bridge is not available');
+        }
+
+        $conversation = $this->getConversation($conversationId);
+        if (!$conversation) {
+            throw new \InvalidArgumentException("Conversation not found: {$conversationId}");
+        }
+
+        // Add user message
+        $this->addUserMessage($conversationId, $query);
+
+        // Stream RAG response
+        $result = $this->ragBridge->streamChat(
+            $query,
+            $modelClass,
+            $callback,
+            $conversation->user_id,
+            $options
+        );
+
+        // Add assistant message with sources
+        $conversation->addMessage('assistant', $result['response'], [
+            'sources' => $result['sources'],
+            'context_count' => $result['context_count'],
+            'rag_enabled' => true,
+        ]);
+
+        $conversation->touch('last_activity_at');
+
+        return $result;
+    }
+
+    /**
+     * Enable RAG for conversation
+     */
+    public function enableRAG(string $conversationId, string $modelClass, array $options = []): void
+    {
+        $conversation = $this->getConversation($conversationId);
+        if (!$conversation) {
+            throw new \InvalidArgumentException("Conversation not found: {$conversationId}");
+        }
+
+        $settings = $conversation->settings ?? [];
+        $settings['rag_enabled'] = true;
+        $settings['rag_model_class'] = $modelClass;
+        $settings['rag_options'] = $options;
+
+        $conversation->update(['settings' => $settings]);
+    }
+
+    /**
+     * Disable RAG for conversation
+     */
+    public function disableRAG(string $conversationId): void
+    {
+        $conversation = $this->getConversation($conversationId);
+        if (!$conversation) {
+            throw new \InvalidArgumentException("Conversation not found: {$conversationId}");
+        }
+
+        $settings = $conversation->settings ?? [];
+        $settings['rag_enabled'] = false;
+
+        $conversation->update(['settings' => $settings]);
     }
 
     public function getConversationStats(string $conversationId): array

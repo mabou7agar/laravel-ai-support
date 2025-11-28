@@ -3,6 +3,31 @@
 return [
     /*
     |--------------------------------------------------------------------------
+    | Debug Mode
+    |--------------------------------------------------------------------------
+    |
+    | Enable debug logging for AI Engine operations. When enabled, detailed
+    | logs will be written to the ai-engine log channel.
+    |
+    */
+    'debug' => env('AI_ENGINE_DEBUG', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Demo Routes Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Control whether demo routes are enabled. By default, they are only
+    | enabled in local environment. Set AI_ENGINE_ENABLE_DEMO_ROUTES=true
+    | in your .env file to enable in other environments.
+    |
+    */
+    'enable_demo_routes' => env('AI_ENGINE_ENABLE_DEMO_ROUTES', app()->environment('local')),
+    'demo_route_prefix' => env('AI_ENGINE_DEMO_PREFIX', 'ai-demo'),
+    'demo_route_middleware' => ['web'],
+    
+    /*
+    |--------------------------------------------------------------------------
     | Default AI Engine
     |--------------------------------------------------------------------------
     |
@@ -12,6 +37,20 @@ return [
     |
     */
     'default' => env('AI_ENGINE_DEFAULT', 'openai'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rate Limiting
+    |--------------------------------------------------------------------------
+    |
+    | Configure rate limiting for AI requests to prevent abuse and control costs.
+    |
+    */
+    'rate_limiting' => [
+        'enabled' => env('AI_ENGINE_RATE_LIMIT_ENABLED', true),
+        'max_requests_per_minute' => env('AI_ENGINE_RATE_LIMIT_PER_MINUTE', 60),
+        'max_requests_per_hour' => env('AI_ENGINE_RATE_LIMIT_PER_HOUR', 1000),
+    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -270,7 +309,17 @@ return [
     |
     */
     'memory' => [
+        'enabled' => env('AI_MEMORY_ENABLED', true),
         'default_driver' => env('AI_MEMORY_DRIVER', 'database'),
+        'max_messages' => env('AI_MEMORY_MAX_MESSAGES', 50),
+        
+        // Memory Optimization Settings
+        'optimization' => [
+            'enabled' => env('AI_MEMORY_OPTIMIZATION_ENABLED', true),
+            'window_size' => env('AI_MEMORY_WINDOW_SIZE', 10), // Recent messages to keep
+            'summary_threshold' => env('AI_MEMORY_SUMMARY_THRESHOLD', 20), // When to start summarizing
+            'cache_ttl' => env('AI_MEMORY_CACHE_TTL', 300), // 5 minutes
+        ],
         
         'database' => [
             'connection' => env('AI_MEMORY_DB_CONNECTION', null),
@@ -426,8 +475,165 @@ return [
             'allowed_domains' => env('AI_ACTIONS_ALLOWED_DOMAINS', ''),
         ],
         'handlers' => [
-            'button' => \LaravelAIEngine\Services\Actions\Handlers\ButtonActionHandler::class,
-            'quick_reply' => \LaravelAIEngine\Services\Actions\Handlers\QuickReplyActionHandler::class,
+            'button' => \LaravelAIEngine\Services\ActionHandlers\ButtonActionHandler::class,
+            'quick_reply' => \LaravelAIEngine\Services\ActionHandlers\QuickReplyActionHandler::class,
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Vector Search & Embeddings Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure vector database, embeddings, and semantic search features
+    |
+    */
+    'vector' => [
+        // Default vector database driver
+        'default_driver' => env('VECTOR_DB_DRIVER', 'qdrant'),
+
+        // Vector database drivers
+        'drivers' => [
+            'qdrant' => [
+                'host' => env('QDRANT_HOST', 'http://localhost:6333'),
+                'api_key' => env('QDRANT_API_KEY'),
+                'timeout' => env('QDRANT_TIMEOUT', 30),
+            ],
+
+            'pinecone' => [
+                'api_key' => env('PINECONE_API_KEY'),
+                'environment' => env('PINECONE_ENVIRONMENT', 'us-west1-gcp'),
+                'timeout' => env('PINECONE_TIMEOUT', 30),
+            ],
+        ],
+
+        // Embedding configuration
+        'embedding_model' => env('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-large'),
+        'embedding_dimensions' => env('OPENAI_EMBEDDING_DIMENSIONS', 3072),
+
+        // Collection settings
+        'collection_prefix' => env('VECTOR_COLLECTION_PREFIX', 'vec_'),
+
+        // Caching
+        'cache_embeddings' => env('VECTOR_CACHE_EMBEDDINGS', true),
+        'cache_ttl' => env('VECTOR_CACHE_TTL', 86400), // 24 hours
+
+        // Batch processing
+        'batch_size' => env('VECTOR_BATCH_SIZE', 100),
+
+        // Auto-indexing
+        'auto_index' => env('VECTOR_AUTO_INDEX', false),
+        'auto_delete' => env('VECTOR_AUTO_DELETE', true),
+
+        // Queue configuration
+        'queue' => [
+            'enabled' => env('VECTOR_QUEUE_ENABLED', true),
+            'connection' => env('VECTOR_QUEUE_CONNECTION', 'redis'),
+            'queue_name' => env('VECTOR_QUEUE_NAME', 'vector-indexing'),
+        ],
+
+        // Search defaults
+        'search' => [
+            'default_limit' => env('VECTOR_SEARCH_LIMIT', 20),
+            'default_threshold' => env('VECTOR_SEARCH_THRESHOLD', 0.3),
+        ],
+
+        // Chunking configuration for large texts
+        'chunking' => [
+            'enabled' => env('VECTOR_CHUNKING_ENABLED', true),
+            'chunk_size' => env('VECTOR_CHUNK_SIZE', 1000),
+            'chunk_overlap' => env('VECTOR_CHUNK_OVERLAP', 200),
+            'min_chunk_size' => env('VECTOR_MIN_CHUNK_SIZE', 100),
+        ],
+
+        // Media embedding configuration
+        'media' => [
+            'enabled' => env('VECTOR_MEDIA_ENABLED', true),
+            'vision_model' => env('OPENAI_VISION_MODEL', 'gpt-4o'),
+            'whisper_model' => env('OPENAI_WHISPER_MODEL', 'whisper-1'),
+            
+            // Supported file formats
+            'supported_formats' => [
+                'images' => ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'heic', 'heif'],
+                'documents' => ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'ppt', 'pptx', 'csv'],
+                'audio' => ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma'],
+                'video' => ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'm4v'],
+            ],
+        ],
+
+        // RAG (Retrieval Augmented Generation) configuration
+        'rag' => [
+            'enabled' => env('VECTOR_RAG_ENABLED', true),
+            'max_context_items' => env('VECTOR_RAG_MAX_CONTEXT', 5),
+            'include_sources' => env('VECTOR_RAG_INCLUDE_SOURCES', true),
+            'min_relevance_score' => env('VECTOR_RAG_MIN_SCORE', 0.5),
+        ],
+
+        // Authorization & Security
+        'authorization' => [
+            'enabled' => env('VECTOR_AUTHORIZATION_ENABLED', true),
+            'default_allow' => env('VECTOR_AUTH_DEFAULT_ALLOW', true),
+            'default_allow_indexing' => env('VECTOR_AUTH_DEFAULT_ALLOW_INDEXING', true),
+            'default_allow_deletion' => env('VECTOR_AUTH_DEFAULT_ALLOW_DELETION', true),
+            'filter_by_user' => env('VECTOR_AUTH_FILTER_BY_USER', false),
+            'filter_by_visibility' => env('VECTOR_AUTH_FILTER_BY_VISIBILITY', true),
+            'filter_by_status' => env('VECTOR_AUTH_FILTER_BY_STATUS', true),
+            'log_events' => env('VECTOR_AUTH_LOG_EVENTS', false),
+            
+            // Row-level security rules
+            'row_level_security' => [
+                // Example: ['field' => 'user_id', 'operator' => '==', 'value' => '{user_id}']
+            ],
+            
+            // Collection access control
+            'restricted_collections' => [],
+            'accessible_collections' => [],
+            'collection_access' => [],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Intelligent RAG Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for Intelligent RAG (Retrieval-Augmented Generation).
+    | The AI automatically decides when to search the knowledge base.
+    |
+    */
+    'intelligent_rag' => [
+        'enabled' => env('INTELLIGENT_RAG_ENABLED', true),
+        
+        // Default collections to search (model class names)
+        // If empty, the system will AUTO-DISCOVER all models with:
+        // - Vectorizable trait
+        // - RAGgable trait
+        // 
+        // Simply add 'use Vectorizable;' or 'use RAGgable;' to your models!
+        'default_collections' => env('INTELLIGENT_RAG_COLLECTIONS') 
+            ? explode(',', env('INTELLIGENT_RAG_COLLECTIONS'))
+            : [
+                // Leave empty for auto-discovery, or specify manually:
+                // 'App\\Models\\Document',
+                // 'App\\Models\\Post',
+                // 'App\\Models\\Email',
+                // 'App\\Models\\Article',
+            ],
+        
+        // Auto-discovery settings
+        'auto_discover' => env('INTELLIGENT_RAG_AUTO_DISCOVER', true),
+        'discovery_cache_ttl' => env('INTELLIGENT_RAG_DISCOVERY_CACHE', 3600), // 1 hour
+        
+        // Maximum context items to retrieve
+        'max_context_items' => env('INTELLIGENT_RAG_MAX_CONTEXT', 5),
+        
+        // Minimum relevance score (0-1)
+        'min_relevance_score' => env('INTELLIGENT_RAG_MIN_SCORE', 0.7),
+        
+        // Model to use for query analysis
+        'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'),
+        
+        // Include source citations in response
+        'include_sources' => env('INTELLIGENT_RAG_INCLUDE_SOURCES', true),
     ],
 ];

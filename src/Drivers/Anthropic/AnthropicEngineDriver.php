@@ -111,14 +111,10 @@ class AnthropicEngineDriver extends BaseEngineDriver
     public function generateText(AIRequest $request): AIResponse
     {
         try {
-            $messages = $this->buildMessages($request);
+            $this->logApiRequest('generateText', $request);
             
-            $payload = [
-                'model' => $request->model->value,
-                'messages' => $messages,
-                'max_tokens' => $request->maxTokens ?? 4096,
-                'temperature' => $request->temperature ?? 0.7,
-            ];
+            $messages = $this->buildMessages($request);
+            $payload = $this->buildChatPayload($request, $messages);
 
             if ($request->systemPrompt) {
                 $payload['system'] = $request->systemPrompt;
@@ -128,33 +124,18 @@ class AnthropicEngineDriver extends BaseEngineDriver
                 'json' => $payload,
             ]);
 
-            $data = json_decode($response->getBody()->getContents(), true);
-            
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
             $content = $data['content'][0]['text'] ?? '';
-            $tokensUsed = $data['usage']['output_tokens'] ?? $this->calculateTokensUsed($content);
 
-            return AIResponse::success(
+            return $this->buildSuccessResponse(
                 $content,
-                $request->engine,
-                $request->model
-            )->withUsage(
-                tokensUsed: $tokensUsed,
-                creditsUsed: $tokensUsed * $request->model->creditIndex()
-            )->withRequestId($data['id'] ?? null)
-             ->withFinishReason($data['stop_reason'] ?? null);
+                $request,
+                $data,
+                'anthropic'
+            );
 
-        } catch (RequestException $e) {
-            return AIResponse::error(
-                'Anthropic API error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
-            );
         } catch (\Exception $e) {
-            return AIResponse::error(
-                'Unexpected error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
-            );
+            return $this->handleApiError($e, $request, 'text generation');
         }
     }
 
@@ -275,19 +256,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
      */
     private function buildMessages(AIRequest $request): array
     {
-        $messages = [];
-
-        // Add conversation history if provided
-        if (!empty($request->messages)) {
-            $messages = array_merge($messages, $request->messages);
-        }
-
-        // Add the main prompt
-        $messages[] = [
-            'role' => 'user',
-            'content' => $request->prompt,
-        ];
-
-        return $messages;
+        // Use centralized method (Anthropic doesn't include system in messages array)
+        return $this->buildStandardMessages($request, includeSystemPrompt: false);
     }
 }

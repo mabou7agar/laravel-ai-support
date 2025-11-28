@@ -116,12 +116,12 @@ class AnalyticsTrackingListener
     {
         try {
             $this->analyticsManager->trackRequest([
-                'request_id' => $event->sessionId,
+                'request_id' => 'session_start_' . $event->sessionId . '_' . uniqid(),
                 'user_id' => $event->userId,
                 'engine' => $event->engine,
                 'model' => $event->model,
                 'status' => 'started',
-                'metadata' => $event->metadata,
+                'metadata' => array_merge($event->metadata, ['session_id' => $event->sessionId]),
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to track session started', [

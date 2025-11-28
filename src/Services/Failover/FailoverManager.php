@@ -354,8 +354,14 @@ class FailoverManager
     {
         $providers = config('ai-engine.failover.providers', []);
         
-        foreach ($providers as $provider) {
-            $this->getCircuitBreaker($provider);
+        foreach ($providers as $providerName => $providerConfig) {
+            // If providers is an array of strings, use the value
+            // If providers is an associative array, use the key
+            $name = is_string($providerName) ? $providerName : $providerConfig;
+            
+            if (is_string($name)) {
+                $this->getCircuitBreaker($name);
+            }
         }
     }
 

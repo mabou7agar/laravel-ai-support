@@ -17,6 +17,7 @@ class AIStreamingError
         public string $engine,
         public string $errorMessage,
         public int $errorCode,
+        public ?string $userId = null,
         public ?\Throwable $exception = null,
         public array $metadata = []
     ) {}

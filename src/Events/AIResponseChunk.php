@@ -21,6 +21,7 @@ class AIResponseChunk implements ShouldBroadcast
         public string $sessionId,
         public string $chunk,
         public int $chunkIndex,
+        public ?string $userId = null,
         public array $metadata = []
     ) {}
 
@@ -42,6 +43,7 @@ class AIResponseChunk implements ShouldBroadcast
             'session_id' => $this->sessionId,
             'chunk' => $this->chunk,
             'chunk_index' => $this->chunkIndex,
+            'user_id' => $this->userId,
             'metadata' => $this->metadata,
         ];
     }

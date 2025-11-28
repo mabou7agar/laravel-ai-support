@@ -51,6 +51,15 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function registerCoreServices(): void
     {
+        // Register OpenAI Client
+        $this->app->singleton(\OpenAI\Client::class, function ($app) {
+            $apiKey = config('ai-engine.engines.openai.api_key');
+            if (empty($apiKey)) {
+                throw new \RuntimeException('OpenAI API key is not configured. Please set OPENAI_API_KEY in your .env file.');
+            }
+            return \OpenAI::client($apiKey);
+        });
+
         // Register dependencies first
         $this->app->singleton(CreditManager::class, function ($app) {
             return new CreditManager($app);
@@ -109,10 +118,12 @@ class AIEngineServiceProvider extends ServiceProvider
             return new FailoverManager();
         });
 
-        // WebSocket Streaming System
-        $this->app->singleton(WebSocketManager::class, function ($app) {
-            return new WebSocketManager();
-        });
+        // WebSocket Streaming System (only if Ratchet is installed)
+        if (interface_exists(\Ratchet\MessageComponentInterface::class)) {
+            $this->app->singleton(WebSocketManager::class, function ($app) {
+                return new WebSocketManager();
+            });
+        }
 
         // Analytics and Monitoring System
         $this->app->singleton(MetricsCollector::class, function ($app) {
@@ -130,6 +141,78 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(NewAnalyticsManager::class, function ($app) {
             return new NewAnalyticsManager($app->make(MetricsCollector::class));
         });
+
+        // Vector Search & Embeddings System
+        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorDriverManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\Vector\VectorDriverManager();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Vector\EmbeddingService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Vector\EmbeddingService(
+                $app->make(\OpenAI\Client::class),
+                $app->make(CreditManager::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorSearchService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Vector\VectorSearchService(
+                $app->make(\LaravelAIEngine\Services\Vector\VectorDriverManager::class),
+                $app->make(\LaravelAIEngine\Services\Vector\EmbeddingService::class)
+            );
+        });
+
+        // RAG (Retrieval Augmented Generation) System
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\VectorRAGBridge::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\VectorRAGBridge(
+                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+                $app->make(AIEngineManager::class)
+            );
+        });
+
+        // Media Processing Services
+        $this->app->singleton(\LaravelAIEngine\Services\Media\VisionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Media\VisionService(
+                $app->make(\OpenAI\Client::class),
+                $app->make(CreditManager::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Media\AudioService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Media\AudioService(
+                $app->make(\OpenAI\Client::class),
+                $app->make(CreditManager::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Media\VideoService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Media\VideoService(
+                $app->make(\LaravelAIEngine\Services\Media\AudioService::class),
+                $app->make(\LaravelAIEngine\Services\Media\VisionService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Media\DocumentService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Media\DocumentService();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Media\MediaEmbeddingService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Media\MediaEmbeddingService(
+                $app->make(\LaravelAIEngine\Services\Vector\EmbeddingService::class)
+            );
+        });
+
+        // Vector Enterprise Services
+        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorAuthorizationService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Vector\VectorAuthorizationService();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Vector\ChunkingService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Vector\ChunkingService();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorAnalyticsService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Vector\VectorAnalyticsService();
+        });
     }
 
     /**
@@ -138,12 +221,17 @@ class AIEngineServiceProvider extends ServiceProvider
     protected function registerUnifiedEngine(): void
     {
         $this->app->singleton(\LaravelAIEngine\Services\UnifiedEngineManager::class, function ($app) {
+            // Only pass WebSocketManager if it's registered
+            $webSocketManager = $app->bound(WebSocketManager::class) 
+                ? $app->make(WebSocketManager::class) 
+                : null;
+            
             return new \LaravelAIEngine\Services\UnifiedEngineManager(
                 $app->make(\LaravelAIEngine\Services\AIEngineService::class),
                 $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class),
                 $app->make(ActionManager::class),
                 $app->make(FailoverManager::class),
-                $app->make(WebSocketManager::class),
+                $webSocketManager,
                 $app->make(NewAnalyticsManager::class)
             );
         });
@@ -161,7 +249,12 @@ class AIEngineServiceProvider extends ServiceProvider
         // Enterprise aliases
         $this->app->alias(ActionManager::class, 'ai-actions');
         $this->app->alias(FailoverManager::class, 'ai-failover');
-        $this->app->alias(WebSocketManager::class, 'ai-streaming');
+        
+        // Only alias WebSocketManager if it's registered
+        if ($this->app->bound(WebSocketManager::class)) {
+            $this->app->alias(WebSocketManager::class, 'ai-streaming');
+        }
+        
         $this->app->alias(NewAnalyticsManager::class, 'ai-analytics');
     }
 
@@ -197,6 +290,10 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\StreamingServerCommand::class,
                 Console\Commands\SystemHealthCommand::class,
                 Console\Commands\TestPackageCommand::class,
+                Console\Commands\VectorIndexCommand::class,
+                Console\Commands\VectorSearchCommand::class,
+                Console\Commands\VectorAnalyticsCommand::class,
+                Console\Commands\VectorCleanCommand::class,
             ]);
         }
 
@@ -204,6 +301,11 @@ class AIEngineServiceProvider extends ServiceProvider
         
         // Load routes
         $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
+        
+        // Load demo routes conditionally
+        if (config('ai-engine.enable_demo_routes', $this->app->environment('local'))) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
+        }
         
         // Register views
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'ai-engine');
@@ -291,7 +393,15 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function registerBladeComponents(): void
     {
-        $this->app->make('blade.compiler')->component('ai-chat', \LaravelAIEngine\View\Components\AiChat::class);
+        $compiler = $this->app->make('blade.compiler');
+        
+        // Register anonymous components
+        $compiler->anonymousComponentPath(__DIR__.'/../resources/views/components', 'ai-engine');
+        
+        // Register class-based components (if they exist)
+        if (class_exists(\LaravelAIEngine\View\Components\AiChat::class)) {
+            $compiler->component('ai-chat', \LaravelAIEngine\View\Components\AiChat::class);
+        }
     }
 
     /**

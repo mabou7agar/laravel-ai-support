@@ -105,6 +105,8 @@ class GeminiEngineDriver extends BaseEngineDriver
     public function generateText(AIRequest $request): AIResponse
     {
         try {
+            $this->logApiRequest('generateText', $request);
+            
             $contents = $this->buildContents($request);
             
             $payload = [
@@ -127,32 +129,18 @@ class GeminiEngineDriver extends BaseEngineDriver
                 'query' => ['key' => $this->getApiKey()],
             ]);
 
-            $data = json_decode($response->getBody()->getContents(), true);
-            
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
             $content = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
-            $tokensUsed = $data['usageMetadata']['totalTokenCount'] ?? $this->calculateTokensUsed($content);
 
-            return AIResponse::success(
+            return $this->buildSuccessResponse(
                 $content,
-                $request->engine,
-                $request->model
-            )->withUsage(
-                tokensUsed: $tokensUsed,
-                creditsUsed: $tokensUsed * $request->model->creditIndex()
-            )->withFinishReason($data['candidates'][0]['finishReason'] ?? null);
+                $request,
+                $data,
+                'gemini'
+            );
 
-        } catch (RequestException $e) {
-            return AIResponse::error(
-                'Gemini API error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
-            );
         } catch (\Exception $e) {
-            return AIResponse::error(
-                'Unexpected error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
-            );
+            return $this->handleApiError($e, $request, 'text generation');
         }
     }
 
@@ -318,9 +306,17 @@ class GeminiEngineDriver extends BaseEngineDriver
     {
         $contents = [];
 
+        // Get conversation history using centralized method
+        $historyMessages = $this->getConversationHistory($request);
+        
         // Add conversation history if provided
-        if (!empty($request->messages)) {
-            foreach ($request->messages as $message) {
+        if (!empty($historyMessages)) {
+            foreach ($historyMessages as $message) {
+                // Skip system messages (Gemini handles them separately via systemInstruction)
+                if (($message['role'] ?? '') === 'system') {
+                    continue;
+                }
+                
                 $role = $message['role'] === 'assistant' ? 'model' : 'user';
                 $contents[] = [
                     'role' => $role,

@@ -17,6 +17,7 @@ class AIFailoverTriggered
         public string $primaryEngine,
         public string $fallbackEngine,
         public string $reason,
+        public ?string $userId = null,
         public array $metadata = []
     ) {}
 }

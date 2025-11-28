@@ -84,6 +84,32 @@ class UnifiedEngineManager
     }
 
     /**
+     * Create an AI request
+     */
+    public function createRequest(
+        string $prompt,
+        ?string $engine = null,
+        ?string $model = null,
+        ?int $maxTokens = null,
+        ?float $temperature = null,
+        ?string $systemPrompt = null,
+        array $parameters = []
+    ): AIRequest {
+        $engineEnum = $engine ? EngineEnum::from($engine) : EngineEnum::from(config('ai-engine.default_engine', 'openai'));
+        $modelEnum = $model ? EntityEnum::from($model) : EntityEnum::from(config('ai-engine.default_model', 'gpt-4o'));
+
+        return new AIRequest(
+            prompt: $prompt,
+            engine: $engineEnum,
+            model: $modelEnum,
+            parameters: $parameters,
+            systemPrompt: $systemPrompt,
+            maxTokens: $maxTokens,
+            temperature: $temperature
+        );
+    }
+
+    /**
      * Get available engines
      */
     public function getEngines(): array

@@ -23,21 +23,23 @@ class DatabaseAnalyticsDriver implements AnalyticsDriverInterface
      */
     public function trackRequest(array $data): void
     {
-        DB::connection($this->connection)->table('ai_analytics_requests')->insert([
-            'request_id' => $data['request_id'],
-            'user_id' => $data['user_id'],
-            'engine' => $data['engine'],
-            'model' => $data['model'],
-            'input_tokens' => $data['input_tokens'],
-            'output_tokens' => $data['output_tokens'],
-            'total_tokens' => $data['total_tokens'],
-            'response_time' => $data['response_time'],
-            'cost' => $data['cost'],
-            'success' => $data['success'],
-            'error_message' => $data['error_message'],
-            'metadata' => json_encode($data['metadata']),
-            'created_at' => Carbon::parse($data['timestamp'])->toDateTimeString(),
-        ]);
+        DB::connection($this->connection)->table('ai_analytics_requests')->updateOrInsert(
+            ['request_id' => $data['request_id']],
+            [
+                'user_id' => $data['user_id'],
+                'engine' => $data['engine'],
+                'model' => $data['model'],
+                'input_tokens' => $data['input_tokens'],
+                'output_tokens' => $data['output_tokens'],
+                'total_tokens' => $data['total_tokens'],
+                'response_time' => $data['response_time'],
+                'cost' => $data['cost'],
+                'success' => $data['success'],
+                'error_message' => $data['error_message'],
+                'metadata' => json_encode($data['metadata']),
+                'created_at' => Carbon::parse($data['timestamp'])->toDateTimeString(),
+            ]
+        );
     }
 
     /**

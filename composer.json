@@ -42,6 +42,11 @@
         "orchestra/testbench": "^7.0",
         "mockery/mockery": "^1.4"
     },
+    "suggest": {
+        "cboden/ratchet": "Required for WebSocket streaming support (^0.4)",
+        "ext-mongodb": "Required for MongoDB memory driver support",
+        "mongodb/mongodb": "Required for MongoDB memory driver support (^1.8)"
+    },
     "autoload": {
         "psr-4": {
             "LaravelAIEngine\\": "src/"

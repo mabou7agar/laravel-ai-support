@@ -56,7 +56,7 @@ class EntityEnum
     public const FAL_STABLE_VIDEO = 'fal-stable-video';
     public const FAL_ANIMATEDIFF = 'fal-animatediff';
     public const FAL_LUMA_DREAM = 'fal-luma-dream';
-    
+
     // Simplified aliases for common models
     public const FLUX_PRO = 'flux-pro';
     public const KLING_VIDEO = 'kling-video';
@@ -107,48 +107,48 @@ class EntityEnum
     public const OPENROUTER_GPT_5 = 'openai/gpt-5';
     public const OPENROUTER_GPT_5_MINI = 'openai/gpt-5-mini';
     public const OPENROUTER_GPT_5_NANO = 'openai/gpt-5-nano';
-    
+
     // GPT-4o Models
     public const OPENROUTER_GPT_4O = 'openai/gpt-4o';
     public const OPENROUTER_GPT_4O_2024_11_20 = 'openai/gpt-4o-2024-11-20';
     public const OPENROUTER_GPT_4O_MINI = 'openai/gpt-4o-mini';
     public const OPENROUTER_GPT_4O_MINI_2024_07_18 = 'openai/gpt-4o-mini-2024-07-18';
-    
+
     // Claude 4 Models (Latest generation)
     public const OPENROUTER_CLAUDE_4_OPUS = 'anthropic/claude-4-opus';
     public const OPENROUTER_CLAUDE_4_SONNET = 'anthropic/claude-4-sonnet';
-    
+
     // Claude 3.5 Models
     public const OPENROUTER_CLAUDE_3_5_SONNET = 'anthropic/claude-3.5-sonnet';
     public const OPENROUTER_CLAUDE_3_5_SONNET_20241022 = 'anthropic/claude-3.5-sonnet-20241022';
     public const OPENROUTER_CLAUDE_3_5_HAIKU = 'anthropic/claude-3.5-haiku';
-    
+
     // Claude 3 Models
     public const OPENROUTER_CLAUDE_3_OPUS = 'anthropic/claude-3-opus';
     public const OPENROUTER_CLAUDE_3_HAIKU = 'anthropic/claude-3-haiku';
-    
+
     // Google Models
     // Gemini 2.5 Models (Latest Generation - March 2025)
     public const OPENROUTER_GEMINI_2_5_PRO = 'google/gemini-2.5-pro';
     public const OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL = 'google/gemini-2.5-pro-experimental';
-    
+
     // Previous Gemini Models
     public const OPENROUTER_GEMINI_PRO = 'google/gemini-pro';
     public const OPENROUTER_GEMINI_1_5_PRO = 'google/gemini-1.5-pro';
     public const OPENROUTER_GEMINI_2_0_FLASH = 'google/gemini-2.0-flash';
-    
+
     // Meta Llama Models
     public const OPENROUTER_LLAMA_3_1_405B = 'meta-llama/llama-3.1-405b-instruct';
     public const OPENROUTER_LLAMA_3_1_70B = 'meta-llama/llama-3.1-70b-instruct';
     public const OPENROUTER_LLAMA_3_2_90B = 'meta-llama/llama-3.2-90b-instruct';
     public const OPENROUTER_LLAMA_3_3_70B = 'meta-llama/llama-3.3-70b-instruct';
-    
+
     // Other Popular Models
     public const OPENROUTER_MIXTRAL_8X7B = 'mistralai/mixtral-8x7b-instruct';
     public const OPENROUTER_QWEN_2_5_72B = 'qwen/qwen-2.5-72b-instruct';
     public const OPENROUTER_DEEPSEEK_V3 = 'deepseek/deepseek-chat';
     public const OPENROUTER_DEEPSEEK_R1 = 'deepseek/deepseek-r1';
-    
+
     // Free Models (OpenRouter Free Tier)
     public const OPENROUTER_LLAMA_3_1_8B_FREE = 'meta-llama/llama-3.1-8b-instruct:free';
     public const OPENROUTER_LLAMA_3_2_3B_FREE = 'meta-llama/llama-3.2-3b-instruct:free';
@@ -172,6 +172,9 @@ class EntityEnum
     public function engine(): EngineEnum
     {
         switch ($this->value) {
+            case self::GPT_4O:
+            case self::GPT_4O_MINI:
+            case self::GPT_3_5_TURBO:
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::WHISPER_1:
@@ -645,6 +648,14 @@ class EntityEnum
     public function getContentType(): string
     {
         switch ($this->value) {
+            case self::GPT_4O:
+            case self::GPT_4O_MINI:
+            case self::GPT_3_5_TURBO:
+            case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_HAIKU:
+            case self::CLAUDE_3_OPUS:
+            case self::GEMINI_1_5_PRO:
+            case self::GEMINI_1_5_FLASH:
             case self::OPENROUTER_MISTRAL_7B_FREE:
             case self::OPENROUTER_QWEN_2_5_7B_FREE:
             case self::OPENROUTER_PHI_3_MINI_FREE:
@@ -723,9 +734,13 @@ class EntityEnum
     public function supportsVision(): bool
     {
         switch ($this->value) {
+            case self::GPT_4O:
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
                 return true;
+            case self::GPT_4O_MINI:
+            case self::GPT_3_5_TURBO:
+                return false;
             default:
                 throw new \InvalidArgumentException("Unknown model: {$this->value}");
         }
@@ -737,6 +752,9 @@ class EntityEnum
     public function supportsStreaming(): bool
     {
         switch ($this->value) {
+            case self::GPT_4O:
+            case self::GPT_4O_MINI:
+            case self::GPT_3_5_TURBO:
             case self::DEEPSEEK_CHAT:
             case self::DEEPSEEK_REASONER:
                 return true;

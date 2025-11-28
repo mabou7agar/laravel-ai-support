@@ -17,6 +17,7 @@ class AIRequest
     private EntityEnum $model;
     private array $parameters;
     private ?string $userId;
+    private ?string $conversationId;
     private array $context;
     private array $files;
     private bool $stream;
@@ -33,6 +34,7 @@ class AIRequest
         EntityEnum $model,
         array $parameters = [],
         ?string $userId = null,
+        ?string $conversationId = null,
         array $context = [],
         array $files = [],
         bool $stream = false,
@@ -48,6 +50,7 @@ class AIRequest
         $this->model = $model;
         $this->parameters = $parameters;
         $this->userId = $userId;
+        $this->conversationId = $conversationId;
         $this->context = $context;
         $this->files = $files;
         $this->stream = $stream;
@@ -83,6 +86,17 @@ class AIRequest
     public function getUserId(): ?string
     {
         return $this->userId;
+    }
+
+    public function getConversationId(): ?string
+    {
+        return $this->conversationId;
+    }
+
+    public function setConversationId(?string $conversationId): self
+    {
+        $this->conversationId = $conversationId;
+        return $this;
     }
 
     public function getContext(): array
@@ -268,20 +282,21 @@ class AIRequest
     public function withMessages(array $messages): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            $this->context,
-            $this->files,
-            $this->stream,
-            $this->systemPrompt,
-            $messages,
-            $this->maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,  // ← MISSING!
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata
         );
     }
 

@@ -249,4 +249,376 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     {
         return $this->config['api_key'] ?? '';
     }
+
+    /**
+     * Build standard messages array with conversation history
+     * 
+     * This centralizes the logic for building messages across all drivers:
+     * 1. Add system prompt if provided
+     * 2. Add conversation history if provided
+     * 3. Add current user message
+     * 
+     * @param AIRequest $request
+     * @param bool $includeSystemPrompt Whether to include system prompt (default: true)
+     * @return array Standard message format: [['role' => 'user|assistant|system', 'content' => '...']]
+     */
+    protected function buildStandardMessages(AIRequest $request, bool $includeSystemPrompt = true): array
+    {
+        $messages = [];
+
+        // Add system message if provided
+        if ($includeSystemPrompt && $request->systemPrompt) {
+            $messages[] = [
+                'role' => 'system',
+                'content' => $request->systemPrompt,
+            ];
+        }
+
+        // Add conversation history if provided (using getter method)
+        $historyMessages = $request->getMessages();
+        if (!empty($historyMessages)) {
+            $messages = array_merge($messages, $historyMessages);
+        }
+
+        // Add the main prompt
+        $messages[] = [
+            'role' => 'user',
+            'content' => $request->prompt,
+        ];
+
+        return $messages;
+    }
+
+    /**
+     * Get conversation history from request
+     * 
+     * Centralized method to safely get conversation history
+     * 
+     * @param AIRequest $request
+     * @return array
+     */
+    protected function getConversationHistory(AIRequest $request): array
+    {
+        return $request->getMessages();
+    }
+
+    /**
+     * Handle API errors consistently across all drivers
+     * 
+     * @param \Exception $exception
+     * @param AIRequest $request
+     * @param string $context Additional context (e.g., 'text generation', 'image generation')
+     * @return AIResponse
+     */
+    protected function handleApiError(\Exception $exception, AIRequest $request, string $context = 'API request'): AIResponse
+    {
+        $errorMessage = $exception instanceof \GuzzleHttp\Exception\RequestException
+            ? "{$this->getEngineEnum()->value} API error: {$exception->getMessage()}"
+            : "Unexpected error during {$context}: {$exception->getMessage()}";
+
+        \Log::error($errorMessage, [
+            'engine' => $request->engine->value,
+            'model' => $request->model->value,
+            'context' => $context,
+            'exception' => get_class($exception),
+            'trace' => config('app.debug') ? $exception->getTraceAsString() : null,
+        ]);
+
+        return AIResponse::error(
+            $errorMessage,
+            $request->engine,
+            $request->model
+        );
+    }
+
+    /**
+     * Safely test engine connection
+     * 
+     * @param AIRequest $testRequest
+     * @param callable $testCallback
+     * @return bool
+     */
+    protected function safeConnectionTest(AIRequest $testRequest, callable $testCallback): bool
+    {
+        try {
+            $response = $testCallback($testRequest);
+            return $response instanceof AIResponse ? $response->isSuccess() : (bool) $response;
+        } catch (\Exception $e) {
+            \Log::warning("Connection test failed for {$this->getEngineEnum()->value}: {$e->getMessage()}");
+            return false;
+        }
+    }
+
+    /**
+     * Extract token usage from API response
+     * 
+     * Handles different API response formats for token counting
+     * 
+     * @param array $data API response data
+     * @param string $content Fallback content for estimation
+     * @param string $format API format ('openai', 'anthropic', 'gemini', etc.)
+     * @return int
+     */
+    protected function extractTokenUsage(array $data, string $content, string $format = 'openai'): int
+    {
+        $tokens = match($format) {
+            'openai', 'deepseek', 'perplexity' => $data['usage']['total_tokens'] ?? null,
+            'anthropic' => ($data['usage']['input_tokens'] ?? 0) + ($data['usage']['output_tokens'] ?? 0),
+            'gemini' => $data['usageMetadata']['totalTokenCount'] ?? null,
+            default => null,
+        };
+
+        return $tokens ?? $this->calculateTokensUsed($content);
+    }
+
+    /**
+     * Build standard request payload for chat completion
+     * 
+     * @param AIRequest $request
+     * @param array $messages
+     * @param array $additionalParams
+     * @return array
+     */
+    protected function buildChatPayload(AIRequest $request, array $messages, array $additionalParams = []): array
+    {
+        return array_merge([
+            'model' => $request->model->value,
+            'messages' => $messages,
+            'max_tokens' => $request->maxTokens,
+            'temperature' => $request->temperature ?? 0.7,
+        ], $additionalParams);
+    }
+
+    /**
+     * Log API request for debugging
+     * 
+     * @param string $operation
+     * @param AIRequest $request
+     * @param array $additionalData
+     * @return void
+     */
+    protected function logApiRequest(string $operation, AIRequest $request, array $additionalData = []): void
+    {
+        if (config('ai-engine.debug', false)) {
+            \Log::debug("{$this->getEngineEnum()->value} API Request: {$operation}", array_merge([
+                'engine' => $request->engine->value,
+                'model' => $request->model->value,
+                'prompt_length' => strlen($request->prompt),
+                'has_history' => !empty($request->getMessages()),
+                'history_count' => count($request->getMessages()),
+            ], $additionalData));
+        }
+    }
+
+    /**
+     * Validate required files in request
+     * 
+     * @param AIRequest $request
+     * @param int $minFiles
+     * @param int $maxFiles
+     * @throws \InvalidArgumentException
+     * @return void
+     */
+    protected function validateFiles(AIRequest $request, int $minFiles = 1, int $maxFiles = 1): void
+    {
+        $fileCount = count($request->files);
+        
+        if ($fileCount < $minFiles) {
+            throw new \InvalidArgumentException("At least {$minFiles} file(s) required");
+        }
+        
+        if ($fileCount > $maxFiles) {
+            throw new \InvalidArgumentException("Maximum {$maxFiles} file(s) allowed");
+        }
+    }
+
+    /**
+     * Build successful AIResponse with common metadata
+     * 
+     * @param string $content
+     * @param AIRequest $request
+     * @param array $apiResponse Raw API response data
+     * @param string $format API format for token extraction ('openai', 'anthropic', 'gemini')
+     * @return AIResponse
+     */
+    protected function buildSuccessResponse(
+        string $content,
+        AIRequest $request,
+        array $apiResponse = [],
+        string $format = 'openai'
+    ): AIResponse {
+        $tokensUsed = !empty($apiResponse) 
+            ? $this->extractTokenUsage($apiResponse, $content, $format)
+            : $this->calculateTokensUsed($content);
+
+        $response = AIResponse::success(
+            $content,
+            $request->engine,
+            $request->model
+        )->withUsage(
+            tokensUsed: $tokensUsed,
+            creditsUsed: $tokensUsed * $request->model->creditIndex()
+        );
+
+        // Add request ID if available
+        if ($requestId = $this->extractRequestId($apiResponse, $format)) {
+            $response = $response->withRequestId($requestId);
+        }
+
+        // Add finish reason if available
+        if ($finishReason = $this->extractFinishReason($apiResponse, $format)) {
+            $response = $response->withFinishReason($finishReason);
+        }
+
+        // Add detailed usage if available
+        if ($detailedUsage = $this->extractDetailedUsage($apiResponse, $format)) {
+            $response = $response->withDetailedUsage($detailedUsage);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Extract request ID from API response
+     * 
+     * @param array $data
+     * @param string $format
+     * @return string|null
+     */
+    protected function extractRequestId(array $data, string $format = 'openai'): ?string
+    {
+        return match($format) {
+            'openai', 'anthropic', 'deepseek', 'perplexity' => $data['id'] ?? null,
+            'gemini' => $data['name'] ?? null,
+            default => null,
+        };
+    }
+
+    /**
+     * Extract finish reason from API response
+     * 
+     * @param array $data
+     * @param string $format
+     * @return string|null
+     */
+    protected function extractFinishReason(array $data, string $format = 'openai'): ?string
+    {
+        return match($format) {
+            'openai', 'deepseek', 'perplexity' => $data['choices'][0]['finish_reason'] ?? null,
+            'anthropic' => $data['stop_reason'] ?? null,
+            'gemini' => $data['candidates'][0]['finishReason'] ?? null,
+            default => null,
+        };
+    }
+
+    /**
+     * Extract detailed token usage from API response
+     * 
+     * @param array $data
+     * @param string $format
+     * @return array|null
+     */
+    protected function extractDetailedUsage(array $data, string $format = 'openai'): ?array
+    {
+        $usage = match($format) {
+            'openai', 'deepseek', 'perplexity' => $data['usage'] ?? null,
+            'anthropic' => $data['usage'] ?? null,
+            'gemini' => $data['usageMetadata'] ?? null,
+            default => null,
+        };
+
+        if (!$usage) {
+            return null;
+        }
+
+        // Normalize to common format
+        return match($format) {
+            'openai', 'deepseek', 'perplexity' => [
+                'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
+                'completion_tokens' => $usage['completion_tokens'] ?? 0,
+                'total_tokens' => $usage['total_tokens'] ?? 0,
+            ],
+            'anthropic' => [
+                'prompt_tokens' => $usage['input_tokens'] ?? 0,
+                'completion_tokens' => $usage['output_tokens'] ?? 0,
+                'total_tokens' => ($usage['input_tokens'] ?? 0) + ($usage['output_tokens'] ?? 0),
+            ],
+            'gemini' => [
+                'prompt_tokens' => $usage['promptTokenCount'] ?? 0,
+                'completion_tokens' => $usage['candidatesTokenCount'] ?? 0,
+                'total_tokens' => $usage['totalTokenCount'] ?? 0,
+            ],
+            default => null,
+        };
+    }
+
+    /**
+     * Create error response for unsupported operations
+     * 
+     * @param string $operation
+     * @param AIRequest $request
+     * @return AIResponse
+     */
+    protected function unsupportedOperation(string $operation, AIRequest $request): AIResponse
+    {
+        return AIResponse::error(
+            "{$operation} not supported by {$this->getEngineEnum()->value}",
+            $request->engine,
+            $request->model
+        );
+    }
+
+    /**
+     * Parse JSON response safely
+     * 
+     * @param string $jsonString
+     * @param bool $associative
+     * @return array|object|null
+     */
+    protected function parseJsonResponse(string $jsonString, bool $associative = true): array|object|null
+    {
+        try {
+            return json_decode($jsonString, $associative, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            \Log::error("JSON parsing error: {$e->getMessage()}", [
+                'json' => substr($jsonString, 0, 500),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Calculate credits used based on tokens and model
+     * 
+     * @param int $tokens
+     * @param EntityEnum $model
+     * @return float
+     */
+    protected function calculateCredits(int $tokens, EntityEnum $model): float
+    {
+        return $tokens * $model->creditIndex();
+    }
+
+    /**
+     * Merge metadata arrays safely
+     * 
+     * @param array ...$metadataArrays
+     * @return array
+     */
+    protected function mergeMetadata(array ...$metadataArrays): array
+    {
+        $merged = [];
+        
+        foreach ($metadataArrays as $metadata) {
+            foreach ($metadata as $key => $value) {
+                if (is_array($value) && isset($merged[$key]) && is_array($merged[$key])) {
+                    $merged[$key] = array_merge($merged[$key], $value);
+                } else {
+                    $merged[$key] = $value;
+                }
+            }
+        }
+        
+        return $merged;
+    }
 }

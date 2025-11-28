@@ -6,91 +6,192 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use LaravelAIEngine\Facades\Engine;
-use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Services\ChatService;
+use LaravelAIEngine\Services\ConversationService;
+use LaravelAIEngine\Services\ActionService;
+use LaravelAIEngine\Events\AIActionTriggered;
+use LaravelAIEngine\Http\Requests\SendMessageRequest;
+use LaravelAIEngine\Http\Requests\ExecuteActionRequest;
+use LaravelAIEngine\Http\Requests\ClearHistoryRequest;
+use LaravelAIEngine\Http\Requests\UploadFileRequest;
+use LaravelAIEngine\Http\Requests\ExecuteDynamicActionRequest;
+use LaravelAIEngine\Services\DynamicActionService;
+use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use LaravelAIEngine\DTOs\InteractiveAction;
 use LaravelAIEngine\Enums\ActionTypeEnum;
-use LaravelAIEngine\Events\AISessionStarted;
-use LaravelAIEngine\Events\AIActionTriggered;
 
 class AiChatController extends Controller
 {
+    public function __construct(
+        protected ChatService $chatService,
+        protected ConversationService $conversationService,
+        protected ActionService $actionService,
+        protected DynamicActionService $dynamicActionService,
+        protected RAGCollectionDiscovery $ragDiscovery
+    ) {}
+    /**
+     * Display the enhanced chat demo
+     */
+    public function index()
+    {
+        return view('ai-engine::demo.chat-enhanced', [
+            'title' => 'AI Chat Assistant - Enhanced',
+        ]);
+    }
+
+    /**
+     * Display the basic chat demo
+     */
+    public function basic()
+    {
+        return view('ai-engine::demo.chat', [
+            'title' => 'AI Chat Demo',
+            'enableRAG' => false,
+        ]);
+    }
+
+    /**
+     * Display the RAG chat demo
+     */
+    public function rag()
+    {
+        return view('ai-engine::demo.chat-rag', [
+            'title' => 'RAG Chat Demo',
+            'enableRAG' => true,
+        ]);
+    }
+
+    /**
+     * Display the voice chat demo
+     */
+    public function voice()
+    {
+        return view('ai-engine::demo.chat-voice', [
+            'title' => 'Voice Chat Demo',
+            'enableVoice' => true,
+        ]);
+    }
+
+    /**
+     * Display the multi-modal chat demo
+     */
+    public function multimodal()
+    {
+        return view('ai-engine::demo.chat-multimodal', [
+            'title' => 'Multi-Modal Chat Demo',
+            'enableFileUpload' => true,
+        ]);
+    }
+
+    /**
+     * Display the vector search demo
+     */
+    public function vectorSearch()
+    {
+        return view('ai-engine::demo.vector-search', [
+            'title' => 'Vector Search Demo',
+        ]);
+    }
+
     /**
      * Send a message to the AI and get a response
      */
-    public function sendMessage(Request $request): JsonResponse
+    public function sendMessage(SendMessageRequest $request): JsonResponse
     {
         try {
-            $validated = $request->validate([
-                'message' => 'required|string|max:4000',
-                'session_id' => 'required|string|max:255',
-                'engine' => 'sometimes|string|in:openai,anthropic,gemini',
-                'model' => 'sometimes|string',
-                'memory' => 'sometimes|boolean',
-                'actions' => 'sometimes|boolean',
-                'streaming' => 'sometimes|boolean',
-            ]);
+            $dto = $request->toDTO();
 
-            $engine = $validated['engine'] ?? 'openai';
-            $model = $validated['model'] ?? 'gpt-4o';
-            $useMemory = $validated['memory'] ?? true;
-            $useActions = $validated['actions'] ?? true;
-            $useStreaming = $validated['streaming'] ?? false;
+            $engine = $dto->engine;
+            $model = $dto->model;
+            $useMemory = $dto->memory;
+            $useActions = $dto->actions;
+            $useStreaming = $dto->streaming;
 
-            // Create AI request
-            $aiRequest = new AIRequest(
-                prompt: $validated['message'],
-                engine: $engine,
-                model: $model,
-                maxTokens: 1000,
-                temperature: 0.7,
-                systemPrompt: $this->getSystemPrompt($useActions),
-                conversationId: $useMemory ? $validated['session_id'] : null
+            // Check if API key is configured
+            $apiKey = config("ai-engine.engines.{$engine}.api_key");
+            if (empty($apiKey)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "API key for {$engine} is not configured. Please set " . strtoupper($engine) . "_API_KEY in your .env file.",
+                    'demo_mode' => true,
+                    'response' => "👋 Hello! I'm a demo AI assistant. To enable real AI responses, please configure your API keys in the .env file:\n\n" .
+                                "OPENAI_API_KEY=your-key-here\n" .
+                                "ANTHROPIC_API_KEY=your-key-here\n" .
+                                "GOOGLE_API_KEY=your-key-here\n\n" .
+                                "For now, I'm running in demo mode. Your message was: \"{$dto->message}\"",
+                ], 200); // Return 200 so the UI can display the demo message
+            }
+
+            // Get RAG collections from config or request
+            $ragCollections = $request->input('rag_collections');
+            
+            // If not provided, auto-discover from RAGgable/Vectorizable models
+            if (empty($ragCollections)) {
+                $ragCollections = $this->ragDiscovery->discover();
+            }
+            
+            $useIntelligentRAG = $request->input('use_intelligent_rag', 
+                config('ai-engine.intelligent_rag.enabled', true)
             );
 
-            // Fire session started event
-            event(new AISessionStarted(
-                sessionId: $validated['session_id'],
+            // Process message using ChatService
+            $response = $this->chatService->processMessage(
+                message: $dto->message,
+                sessionId: $dto->sessionId,
                 engine: $engine,
                 model: $model,
-                options: ['memory' => $useMemory, 'actions' => $useActions]
-            ));
-
-            if ($useStreaming) {
-                return $this->handleStreamingRequest($aiRequest, $validated);
-            }
-
-            // Get AI response
-            $response = Engine::engine($engine)->send($aiRequest);
+                useMemory: $useMemory,
+                useActions: $useActions,
+                useIntelligentRAG: $useIntelligentRAG,
+                ragCollections: $ragCollections,
+                userId: $dto->userId
+            );
 
             // Add interactive actions if enabled
+            $actions = [];
             if ($useActions) {
-                $actions = $this->generateSuggestedActions($response->content, $validated['session_id']);
-                $response = $response->withActions($actions);
+                try {
+                    $actions = $this->actionService->generateSuggestedActions(
+                        $response->getContent(),
+                        $dto->sessionId
+                    );
+                } catch (\Exception $e) {
+                    \Log::warning('Failed to generate actions: ' . $e->getMessage());
+                }
             }
 
-            // Track analytics
-            Engine::trackRequest([
-                'session_id' => $validated['session_id'],
-                'engine' => $engine,
-                'model' => $model,
-                'tokens' => $response->usage['total_tokens'] ?? 0,
-                'cost' => $response->cost ?? 0,
-                'duration' => $response->responseTime ?? 0,
-                'user_id' => auth()->id(),
-            ]);
+            // Track analytics (wrapped in try-catch)
+            try {
+                Engine::trackRequest([
+                    'session_id' => $dto->sessionId,
+                    'engine' => $engine,
+                    'model' => $model,
+                    'tokens' => $response->getUsage()['total_tokens'] ?? 0,
+                    'cost' => 0,
+                    'duration' => 0,
+                    'user_id' => $dto->userId,
+                ]);
+            } catch (\Exception $e) {
+                \Log::warning('Failed to track analytics: ' . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
-                'response' => $response->content,
-                'actions' => $response->actions ?? [],
-                'usage' => $response->usage ?? [],
-                'session_id' => $validated['session_id'],
+                'response' => $response->getContent(),
+                'actions' => array_map(fn($action) => $action->toArray(), $actions),
+                'usage' => $response->getUsage() ?? [],
+                'session_id' => $dto->sessionId,
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Send message error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
+                'trace' => config('app.debug') ? $e->getTraceAsString() : null,
             ], 500);
         }
     }
@@ -98,41 +199,36 @@ class AiChatController extends Controller
     /**
      * Execute an interactive action
      */
-    public function executeAction(Request $request): JsonResponse
+    public function executeAction(ExecuteActionRequest $request): JsonResponse
     {
         try {
-            $validated = $request->validate([
-                'action_id' => 'required|string',
-                'action_type' => 'required|string',
-                'session_id' => 'required|string',
-                'payload' => 'sometimes|array',
-            ]);
+            $dto = $request->toDTO();
 
             // Create action object
             $action = new InteractiveAction(
-                id: $validated['action_id'],
-                type: ActionTypeEnum::from($validated['action_type']),
-                label: $validated['payload']['label'] ?? 'Action',
-                data: $validated['payload'] ?? []
+                id: $dto->actionId,
+                type: ActionTypeEnum::from($dto->actionType),
+                label: $dto->payload['label'] ?? 'Action',
+                data: $dto->payload
             );
 
             // Execute action
-            $actionResponse = Engine::executeAction($action, $validated['payload'] ?? []);
+            $actionResponse = Engine::executeAction($action, $dto->payload);
 
             // Fire action triggered event
             event(new AIActionTriggered(
-                sessionId: $validated['session_id'],
-                actionId: $validated['action_id'],
-                actionType: $validated['action_type'],
-                payload: $validated['payload'] ?? []
+                sessionId: $dto->sessionId,
+                actionId: $dto->actionId,
+                actionType: $dto->actionType,
+                payload: $dto->payload
             ));
 
             // Track action analytics
             Engine::trackAction([
-                'session_id' => $validated['session_id'],
-                'action_id' => $validated['action_id'],
-                'action_type' => $validated['action_type'],
-                'user_id' => auth()->id(),
+                'session_id' => $dto->sessionId,
+                'action_id' => $dto->actionId,
+                'action_type' => $dto->actionType,
+                'user_id' => $dto->userId,
             ]);
 
             return response()->json([
@@ -152,44 +248,26 @@ class AiChatController extends Controller
     /**
      * Get chat history for a session
      */
-    public function getHistory(Request $request): JsonResponse
+    public function getHistory(string $sessionId, Request $request): JsonResponse
     {
         try {
-            $validated = $request->validate([
-                'session_id' => 'required|string',
-                'limit' => 'sometimes|integer|min:1|max:100',
-            ]);
+            $limit = $request->input('limit', 50);
 
-            $limit = $validated['limit'] ?? 50;
-            
-            // Get conversation history from memory
-            $conversation = Engine::memory()->getConversation($validated['session_id']);
-            
-            if (!$conversation) {
-                return response()->json([
-                    'success' => true,
-                    'messages' => [],
-                    'session_id' => $validated['session_id'],
-                ]);
-            }
-
-            $messages = collect($conversation['messages'] ?? [])
-                ->take(-$limit)
-                ->map(function ($message) {
-                    return [
-                        'role' => $message['role'],
-                        'content' => $message['content'],
-                        'timestamp' => $message['timestamp'] ?? null,
-                        'actions' => $message['actions'] ?? [],
-                    ];
-                })
-                ->values();
+            // Get conversation history using ConversationService
+            $messages = $this->conversationService->getConversationHistory($sessionId, $limit);
 
             return response()->json([
                 'success' => true,
-                'messages' => $messages,
-                'session_id' => $validated['session_id'],
-                'total_messages' => count($conversation['messages'] ?? []),
+                'messages' => collect($messages)->map(function ($message) {
+                    return [
+                        'role' => $message['role'] ?? 'unknown',
+                        'content' => $message['content'] ?? '',
+                        'timestamp' => $message['timestamp'] ?? null,
+                        'actions' => $message['actions'] ?? [],
+                    ];
+                })->values(),
+                'session_id' => $sessionId,
+                'total_messages' => count($messages),
             ]);
 
         } catch (\Exception $e) {
@@ -203,20 +281,18 @@ class AiChatController extends Controller
     /**
      * Clear chat history for a session
      */
-    public function clearHistory(Request $request): JsonResponse
+    public function clearHistory(ClearHistoryRequest $request): JsonResponse
     {
         try {
-            $validated = $request->validate([
-                'session_id' => 'required|string',
-            ]);
+            $dto = $request->toDTO();
 
-            // Clear conversation from memory
-            Engine::memory()->clearConversation($validated['session_id']);
+            // Clear conversation using ConversationService
+            $cleared = $this->conversationService->clearConversation($dto->sessionId);
 
             return response()->json([
-                'success' => true,
-                'message' => 'Chat history cleared successfully',
-                'session_id' => $validated['session_id'],
+                'success' => $cleared,
+                'message' => $cleared ? 'Chat history cleared successfully' : 'No conversation found',
+                'session_id' => $dto->sessionId,
             ]);
 
         } catch (\Exception $e) {
@@ -275,7 +351,7 @@ class AiChatController extends Controller
                 sessionId: $validated['session_id'],
                 generator: function() use ($aiRequest) {
                     $response = Engine::engine($aiRequest->engine->value)->send($aiRequest);
-                    
+
                     // Simulate streaming by chunking the response
                     $chunks = str_split($response->content, 10);
                     foreach ($chunks as $chunk) {
@@ -300,72 +376,206 @@ class AiChatController extends Controller
         }
     }
 
+
     /**
-     * Generate suggested actions based on AI response
+     * Upload a file for AI processing
      */
-    protected function generateSuggestedActions(string $content, string $sessionId): array
+    public function uploadFile(UploadFileRequest $request): JsonResponse
     {
-        $actions = [];
+        try {
+            $dto = $request->toDTO();
 
-        // Add common actions
-        $actions[] = new InteractiveAction(
-            id: 'regenerate_' . uniqid(),
-            type: ActionTypeEnum::BUTTON,
-            label: '🔄 Regenerate',
-            data: ['action' => 'regenerate', 'session_id' => $sessionId]
-        );
+            $file = $dto->file;
+            $sessionId = $dto->sessionId;
 
-        $actions[] = new InteractiveAction(
-            id: 'copy_' . uniqid(),
-            type: ActionTypeEnum::BUTTON,
-            label: '📋 Copy',
-            data: ['action' => 'copy', 'content' => $content]
-        );
+            // Store the file
+            $path = $file->store('ai-uploads/' . $sessionId, 'public');
 
-        // Add context-specific actions based on content
-        if (str_contains(strtolower($content), 'code') || str_contains($content, '```')) {
-            $actions[] = new InteractiveAction(
-                id: 'explain_code_' . uniqid(),
-                type: ActionTypeEnum::BUTTON,
-                label: '💡 Explain Code',
-                data: ['action' => 'explain_code']
-            );
+            // Get file information
+            $fileInfo = [
+                'name' => $file->getClientOriginalName(),
+                'path' => $path,
+                'url' => asset('storage/' . $path),
+                'size' => $file->getSize(),
+                'mime_type' => $file->getMimeType(),
+                'type' => $dto->type ?? $this->detectFileType($file->getMimeType()),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'file' => $fileInfo,
+                'message' => 'File uploaded successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('File upload error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        if (str_contains(strtolower($content), 'question') || str_contains($content, '?')) {
-            $actions[] = new InteractiveAction(
-                id: 'more_details_' . uniqid(),
-                type: ActionTypeEnum::BUTTON,
-                label: '📖 More Details',
-                data: ['action' => 'more_details']
-            );
-        }
-
-        // Add quick reply suggestions
-        $quickReplies = ['Thank you!', 'Tell me more', 'What else?', 'Can you explain?'];
-        foreach ($quickReplies as $reply) {
-            $actions[] = new InteractiveAction(
-                id: 'quick_reply_' . uniqid(),
-                type: ActionTypeEnum::QUICK_REPLY,
-                label: $reply,
-                data: ['reply' => $reply]
-            );
-        }
-
-        return $actions;
     }
 
     /**
-     * Get system prompt for AI requests
+     * Detect file type from mime type
      */
-    protected function getSystemPrompt(bool $useActions): string
+    protected function detectFileType(string $mimeType): string
     {
-        $prompt = "You are a helpful AI assistant. Provide clear, accurate, and helpful responses to user questions.";
-
-        if ($useActions) {
-            $prompt .= " When appropriate, suggest follow-up actions or questions that might be helpful to the user.";
+        if (str_starts_with($mimeType, 'image/')) {
+            return 'image';
+        } elseif (str_starts_with($mimeType, 'audio/')) {
+            return 'audio';
+        } elseif (str_starts_with($mimeType, 'video/')) {
+            return 'video';
+        } else {
+            return 'document';
         }
+    }
 
-        return $prompt;
+    /**
+     * Get available dynamic actions
+     */
+    public function getAvailableActions(Request $request): JsonResponse
+    {
+        try {
+            $query = $request->input('query', '');
+            
+            if ($query) {
+                // Get recommended actions based on query
+                $actions = $this->dynamicActionService->getRecommendedActions($query);
+            } else {
+                // Get all available actions
+                $actions = $this->dynamicActionService->discoverActions();
+            }
+
+            return response()->json([
+                'success' => true,
+                'actions' => $actions,
+                'count' => count($actions),
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Execute a dynamic action
+     */
+    public function executeDynamicAction(ExecuteDynamicActionRequest $request): JsonResponse
+    {
+        try {
+            $dto = $request->toDTO();
+
+            // Get all actions and find the requested one
+            $actions = $this->dynamicActionService->discoverActions();
+            $action = collect($actions)->firstWhere('id', $dto->actionId);
+
+            if (!$action) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Action not found',
+                ], 404);
+            }
+
+            // Execute the action
+            $result = $this->dynamicActionService->executeAction(
+                $action,
+                $dto->parameters
+            );
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get memory statistics for a session
+     */
+    public function getMemoryStats(string $sessionId): JsonResponse
+    {
+        try {
+            $messages = $this->conversationService->getConversationHistory($sessionId, 1000);
+            
+            $stats = [
+                'total_messages' => count($messages),
+                'user_messages' => count(array_filter($messages, fn($m) => ($m['role'] ?? '') === 'user')),
+                'assistant_messages' => count(array_filter($messages, fn($m) => ($m['role'] ?? '') === 'assistant')),
+                'system_messages' => count(array_filter($messages, fn($m) => ($m['role'] ?? '') === 'system')),
+                'estimated_tokens' => $this->estimateTokens($messages),
+                'session_id' => $sessionId,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'stats' => $stats,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Estimate token count from messages
+     */
+    protected function estimateTokens(array $messages): int
+    {
+        $totalChars = array_reduce($messages, function ($carry, $msg) {
+            return $carry + strlen($msg['content'] ?? '');
+        }, 0);
+        
+        // Rough estimate: 1 token ≈ 4 characters
+        return (int) ($totalChars / 4);
+    }
+
+    /**
+     * Get conversation context summary
+     */
+    public function getContextSummary(string $sessionId): JsonResponse
+    {
+        try {
+            $messages = $this->conversationService->getConversationHistory($sessionId, 50);
+            
+            if (empty($messages)) {
+                return response()->json([
+                    'success' => true,
+                    'summary' => 'No conversation history',
+                    'topics' => [],
+                ]);
+            }
+
+            // Extract topics from user messages
+            $userMessages = array_filter($messages, fn($m) => ($m['role'] ?? '') === 'user');
+            $topics = array_map(function ($msg) {
+                $content = $msg['content'] ?? '';
+                return substr($content, 0, 50) . (strlen($content) > 50 ? '...' : '');
+            }, array_slice($userMessages, -5));
+
+            return response()->json([
+                'success' => true,
+                'summary' => 'Discussed: ' . implode(', ', $topics),
+                'topics' => $topics,
+                'message_count' => count($messages),
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

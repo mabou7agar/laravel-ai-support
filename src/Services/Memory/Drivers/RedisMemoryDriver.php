@@ -118,6 +118,21 @@ class RedisMemoryDriver implements MemoryDriverInterface
     }
 
     /**
+     * Get conversation data
+     */
+    public function getConversation(string $conversationId): ?array
+    {
+        $messages = $this->getMessages($conversationId);
+        $context = $this->getContext($conversationId);
+        
+        return [
+            'conversation_id' => $conversationId,
+            'messages' => $messages,
+            'context' => $context,
+        ];
+    }
+
+    /**
      * Clear conversation history
      */
     public function clearConversation(string $conversationId): void
