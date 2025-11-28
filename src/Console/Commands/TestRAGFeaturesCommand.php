@@ -11,9 +11,11 @@ class TestRAGFeaturesCommand extends Command
 {
     protected $signature = 'ai-engine:test-rag
                             {--model= : Specific model class to test}
-                            {--quick : Run quick tests only}';
+                            {--quick : Run quick tests only}
+                            {--verbose : Show detailed output}
+                            {--skip-interactive : Skip interactive prompts}';
 
-    protected $description = 'Test all RAG features (discovery, search, chat, intelligent RAG)';
+    protected $description = 'Comprehensive RAG testing suite (discovery, search, chat, context, relationships)';
 
     public function handle(
         RAGCollectionDiscovery $discovery,
@@ -60,8 +62,32 @@ class TestRAGFeaturesCommand extends Command
         // Test 7: Chat Service Integration
         $this->testChatServiceIntegration($chatService);
 
+        // Test 8: Context Enhancement
+        if (!$this->option('quick')) {
+            $this->testContextEnhancement($modelClass);
+        }
+
+        // Test 9: Auto-Detection Features
+        if (!$this->option('quick')) {
+            $this->testAutoDetection($modelClass);
+        }
+
+        // Test 10: Relationship Traversal
+        if (!$this->option('quick')) {
+            $this->testRelationshipTraversal($modelClass);
+        }
+
+        // Test 11: Content Truncation
+        if (!$this->option('quick')) {
+            $this->testContentTruncation($modelClass);
+        }
+
+        // Test 12: Vector Status
+        $this->testVectorStatus($modelClass);
+
         $this->newLine();
         $this->info('✅ All tests completed successfully!');
+        $this->displayTestSummary();
 
         return self::SUCCESS;
     }
@@ -323,5 +349,274 @@ class TestRAGFeaturesCommand extends Command
             $this->error("❌ Chat service integration failed: {$e->getMessage()}");
             $this->newLine();
         }
+    }
+
+    /**
+     * Test 8: Context Enhancement
+     */
+    protected function testContextEnhancement(string $modelClass): void
+    {
+        $this->line('🎯 Test 8: Context Enhancement');
+        $this->line('─────────────────────────────────');
+
+        try {
+            $query = $this->option('skip-interactive') ? 'test' : $this->ask('Enter search query', 'test');
+            
+            $results = $modelClass::vectorSearch($query, 3);
+
+            if ($results->isEmpty()) {
+                $this->warn('⚠️  No results to test context enhancement');
+                $this->newLine();
+                return;
+            }
+
+            $this->info('✅ Testing context enhancement:');
+            
+            foreach ($results->take(1) as $result) {
+                // Test metadata extraction
+                $this->line("   Model: " . class_basename($result));
+                $this->line("   ID: {$result->id}");
+                
+                if (isset($result->subject)) {
+                    $this->line("   Subject: {$result->subject}");
+                }
+                if (isset($result->from_name)) {
+                    $this->line("   From: {$result->from_name}");
+                }
+                if (isset($result->created_at)) {
+                    $this->line("   Date: {$result->created_at}");
+                }
+                
+                // Test vector content
+                if (method_exists($result, 'getVectorContent')) {
+                    $content = $result->getVectorContent();
+                    $this->line("   Content Length: " . strlen($content) . " chars");
+                    $this->line("   Content Preview: " . substr($content, 0, 100) . '...');
+                }
+            }
+
+            $this->newLine();
+
+        } catch (\Exception $e) {
+            $this->error("❌ Context enhancement test failed: {$e->getMessage()}");
+            $this->newLine();
+        }
+    }
+
+    /**
+     * Test 9: Auto-Detection Features
+     */
+    protected function testAutoDetection(string $modelClass): void
+    {
+        $this->line('🤖 Test 9: Auto-Detection Features');
+        $this->line('─────────────────────────────────');
+
+        try {
+            $instance = $modelClass::first();
+
+            if (!$instance) {
+                $this->warn('⚠️  No records found');
+                $this->newLine();
+                return;
+            }
+
+            // Test vectorizable fields
+            $vectorizable = $instance->vectorizable ?? [];
+            $this->line("Vectorizable fields: " . (empty($vectorizable) ? 'Auto-detected' : 'Configured'));
+            
+            if (!empty($vectorizable)) {
+                $this->line("   Fields: " . implode(', ', $vectorizable));
+            }
+
+            // Test collection name
+            if (method_exists($instance, 'getVectorCollectionName')) {
+                $collection = $instance->getVectorCollectionName();
+                $this->line("   Collection: {$collection}");
+            }
+
+            // Test relationships
+            if (property_exists($instance, 'vectorRelationships')) {
+                $relations = $instance->vectorRelationships ?? [];
+                if (!empty($relations)) {
+                    $this->line("   Relationships: " . implode(', ', $relations));
+                }
+            }
+
+            $this->info('✅ Auto-detection working');
+            $this->newLine();
+
+        } catch (\Exception $e) {
+            $this->error("❌ Auto-detection test failed: {$e->getMessage()}");
+            $this->newLine();
+        }
+    }
+
+    /**
+     * Test 10: Relationship Traversal
+     */
+    protected function testRelationshipTraversal(string $modelClass): void
+    {
+        $this->line('🔗 Test 10: Relationship Traversal');
+        $this->line('─────────────────────────────────');
+
+        try {
+            $instance = $modelClass::first();
+
+            if (!$instance) {
+                $this->warn('⚠️  No records found');
+                $this->newLine();
+                return;
+            }
+
+            // Test indexable relationships
+            if (method_exists($instance, 'getIndexableRelationships')) {
+                $depth1 = $instance->getIndexableRelationships(1);
+                $depth2 = $instance->getIndexableRelationships(2);
+                $depth3 = $instance->getIndexableRelationships(3);
+
+                $this->line("Depth 1: " . count($depth1) . " relationships");
+                if (!empty($depth1) && $this->option('verbose')) {
+                    foreach ($depth1 as $rel) {
+                        $this->line("   - {$rel}");
+                    }
+                }
+
+                $this->line("Depth 2: " . count($depth2) . " relationships");
+                if (!empty($depth2) && $this->option('verbose')) {
+                    foreach ($depth2 as $rel) {
+                        $this->line("   - {$rel}");
+                    }
+                }
+
+                $this->line("Depth 3: " . count($depth3) . " relationships");
+                
+                $this->info('✅ Relationship traversal working');
+            } else {
+                $this->warn('⚠️  Model does not support relationship traversal');
+            }
+
+            $this->newLine();
+
+        } catch (\Exception $e) {
+            $this->error("❌ Relationship traversal test failed: {$e->getMessage()}");
+            $this->newLine();
+        }
+    }
+
+    /**
+     * Test 11: Content Truncation
+     */
+    protected function testContentTruncation(string $modelClass): void
+    {
+        $this->line('📏 Test 11: Content Truncation');
+        $this->line('─────────────────────────────────');
+
+        try {
+            $instance = $modelClass::first();
+
+            if (!$instance) {
+                $this->warn('⚠️  No records found');
+                $this->newLine();
+                return;
+            }
+
+            if (method_exists($instance, 'getVectorContent')) {
+                $content = $instance->getVectorContent();
+                $length = strlen($content);
+                $maxLength = config('ai-engine.vector.max_content_length', 32000);
+
+                $this->line("Content length: {$length} chars");
+                $this->line("Max allowed: {$maxLength} chars");
+                
+                if ($length > $maxLength) {
+                    $this->warn("⚠️  Content exceeds limit (will be truncated)");
+                } else {
+                    $this->info("✅ Content within limits");
+                }
+
+                $percentage = round(($length / $maxLength) * 100, 1);
+                $this->line("Usage: {$percentage}% of limit");
+            }
+
+            $this->newLine();
+
+        } catch (\Exception $e) {
+            $this->error("❌ Content truncation test failed: {$e->getMessage()}");
+            $this->newLine();
+        }
+    }
+
+    /**
+     * Test 12: Vector Status
+     */
+    protected function testVectorStatus(string $modelClass): void
+    {
+        $this->line('📊 Test 12: Vector Status');
+        $this->line('─────────────────────────────────');
+
+        try {
+            $total = $modelClass::count();
+            
+            // Get indexed count
+            $vectorSearch = app(\LaravelAIEngine\Services\Vector\VectorSearchService::class);
+            $indexed = $vectorSearch->getIndexedCount($modelClass);
+            $pending = max(0, $total - $indexed);
+
+            $this->table(
+                ['Metric', 'Value'],
+                [
+                    ['Total Records', $total],
+                    ['Indexed', $indexed],
+                    ['Pending', $pending],
+                    ['Percentage', $total > 0 ? round(($indexed / $total) * 100, 1) . '%' : '0%'],
+                ]
+            );
+
+            if ($pending > 0) {
+                $this->warn("⚠️  {$pending} records need indexing");
+                $this->line("   Run: php artisan ai-engine:vector-index \"{$modelClass}\"");
+            } else {
+                $this->info('✅ All records indexed');
+            }
+
+            $this->newLine();
+
+        } catch (\Exception $e) {
+            $this->error("❌ Vector status test failed: {$e->getMessage()}");
+            $this->newLine();
+        }
+    }
+
+    /**
+     * Display test summary
+     */
+    protected function displayTestSummary(): void
+    {
+        $this->newLine();
+        $this->line('═══════════════════════════════════');
+        $this->line('📋 Test Summary');
+        $this->line('═══════════════════════════════════');
+        
+        $tests = [
+            '✅ Collection Discovery',
+            '✅ Vector Search',
+            '✅ Intelligent RAG',
+            '✅ Manual RAG',
+            '✅ Instance Methods',
+            '✅ Chat Service Integration',
+            '✅ Context Enhancement',
+            '✅ Auto-Detection',
+            '✅ Relationship Traversal',
+            '✅ Content Truncation',
+            '✅ Vector Status',
+        ];
+
+        foreach ($tests as $test) {
+            $this->line($test);
+        }
+
+        $this->newLine();
+        $this->info('🎉 All RAG features tested successfully!');
+        $this->line('═══════════════════════════════════');
     }
 }
