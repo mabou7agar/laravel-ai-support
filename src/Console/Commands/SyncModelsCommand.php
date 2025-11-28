@@ -75,7 +75,14 @@ class SyncModelsCommand extends Command
             default => null,
         };
 
-        return $configKey && !empty(config($configKey));
+        if (!$configKey) {
+            return false;
+        }
+
+        $apiKey = config($configKey);
+        
+        // Check if API key is a non-empty string
+        return is_string($apiKey) && !empty(trim($apiKey));
     }
 
     private function syncEngineModels(EngineEnum $engine, bool $force): array
