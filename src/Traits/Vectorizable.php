@@ -35,6 +35,20 @@ trait Vectorizable
     public array $vectorizable = [];
     
     /**
+     * Define which relationships to include in vector content
+     * Override this in your model
+     * 
+     * Example: protected array $vectorRelationships = ['author', 'tags', 'comments'];
+     */
+    protected array $vectorRelationships = [];
+    
+    /**
+     * Maximum relationship depth to traverse
+     * Override this in your model
+     */
+    protected int $maxRelationshipDepth = 1;
+    
+    /**
      * RAG priority (0-100, higher = searched first)
      */
     protected int $ragPriority = 50;
@@ -120,6 +134,67 @@ trait Vectorizable
         }
 
         return true;
+    }
+
+    /**
+     * Get vector content with relationships included
+     * 
+     * @param array|null $relationships Relationships to include (null = use $vectorRelationships)
+     * @return string
+     */
+    public function getVectorContentWithRelationships(?array $relationships = null): string
+    {
+        $relationships = $relationships ?? $this->vectorRelationships;
+        
+        if (empty($relationships)) {
+            return $this->getVectorContent();
+        }
+        
+        // Load relationships if not already loaded
+        $this->loadMissing($relationships);
+        
+        $content = [$this->getVectorContent()];
+        
+        foreach ($relationships as $relation) {
+            if ($this->relationLoaded($relation)) {
+                $related = $this->$relation;
+                
+                if ($related instanceof \Illuminate\Database\Eloquent\Collection) {
+                    foreach ($related as $item) {
+                        if (method_exists($item, 'getVectorContent')) {
+                            $content[] = $item->getVectorContent();
+                        } elseif (is_string($item)) {
+                            $content[] = $item;
+                        }
+                    }
+                } elseif ($related && method_exists($related, 'getVectorContent')) {
+                    $content[] = $related->getVectorContent();
+                } elseif ($related && is_string($related)) {
+                    $content[] = $related;
+                }
+            }
+        }
+        
+        return implode("\n\n---\n\n", array_filter($content));
+    }
+
+    /**
+     * Get all relationships to index (respects depth)
+     * 
+     * @param int|null $depth Maximum depth to traverse
+     * @return array
+     */
+    public function getIndexableRelationships(?int $depth = null): array
+    {
+        $depth = $depth ?? $this->maxRelationshipDepth;
+        
+        if ($depth === 0 || empty($this->vectorRelationships)) {
+            return [];
+        }
+        
+        // For now, just return direct relationships
+        // TODO: Implement nested relationship traversal for depth > 1
+        return $this->vectorRelationships;
     }
 
     /**

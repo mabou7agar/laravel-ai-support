@@ -13,7 +13,9 @@ class VectorIndexCommand extends Command
                             {--id=* : Specific model IDs to index}
                             {--batch=100 : Batch size for indexing}
                             {--force : Force re-indexing of already indexed models}
-                            {--queue : Queue the indexing jobs}';
+                            {--queue : Queue the indexing jobs}
+                            {--with-relationships : Include relationships in indexing}
+                            {--relationship-depth=1 : Maximum relationship depth to traverse}';
 
     protected $description = 'Index models in the vector database. If no model specified, indexes all vectorizable models';
 
@@ -142,6 +144,14 @@ class VectorIndexCommand extends Command
             $this->info('Creating vector collection...');
             $vectorSearch->createCollection($modelClass);
 
+            // Check if relationships should be included
+            $withRelationships = $this->option('with-relationships');
+            $relationshipDepth = (int) $this->option('relationship-depth');
+            
+            if ($withRelationships) {
+                $this->info("Including relationships (depth: {$relationshipDepth})");
+            }
+
             // Get models to index
             $query = $modelClass::query();
             
@@ -164,13 +174,21 @@ class VectorIndexCommand extends Command
             $bar = $this->output->createProgressBar($total);
             $bar->start();
 
-            $query->chunk($batchSize, function ($models) use ($vectorSearch, &$indexed, &$failed, $bar) {
+            $query->chunk($batchSize, function ($models) use ($vectorSearch, &$indexed, &$failed, $bar, $withRelationships, $relationshipDepth) {
                 foreach ($models as $model) {
                     try {
                         // Check if should be indexed
                         if (method_exists($model, 'shouldBeIndexed') && !$model->shouldBeIndexed()) {
                             $bar->advance();
                             continue;
+                        }
+
+                        // Load relationships if requested
+                        if ($withRelationships && method_exists($model, 'getIndexableRelationships')) {
+                            $relationships = $model->getIndexableRelationships($relationshipDepth);
+                            if (!empty($relationships)) {
+                                $model->loadMissing($relationships);
+                            }
                         }
 
                         $vectorSearch->index($model);
