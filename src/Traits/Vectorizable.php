@@ -99,7 +99,8 @@ trait Vectorizable
                 }
             }
             
-            return implode(' ', $content);
+            $fullContent = implode(' ', $content);
+            return $this->truncateContent($fullContent);
         }
 
         // Auto-detect vectorizable fields if not set
@@ -114,7 +115,8 @@ trait Vectorizable
                 }
             }
             
-            return implode(' ', $content);
+            $fullContent = implode(' ', $content);
+            return $this->truncateContent($fullContent);
         }
 
         // Fallback: use common text fields
@@ -127,7 +129,47 @@ trait Vectorizable
             }
         }
 
-        return implode(' ', $content);
+        $fullContent = implode(' ', $content);
+        return $this->truncateContent($fullContent);
+    }
+
+    /**
+     * Truncate content to safe size for vector embedding
+     * Most embedding models have token limits (e.g., OpenAI: 8191 tokens)
+     * 
+     * @param string $content
+     * @return string
+     */
+    protected function truncateContent(string $content): string
+    {
+        // Get max length from config or use default
+        // ~4 chars per token on average, so 8000 tokens ≈ 32000 chars
+        $maxChars = config('ai-engine.vector.max_content_length', 32000);
+        
+        if (strlen($content) <= $maxChars) {
+            return $content;
+        }
+
+        // Truncate and add indicator
+        $truncated = substr($content, 0, $maxChars);
+        
+        // Try to cut at last complete sentence
+        $lastPeriod = strrpos($truncated, '.');
+        $lastNewline = strrpos($truncated, "\n");
+        $cutPoint = max($lastPeriod, $lastNewline);
+        
+        if ($cutPoint !== false && $cutPoint > $maxChars * 0.8) {
+            $truncated = substr($truncated, 0, $cutPoint + 1);
+        }
+
+        \Log::info('Truncated vector content', [
+            'model' => get_class($this),
+            'original_length' => strlen($content),
+            'truncated_length' => strlen($truncated),
+            'max_chars' => $maxChars
+        ]);
+
+        return $truncated;
     }
 
     /**
@@ -214,11 +256,18 @@ trait Vectorizable
             $modelClass = get_class($this);
             $tableName = $this->getTable();
 
-            // Build column description
+            // Build column description (limit to prevent token overflow)
             $columnDescriptions = [];
-            foreach ($textColumns as $column) {
+            $maxColumns = 50; // Limit columns in prompt
+            $columnsToAnalyze = array_slice($textColumns, 0, $maxColumns);
+            
+            foreach ($columnsToAnalyze as $column) {
                 $type = $columnInfo[$column] ?? 'unknown';
                 $columnDescriptions[] = "- {$column} ({$type})";
+            }
+
+            if (count($textColumns) > $maxColumns) {
+                $columnDescriptions[] = "... and " . (count($textColumns) - $maxColumns) . " more columns";
             }
 
             $prompt = <<<PROMPT
@@ -235,6 +284,7 @@ Task: Select which columns should be vectorized for semantic search. Consider:
 2. Fields users would want to search by semantic meaning
 3. Exclude: IDs, tokens, hashes, technical codes, URLs (unless they're the main content)
 4. Include: Subject lines, body text, names, descriptions, comments, messages, titles
+5. Select maximum 5-7 most important fields to avoid content overload
 
 Respond with ONLY a JSON array of column names, nothing else.
 Example: ["subject", "body", "description"]
