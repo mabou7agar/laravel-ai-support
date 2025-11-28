@@ -489,9 +489,170 @@ PROMPT;
             return [];
         }
 
-        // For now, just return direct relationships
-        // TODO: Implement nested relationship traversal for depth > 1
-        return $this->vectorRelationships;
+        if ($depth === 1) {
+            // Simple case: just return direct relationships
+            return $this->vectorRelationships;
+        }
+
+        // Nested case: traverse relationships recursively
+        return $this->traverseNestedRelationships($this->vectorRelationships, $depth);
+    }
+
+    /**
+     * Traverse nested relationships up to specified depth
+     *
+     * @param array $relationships
+     * @param int $maxDepth
+     * @param int $currentDepth
+     * @param string $prefix
+     * @return array
+     */
+    protected function traverseNestedRelationships(
+        array $relationships,
+        int $maxDepth,
+        int $currentDepth = 1,
+        string $prefix = ''
+    ): array {
+        $result = [];
+
+        foreach ($relationships as $relation) {
+            // Add the current relationship
+            $fullRelation = $prefix ? "{$prefix}.{$relation}" : $relation;
+            $result[] = $fullRelation;
+
+            // If we haven't reached max depth, traverse deeper
+            if ($currentDepth < $maxDepth) {
+                try {
+                    // Load the relationship to inspect it
+                    $this->loadMissing($relation);
+                    
+                    if ($this->relationLoaded($relation)) {
+                        $related = $this->$relation;
+                        
+                        // Handle collections
+                        if ($related instanceof \Illuminate\Database\Eloquent\Collection) {
+                            $related = $related->first();
+                        }
+                        
+                        // Check if related model has vectorRelationships
+                        if ($related && is_object($related)) {
+                            $nestedRelations = $this->getNestedVectorRelationships($related);
+                            
+                            if (!empty($nestedRelations)) {
+                                // Recursively traverse nested relationships
+                                $nestedResults = $this->traverseNestedRelationshipsForModel(
+                                    $related,
+                                    $nestedRelations,
+                                    $maxDepth,
+                                    $currentDepth + 1,
+                                    $fullRelation
+                                );
+                                
+                                $result = array_merge($result, $nestedResults);
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // Skip relationships that fail to load
+                    \Log::debug('Failed to traverse nested relationship', [
+                        'model' => get_class($this),
+                        'relation' => $fullRelation,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Traverse nested relationships for a related model
+     *
+     * @param mixed $model
+     * @param array $relationships
+     * @param int $maxDepth
+     * @param int $currentDepth
+     * @param string $prefix
+     * @return array
+     */
+    protected function traverseNestedRelationshipsForModel(
+        $model,
+        array $relationships,
+        int $maxDepth,
+        int $currentDepth,
+        string $prefix
+    ): array {
+        $result = [];
+
+        foreach ($relationships as $relation) {
+            $fullRelation = "{$prefix}.{$relation}";
+            $result[] = $fullRelation;
+
+            // Continue traversing if not at max depth
+            if ($currentDepth < $maxDepth) {
+                try {
+                    $model->loadMissing($relation);
+                    
+                    if ($model->relationLoaded($relation)) {
+                        $related = $model->$relation;
+                        
+                        if ($related instanceof \Illuminate\Database\Eloquent\Collection) {
+                            $related = $related->first();
+                        }
+                        
+                        if ($related && is_object($related)) {
+                            $nestedRelations = $this->getNestedVectorRelationships($related);
+                            
+                            if (!empty($nestedRelations)) {
+                                $nestedResults = $this->traverseNestedRelationshipsForModel(
+                                    $related,
+                                    $nestedRelations,
+                                    $maxDepth,
+                                    $currentDepth + 1,
+                                    $fullRelation
+                                );
+                                
+                                $result = array_merge($result, $nestedResults);
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Log::debug('Failed to traverse nested relationship for model', [
+                        'model' => get_class($model),
+                        'relation' => $fullRelation,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get vector relationships from a related model
+     *
+     * @param mixed $model
+     * @return array
+     */
+    protected function getNestedVectorRelationships($model): array
+    {
+        if (!is_object($model)) {
+            return [];
+        }
+
+        // Check if model has vectorRelationships property
+        if (property_exists($model, 'vectorRelationships')) {
+            return $model->vectorRelationships ?? [];
+        }
+
+        // Check if it's a public property
+        if (isset($model->vectorRelationships)) {
+            return $model->vectorRelationships;
+        }
+
+        return [];
     }
 
     /**
