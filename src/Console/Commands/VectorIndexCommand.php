@@ -80,8 +80,36 @@ class VectorIndexCommand extends Command
 
     protected function discoverVectorizableModels(): array
     {
-        // Use the helper function to get all registered vectorizable models
-        return vectorizable_models();
+        $models = [];
+        $modelsPath = app_path('Models');
+        
+        if (!is_dir($modelsPath)) {
+            return $models;
+        }
+        
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($modelsPath)
+        );
+        
+        foreach ($files as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                // Read file content and check for Vectorizable trait usage
+                $content = file_get_contents($file->getPathname());
+                
+                // Check if file uses Vectorizable trait
+                if (preg_match('/use\s+LaravelAIEngine\\\\Traits\\\\Vectorizable\s*;/i', $content) ||
+                    preg_match('/use\s+Vectorizable\s*;/i', $content)) {
+                    
+                    // Extract namespace and class name
+                    $relativePath = str_replace($modelsPath . '/', '', $file->getPathname());
+                    $className = 'App\\Models\\' . str_replace(['/', '.php'], ['\\', ''], $relativePath);
+                    
+                    $models[] = $className;
+                }
+            }
+        }
+        
+        return $models;
     }
 
     protected function indexModel(string $modelClass, VectorSearchService $vectorSearch, bool $showHeader = true): int
