@@ -29,6 +29,18 @@ use LaravelAIEngine\DTOs\AIResponse;
 trait Vectorizable
 {
     /**
+     * Boot the Vectorizable trait for a model.
+     * This automatically registers the VectorIndexObserver.
+     */
+    public static function bootVectorizable(): void
+    {
+        // Only register observer if auto_index is enabled
+        if (config('ai-engine.vector.auto_index', false)) {
+            static::observe(\LaravelAIEngine\Observers\VectorIndexObserver::class);
+        }
+    }
+
+    /**
      * Define which fields should be vectorized
      * Override this in your model
      */
