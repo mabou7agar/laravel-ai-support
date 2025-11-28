@@ -68,17 +68,9 @@ class SyncModelsCommand extends Command
 
     private function isEngineConfigured(EngineEnum $engine): bool
     {
-        $configKey = match ($engine) {
-            EngineEnum::OPENAI => 'ai-engine.engines.openai.api_key',
-            EngineEnum::ANTHROPIC => 'ai-engine.engines.anthropic.api_key',
-            EngineEnum::GEMINI => 'ai-engine.engines.gemini.api_key',
-            default => null,
-        };
-
-        if (!$configKey) {
-            return false;
-        }
-
+        // Build config key from engine value
+        $configKey = "ai-engine.engines.{$engine->value}.api_key";
+        
         $apiKey = config($configKey);
         
         // Check if API key is a non-empty string

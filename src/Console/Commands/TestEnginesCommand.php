@@ -106,28 +106,9 @@ class TestEnginesCommand extends Command
 
     private function isEngineConfigured(EngineEnum $engine): bool
     {
-        $configKey = match ($engine) {
-            EngineEnum::OPENAI => 'ai-engine.engines.openai.api_key',
-            EngineEnum::ANTHROPIC => 'ai-engine.engines.anthropic.api_key',
-            EngineEnum::GEMINI => 'ai-engine.engines.gemini.api_key',
-            EngineEnum::STABLE_DIFFUSION => 'ai-engine.engines.stable_diffusion.api_key',
-            EngineEnum::ELEVEN_LABS => 'ai-engine.engines.eleven_labs.api_key',
-            EngineEnum::FAL_AI => 'ai-engine.engines.fal_ai.api_key',
-            EngineEnum::DEEPSEEK => 'ai-engine.engines.deepseek.api_key',
-            EngineEnum::PERPLEXITY => 'ai-engine.engines.perplexity.api_key',
-            EngineEnum::MIDJOURNEY => 'ai-engine.engines.midjourney.api_key',
-            EngineEnum::AZURE => 'ai-engine.engines.azure.api_key',
-            EngineEnum::SERPER => 'ai-engine.engines.serper.api_key',
-            EngineEnum::PLAGIARISM_CHECK => 'ai-engine.engines.plagiarism_check.api_key',
-            EngineEnum::UNSPLASH => 'ai-engine.engines.unsplash.api_key',
-            EngineEnum::PEXELS => 'ai-engine.engines.pexels.api_key',
-            default => null,
-        };
-
-        if (!$configKey) {
-            return false;
-        }
-
+        // Build config key from engine value
+        $configKey = "ai-engine.engines.{$engine->value}.api_key";
+        
         $apiKey = config($configKey);
         
         // Check if API key is a non-empty string
