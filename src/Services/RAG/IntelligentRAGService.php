@@ -385,10 +385,11 @@ PROMPT;
             return class_exists($collection);
         });
 
-        // If no valid collections, return empty
+        // If no valid collections, return empty (this is OK - RAG will work without vector search)
         if (empty($validCollections)) {
-            Log::channel('ai-engine')->warning('No valid collections found', [
+            Log::channel('ai-engine')->debug('No valid RAG collections found - continuing without vector search', [
                 'provided_collections' => $collections,
+                'note' => 'This is normal if no models use the Vectorizable trait. The chat will work without RAG context.',
             ]);
             return collect();
         }
