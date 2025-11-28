@@ -21,19 +21,31 @@ class RelationshipAnalyzer
      */
     public function analyzeRelationships(string $modelClass): array
     {
-        if (!class_exists($modelClass)) {
-            throw new \InvalidArgumentException("Model class not found: {$modelClass}");
+        try {
+            if (!class_exists($modelClass)) {
+                throw new \InvalidArgumentException("Model class not found: {$modelClass}");
+            }
+            
+            $relationships = $this->detectRelationships($modelClass);
+            
+            return [
+                'model' => $modelClass,
+                'relationships' => $relationships,
+                'recommended' => $this->getRecommendedRelationships($relationships),
+                'suggested_depth' => $this->suggestDepth($relationships),
+                'warnings' => $this->getWarnings($relationships),
+            ];
+        } catch (\Exception $e) {
+            // Return empty analysis on error
+            return [
+                'model' => $modelClass,
+                'relationships' => [],
+                'recommended' => [],
+                'suggested_depth' => 0,
+                'warnings' => ['Failed to analyze relationships: ' . $e->getMessage()],
+                'error' => $e->getMessage(),
+            ];
         }
-        
-        $relationships = $this->detectRelationships($modelClass);
-        
-        return [
-            'model' => $modelClass,
-            'relationships' => $relationships,
-            'recommended' => $this->getRecommendedRelationships($relationships),
-            'suggested_depth' => $this->suggestDepth($relationships),
-            'warnings' => $this->getWarnings($relationships),
-        ];
     }
     
     /**
