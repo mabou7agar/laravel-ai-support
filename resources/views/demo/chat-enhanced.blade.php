@@ -742,7 +742,13 @@
                         formatted = formatted.replace(/\n{3,}/g, '\n\n').trim();
                     }
 
-                    // Basic markdown-like formatting
+                    // Escape HTML to prevent email addresses and tags from being removed
+                    formatted = formatted
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+
+                    // Basic markdown-like formatting (after HTML escaping)
                     return formatted
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                         .replace(/\*(.*?)\*/g, '<em>$1</em>')

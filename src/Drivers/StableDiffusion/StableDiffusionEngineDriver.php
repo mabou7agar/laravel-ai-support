@@ -289,7 +289,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::STABLE_DIFFUSION;
+        return new EngineEnum(EngineEnum::STABLE_DIFFUSION);
     }
 
     /**

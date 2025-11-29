@@ -344,11 +344,22 @@ PROMPT;
             // Parse JSON response
             $analysis = $this->parseJsonResponse($response);
 
+            // Handle empty arrays - use defaults when arrays are empty or null
+            $searchQueries = $analysis['search_queries'] ?? null;
+            if (empty($searchQueries)) {
+                $searchQueries = [$query];
+            }
+
+            $collections = $analysis['collections'] ?? null;
+            if (empty($collections)) {
+                $collections = $availableCollections;
+            }
+
             return [
                 'needs_context' => $analysis['needs_context'] ?? false,
                 'reasoning' => $analysis['reasoning'] ?? '',
-                'search_queries' => $analysis['search_queries'] ?? [$query],
-                'collections' => $analysis['collections'] ?? $availableCollections,
+                'search_queries' => $searchQueries,
+                'collections' => $collections,
                 'query_type' => $analysis['query_type'] ?? 'conversational',
             ];
 

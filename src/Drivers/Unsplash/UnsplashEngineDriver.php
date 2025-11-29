@@ -357,7 +357,7 @@ class UnsplashEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::UNSPLASH;
+        return new EngineEnum(EngineEnum::UNSPLASH);
     }
 
     /**
