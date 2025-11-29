@@ -94,43 +94,43 @@ trait Vectorizable
      */
     public function getVectorContent(): string
     {
+        $content = [];
+
         // If vectorizable is explicitly set, use it
         if (!empty($this->vectorizable)) {
-            $content = [];
-
             foreach ($this->vectorizable as $field) {
                 if (isset($this->$field)) {
                     $content[] = $this->$field;
                 }
             }
+        } else {
+            // Auto-detect vectorizable fields if not set
+            $autoFields = $this->autoDetectVectorizableFields();
 
-            $fullContent = implode(' ', $content);
-            return $this->truncateContent($fullContent);
+            if (!empty($autoFields)) {
+                foreach ($autoFields as $field) {
+                    if (isset($this->$field)) {
+                        $content[] = $this->$field;
+                    }
+                }
+            }
         }
 
-        // Auto-detect vectorizable fields if not set
-        $autoFields = $this->autoDetectVectorizableFields();
-
-        if (!empty($autoFields)) {
-            $content = [];
-
-            foreach ($autoFields as $field) {
+        // If no content yet, fallback to common text fields
+        if (empty($content)) {
+            $commonFields = ['title', 'name', 'content', 'description', 'body', 'text'];
+            foreach ($commonFields as $field) {
                 if (isset($this->$field)) {
                     $content[] = $this->$field;
                 }
             }
-
-            $fullContent = implode(' ', $content);
-            return $this->truncateContent($fullContent);
         }
 
-        // Fallback: use common text fields
-        $commonFields = ['title', 'name', 'content', 'description', 'body', 'text'];
-        $content = [];
-
-        foreach ($commonFields as $field) {
-            if (isset($this->$field)) {
-                $content[] = $this->$field;
+        // Add media content if HasMediaEmbeddings trait is used
+        if (method_exists($this, 'getMediaVectorContent')) {
+            $mediaContent = $this->getMediaVectorContent();
+            if (!empty($mediaContent)) {
+                $content[] = $mediaContent;
             }
         }
 

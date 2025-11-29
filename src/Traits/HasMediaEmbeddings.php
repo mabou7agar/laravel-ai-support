@@ -17,20 +17,12 @@ trait HasMediaEmbeddings
     public array $mediaFields = [];
 
     /**
-     * Get vector content including media
+     * Get media content for vectorization
+     * This method is called by Vectorizable::getVectorContent() if it exists
      */
-    public function getVectorContent(): string
+    public function getMediaVectorContent(): string
     {
         $content = [];
-
-        // Get text content from vectorizable fields
-        if (property_exists($this, 'vectorizable') && !empty($this->vectorizable)) {
-            foreach ($this->vectorizable as $field) {
-                if (isset($this->$field) && is_string($this->$field)) {
-                    $content[] = $this->$field;
-                }
-            }
-        }
 
         // Get media content
         if (!empty($this->mediaFields)) {
