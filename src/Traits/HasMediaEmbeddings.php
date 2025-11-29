@@ -19,6 +19,7 @@ trait HasMediaEmbeddings
     /**
      * Get media content for vectorization
      * This method is called by Vectorizable::getVectorContent() if it exists
+     * Supports both local files and URLs
      */
     public function getMediaVectorContent(): string
     {
@@ -30,7 +31,16 @@ trait HasMediaEmbeddings
             
             foreach ($this->mediaFields as $type => $field) {
                 if (isset($this->$field)) {
-                    $mediaContent = $mediaService->getMediaContent($this, $field);
+                    $fieldValue = $this->$field;
+                    
+                    // Check if field contains a URL
+                    if ($this->isUrl($fieldValue)) {
+                        $mediaContent = $this->processUrlMedia($fieldValue, $type);
+                    } else {
+                        // Process as local file
+                        $mediaContent = $mediaService->getMediaContent($this, $field);
+                    }
+                    
                     if ($mediaContent) {
                         $content[] = $mediaContent;
                     }
@@ -39,6 +49,106 @@ trait HasMediaEmbeddings
         }
 
         return implode(' ', $content);
+    }
+
+    /**
+     * Check if a string is a URL
+     */
+    protected function isUrl(string $value): bool
+    {
+        return filter_var($value, FILTER_VALIDATE_URL) !== false;
+    }
+
+    /**
+     * Process media from URL
+     * Downloads the file and processes it based on type
+     */
+    protected function processUrlMedia(string $url, string $type): ?string
+    {
+        try {
+            // Download file to temp location
+            $tempFile = $this->downloadUrlToTemp($url);
+            
+            if (!$tempFile) {
+                \Log::channel('ai-engine')->warning('Failed to download URL media', [
+                    'url' => $url,
+                    'type' => $type,
+                ]);
+                return null;
+            }
+
+            // Process based on type
+            $content = match($type) {
+                'image' => app(VisionService::class)->analyzeImage($tempFile),
+                'audio' => app(AudioService::class)->transcribe($tempFile),
+                'video' => app(VideoService::class)->processVideo($tempFile),
+                'document' => app(DocumentService::class)->extractText($tempFile),
+                default => null,
+            };
+
+            // Cleanup temp file
+            @unlink($tempFile);
+
+            if (config('ai-engine.debug')) {
+                \Log::channel('ai-engine')->debug('Processed URL media', [
+                    'url' => $url,
+                    'type' => $type,
+                    'content_length' => strlen($content ?? ''),
+                ]);
+            }
+
+            return $content;
+
+        } catch (\Exception $e) {
+            \Log::channel('ai-engine')->error('Error processing URL media', [
+                'url' => $url,
+                'type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Download URL to temporary file
+     */
+    protected function downloadUrlToTemp(string $url): ?string
+    {
+        try {
+            // Get file extension from URL
+            $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
+            if (empty($extension)) {
+                $extension = 'tmp';
+            }
+
+            // Create temp file
+            $tempFile = tempnam(sys_get_temp_dir(), 'media_') . '.' . $extension;
+
+            // Download with timeout
+            $context = stream_context_create([
+                'http' => [
+                    'timeout' => 30,
+                    'user_agent' => 'Laravel-AI-Engine/1.0',
+                ],
+            ]);
+
+            $content = @file_get_contents($url, false, $context);
+            
+            if ($content === false) {
+                return null;
+            }
+
+            file_put_contents($tempFile, $content);
+
+            return $tempFile;
+
+        } catch (\Exception $e) {
+            \Log::channel('ai-engine')->error('Failed to download URL', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 
     /**
