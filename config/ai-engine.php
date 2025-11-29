@@ -658,6 +658,20 @@ return [
         // Auto-discovery settings
         'auto_discover' => env('INTELLIGENT_RAG_AUTO_DISCOVER', true),
         'discovery_cache_ttl' => env('INTELLIGENT_RAG_DISCOVERY_CACHE', 3600), // 1 hour
+        
+        // Discovery paths - where to look for models with Vectorizable trait
+        // Supports multiple paths for modular architectures
+        'discovery_paths' => [
+            [
+                'path' => app_path('Models'),
+                'namespace' => 'App\\Models',
+            ],
+            // Add custom paths here, for example:
+            // [
+            //     'path' => base_path('modules/*/Models'),
+            //     'namespace' => 'Modules\\{module}\\Models',  // {module} will be replaced
+            // ],
+        ],
 
         // Maximum context items to retrieve
         'max_context_items' => env('INTELLIGENT_RAG_MAX_CONTEXT', 5),

@@ -62,42 +62,76 @@ class RAGCollectionDiscovery
     }
 
     /**
-     * Discover RAG collections from app/Models directory (including subdirectories)
+     * Discover RAG collections from configured paths (including subdirectories)
+     * Supports multiple paths and glob patterns for modular architectures
      * 
      * @return array
      */
     protected function discoverFromModels(): array
     {
         $collections = [];
-        $modelsPath = app_path('Models');
+        $discoveryPaths = config('ai-engine.intelligent_rag.discovery_paths', [
+            [
+                'path' => app_path('Models'),
+                'namespace' => 'App\\Models',
+            ],
+        ]);
 
-        if (!File::isDirectory($modelsPath)) {
+        foreach ($discoveryPaths as $pathConfig) {
+            $path = $pathConfig['path'];
+            $namespace = $pathConfig['namespace'];
+            
+            // Handle glob patterns (e.g., modules/*/Models)
+            if (str_contains($path, '*')) {
+                $collections = array_merge($collections, $this->discoverFromGlobPath($path, $namespace));
+            } else {
+                $collections = array_merge($collections, $this->discoverFromSinglePath($path, $namespace));
+            }
+        }
+
+        // Remove duplicates and sort by priority
+        $collections = array_unique($collections);
+        $collections = $this->sortByPriority($collections);
+
+        return $collections;
+    }
+
+    /**
+     * Discover models from a single path
+     * 
+     * @param string $path
+     * @param string $namespace
+     * @return array
+     */
+    protected function discoverFromSinglePath(string $path, string $namespace): array
+    {
+        $collections = [];
+
+        if (!File::isDirectory($path)) {
             return [];
         }
 
         try {
             // Get all PHP files recursively (including subdirectories)
-            $files = File::allFiles($modelsPath);
+            $files = File::allFiles($path);
 
             foreach ($files as $file) {
                 // Build the full class name from the file path
-                $className = $this->getClassNameFromFile($file, $modelsPath);
+                $className = $this->getClassNameFromFile($file, $path, $namespace);
 
                 if (!$className || !class_exists($className)) {
                     continue;
                 }
 
-                // Check if model uses Vectorizable or RAGgable traits
+                // Check if model uses Vectorizable trait
                 if ($this->isRAGgable($className)) {
                     $collections[] = $className;
                 }
             }
 
-            // Sort by priority if RAGgable
-            $collections = $this->sortByPriority($collections);
-
         } catch (\Exception $e) {
-            Log::warning('Failed to discover RAG collections', [
+            Log::warning('Failed to discover RAG collections from path', [
+                'path' => $path,
                 'error' => $e->getMessage(),
             ]);
         }
@@ -106,16 +140,59 @@ class RAGCollectionDiscovery
     }
 
     /**
+     * Discover models from glob pattern (e.g., modules/*/Models)
+     * 
+     * @param string $globPath
+     * @param string $namespacePattern
+     * @return array
+     */
+    protected function discoverFromGlobPath(string $globPath, string $namespacePattern): array
+    {
+        $collections = [];
+        $matchedPaths = glob($globPath, GLOB_ONLYDIR);
+
+        foreach ($matchedPaths as $matchedPath) {
+            // Extract module name from path for namespace replacement
+            $moduleName = $this->extractModuleName($matchedPath, $globPath);
+            $namespace = str_replace('{module}', $moduleName, $namespacePattern);
+            
+            $collections = array_merge($collections, $this->discoverFromSinglePath($matchedPath, $namespace));
+        }
+
+        return $collections;
+    }
+
+    /**
+     * Extract module name from matched glob path
+     * 
+     * @param string $matchedPath
+     * @param string $globPattern
+     * @return string
+     */
+    protected function extractModuleName(string $matchedPath, string $globPattern): string
+    {
+        // Remove base path and trailing /Models to get module name
+        $pattern = str_replace('*', '([^/]+)', $globPattern);
+        
+        if (preg_match('#' . $pattern . '#', $matchedPath, $matches)) {
+            return $matches[1] ?? 'Unknown';
+        }
+        
+        return 'Unknown';
+    }
+
+    /**
      * Get the fully qualified class name from a file path
-     * Handles nested directories (e.g., App\Models\Blog\Post)
+     * Handles nested directories (e.g., App\Models\Blog\Post, Modules\MailBox\Models\EmailCache)
      * 
      * @param \SplFileInfo $file
      * @param string $basePath
+     * @param string $baseNamespace
      * @return string|null
      */
-    protected function getClassNameFromFile(\SplFileInfo $file, string $basePath): ?string
+    protected function getClassNameFromFile(\SplFileInfo $file, string $basePath, string $baseNamespace): ?string
     {
-        // Get relative path from base Models directory
+        // Get relative path from base directory
         $relativePath = str_replace($basePath . DIRECTORY_SEPARATOR, '', $file->getRealPath());
         
         // Remove .php extension
@@ -125,7 +202,12 @@ class RAGCollectionDiscovery
         $namespacePath = str_replace(DIRECTORY_SEPARATOR, '\\', $relativePath);
         
         // Build full class name
-        return 'App\\Models\\' . $namespacePath;
+        // If there's a sub-path, append it; otherwise just use the filename
+        if (!empty($namespacePath)) {
+            return rtrim($baseNamespace, '\\') . '\\' . $namespacePath;
+        }
+        
+        return $baseNamespace;
     }
 
     /**
