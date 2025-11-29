@@ -302,6 +302,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\GenerateVectorConfigCommand::class,
                 Console\Commands\TestVectorJourneyCommand::class,
                 Console\Commands\ConfigureAllModelsCommand::class,
+                Console\Commands\TestMediaEmbeddingsCommand::class,
             ]);
         }
 
