@@ -14,6 +14,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Vectorization Settings
+    |--------------------------------------------------------------------------
+    |
+    | Configure how content is vectorized for RAG and vector search.
+    |
+    */
+    'vectorization' => [
+        // Maximum size per field before skipping (in bytes)
+        // Fields larger than this will be skipped to prevent token limit errors
+        'max_field_size' => env('AI_ENGINE_MAX_FIELD_SIZE', 100000), // 100KB
+
+        // Maximum total content length after combining all fields (in characters)
+        // This is truncated to fit within embedding model token limits
+        // OpenAI: 8192 tokens ≈ 6000 chars (conservative estimate)
+        'max_content_length' => env('AI_ENGINE_MAX_CONTENT_LENGTH', 6000),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Demo Routes
     |--------------------------------------------------------------------------
     |

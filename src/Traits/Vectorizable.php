@@ -98,12 +98,24 @@ trait Vectorizable
         $usedFields = [];
         $source = '';
 
+        $maxFieldSize = config('ai-engine.vectorization.max_field_size', 100000); // 100KB per field
+        $skippedFields = [];
+
         // If vectorizable is explicitly set, use it
         if (!empty($this->vectorizable)) {
             $source = 'explicit $vectorizable property';
             foreach ($this->vectorizable as $field) {
                 if (isset($this->$field)) {
-                    $content[] = $this->$field;
+                    $fieldValue = $this->$field;
+                    $fieldSize = strlen($fieldValue);
+                    
+                    // Skip fields that are too large
+                    if ($fieldSize > $maxFieldSize) {
+                        $skippedFields[] = ['field' => $field, 'size' => $fieldSize];
+                        continue;
+                    }
+                    
+                    $content[] = $fieldValue;
                     $usedFields[] = $field;
                 }
             }
@@ -115,7 +127,16 @@ trait Vectorizable
                 $source = 'auto-detected fields';
                 foreach ($autoFields as $field) {
                     if (isset($this->$field)) {
-                        $content[] = $this->$field;
+                        $fieldValue = $this->$field;
+                        $fieldSize = strlen($fieldValue);
+                        
+                        // Skip fields that are too large
+                        if ($fieldSize > $maxFieldSize) {
+                            $skippedFields[] = ['field' => $field, 'size' => $fieldSize];
+                            continue;
+                        }
+                        
+                        $content[] = $fieldValue;
                         $usedFields[] = $field;
                     }
                 }
@@ -128,7 +149,16 @@ trait Vectorizable
             $commonFields = ['title', 'name', 'content', 'description', 'body', 'text'];
             foreach ($commonFields as $field) {
                 if (isset($this->$field)) {
-                    $content[] = $this->$field;
+                    $fieldValue = $this->$field;
+                    $fieldSize = strlen($fieldValue);
+                    
+                    // Skip fields that are too large
+                    if ($fieldSize > $maxFieldSize) {
+                        $skippedFields[] = ['field' => $field, 'size' => $fieldSize];
+                        continue;
+                    }
+                    
+                    $content[] = $fieldValue;
                     $usedFields[] = $field;
                 }
             }
@@ -153,10 +183,20 @@ trait Vectorizable
                 'id' => $this->id ?? 'new',
                 'source' => $source,
                 'fields_used' => $usedFields,
+                'fields_skipped' => $skippedFields,
                 'has_media' => $hasMedia,
                 'content_length' => strlen($fullContent),
                 'truncated_length' => strlen($truncated),
                 'was_truncated' => strlen($fullContent) !== strlen($truncated),
+            ]);
+        }
+
+        // Log warning if fields were skipped
+        if (!empty($skippedFields)) {
+            \Log::channel('ai-engine')->warning('Large fields skipped during vectorization', [
+                'model' => get_class($this),
+                'id' => $this->id ?? 'new',
+                'skipped_fields' => $skippedFields,
             ]);
         }
 
@@ -173,8 +213,9 @@ trait Vectorizable
     protected function truncateContent(string $content): string
     {
         // Get max length from config or use default
-        // ~4 chars per token on average, so 8000 tokens ≈ 32000 chars
-        $maxChars = config('ai-engine.vector.max_content_length', 32000);
+        // OpenAI embedding models have 8192 token limit
+        // ~1.3 chars per token on average (conservative), so 8000 tokens ≈ 6000 chars (safe limit)
+        $maxChars = config('ai-engine.vectorization.max_content_length', 6000);
 
         if (strlen($content) <= $maxChars) {
             return $content;
@@ -257,7 +298,12 @@ trait Vectorizable
             // Filter to text-based columns only
             $textColumns = array_filter($columnInfo, function($type, $column) {
                 // Skip common non-vectorizable columns
-                $skipColumns = ['id', 'created_at', 'updated_at', 'deleted_at', 'password', 'remember_token', 'email_verified_at'];
+                $skipColumns = [
+                    'id', 'created_at', 'updated_at', 'deleted_at', 
+                    'password', 'remember_token', 'email_verified_at',
+                    'raw_body', 'raw_content', 'raw_data', 'raw_email', // Skip raw fields (contain attachments)
+                    'binary_data', 'file_data', 'attachment_data', // Skip binary data
+                ];
                 if (in_array($column, $skipColumns)) {
                     return false;
                 }
