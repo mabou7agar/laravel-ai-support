@@ -174,7 +174,7 @@ class MediaEmbeddingService
     }
 
     /**
-     * Get media content for indexing
+     * Get media content for indexing (without generating embeddings)
      */
     public function getMediaContent($model, string $field): ?string
     {
@@ -190,7 +190,13 @@ class MediaEmbeddingService
         }
 
         if (!file_exists($filePath)) {
-            Log::warning('Media file not found', ['path' => $filePath]);
+            if (config('ai-engine.debug')) {
+                Log::channel('ai-engine')->warning('Media file not found', [
+                    'model' => get_class($model),
+                    'field' => $field,
+                    'path' => $filePath,
+                ]);
+            }
             return null;
         }
 
@@ -198,17 +204,44 @@ class MediaEmbeddingService
         $type = $this->detectType($extension);
 
         if (!$type) {
+            if (config('ai-engine.debug')) {
+                Log::channel('ai-engine')->warning('Could not detect media type', [
+                    'model' => get_class($model),
+                    'field' => $field,
+                    'extension' => $extension,
+                ]);
+            }
             return null;
         }
 
         try {
-            $result = $this->embedMedia($filePath, $type);
-            return $result['content'];
+            // Process media to extract content (without embedding)
+            $content = match ($type) {
+                'image' => $this->processImage($filePath, null),
+                'audio' => $this->processAudio($filePath, null),
+                'video' => $this->processVideo($filePath, null),
+                'document' => $this->processDocument($filePath, $extension),
+                default => null,
+            };
+
+            if (config('ai-engine.debug')) {
+                Log::channel('ai-engine')->info('Media content extracted', [
+                    'model' => get_class($model),
+                    'field' => $field,
+                    'type' => $type,
+                    'file_size' => filesize($filePath),
+                    'content_length' => strlen($content ?? ''),
+                ]);
+            }
+
+            return $content;
         } catch (\Exception $e) {
-            Log::error('Failed to get media content', [
+            Log::channel('ai-engine')->error('Failed to get media content', [
                 'model' => get_class($model),
                 'field' => $field,
+                'type' => $type,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             return null;
         }
