@@ -21,10 +21,24 @@ return [
     |
     */
     'vectorization' => [
+        // Chunking strategy: 'split' or 'truncate'
+        // - 'split': Creates multiple embeddings for large content (recommended for RAG)
+        // - 'truncate': Truncates content to fit (faster, but loses information)
+        'strategy' => env('AI_ENGINE_VECTORIZATION_STRATEGY', 'split'),
+
         // Maximum size per field before chunking (in bytes)
         // Fields larger than this will be intelligently chunked (70% beginning + 30% end)
         // This preserves context while staying within limits
         'max_field_size' => env('AI_ENGINE_MAX_FIELD_SIZE', 100000), // 100KB
+
+        // Chunk size for split strategy (in characters)
+        // Each chunk will be this size (respecting token limits)
+        // Leave null to auto-calculate based on embedding model
+        'chunk_size' => env('AI_ENGINE_CHUNK_SIZE', null),
+        
+        // Chunk overlap (in characters)
+        // Overlap between chunks to maintain context
+        'chunk_overlap' => env('AI_ENGINE_CHUNK_OVERLAP', 200),
 
         // Maximum total content length after combining all fields (in characters)
         // Leave null to auto-calculate based on embedding model token limits

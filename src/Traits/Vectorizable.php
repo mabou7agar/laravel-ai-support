@@ -89,10 +89,54 @@ trait Vectorizable
     }
 
     /**
+     * Get chunked content for vectorization
+     * Returns array of chunks for 'split' strategy
+     * Each chunk is suitable for separate embedding
+     */
+    public function getVectorContentChunks(): array
+    {
+        $strategy = config('ai-engine.vectorization.strategy', 'split');
+        
+        if ($strategy === 'truncate') {
+            // Return single chunk for backward compatibility
+            return [$this->getVectorContent()];
+        }
+
+        // Get full content without truncation
+        $fullContent = $this->getFullVectorContent();
+        
+        // Split into chunks
+        return $this->splitIntoChunks($fullContent);
+    }
+
+    /**
      * Get content to be vectorized
+     * Returns single string for 'truncate' strategy
      * Override this method for custom content generation
      */
     public function getVectorContent(): string
+    {
+        $fullContent = $this->getFullVectorContent();
+        
+        // Apply strategy
+        $strategy = config('ai-engine.vectorization.strategy', 'split');
+        
+        if ($strategy === 'split') {
+            // For split strategy, return first chunk only
+            // Use getVectorContentChunks() for all chunks
+            $chunks = $this->splitIntoChunks($fullContent);
+            return $chunks[0] ?? '';
+        }
+        
+        // Truncate strategy
+        return $this->truncateContent($fullContent);
+    }
+
+    /**
+     * Get full vector content without truncation
+     * Used internally by both strategies
+     */
+    protected function getFullVectorContent(): string
     {
         $content = [];
         $usedFields = [];
@@ -199,13 +243,9 @@ trait Vectorizable
         }
 
         $fullContent = implode(' ', $content);
-        $truncated = $this->truncateContent($fullContent);
 
         if (config('ai-engine.debug')) {
-            $embeddingModel = config('ai-engine.vector.embedding_model', 'text-embedding-3-small');
-            $tokenLimit = $this->getModelTokenLimit($embeddingModel);
-            
-            \Log::channel('ai-engine')->debug('Vector content generated', [
+            \Log::channel('ai-engine')->debug('Full vector content generated', [
                 'model' => get_class($this),
                 'id' => $this->id ?? 'new',
                 'source' => $source,
@@ -213,11 +253,6 @@ trait Vectorizable
                 'fields_chunked' => $chunkedFields,
                 'has_media' => $hasMedia,
                 'content_length' => strlen($fullContent),
-                'truncated_length' => strlen($truncated),
-                'was_truncated' => strlen($fullContent) !== strlen($truncated),
-                'embedding_model' => $embeddingModel,
-                'model_token_limit' => $tokenLimit,
-                'estimated_tokens' => (int) (strlen($truncated) / 1.3),
             ]);
         }
 
@@ -230,7 +265,80 @@ trait Vectorizable
             ]);
         }
 
-        return $truncated;
+        return $fullContent;
+    }
+
+    /**
+     * Split content into chunks for multiple embeddings
+     */
+    protected function splitIntoChunks(string $content): array
+    {
+        if (empty($content)) {
+            return [];
+        }
+
+        $embeddingModel = config('ai-engine.vector.embedding_model', 'text-embedding-3-small');
+        $tokenLimit = $this->getModelTokenLimit($embeddingModel);
+        
+        // Calculate chunk size (leave 10% buffer for safety)
+        $chunkSize = config('ai-engine.vectorization.chunk_size');
+        if (!$chunkSize) {
+            // Auto-calculate: 90% of token limit converted to chars
+            $chunkSize = (int) ($tokenLimit * 0.9 * 1.3); // 1.3 chars per token average
+        }
+        
+        $overlap = config('ai-engine.vectorization.chunk_overlap', 200);
+        
+        // If content fits in one chunk, return it
+        if (strlen($content) <= $chunkSize) {
+            return [$content];
+        }
+
+        $chunks = [];
+        $position = 0;
+        $contentLength = strlen($content);
+
+        while ($position < $contentLength) {
+            // Extract chunk
+            $chunk = substr($content, $position, $chunkSize);
+            
+            // Try to break at sentence boundary
+            if ($position + $chunkSize < $contentLength) {
+                $lastPeriod = strrpos($chunk, '.');
+                $lastNewline = strrpos($chunk, "\n");
+                $breakPoint = max($lastPeriod, $lastNewline);
+                
+                if ($breakPoint !== false && $breakPoint > $chunkSize * 0.8) {
+                    $chunk = substr($chunk, 0, $breakPoint + 1);
+                    $position += $breakPoint + 1;
+                } else {
+                    $position += $chunkSize;
+                }
+            } else {
+                $position = $contentLength;
+            }
+            
+            $chunks[] = trim($chunk);
+            
+            // Move back by overlap amount for next chunk
+            if ($position < $contentLength) {
+                $position -= $overlap;
+            }
+        }
+
+        if (config('ai-engine.debug')) {
+            \Log::channel('ai-engine')->info('Content split into chunks', [
+                'model' => get_class($this),
+                'id' => $this->id ?? 'new',
+                'total_length' => $contentLength,
+                'chunk_count' => count($chunks),
+                'chunk_size' => $chunkSize,
+                'overlap' => $overlap,
+                'chunk_lengths' => array_map('strlen', $chunks),
+            ]);
+        }
+
+        return $chunks;
     }
 
     /**
