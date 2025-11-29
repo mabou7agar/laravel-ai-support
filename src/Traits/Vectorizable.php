@@ -99,7 +99,7 @@ trait Vectorizable
         $source = '';
 
         $maxFieldSize = config('ai-engine.vectorization.max_field_size', 100000); // 100KB per field
-        $skippedFields = [];
+        $chunkedFields = [];
 
         // If vectorizable is explicitly set, use it
         if (!empty($this->vectorizable)) {
@@ -109,13 +109,15 @@ trait Vectorizable
                     $fieldValue = $this->$field;
                     $fieldSize = strlen($fieldValue);
                     
-                    // Skip fields that are too large
+                    // Chunk fields that are too large
                     if ($fieldSize > $maxFieldSize) {
-                        $skippedFields[] = ['field' => $field, 'size' => $fieldSize];
-                        continue;
+                        $chunked = $this->chunkLargeField($fieldValue, $maxFieldSize);
+                        $content[] = $chunked;
+                        $chunkedFields[] = ['field' => $field, 'original_size' => $fieldSize, 'chunked_size' => strlen($chunked)];
+                    } else {
+                        $content[] = $fieldValue;
                     }
                     
-                    $content[] = $fieldValue;
                     $usedFields[] = $field;
                 }
             }
@@ -130,13 +132,15 @@ trait Vectorizable
                         $fieldValue = $this->$field;
                         $fieldSize = strlen($fieldValue);
                         
-                        // Skip fields that are too large
+                        // Chunk fields that are too large
                         if ($fieldSize > $maxFieldSize) {
-                            $skippedFields[] = ['field' => $field, 'size' => $fieldSize];
-                            continue;
+                            $chunked = $this->chunkLargeField($fieldValue, $maxFieldSize);
+                            $content[] = $chunked;
+                            $chunkedFields[] = ['field' => $field, 'original_size' => $fieldSize, 'chunked_size' => strlen($chunked)];
+                        } else {
+                            $content[] = $fieldValue;
                         }
                         
-                        $content[] = $fieldValue;
                         $usedFields[] = $field;
                     }
                 }
@@ -152,13 +156,15 @@ trait Vectorizable
                     $fieldValue = $this->$field;
                     $fieldSize = strlen($fieldValue);
                     
-                    // Skip fields that are too large
+                    // Chunk fields that are too large
                     if ($fieldSize > $maxFieldSize) {
-                        $skippedFields[] = ['field' => $field, 'size' => $fieldSize];
-                        continue;
+                        $chunked = $this->chunkLargeField($fieldValue, $maxFieldSize);
+                        $content[] = $chunked;
+                        $chunkedFields[] = ['field' => $field, 'original_size' => $fieldSize, 'chunked_size' => strlen($chunked)];
+                    } else {
+                        $content[] = $fieldValue;
                     }
                     
-                    $content[] = $fieldValue;
                     $usedFields[] = $field;
                 }
             }
@@ -186,7 +192,7 @@ trait Vectorizable
                 'id' => $this->id ?? 'new',
                 'source' => $source,
                 'fields_used' => $usedFields,
-                'fields_skipped' => $skippedFields,
+                'fields_chunked' => $chunkedFields,
                 'has_media' => $hasMedia,
                 'content_length' => strlen($fullContent),
                 'truncated_length' => strlen($truncated),
@@ -197,16 +203,51 @@ trait Vectorizable
             ]);
         }
 
-        // Log warning if fields were skipped
-        if (!empty($skippedFields)) {
-            \Log::channel('ai-engine')->warning('Large fields skipped during vectorization', [
+        // Log info if fields were chunked
+        if (!empty($chunkedFields)) {
+            \Log::channel('ai-engine')->info('Large fields chunked during vectorization', [
                 'model' => get_class($this),
                 'id' => $this->id ?? 'new',
-                'skipped_fields' => $skippedFields,
+                'chunked_fields' => $chunkedFields,
             ]);
         }
 
         return $truncated;
+    }
+
+    /**
+     * Chunk large field content intelligently
+     * Takes beginning and end of content to preserve context
+     *
+     * @param string $content
+     * @param int $maxSize
+     * @return string
+     */
+    protected function chunkLargeField(string $content, int $maxSize): string
+    {
+        if (strlen($content) <= $maxSize) {
+            return $content;
+        }
+
+        // Take 70% from beginning and 30% from end to preserve context
+        $beginningSize = (int) ($maxSize * 0.7);
+        $endSize = (int) ($maxSize * 0.3);
+
+        $beginning = substr($content, 0, $beginningSize);
+        $end = substr($content, -$endSize);
+
+        // Try to cut at sentence boundaries
+        $lastPeriod = strrpos($beginning, '.');
+        if ($lastPeriod !== false && $lastPeriod > $beginningSize * 0.8) {
+            $beginning = substr($beginning, 0, $lastPeriod + 1);
+        }
+
+        $firstPeriod = strpos($end, '.');
+        if ($firstPeriod !== false && $firstPeriod < $endSize * 0.2) {
+            $end = substr($end, $firstPeriod + 1);
+        }
+
+        return $beginning . "\n\n[... content truncated ...]\n\n" . $end;
     }
 
     /**

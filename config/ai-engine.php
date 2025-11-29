@@ -21,8 +21,9 @@ return [
     |
     */
     'vectorization' => [
-        // Maximum size per field before skipping (in bytes)
-        // Fields larger than this will be skipped to prevent token limit errors
+        // Maximum size per field before chunking (in bytes)
+        // Fields larger than this will be intelligently chunked (70% beginning + 30% end)
+        // This preserves context while staying within limits
         'max_field_size' => env('AI_ENGINE_MAX_FIELD_SIZE', 100000), // 100KB
 
         // Maximum total content length after combining all fields (in characters)
