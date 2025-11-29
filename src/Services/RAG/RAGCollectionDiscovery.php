@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * RAG Collection Discovery Service
- * 
+ *
  * Automatically discovers models that can be used for RAG:
  * 1. Models with Vectorizable trait
  * 2. Models with RAGgable trait
@@ -27,7 +27,7 @@ class RAGCollectionDiscovery
 
     /**
      * Discover all RAG collections
-     * 
+     *
      * @param bool $useCache Whether to use cached results
      * @return array Array of model class names
      */
@@ -64,7 +64,7 @@ class RAGCollectionDiscovery
     /**
      * Discover RAG collections from configured paths (including subdirectories)
      * Supports multiple paths and glob patterns for modular architectures
-     * 
+     *
      * @return array
      */
     protected function discoverFromModels(): array
@@ -80,7 +80,7 @@ class RAGCollectionDiscovery
         foreach ($discoveryPaths as $pathConfig) {
             $path = $pathConfig['path'];
             $namespace = $pathConfig['namespace'];
-            
+
             // Handle glob patterns (e.g., modules/*/Models)
             if (str_contains($path, '*')) {
                 $collections = array_merge($collections, $this->discoverFromGlobPath($path, $namespace));
@@ -98,7 +98,7 @@ class RAGCollectionDiscovery
 
     /**
      * Discover models from a single path
-     * 
+     *
      * @param string $path
      * @param string $namespace
      * @return array
@@ -140,7 +140,8 @@ class RAGCollectionDiscovery
     }
 
     /**
-     * Discover models from glob pattern (e.g., modules/*/Models)
+     * Discover models from glob pattern
+     * Example: modules/star/Models where star is wildcard
      * 
      * @param string $globPath
      * @param string $namespacePattern
@@ -155,7 +156,7 @@ class RAGCollectionDiscovery
             // Extract module name from path for namespace replacement
             $moduleName = $this->extractModuleName($matchedPath, $globPath);
             $namespace = str_replace('{module}', $moduleName, $namespacePattern);
-            
+
             $collections = array_merge($collections, $this->discoverFromSinglePath($matchedPath, $namespace));
         }
 
@@ -164,7 +165,7 @@ class RAGCollectionDiscovery
 
     /**
      * Extract module name from matched glob path
-     * 
+     *
      * @param string $matchedPath
      * @param string $globPattern
      * @return string
@@ -173,18 +174,18 @@ class RAGCollectionDiscovery
     {
         // Remove base path and trailing /Models to get module name
         $pattern = str_replace('*', '([^/]+)', $globPattern);
-        
+
         if (preg_match('#' . $pattern . '#', $matchedPath, $matches)) {
             return $matches[1] ?? 'Unknown';
         }
-        
+
         return 'Unknown';
     }
 
     /**
      * Get the fully qualified class name from a file path
      * Handles nested directories (e.g., App\Models\Blog\Post, Modules\MailBox\Models\EmailCache)
-     * 
+     *
      * @param \SplFileInfo $file
      * @param string $basePath
      * @param string $baseNamespace
@@ -194,25 +195,25 @@ class RAGCollectionDiscovery
     {
         // Get relative path from base directory
         $relativePath = str_replace($basePath . DIRECTORY_SEPARATOR, '', $file->getRealPath());
-        
+
         // Remove .php extension
         $relativePath = str_replace('.php', '', $relativePath);
-        
+
         // Convert directory separators to namespace separators
         $namespacePath = str_replace(DIRECTORY_SEPARATOR, '\\', $relativePath);
-        
+
         // Build full class name
         // If there's a sub-path, append it; otherwise just use the filename
         if (!empty($namespacePath)) {
             return rtrim($baseNamespace, '\\') . '\\' . $namespacePath;
         }
-        
+
         return $baseNamespace;
     }
 
     /**
      * Check if a class is RAGgable
-     * 
+     *
      * @param string $className
      * @return bool
      */
@@ -226,7 +227,7 @@ class RAGCollectionDiscovery
 
     /**
      * Sort collections by RAG priority
-     * 
+     *
      * @param array $collections
      * @return array
      */
@@ -244,7 +245,7 @@ class RAGCollectionDiscovery
 
     /**
      * Get priority for a model class
-     * 
+     *
      * @param string $className
      * @return int
      */
@@ -252,7 +253,7 @@ class RAGCollectionDiscovery
     {
         try {
             $instance = new $className();
-            
+
             if (method_exists($instance, 'getRAGPriority')) {
                 return $instance->getRAGPriority();
             }
@@ -265,7 +266,7 @@ class RAGCollectionDiscovery
 
     /**
      * Clear the discovery cache
-     * 
+     *
      * @return void
      */
     public function clearCache(): void
@@ -275,7 +276,7 @@ class RAGCollectionDiscovery
 
     /**
      * Get statistics about discovered collections
-     * 
+     *
      * @return array
      */
     public function getStatistics(): array
@@ -292,7 +293,7 @@ class RAGCollectionDiscovery
 
     /**
      * Check if a specific model is discoverable
-     * 
+     *
      * @param string $className
      * @return bool
      */
