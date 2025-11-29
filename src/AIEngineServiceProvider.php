@@ -33,6 +33,9 @@ class AIEngineServiceProvider extends ServiceProvider
             'ai-engine'
         );
 
+        // Register AI Engine log channel
+        $this->registerLogChannel();
+
         // Core AI Engine Services
         $this->registerCoreServices();
         
@@ -44,6 +47,19 @@ class AIEngineServiceProvider extends ServiceProvider
         
         // Service Aliases
         $this->registerAliases();
+    }
+
+    /**
+     * Register AI Engine log channel
+     */
+    protected function registerLogChannel(): void
+    {
+        $this->app->make('config')->set('logging.channels.ai-engine', [
+            'driver' => 'daily',
+            'path' => storage_path('logs/ai-engine.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 14,
+        ]);
     }
 
     /**

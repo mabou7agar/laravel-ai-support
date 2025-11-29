@@ -200,24 +200,38 @@ class TestMediaEmbeddingsCommand extends Command
 
     protected function showRecentLogs()
     {
-        $logFile = storage_path('logs/ai-engine.log');
+        // Try daily log file first (ai-engine-YYYY-MM-DD.log)
+        $logFile = storage_path('logs/ai-engine-' . date('Y-m-d') . '.log');
+        
+        // Fallback to non-dated log file
+        if (!file_exists($logFile)) {
+            $logFile = storage_path('logs/ai-engine.log');
+        }
         
         if (!file_exists($logFile)) {
-            $this->warn('   ⚠️  Log file not found: ' . $logFile);
+            $this->warn('   ⚠️  Log file not found');
+            $this->line('   💡 Tip: Logs are written to storage/logs/ai-engine-YYYY-MM-DD.log');
             return;
         }
 
-        $this->line('   📄 Recent log entries:');
+        $this->line('   📄 Recent log entries from: ' . basename($logFile));
         $this->newLine();
 
-        // Get last 20 lines
-        $lines = array_slice(file($logFile), -20);
+        // Get last 30 lines
+        $lines = array_slice(file($logFile), -30);
         
+        $found = false;
         foreach ($lines as $line) {
             if (str_contains($line, 'Vector content generated') || 
-                str_contains($line, 'Auto-detect')) {
+                str_contains($line, 'Auto-detect') ||
+                str_contains($line, 'Large fields skipped')) {
                 $this->line('   ' . trim($line));
+                $found = true;
             }
+        }
+        
+        if (!$found) {
+            $this->line('   ℹ️  No relevant log entries found');
         }
     }
 
