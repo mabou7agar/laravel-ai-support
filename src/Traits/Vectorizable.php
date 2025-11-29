@@ -95,12 +95,16 @@ trait Vectorizable
     public function getVectorContent(): string
     {
         $content = [];
+        $usedFields = [];
+        $source = '';
 
         // If vectorizable is explicitly set, use it
         if (!empty($this->vectorizable)) {
+            $source = 'explicit $vectorizable property';
             foreach ($this->vectorizable as $field) {
                 if (isset($this->$field)) {
                     $content[] = $this->$field;
+                    $usedFields[] = $field;
                 }
             }
         } else {
@@ -108,9 +112,11 @@ trait Vectorizable
             $autoFields = $this->autoDetectVectorizableFields();
 
             if (!empty($autoFields)) {
+                $source = 'auto-detected fields';
                 foreach ($autoFields as $field) {
                     if (isset($this->$field)) {
                         $content[] = $this->$field;
+                        $usedFields[] = $field;
                     }
                 }
             }
@@ -118,24 +124,43 @@ trait Vectorizable
 
         // If no content yet, fallback to common text fields
         if (empty($content)) {
+            $source = 'fallback common fields';
             $commonFields = ['title', 'name', 'content', 'description', 'body', 'text'];
             foreach ($commonFields as $field) {
                 if (isset($this->$field)) {
                     $content[] = $this->$field;
+                    $usedFields[] = $field;
                 }
             }
         }
 
         // Add media content if HasMediaEmbeddings trait is used
+        $hasMedia = false;
         if (method_exists($this, 'getMediaVectorContent')) {
             $mediaContent = $this->getMediaVectorContent();
             if (!empty($mediaContent)) {
                 $content[] = $mediaContent;
+                $hasMedia = true;
             }
         }
 
         $fullContent = implode(' ', $content);
-        return $this->truncateContent($fullContent);
+        $truncated = $this->truncateContent($fullContent);
+
+        if (config('ai-engine.debug')) {
+            \Log::channel('ai-engine')->debug('Vector content generated', [
+                'model' => get_class($this),
+                'id' => $this->id ?? 'new',
+                'source' => $source,
+                'fields_used' => $usedFields,
+                'has_media' => $hasMedia,
+                'content_length' => strlen($fullContent),
+                'truncated_length' => strlen($truncated),
+                'was_truncated' => strlen($fullContent) !== strlen($truncated),
+            ]);
+        }
+
+        return $truncated;
     }
 
     /**
@@ -184,18 +209,36 @@ trait Vectorizable
      */
     protected function autoDetectVectorizableFields(): array
     {
+        $modelClass = get_class($this);
+        $tableName = $this->getTable();
+        
         // Check cache first
-        $cacheKey = 'vectorizable_fields_' . $this->getTable();
+        $cacheKey = 'vectorizable_fields_' . $tableName;
 
         if (\Cache::has($cacheKey)) {
-            return \Cache::get($cacheKey);
+            $cachedFields = \Cache::get($cacheKey);
+            
+            if (config('ai-engine.debug')) {
+                \Log::channel('ai-engine')->debug('Auto-detect vectorizable fields (from cache)', [
+                    'model' => $modelClass,
+                    'table' => $tableName,
+                    'detected_fields' => $cachedFields,
+                    'source' => 'cache'
+                ]);
+            }
+            
+            return $cachedFields;
         }
 
         try {
             // Get table columns
-            $columns = \Schema::getColumnListing($this->getTable());
+            $columns = \Schema::getColumnListing($tableName);
 
             if (empty($columns)) {
+                \Log::channel('ai-engine')->warning('No columns found for auto-detection', [
+                    'model' => $modelClass,
+                    'table' => $tableName,
+                ]);
                 return [];
             }
 
@@ -203,7 +246,7 @@ trait Vectorizable
             $columnInfo = [];
             foreach ($columns as $column) {
                 try {
-                    $type = \Schema::getColumnType($this->getTable(), $column);
+                    $type = \Schema::getColumnType($tableName, $column);
                     $columnInfo[$column] = $type;
                 } catch (\Exception $e) {
                     // Skip columns that cause errors
@@ -226,13 +269,33 @@ trait Vectorizable
 
             $textColumnNames = array_keys($textColumns);
 
+            \Log::channel('ai-engine')->info('Auto-detect: Found text columns', [
+                'model' => $modelClass,
+                'table' => $tableName,
+                'all_columns' => count($columns),
+                'text_columns' => $textColumnNames,
+                'column_types' => $textColumns,
+            ]);
+
             // If no text columns found, return empty
             if (empty($textColumnNames)) {
+                \Log::channel('ai-engine')->warning('Auto-detect: No text columns found', [
+                    'model' => $modelClass,
+                    'table' => $tableName,
+                ]);
                 return [];
             }
 
             // Use AI to decide which fields to vectorize
             $selectedFields = $this->useAIToSelectFields($textColumnNames, $columnInfo);
+
+            \Log::channel('ai-engine')->info('Auto-detect: Selected fields for vectorization', [
+                'model' => $modelClass,
+                'table' => $tableName,
+                'selected_fields' => $selectedFields,
+                'total_selected' => count($selectedFields),
+                'source' => 'AI analysis'
+            ]);
 
             // Cache for 24 hours
             \Cache::put($cacheKey, $selectedFields, now()->addDay());
