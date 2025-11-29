@@ -660,17 +660,14 @@ return [
         'discovery_cache_ttl' => env('INTELLIGENT_RAG_DISCOVERY_CACHE', 3600), // 1 hour
         
         // Discovery paths - where to look for models with Vectorizable trait
-        // Supports multiple paths for modular architectures
+        // Namespaces are auto-detected from the actual PHP files
+        // Supports glob patterns for modular architectures
         'discovery_paths' => [
-            [
-                'path' => app_path('Models'),
-                'namespace' => 'App\\Models',
-            ],
+            app_path('Models'),
             // Add custom paths here, for example:
-            // [
-            //     'path' => base_path('modules/*/Models'),
-            //     'namespace' => 'Modules\\{module}\\Models',  // {module} will be replaced
-            // ],
+            // base_path('modules/*/Models'),
+            // base_path('packages/*/src/Models'),
+            // base_path('src/Domain/*/Models'),
         ],
 
         // Maximum context items to retrieve

@@ -71,21 +71,15 @@ class RAGCollectionDiscovery
     {
         $collections = [];
         $discoveryPaths = config('ai-engine.intelligent_rag.discovery_paths', [
-            [
-                'path' => app_path('Models'),
-                'namespace' => 'App\\Models',
-            ],
+            app_path('Models'),
         ]);
 
-        foreach ($discoveryPaths as $pathConfig) {
-            $path = $pathConfig['path'];
-            $namespace = $pathConfig['namespace'];
-
+        foreach ($discoveryPaths as $path) {
             // Handle glob patterns (e.g., modules/*/Models)
             if (str_contains($path, '*')) {
-                $collections = array_merge($collections, $this->discoverFromGlobPath($path, $namespace));
+                $collections = array_merge($collections, $this->discoverFromGlobPath($path));
             } else {
-                $collections = array_merge($collections, $this->discoverFromSinglePath($path, $namespace));
+                $collections = array_merge($collections, $this->discoverFromSinglePath($path));
             }
         }
 
@@ -98,12 +92,12 @@ class RAGCollectionDiscovery
 
     /**
      * Discover models from a single path
-     *
+     * 
      * @param string $path
-     * @param string $namespace
+     * @param string|null $namespace (optional, will auto-detect if not provided)
      * @return array
      */
-    protected function discoverFromSinglePath(string $path, string $namespace): array
+    protected function discoverFromSinglePath(string $path, ?string $namespace = null): array
     {
         $collections = [];
 
@@ -116,8 +110,8 @@ class RAGCollectionDiscovery
             $files = File::allFiles($path);
 
             foreach ($files as $file) {
-                // Build the full class name from the file path
-                $className = $this->getClassNameFromFile($file, $path, $namespace);
+                // Auto-detect the class name from the file content
+                $className = $this->extractClassNameFromFile($file);
 
                 if (!$className || !class_exists($className)) {
                     continue;
@@ -144,71 +138,57 @@ class RAGCollectionDiscovery
      * Example: modules/star/Models where star is wildcard
      * 
      * @param string $globPath
-     * @param string $namespacePattern
      * @return array
      */
-    protected function discoverFromGlobPath(string $globPath, string $namespacePattern): array
+    protected function discoverFromGlobPath(string $globPath): array
     {
         $collections = [];
         $matchedPaths = glob($globPath, GLOB_ONLYDIR);
 
         foreach ($matchedPaths as $matchedPath) {
-            // Extract module name from path for namespace replacement
-            $moduleName = $this->extractModuleName($matchedPath, $globPath);
-            $namespace = str_replace('{module}', $moduleName, $namespacePattern);
-
-            $collections = array_merge($collections, $this->discoverFromSinglePath($matchedPath, $namespace));
+            $collections = array_merge($collections, $this->discoverFromSinglePath($matchedPath));
         }
 
         return $collections;
     }
 
     /**
-     * Extract module name from matched glob path
-     *
-     * @param string $matchedPath
-     * @param string $globPattern
-     * @return string
-     */
-    protected function extractModuleName(string $matchedPath, string $globPattern): string
-    {
-        // Remove base path and trailing /Models to get module name
-        $pattern = str_replace('*', '([^/]+)', $globPattern);
-
-        if (preg_match('#' . $pattern . '#', $matchedPath, $matches)) {
-            return $matches[1] ?? 'Unknown';
-        }
-
-        return 'Unknown';
-    }
-
-    /**
-     * Get the fully qualified class name from a file path
-     * Handles nested directories (e.g., App\Models\Blog\Post, Modules\MailBox\Models\EmailCache)
-     *
+     * Extract the fully qualified class name from a PHP file
+     * Reads the file content to get the actual namespace and class name
+     * 
      * @param \SplFileInfo $file
-     * @param string $basePath
-     * @param string $baseNamespace
      * @return string|null
      */
-    protected function getClassNameFromFile(\SplFileInfo $file, string $basePath, string $baseNamespace): ?string
+    protected function extractClassNameFromFile(\SplFileInfo $file): ?string
     {
-        // Get relative path from base directory
-        $relativePath = str_replace($basePath . DIRECTORY_SEPARATOR, '', $file->getRealPath());
-
-        // Remove .php extension
-        $relativePath = str_replace('.php', '', $relativePath);
-
-        // Convert directory separators to namespace separators
-        $namespacePath = str_replace(DIRECTORY_SEPARATOR, '\\', $relativePath);
-
-        // Build full class name
-        // If there's a sub-path, append it; otherwise just use the filename
-        if (!empty($namespacePath)) {
-            return rtrim($baseNamespace, '\\') . '\\' . $namespacePath;
+        try {
+            $content = file_get_contents($file->getRealPath());
+            
+            // Extract namespace
+            $namespace = null;
+            if (preg_match('/namespace\s+([^;]+);/i', $content, $matches)) {
+                $namespace = trim($matches[1]);
+            }
+            
+            // Extract class name
+            $className = null;
+            if (preg_match('/class\s+(\w+)/i', $content, $matches)) {
+                $className = trim($matches[1]);
+            }
+            
+            // Build fully qualified class name
+            if ($className) {
+                return $namespace ? $namespace . '\\' . $className : $className;
+            }
+            
+        } catch (\Exception $e) {
+            Log::debug('Failed to extract class name from file', [
+                'file' => $file->getRealPath(),
+                'error' => $e->getMessage(),
+            ]);
         }
-
-        return $baseNamespace;
+        
+        return null;
     }
 
     /**
