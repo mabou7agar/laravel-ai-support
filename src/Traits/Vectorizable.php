@@ -218,6 +218,7 @@ trait Vectorizable
     /**
      * Chunk large field content intelligently
      * Takes beginning and end of content to preserve context
+     * Uses semantic separator that won't interfere with embeddings
      *
      * @param string $content
      * @param int $maxSize
@@ -229,14 +230,21 @@ trait Vectorizable
             return $content;
         }
 
+        // Strategy: Take beginning and end, join with space
+        // This preserves semantic meaning for embeddings
+        
+        // Calculate sizes (leave room for separator)
+        $separatorSize = 50; // Space for separator
+        $availableSize = $maxSize - $separatorSize;
+        
         // Take 70% from beginning and 30% from end to preserve context
-        $beginningSize = (int) ($maxSize * 0.7);
-        $endSize = (int) ($maxSize * 0.3);
+        $beginningSize = (int) ($availableSize * 0.7);
+        $endSize = (int) ($availableSize * 0.3);
 
         $beginning = substr($content, 0, $beginningSize);
         $end = substr($content, -$endSize);
 
-        // Try to cut at sentence boundaries
+        // Try to cut at sentence boundaries for better context
         $lastPeriod = strrpos($beginning, '.');
         if ($lastPeriod !== false && $lastPeriod > $beginningSize * 0.8) {
             $beginning = substr($beginning, 0, $lastPeriod + 1);
@@ -247,7 +255,10 @@ trait Vectorizable
             $end = substr($end, $firstPeriod + 1);
         }
 
-        return $beginning . "\n\n[... content truncated ...]\n\n" . $end;
+        // Use simple space separator instead of marker
+        // This maintains semantic flow for embeddings
+        // The embedding model will naturally understand the content
+        return trim($beginning) . ' ' . trim($end);
     }
 
     /**
