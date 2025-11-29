@@ -56,7 +56,7 @@ trait HasMediaEmbeddings
                     // Handle array of URLs/paths
                     if (is_array($fieldValue)) {
                         foreach ($fieldValue as $index => $item) {
-                            $mediaContent = $this->processMediaItem($item, $type, $mediaService);
+                            $mediaContent = $this->processMediaItem($item, $type, $mediaService, $field);
                             if ($mediaContent) {
                                 // Truncate if too large
                                 if (strlen($mediaContent) > $maxMediaContent) {
@@ -67,7 +67,7 @@ trait HasMediaEmbeddings
                         }
                     } else {
                         // Handle single URL/path
-                        $mediaContent = $this->processMediaItem($fieldValue, $type, $mediaService);
+                        $mediaContent = $this->processMediaItem($fieldValue, $type, $mediaService, $field);
                         if ($mediaContent) {
                             // Truncate if too large
                             if (strlen($mediaContent) > $maxMediaContent) {
@@ -108,14 +108,14 @@ trait HasMediaEmbeddings
     /**
      * Process a single media item (URL or local path)
      */
-    protected function processMediaItem(string $item, string $type, $mediaService): ?string
+    protected function processMediaItem(string $item, string $type, $mediaService, string $fieldName): ?string
     {
         // Check if item is a URL
         if ($this->isUrl($item)) {
             return $this->processUrlMedia($item, $type);
         } else {
-            // Process as local file
-            return $mediaService->getMediaContent($this, $item);
+            // Process as local file - use field name, not the value
+            return $mediaService->getMediaContent($this, $fieldName);
         }
     }
 
