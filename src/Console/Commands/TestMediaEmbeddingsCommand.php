@@ -242,13 +242,18 @@ class TestMediaPost extends Model
     protected $table = 'test_media_posts';
     protected $guarded = [];
 
-    public array $vectorizable = ['title', 'content'];
-    
-    public array $mediaFields = [
-        'image' => 'image_path',
-        'audio' => 'audio_path',
-        'video' => 'video_path',
-    ];
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+        
+        // Set vectorizable fields after trait is loaded
+        $this->vectorizable = ['title', 'content'];
+        $this->mediaFields = [
+            'image' => 'image_path',
+            'audio' => 'audio_path',
+            'video' => 'video_path',
+        ];
+    }
 }
 
 /**
@@ -261,6 +266,11 @@ class TestMediaPostAutoDetect extends Model
     protected $table = 'test_media_posts';
     protected $guarded = [];
     
-    // No $vectorizable - should auto-detect
-    public array $mediaFields = [];
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+        
+        // No $vectorizable - should auto-detect
+        $this->mediaFields = [];
+    }
 }
