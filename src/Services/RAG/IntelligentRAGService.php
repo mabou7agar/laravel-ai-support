@@ -348,7 +348,7 @@ PROMPT;
                 'needs_context' => $analysis['needs_context'] ?? false,
                 'reasoning' => $analysis['reasoning'] ?? '',
                 'search_queries' => $analysis['search_queries'] ?? [$query],
-                'collections' => $analysis['collections'] ?? [],
+                'collections' => $analysis['collections'] ?? $availableCollections,
                 'query_type' => $analysis['query_type'] ?? 'conversational',
             ];
 
@@ -362,7 +362,7 @@ PROMPT;
                 'needs_context' => false,
                 'reasoning' => 'Analysis failed',
                 'search_queries' => [],
-                'collections' => [],
+                'collections' => $availableCollections,
                 'query_type' => 'conversational',
             ];
         }
