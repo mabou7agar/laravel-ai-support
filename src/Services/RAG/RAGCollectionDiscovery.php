@@ -62,7 +62,7 @@ class RAGCollectionDiscovery
     }
 
     /**
-     * Discover RAG collections from app/Models directory
+     * Discover RAG collections from app/Models directory (including subdirectories)
      * 
      * @return array
      */
@@ -76,12 +76,14 @@ class RAGCollectionDiscovery
         }
 
         try {
+            // Get all PHP files recursively (including subdirectories)
             $files = File::allFiles($modelsPath);
 
             foreach ($files as $file) {
-                $className = 'App\\Models\\' . $file->getFilenameWithoutExtension();
+                // Build the full class name from the file path
+                $className = $this->getClassNameFromFile($file, $modelsPath);
 
-                if (!class_exists($className)) {
+                if (!$className || !class_exists($className)) {
                     continue;
                 }
 
@@ -101,6 +103,29 @@ class RAGCollectionDiscovery
         }
 
         return $collections;
+    }
+
+    /**
+     * Get the fully qualified class name from a file path
+     * Handles nested directories (e.g., App\Models\Blog\Post)
+     * 
+     * @param \SplFileInfo $file
+     * @param string $basePath
+     * @return string|null
+     */
+    protected function getClassNameFromFile(\SplFileInfo $file, string $basePath): ?string
+    {
+        // Get relative path from base Models directory
+        $relativePath = str_replace($basePath . DIRECTORY_SEPARATOR, '', $file->getRealPath());
+        
+        // Remove .php extension
+        $relativePath = str_replace('.php', '', $relativePath);
+        
+        // Convert directory separators to namespace separators
+        $namespacePath = str_replace(DIRECTORY_SEPARATOR, '\\', $relativePath);
+        
+        // Build full class name
+        return 'App\\Models\\' . $namespacePath;
     }
 
     /**
