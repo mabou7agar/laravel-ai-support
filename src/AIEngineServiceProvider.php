@@ -320,6 +320,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\ConfigureAllModelsCommand::class,
                 Console\Commands\TestMediaEmbeddingsCommand::class,
                 Console\Commands\TestChunkingCommand::class,
+                Console\Commands\TestLargeMediaCommand::class,
             ]);
         }
 
