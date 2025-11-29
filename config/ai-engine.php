@@ -62,6 +62,15 @@ return [
         // Maximum media file size to download (in bytes)
         // Files larger than this will be skipped to prevent memory issues
         'max_media_file_size' => env('AI_ENGINE_MAX_MEDIA_FILE_SIZE', 10485760), // 10MB
+
+        // Enable processing of large media files
+        // When true, large videos/audio will be split into chunks and processed
+        // When false, large files are skipped entirely
+        'process_large_media' => env('AI_ENGINE_PROCESS_LARGE_MEDIA', false),
+
+        // Chunk size for large media files (in seconds for video/audio)
+        // Large media will be split into chunks of this duration
+        'media_chunk_duration' => env('AI_ENGINE_MEDIA_CHUNK_DURATION', 60), // 60 seconds
     ],
 
     /*

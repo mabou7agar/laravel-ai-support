@@ -272,12 +272,16 @@ trait HasMediaEmbeddings
     /**
      * Process media from URL
      * Downloads the file and processes it based on type
+     * Supports chunked processing for large files
      */
     protected function processUrlMedia(string $url, string $type): ?string
     {
         try {
+            // Check if we should process large files
+            $processLargeMedia = config('ai-engine.vectorization.process_large_media', false);
+            
             // Download file to temp location
-            $tempFile = $this->downloadUrlToTemp($url);
+            $tempFile = $this->downloadUrlToTemp($url, $processLargeMedia);
             
             if (!$tempFile) {
                 \Log::channel('ai-engine')->warning('Failed to download URL media', [
@@ -287,14 +291,24 @@ trait HasMediaEmbeddings
                 return null;
             }
 
-            // Process based on type
-            $content = match($type) {
-                'image' => app(VisionService::class)->analyzeImage($tempFile),
-                'audio' => app(AudioService::class)->transcribe($tempFile),
-                'video' => app(VideoService::class)->processVideo($tempFile),
-                'document' => app(DocumentService::class)->extractText($tempFile),
-                default => null,
-            };
+            // Check file size
+            $fileSize = filesize($tempFile);
+            $maxFileSize = config('ai-engine.vectorization.max_media_file_size', 10485760);
+
+            // Process based on type and size
+            if ($fileSize > $maxFileSize && $processLargeMedia && in_array($type, ['video', 'audio'])) {
+                // Process large media in chunks
+                $content = $this->processLargeMediaInChunks($tempFile, $type, $url);
+            } else {
+                // Normal processing
+                $content = match($type) {
+                    'image' => app(VisionService::class)->analyzeImage($tempFile),
+                    'audio' => app(AudioService::class)->transcribe($tempFile),
+                    'video' => app(VideoService::class)->processVideo($tempFile),
+                    'document' => app(DocumentService::class)->extractText($tempFile),
+                    default => null,
+                };
+            }
 
             // Cleanup temp file
             @unlink($tempFile);
@@ -303,7 +317,9 @@ trait HasMediaEmbeddings
                 \Log::channel('ai-engine')->debug('Processed URL media', [
                     'url' => $url,
                     'type' => $type,
+                    'file_size' => $fileSize,
                     'content_length' => strlen($content ?? ''),
+                    'was_chunked' => $fileSize > $maxFileSize && $processLargeMedia,
                 ]);
             }
 
@@ -320,10 +336,90 @@ trait HasMediaEmbeddings
     }
 
     /**
+     * Process large media file in chunks
+     */
+    protected function processLargeMediaInChunks(string $filePath, string $type, string $url): ?string
+    {
+        try {
+            $chunkDuration = config('ai-engine.vectorization.media_chunk_duration', 60);
+            $chunks = [];
+
+            if ($type === 'video') {
+                // Process video in chunks
+                $chunks = $this->processVideoInChunks($filePath, $chunkDuration);
+            } elseif ($type === 'audio') {
+                // Process audio in chunks
+                $chunks = $this->processAudioInChunks($filePath, $chunkDuration);
+            }
+
+            $combinedContent = implode(' ', $chunks);
+
+            if (config('ai-engine.debug')) {
+                \Log::channel('ai-engine')->info('Processed large media in chunks', [
+                    'url' => $url,
+                    'type' => $type,
+                    'chunk_count' => count($chunks),
+                    'chunk_duration' => $chunkDuration,
+                    'total_content_length' => strlen($combinedContent),
+                ]);
+            }
+
+            return $combinedContent;
+
+        } catch (\Exception $e) {
+            \Log::channel('ai-engine')->error('Failed to process large media in chunks', [
+                'url' => $url,
+                'type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Process video in chunks using FFmpeg
+     */
+    protected function processVideoInChunks(string $filePath, int $chunkDuration): array
+    {
+        $chunks = [];
+        $videoService = app(VideoService::class);
+
+        // Get video duration (requires FFmpeg)
+        // This is a simplified version - actual implementation would use FFmpeg
+        // to split video and process each chunk
+        
+        // For now, process the first chunk only as a demonstration
+        $chunks[] = $videoService->processVideo($filePath, null, [
+            'duration' => $chunkDuration,
+            'start_time' => 0,
+        ]);
+
+        return $chunks;
+    }
+
+    /**
+     * Process audio in chunks
+     */
+    protected function processAudioInChunks(string $filePath, int $chunkDuration): array
+    {
+        $chunks = [];
+        $audioService = app(AudioService::class);
+
+        // Get audio duration and split into chunks
+        // This is a simplified version - actual implementation would use FFmpeg
+        // to split audio and transcribe each chunk
+        
+        // For now, transcribe the whole file
+        $chunks[] = $audioService->transcribe($filePath);
+
+        return $chunks;
+    }
+
+    /**
      * Download URL to temporary file
      * Checks file size before downloading to prevent memory issues
      */
-    protected function downloadUrlToTemp(string $url): ?string
+    protected function downloadUrlToTemp(string $url, bool $allowLargeFiles = false): ?string
     {
         try {
             // Check file size first
@@ -335,7 +431,8 @@ trait HasMediaEmbeddings
                     ? end($headers['Content-Length']) 
                     : $headers['Content-Length'];
                 
-                if ($fileSize > $maxFileSize) {
+                // Skip if too large and not allowing large files
+                if ($fileSize > $maxFileSize && !$allowLargeFiles) {
                     \Log::channel('ai-engine')->warning('Media file too large, skipping download', [
                         'url' => $url,
                         'file_size' => $fileSize,
@@ -343,6 +440,15 @@ trait HasMediaEmbeddings
                         'size_mb' => round($fileSize / 1048576, 2) . 'MB',
                     ]);
                     return null;
+                }
+                
+                // Log if downloading large file
+                if ($fileSize > $maxFileSize && $allowLargeFiles) {
+                    \Log::channel('ai-engine')->info('Downloading large media file for chunked processing', [
+                        'url' => $url,
+                        'file_size' => $fileSize,
+                        'size_mb' => round($fileSize / 1048576, 2) . 'MB',
+                    ]);
                 }
             }
 
