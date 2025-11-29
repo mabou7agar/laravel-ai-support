@@ -171,12 +171,30 @@ trait Vectorizable
         }
 
         // Add media content if HasMediaEmbeddings trait is used
+        // This automatically integrates media without requiring explicit configuration
         $hasMedia = false;
         if (method_exists($this, 'getMediaVectorContent')) {
-            $mediaContent = $this->getMediaVectorContent();
-            if (!empty($mediaContent)) {
-                $content[] = $mediaContent;
-                $hasMedia = true;
+            try {
+                $mediaContent = $this->getMediaVectorContent();
+                if (!empty($mediaContent)) {
+                    $content[] = $mediaContent;
+                    $hasMedia = true;
+                    
+                    if (config('ai-engine.debug')) {
+                        \Log::channel('ai-engine')->debug('Media content integrated', [
+                            'model' => get_class($this),
+                            'id' => $this->id ?? 'new',
+                            'media_content_length' => strlen($mediaContent),
+                        ]);
+                    }
+                }
+            } catch (\Exception $e) {
+                // Gracefully handle media processing errors
+                \Log::channel('ai-engine')->warning('Media processing failed, continuing with text only', [
+                    'model' => get_class($this),
+                    'id' => $this->id ?? 'new',
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
