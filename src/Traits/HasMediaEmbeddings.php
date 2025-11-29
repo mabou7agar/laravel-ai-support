@@ -19,36 +19,210 @@ trait HasMediaEmbeddings
     /**
      * Get media content for vectorization
      * This method is called by Vectorizable::getVectorContent() if it exists
-     * Supports both local files and URLs
+     * Supports both local files and URLs, arrays, and relationships
      */
     public function getMediaVectorContent(): string
     {
         $content = [];
+
+        // Auto-detect media fields if not explicitly set
+        if (empty($this->mediaFields)) {
+            $this->mediaFields = $this->autoDetectMediaFields();
+        }
 
         // Get media content
         if (!empty($this->mediaFields)) {
             $mediaService = app(MediaEmbeddingService::class);
             
             foreach ($this->mediaFields as $type => $field) {
+                // Handle relationship fields (e.g., 'attachments')
+                if (method_exists($this, $field)) {
+                    $relationContent = $this->processRelationMedia($field, $type);
+                    if ($relationContent) {
+                        $content[] = $relationContent;
+                    }
+                    continue;
+                }
+                
                 if (isset($this->$field)) {
                     $fieldValue = $this->$field;
                     
-                    // Check if field contains a URL
-                    if ($this->isUrl($fieldValue)) {
-                        $mediaContent = $this->processUrlMedia($fieldValue, $type);
+                    // Handle array of URLs/paths
+                    if (is_array($fieldValue)) {
+                        foreach ($fieldValue as $item) {
+                            $mediaContent = $this->processMediaItem($item, $type, $mediaService);
+                            if ($mediaContent) {
+                                $content[] = $mediaContent;
+                            }
+                        }
                     } else {
-                        // Process as local file
-                        $mediaContent = $mediaService->getMediaContent($this, $field);
-                    }
-                    
-                    if ($mediaContent) {
-                        $content[] = $mediaContent;
+                        // Handle single URL/path
+                        $mediaContent = $this->processMediaItem($fieldValue, $type, $mediaService);
+                        if ($mediaContent) {
+                            $content[] = $mediaContent;
+                        }
                     }
                 }
             }
         }
 
         return implode(' ', $content);
+    }
+
+    /**
+     * Process a single media item (URL or local path)
+     */
+    protected function processMediaItem(string $item, string $type, $mediaService): ?string
+    {
+        // Check if item is a URL
+        if ($this->isUrl($item)) {
+            return $this->processUrlMedia($item, $type);
+        } else {
+            // Process as local file
+            return $mediaService->getMediaContent($this, $item);
+        }
+    }
+
+    /**
+     * Process media from relationship
+     */
+    protected function processRelationMedia(string $relationName, string $type): ?string
+    {
+        try {
+            $related = $this->$relationName;
+            
+            if (!$related) {
+                return null;
+            }
+
+            $content = [];
+
+            // Handle collection
+            if ($related instanceof \Illuminate\Database\Eloquent\Collection) {
+                foreach ($related as $item) {
+                    $mediaContent = $this->extractMediaFromRelation($item, $type);
+                    if ($mediaContent) {
+                        $content[] = $mediaContent;
+                    }
+                }
+            } else {
+                // Handle single model
+                $mediaContent = $this->extractMediaFromRelation($related, $type);
+                if ($mediaContent) {
+                    $content[] = $mediaContent;
+                }
+            }
+
+            return implode(' ', $content);
+
+        } catch (\Exception $e) {
+            \Log::channel('ai-engine')->warning('Failed to process relation media', [
+                'relation' => $relationName,
+                'type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Extract media from related model
+     */
+    protected function extractMediaFromRelation($model, string $type): ?string
+    {
+        // Try common field names based on type
+        $fieldNames = match($type) {
+            'image' => ['url', 'path', 'file_path', 'image_url', 'image_path'],
+            'audio' => ['url', 'path', 'file_path', 'audio_url', 'audio_path'],
+            'video' => ['url', 'path', 'file_path', 'video_url', 'video_path'],
+            'document' => ['url', 'path', 'file_path', 'document_url', 'document_path'],
+            default => ['url', 'path', 'file_path'],
+        };
+
+        foreach ($fieldNames as $fieldName) {
+            if (isset($model->$fieldName)) {
+                $value = $model->$fieldName;
+                
+                if ($this->isUrl($value)) {
+                    return $this->processUrlMedia($value, $type);
+                } else {
+                    return app(MediaEmbeddingService::class)->getMediaContent($model, $fieldName);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Auto-detect media fields from model
+     */
+    protected function autoDetectMediaFields(): array
+    {
+        $detectedFields = [];
+
+        try {
+            // Get table columns
+            $columns = \Schema::getColumnListing($this->getTable());
+
+            // Common media field patterns
+            $patterns = [
+                'image' => ['image', 'photo', 'picture', 'avatar', 'thumbnail', 'banner', 'cover'],
+                'audio' => ['audio', 'sound', 'voice', 'recording', 'podcast'],
+                'video' => ['video', 'movie', 'clip', 'recording'],
+                'document' => ['document', 'file', 'pdf', 'doc', 'attachment'],
+            ];
+
+            foreach ($columns as $column) {
+                $columnLower = strtolower($column);
+                
+                foreach ($patterns as $type => $keywords) {
+                    foreach ($keywords as $keyword) {
+                        if (str_contains($columnLower, $keyword) && 
+                            (str_contains($columnLower, 'url') || 
+                             str_contains($columnLower, 'path') || 
+                             str_contains($columnLower, 'file'))) {
+                            $detectedFields[$type] = $column;
+                            break 2; // Found a match, move to next column
+                        }
+                    }
+                }
+            }
+
+            // Check for media relationships
+            $relationMethods = get_class_methods($this);
+            $mediaRelations = ['attachments', 'images', 'photos', 'files', 'documents', 'media'];
+            
+            foreach ($mediaRelations as $relation) {
+                if (in_array($relation, $relationMethods)) {
+                    // Determine type from relation name
+                    $type = match(true) {
+                        str_contains($relation, 'image') || str_contains($relation, 'photo') => 'image',
+                        str_contains($relation, 'audio') => 'audio',
+                        str_contains($relation, 'video') => 'video',
+                        str_contains($relation, 'document') || str_contains($relation, 'file') => 'document',
+                        default => 'document', // Default to document for generic 'attachments', 'media'
+                    };
+                    
+                    $detectedFields[$type] = $relation;
+                }
+            }
+
+            if (config('ai-engine.debug') && !empty($detectedFields)) {
+                \Log::channel('ai-engine')->debug('Auto-detected media fields', [
+                    'model' => get_class($this),
+                    'detected_fields' => $detectedFields,
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            \Log::channel('ai-engine')->warning('Failed to auto-detect media fields', [
+                'model' => get_class($this),
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $detectedFields;
     }
 
     /**
