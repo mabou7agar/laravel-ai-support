@@ -26,9 +26,19 @@ return [
         'max_field_size' => env('AI_ENGINE_MAX_FIELD_SIZE', 100000), // 100KB
 
         // Maximum total content length after combining all fields (in characters)
-        // This is truncated to fit within embedding model token limits
-        // OpenAI: 8192 tokens ≈ 6000 chars (conservative estimate)
-        'max_content_length' => env('AI_ENGINE_MAX_CONTENT_LENGTH', 6000),
+        // Leave null to auto-calculate based on embedding model token limits
+        // Or set a specific value to override (e.g., 6000 for conservative limit)
+        'max_content_length' => env('AI_ENGINE_MAX_CONTENT_LENGTH', null),
+        
+        // Embedding model to use for vectorization
+        // Different models have different token limits:
+        // - text-embedding-3-small: 8191 tokens
+        // - text-embedding-3-large: 8191 tokens  
+        // - text-embedding-ada-002: 8191 tokens
+        // - voyage-large-2: 16000 tokens
+        // - cohere embed-*: 512 tokens
+        // - mistral-embed: 8192 tokens
+        'embedding_model' => env('AI_ENGINE_EMBEDDING_MODEL', 'text-embedding-3-small'),
     ],
 
     /*

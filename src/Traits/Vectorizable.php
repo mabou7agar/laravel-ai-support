@@ -178,6 +178,9 @@ trait Vectorizable
         $truncated = $this->truncateContent($fullContent);
 
         if (config('ai-engine.debug')) {
+            $embeddingModel = config('ai-engine.vector.embedding_model', 'text-embedding-3-small');
+            $tokenLimit = $this->getModelTokenLimit($embeddingModel);
+            
             \Log::channel('ai-engine')->debug('Vector content generated', [
                 'model' => get_class($this),
                 'id' => $this->id ?? 'new',
@@ -188,6 +191,9 @@ trait Vectorizable
                 'content_length' => strlen($fullContent),
                 'truncated_length' => strlen($truncated),
                 'was_truncated' => strlen($fullContent) !== strlen($truncated),
+                'embedding_model' => $embeddingModel,
+                'model_token_limit' => $tokenLimit,
+                'estimated_tokens' => (int) (strlen($truncated) / 1.3),
             ]);
         }
 
@@ -205,17 +211,25 @@ trait Vectorizable
 
     /**
      * Truncate content to safe size for vector embedding
-     * Most embedding models have token limits (e.g., OpenAI: 8191 tokens)
+     * Dynamically adjusts based on the embedding model being used
      *
      * @param string $content
      * @return string
      */
     protected function truncateContent(string $content): string
     {
-        // Get max length from config or use default
-        // OpenAI embedding models have 8192 token limit
-        // ~1.3 chars per token on average (conservative), so 8000 tokens ≈ 6000 chars (safe limit)
-        $maxChars = config('ai-engine.vectorization.max_content_length', 6000);
+        // Get the embedding model from config
+        $embeddingModel = config('ai-engine.vector.embedding_model', 'text-embedding-3-small');
+        
+        // Get token limit for the model
+        $tokenLimit = $this->getModelTokenLimit($embeddingModel);
+        
+        // Convert tokens to characters (conservative estimate)
+        // Use 1.3 chars per token to stay safe
+        $maxChars = (int) ($tokenLimit * 1.3);
+        
+        // Allow config override
+        $maxChars = config('ai-engine.vectorization.max_content_length', $maxChars);
 
         if (strlen($content) <= $maxChars) {
             return $content;
@@ -241,6 +255,89 @@ trait Vectorizable
         ]);
 
         return $truncated;
+    }
+
+    /**
+     * Get token limit for embedding model from database
+     * Falls back to hardcoded limits if model not found in DB
+     * 
+     * @param string $model
+     * @return int
+     */
+    protected function getModelTokenLimit(string $model): int
+    {
+        // Try to get from database first (with caching)
+        try {
+            $aiModel = \LaravelAIEngine\Models\AIModel::findByModelId($model);
+            
+            if ($aiModel && isset($aiModel->context_window['input'])) {
+                return (int) $aiModel->context_window['input'];
+            }
+            
+            if ($aiModel && isset($aiModel->max_tokens)) {
+                return (int) $aiModel->max_tokens;
+            }
+        } catch (\Exception $e) {
+            // Database might not be set up yet, fall through to hardcoded limits
+            \Log::channel('ai-engine')->debug('Could not fetch model from database, using fallback', [
+                'model' => $model,
+                'error' => $e->getMessage(),
+            ]);
+        }
+        
+        // Fallback to hardcoded limits for common embedding models
+        $limits = [
+            // OpenAI Models
+            'text-embedding-3-small' => 8191,
+            'text-embedding-3-large' => 8191,
+            'text-embedding-ada-002' => 8191,
+            
+            // Cohere Models
+            'embed-english-v3.0' => 512,
+            'embed-multilingual-v3.0' => 512,
+            
+            // Voyage AI Models
+            'voyage-large-2' => 16000,
+            'voyage-code-2' => 16000,
+            'voyage-2' => 4000,
+            
+            // Mistral Models
+            'mistral-embed' => 8192,
+            
+            // Jina AI Models
+            'jina-embeddings-v2-base-en' => 8192,
+            'jina-embeddings-v2-small-en' => 8192,
+        ];
+        
+        // Check if model has known limit
+        if (isset($limits[$model])) {
+            return $limits[$model];
+        }
+        
+        // Check for model family patterns
+        if (str_contains($model, 'text-embedding-3') || str_contains($model, 'text-embedding-ada')) {
+            return 8191;
+        }
+        
+        if (str_contains($model, 'voyage')) {
+            return 4000;
+        }
+        
+        if (str_contains($model, 'cohere') || str_contains($model, 'embed-')) {
+            return 512;
+        }
+        
+        if (str_contains($model, 'jina')) {
+            return 8192;
+        }
+        
+        // Default to conservative limit
+        \Log::channel('ai-engine')->warning('Unknown embedding model, using default token limit', [
+            'model' => $model,
+            'default_limit' => 4000,
+        ]);
+        
+        return 4000; // Safe default
     }
 
     /**
