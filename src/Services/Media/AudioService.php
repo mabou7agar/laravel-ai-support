@@ -55,7 +55,10 @@ class AudioService
             // Estimate credits (Whisper is $0.006 per minute)
             $duration = $this->estimateAudioDuration($audioPath);
             $credits = (int) ceil($duration / 60 * 6); // Rough estimate
-            $this->creditManager->deductCredits($userId, $credits, 'audio_transcription');
+            if ($userId) {
+                // TODO: Integrate with proper credit system
+                // $this->creditManager->deductCredits($userId, $credits, 'audio_transcription');
+            }
 
             Log::info('Audio transcribed with Whisper', [
                 'audio_path' => $audioPath,
@@ -92,7 +95,10 @@ class AudioService
             // Track credits
             $duration = $this->estimateAudioDuration($audioPath);
             $credits = (int) ceil($duration / 60 * 6);
-            $this->creditManager->deductCredits($userId, $credits, 'audio_transcription');
+            if ($userId) {
+                // TODO: Integrate with proper credit system
+                // $this->creditManager->deductCredits($userId, $credits, 'audio_transcription');
+            }
 
             return [
                 'text' => $response->text,
@@ -132,7 +138,10 @@ class AudioService
             // Track credits
             $duration = $this->estimateAudioDuration($audioPath);
             $credits = (int) ceil($duration / 60 * 6);
-            $this->creditManager->deductCredits($userId, $credits, 'audio_translation');
+            if ($userId) {
+                // TODO: Integrate with proper credit system
+                // $this->creditManager->deductCredits($userId, $credits, 'audio_translation');
+            }
 
             Log::info('Audio translated with Whisper', [
                 'audio_path' => $audioPath,
