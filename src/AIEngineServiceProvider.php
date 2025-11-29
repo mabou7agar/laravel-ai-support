@@ -319,6 +319,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\TestVectorJourneyCommand::class,
                 Console\Commands\ConfigureAllModelsCommand::class,
                 Console\Commands\TestMediaEmbeddingsCommand::class,
+                Console\Commands\TestChunkingCommand::class,
             ]);
         }
 
