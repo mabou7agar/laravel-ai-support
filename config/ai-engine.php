@@ -54,6 +54,14 @@ return [
         // - cohere embed-*: 512 tokens
         // - mistral-embed: 8192 tokens
         'embedding_model' => env('AI_ENGINE_EMBEDDING_MODEL', 'text-embedding-3-small'),
+
+        // Maximum media content size (in bytes)
+        // Media content (image descriptions, transcriptions) larger than this will be truncated
+        'max_media_content' => env('AI_ENGINE_MAX_MEDIA_CONTENT', 50000), // 50KB
+
+        // Maximum media file size to download (in bytes)
+        // Files larger than this will be skipped to prevent memory issues
+        'max_media_file_size' => env('AI_ENGINE_MAX_MEDIA_FILE_SIZE', 10485760), // 10MB
     ],
 
     /*

@@ -20,10 +20,12 @@ trait HasMediaEmbeddings
      * Get media content for vectorization
      * This method is called by Vectorizable::getVectorContent() if it exists
      * Supports both local files and URLs, arrays, and relationships
+     * Handles large media with size limits and truncation
      */
     public function getMediaVectorContent(): string
     {
         $content = [];
+        $maxMediaContent = config('ai-engine.vectorization.max_media_content', 50000); // 50KB per media
 
         // Auto-detect media fields if not explicitly set
         if (empty($this->mediaFields)) {
@@ -39,6 +41,10 @@ trait HasMediaEmbeddings
                 if (method_exists($this, $field)) {
                     $relationContent = $this->processRelationMedia($field, $type);
                     if ($relationContent) {
+                        // Truncate if too large
+                        if (strlen($relationContent) > $maxMediaContent) {
+                            $relationContent = $this->truncateMediaContent($relationContent, $maxMediaContent, $field);
+                        }
                         $content[] = $relationContent;
                     }
                     continue;
@@ -49,9 +55,13 @@ trait HasMediaEmbeddings
                     
                     // Handle array of URLs/paths
                     if (is_array($fieldValue)) {
-                        foreach ($fieldValue as $item) {
+                        foreach ($fieldValue as $index => $item) {
                             $mediaContent = $this->processMediaItem($item, $type, $mediaService);
                             if ($mediaContent) {
+                                // Truncate if too large
+                                if (strlen($mediaContent) > $maxMediaContent) {
+                                    $mediaContent = $this->truncateMediaContent($mediaContent, $maxMediaContent, "{$field}[{$index}]");
+                                }
                                 $content[] = $mediaContent;
                             }
                         }
@@ -59,6 +69,10 @@ trait HasMediaEmbeddings
                         // Handle single URL/path
                         $mediaContent = $this->processMediaItem($fieldValue, $type, $mediaService);
                         if ($mediaContent) {
+                            // Truncate if too large
+                            if (strlen($mediaContent) > $maxMediaContent) {
+                                $mediaContent = $this->truncateMediaContent($mediaContent, $maxMediaContent, $field);
+                            }
                             $content[] = $mediaContent;
                         }
                     }
@@ -67,6 +81,28 @@ trait HasMediaEmbeddings
         }
 
         return implode(' ', $content);
+    }
+
+    /**
+     * Truncate media content if too large
+     */
+    protected function truncateMediaContent(string $content, int $maxSize, string $fieldName): string
+    {
+        $originalSize = strlen($content);
+        $truncated = substr($content, 0, $maxSize);
+
+        if (config('ai-engine.debug')) {
+            \Log::channel('ai-engine')->info('Media content truncated', [
+                'model' => get_class($this),
+                'id' => $this->id ?? 'new',
+                'field' => $fieldName,
+                'original_size' => $originalSize,
+                'truncated_size' => strlen($truncated),
+                'reduction' => round((1 - strlen($truncated) / $originalSize) * 100, 1) . '%',
+            ]);
+        }
+
+        return $truncated;
     }
 
     /**
@@ -285,10 +321,31 @@ trait HasMediaEmbeddings
 
     /**
      * Download URL to temporary file
+     * Checks file size before downloading to prevent memory issues
      */
     protected function downloadUrlToTemp(string $url): ?string
     {
         try {
+            // Check file size first
+            $maxFileSize = config('ai-engine.vectorization.max_media_file_size', 10485760); // 10MB
+            
+            $headers = @get_headers($url, 1);
+            if ($headers && isset($headers['Content-Length'])) {
+                $fileSize = is_array($headers['Content-Length']) 
+                    ? end($headers['Content-Length']) 
+                    : $headers['Content-Length'];
+                
+                if ($fileSize > $maxFileSize) {
+                    \Log::channel('ai-engine')->warning('Media file too large, skipping download', [
+                        'url' => $url,
+                        'file_size' => $fileSize,
+                        'max_size' => $maxFileSize,
+                        'size_mb' => round($fileSize / 1048576, 2) . 'MB',
+                    ]);
+                    return null;
+                }
+            }
+
             // Get file extension from URL
             $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
             if (empty($extension)) {
@@ -309,6 +366,16 @@ trait HasMediaEmbeddings
             $content = @file_get_contents($url, false, $context);
             
             if ($content === false) {
+                return null;
+            }
+
+            // Double-check size after download
+            if (strlen($content) > $maxFileSize) {
+                \Log::channel('ai-engine')->warning('Downloaded file too large, skipping', [
+                    'url' => $url,
+                    'downloaded_size' => strlen($content),
+                    'max_size' => $maxFileSize,
+                ]);
                 return null;
             }
 
