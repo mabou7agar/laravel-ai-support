@@ -42,8 +42,7 @@
         "illuminate/queue": "^9.0|^10.0|^11.0|^12.0",
         "guzzlehttp/guzzle": "^7.0",
         "openai-php/client": "^0.8|^0.9|^0.10",
-        "symfony/http-client": "^5.4|^6.0|^7.0",
-        "firebase/php-jwt": "^6.0"
+        "symfony/http-client": "^5.4|^6.0|^7.0"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.5",
@@ -53,7 +52,9 @@
     "suggest": {
         "cboden/ratchet": "Required for WebSocket streaming support (^0.4)",
         "ext-mongodb": "Required for MongoDB memory driver support",
-        "mongodb/mongodb": "Required for MongoDB memory driver support (^1.8)"
+        "mongodb/mongodb": "Required for MongoDB memory driver support (^1.8)",
+        "firebase/php-jwt": "Required for node JWT authentication (^6.0)",
+        "tymon/jwt-auth": "Alternative JWT library for node authentication (^2.0)"
     },
     "autoload": {
         "psr-4": {

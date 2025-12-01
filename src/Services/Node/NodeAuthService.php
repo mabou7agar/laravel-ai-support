@@ -4,16 +4,39 @@ namespace LaravelAIEngine\Services\Node;
 
 use LaravelAIEngine\Models\AINode;
 use Illuminate\Support\Facades\Log;
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
 
 class NodeAuthService
 {
+    /**
+     * Check which JWT library is available
+     */
+    protected function getJwtLibrary(): ?string
+    {
+        if (class_exists('\Firebase\JWT\JWT')) {
+            return 'firebase';
+        }
+        
+        if (class_exists('\Tymon\JWTAuth\Facades\JWTAuth')) {
+            return 'tymon';
+        }
+        
+        return null;
+    }
+    
     /**
      * Generate JWT token for node
      */
     public function generateToken(AINode $node, int $expiresIn = 3600): string
     {
+        $library = $this->getJwtLibrary();
+        
+        if (!$library) {
+            throw new \RuntimeException(
+                'No JWT library found. Please install either firebase/php-jwt or tymon/jwt-auth. ' .
+                'Run: composer require firebase/php-jwt'
+            );
+        }
+        
         $payload = [
             'iss' => config('app.url'),
             'sub' => $node->id,
@@ -25,9 +48,57 @@ class NodeAuthService
             'type' => $node->type,
         ];
         
+        if ($library === 'firebase') {
+            return $this->generateTokenFirebase($payload);
+        }
+        
+        return $this->generateTokenTymon($payload, $expiresIn);
+    }
+    
+    /**
+     * Generate token using Firebase JWT
+     */
+    protected function generateTokenFirebase(array $payload): string
+    {
+        $secret = $this->getJwtSecret();
+        return \Firebase\JWT\JWT::encode($payload, $secret, 'HS256');
+    }
+    
+    /**
+     * Generate token using Tymon JWT
+     */
+    protected function generateTokenTymon(array $payload, int $expiresIn): string
+    {
         $secret = $this->getJwtSecret();
         
-        return JWT::encode($payload, $secret, 'HS256');
+        // Create custom claims for Tymon
+        $customClaims = [
+            'node_slug' => $payload['node_slug'],
+            'node_name' => $payload['node_name'],
+            'capabilities' => $payload['capabilities'],
+            'type' => $payload['type'],
+        ];
+        
+        // Use Tymon's factory to create token
+        try {
+            $factory = app('tymon.jwt');
+            return $factory->customClaims($customClaims)
+                ->ttl($expiresIn / 60) // Convert seconds to minutes
+                ->fromSubject($payload['sub']);
+        } catch (\Exception $e) {
+            // Fallback to manual encoding if Tymon factory fails
+            Log::channel('ai-engine')->warning('Tymon JWT factory failed, using manual encoding', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Manual JWT encoding as fallback
+            $header = base64_encode(json_encode(['typ' => 'JWT', 'alg' => 'HS256']));
+            $payloadEncoded = base64_encode(json_encode($payload));
+            $signature = hash_hmac('sha256', "$header.$payloadEncoded", $secret, true);
+            $signatureEncoded = base64_encode($signature);
+            
+            return "$header.$payloadEncoded.$signatureEncoded";
+        }
     }
     
     /**
@@ -35,9 +106,28 @@ class NodeAuthService
      */
     public function validateToken(string $token): ?array
     {
+        $library = $this->getJwtLibrary();
+        
+        if (!$library) {
+            Log::channel('ai-engine')->error('No JWT library available for token validation');
+            return null;
+        }
+        
+        if ($library === 'firebase') {
+            return $this->validateTokenFirebase($token);
+        }
+        
+        return $this->validateTokenTymon($token);
+    }
+    
+    /**
+     * Validate token using Firebase JWT
+     */
+    protected function validateTokenFirebase(string $token): ?array
+    {
         try {
             $secret = $this->getJwtSecret();
-            $decoded = JWT::decode($token, new Key($secret, 'HS256'));
+            $decoded = \Firebase\JWT\JWT::decode($token, new \Firebase\JWT\Key($secret, 'HS256'));
             
             return (array) $decoded;
         } catch (\Firebase\JWT\ExpiredException $e) {
@@ -47,6 +137,31 @@ class NodeAuthService
             return null;
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('Invalid JWT token', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+    
+    /**
+     * Validate token using Tymon JWT
+     */
+    protected function validateTokenTymon(string $token): ?array
+    {
+        try {
+            $parser = app('tymon.jwt.parser');
+            $payload = $parser->setRequest(request()->create('/', 'GET', [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer ' . $token
+            ]))->parseToken()->getPayload();
+            
+            return $payload->toArray();
+        } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
+            Log::channel('ai-engine')->warning('JWT token expired (Tymon)', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Invalid JWT token (Tymon)', [
                 'error' => $e->getMessage(),
             ]);
             return null;
