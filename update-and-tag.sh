@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo "🚀 Laravel AI Engine - Push and Tag v2.0.0"
+echo "🚀 Laravel AI Engine - Push and Tag v2.2.18"
 echo ""
 
 # Check if we're in a git repository
