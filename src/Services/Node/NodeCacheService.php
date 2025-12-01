@@ -184,6 +184,8 @@ class NodeCacheService
      */
     public function getStatistics(): array
     {
+        $now = now()->toDateTimeString();
+        
         $stats = DB::table('ai_node_search_cache')
             ->selectRaw('
                 COUNT(*) as total_entries,
@@ -191,9 +193,9 @@ class NodeCacheService
                 AVG(hit_count) as avg_hits_per_entry,
                 SUM(result_count) as total_results,
                 AVG(duration_ms) as avg_duration_ms,
-                COUNT(CASE WHEN expires_at > NOW() THEN 1 END) as active_entries,
-                COUNT(CASE WHEN expires_at <= NOW() THEN 1 END) as expired_entries
-            ')
+                COUNT(CASE WHEN expires_at > ? THEN 1 END) as active_entries,
+                COUNT(CASE WHEN expires_at <= ? THEN 1 END) as expired_entries
+            ', [$now, $now])
             ->first();
         
         return [
