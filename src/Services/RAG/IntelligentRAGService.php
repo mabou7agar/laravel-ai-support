@@ -487,23 +487,33 @@ PROMPT;
         $info = "AVAILABLE NODES:\n\n";
         
         foreach ($nodes as $node) {
-            $metadata = $node->metadata ?? [];
             $capabilities = implode(', ', $node->capabilities ?? []);
             
             $info .= "Node: {$node->name} (slug: {$node->slug})\n";
-            $info .= "  Type: " . ($metadata['type'] ?? 'general') . "\n";
             $info .= "  Capabilities: {$capabilities}\n";
-            $info .= "  Description: " . ($metadata['description'] ?? 'N/A') . "\n";
+            
+            // Add description (primary source of information for AI)
+            if ($node->description) {
+                $info .= "  Description: {$node->description}\n";
+            }
             
             // Add domain/category information
-            if (isset($metadata['domains'])) {
-                $info .= "  Domains: " . implode(', ', $metadata['domains']) . "\n";
+            if (!empty($node->domains)) {
+                $info .= "  Domains: " . implode(', ', $node->domains) . "\n";
             }
             
             // Add data types
-            if (isset($metadata['data_types'])) {
-                $info .= "  Data Types: " . implode(', ', $metadata['data_types']) . "\n";
+            if (!empty($node->data_types)) {
+                $info .= "  Data Types: " . implode(', ', $node->data_types) . "\n";
             }
+            
+            // Add keywords for better matching
+            if (!empty($node->keywords)) {
+                $info .= "  Keywords: " . implode(', ', $node->keywords) . "\n";
+            }
+            
+            // Add health status
+            $info .= "  Status: " . ($node->isHealthy() ? '✅ Healthy' : '⚠️ Degraded') . "\n";
             
             $info .= "\n";
         }

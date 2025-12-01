@@ -19,10 +19,14 @@ class AINode extends Model
         'slug',
         'type',
         'url',
+        'description',
         'api_key',
         'refresh_token',
         'refresh_token_expires_at',
         'capabilities',
+        'domains',
+        'data_types',
+        'keywords',
         'metadata',
         'version',
         'status',
@@ -35,6 +39,9 @@ class AINode extends Model
     
     protected $casts = [
         'capabilities' => 'array',
+        'domains' => 'array',
+        'data_types' => 'array',
+        'keywords' => 'array',
         'metadata' => 'array',
         'last_ping_at' => 'datetime',
         'refresh_token_expires_at' => 'datetime',
@@ -224,16 +231,62 @@ class AINode extends Model
     }
     
     /**
-     * Get load score (for load balancing)
-     * Lower is better
+     * Get load score for load balancing
      */
     public function getLoadScore(): float
     {
-        $responseTimeScore = $this->avg_response_time ?? 1000;
-        $connectionScore = $this->active_connections * 100;
-        $healthScore = $this->isHealthy() ? 0 : 10000;
+        $responseTime = $this->avg_response_time ?? 100;
+        $connections = $this->active_connections ?? 0;
+        $weight = $this->weight ?? 1;
         
-        return $responseTimeScore + $connectionScore + $healthScore;
+        // Lower score = better (less loaded)
+        // Formula: (response_time * connections) / weight
+        return ($responseTime * ($connections + 1)) / $weight;
+    }
+    
+    /**
+     * Get AI-friendly node information for context-aware selection
+     */
+    public function getAIContext(): array
+    {
+        return [
+            'slug' => $this->slug,
+            'name' => $this->name,
+            'description' => $this->description,
+            'capabilities' => $this->capabilities ?? [],
+            'domains' => $this->domains ?? [],
+            'data_types' => $this->data_types ?? [],
+            'keywords' => $this->keywords ?? [],
+            'status' => $this->status,
+            'is_healthy' => $this->isHealthy(),
+            'avg_response_time' => $this->avg_response_time,
+        ];
+    }
+    
+    /**
+     * Check if node matches query context
+     */
+    public function matchesContext(array $keywords): bool
+    {
+        $nodeKeywords = array_merge(
+            $this->keywords ?? [],
+            $this->domains ?? [],
+            $this->data_types ?? [],
+            [$this->name, $this->slug]
+        );
+        
+        $nodeKeywords = array_map('strtolower', $nodeKeywords);
+        $searchKeywords = array_map('strtolower', $keywords);
+        
+        foreach ($searchKeywords as $keyword) {
+            foreach ($nodeKeywords as $nodeKeyword) {
+                if (str_contains($nodeKeyword, $keyword) || str_contains($keyword, $nodeKeyword)) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
     
     // ==================== Accessors ====================

@@ -10,8 +10,12 @@ class RegisterNodeCommand extends Command
     protected $signature = 'ai-engine:node-register
                             {name : Node name}
                             {url : Node URL}
+                            {--description= : Node description (what it does)}
                             {--type=child : Node type (master/child)}
                             {--capabilities=* : Node capabilities}
+                            {--domains=* : Business domains (ecommerce, blog, crm)}
+                            {--data-types=* : Data types (products, posts, customers)}
+                            {--keywords=* : Search keywords}
                             {--weight=1 : Node weight for load balancing}';
     
     protected $description = 'Register a new node';
@@ -21,8 +25,12 @@ class RegisterNodeCommand extends Command
         $node = $registry->register([
             'name' => $this->argument('name'),
             'url' => $this->argument('url'),
+            'description' => $this->option('description'),
             'type' => $this->option('type'),
             'capabilities' => $this->option('capabilities') ?: ['search', 'actions'],
+            'domains' => $this->option('domains') ?: [],
+            'data_types' => $this->option('data-types') ?: [],
+            'keywords' => $this->option('keywords') ?: [],
             'weight' => (int) $this->option('weight'),
         ]);
         
