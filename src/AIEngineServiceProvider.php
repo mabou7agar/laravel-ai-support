@@ -385,6 +385,7 @@ class AIEngineServiceProvider extends ServiceProvider
                     Console\Commands\Node\PingNodesCommand::class,
                     Console\Commands\Node\NodeStatsCommand::class,
                     Console\Commands\Node\TestNodeSystemCommand::class,
+                    Console\Commands\Node\DemoNodesCommand::class,
                 ]);
             }
         }

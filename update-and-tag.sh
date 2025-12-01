@@ -26,7 +26,7 @@ CURRENT_BRANCH=$(git branch --show-current)
 echo -e "${BLUE}📍 Current branch: ${YELLOW}${CURRENT_BRANCH}${NC}"
 
 # Tag version
-TAG_VERSION="v2.0.0"
+TAG_VERSION="v2.2.18"
 
 # Check for uncommitted changes
 if [[ -n $(git status -s) ]]; then
