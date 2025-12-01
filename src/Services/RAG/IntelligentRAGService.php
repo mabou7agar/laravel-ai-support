@@ -23,6 +23,9 @@ class IntelligentRAGService
     protected ConversationService $conversationService;
     protected array $config;
 
+    protected ?NodeRegistryService $nodeRegistry = null;
+    protected ?FederatedSearchService $federatedSearch = null;
+
     public function __construct(
         VectorSearchService $vectorSearch,
         AIEngineManager $aiEngine,
@@ -32,6 +35,14 @@ class IntelligentRAGService
         $this->aiEngine = $aiEngine;
         $this->conversationService = $conversationService;
         $this->config = config('ai-engine.intelligent_rag', []);
+        
+        // Lazy load node services if available
+        if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
+            $this->nodeRegistry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
+        }
+        if (class_exists(\LaravelAIEngine\Services\Node\FederatedSearchService::class)) {
+            $this->federatedSearch = app(\LaravelAIEngine\Services\Node\FederatedSearchService::class);
+        }
     }
 
     /**
@@ -377,6 +388,233 @@ PROMPT;
                 'query_type' => 'conversational',
             ];
         }
+    }
+
+    /**
+     * Analyze query with conversation context to determine nodes (CONTEXT-AWARE)
+     * 
+     * This method considers the full conversation history to intelligently
+     * select which nodes to search, maintaining context continuity.
+     */
+    protected function analyzeQueryWithContext(
+        string $query,
+        array $conversationHistory = [],
+        ?Collection $availableNodes = null
+    ): array {
+        // If node services not available, fallback to regular analysis
+        if (!$this->nodeRegistry || !$this->federatedSearch) {
+            return $this->analyzeQuery($query, $conversationHistory, []);
+        }
+        
+        // Get available nodes
+        $nodes = $availableNodes ?? $this->nodeRegistry->getActiveNodes();
+        
+        if ($nodes->isEmpty()) {
+            return $this->analyzeQuery($query, $conversationHistory, []);
+        }
+        
+        // Build node information for AI
+        $nodeInfo = $this->buildNodeInformation($nodes);
+        
+        // Build conversation context
+        $contextSummary = $this->buildConversationContext($conversationHistory);
+        
+        // Create enhanced analysis prompt
+        $systemPrompt = $this->getContextAwareAnalysisPrompt($nodeInfo);
+        
+        $userPrompt = <<<PROMPT
+CONVERSATION CONTEXT:
+{$contextSummary}
+
+CURRENT QUERY: "{$query}"
+
+Based on the conversation context and current query, determine:
+1. Should we search for information?
+2. Which specific nodes are relevant?
+3. What collections/models to search?
+4. What search queries to use?
+
+Consider:
+- Previous topics discussed
+- User's current intent
+- Which nodes have relevant data
+- Context continuity
+
+Respond in JSON format.
+PROMPT;
+
+        try {
+            $request = new AIRequest(
+                prompt: $userPrompt,
+                engine: new \LaravelAIEngine\Enums\EngineEnum(config('ai-engine.default')),
+                model: new \LaravelAIEngine\Enums\EntityEnum($this->config['analysis_model'] ?? 'gpt-4o'),
+                systemPrompt: $systemPrompt,
+                temperature: 0.3,
+                maxTokens: 500
+            );
+
+            $aiResponse = $this->aiEngine->processRequest($request);
+            $response = $aiResponse->getContent();
+            
+            // Parse JSON response
+            $analysis = $this->parseJsonResponse($response);
+            
+            return [
+                'needs_context' => $analysis['needs_context'] ?? false,
+                'nodes' => $analysis['nodes'] ?? [],
+                'collections' => $analysis['collections'] ?? [],
+                'search_queries' => $analysis['search_queries'] ?? [$query],
+                'reasoning' => $analysis['reasoning'] ?? '',
+                'context_topics' => $analysis['context_topics'] ?? [],
+                'search_strategy' => $analysis['search_strategy'] ?? 'parallel',
+            ];
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Context-aware analysis failed', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Fallback to basic analysis
+            return $this->analyzeQuery($query, $conversationHistory, []);
+        }
+    }
+    
+    /**
+     * Build node information for AI analysis
+     */
+    protected function buildNodeInformation(Collection $nodes): string
+    {
+        $info = "AVAILABLE NODES:\n\n";
+        
+        foreach ($nodes as $node) {
+            $metadata = $node->metadata ?? [];
+            $capabilities = implode(', ', $node->capabilities ?? []);
+            
+            $info .= "Node: {$node->name} (slug: {$node->slug})\n";
+            $info .= "  Type: " . ($metadata['type'] ?? 'general') . "\n";
+            $info .= "  Capabilities: {$capabilities}\n";
+            $info .= "  Description: " . ($metadata['description'] ?? 'N/A') . "\n";
+            
+            // Add domain/category information
+            if (isset($metadata['domains'])) {
+                $info .= "  Domains: " . implode(', ', $metadata['domains']) . "\n";
+            }
+            
+            // Add data types
+            if (isset($metadata['data_types'])) {
+                $info .= "  Data Types: " . implode(', ', $metadata['data_types']) . "\n";
+            }
+            
+            $info .= "\n";
+        }
+        
+        return $info;
+    }
+    
+    /**
+     * Build conversation context summary
+     */
+    protected function buildConversationContext(array $conversationHistory): string
+    {
+        if (empty($conversationHistory)) {
+            return "No previous conversation.";
+        }
+        
+        // Get recent messages (configurable window)
+        $contextWindow = $this->config['context_window'] ?? 5;
+        $recentMessages = array_slice($conversationHistory, -$contextWindow);
+        
+        $context = "Recent conversation:\n";
+        foreach ($recentMessages as $msg) {
+            $role = ucfirst($msg['role'] ?? 'user');
+            $content = substr($msg['content'] ?? '', 0, 200);
+            $context .= "{$role}: {$content}\n";
+        }
+        
+        // Extract topics from conversation
+        $topics = $this->extractTopicsFromConversation($conversationHistory);
+        if (!empty($topics)) {
+            $context .= "\nTopics discussed: " . implode(', ', $topics) . "\n";
+        }
+        
+        return $context;
+    }
+    
+    /**
+     * Extract topics from conversation history
+     */
+    protected function extractTopicsFromConversation(array $conversationHistory): array
+    {
+        $topics = [];
+        
+        // Common keywords to extract
+        $keywords = ['laravel', 'php', 'product', 'book', 'tutorial', 'customer', 'order', 'article', 'support', 'ticket', 'purchase', 'learn'];
+        
+        foreach ($conversationHistory as $msg) {
+            $content = strtolower($msg['content'] ?? '');
+            
+            foreach ($keywords as $keyword) {
+                if (str_contains($content, $keyword) && !in_array($keyword, $topics)) {
+                    $topics[] = $keyword;
+                }
+            }
+        }
+        
+        return $topics;
+    }
+    
+    /**
+     * Get context-aware analysis prompt
+     */
+    protected function getContextAwareAnalysisPrompt(string $nodeInfo): string
+    {
+        return <<<PROMPT
+You are an intelligent node selector for a distributed AI system. Your job is to analyze the conversation context and current query to determine which nodes to search.
+
+{$nodeInfo}
+
+ANALYSIS RULES:
+
+1. **Context Continuity**: If the conversation is about a specific topic, prefer nodes related to that topic
+   - Example: If discussing "Laravel books", prioritize e-commerce node
+
+2. **Intent Evolution**: Detect when user's intent changes
+   - "Tell me about Laravel" → "Show me books" = Same topic, different intent
+   - "Tell me about Laravel" → "What's the weather?" = Topic change
+
+3. **Node Matching**: Match query intent to node capabilities
+   - Product queries → E-commerce node
+   - Tutorial/article queries → Blog node
+   - Customer/support queries → CRM node
+   - General queries → Multiple nodes
+
+4. **Optimization**: Only search relevant nodes
+   - Don't search all nodes for specific queries
+   - Use context to narrow down nodes
+
+5. **Multi-Node Queries**: Some queries need multiple nodes
+   - "Find Laravel resources" → Blog + E-commerce
+   - "Customer who bought X" → CRM + E-commerce
+
+RESPONSE FORMAT (JSON):
+{
+    "needs_context": true,
+    "reasoning": "User is asking about Laravel books based on previous context",
+    "context_topics": ["laravel", "books", "learning"],
+    "nodes": ["ecommerce"],
+    "collections": ["App\\\\Models\\\\Product"],
+    "search_queries": ["Laravel books", "Laravel learning resources"],
+    "search_strategy": "parallel"
+}
+
+IMPORTANT:
+- Consider the FULL conversation context, not just the current query
+- Use previous topics to inform node selection
+- Be specific about which nodes to search
+- Explain your reasoning
+- Use DOUBLE backslashes in class names (e.g., "App\\\\Models\\\\Product")
+- Empty nodes array means search all nodes
+PROMPT;
     }
 
     /**
