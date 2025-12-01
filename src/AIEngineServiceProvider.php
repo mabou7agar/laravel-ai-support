@@ -231,6 +231,59 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorAnalyticsService::class, function ($app) {
             return new \LaravelAIEngine\Services\Vector\VectorAnalyticsService();
         });
+        
+        // Node Management Services
+        $this->registerNodeServices();
+    }
+    
+    /**
+     * Register node management services
+     */
+    protected function registerNodeServices(): void
+    {
+        if (!config('ai-engine.nodes.enabled', true)) {
+            return;
+        }
+        
+        // Auth Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeAuthService::class);
+        
+        // Circuit Breaker
+        $this->app->singleton(\LaravelAIEngine\Services\Node\CircuitBreakerService::class);
+        
+        // Cache Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeCacheService::class);
+        
+        // Load Balancer
+        $this->app->singleton(\LaravelAIEngine\Services\Node\LoadBalancerService::class);
+        
+        // Registry Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRegistryService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\NodeRegistryService(
+                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)
+            );
+        });
+        
+        // Federated Search Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\FederatedSearchService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\FederatedSearchService(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeCacheService::class),
+                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
+                $app->make(\LaravelAIEngine\Services\Node\LoadBalancerService::class)
+            );
+        });
+        
+        // Remote Action Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\RemoteActionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\RemoteActionService(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)
+            );
+        });
     }
 
     /**
@@ -322,6 +375,17 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\TestChunkingCommand::class,
                 Console\Commands\TestLargeMediaCommand::class,
             ]);
+            
+            // Node Management Commands
+            if (config('ai-engine.nodes.enabled', true)) {
+                $this->commands([
+                    Console\Commands\Node\MonitorNodesCommand::class,
+                    Console\Commands\Node\RegisterNodeCommand::class,
+                    Console\Commands\Node\ListNodesCommand::class,
+                    Console\Commands\Node\PingNodesCommand::class,
+                    Console\Commands\Node\NodeStatsCommand::class,
+                ]);
+            }
         }
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
@@ -333,6 +397,16 @@ class AIEngineServiceProvider extends ServiceProvider
         // Load demo routes conditionally (safe for config cache)
         if (config('ai-engine.enable_demo_routes', false)) {
             $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
+        }
+        
+        // Load node API routes
+        if (config('ai-engine.nodes.enabled', true)) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/node-api.php');
+            
+            // Register middleware
+            $router = $this->app['router'];
+            $router->aliasMiddleware('node.auth', \LaravelAIEngine\Http\Middleware\NodeAuthMiddleware::class);
+            $router->aliasMiddleware('node.rate_limit', \LaravelAIEngine\Http\Middleware\NodeRateLimitMiddleware::class);
         }
         
         // Register views

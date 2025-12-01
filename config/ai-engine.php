@@ -747,4 +747,60 @@ return [
         // Include source citations in response
         'include_sources' => env('INTELLIGENT_RAG_INCLUDE_SOURCES', true),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Node Management (Master-Node Architecture)
+    |--------------------------------------------------------------------------
+    |
+    | Configure the distributed master-node architecture for scaling across
+    | multiple applications and services.
+    |
+    */
+    'nodes' => [
+        // Enable node management
+        'enabled' => env('AI_ENGINE_NODES_ENABLED', true),
+        
+        // Is this the master node?
+        'is_master' => env('AI_ENGINE_IS_MASTER', true),
+        
+        // Master node URL (for child nodes)
+        'master_url' => env('AI_ENGINE_MASTER_URL'),
+        
+        // JWT secret for node authentication
+        'jwt_secret' => env('AI_ENGINE_JWT_SECRET', env('APP_KEY')),
+        
+        // Node capabilities
+        'capabilities' => ['search', 'actions', 'rag'],
+        
+        // Auto-register with master on boot
+        'auto_register' => env('AI_ENGINE_AUTO_REGISTER', false),
+        
+        // Health check interval (seconds)
+        'health_check_interval' => env('AI_ENGINE_HEALTH_CHECK_INTERVAL', 300),
+        
+        // Request timeout (seconds)
+        'request_timeout' => env('AI_ENGINE_REQUEST_TIMEOUT', 30),
+        
+        // Cache TTL (seconds)
+        'cache_ttl' => env('AI_ENGINE_CACHE_TTL', 900),
+        
+        // Max parallel requests
+        'max_parallel_requests' => env('AI_ENGINE_MAX_PARALLEL_REQUESTS', 10),
+        
+        // Circuit breaker settings
+        'circuit_breaker' => [
+            'failure_threshold' => env('AI_ENGINE_CB_FAILURE_THRESHOLD', 5),
+            'success_threshold' => env('AI_ENGINE_CB_SUCCESS_THRESHOLD', 2),
+            'timeout' => env('AI_ENGINE_CB_TIMEOUT', 60),
+            'retry_timeout' => env('AI_ENGINE_CB_RETRY_TIMEOUT', 30),
+        ],
+        
+        // Rate limiting
+        'rate_limit' => [
+            'enabled' => env('AI_ENGINE_RATE_LIMIT_ENABLED', true),
+            'max_attempts' => env('AI_ENGINE_RATE_LIMIT_MAX', 60),
+            'decay_minutes' => env('AI_ENGINE_RATE_LIMIT_DECAY', 1),
+        ],
+    ],
 ];
