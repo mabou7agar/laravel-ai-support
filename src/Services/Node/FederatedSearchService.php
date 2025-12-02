@@ -106,7 +106,7 @@ class FederatedSearchService
                         $collection,
                         $query,
                         $limit,
-                        $options['threshold'] ?? 0.7
+                        $options['threshold'] ?? 0.3
                     );
                     
                     foreach ($searchResults as $result) {
