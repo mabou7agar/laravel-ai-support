@@ -629,6 +629,7 @@ PROMPT;
 
     /**
      * Retrieve relevant context from vector database
+     * Uses federated search across nodes if available, otherwise local search
      */
     protected function retrieveRelevantContext(
         array $searchQueries,
@@ -653,8 +654,86 @@ PROMPT;
             return collect();
         }
 
+        // Use federated search if available and enabled
+        if ($this->federatedSearch && config('ai-engine.nodes.enabled', false)) {
+            return $this->retrieveFromFederatedSearch($searchQueries, $validCollections, $maxResults, $threshold, $options);
+        }
+
+        // Fallback to local search
+        return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold);
+    }
+    
+    /**
+     * Retrieve context using federated search across nodes
+     */
+    protected function retrieveFromFederatedSearch(
+        array $searchQueries,
+        array $collections,
+        int $maxResults,
+        float $threshold,
+        array $options
+    ): Collection {
+        $allResults = collect();
+        
         foreach ($searchQueries as $searchQuery) {
-            foreach ($validCollections as $collection) {
+            try {
+                // Use federated search across all nodes
+                $federatedResults = $this->federatedSearch->search(
+                    query: $searchQuery,
+                    nodeIds: null, // Auto-select nodes based on context
+                    limit: $maxResults,
+                    options: array_merge($options, [
+                        'collections' => $collections,
+                        'min_score' => $threshold,
+                    ])
+                );
+                
+                // Extract results from federated response
+                if (!empty($federatedResults['results'])) {
+                    foreach ($federatedResults['results'] as $nodeResult) {
+                        if (!empty($nodeResult['results'])) {
+                            $allResults = $allResults->merge(collect($nodeResult['results']));
+                        }
+                    }
+                }
+                
+                Log::channel('ai-engine')->debug('Federated search completed', [
+                    'query' => $searchQuery,
+                    'nodes_searched' => $federatedResults['nodes_searched'] ?? 0,
+                    'total_results' => $federatedResults['total_results'] ?? 0,
+                ]);
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Federated search failed, falling back to local', [
+                    'query' => $searchQuery,
+                    'error' => $e->getMessage(),
+                ]);
+                
+                // Fallback to local search for this query
+                $localResults = $this->retrieveFromLocalSearch([$searchQuery], $collections, $maxResults, $threshold);
+                $allResults = $allResults->merge($localResults);
+            }
+        }
+        
+        // Deduplicate and sort by relevance
+        return $allResults
+            ->unique('id')
+            ->sortByDesc('vector_score')
+            ->take($maxResults);
+    }
+    
+    /**
+     * Retrieve context using local vector search
+     */
+    protected function retrieveFromLocalSearch(
+        array $searchQueries,
+        array $collections,
+        int $maxResults,
+        float $threshold
+    ): Collection {
+        $allResults = collect();
+        
+        foreach ($searchQueries as $searchQuery) {
+            foreach ($collections as $collection) {
                 try {
                     $results = $this->vectorSearch->search(
                         $collection,
