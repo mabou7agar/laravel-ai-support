@@ -640,11 +640,26 @@ PROMPT;
         $maxResults = $options['max_context'] ?? $this->config['max_context_items'] ?? 5;
         $threshold = $options['min_score'] ?? $this->config['min_relevance_score'] ?? 0.7;
 
-        // Filter out invalid collection names (must be valid class names with Vectorizable trait)
+        // Use federated search if available and enabled
+        $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
+        
+        if ($useFederatedSearch) {
+            // For federated search, we trust the collections array
+            // The child nodes will validate if they have the class
+            Log::channel('ai-engine')->debug('Using federated search - delegating collection validation to nodes', [
+                'collections' => $collections,
+                'note' => 'Collections may exist on remote nodes even if not available locally',
+            ]);
+            
+            return $this->retrieveFromFederatedSearch($searchQueries, $collections, $maxResults, $threshold, $options);
+        }
+        
+        // For local search only, validate collections exist locally
         $validCollections = array_filter($collections, function($collection) {
             if (!class_exists($collection)) {
-                Log::channel('ai-engine')->debug('Collection class does not exist', [
+                Log::channel('ai-engine')->debug('Collection class does not exist locally', [
                     'collection' => $collection,
+                    'note' => 'Enable federated search to search remote nodes',
                 ]);
                 return false;
             }
@@ -664,21 +679,16 @@ PROMPT;
             return $hasVectorizable;
         });
 
-        // If no valid collections, return empty (this is OK - RAG will work without vector search)
+        // If no valid collections locally, return empty
         if (empty($validCollections)) {
-            Log::channel('ai-engine')->debug('No valid RAG collections found - continuing without vector search', [
+            Log::channel('ai-engine')->debug('No valid RAG collections found locally', [
                 'provided_collections' => $collections,
-                'note' => 'This is normal if no models use the Vectorizable trait. The chat will work without RAG context.',
+                'note' => 'Enable federated search (AI_ENGINE_NODES_ENABLED=true) to search remote nodes',
             ]);
             return collect();
         }
 
-        // Use federated search if available and enabled
-        if ($this->federatedSearch && config('ai-engine.nodes.enabled', false)) {
-            return $this->retrieveFromFederatedSearch($searchQueries, $validCollections, $maxResults, $threshold, $options);
-        }
-
-        // Fallback to local search
+        // Use local search
         return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold);
     }
     
