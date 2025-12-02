@@ -1109,6 +1109,76 @@ PROMPT;
     }
 
     /**
+     * Get display name for RAG collection
+     * Override this in your model for custom names
+     *
+     * @return string
+     */
+    public function getRAGDisplayName(): string
+    {
+        // Check if model has a custom display name property
+        if (property_exists($this, 'ragDisplayName') && !empty($this->ragDisplayName)) {
+            return $this->ragDisplayName;
+        }
+
+        // Convert class name to readable format
+        // Example: EmailMessage -> Email Message
+        $className = class_basename(static::class);
+        return ucwords(preg_replace('/(?<!^)[A-Z]/', ' $0', $className));
+    }
+
+    /**
+     * Get description for RAG collection
+     * Override this in your model for custom descriptions
+     *
+     * @return string
+     */
+    public function getRAGDescription(): string
+    {
+        // Check if model has a custom description property
+        if (property_exists($this, 'ragDescription') && !empty($this->ragDescription)) {
+            return $this->ragDescription;
+        }
+
+        // Generate default description
+        $displayName = $this->getRAGDisplayName();
+        return "Search through {$displayName}";
+    }
+
+    /**
+     * Get icon for RAG collection
+     * Override this in your model for custom icons
+     *
+     * @return string
+     */
+    public function getRAGIcon(): string
+    {
+        // Check if model has a custom icon property
+        if (property_exists($this, 'ragIcon') && !empty($this->ragIcon)) {
+            return $this->ragIcon;
+        }
+
+        // Auto-detect icon based on class name
+        $className = strtolower(class_basename(static::class));
+        
+        if (str_contains($className, 'email')) return '📧';
+        if (str_contains($className, 'message')) return '💬';
+        if (str_contains($className, 'document')) return '📄';
+        if (str_contains($className, 'file')) return '📁';
+        if (str_contains($className, 'post')) return '📝';
+        if (str_contains($className, 'article')) return '📰';
+        if (str_contains($className, 'user')) return '👤';
+        if (str_contains($className, 'customer')) return '👥';
+        if (str_contains($className, 'product')) return '🛍️';
+        if (str_contains($className, 'order')) return '📦';
+        if (str_contains($className, 'task')) return '✅';
+        if (str_contains($className, 'note')) return '📝';
+        if (str_contains($className, 'comment')) return '💭';
+        
+        return '📚';
+    }
+
+    /**
      * Determine if this model should be included in RAG
      *
      * @param string $query

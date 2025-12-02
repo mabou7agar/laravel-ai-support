@@ -26,17 +26,30 @@ class ModuleController extends Controller
             
             // Format as modules
             $modules = collect($ragCollectionClasses)->map(function ($className) {
-                // Extract model name from class
-                $modelName = class_basename($className);
-                
-                return [
-                    'id' => $className,
-                    'name' => $this->formatModelName($modelName),
-                    'type' => 'rag_collection',
-                    'description' => "Search through {$this->formatModelName($modelName)}",
-                    'enabled' => true,
-                    'icon' => $this->getCollectionIcon($modelName),
-                ];
+                try {
+                    // Create instance to get display info from trait methods
+                    $instance = new $className();
+                    
+                    return [
+                        'id' => $className,
+                        'name' => $instance->getRAGDisplayName(),
+                        'type' => 'rag_collection',
+                        'description' => $instance->getRAGDescription(),
+                        'enabled' => true,
+                        'icon' => $instance->getRAGIcon(),
+                    ];
+                } catch (\Exception $e) {
+                    // Fallback if instance creation fails
+                    $modelName = class_basename($className);
+                    return [
+                        'id' => $className,
+                        'name' => $this->formatModelName($modelName),
+                        'type' => 'rag_collection',
+                        'description' => "Search through {$this->formatModelName($modelName)}",
+                        'enabled' => true,
+                        'icon' => $this->getCollectionIcon($modelName),
+                    ];
+                }
             })->values();
 
             return response()->json([
