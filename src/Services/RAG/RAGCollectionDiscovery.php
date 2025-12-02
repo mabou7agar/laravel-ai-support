@@ -18,20 +18,27 @@ class RAGCollectionDiscovery
     protected string $cacheKey = 'ai_engine:rag_collections';
     protected int $cacheTtl;
     protected bool $autoDiscover;
+    protected $nodeRegistry = null;
 
     public function __construct()
     {
         $this->cacheTtl = config('ai-engine.intelligent_rag.discovery_cache_ttl', 3600);
         $this->autoDiscover = config('ai-engine.intelligent_rag.auto_discover', true);
+        
+        // Lazy load node registry if available
+        if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
+            $this->nodeRegistry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
+        }
     }
 
     /**
-     * Discover all RAG collections
+     * Discover all RAG collections (local + federated)
      *
      * @param bool $useCache Whether to use cached results
+     * @param bool $includeFederated Whether to include collections from remote nodes
      * @return array Array of model class names
      */
-    public function discover(bool $useCache = true): array
+    public function discover(bool $useCache = true, bool $includeFederated = true): array
     {
         // Check cache first
         if ($useCache) {
@@ -53,11 +60,57 @@ class RAGCollectionDiscovery
             return [];
         }
 
+        // Discover local collections
         $collections = $this->discoverFromModels();
+        
+        // Discover from remote nodes if enabled
+        if ($includeFederated && $this->nodeRegistry && config('ai-engine.nodes.enabled', false)) {
+            $federatedCollections = $this->discoverFromNodes();
+            $collections = array_unique(array_merge($collections, $federatedCollections));
+        }
 
         // Cache results
         Cache::put($this->cacheKey, $collections, $this->cacheTtl);
 
+        return $collections;
+    }
+    
+    /**
+     * Discover collections from remote nodes
+     *
+     * @return array
+     */
+    protected function discoverFromNodes(): array
+    {
+        $collections = [];
+        
+        try {
+            $nodes = $this->nodeRegistry->getActiveNodes();
+            
+            foreach ($nodes as $node) {
+                try {
+                    $response = \LaravelAIEngine\Services\Node\NodeHttpClient::make()
+                        ->get($node->url . '/api/ai-engine/collections');
+                    
+                    if ($response->successful()) {
+                        $data = $response->json();
+                        foreach ($data['collections'] ?? [] as $collection) {
+                            $collections[] = $collection['class'];
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::debug('Failed to get collections from node', [
+                        'node' => $node->slug,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to discover collections from nodes', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+        
         return $collections;
     }
 
