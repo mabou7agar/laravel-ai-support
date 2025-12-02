@@ -1,0 +1,740 @@
+{
+	"info": {
+		"_postman_id": "ai-engine-collection-2025",
+		"name": "Laravel AI Engine - Complete API Collection",
+		"description": "Complete API collection for Laravel AI Engine including Chat, RAG, Federated Search, Node Management, and Vector Operations",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "laravel-ai-engine"
+	},
+	"item": [
+		{
+			"name": "Chat APIs",
+			"item": [
+				{
+					"name": "Send Chat Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Hello! How are you?\",\n    \"session_id\": \"user-123-session\",\n    \"memory\": true,\n    \"actions\": true,\n    \"use_intelligent_rag\": true,\n    \"rag_collections\": []\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/send",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "send"]
+						},
+						"description": "Send a chat message with optional RAG and memory"
+					}
+				},
+				{
+					"name": "Get Chat History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/history/{{session_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "history", "{{session_id}}"]
+						},
+						"description": "Get conversation history for a session"
+					}
+				},
+				{
+					"name": "Clear Chat History",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"session_id\": \"user-123-session\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/clear",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "clear"]
+						},
+						"description": "Clear conversation history for a session"
+					}
+				},
+				{
+					"name": "Get Available Engines",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/engines",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "engines"]
+						},
+						"description": "Get list of available AI engines"
+					}
+				},
+				{
+					"name": "Get Available Actions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/actions",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "actions"]
+						},
+						"description": "Get list of available dynamic actions"
+					}
+				},
+				{
+					"name": "Execute Action",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"search_database\",\n    \"parameters\": {\n        \"query\": \"Laravel\"\n    },\n    \"session_id\": \"user-123-session\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/execute-action",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "execute-action"]
+						},
+						"description": "Execute a dynamic action"
+					}
+				}
+			],
+			"description": "Chat API endpoints for conversational AI"
+		},
+		{
+			"name": "RAG APIs",
+			"item": [
+				{
+					"name": "RAG Chat",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"What posts do you have about Laravel?\",\n    \"session_id\": \"rag-session-123\",\n    \"rag_collections\": [\"App\\\\Models\\\\Post\"],\n    \"use_intelligent_rag\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/rag/chat",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "rag", "chat"]
+						},
+						"description": "Send a message with RAG context retrieval"
+					}
+				},
+				{
+					"name": "Get RAG Collections",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/rag/collections",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "rag", "collections"]
+						},
+						"description": "Get available RAG collections (Vectorizable models)"
+					}
+				},
+				{
+					"name": "Get RAG Engines",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/rag/engines",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "rag", "engines"]
+						},
+						"description": "Get available AI engines for RAG"
+					}
+				},
+				{
+					"name": "RAG Health Check",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/rag/health",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "rag", "health"]
+						},
+						"description": "Check RAG system health status"
+					}
+				},
+				{
+					"name": "Clear RAG Chat History",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"session_id\": \"rag-session-123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/rag/chat/clear",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "rag", "chat", "clear"]
+						},
+						"description": "Clear RAG conversation history"
+					}
+				},
+				{
+					"name": "Get RAG Chat History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/rag/chat/history/{{session_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "rag", "chat", "history", "{{session_id}}"]
+						},
+						"description": "Get RAG conversation history"
+					}
+				},
+				{
+					"name": "Execute RAG Action",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action_id\": \"action-123\",\n    \"parameters\": {},\n    \"session_id\": \"rag-session-123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/rag/actions/execute",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "rag", "actions", "execute"]
+						},
+						"description": "Execute a RAG action"
+					}
+				}
+			],
+			"description": "RAG (Retrieval-Augmented Generation) API endpoints"
+		},
+		{
+			"name": "Node APIs (Federated)",
+			"item": [
+				{
+					"name": "Get Collections (Child Node)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{node_jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{child_node_url}}/api/ai-engine/collections",
+							"host": ["{{child_node_url}}"],
+							"path": ["api", "ai-engine", "collections"]
+						},
+						"description": "Get available collections from a child node"
+					}
+				},
+				{
+					"name": "Search (Child Node)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{node_jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"query\": \"Laravel routing\",\n    \"limit\": 5,\n    \"options\": {\n        \"collections\": [\"App\\\\Models\\\\Post\"],\n        \"threshold\": 0.3\n    }\n}"
+						},
+						"url": {
+							"raw": "{{child_node_url}}/api/ai-engine/search",
+							"host": ["{{child_node_url}}"],
+							"path": ["api", "ai-engine", "search"]
+						},
+						"description": "Search collections on a child node"
+					}
+				},
+				{
+					"name": "Ping (Child Node)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{node_jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{child_node_url}}/api/ai-engine/ping",
+							"host": ["{{child_node_url}}"],
+							"path": ["api", "ai-engine", "ping"]
+						},
+						"description": "Ping a child node to check health"
+					}
+				},
+				{
+					"name": "Health Check (Child Node)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{node_jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{child_node_url}}/api/ai-engine/health",
+							"host": ["{{child_node_url}}"],
+							"path": ["api", "ai-engine", "health"]
+						},
+						"description": "Get health status of a child node"
+					}
+				}
+			],
+			"description": "Federated node API endpoints for distributed RAG"
+		},
+		{
+			"name": "Vector Search APIs",
+			"item": [
+				{
+					"name": "Search Vectors",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"query\": \"Laravel routing\",\n    \"model_class\": \"App\\\\Models\\\\Post\",\n    \"limit\": 5,\n    \"threshold\": 0.3\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/vector/search",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "vector", "search"]
+						},
+						"description": "Search vectors for semantic similarity"
+					}
+				},
+				{
+					"name": "Index Model",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"model_class\": \"App\\\\Models\\\\Post\",\n    \"batch_size\": 100\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/vector/index",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "vector", "index"]
+						},
+						"description": "Index a model for vector search"
+					}
+				},
+				{
+					"name": "Get Vector Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/vector/status?model_class=App\\Models\\Post",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "vector", "status"],
+							"query": [
+								{
+									"key": "model_class",
+									"value": "App\\Models\\Post"
+								}
+							]
+						},
+						"description": "Get indexing status for a model"
+					}
+				},
+				{
+					"name": "Get Vector Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/vector/analytics",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "vector", "analytics"]
+						},
+						"description": "Get vector search analytics"
+					}
+				}
+			],
+			"description": "Vector search and embedding APIs"
+		},
+		{
+			"name": "Model Registry APIs",
+			"item": [
+				{
+					"name": "List AI Models",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/models?provider=openai",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "models"],
+							"query": [
+								{
+									"key": "provider",
+									"value": "openai",
+									"description": "Filter by provider (optional)"
+								}
+							]
+						},
+						"description": "Get list of available AI models"
+					}
+				},
+				{
+					"name": "Get Model Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/models/{{model_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "models", "{{model_id}}"]
+						},
+						"description": "Get details of a specific AI model"
+					}
+				},
+				{
+					"name": "Get Recommended Model",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"task\": \"code_generation\",\n    \"provider\": \"openai\",\n    \"max_cost\": 0.01\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/models/recommend",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "models", "recommend"]
+						},
+						"description": "Get recommended model for a task"
+					}
+				}
+			],
+			"description": "Dynamic Model Registry APIs"
+		},
+		{
+			"name": "Streaming APIs",
+			"item": [
+				{
+					"name": "Stream Chat (SSE)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "text/event-stream"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Write a long story about Laravel\",\n    \"session_id\": \"stream-session-123\",\n    \"stream\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/chat/stream",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "chat", "stream"]
+						},
+						"description": "Stream chat responses using Server-Sent Events"
+					}
+				}
+			],
+			"description": "Streaming API endpoints for real-time responses"
+		},
+		{
+			"name": "Health & Status",
+			"item": [
+				{
+					"name": "System Health",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/health",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "health"]
+						},
+						"description": "Get overall system health status"
+					}
+				},
+				{
+					"name": "Engine Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/engines/status",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "engines", "status"]
+						},
+						"description": "Get status of all AI engines"
+					}
+				}
+			],
+			"description": "Health check and status endpoints"
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "https://middleware.test",
+			"type": "string"
+		},
+		{
+			"key": "child_node_url",
+			"value": "https://ai.test",
+			"type": "string"
+		},
+		{
+			"key": "api_token",
+			"value": "your-api-token-here",
+			"type": "string"
+		},
+		{
+			"key": "node_jwt_token",
+			"value": "your-node-jwt-token-here",
+			"type": "string"
+		},
+		{
+			"key": "session_id",
+			"value": "user-123-session",
+			"type": "string"
+		},
+		{
+			"key": "model_id",
+			"value": "gpt-4",
+			"type": "string"
+		}
+	]
+}
