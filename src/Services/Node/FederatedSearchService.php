@@ -66,9 +66,10 @@ class FederatedSearchService
             return $mergedResults;
             
         } catch (\Exception $e) {
-            Log::channel('ai-engine')->error('Federated search failed', [
+            \Log::error('🚨 Federated search failed', [
                 'query' => $query,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             
             // Fallback to local search only
