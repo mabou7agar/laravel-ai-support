@@ -713,7 +713,7 @@ PROMPT;
                     limit: $maxResults,
                     options: array_merge($options, [
                         'collections' => $collections,
-                        'min_score' => $threshold,
+                        'threshold' => $threshold,
                     ])
                 );
                 
