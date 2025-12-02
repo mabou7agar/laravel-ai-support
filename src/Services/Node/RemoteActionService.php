@@ -233,8 +233,14 @@ class RemoteActionService
     {
         $startTime = microtime(true);
         
-        $response = Http::timeout(config('ai-engine.nodes.request_timeout', 30))
-            ->withHeaders([
+        $http = Http::timeout(config('ai-engine.nodes.request_timeout', 30));
+        
+        // Disable SSL verification if configured
+        if (!config('ai-engine.nodes.verify_ssl', true)) {
+            $http = $http->withOptions(['verify' => false]);
+        }
+        
+        $response = $http->withHeaders([
                 'Authorization' => 'Bearer ' . $this->authService->generateToken($node, 300),
                 'Accept' => 'application/json',
             ])

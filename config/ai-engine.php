@@ -782,6 +782,9 @@ return [
         // Request timeout (seconds)
         'request_timeout' => env('AI_ENGINE_REQUEST_TIMEOUT', 30),
         
+        // SSL certificate verification (disable for self-signed certs in development)
+        'verify_ssl' => env('AI_ENGINE_VERIFY_SSL', true),
+        
         // Cache TTL (seconds)
         'cache_ttl' => env('AI_ENGINE_CACHE_TTL', 900),
         
