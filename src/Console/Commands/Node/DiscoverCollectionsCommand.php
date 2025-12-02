@@ -137,12 +137,29 @@ class DiscoverCollectionsCommand extends Command
                 ->get($node->url . '/api/ai-engine/collections');
             
             if (!$response->successful()) {
-                throw new \Exception("HTTP {$response->status()}: " . $response->body());
+                $statusCode = $response->status();
+                $body = $response->body();
+                
+                // Check if response is HTML (error page)
+                if (str_contains($body, '<!DOCTYPE html>') || str_contains($body, '<html')) {
+                    throw new \Exception("HTTP {$statusCode}: Node returned HTML error page. The /api/ai-engine/collections endpoint may not exist or has an error. Please update the child node package.");
+                }
+                
+                // Try to get JSON error message
+                $errorData = $response->json();
+                $errorMessage = $errorData['message'] ?? $errorData['error'] ?? 'Unknown error';
+                
+                throw new \Exception("HTTP {$statusCode}: {$errorMessage}");
             }
             
             $data = $response->json();
             
-            return $data['collections'] ?? [];
+            // Validate response structure
+            if (!isset($data['collections']) || !is_array($data['collections'])) {
+                throw new \Exception("Invalid response format. Expected 'collections' array.");
+            }
+            
+            return $data['collections'];
             
         } catch (\Exception $e) {
             throw new \Exception("Failed to discover collections: " . $e->getMessage());

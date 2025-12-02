@@ -58,33 +58,58 @@ class NodeApiController extends Controller
             return $collections;
         }
         
-        $files = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($modelsPath)
-        );
+        try {
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($modelsPath, \RecursiveDirectoryIterator::SKIP_DOTS)
+            );
+        } catch (\Exception $e) {
+            \Log::error('Failed to iterate models directory', [
+                'path' => $modelsPath,
+                'error' => $e->getMessage(),
+            ]);
+            return $collections;
+        }
         
         foreach ($files as $file) {
-            if ($file->isDir() || $file->getExtension() !== 'php') {
+            try {
+                if ($file->isDir() || $file->getExtension() !== 'php') {
+                    continue;
+                }
+                
+                $relativePath = str_replace($modelsPath . '/', '', $file->getPathname());
+                $className = 'App\\Models\\' . str_replace(['/', '.php'], ['\\', ''], $relativePath);
+                
+                if (!class_exists($className)) {
+                    continue;
+                }
+                
+                // Check if class uses Vectorizable trait
+                $uses = class_uses_recursive($className);
+                $hasVectorizable = in_array(\LaravelAIEngine\Traits\Vectorizable::class, $uses) ||
+                                  in_array(\LaravelAIEngine\Traits\VectorizableWithMedia::class, $uses);
+                
+                if ($hasVectorizable) {
+                    // Safely get table name
+                    try {
+                        $instance = new $className;
+                        $tableName = $instance->getTable();
+                    } catch (\Exception $e) {
+                        $tableName = 'unknown';
+                    }
+                    
+                    $collections[] = [
+                        'class' => $className,
+                        'name' => class_basename($className),
+                        'table' => $tableName,
+                    ];
+                }
+            } catch (\Exception $e) {
+                // Skip problematic files
+                \Log::debug('Skipped model file during collection discovery', [
+                    'file' => $file->getPathname(),
+                    'error' => $e->getMessage(),
+                ]);
                 continue;
-            }
-            
-            $relativePath = str_replace($modelsPath . '/', '', $file->getPathname());
-            $className = 'App\\Models\\' . str_replace(['/', '.php'], ['\\', ''], $relativePath);
-            
-            if (!class_exists($className)) {
-                continue;
-            }
-            
-            // Check if class uses Vectorizable trait
-            $uses = class_uses_recursive($className);
-            $hasVectorizable = in_array(\LaravelAIEngine\Traits\Vectorizable::class, $uses) ||
-                              in_array(\LaravelAIEngine\Traits\VectorizableWithMedia::class, $uses);
-            
-            if ($hasVectorizable) {
-                $collections[] = [
-                    'class' => $className,
-                    'name' => class_basename($className),
-                    'table' => (new $className)->getTable(),
-                ];
             }
         }
         
