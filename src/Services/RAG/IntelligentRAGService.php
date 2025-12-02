@@ -23,8 +23,8 @@ class IntelligentRAGService
     protected ConversationService $conversationService;
     protected array $config;
 
-    protected ?NodeRegistryService $nodeRegistry = null;
-    protected ?FederatedSearchService $federatedSearch = null;
+    protected $nodeRegistry = null;
+    protected $federatedSearch = null;
 
     public function __construct(
         VectorSearchService $vectorSearch,
