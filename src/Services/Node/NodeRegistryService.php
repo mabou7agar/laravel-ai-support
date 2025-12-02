@@ -117,17 +117,7 @@ class NodeRegistryService
         try {
             $startTime = microtime(true);
             
-            $http = Http::timeout(5);
-            
-            // Disable SSL verification if configured
-            if (!config('ai-engine.nodes.verify_ssl', true)) {
-                $http = $http->withOptions(['verify' => false]);
-            }
-            
-            $response = $http->withHeaders([
-                    'Authorization' => 'Bearer ' . $this->authService->generateToken($node, 300),
-                    'Accept' => 'application/json',
-                ])
+            $response = NodeHttpClient::makeForHealthCheck($node)
                 ->get($node->getApiUrl('health'));
             
             $duration = (int) ((microtime(true) - $startTime) * 1000);

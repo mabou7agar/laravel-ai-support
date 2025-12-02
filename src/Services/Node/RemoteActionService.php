@@ -86,13 +86,7 @@ class RemoteActionService
             
             $promises[$node->slug] = [
                 'node' => $node,
-                'promise' => Http::async()
-                    ->timeout(config('ai-engine.nodes.request_timeout', 30))
-                    ->withHeaders([
-                        'Authorization' => 'Bearer ' . $this->authService->generateToken($node, 300),
-                        'Accept' => 'application/json',
-                        'X-Trace-Id' => $traceId,
-                    ])
+                'promise' => NodeHttpClient::makeForAction($node, $traceId)
                     ->post($node->getApiUrl('actions'), [
                         'action' => $action,
                         'params' => $params,
@@ -233,17 +227,7 @@ class RemoteActionService
     {
         $startTime = microtime(true);
         
-        $http = Http::timeout(config('ai-engine.nodes.request_timeout', 30));
-        
-        // Disable SSL verification if configured
-        if (!config('ai-engine.nodes.verify_ssl', true)) {
-            $http = $http->withOptions(['verify' => false]);
-        }
-        
-        $response = $http->withHeaders([
-                'Authorization' => 'Bearer ' . $this->authService->generateToken($node, 300),
-                'Accept' => 'application/json',
-            ])
+        $response = NodeHttpClient::makeForAction($node)
             ->post($node->getApiUrl('actions'), [
                 'action' => $action,
                 'params' => $params,
