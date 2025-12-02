@@ -154,7 +154,7 @@ class NodeCacheService
     /**
      * Warm up cache for common queries
      */
-    public function warmUp(array $commonQueries, ?array $nodeIds = null, callable $searchCallback): void
+    public function warmUp(array $commonQueries, callable $searchCallback, ?array $nodeIds = null): void
     {
         Log::channel('ai-engine')->info('Starting cache warm-up', [
             'query_count' => count($commonQueries),
