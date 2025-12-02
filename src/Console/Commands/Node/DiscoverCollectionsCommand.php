@@ -112,7 +112,7 @@ class DiscoverCollectionsCommand extends Command
         $this->line('$collections = [];');
         foreach ($allCollections as $nodeData) {
             foreach ($nodeData['collections'] as $collection) {
-                $this->line("$collections[] = '{$collection['class']}';");
+                $this->line("\$collections[] = '{$collection['class']}';");
             }
         }
         $this->line('');
