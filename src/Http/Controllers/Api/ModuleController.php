@@ -26,17 +26,39 @@ class ModuleController extends Controller
             
             // Format as modules
             $modules = collect($ragCollectionClasses)->map(function ($className) {
+                // Check if class exists locally (for remote node collections, it won't)
+                if (!class_exists($className)) {
+                    // This is a remote collection - use fallback formatting
+                    $modelName = class_basename($className);
+                    return [
+                        'id' => $className,
+                        'name' => $this->formatModelName($modelName),
+                        'type' => 'rag_collection',
+                        'description' => "Search through {$this->formatModelName($modelName)}",
+                        'enabled' => true,
+                        'icon' => $this->getCollectionIcon($modelName),
+                        'source' => 'remote',
+                    ];
+                }
+                
                 try {
                     // Create instance to get display info from trait methods
                     $instance = new $className();
                     
                     return [
                         'id' => $className,
-                        'name' => $instance->getRAGDisplayName(),
+                        'name' => method_exists($instance, 'getRAGDisplayName') 
+                            ? $instance->getRAGDisplayName() 
+                            : $this->formatModelName(class_basename($className)),
                         'type' => 'rag_collection',
-                        'description' => $instance->getRAGDescription(),
+                        'description' => method_exists($instance, 'getRAGDescription')
+                            ? $instance->getRAGDescription()
+                            : "Search through {$this->formatModelName(class_basename($className))}",
                         'enabled' => true,
-                        'icon' => $instance->getRAGIcon(),
+                        'icon' => method_exists($instance, 'getRAGIcon')
+                            ? $instance->getRAGIcon()
+                            : $this->getCollectionIcon(class_basename($className)),
+                        'source' => 'local',
                     ];
                 } catch (\Exception $e) {
                     // Fallback if instance creation fails
@@ -48,6 +70,7 @@ class ModuleController extends Controller
                         'description' => "Search through {$this->formatModelName($modelName)}",
                         'enabled' => true,
                         'icon' => $this->getCollectionIcon($modelName),
+                        'source' => 'local',
                     ];
                 }
             })->values();

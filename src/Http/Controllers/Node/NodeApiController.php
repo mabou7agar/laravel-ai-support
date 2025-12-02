@@ -97,12 +97,32 @@ class NodeApiController extends Controller
                 );
                 
                 foreach ($searchResults as $result) {
+                    \Log::info('NodeApiController: Adding result with metadata', [
+                        'id' => $result->id,
+                        'collection' => $collection,
+                    ]);
+                    
                     $results[] = [
                         'id' => $result->id ?? null,
                         'content' => $this->extractContent($result),
                         'score' => $result->vector_score ?? 0,
                         'model_class' => $collection,
                         'model_type' => class_basename($collection),
+                        // Include metadata for enrichResponseWithSources to use
+                        'metadata' => [
+                            'model_class' => $collection,
+                            'model_type' => class_basename($collection),
+                            'model_id' => $result->id ?? null,
+                        ],
+                        // Also include vector_metadata if it exists on the result
+                        'vector_metadata' => $result->vector_metadata ?? [
+                            'model_class' => $collection,
+                            'model_type' => class_basename($collection),
+                        ],
+                        // Include additional fields for display
+                        'title' => $result->title ?? $result->name ?? $result->subject ?? null,
+                        'name' => $result->name ?? null,
+                        'body' => $result->body ?? null,
                     ];
                 }
             }

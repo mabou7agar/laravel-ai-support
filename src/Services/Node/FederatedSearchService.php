@@ -116,6 +116,20 @@ class FederatedSearchService
                             'score' => $result->vector_score ?? 0,
                             'model_class' => $collection,
                             'model_type' => class_basename($collection),
+                            // Include metadata for enrichResponseWithSources
+                            'metadata' => [
+                                'model_class' => $collection,
+                                'model_type' => class_basename($collection),
+                                'model_id' => $result->id ?? null,
+                            ],
+                            'vector_metadata' => $result->vector_metadata ?? [
+                                'model_class' => $collection,
+                                'model_type' => class_basename($collection),
+                            ],
+                            // Include additional display fields
+                            'title' => $result->title ?? $result->name ?? $result->subject ?? null,
+                            'name' => $result->name ?? null,
+                            'body' => $result->body ?? null,
                         ];
                     }
                 } catch (\Exception $e) {
@@ -289,6 +303,15 @@ class FederatedSearchService
     protected function mergeResults(array $local, array $remote, int $limit, string $query): array
     {
         $allResults = [];
+        
+        // Debug: Log first local result
+        if (!empty($local['results'])) {
+            \Log::info('Local result before merge', [
+                'keys' => array_keys($local['results'][0]),
+                'has_metadata' => isset($local['results'][0]['metadata']),
+                'metadata' => $local['results'][0]['metadata'] ?? 'not set',
+            ]);
+        }
         
         // Add local results
         foreach ($local['results'] as $result) {

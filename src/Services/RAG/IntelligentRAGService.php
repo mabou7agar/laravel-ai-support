@@ -719,9 +719,42 @@ PROMPT;
                 
                 // Extract results from federated response
                 if (!empty($federatedResults['results'])) {
+                    // Always log first result structure to debug metadata issue
+                    if (count($federatedResults['results']) > 0) {
+                        \Log::info('Federated result structure', [
+                            'first_result_keys' => array_keys($federatedResults['results'][0]),
+                            'has_metadata' => isset($federatedResults['results'][0]['metadata']),
+                            'has_vector_metadata' => isset($federatedResults['results'][0]['vector_metadata']),
+                            'metadata_value' => $federatedResults['results'][0]['metadata'] ?? 'not set',
+                        ]);
+                    }
+                    
                     foreach ($federatedResults['results'] as $result) {
                         // Convert array result to object for consistency
-                        $allResults->push((object) $result);
+                        $obj = (object) $result;
+                        
+                        // Ensure metadata is preserved and accessible at the top level
+                        // This is critical for enrichResponseWithSources to extract model_class
+                        if (isset($result['metadata']) && is_array($result['metadata'])) {
+                            $obj->metadata = $result['metadata'];
+                            // Also set vector_metadata as an alias for consistency with local search
+                            $obj->vector_metadata = $result['metadata'];
+                        }
+                        
+                        // Handle both metadata and vector_metadata keys from different node implementations
+                        if (isset($result['vector_metadata']) && is_array($result['vector_metadata'])) {
+                            $obj->vector_metadata = $result['vector_metadata'];
+                            if (!isset($obj->metadata)) {
+                                $obj->metadata = $result['vector_metadata'];
+                            }
+                        }
+                        
+                        // Ensure vector_score is set for relevance calculation
+                        if (!isset($obj->vector_score) && isset($result['score'])) {
+                            $obj->vector_score = $result['score'];
+                        }
+                        
+                        $allResults->push($obj);
                     }
                 }
                 
@@ -976,11 +1009,39 @@ PROMPT;
     protected function enrichResponseWithSources(AIResponse $response, Collection $context): AIResponse
     {
         $sources = $context->map(function ($item, $index) {
+            // Determine model class - try multiple approaches
+            $modelClass = null;
+            
+            // Approach 1: If it's an actual model instance (not stdClass), use get_class
+            if (!($item instanceof \stdClass)) {
+                $modelClass = get_class($item);
+            }
+            
+            // Approach 2: Check vector_metadata property for model_class (from local search)
+            if (!$modelClass && isset($item->vector_metadata) && is_array($item->vector_metadata)) {
+                $modelClass = $item->vector_metadata['model_class'] ?? null;
+            }
+            
+            // Approach 3: Check metadata property for model_class (from federated search)
+            if (!$modelClass && isset($item->metadata) && is_array($item->metadata)) {
+                $modelClass = $item->metadata['model_class'] ?? null;
+            }
+            
+            // Log warning only if we still can't determine the model class
+            if (!$modelClass && config('ai-engine.debug')) {
+                Log::channel('ai-engine')->warning('Could not determine model class for source', [
+                    'index' => $index,
+                    'item_class' => get_class($item),
+                    'has_vector_metadata' => isset($item->vector_metadata),
+                    'has_metadata' => isset($item->metadata),
+                ]);
+            }
+            
             return [
                 'id' => $item->id ?? null,
                 'model_id' => $item->id ?? null,  // Original model ID
-                'model_class' => get_class($item),  // Full model class name
-                'model_type' => class_basename($item),  // Short model name
+                'model_class' => $modelClass ?? 'Unknown',  // Full model class name
+                'model_type' => $modelClass ? class_basename($modelClass) : 'Unknown',  // Short model name
                 'title' => $item->title ?? $item->name ?? "Source " . ($index + 1),
                 'relevance' => round(($item->vector_score ?? 0) * 100, 1),
                 'content_preview' => isset($item->content) 
