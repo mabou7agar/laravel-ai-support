@@ -163,16 +163,38 @@ class RAGCollectionDiscovery
             $files = File::allFiles($path);
 
             foreach ($files as $file) {
-                // Auto-detect the class name from the file content
-                $className = $this->extractClassNameFromFile($file);
+                try {
+                    // Auto-detect the class name from the file content
+                    $className = $this->extractClassNameFromFile($file);
 
-                if (!$className || !class_exists($className)) {
+                    if (!$className) {
+                        continue;
+                    }
+                    
+                    // Try to check if class exists - catch fatal errors
+                    try {
+                        if (!class_exists($className)) {
+                            continue;
+                        }
+                    } catch (\Error $e) {
+                        Log::debug('Cannot load class during RAG discovery', [
+                            'class' => $className,
+                            'file' => $file->getPathname(),
+                            'error' => $e->getMessage(),
+                        ]);
+                        continue;
+                    }
+
+                    // Check if model uses Vectorizable trait
+                    if ($this->isRAGgable($className)) {
+                        $collections[] = $className;
+                    }
+                } catch (\Exception | \Error $e) {
+                    Log::debug('Skipped file during RAG discovery', [
+                        'file' => $file->getPathname(),
+                        'error' => $e->getMessage(),
+                    ]);
                     continue;
-                }
-
-                // Check if model uses Vectorizable trait
-                if ($this->isRAGgable($className)) {
-                    $collections[] = $className;
                 }
             }
 
