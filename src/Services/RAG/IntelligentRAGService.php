@@ -719,10 +719,9 @@ PROMPT;
                 
                 // Extract results from federated response
                 if (!empty($federatedResults['results'])) {
-                    foreach ($federatedResults['results'] as $nodeResult) {
-                        if (!empty($nodeResult['results'])) {
-                            $allResults = $allResults->merge(collect($nodeResult['results']));
-                        }
+                    foreach ($federatedResults['results'] as $result) {
+                        // Convert array result to object for consistency
+                        $allResults->push((object) $result);
                     }
                 }
                 
