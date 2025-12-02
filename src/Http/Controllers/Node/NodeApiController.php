@@ -93,7 +93,7 @@ class NodeApiController extends Controller
                     $collection,
                     $validated['query'],
                     $validated['limit'] ?? 10,
-                    $validated['options']['threshold'] ?? 0.7
+                    $validated['options']['threshold'] ?? 0.3
                 );
                 
                 foreach ($searchResults as $result) {

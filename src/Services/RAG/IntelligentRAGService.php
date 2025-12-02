@@ -638,7 +638,7 @@ PROMPT;
     ): Collection {
         $allResults = collect();
         $maxResults = $options['max_context'] ?? $this->config['max_context_items'] ?? 5;
-        $threshold = $options['min_score'] ?? $this->config['min_relevance_score'] ?? 0.7;
+        $threshold = $options['min_score'] ?? $this->config['min_relevance_score'] ?? 0.3;
 
         // Use federated search if available and enabled
         $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
