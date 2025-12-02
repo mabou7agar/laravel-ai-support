@@ -147,6 +147,46 @@ class EntityEnum
     public const OPENROUTER_MIXTRAL_8X7B = 'mistralai/mixtral-8x7b-instruct';
     public const OPENROUTER_QWEN_2_5_72B = 'qwen/qwen-2.5-72b-instruct';
     public const OPENROUTER_DEEPSEEK_V3 = 'deepseek/deepseek-chat';
+
+    // Ollama Models (Local AI Models)
+    // Llama Models
+    public const OLLAMA_LLAMA2 = 'llama2';
+    public const OLLAMA_LLAMA2_7B = 'llama2:7b';
+    public const OLLAMA_LLAMA2_13B = 'llama2:13b';
+    public const OLLAMA_LLAMA2_70B = 'llama2:70b';
+    public const OLLAMA_LLAMA3 = 'llama3';
+    public const OLLAMA_LLAMA3_8B = 'llama3:8b';
+    public const OLLAMA_LLAMA3_70B = 'llama3:70b';
+    public const OLLAMA_LLAMA3_1 = 'llama3.1';
+    public const OLLAMA_LLAMA3_2 = 'llama3.2';
+    
+    // Mistral Models
+    public const OLLAMA_MISTRAL = 'mistral';
+    public const OLLAMA_MISTRAL_7B = 'mistral:7b';
+    public const OLLAMA_MIXTRAL = 'mixtral';
+    public const OLLAMA_MIXTRAL_8X7B = 'mixtral:8x7b';
+    
+    // Code Models
+    public const OLLAMA_CODELLAMA = 'codellama';
+    public const OLLAMA_CODELLAMA_7B = 'codellama:7b';
+    public const OLLAMA_CODELLAMA_13B = 'codellama:13b';
+    public const OLLAMA_CODELLAMA_34B = 'codellama:34b';
+    
+    // Other Popular Ollama Models
+    public const OLLAMA_PHI = 'phi';
+    public const OLLAMA_PHI_2 = 'phi:2.7b';
+    public const OLLAMA_GEMMA = 'gemma';
+    public const OLLAMA_GEMMA_2B = 'gemma:2b';
+    public const OLLAMA_GEMMA_7B = 'gemma:7b';
+    public const OLLAMA_NEURAL_CHAT = 'neural-chat';
+    public const OLLAMA_STARLING = 'starling-lm';
+    public const OLLAMA_ORCA_MINI = 'orca-mini';
+    public const OLLAMA_VICUNA = 'vicuna';
+    public const OLLAMA_NOUS_HERMES = 'nous-hermes';
+    public const OLLAMA_WIZARD_CODER = 'wizardcoder';
+    public const OLLAMA_DEEPSEEK_CODER = 'deepseek-coder';
+    public const OLLAMA_QWEN = 'qwen';
+    public const OLLAMA_SOLAR = 'solar';
     public const OPENROUTER_DEEPSEEK_R1 = 'deepseek/deepseek-r1';
 
     // Free Models (OpenRouter Free Tier)

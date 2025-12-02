@@ -11,6 +11,7 @@ use LaravelAIEngine\Drivers\StableDiffusion\StableDiffusionEngineDriver;
 use LaravelAIEngine\Drivers\ElevenLabs\ElevenLabsEngineDriver;
 use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
+use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
 
 /**
  * Engine enumeration class (PHP 8.0 compatible)
@@ -34,6 +35,7 @@ class EngineEnum
     public const UNSPLASH = 'unsplash';
     public const PEXELS = 'pexels';
     public const OPENROUTER = 'openrouter';
+    public const OLLAMA = 'ollama';
 
     public string $value;
 
@@ -71,6 +73,8 @@ class EngineEnum
                 return FalAIEngineDriver::class;
             case self::OPENROUTER:
                 return OpenRouterEngineDriver::class;
+            case self::OLLAMA:
+                return OllamaEngineDriver::class;
             default:
                 throw new \InvalidArgumentException("Unknown engine: {$this->value}");
         }
@@ -114,6 +118,8 @@ class EngineEnum
                 return 'Pexels';
             case self::OPENROUTER:
                 return 'OpenRouter';
+            case self::OLLAMA:
+                return 'Ollama (Local)';
             default:
                 return ucfirst(str_replace('_', ' ', $this->value));
         }
@@ -165,6 +171,8 @@ class EngineEnum
                 return ['images', 'search'];
             case self::OPENROUTER:
                 return ['text', 'chat', 'images', 'vision', 'embeddings'];
+            case self::OLLAMA:
+                return ['text', 'chat', 'embeddings'];
             default:
                 return [];
         }
@@ -263,6 +271,13 @@ class EngineEnum
                     EntityEnum::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL,
                     EntityEnum::OPENROUTER_LLAMA_3_3_70B,
                 ];
+            case self::OLLAMA:
+                return [
+                    EntityEnum::OLLAMA_LLAMA2,
+                    EntityEnum::OLLAMA_LLAMA3,
+                    EntityEnum::OLLAMA_MISTRAL,
+                    EntityEnum::OLLAMA_CODELLAMA,
+                ];
             default:
                 return [];
         }
@@ -290,6 +305,7 @@ class EngineEnum
             self::UNSPLASH,
             self::PEXELS,
             self::OPENROUTER,
+            self::OLLAMA,
         ];
     }
 

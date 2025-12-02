@@ -238,6 +238,53 @@ return [
                 'deepseek/deepseek-r1' => ['enabled' => true, 'credit_index' => 0.4],
             ],
         ],
+
+        'ollama' => [
+            'driver' => 'ollama',
+            'base_url' => env('OLLAMA_BASE_URL', 'http://localhost:11434'),
+            'timeout' => env('OLLAMA_TIMEOUT', 120), // Ollama can be slow on first run
+            'default_model' => env('OLLAMA_DEFAULT_MODEL', 'llama2'),
+            'models' => [
+                // Llama Models
+                'llama2' => ['enabled' => true, 'credit_index' => 0.0],
+                'llama2:7b' => ['enabled' => true, 'credit_index' => 0.0],
+                'llama2:13b' => ['enabled' => true, 'credit_index' => 0.0],
+                'llama2:70b' => ['enabled' => true, 'credit_index' => 0.0],
+                'llama3' => ['enabled' => true, 'credit_index' => 0.0],
+                'llama3:8b' => ['enabled' => true, 'credit_index' => 0.0],
+                'llama3:70b' => ['enabled' => true, 'credit_index' => 0.0],
+                'llama3.1' => ['enabled' => true, 'credit_index' => 0.0],
+                'llama3.2' => ['enabled' => true, 'credit_index' => 0.0],
+                
+                // Mistral Models
+                'mistral' => ['enabled' => true, 'credit_index' => 0.0],
+                'mistral:7b' => ['enabled' => true, 'credit_index' => 0.0],
+                'mixtral' => ['enabled' => true, 'credit_index' => 0.0],
+                'mixtral:8x7b' => ['enabled' => true, 'credit_index' => 0.0],
+                
+                // Code Models
+                'codellama' => ['enabled' => true, 'credit_index' => 0.0],
+                'codellama:7b' => ['enabled' => true, 'credit_index' => 0.0],
+                'codellama:13b' => ['enabled' => true, 'credit_index' => 0.0],
+                'codellama:34b' => ['enabled' => true, 'credit_index' => 0.0],
+                
+                // Other Popular Models
+                'phi' => ['enabled' => true, 'credit_index' => 0.0],
+                'phi:2.7b' => ['enabled' => true, 'credit_index' => 0.0],
+                'gemma' => ['enabled' => true, 'credit_index' => 0.0],
+                'gemma:2b' => ['enabled' => true, 'credit_index' => 0.0],
+                'gemma:7b' => ['enabled' => true, 'credit_index' => 0.0],
+                'neural-chat' => ['enabled' => true, 'credit_index' => 0.0],
+                'starling-lm' => ['enabled' => true, 'credit_index' => 0.0],
+                'orca-mini' => ['enabled' => true, 'credit_index' => 0.0],
+                'vicuna' => ['enabled' => true, 'credit_index' => 0.0],
+                'nous-hermes' => ['enabled' => true, 'credit_index' => 0.0],
+                'wizardcoder' => ['enabled' => true, 'credit_index' => 0.0],
+                'deepseek-coder' => ['enabled' => true, 'credit_index' => 0.0],
+                'qwen' => ['enabled' => true, 'credit_index' => 0.0],
+                'solar' => ['enabled' => true, 'credit_index' => 0.0],
+            ],
+        ],
     ],
 
     /*

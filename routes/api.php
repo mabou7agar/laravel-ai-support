@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\AIChatController;
 use LaravelAIEngine\Http\Controllers\Api\RagChatApiController;
+use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 
 /*
 |--------------------------------------------------------------------------
@@ -45,6 +46,15 @@ Route::prefix('api/v1/rag')
         // System endpoints
         Route::get('/health', [RagChatApiController::class, 'health'])
             ->name('health');
+    });
+
+// Module Discovery Routes (v1)
+Route::prefix('api/v1/modules')
+    ->middleware(['api'])
+    ->name('ai-engine.modules.')
+    ->group(function () {
+        Route::get('/discover', [ModuleController::class, 'discover'])
+            ->name('discover');
     });
 
 // Legacy AI Demo Routes
