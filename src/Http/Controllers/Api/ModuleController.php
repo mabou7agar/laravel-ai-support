@@ -21,18 +21,21 @@ class ModuleController extends Controller
     public function discover(Request $request)
     {
         try {
-            // Get all available RAG collections
-            $ragCollections = $this->ragDiscovery->discoverCollections();
+            // Get all available RAG collections (returns array of class names)
+            $ragCollectionClasses = $this->ragDiscovery->discover();
             
             // Format as modules
-            $modules = collect($ragCollections)->map(function ($collection) {
+            $modules = collect($ragCollectionClasses)->map(function ($className) {
+                // Extract model name from class
+                $modelName = class_basename($className);
+                
                 return [
-                    'id' => $collection['id'] ?? $collection['name'],
-                    'name' => $collection['name'],
+                    'id' => $className,
+                    'name' => $this->formatModelName($modelName),
                     'type' => 'rag_collection',
-                    'description' => $collection['description'] ?? "Search through {$collection['name']}",
-                    'enabled' => $collection['enabled'] ?? true,
-                    'icon' => $this->getCollectionIcon($collection['name']),
+                    'description' => "Search through {$this->formatModelName($modelName)}",
+                    'enabled' => true,
+                    'icon' => $this->getCollectionIcon($modelName),
                 ];
             })->values();
 
@@ -49,6 +52,16 @@ class ModuleController extends Controller
                 'message' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Format model name for display
+     */
+    protected function formatModelName(string $modelName): string
+    {
+        // Convert PascalCase to Title Case with spaces
+        // Example: EmailMessage -> Email Message
+        return ucwords(preg_replace('/(?<!^)[A-Z]/', ' $0', $modelName));
     }
 
     /**
