@@ -50,6 +50,11 @@ class FederatedSearchService
             // Search remote nodes in parallel
             $remoteResults = $this->searchRemoteNodes($nodes, $query, $limit, $options);
             
+            Log::channel('ai-engine')->debug('Remote search results', [
+                'remote_count' => count($remoteResults),
+                'remote_results' => $remoteResults,
+            ]);
+            
             // Merge and rank results
             $mergedResults = $this->mergeResults($localResults, $remoteResults, $limit, $query);
             
