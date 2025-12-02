@@ -4,9 +4,11 @@ namespace LaravelAIEngine\Console\Commands\Node;
 
 use Illuminate\Console\Command;
 use LaravelAIEngine\Models\AINode;
+use LaravelAIEngine\Console\Commands\Node\Concerns\RequiresMasterNode;
 
 class UpdateNodeCommand extends Command
 {
+    use RequiresMasterNode;
     protected $signature = 'ai-engine:node-update
                             {node : Node ID or slug}
                             {--url= : Update node URL}
@@ -25,6 +27,10 @@ class UpdateNodeCommand extends Command
     
     public function handle()
     {
+        if (!$this->ensureMasterNode()) {
+            return 1;
+        }
+        
         $nodeIdentifier = $this->argument('node');
         
         // Find node by ID or slug

@@ -3,15 +3,21 @@
 namespace LaravelAIEngine\Console\Commands\Node;
 
 use Illuminate\Console\Command;
+use LaravelAIEngine\Console\Commands\Node\Concerns\RequiresMasterNode;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
 
 class NodeStatsCommand extends Command
 {
+    use RequiresMasterNode;
     protected $signature = 'ai-engine:node-stats';
     protected $description = 'Show node statistics';
     
     public function handle(NodeRegistryService $registry)
     {
+        if (!$this->ensureMasterNode()) {
+            return 1;
+        }
+        
         $stats = $registry->getStatistics();
         
         $this->info('📊 Node Statistics');

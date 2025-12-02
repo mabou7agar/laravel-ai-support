@@ -6,9 +6,11 @@ use Illuminate\Console\Command;
 use LaravelAIEngine\Models\AINode;
 use LaravelAIEngine\Services\Node\NodeHttpClient;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\Console\Commands\Node\Concerns\RequiresMasterNode;
 
 class DiscoverCollectionsCommand extends Command
 {
+    use RequiresMasterNode;
     protected $signature = 'ai-engine:discover-collections 
                             {--node= : Specific node slug to discover from}
                             {--update : Update node collections in database}
@@ -18,6 +20,10 @@ class DiscoverCollectionsCommand extends Command
     
     public function handle()
     {
+        if (!$this->ensureMasterNode()) {
+            return 1;
+        }
+        
         $this->info('🔍 Discovering Collections from Nodes...');
         $this->newLine();
         
