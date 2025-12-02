@@ -30,8 +30,28 @@ class NodeApiController extends Controller
     public function collections()
     {
         try {
-            $discoveryService = app(\LaravelAIEngine\Services\RAG\CollectionDiscoveryService::class);
-            $collections = $discoveryService->discoverLocal();
+            $discoveryService = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
+            // Get local collections only (no federated, no cache for fresh results)
+            $classNames = $discoveryService->discover(useCache: false, includeFederated: false);
+            
+            // Format as detailed collection info
+            $collections = [];
+            foreach ($classNames as $className) {
+                try {
+                    $instance = new $className;
+                    $collections[] = [
+                        'class' => $className,
+                        'name' => class_basename($className),
+                        'table' => $instance->getTable(),
+                    ];
+                } catch (\Exception $e) {
+                    $collections[] = [
+                        'class' => $className,
+                        'name' => class_basename($className),
+                        'table' => 'unknown',
+                    ];
+                }
+            }
             
             return response()->json([
                 'collections' => $collections,

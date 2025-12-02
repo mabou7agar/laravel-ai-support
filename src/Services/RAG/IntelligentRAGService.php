@@ -1263,7 +1263,7 @@ PROMPT;
      */
     public function getAllAvailableCollections(): array
     {
-        $discoveryService = app(\LaravelAIEngine\Services\RAG\CollectionDiscoveryService::class);
-        return $discoveryService->getAllCollections();
+        $discoveryService = app(RAGCollectionDiscovery::class);
+        return $discoveryService->discover(useCache: true, includeFederated: true);
     }
 }
