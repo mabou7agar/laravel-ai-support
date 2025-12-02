@@ -640,9 +640,28 @@ PROMPT;
         $maxResults = $options['max_context'] ?? $this->config['max_context_items'] ?? 5;
         $threshold = $options['min_score'] ?? $this->config['min_relevance_score'] ?? 0.7;
 
-        // Filter out invalid collection names (must be valid class names)
+        // Filter out invalid collection names (must be valid class names with Vectorizable trait)
         $validCollections = array_filter($collections, function($collection) {
-            return class_exists($collection);
+            if (!class_exists($collection)) {
+                Log::channel('ai-engine')->debug('Collection class does not exist', [
+                    'collection' => $collection,
+                ]);
+                return false;
+            }
+            
+            // Check if class uses Vectorizable trait
+            $uses = class_uses_recursive($collection);
+            $hasVectorizable = in_array(\LaravelAIEngine\Traits\Vectorizable::class, $uses) ||
+                              in_array(\LaravelAIEngine\Traits\VectorizableWithMedia::class, $uses);
+            
+            if (!$hasVectorizable) {
+                Log::channel('ai-engine')->debug('Collection class does not use Vectorizable trait', [
+                    'collection' => $collection,
+                    'available_traits' => array_values($uses),
+                ]);
+            }
+            
+            return $hasVectorizable;
         });
 
         // If no valid collections, return empty (this is OK - RAG will work without vector search)
