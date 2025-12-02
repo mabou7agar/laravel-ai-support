@@ -253,6 +253,7 @@ class FederatedSearchService
                 Log::channel('ai-engine')->debug('Node search successful', [
                     'node' => $slug,
                     'count' => count($responseData['results'] ?? []),
+                    'response_data' => $responseData,
                 ]);
             } else {
                 $this->circuitBreaker->recordFailure($node);
@@ -260,6 +261,7 @@ class FederatedSearchService
                 Log::channel('ai-engine')->warning('Node search failed', [
                     'node' => $slug,
                     'status' => $response->status(),
+                    'body' => $response->body(),
                 ]);
                 
                 $results[] = [
@@ -267,7 +269,7 @@ class FederatedSearchService
                     'node_name' => $node->name,
                     'results' => [],
                     'count' => 0,
-                    'error' => 'Request failed',
+                    'error' => 'Request failed: HTTP ' . $response->status(),
                 ];
             }
         }
