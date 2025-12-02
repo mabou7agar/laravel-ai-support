@@ -8,6 +8,7 @@ use LaravelAIEngine\Http\Middleware\NodeRateLimitMiddleware;
 Route::prefix('api/ai-engine')->group(function () {
     // Public endpoints
     Route::get('health', [NodeApiController::class, 'health']);
+    Route::get('collections', [NodeApiController::class, 'collections']);
     Route::post('register', [NodeApiController::class, 'register']);
     
     // Protected endpoints (require authentication)

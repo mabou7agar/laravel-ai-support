@@ -938,16 +938,6 @@ PROMPT;
             return $model->getVectorContent();
         }
 
-        if (property_exists($model, 'vectorizable')) {
-            $content = [];
-            foreach ($model->vectorizable as $field) {
-                if (isset($model->$field)) {
-                    $content[] = $model->$field;
-                }
-            }
-            return implode(' ', $content);
-        }
-
         $fields = ['content', 'body', 'description', 'text', 'title', 'name'];
         $content = [];
 
@@ -1266,5 +1256,91 @@ PROMPT;
 
             return [];
         }
+    }
+    
+    /**
+     * Get all available collections from all nodes
+     */
+    public function getAllAvailableCollections(): array
+    {
+        $collections = [];
+        
+        // Get local collections
+        $localCollections = $this->discoverLocalCollections();
+        foreach ($localCollections as $collection) {
+            $collections[] = $collection['class'];
+        }
+        
+        // Get collections from remote nodes if federated search enabled
+        if ($this->nodeRegistry && config('ai-engine.nodes.enabled', false)) {
+            $nodes = $this->nodeRegistry->getActiveNodes();
+            
+            foreach ($nodes as $node) {
+                try {
+                    $response = \LaravelAIEngine\Services\Node\NodeHttpClient::make()
+                        ->get($node->url . '/api/ai-engine/collections');
+                    
+                    if ($response->successful()) {
+                        $data = $response->json();
+                        foreach ($data['collections'] ?? [] as $collection) {
+                            $collections[] = $collection['class'];
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // Skip failed nodes
+                    \Log::channel('ai-engine')->debug('Failed to get collections from node', [
+                        'node' => $node->slug,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+        
+        return array_unique($collections);
+    }
+    
+    /**
+     * Discover local Vectorizable collections
+     */
+    protected function discoverLocalCollections(): array
+    {
+        $collections = [];
+        $modelsPath = app_path('Models');
+        
+        if (!is_dir($modelsPath)) {
+            return $collections;
+        }
+        
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($modelsPath)
+        );
+        
+        foreach ($files as $file) {
+            if ($file->isDir() || $file->getExtension() !== 'php') {
+                continue;
+            }
+            
+            $relativePath = str_replace($modelsPath . '/', '', $file->getPathname());
+            $className = 'App\\Models\\' . str_replace(['/', '.php'], ['\\', ''], $relativePath);
+            
+            if (!class_exists($className)) {
+                continue;
+            }
+            
+            // Check if class uses Vectorizable trait
+            $uses = class_uses_recursive($className);
+            $hasVectorizable = in_array(\LaravelAIEngine\Traits\Vectorizable::class, $uses) ||
+                              in_array(\LaravelAIEngine\Traits\VectorizableWithMedia::class, $uses);
+            
+            if ($hasVectorizable) {
+                $collections[] = [
+                    'class' => $className,
+                    'name' => class_basename($className),
+                    'table' => (new $className)->getTable(),
+                ];
+            }
+        }
+        
+        return $collections;
     }
 }

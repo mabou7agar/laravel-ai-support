@@ -24,6 +24,74 @@ class NodeApiController extends Controller
     }
     
     /**
+     * Collections discovery endpoint
+     * Returns all available Vectorizable collections on this node
+     */
+    public function collections()
+    {
+        try {
+            $collections = $this->discoverCollections();
+            
+            return response()->json([
+                'collections' => $collections,
+                'count' => count($collections),
+                'timestamp' => now()->toIso8601String(),
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to discover collections',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    
+    /**
+     * Discover all Vectorizable models in the application
+     */
+    protected function discoverCollections(): array
+    {
+        $collections = [];
+        $modelsPath = app_path('Models');
+        
+        if (!is_dir($modelsPath)) {
+            return $collections;
+        }
+        
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($modelsPath)
+        );
+        
+        foreach ($files as $file) {
+            if ($file->isDir() || $file->getExtension() !== 'php') {
+                continue;
+            }
+            
+            $relativePath = str_replace($modelsPath . '/', '', $file->getPathname());
+            $className = 'App\\Models\\' . str_replace(['/', '.php'], ['\\', ''], $relativePath);
+            
+            if (!class_exists($className)) {
+                continue;
+            }
+            
+            // Check if class uses Vectorizable trait
+            $uses = class_uses_recursive($className);
+            $hasVectorizable = in_array(\LaravelAIEngine\Traits\Vectorizable::class, $uses) ||
+                              in_array(\LaravelAIEngine\Traits\VectorizableWithMedia::class, $uses);
+            
+            if ($hasVectorizable) {
+                $collections[] = [
+                    'class' => $className,
+                    'name' => class_basename($className),
+                    'table' => (new $className)->getTable(),
+                ];
+            }
+        }
+        
+        return $collections;
+    }
+    
+    /**
      * Search endpoint (for remote nodes to call)
      */
     public function search(Request $request, VectorSearchService $searchService)

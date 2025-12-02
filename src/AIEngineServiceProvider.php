@@ -388,6 +388,7 @@ class AIEngineServiceProvider extends ServiceProvider
                     Console\Commands\Node\TestNodeSystemCommand::class,
                     Console\Commands\Node\DemoNodesCommand::class,
                     Console\Commands\Node\NodeLogsCommand::class,
+                    Console\Commands\Node\DiscoverCollectionsCommand::class,
                 ]);
             }
         }
