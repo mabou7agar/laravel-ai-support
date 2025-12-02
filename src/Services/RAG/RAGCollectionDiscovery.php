@@ -164,6 +164,14 @@ class RAGCollectionDiscovery
 
             foreach ($files as $file) {
                 try {
+                    // Check if file contains Vectorizable trait BEFORE loading the class
+                    $fileContent = file_get_contents($file->getRealPath());
+                    if (!str_contains($fileContent, 'use LaravelAIEngine\Traits\Vectorizable') &&
+                        !str_contains($fileContent, 'use LaravelAIEngine\Traits\VectorizableWithMedia')) {
+                        // Skip files that don't use Vectorizable traits
+                        continue;
+                    }
+                    
                     // Auto-detect the class name from the file content
                     $className = $this->extractClassNameFromFile($file);
 
@@ -185,7 +193,7 @@ class RAGCollectionDiscovery
                         continue;
                     }
 
-                    // Check if model uses Vectorizable trait
+                    // Double-check if model uses Vectorizable trait (in case of false positive from file content check)
                     if ($this->isRAGgable($className)) {
                         $collections[] = $className;
                     }
