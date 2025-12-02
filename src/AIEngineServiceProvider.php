@@ -381,11 +381,13 @@ class AIEngineServiceProvider extends ServiceProvider
                 $this->commands([
                     Console\Commands\Node\MonitorNodesCommand::class,
                     Console\Commands\Node\RegisterNodeCommand::class,
+                    Console\Commands\Node\UpdateNodeCommand::class,
                     Console\Commands\Node\ListNodesCommand::class,
                     Console\Commands\Node\PingNodesCommand::class,
                     Console\Commands\Node\NodeStatsCommand::class,
                     Console\Commands\Node\TestNodeSystemCommand::class,
                     Console\Commands\Node\DemoNodesCommand::class,
+                    Console\Commands\Node\NodeLogsCommand::class,
                 ]);
             }
         }

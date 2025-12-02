@@ -166,7 +166,12 @@ class NodeRegistryService
             Log::channel('ai-engine')->error('Node ping exception', [
                 'node_id' => $node->id,
                 'node_slug' => $node->slug,
+                'node_name' => $node->name,
+                'node_url' => $node->url,
+                'health_url' => $node->getApiUrl('health'),
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
+                'trace' => config('app.debug') ? $e->getTraceAsString() : null,
             ]);
             
             return false;

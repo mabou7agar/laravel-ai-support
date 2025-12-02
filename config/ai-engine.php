@@ -802,5 +802,15 @@ return [
             'max_attempts' => env('AI_ENGINE_RATE_LIMIT_MAX', 60),
             'decay_minutes' => env('AI_ENGINE_RATE_LIMIT_DECAY', 1),
         ],
+        
+        // Logging & Debugging
+        'logging' => [
+            'enabled' => env('AI_ENGINE_NODE_LOGGING', true),
+            'channel' => env('AI_ENGINE_NODE_LOG_CHANNEL', 'ai-engine'),
+            'log_requests' => env('AI_ENGINE_LOG_REQUESTS', true),
+            'log_responses' => env('AI_ENGINE_LOG_RESPONSES', true),
+            'log_errors' => env('AI_ENGINE_LOG_ERRORS', true),
+            'log_circuit_breaker' => env('AI_ENGINE_LOG_CIRCUIT_BREAKER', true),
+        ],
     ],
 ];
