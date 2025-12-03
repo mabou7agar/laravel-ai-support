@@ -98,19 +98,6 @@ return [
     */
     'default' => env('AI_ENGINE_DEFAULT', 'openai'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Rate Limiting
-    |--------------------------------------------------------------------------
-    |
-    | Configure rate limiting for AI requests to prevent abuse and control costs.
-    |
-    */
-    'rate_limiting' => [
-        'enabled' => env('AI_ENGINE_RATE_LIMIT_ENABLED', true),
-        'max_requests_per_minute' => env('AI_ENGINE_RATE_LIMIT_PER_MINUTE', 60),
-        'max_requests_per_hour' => env('AI_ENGINE_RATE_LIMIT_PER_HOUR', 1000),
-    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -374,20 +361,6 @@ return [
         'custom_filters' => [],
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Analytics Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Configure usage analytics and monitoring.
-    |
-    */
-    'analytics' => [
-        'enabled' => env('AI_ANALYTICS_ENABLED', true),
-        'driver' => env('AI_ANALYTICS_DRIVER', 'database'),
-        'metrics' => ['usage', 'costs', 'latency', 'errors'],
-        'retention_days' => env('AI_ANALYTICS_RETENTION', 90),
-    ],
 
     /*
     |--------------------------------------------------------------------------
