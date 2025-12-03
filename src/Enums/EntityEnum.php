@@ -29,6 +29,9 @@ class EntityEnum
     public const GPT_4O = 'gpt-4o';
     public const GPT_4O_MINI = 'gpt-4o-mini';
     public const GPT_3_5_TURBO = 'gpt-3.5-turbo';
+    public const GPT_5 = 'gpt-5';
+    public const GPT_5_MINI = 'gpt-5-mini';
+    public const GPT_5_NANO = 'gpt-5-nano';
     public const DALL_E_3 = 'dall-e-3';
     public const DALL_E_2 = 'dall-e-2';
     public const WHISPER_1 = 'whisper-1';
@@ -215,6 +218,9 @@ class EntityEnum
             case self::GPT_4O:
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::WHISPER_1:
@@ -282,6 +288,11 @@ class EntityEnum
                 return GPT4OMiniDriver::class;
             case self::GPT_3_5_TURBO:
                 return GPT35TurboDriver::class;
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
+                // GPT-5 models use the same driver as GPT-4O for now
+                return GPT4ODriver::class;
             case self::DALL_E_3:
                 return DallE3Driver::class;
             case self::DALL_E_2:
@@ -400,6 +411,12 @@ class EntityEnum
                 return 'GPT-4o Mini';
             case self::GPT_3_5_TURBO:
                 return 'GPT-3.5 Turbo';
+            case self::GPT_5:
+                return 'GPT-5';
+            case self::GPT_5_MINI:
+                return 'GPT-5 Mini';
+            case self::GPT_5_NANO:
+                return 'GPT-5 Nano';
             case self::DALL_E_3:
                 return 'DALL-E 3';
             case self::DALL_E_2:
@@ -519,6 +536,12 @@ class EntityEnum
                 return 0.5;
             case self::GPT_3_5_TURBO:
                 return 0.3;
+            case self::GPT_5:
+                return 3.0;  // GPT-5 is more expensive than GPT-4o
+            case self::GPT_5_MINI:
+                return 0.7;  // Between GPT-4o-mini and GPT-4o
+            case self::GPT_5_NANO:
+                return 0.4;  // Similar to GPT-3.5-turbo
             case self::DALL_E_3:
                 return 5.0;
             case self::DALL_E_2:
@@ -691,6 +714,9 @@ class EntityEnum
             case self::GPT_4O:
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
             case self::CLAUDE_3_5_SONNET:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
@@ -749,6 +775,10 @@ class EntityEnum
                 return 128000;
             case self::GPT_3_5_TURBO:
                 return 16385;
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
+                return 200000;  // GPT-5 has larger context window
             case self::CLAUDE_3_5_SONNET:
                 return 200000;
             case self::CLAUDE_3_HAIKU:
@@ -775,11 +805,14 @@ class EntityEnum
     {
         switch ($this->value) {
             case self::GPT_4O:
+            case self::GPT_5:
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
                 return true;
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
                 return false;
             default:
                 throw new \InvalidArgumentException("Unknown model: {$this->value}");
@@ -795,6 +828,9 @@ class EntityEnum
             case self::GPT_4O:
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
             case self::DEEPSEEK_CHAT:
             case self::DEEPSEEK_REASONER:
                 return true;
