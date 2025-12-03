@@ -151,6 +151,16 @@ trait Vectorizable
             foreach ($this->vectorizable as $field) {
                 if (isset($this->$field)) {
                     $fieldValue = $this->$field;
+                    
+                    // Convert non-string values to strings
+                    if (is_array($fieldValue) || is_object($fieldValue)) {
+                        $fieldValue = json_encode($fieldValue);
+                    } elseif ($fieldValue === null) {
+                        continue; // Skip null values
+                    } elseif (!is_string($fieldValue)) {
+                        $fieldValue = (string) $fieldValue;
+                    }
+                    
                     $fieldSize = strlen($fieldValue);
 
                     // Chunk fields that are too large
@@ -176,6 +186,16 @@ trait Vectorizable
             foreach ($fillableTextFields as $field) {
                 if (isset($this->$field)) {
                     $fieldValue = $this->$field;
+                    
+                    // Convert non-string values to strings
+                    if (is_array($fieldValue) || is_object($fieldValue)) {
+                        $fieldValue = json_encode($fieldValue);
+                    } elseif ($fieldValue === null) {
+                        continue; // Skip null values
+                    } elseif (!is_string($fieldValue)) {
+                        $fieldValue = (string) $fieldValue;
+                    }
+                    
                     $fieldSize = strlen($fieldValue);
 
                     // Chunk fields that are too large
@@ -202,6 +222,16 @@ trait Vectorizable
                 foreach ($autoFields as $field) {
                     if (isset($this->$field)) {
                         $fieldValue = $this->$field;
+                        
+                        // Convert non-string values to strings
+                        if (is_array($fieldValue) || is_object($fieldValue)) {
+                            $fieldValue = json_encode($fieldValue);
+                        } elseif ($fieldValue === null) {
+                            continue; // Skip null values
+                        } elseif (!is_string($fieldValue)) {
+                            $fieldValue = (string) $fieldValue;
+                        }
+                        
                         $fieldSize = strlen($fieldValue);
 
                         // Chunk fields that are too large
