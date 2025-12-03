@@ -221,8 +221,10 @@ class RagChatApiController extends Controller
     {
         try {
             $limit = $request->input('limit', 50);
+            // SECURITY: Only use authenticated user ID
+            $userId = $request->user()?->id;
 
-            $messages = $this->conversationService->getConversationHistory($sessionId, $limit);
+            $messages = $this->conversationService->getConversationHistory($sessionId, $limit, $userId);
 
             return response()->json([
                 'success' => true,
@@ -410,6 +412,114 @@ class RagChatApiController extends Controller
                     'collections_count' => count($collections),
                     'timestamp' => now()->toIso8601String(),
                 ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get user conversations
+     * 
+     * @OA\Get(
+     *   path="/api/v1/rag/conversations",
+     *   summary="Get authenticated user's conversations",
+     *   tags={"Chat"},
+     *   security={{"bearerAuth": {}}},
+     *   @OA\Parameter(
+     *     name="limit",
+     *     in="query",
+     *     description="Number of conversations per page (default: 20)",
+     *     required=false,
+     *     @OA\Schema(type="integer")
+     *   ),
+     *   @OA\Parameter(
+     *     name="page",
+     *     in="query",
+     *     description="Page number (default: 1)",
+     *     required=false,
+     *     @OA\Schema(type="integer")
+     *   ),
+     *   @OA\Response(
+     *     response=200,
+     *     description="Success"
+     *   ),
+     *   @OA\Response(
+     *     response=401,
+     *     description="Authentication required"
+     *   )
+     * )
+     */
+    public function getUserConversations(Request $request): JsonResponse
+    {
+        try {
+            // SECURITY: Only use authenticated user ID, never accept user_id from request
+            $userId = $request->user()?->id;
+
+            if (!$userId) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Authentication required',
+                ], 401);
+            }
+
+            $limit = $request->input('limit', 20);
+            $page = $request->input('page', 1);
+            $offset = ($page - 1) * $limit;
+
+            // Get conversations
+            $conversations = \LaravelAIEngine\Models\Conversation::forUser($userId)
+                ->active()
+                ->orderBy('last_activity_at', 'desc')
+                ->skip($offset)
+                ->limit($limit)
+                ->get();
+
+            // Get total count for pagination
+            $total = \LaravelAIEngine\Models\Conversation::forUser($userId)
+                ->active()
+                ->count();
+
+            // Format conversations
+            $formattedConversations = $conversations->map(function ($conversation) {
+                // Get message count and last message
+                $messageCount = $conversation->messages()->count();
+                $lastMessage = $conversation->messages()
+                    ->latest('sent_at')
+                    ->first();
+
+                return [
+                    'conversation_id' => $conversation->conversation_id,
+                    'title' => $conversation->title,
+                    'message_count' => $messageCount,
+                    'last_message' => $lastMessage ? [
+                        'role' => $lastMessage->role,
+                        'content' => substr($lastMessage->content, 0, 100) . (strlen($lastMessage->content) > 100 ? '...' : ''),
+                        'sent_at' => $lastMessage->sent_at->toISOString(),
+                    ] : null,
+                    'last_activity_at' => $conversation->last_activity_at?->toISOString(),
+                    'created_at' => $conversation->created_at->toISOString(),
+                    'settings' => $conversation->settings,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'conversations' => $formattedConversations,
+                    'pagination' => [
+                        'total' => $total,
+                        'per_page' => $limit,
+                        'current_page' => $page,
+                        'last_page' => ceil($total / $limit),
+                        'from' => $offset + 1,
+                        'to' => min($offset + $limit, $total),
+                    ],
+                ],
             ]);
 
         } catch (\Exception $e) {

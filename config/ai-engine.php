@@ -14,6 +14,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | User Context Injection
+    |--------------------------------------------------------------------------
+    |
+    | Automatically inject authenticated user context into AI conversations.
+    | When enabled, the AI will know the user's ID, name, email, role, etc.
+    | This allows the AI to search for user-specific data in RAG searches.
+    |
+    */
+    'inject_user_context' => env('AI_ENGINE_INJECT_USER_CONTEXT', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Vectorization Settings
     |--------------------------------------------------------------------------
     |

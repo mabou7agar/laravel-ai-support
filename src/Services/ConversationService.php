@@ -92,12 +92,21 @@ class ConversationService
     /**
      * Get conversation history for display
      */
-    public function getConversationHistory(string $sessionId, int $limit = 50): array
+    public function getConversationHistory(string $sessionId, int $limit = 50, ?string $userId = null): array
     {
-        // Get conversation by title
-        $conversation = DB::table('ai_conversations')
-            ->where('title', $sessionId)
-            ->first();
+        // Get conversation by title AND user_id for proper isolation
+        $query = DB::table('ai_conversations')
+            ->where('title', $sessionId);
+        
+        // Add user_id filter if provided to ensure user isolation
+        if ($userId !== null) {
+            $query->where('user_id', $userId);
+        } else {
+            // If no user_id, only match conversations without user_id
+            $query->whereNull('user_id');
+        }
+        
+        $conversation = $query->first();
 
         if (!$conversation) {
             return [];

@@ -46,6 +46,10 @@ Route::prefix('api/v1/rag')
         // System endpoints
         Route::get('/health', [RagChatApiController::class, 'health'])
             ->name('health');
+        
+        // Conversation management
+        Route::get('/conversations', [RagChatApiController::class, 'getUserConversations'])
+            ->name('conversations.list');
     });
 
 // Module Discovery Routes (v1)
@@ -105,5 +109,9 @@ Route::prefix('ai-demo')
             // Get context summary
             Route::get('/context-summary/{sessionId}', [AIChatController::class, 'getContextSummary'])
                 ->name('chat.context-summary');
+            
+            // Get user conversations
+            Route::get('/conversations', [AIChatController::class, 'getUserConversations'])
+                ->name('chat.conversations');
         });
     });

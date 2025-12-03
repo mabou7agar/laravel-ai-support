@@ -172,10 +172,15 @@ class AIEngineServiceProvider extends ServiceProvider
             );
         });
 
+        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorAccessControl::class, function ($app) {
+            return new \LaravelAIEngine\Services\Vector\VectorAccessControl();
+        });
+
         $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorSearchService::class, function ($app) {
             return new \LaravelAIEngine\Services\Vector\VectorSearchService(
                 $app->make(\LaravelAIEngine\Services\Vector\VectorDriverManager::class),
-                $app->make(\LaravelAIEngine\Services\Vector\EmbeddingService::class)
+                $app->make(\LaravelAIEngine\Services\Vector\EmbeddingService::class),
+                $app->make(\LaravelAIEngine\Services\Vector\VectorAccessControl::class)
             );
         });
 

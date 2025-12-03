@@ -246,8 +246,8 @@ class AIChatController extends Controller
     public function getHistory(string $sessionId, Request $request): JsonResponse
     {
         try {
-            // Authorization: Check if user owns this session
-            $userId = $request->user()?->id ?? $request->input('user_id');
+            // SECURITY: Only use authenticated user ID for authorization
+            $userId = $request->user()?->id;
 
             if ($userId && !$this->canAccessSession($userId, $sessionId)) {
                 return response()->json([
@@ -258,8 +258,8 @@ class AIChatController extends Controller
 
             $limit = $request->input('limit', 50);
 
-            // Get conversation history using ConversationService
-            $messages = $this->conversationService->getConversationHistory($sessionId, $limit);
+            // Get conversation history using ConversationService with user isolation
+            $messages = $this->conversationService->getConversationHistory($sessionId, $limit, $userId);
 
             return response()->json([
                 'success' => true,
@@ -516,10 +516,20 @@ class AIChatController extends Controller
     /**
      * Get memory statistics for a session
      */
-    public function getMemoryStats(string $sessionId): JsonResponse
+    public function getMemoryStats(string $sessionId, Request $request): JsonResponse
     {
         try {
-            $messages = $this->conversationService->getConversationHistory($sessionId, 1000);
+            // SECURITY: Only use authenticated user ID for authorization
+            $userId = $request->user()?->id;
+
+            if ($userId && !$this->canAccessSession($userId, $sessionId)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthorized access to this conversation',
+                ], 403);
+            }
+
+            $messages = $this->conversationService->getConversationHistory($sessionId, 1000, $userId);
 
             $stats = [
                 'total_messages' => count($messages),
@@ -562,8 +572,8 @@ class AIChatController extends Controller
     public function getContextSummary(string $sessionId, Request $request): JsonResponse
     {
         try {
-            // Authorization: Check if user owns this session
-            $userId = $request->user()?->id ?? $request->input('user_id');
+            // SECURITY: Only use authenticated user ID for authorization
+            $userId = $request->user()?->id;
 
             if ($userId && !$this->canAccessSession($userId, $sessionId)) {
                 return response()->json([
@@ -572,7 +582,7 @@ class AIChatController extends Controller
                 ], 403);
             }
 
-            $messages = $this->conversationService->getConversationHistory($sessionId, 50);
+            $messages = $this->conversationService->getConversationHistory($sessionId, 50, $userId);
 
             if (empty($messages)) {
                 return response()->json([
@@ -597,6 +607,89 @@ class AIChatController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get user conversations
+     */
+    public function getUserConversations(Request $request): JsonResponse
+    {
+        try {
+            // SECURITY: Only use authenticated user ID, never accept user_id from request
+            $userId = $request->user()?->id;
+
+            if (!$userId) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Authentication required',
+                ], 401);
+            }
+
+            $limit = $request->input('limit', 20);
+            $page = $request->input('page', 1);
+            $offset = ($page - 1) * $limit;
+
+            // Get conversations using ConversationManager
+            $conversations = \LaravelAIEngine\Models\Conversation::forUser($userId)
+                ->active()
+                ->orderBy('last_activity_at', 'desc')
+                ->skip($offset)
+                ->limit($limit)
+                ->get();
+
+            // Get total count for pagination
+            $total = \LaravelAIEngine\Models\Conversation::forUser($userId)
+                ->active()
+                ->count();
+
+            // Format conversations
+            $formattedConversations = $conversations->map(function ($conversation) {
+                // Get message count and last message
+                $messageCount = $conversation->messages()->count();
+                $lastMessage = $conversation->messages()
+                    ->latest('sent_at')
+                    ->first();
+
+                return [
+                    'conversation_id' => $conversation->conversation_id,
+                    'title' => $conversation->title,
+                    'message_count' => $messageCount,
+                    'last_message' => $lastMessage ? [
+                        'role' => $lastMessage->role,
+                        'content' => substr($lastMessage->content, 0, 100) . (strlen($lastMessage->content) > 100 ? '...' : ''),
+                        'sent_at' => $lastMessage->sent_at->toISOString(),
+                    ] : null,
+                    'last_activity_at' => $conversation->last_activity_at?->toISOString(),
+                    'created_at' => $conversation->created_at->toISOString(),
+                    'settings' => $conversation->settings,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'conversations' => $formattedConversations,
+                    'pagination' => [
+                        'total' => $total,
+                        'per_page' => $limit,
+                        'current_page' => $page,
+                        'last_page' => ceil($total / $limit),
+                        'from' => $offset + 1,
+                        'to' => min($offset + $limit, $total),
+                    ],
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Get user conversations error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),

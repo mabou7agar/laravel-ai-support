@@ -57,12 +57,24 @@ class IntelligentRAGService
      * @param array $options Additional options (intelligent, engine, model, etc.)
      * @return AIResponse
      */
+    /**
+     * Process message with intelligent RAG and multi-tenant access control
+     * 
+     * @param string $message User's message
+     * @param string $sessionId Session identifier
+     * @param array $availableCollections Model classes to search
+     * @param array $conversationHistory Conversation history
+     * @param array $options Additional options
+     * @param string|int|null $userId User ID (fetched internally for access control)
+     * @return AIResponse
+     */
     public function processMessage(
         string $message,
         string $sessionId,
         array $availableCollections = [],
         array $conversationHistory = [],
-        array $options = []
+        array $options = [],
+        $userId = null
     ): AIResponse {
         try {
             // Load conversation history from session if not provided
@@ -98,20 +110,39 @@ class IntelligentRAGService
                 $context = $this->retrieveRelevantContext(
                     $searchQueries,
                     $analysis['collections'] ?? $availableCollections,
-                    $options
+                    $options,
+                    $userId
                 );
+                
+                if (config('ai-engine.debug')) {
+                    Log::channel('ai-engine')->debug('RAG search completed', [
+                        'user_id' => $userId,
+                        'search_queries' => $searchQueries,
+                        'collections' => $analysis['collections'] ?? $availableCollections,
+                        'results_found' => $context->count(),
+                    ]);
+                }
                 
                 // If no results found, try again with fallback threshold
                 $fallbackThreshold = $this->config['fallback_threshold'] ?? null;
                 if ($context->isEmpty() && !empty($availableCollections) && $fallbackThreshold !== null) {
                     Log::channel('ai-engine')->debug('No RAG results found, retrying with fallback threshold', [
+                        'user_id' => $userId,
                         'fallback_threshold' => $fallbackThreshold,
+                        'search_queries' => $searchQueries,
                     ]);
                     $context = $this->retrieveRelevantContext(
                         $searchQueries,
                         $analysis['collections'] ?? $availableCollections,
-                        array_merge($options, ['min_score' => $fallbackThreshold])
+                        array_merge($options, ['min_score' => $fallbackThreshold]),
+                        $userId  // ← FIX: Pass userId to fallback search too!
                     );
+                    
+                    if (config('ai-engine.debug')) {
+                        Log::channel('ai-engine')->debug('Fallback search completed', [
+                            'results_found' => $context->count(),
+                        ]);
+                    }
                 }
             }
 
@@ -123,8 +154,11 @@ class IntelligentRAGService
                 $options
             );
 
-            // Step 4: Generate response
-            $response = $this->generateResponse($enhancedPrompt, $options);
+            // Step 4: Generate response with conversation history and user context
+            $response = $this->generateResponse($enhancedPrompt, array_merge($options, [
+                'conversation_history' => $conversationHistory,
+                'user_id' => $userId
+            ]));
 
             // Step 5: Add metadata about sources and session
             $metadata = array_merge(
@@ -164,8 +198,24 @@ class IntelligentRAGService
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null,
             ]);
 
-            // Fallback to regular response without RAG
-            return $this->generateResponse($message, $options);
+            // Fallback to regular response without RAG but with conversation history
+            return $this->generateResponse($message, array_merge($options, [
+                'conversation_history' => $conversationHistory ?? [],
+                'user_id' => $userId
+            ]));
+        } catch (\Throwable $e) {
+            // Catch any remaining errors
+            Log::channel('ai-engine')->error('Intelligent RAG critical error', [
+                'session_id' => $sessionId,
+                'message' => $message,
+                'error' => $e->getMessage(),
+                'trace' => config('app.debug') ? $e->getTraceAsString() : null,
+            ]);
+            
+            return $this->generateResponse($message, array_merge($options, [
+                'conversation_history' => $conversationHistory ?? [],
+                'user_id' => $userId
+            ]));
         }
     }
 
@@ -628,13 +678,20 @@ PROMPT;
     }
 
     /**
-     * Retrieve relevant context from vector database
+     * Retrieve relevant context from vector database with access control
      * Uses federated search across nodes if available, otherwise local search
+     * 
+     * @param array $searchQueries Search queries
+     * @param array $collections Model classes to search
+     * @param array $options Additional options
+     * @param string|int|null $userId User ID (fetched internally)
+     * @return Collection
      */
     protected function retrieveRelevantContext(
         array $searchQueries,
         array $collections,
-        array $options = []
+        array $options = [],
+        $userId = null
     ): Collection {
         $allResults = collect();
         $maxResults = $options['max_context'] ?? $this->config['max_context_items'] ?? 5;
@@ -651,7 +708,7 @@ PROMPT;
                 'note' => 'Collections may exist on remote nodes even if not available locally',
             ]);
             
-            return $this->retrieveFromFederatedSearch($searchQueries, $collections, $maxResults, $threshold, $options);
+            return $this->retrieveFromFederatedSearch($searchQueries, $collections, $maxResults, $threshold, $options, $userId);
         }
         
         // For local search only, validate collections exist locally
@@ -689,18 +746,27 @@ PROMPT;
         }
 
         // Use local search
-        return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold);
+        return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
     }
     
     /**
      * Retrieve context using federated search across nodes
+     * 
+     * @param array $searchQueries Search queries
+     * @param array $collections Model classes
+     * @param int $maxResults Maximum results
+     * @param float $threshold Similarity threshold
+     * @param array $options Additional options
+     * @param string|int|null $userId User ID for access control
+     * @return Collection
      */
     protected function retrieveFromFederatedSearch(
         array $searchQueries,
         array $collections,
         int $maxResults,
         float $threshold,
-        array $options
+        array $options,
+        $userId = null
     ): Collection {
         $allResults = collect();
         
@@ -783,32 +849,65 @@ PROMPT;
     }
     
     /**
-     * Retrieve context using local vector search
+     * Retrieve context using local vector search with access control
+     * 
+     * @param array $searchQueries Search queries
+     * @param array $collections Model classes
+     * @param int $maxResults Maximum results
+     * @param float $threshold Similarity threshold
+     * @param string|int|null $userId User ID for access control
+     * @return Collection
      */
     protected function retrieveFromLocalSearch(
         array $searchQueries,
         array $collections,
         int $maxResults,
-        float $threshold
+        float $threshold,
+        $userId = null
     ): Collection {
         $allResults = collect();
+        
+        if (config('ai-engine.debug')) {
+            Log::channel('ai-engine')->debug('Starting local vector search', [
+                'user_id' => $userId,
+                'search_queries' => $searchQueries,
+                'collections' => $collections,
+                'max_results' => $maxResults,
+                'threshold' => $threshold,
+            ]);
+        }
         
         foreach ($searchQueries as $searchQuery) {
             foreach ($collections as $collection) {
                 try {
+                    // SECURITY: Pass userId for multi-tenant access control
                     $results = $this->vectorSearch->search(
                         $collection,
                         $searchQuery,
                         $maxResults,
-                        $threshold
+                        $threshold,
+                        [], // filters
+                        $userId // CRITICAL: User ID for access control (fetched internally)
                     );
+
+                    if (config('ai-engine.debug')) {
+                        Log::channel('ai-engine')->debug('Vector search results', [
+                            'collection' => $collection,
+                            'query' => $searchQuery,
+                            'user_id' => $userId,
+                            'results_count' => $results->count(),
+                            'threshold' => $threshold,
+                        ]);
+                    }
 
                     $allResults = $allResults->merge($results);
                 } catch (\Exception $e) {
                     Log::channel('ai-engine')->warning('Vector search failed', [
                         'collection' => $collection,
                         'query' => $searchQuery,
+                        'user_id' => $userId,
                         'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
                     ]);
                 }
             }
@@ -823,6 +922,9 @@ PROMPT;
 
     /**
      * Build enhanced prompt with context
+     * 
+     * Note: This method now returns just the current message with context.
+     * Conversation history is passed separately as structured messages to the AI request.
      */
     protected function buildEnhancedPrompt(
         string $message,
@@ -833,18 +935,6 @@ PROMPT;
         $systemPrompt = $options['system_prompt'] ?? $this->getDefaultSystemPrompt();
         
         $prompt = "{$systemPrompt}\n\n";
-        
-        // Add conversation history if available
-        if (!empty($conversationHistory)) {
-            $prompt .= "CONVERSATION HISTORY:\n";
-            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            foreach ($conversationHistory as $msg) {
-                $role = ucfirst($msg['role'] ?? 'user');
-                $content = $msg['content'] ?? '';
-                $prompt .= "{$role}: {$content}\n\n";
-            }
-            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-        }
         
         // Add context if available
         if ($context->isNotEmpty()) {
@@ -861,7 +951,19 @@ PROMPT;
             $prompt .= "Please answer based on the context above and our conversation history. ";
             $prompt .= "If the context doesn't fully answer the question, acknowledge what you can answer and what you cannot.";
         } else {
-            $prompt .= "Please answer based on our conversation history.";
+            // When no context found, be helpful instead of saying "no information"
+            $prompt .= "NOTE: I searched the knowledge base but didn't find specific matching content for this query.\n";
+            $prompt .= "However, I can still help you based on:\n";
+            $prompt .= "1. Your user context (I know who you are)\n";
+            $prompt .= "2. Our conversation history\n";
+            $prompt .= "3. General knowledge\n\n";
+            $prompt .= "Please provide a helpful response. If the user is asking about their data (emails, documents, etc.), ";
+            $prompt .= "explain that while I have access to search their data, I didn't find specific matches for this query. ";
+            $prompt .= "Suggest they try:\n";
+            $prompt .= "- Being more specific\n";
+            $prompt .= "- Using different keywords\n";
+            $prompt .= "- Checking if the data exists in the system\n";
+            $prompt .= "But DO NOT say 'I couldn't find any relevant information' - instead be constructive and helpful.";
         }
 
         return $prompt;
@@ -991,14 +1093,30 @@ PROMPT;
         $model = $options['model'] ?? 'gpt-4o';
         $temperature = $options['temperature'] ?? 0.7;
         $maxTokens = $options['max_tokens'] ?? 2000;
+        $userId = $options['user_id'] ?? null;
+
+        // Build system prompt with user context
+        $systemPrompt = $this->getSystemPromptWithUserContext($userId);
 
         $request = new AIRequest(
             prompt: $prompt,
             engine: new \LaravelAIEngine\Enums\EngineEnum($engine),
             model: new \LaravelAIEngine\Enums\EntityEnum($model),
             temperature: $temperature,
-            maxTokens: $maxTokens
+            maxTokens: $maxTokens,
+            systemPrompt: $systemPrompt
         );
+
+        // Attach conversation history if provided
+        if (!empty($options['conversation_history'])) {
+            $request = $request->withMessages($options['conversation_history']);
+            
+            if (config('ai-engine.debug')) {
+                Log::channel('ai-engine')->debug('Conversation history attached to RAG request', [
+                    'message_count' => count($options['conversation_history']),
+                ]);
+            }
+        }
 
         return $this->aiEngine->processRequest($request);
     }
@@ -1323,5 +1441,144 @@ PROMPT;
     {
         $discoveryService = app(RAGCollectionDiscovery::class);
         return $discoveryService->discover(useCache: true, includeFederated: true);
+    }
+
+    /**
+     * Get system prompt with user context
+     * 
+     * @param string|int|null $userId
+     * @return string|null
+     */
+    protected function getSystemPromptWithUserContext($userId): ?string
+    {
+        if (!$userId || !config('ai-engine.inject_user_context', true)) {
+            return null;
+        }
+
+        try {
+            // Get user model class from config
+            $userModel = config('auth.providers.users.model', 'App\\Models\\User');
+            
+            if (!class_exists($userModel)) {
+                return null;
+            }
+            
+            // Fetch user with caching (5 minutes)
+            $user = \Illuminate\Support\Facades\Cache::remember(
+                "ai_user_context_{$userId}",
+                300,
+                fn() => $userModel::find($userId)
+            );
+            
+            if (!$user) {
+                return null;
+            }
+            
+            // Build user context
+            $context = "USER CONTEXT:\n";
+            
+            // User ID (always include for data searching)
+            $context .= "- User ID: {$user->id}\n";
+            
+            // Name
+            if (isset($user->name)) {
+                $context .= "- User's name: {$user->name}\n";
+            }
+            
+            // Email (always include for data searching)
+            if (isset($user->email)) {
+                $context .= "- Email: {$user->email}\n";
+            }
+            
+            // Phone number
+            if (isset($user->phone)) {
+                $context .= "- Phone: {$user->phone}\n";
+            } elseif (isset($user->phone_number)) {
+                $context .= "- Phone: {$user->phone_number}\n";
+            } elseif (isset($user->mobile)) {
+                $context .= "- Phone: {$user->mobile}\n";
+            }
+            
+            // Additional useful fields
+            if (isset($user->username)) {
+                $context .= "- Username: {$user->username}\n";
+            }
+            
+            if (isset($user->first_name) && isset($user->last_name)) {
+                $context .= "- Full Name: {$user->first_name} {$user->last_name}\n";
+            }
+            
+            if (isset($user->title) || isset($user->job_title)) {
+                $title = $user->title ?? $user->job_title;
+                $context .= "- Job Title: {$title}\n";
+            }
+            
+            if (isset($user->department)) {
+                $context .= "- Department: {$user->department}\n";
+            }
+            
+            if (isset($user->location) || isset($user->city)) {
+                $location = $user->location ?? $user->city;
+                $context .= "- Location: {$location}\n";
+            }
+            
+            if (isset($user->timezone)) {
+                $context .= "- Timezone: {$user->timezone}\n";
+            }
+            
+            if (isset($user->language) || isset($user->locale)) {
+                $language = $user->language ?? $user->locale;
+                $context .= "- Language: {$language}\n";
+            }
+            
+            // Role/Admin status
+            if (isset($user->is_admin) && $user->is_admin) {
+                $context .= "- Role: Administrator (has full system access)\n";
+            } elseif (method_exists($user, 'getRoleNames')) {
+                // Spatie Laravel Permission
+                $roles = $user->getRoleNames();
+                if ($roles->isNotEmpty()) {
+                    $context .= "- Role: " . $roles->join(', ') . "\n";
+                }
+            } elseif (method_exists($user, 'roles')) {
+                // Generic roles relationship
+                $roles = $user->roles()->pluck('name');
+                if ($roles->isNotEmpty()) {
+                    $context .= "- Role: " . $roles->join(', ') . "\n";
+                }
+            }
+            
+            // Tenant/Organization
+            if (isset($user->tenant_id)) {
+                $context .= "- Organization ID: {$user->tenant_id}\n";
+            } elseif (isset($user->organization_id)) {
+                $context .= "- Organization ID: {$user->organization_id}\n";
+            } elseif (isset($user->company_id)) {
+                $context .= "- Company ID: {$user->company_id}\n";
+            }
+            
+            // Custom user context (if method exists)
+            if (method_exists($user, 'getAIContext')) {
+                $customContext = $user->getAIContext();
+                if ($customContext) {
+                    $context .= $customContext . "\n";
+                }
+            }
+            
+            $context .= "\nIMPORTANT INSTRUCTIONS:\n";
+            $context .= "- Always address the user by their name when appropriate\n";
+            $context .= "- When searching for user's data, use their User ID ({$user->id}) or Email ({$user->email})\n";
+            $context .= "- Personalize responses based on their role and context\n";
+            $context .= "- When user asks 'my emails', 'my documents', etc., search for data belonging to User ID: {$user->id}";
+            
+            return $context;
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to get user context for RAG', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 }

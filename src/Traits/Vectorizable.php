@@ -897,11 +897,23 @@ PROMPT;
     {
         $metadata = [];
 
-        // Add common metadata
+        // SECURITY: Add user ownership metadata
         if (isset($this->user_id)) {
-            $metadata['user_id'] = $this->user_id;
+            $metadata['user_id'] = (string) $this->user_id;
         }
 
+        // MULTI-TENANT: Add tenant/organization metadata
+        if (isset($this->tenant_id)) {
+            $metadata['tenant_id'] = (string) $this->tenant_id;
+        } elseif (isset($this->organization_id)) {
+            $metadata['tenant_id'] = (string) $this->organization_id;
+        } elseif (isset($this->company_id)) {
+            $metadata['tenant_id'] = (string) $this->company_id;
+        } elseif (isset($this->team_id)) {
+            $metadata['tenant_id'] = (string) $this->team_id;
+        }
+
+        // Add common metadata
         if (isset($this->status)) {
             $metadata['status'] = $this->status;
         }
@@ -912,6 +924,15 @@ PROMPT;
 
         if (isset($this->type)) {
             $metadata['type'] = $this->type;
+        }
+
+        // Add visibility/access control metadata
+        if (isset($this->is_public)) {
+            $metadata['is_public'] = $this->is_public;
+        }
+
+        if (isset($this->visibility)) {
+            $metadata['visibility'] = $this->visibility;
         }
 
         return $metadata;

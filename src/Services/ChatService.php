@@ -33,6 +33,17 @@ class ChatService
 
     /**
      * Process a chat message and generate AI response
+     * 
+     * @param string $message The user's message
+     * @param string $sessionId Session identifier
+     * @param string $engine AI engine to use
+     * @param string $model AI model to use
+     * @param bool $useMemory Enable conversation memory
+     * @param bool $useActions Enable interactive actions
+     * @param bool $useIntelligentRAG Enable RAG with access control
+     * @param array $ragCollections RAG collections to search
+     * @param string|int|null $userId User ID (fetched internally for access control)
+     * @return AIResponse
      */
     public function processMessage(
         string $message,
@@ -43,19 +54,19 @@ class ChatService
         bool $useActions = true,
         bool $useIntelligentRAG = true,
         array $ragCollections = [],
-        ?string $userId = null
+        $userId = null
     ): AIResponse {
         // Preprocess message to detect numbered selections
         $processedMessage = $this->preprocessMessage($message, $sessionId, $useMemory);
         
-        // Create AI request
+        // Create AI request with user context
         $aiRequest = Engine::createRequest(
             prompt: $processedMessage,
             engine: $engine,
             model: $model,
             maxTokens: 1000,
             temperature: 0.7,
-            systemPrompt: $this->getSystemPrompt($useActions)
+            systemPrompt: $this->getSystemPrompt($useActions, $userId)
         );
 
         // Load conversation history if memory is enabled
@@ -114,6 +125,7 @@ class ChatService
                 
                 $conversationHistory = !empty($messages) ? $messages : [];
                 
+                // SECURITY: Pass userId for multi-tenant access control
                 $response = $this->intelligentRAG->processMessage(
                     $message,
                     $sessionId,
@@ -123,7 +135,8 @@ class ChatService
                         'engine' => $engine,
                         'model' => $model,
                         'max_tokens' => 2000,
-                    ]
+                    ],
+                    $userId // CRITICAL: User ID for access control (fetched internally)
                 );
                 
                 if (config('ai-engine.debug')) {
@@ -177,9 +190,17 @@ class ChatService
     /**
      * Get system prompt based on configuration
      */
-    protected function getSystemPrompt(bool $useActions): string
+    protected function getSystemPrompt(bool $useActions, $userId = null): string
     {
         $prompt = "You are a helpful AI assistant. Provide clear, accurate, and helpful responses to user questions.";
+        
+        // Add user context if authenticated
+        if ($userId && config('ai-engine.inject_user_context', true)) {
+            $userContext = $this->getUserContext($userId);
+            if ($userContext) {
+                $prompt .= "\n\n" . $userContext;
+            }
+        }
         
         // Add numbered selection handling
         $prompt .= "\n\nIMPORTANT: When you provide numbered lists or options:";
@@ -259,5 +280,140 @@ class ChatService
         }
         
         return $message;
+    }
+
+    /**
+     * Get user context for AI system prompt
+     * 
+     * @param string|int $userId
+     * @return string|null
+     */
+    protected function getUserContext($userId): ?string
+    {
+        try {
+            // Get user model class from config
+            $userModel = config('auth.providers.users.model', 'App\\Models\\User');
+            
+            if (!class_exists($userModel)) {
+                return null;
+            }
+            
+            // Fetch user with caching (5 minutes)
+            $user = \Illuminate\Support\Facades\Cache::remember(
+                "ai_user_context_{$userId}",
+                300,
+                fn() => $userModel::find($userId)
+            );
+            
+            if (!$user) {
+                return null;
+            }
+            
+            // Build user context
+            $context = "USER CONTEXT:\n";
+            
+            // User ID (always include for data searching)
+            $context .= "- User ID: {$user->id}\n";
+            
+            // Name
+            if (isset($user->name)) {
+                $context .= "- User's name: {$user->name}\n";
+            }
+            
+            // Email (always include for data searching)
+            if (isset($user->email)) {
+                $context .= "- Email: {$user->email}\n";
+            }
+            
+            // Phone number
+            if (isset($user->phone)) {
+                $context .= "- Phone: {$user->phone}\n";
+            } elseif (isset($user->phone_number)) {
+                $context .= "- Phone: {$user->phone_number}\n";
+            } elseif (isset($user->mobile)) {
+                $context .= "- Phone: {$user->mobile}\n";
+            }
+            
+            // Additional useful fields
+            if (isset($user->username)) {
+                $context .= "- Username: {$user->username}\n";
+            }
+            
+            if (isset($user->first_name) && isset($user->last_name)) {
+                $context .= "- Full Name: {$user->first_name} {$user->last_name}\n";
+            }
+            
+            if (isset($user->title) || isset($user->job_title)) {
+                $title = $user->title ?? $user->job_title;
+                $context .= "- Job Title: {$title}\n";
+            }
+            
+            if (isset($user->department)) {
+                $context .= "- Department: {$user->department}\n";
+            }
+            
+            if (isset($user->location) || isset($user->city)) {
+                $location = $user->location ?? $user->city;
+                $context .= "- Location: {$location}\n";
+            }
+            
+            if (isset($user->timezone)) {
+                $context .= "- Timezone: {$user->timezone}\n";
+            }
+            
+            if (isset($user->language) || isset($user->locale)) {
+                $language = $user->language ?? $user->locale;
+                $context .= "- Language: {$language}\n";
+            }
+            
+            // Role/Admin status
+            if (isset($user->is_admin) && $user->is_admin) {
+                $context .= "- Role: Administrator (has full system access)\n";
+            } elseif (method_exists($user, 'getRoleNames')) {
+                // Spatie Laravel Permission
+                $roles = $user->getRoleNames();
+                if ($roles->isNotEmpty()) {
+                    $context .= "- Role: " . $roles->join(', ') . "\n";
+                }
+            } elseif (method_exists($user, 'roles')) {
+                // Generic roles relationship
+                $roles = $user->roles()->pluck('name');
+                if ($roles->isNotEmpty()) {
+                    $context .= "- Role: " . $roles->join(', ') . "\n";
+                }
+            }
+            
+            // Tenant/Organization
+            if (isset($user->tenant_id)) {
+                $context .= "- Organization ID: {$user->tenant_id}\n";
+            } elseif (isset($user->organization_id)) {
+                $context .= "- Organization ID: {$user->organization_id}\n";
+            } elseif (isset($user->company_id)) {
+                $context .= "- Company ID: {$user->company_id}\n";
+            }
+            
+            // Custom user context (if method exists)
+            if (method_exists($user, 'getAIContext')) {
+                $customContext = $user->getAIContext();
+                if ($customContext) {
+                    $context .= $customContext . "\n";
+                }
+            }
+            
+            $context .= "\nIMPORTANT INSTRUCTIONS:\n";
+            $context .= "- Always address the user by their name when appropriate\n";
+            $context .= "- When searching for user's data, use their User ID ({$user->id}) or Email ({$user->email})\n";
+            $context .= "- Personalize responses based on their role and context\n";
+            $context .= "- When user asks 'my emails', 'my documents', etc., search for data belonging to User ID: {$user->id}";
+            
+            return $context;
+            
+        } catch (\Exception $e) {
+            Log::warning('Failed to get user context for AI', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 }

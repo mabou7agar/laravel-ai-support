@@ -12,17 +12,28 @@ class VectorSearchService
 {
     protected VectorDriverManager $driverManager;
     protected EmbeddingService $embeddingService;
+    protected VectorAccessControl $accessControl;
 
     public function __construct(
         VectorDriverManager $driverManager,
-        EmbeddingService $embeddingService
+        EmbeddingService $embeddingService,
+        VectorAccessControl $accessControl
     ) {
         $this->driverManager = $driverManager;
         $this->embeddingService = $embeddingService;
+        $this->accessControl = $accessControl;
     }
 
     /**
-     * Search for similar vectors
+     * Search for similar vectors with multi-tenant access control
+     * 
+     * @param string $modelClass Model class to search
+     * @param string $query Search query
+     * @param int $limit Maximum results
+     * @param float $threshold Similarity threshold
+     * @param array $filters Additional filters
+     * @param string|int|null $userId User ID (fetched internally for access control)
+     * @return Collection
      */
     public function search(
         string $modelClass,
@@ -30,7 +41,7 @@ class VectorSearchService
         int $limit = 20,
         float $threshold = 0.3,
         array $filters = [],
-        ?string $userId = null
+        $userId = null
     ): Collection {
         try {
             // Generate query embedding
@@ -38,6 +49,21 @@ class VectorSearchService
 
             // Get collection name
             $collectionName = $this->getCollectionName($modelClass);
+
+            // SECURITY: Build access control filters (fetches user internally)
+            $filters = $this->accessControl->buildSearchFilters($userId, $filters);
+            
+            // Get access level for logging
+            $user = $this->accessControl->getUserById($userId);
+            $accessLevel = $this->accessControl->getAccessLevel($user);
+            
+            Log::debug('Vector search with access control', [
+                'user_id' => $userId,
+                'access_level' => $accessLevel,
+                'model' => $modelClass,
+                'query' => substr($query, 0, 100),
+                'filters' => $filters,
+            ]);
 
             // Search in vector database
             $driver = $this->driverManager->driver();
