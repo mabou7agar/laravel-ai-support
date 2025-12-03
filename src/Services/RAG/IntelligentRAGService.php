@@ -321,69 +321,45 @@ class IntelligentRAGService
         }
 
         $systemPrompt = <<<PROMPT
-You are a query analyzer for a knowledge base system. Your job is to determine if we should search our LOCAL knowledge base.
+Query analyzer for knowledge base. Determine if we should search.
 {$collectionsInfo}
-CRITICAL RULES:
-1. DEFAULT TO SEARCHING - When in doubt, search! (needs_context: true)
-2. ALWAYS search if the query could be asking about what we know or what we can help with
-3. ALWAYS search if asking about capabilities, assistance, or what information we have
-4. Only skip searching for pure greetings ("hi", "hello") or simple math
+RULES:
+1. DEFAULT: needs_context: true (always search unless pure greeting)
+2. Skip search ONLY for: "hi", "hello", simple math
+3. Use EXACT query as search term for short specific queries
 
-Analyze the query and respond with JSON:
-{
-    "needs_context": true,
-    "reasoning": "query asks about capabilities - should search to show what topics we have",
-    "search_queries": ["Laravel", "tutorial", "guide"],
-    "collections": ["App\\\\Models\\\\Post"],
-    "query_type": "informational"
-}
+RESPOND WITH JSON:
+{"needs_context": true, "reasoning": "brief reason", "search_queries": ["term1", "term2"], "collections": ["App\\\\Models\\\\Post"], "query_type": "informational"}
 
-IMPORTANT: 
-- Use FULL class names with DOUBLE backslashes (e.g., "App\\\\Models\\\\Post")
-- DEFAULT to needs_context: true unless it's clearly just a greeting
-- Questions about "what can you help with", "what do you know", "assist me" → ALWAYS search with BROAD queries
-- When asked about capabilities/help, use EMPTY search_queries: [] to return ALL content
-- For specific technical questions, use specific search terms
-- For ANY question that might relate to our content, ALWAYS search
-
-Examples that NEED context (needs_context: true):
-- "what can you assist me at" → Search (asking about capabilities!)
-- "what do you know" → Search (asking about our knowledge!)
-- "help me" → Search (asking for assistance!)
-- "what information do you have" → Search (asking about content!)
-- "Tell me about Laravel routing" → Search Post
-- "How does Eloquent work?" → Search Post
-- "What is middleware?" → Search Post  
-- "Explain Laravel queues" → Search Post
-- "What are the latest posts?" → Search Post
-
-Examples that DON'T need context (needs_context: false):
-- "Hello" → ONLY greeting, nothing else
-- "Hi" → ONLY greeting, nothing else  
-- "What's 2+2?" → Simple math
-
-IMPORTANT: If a greeting is followed by a question, it's NOT just a greeting!
-- "Hi, what can you help with?" → needs_context: true (it's a question!)
-- "Hello, tell me about X" → needs_context: true (it's a request!)
-- "Hey, what do you know?" → needs_context: true (asking about knowledge!)
+SEARCH QUERY RULES:
+- Short specific queries (e.g., "Password Reset Request") → Use EXACT query: ["Password Reset Request"]
+- Technical questions → Extract key terms: ["Laravel routing"]
+- Capabilities questions → Use empty: []
+- Follow-up questions → Extract topic from conversation history
 PROMPT;
 
         $conversationContext = '';
         if (!empty($conversationHistory)) {
+            // Only include brief previews to save tokens
             $recentMessages = array_slice($conversationHistory, -3);
-            $conversationContext = "\n\nRecent conversation:\n" .
-                implode("\n", array_map(fn($m) => "{$m['role']}: {$m['content']}", $recentMessages));
+            $conversationContext = "\n\nRecent topics:\n";
+            foreach ($recentMessages as $m) {
+                $preview = mb_substr($m['content'], 0, 120);
+                $conversationContext .= "- {$m['role']}: {$preview}" . (strlen($m['content']) > 120 ? '...' : '') . "\n";
+            }
         }
 
         $analysisPrompt = <<<PROMPT
 {$conversationContext}
 
-Current query: "{$query}"
+Query: "{$query}"
 
-REMEMBER: When in doubt, ALWAYS set needs_context: true and search our knowledge base!
-Only set needs_context: false if this is CLEARLY just "hi", "hello", or simple math.
+INSTRUCTIONS:
+- Follow-up queries ("tell me more", "reply to this", "that email") → Extract topic from conversation history
+- Short specific queries → Use EXACT query as search term
+- Default: needs_context: true
 
-Analyze this query and provide your assessment in JSON format.
+Respond with JSON only.
 PROMPT;
 
         try {
@@ -395,8 +371,8 @@ PROMPT;
                 engine:       new \LaravelAIEngine\Enums\EngineEnum(config('ai-engine.default')),
                 model:        new \LaravelAIEngine\Enums\EntityEnum($analysisModel),
                 systemPrompt: $systemPrompt,
-                temperature:  0.3,
-                maxTokens:    300
+                maxTokens:    300,
+                temperature:  0.3
             );
 
             $aiResponse = $this->aiEngine->processRequest($request);
@@ -948,21 +924,27 @@ PROMPT;
         $prompt .= "CURRENT QUESTION: {$message}\n\n";
 
         if ($context->isNotEmpty()) {
-            $prompt .= "Please answer based on the context above and our conversation history. ";
-            $prompt .= "If the context doesn't fully answer the question, acknowledge what you can answer and what you cannot.";
+            // Context found - answer directly with email-aware instructions
+            $prompt .= "INSTRUCTIONS:\n";
+            $prompt .= "- Answer directly and naturally using the context above\n";
+            $prompt .= "- Cite sources: [Source 0], [Source 1]\n";
+            $prompt .= "- Don't say 'based on the context' - just answer naturally\n";
+            $prompt .= "- For email replies: use actual names from context (from_name, subject), NEVER use placeholders like [Recipient's Name]\n";
+            $prompt .= "- User's name is Mohamed - use for signatures\n";
         } else {
-            // When no context found, be helpful instead of saying "no information"
-            $prompt .= "NOTE: I searched the knowledge base but didn't find specific matching content for this query.\n";
-            $prompt .= "However, I can still help you based on:\n";
-            $prompt .= "1. Your user context (I know who you are)\n";
-            $prompt .= "2. Our conversation history\n";
-            $prompt .= "Please provide a helpful response. If the user is asking about their data (emails, documents, etc.), ";
-            $prompt .= "explain that while I have access to search their data, I didn't find specific matches for this query. ";
-            $prompt .= "Suggest they try:\n";
-            $prompt .= "- Being more specific\n";
-            $prompt .= "- Using different keywords\n";
-            $prompt .= "- Checking if the data exists in the system\n";
-            $prompt .= "But DO NOT say 'I couldn't find any relevant information' - instead be constructive and helpful.";
+            // No KB context - use conversation history if applicable
+            $prompt .= "NO KNOWLEDGE BASE RESULTS FOUND.\n\n";
+            $prompt .= "CHECK CONVERSATION HISTORY FIRST:\n";
+            $prompt .= "- If this is a follow-up (e.g., 'reply to this mail', 'tell me more'), answer using conversation history\n";
+            $prompt .= "- If asking about something we just discussed, answer from that context\n\n";
+            $prompt .= "ONLY say 'I don't have information' if:\n";
+            $prompt .= "- It's a completely NEW topic not in our conversation\n";
+            $prompt .= "- It requires general knowledge (e.g., 'what can I eat')\n\n";
+            $prompt .= "FOR EMAIL REPLIES - Extract from conversation:\n";
+            $prompt .= "- Sender name (from_name) → Use for greeting (e.g., 'Hi John,' not 'Hi [Recipient's Name],')\n";
+            $prompt .= "- Email subject → Use for 'Re: [subject]'\n";
+            $prompt .= "- User's name is Mohamed → Use for signature\n";
+            $prompt .= "- NEVER use placeholders - always use actual information from context\n";
         }
 
         return $prompt;
@@ -1376,23 +1358,27 @@ You are an intelligent knowledge base assistant with access to a curated knowled
 - Help users find and understand information from the knowledge base
 - Be helpful, thorough, and conversational when context is available
 - Be honest when information is not in the knowledge base
+- When drafting emails or replies, automatically fill in placeholders with real information from context
 
 📚 KNOWLEDGE BASE RULES:
 
 ✅ WHEN CONTEXT IS PROVIDED (you'll see "RELEVANT CONTEXT FROM KNOWLEDGE BASE" section):
-- Answer confidently and naturally using the provided context
+- Answer directly and naturally - just provide the information
 - Be conversational and helpful - explain, elaborate, and provide examples from the context
 - ALWAYS cite sources using [Source 0], [Source 1], etc.
-- If context is partial, explain what you know and what's missing
+- DON'T say "based on the context" or "according to the knowledge base" - just answer naturally
+- DON'T explain what's missing - just provide what you have
 - Synthesize information from multiple sources when available
 - Be thorough and informative with the available information
 
 ❌ WHEN NO CONTEXT IS PROVIDED (no "RELEVANT CONTEXT" section):
-- Politely inform: "I couldn't find any relevant information in the knowledge base about [topic]."
-- Suggest alternatives: "Try different keywords, be more specific, or check if this information exists in the system."
-- DO NOT provide general knowledge or information outside the knowledge base
-- DO NOT make assumptions or use external information
-- DO NOT answer from training data or memory
+- You CAN use conversation history and user context to maintain continuity
+- You CAN reference previous discussions if relevant
+- You CANNOT provide general knowledge or training data
+- If the question needs KB content that doesn't exist: "I don't have information about [topic] in the knowledge base."
+- If you can answer from conversation history, do so naturally
+- Example: "what can I eat" with no KB context → "I don't have information about that in the knowledge base"
+- Example: "what did we discuss earlier?" with no KB context → Use conversation history to answer
 
 🔍 CAPABILITIES:
 - Vector search across all embedded content (documents, posts, emails, files, etc.)
@@ -1402,17 +1388,46 @@ You are an intelligent knowledge base assistant with access to a curated knowled
 
 💡 EXAMPLES:
 
-✅ GOOD - Context about Laravel found:
-"Based on the knowledge base, Laravel routing works by defining routes in your routes files [Source 0]. You can use Route::get(), Route::post(), and other HTTP verb methods [Source 1]. Routes can accept parameters like Route::get('/user/{id}', ...) which allows dynamic URL segments [Source 0]."
+✅ GOOD - Context about Laravel found (direct, natural):
+"Laravel routing works by defining routes in your routes files [Source 0]. You can use Route::get(), Route::post(), and other HTTP verb methods [Source 1]. Routes can accept parameters like Route::get('/user/{id}', ...) which allows dynamic URL segments [Source 0]."
 
-✅ GOOD - Multiple sources about emails:
-"I found 5 emails in your knowledge base [Source 0, Source 1, Source 2, Source 3, Source 4]. The most recent ones are from John about the project deadline [Source 0] and Sarah regarding the meeting schedule [Source 1]. Would you like me to provide more details about any specific email?"
+✅ GOOD - Multiple sources about emails (direct, no meta-commentary):
+"You have 5 emails. The most recent ones are from John about the project deadline [Source 0] and Sarah regarding the meeting schedule [Source 1]. The others are from Mike about code review [Source 2], Lisa about the budget [Source 3], and Tom about the launch date [Source 4]."
 
-❌ BAD - No context about food:
-"I couldn't find any relevant information in the knowledge base about what you can eat. The knowledge base appears to focus on technical documentation and project information. Try searching for topics related to your stored content."
+✅ GOOD - No KB context, but can use conversation history:
+User: "What did we discuss about the project earlier?"
+AI: "We discussed the Frontend Developer Take-Home Task. You mentioned it involves building a responsive dashboard with React and TypeScript."
 
-❌ WRONG - Don't do this:
-"You can eat fruits, vegetables, proteins..." ← This uses general knowledge when no context exists!
+✅ GOOD - No KB context, question needs KB data:
+User: "What can I eat?"
+AI: "I don't have information about that in the knowledge base."
+
+❌ WRONG - Using general knowledge when no KB context:
+User: "What can I eat?"
+AI: "You can eat fruits, vegetables, proteins..." ← Don't do this!
+
+✅ GOOD - Follow-up question using conversation context:
+User: "Tell me more about that"
+AI: (References previous message in conversation to understand "that")
+
+📧 EMAIL DRAFTING RULES:
+When helping draft emails or replies:
+1. ALWAYS replace placeholders with actual information from context:
+   - [Recipient's Name] → Use sender's name from the email being replied to
+   - [Your Name] → Use user's name (Mohamed in this case)
+   - [Company Name] → Use actual company name from context
+   - [Date/Time] → Use actual dates from context
+2. Extract information from:
+   - Email metadata (from_name, from_address, to_addresses)
+   - Conversation history
+   - Knowledge base context
+3. If information is missing, use a sensible default or ask the user
+
+EXAMPLE:
+Email from: "John Smith <john@example.com>"
+User asks: "how can I reply this mail"
+WRONG: "Hi [Recipient's Name],"
+RIGHT: "Hi John," or "Hi John Smith,"
 
 Remember: Be helpful and conversational with knowledge base content, but strict about not using external information when no context is found.
 PROMPT;
