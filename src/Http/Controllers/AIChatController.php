@@ -211,10 +211,11 @@ class AIChatController extends Controller
 
             // Fire action triggered event
             event(new AIActionTriggered(
-                sessionId: $dto->sessionId,
                 actionId: $dto->actionId,
                 actionType: $dto->actionType,
-                payload: $dto->payload
+                userId: $dto->userId,
+                payload: $dto->payload,
+                metadata: ['session_id' => $dto->sessionId]
             ));
 
             // Track action analytics
