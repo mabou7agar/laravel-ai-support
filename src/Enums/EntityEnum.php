@@ -22,9 +22,12 @@ use LaravelAIEngine\Drivers\FalAI\FluxProDriver;
 use LaravelAIEngine\Drivers\FalAI\KlingVideoDriver;
 use LaravelAIEngine\Drivers\DeepSeek\DeepSeekChatDriver;
 use LaravelAIEngine\Drivers\DeepSeek\DeepSeekReasonerDriver;
+use LaravelAIEngine\Services\Models\DynamicModelResolver;
 
 class EntityEnum
 {
+    protected static ?DynamicModelResolver $resolver = null;
+    protected ?array $dynamicModel = null;
     // OpenAI Models
     public const GPT_4O = 'gpt-4o';
     public const GPT_4O_MINI = 'gpt-4o-mini';
@@ -206,6 +209,51 @@ class EntityEnum
     public function __construct(string $value)
     {
         $this->value = $value;
+        
+        // Try to load dynamic model info if not a predefined constant
+        if (!$this->isPredefinedModel()) {
+            $this->dynamicModel = $this->getResolver()->resolve($value);
+        }
+    }
+    
+    /**
+     * Get or create the resolver instance
+     */
+    protected function getResolver(): DynamicModelResolver
+    {
+        if (static::$resolver === null) {
+            static::$resolver = new DynamicModelResolver();
+        }
+        return static::$resolver;
+    }
+    
+    /**
+     * Check if this is a predefined model constant
+     */
+    protected function isPredefinedModel(): bool
+    {
+        $reflection = new \ReflectionClass(static::class);
+        $constants = $reflection->getConstants();
+        return in_array($this->value, $constants, true);
+    }
+    
+    /**
+     * Check if this model is loaded dynamically from database
+     */
+    public function isDynamic(): bool
+    {
+        return $this->dynamicModel !== null;
+    }
+    
+    /**
+     * Get dynamic model property or fallback to switch statement
+     */
+    protected function getDynamicOr(string $key, callable $fallback)
+    {
+        if ($this->isDynamic() && isset($this->dynamicModel[$key])) {
+            return $this->dynamicModel[$key];
+        }
+        return $fallback();
     }
 
 
@@ -214,6 +262,11 @@ class EntityEnum
      */
     public function engine(): EngineEnum
     {
+        // Use dynamic model data if available
+        if ($this->isDynamic() && isset($this->dynamicModel['engine'])) {
+            return new EngineEnum($this->dynamicModel['engine']);
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
@@ -281,6 +334,11 @@ class EntityEnum
      */
     public function driverClass(): string
     {
+        // Use dynamic model data if available
+        if ($this->isDynamic() && isset($this->dynamicModel['driver_class'])) {
+            return $this->dynamicModel['driver_class'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
                 return GPT4ODriver::class;
@@ -404,6 +462,11 @@ class EntityEnum
      */
     public function label(): string
     {
+        // Use dynamic model name if available
+        if ($this->isDynamic() && isset($this->dynamicModel['name'])) {
+            return $this->dynamicModel['name'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
                 return 'GPT-4o';
@@ -529,6 +592,11 @@ class EntityEnum
      */
     public function creditIndex(): float
     {
+        // Use dynamic model credit index if available
+        if ($this->isDynamic() && isset($this->dynamicModel['credit_index'])) {
+            return $this->dynamicModel['credit_index'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
                 return 2.0;
@@ -710,6 +778,11 @@ class EntityEnum
      */
     public function getContentType(): string
     {
+        // Use dynamic model content type if available
+        if ($this->isDynamic() && isset($this->dynamicModel['content_type'])) {
+            return $this->dynamicModel['content_type'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
@@ -768,6 +841,11 @@ class EntityEnum
      */
     public function maxTokens(): int
     {
+        // Use dynamic model max tokens if available
+        if ($this->isDynamic() && isset($this->dynamicModel['max_tokens'])) {
+            return $this->dynamicModel['max_tokens'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
                 return 128000;
@@ -803,6 +881,11 @@ class EntityEnum
      */
     public function supportsVision(): bool
     {
+        // Use dynamic model vision support if available
+        if ($this->isDynamic() && isset($this->dynamicModel['supports_vision'])) {
+            return $this->dynamicModel['supports_vision'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_5:
@@ -824,6 +907,11 @@ class EntityEnum
      */
     public function supportsStreaming(): bool
     {
+        // Use dynamic model streaming support if available
+        if ($this->isDynamic() && isset($this->dynamicModel['supports_streaming'])) {
+            return $this->dynamicModel['supports_streaming'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
