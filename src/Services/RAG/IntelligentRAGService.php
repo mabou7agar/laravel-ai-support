@@ -35,7 +35,7 @@ class IntelligentRAGService
         $this->aiEngine = $aiEngine;
         $this->conversationService = $conversationService;
         $this->config = config('ai-engine.intelligent_rag', []);
-        
+
         // Lazy load node services if available
         if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
             $this->nodeRegistry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
@@ -59,7 +59,7 @@ class IntelligentRAGService
      */
     /**
      * Process message with intelligent RAG and multi-tenant access control
-     * 
+     *
      * @param string $message User's message
      * @param string $sessionId Session identifier
      * @param array $availableCollections Model classes to search
@@ -86,7 +86,7 @@ class IntelligentRAGService
             $useIntelligent = $options['intelligent'] ?? true;
 
             // Step 1: Analyze if query needs context retrieval
-            $analysis = $useIntelligent 
+            $analysis = $useIntelligent
                 ? $this->analyzeQuery($message, $conversationHistory, $availableCollections)
                 : ['needs_context' => true, 'search_queries' => [$message], 'collections' => $availableCollections];
 
@@ -103,17 +103,17 @@ class IntelligentRAGService
             $context = collect();
             if ($analysis['needs_context']) {
                 // If no search queries provided, use the original message
-                $searchQueries = !empty($analysis['search_queries']) 
-                    ? $analysis['search_queries'] 
+                $searchQueries = !empty($analysis['search_queries'])
+                    ? $analysis['search_queries']
                     : [$message];
-                    
+
                 $context = $this->retrieveRelevantContext(
                     $searchQueries,
                     $analysis['collections'] ?? $availableCollections,
                     $options,
                     $userId
                 );
-                
+
                 if (config('ai-engine.debug')) {
                     Log::channel('ai-engine')->debug('RAG search completed', [
                         'user_id' => $userId,
@@ -122,7 +122,7 @@ class IntelligentRAGService
                         'results_found' => $context->count(),
                     ]);
                 }
-                
+
                 // If no results found, try again with fallback threshold
                 $fallbackThreshold = $this->config['fallback_threshold'] ?? null;
                 if ($context->isEmpty() && !empty($availableCollections) && $fallbackThreshold !== null) {
@@ -137,7 +137,7 @@ class IntelligentRAGService
                         array_merge($options, ['min_score' => $fallbackThreshold]),
                         $userId  // ← FIX: Pass userId to fallback search too!
                     );
-                    
+
                     if (config('ai-engine.debug')) {
                         Log::channel('ai-engine')->debug('Fallback search completed', [
                             'results_found' => $context->count(),
@@ -211,7 +211,7 @@ class IntelligentRAGService
                 'error' => $e->getMessage(),
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null,
             ]);
-            
+
             return $this->generateResponse($message, array_merge($options, [
                 'conversation_history' => $conversationHistory ?? [],
                 'user_id' => $userId
@@ -248,7 +248,7 @@ class IntelligentRAGService
             $useIntelligent = $options['intelligent'] ?? true;
 
             // Analyze query
-            $analysis = $useIntelligent 
+            $analysis = $useIntelligent
                 ? $this->analyzeQuery($message, $conversationHistory, $availableCollections)
                 : ['needs_context' => true, 'search_queries' => [$message], 'collections' => $availableCollections];
 
@@ -279,7 +279,7 @@ class IntelligentRAGService
                     $fullResponse .= $chunk;
                     $callback($chunk);
                 })
-                ->chat($enhancedPrompt);
+                ->generate($enhancedPrompt);
 
             // Return metadata with sources
             return [
@@ -389,7 +389,7 @@ PROMPT;
         try {
             // Create AI request for analysis
             $analysisModel = $this->config['analysis_model'] ?? 'gpt-4o';
-            
+
             $request = new AIRequest(
                 prompt:       $analysisPrompt,
                 engine:       new \LaravelAIEngine\Enums\EngineEnum(config('ai-engine.default')),
@@ -442,7 +442,7 @@ PROMPT;
 
     /**
      * Analyze query with conversation context to determine nodes (CONTEXT-AWARE)
-     * 
+     *
      * This method considers the full conversation history to intelligently
      * select which nodes to search, maintaining context continuity.
      */
@@ -455,23 +455,23 @@ PROMPT;
         if (!$this->nodeRegistry || !$this->federatedSearch) {
             return $this->analyzeQuery($query, $conversationHistory, []);
         }
-        
+
         // Get available nodes
         $nodes = $availableNodes ?? $this->nodeRegistry->getActiveNodes();
-        
+
         if ($nodes->isEmpty()) {
             return $this->analyzeQuery($query, $conversationHistory, []);
         }
-        
+
         // Build node information for AI
         $nodeInfo = $this->buildNodeInformation($nodes);
-        
+
         // Build conversation context
         $contextSummary = $this->buildConversationContext($conversationHistory);
-        
+
         // Create enhanced analysis prompt
         $systemPrompt = $this->getContextAwareAnalysisPrompt($nodeInfo);
-        
+
         $userPrompt = <<<PROMPT
 CONVERSATION CONTEXT:
 {$contextSummary}
@@ -505,10 +505,10 @@ PROMPT;
 
             $aiResponse = $this->aiEngine->processRequest($request);
             $response = $aiResponse->getContent();
-            
+
             // Parse JSON response
             $analysis = $this->parseJsonResponse($response);
-            
+
             return [
                 'needs_context' => $analysis['needs_context'] ?? false,
                 'nodes' => $analysis['nodes'] ?? [],
@@ -518,59 +518,59 @@ PROMPT;
                 'context_topics' => $analysis['context_topics'] ?? [],
                 'search_strategy' => $analysis['search_strategy'] ?? 'parallel',
             ];
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Context-aware analysis failed', [
                 'error' => $e->getMessage(),
             ]);
-            
+
             // Fallback to basic analysis
             return $this->analyzeQuery($query, $conversationHistory, []);
         }
     }
-    
+
     /**
      * Build node information for AI analysis
      */
     protected function buildNodeInformation(Collection $nodes): string
     {
         $info = "AVAILABLE NODES:\n\n";
-        
+
         foreach ($nodes as $node) {
             $capabilities = implode(', ', $node->capabilities ?? []);
-            
+
             $info .= "Node: {$node->name} (slug: {$node->slug})\n";
             $info .= "  Capabilities: {$capabilities}\n";
-            
+
             // Add description (primary source of information for AI)
             if ($node->description) {
                 $info .= "  Description: {$node->description}\n";
             }
-            
+
             // Add domain/category information
             if (!empty($node->domains)) {
                 $info .= "  Domains: " . implode(', ', $node->domains) . "\n";
             }
-            
+
             // Add data types
             if (!empty($node->data_types)) {
                 $info .= "  Data Types: " . implode(', ', $node->data_types) . "\n";
             }
-            
+
             // Add keywords for better matching
             if (!empty($node->keywords)) {
                 $info .= "  Keywords: " . implode(', ', $node->keywords) . "\n";
             }
-            
+
             // Add health status
             $info .= "  Status: " . ($node->isHealthy() ? '✅ Healthy' : '⚠️ Degraded') . "\n";
-            
+
             $info .= "\n";
         }
-        
+
         return $info;
     }
-    
+
     /**
      * Build conversation context summary
      */
@@ -579,50 +579,50 @@ PROMPT;
         if (empty($conversationHistory)) {
             return "No previous conversation.";
         }
-        
+
         // Get recent messages (configurable window)
         $contextWindow = $this->config['context_window'] ?? 5;
         $recentMessages = array_slice($conversationHistory, -$contextWindow);
-        
+
         $context = "Recent conversation:\n";
         foreach ($recentMessages as $msg) {
             $role = ucfirst($msg['role'] ?? 'user');
             $content = substr($msg['content'] ?? '', 0, 200);
             $context .= "{$role}: {$content}\n";
         }
-        
+
         // Extract topics from conversation
         $topics = $this->extractTopicsFromConversation($conversationHistory);
         if (!empty($topics)) {
             $context .= "\nTopics discussed: " . implode(', ', $topics) . "\n";
         }
-        
+
         return $context;
     }
-    
+
     /**
      * Extract topics from conversation history
      */
     protected function extractTopicsFromConversation(array $conversationHistory): array
     {
         $topics = [];
-        
+
         // Common keywords to extract
         $keywords = ['laravel', 'php', 'product', 'book', 'tutorial', 'customer', 'order', 'article', 'support', 'ticket', 'purchase', 'learn'];
-        
+
         foreach ($conversationHistory as $msg) {
             $content = strtolower($msg['content'] ?? '');
-            
+
             foreach ($keywords as $keyword) {
                 if (str_contains($content, $keyword) && !in_array($keyword, $topics)) {
                     $topics[] = $keyword;
                 }
             }
         }
-        
+
         return $topics;
     }
-    
+
     /**
      * Get context-aware analysis prompt
      */
@@ -680,7 +680,7 @@ PROMPT;
     /**
      * Retrieve relevant context from vector database with access control
      * Uses federated search across nodes if available, otherwise local search
-     * 
+     *
      * @param array $searchQueries Search queries
      * @param array $collections Model classes to search
      * @param array $options Additional options
@@ -699,7 +699,7 @@ PROMPT;
 
         // Use federated search if available and enabled
         $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
-        
+
         if ($useFederatedSearch) {
             // For federated search, we trust the collections array
             // The child nodes will validate if they have the class
@@ -707,10 +707,10 @@ PROMPT;
                 'collections' => $collections,
                 'note' => 'Collections may exist on remote nodes even if not available locally',
             ]);
-            
+
             return $this->retrieveFromFederatedSearch($searchQueries, $collections, $maxResults, $threshold, $options, $userId);
         }
-        
+
         // For local search only, validate collections exist locally
         $validCollections = array_filter($collections, function($collection) {
             if (!class_exists($collection)) {
@@ -720,19 +720,19 @@ PROMPT;
                 ]);
                 return false;
             }
-            
+
             // Check if class uses Vectorizable trait
             $uses = class_uses_recursive($collection);
             $hasVectorizable = in_array(\LaravelAIEngine\Traits\Vectorizable::class, $uses) ||
                               in_array(\LaravelAIEngine\Traits\VectorizableWithMedia::class, $uses);
-            
+
             if (!$hasVectorizable) {
                 Log::channel('ai-engine')->debug('Collection class does not use Vectorizable trait', [
                     'collection' => $collection,
                     'available_traits' => array_values($uses),
                 ]);
             }
-            
+
             return $hasVectorizable;
         });
 
@@ -748,10 +748,10 @@ PROMPT;
         // Use local search
         return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
     }
-    
+
     /**
      * Retrieve context using federated search across nodes
-     * 
+     *
      * @param array $searchQueries Search queries
      * @param array $collections Model classes
      * @param int $maxResults Maximum results
@@ -769,7 +769,7 @@ PROMPT;
         $userId = null
     ): Collection {
         $allResults = collect();
-        
+
         foreach ($searchQueries as $searchQuery) {
             try {
                 // Use federated search across all nodes
@@ -782,7 +782,7 @@ PROMPT;
                         'threshold' => $threshold,
                     ])
                 );
-                
+
                 // Extract results from federated response
                 if (!empty($federatedResults['results'])) {
                     // Always log first result structure to debug metadata issue
@@ -794,11 +794,11 @@ PROMPT;
                             'metadata_value' => $federatedResults['results'][0]['metadata'] ?? 'not set',
                         ]);
                     }
-                    
+
                     foreach ($federatedResults['results'] as $result) {
                         // Convert array result to object for consistency
                         $obj = (object) $result;
-                        
+
                         // Ensure metadata is preserved and accessible at the top level
                         // This is critical for enrichResponseWithSources to extract model_class
                         if (isset($result['metadata']) && is_array($result['metadata'])) {
@@ -806,7 +806,7 @@ PROMPT;
                             // Also set vector_metadata as an alias for consistency with local search
                             $obj->vector_metadata = $result['metadata'];
                         }
-                        
+
                         // Handle both metadata and vector_metadata keys from different node implementations
                         if (isset($result['vector_metadata']) && is_array($result['vector_metadata'])) {
                             $obj->vector_metadata = $result['vector_metadata'];
@@ -814,16 +814,16 @@ PROMPT;
                                 $obj->metadata = $result['vector_metadata'];
                             }
                         }
-                        
+
                         // Ensure vector_score is set for relevance calculation
                         if (!isset($obj->vector_score) && isset($result['score'])) {
                             $obj->vector_score = $result['score'];
                         }
-                        
+
                         $allResults->push($obj);
                     }
                 }
-                
+
                 Log::channel('ai-engine')->debug('Federated search completed', [
                     'query' => $searchQuery,
                     'nodes_searched' => $federatedResults['nodes_searched'] ?? 0,
@@ -834,23 +834,23 @@ PROMPT;
                     'query' => $searchQuery,
                     'error' => $e->getMessage(),
                 ]);
-                
+
                 // Fallback to local search for this query
-                $localResults = $this->retrieveFromLocalSearch([$searchQuery], $collections, $maxResults, $threshold);
+                $localResults = $this->retrieveFromLocalSearch([$searchQuery], $collections, $maxResults, $threshold, $userId);
                 $allResults = $allResults->merge($localResults);
             }
         }
-        
+
         // Deduplicate and sort by relevance
         return $allResults
             ->unique('id')
             ->sortByDesc('vector_score')
             ->take($maxResults);
     }
-    
+
     /**
      * Retrieve context using local vector search with access control
-     * 
+     *
      * @param array $searchQueries Search queries
      * @param array $collections Model classes
      * @param int $maxResults Maximum results
@@ -866,7 +866,7 @@ PROMPT;
         $userId = null
     ): Collection {
         $allResults = collect();
-        
+
         if (config('ai-engine.debug')) {
             Log::channel('ai-engine')->debug('Starting local vector search', [
                 'user_id' => $userId,
@@ -876,7 +876,7 @@ PROMPT;
                 'threshold' => $threshold,
             ]);
         }
-        
+
         foreach ($searchQueries as $searchQuery) {
             foreach ($collections as $collection) {
                 try {
@@ -922,7 +922,7 @@ PROMPT;
 
     /**
      * Build enhanced prompt with context
-     * 
+     *
      * Note: This method now returns just the current message with context.
      * Conversation history is passed separately as structured messages to the AI request.
      */
@@ -933,9 +933,9 @@ PROMPT;
         array $options = []
     ): string {
         $systemPrompt = $options['system_prompt'] ?? $this->getDefaultSystemPrompt();
-        
+
         $prompt = "{$systemPrompt}\n\n";
-        
+
         // Add context if available
         if ($context->isNotEmpty()) {
             $contextText = $this->formatContext($context);
@@ -944,9 +944,9 @@ PROMPT;
             $prompt .= "{$contextText}\n";
             $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
         }
-        
+
         $prompt .= "CURRENT QUESTION: {$message}\n\n";
-        
+
         if ($context->isNotEmpty()) {
             $prompt .= "Please answer based on the context above and our conversation history. ";
             $prompt .= "If the context doesn't fully answer the question, acknowledge what you can answer and what you cannot.";
@@ -956,7 +956,6 @@ PROMPT;
             $prompt .= "However, I can still help you based on:\n";
             $prompt .= "1. Your user context (I know who you are)\n";
             $prompt .= "2. Our conversation history\n";
-            $prompt .= "3. General knowledge\n\n";
             $prompt .= "Please provide a helpful response. If the user is asking about their data (emails, documents, etc.), ";
             $prompt .= "explain that while I have access to search their data, I didn't find specific matches for this query. ";
             $prompt .= "Suggest they try:\n";
@@ -986,11 +985,11 @@ PROMPT;
 
             // Format with enhanced context
             $formattedItem = "[Source {$index}: {$source}] (Relevance: {$score}%)";
-            
+
             if (!empty($metadata)) {
                 $formattedItem .= "\n{$metadata}";
             }
-            
+
             $formattedItem .= "\n{$content}";
 
             $formatted[] = $formattedItem;
@@ -1001,7 +1000,7 @@ PROMPT;
 
     /**
      * Build metadata section for context item
-     * 
+     *
      * @param mixed $item
      * @return string
      */
@@ -1031,7 +1030,7 @@ PROMPT;
                 }
                 return $addr['email'] ?? '';
             }, array_slice($item->to_addresses, 0, 3));
-            
+
             if (!empty($toList)) {
                 $metadata[] = "To: " . implode(', ', $toList);
                 if (count($item->to_addresses) > 3) {
@@ -1110,7 +1109,7 @@ PROMPT;
         // Attach conversation history if provided
         if (!empty($options['conversation_history'])) {
             $request = $request->withMessages($options['conversation_history']);
-            
+
             if (config('ai-engine.debug')) {
                 Log::channel('ai-engine')->debug('Conversation history attached to RAG request', [
                     'message_count' => count($options['conversation_history']),
@@ -1129,22 +1128,22 @@ PROMPT;
         $sources = $context->map(function ($item, $index) {
             // Determine model class - try multiple approaches
             $modelClass = null;
-            
+
             // Approach 1: If it's an actual model instance (not stdClass), use get_class
             if (!($item instanceof \stdClass)) {
                 $modelClass = get_class($item);
             }
-            
+
             // Approach 2: Check vector_metadata property for model_class (from local search)
             if (!$modelClass && isset($item->vector_metadata) && is_array($item->vector_metadata)) {
                 $modelClass = $item->vector_metadata['model_class'] ?? null;
             }
-            
+
             // Approach 3: Check metadata property for model_class (from federated search)
             if (!$modelClass && isset($item->metadata) && is_array($item->metadata)) {
                 $modelClass = $item->metadata['model_class'] ?? null;
             }
-            
+
             // Log warning only if we still can't determine the model class
             if (!$modelClass && config('ai-engine.debug')) {
                 Log::channel('ai-engine')->warning('Could not determine model class for source', [
@@ -1154,7 +1153,7 @@ PROMPT;
                     'has_metadata' => isset($item->metadata),
                 ]);
             }
-            
+
             return [
                 'id' => $item->id ?? null,
                 'model_id' => $item->id ?? null,  // Original model ID
@@ -1162,12 +1161,12 @@ PROMPT;
                 'model_type' => $modelClass ? class_basename($modelClass) : 'Unknown',  // Short model name
                 'title' => $item->title ?? $item->name ?? "Source " . ($index + 1),
                 'relevance' => round(($item->vector_score ?? 0) * 100, 1),
-                'content_preview' => isset($item->content) 
-                    ? substr($item->content, 0, 200) 
+                'content_preview' => isset($item->content)
+                    ? substr($item->content, 0, 200)
                     : (isset($item->body) ? substr($item->body, 0, 200) : null),
             ];
         })->toArray();
-        
+
         // Detect numbered options in the response
         $numberedOptions = $this->extractNumberedOptions($response->getContent());
 
@@ -1189,20 +1188,20 @@ PROMPT;
             usage: $response->getUsage()
         );
     }
-    
+
     /**
      * Extract numbered options from response content
      */
     protected function extractNumberedOptions(string $content): array
     {
         $options = [];
-        
+
         // Pattern 1: Simple numbered lists (1. , 2. , etc.)
         if (preg_match_all('/^\s*(\d+)\.\s+(.+?)$/m', $content, $matches, PREG_SET_ORDER)) {
             foreach (array_slice($matches, 0, 10) as $match) {
                 $number = (int) $match[1];
                 $fullLine = trim($match[2]);
-                
+
                 // Extract just the title (before the colon or first sentence)
                 $text = $fullLine;
                 if (strpos($fullLine, ':') !== false) {
@@ -1210,12 +1209,12 @@ PROMPT;
                 } elseif (strpos($fullLine, '.') !== false) {
                     $text = trim(substr($fullLine, 0, strpos($fullLine, '.')));
                 }
-                
+
                 // Skip very short options
                 if (strlen($text) < 3) {
                     continue;
                 }
-                
+
                 $options[] = [
                     'number' => $number,
                     'text' => $text,
@@ -1227,14 +1226,14 @@ PROMPT;
                 ];
             }
         }
-        
+
         // Pattern 2: Markdown bullet points with bold headers (- **Title**: Description)
         if (empty($options) && preg_match_all('/^-\s+\*\*(.+?)\*\*:?\s*(.+?)(?=\n-|\n\n|$)/ms', $content, $matches, PREG_SET_ORDER)) {
             $number = 1;
             foreach (array_slice($matches, 0, 10) as $match) {
                 $title = trim($match[1]);
                 $description = trim($match[2]);
-                
+
                 $options[] = [
                     'number' => $number,
                     'text' => $title,
@@ -1247,18 +1246,18 @@ PROMPT;
                 $number++;
             }
         }
-        
+
         // Pattern 3: Markdown headers (#### Title)
         if (empty($options) && preg_match_all('/^#{2,4}\s+(.+?)$/m', $content, $matches, PREG_SET_ORDER)) {
             $number = 1;
             foreach (array_slice($matches, 0, 10) as $match) {
                 $title = trim($match[1]);
-                
+
                 // Skip main title or very short headers
                 if (strlen($title) < 5 || stripos($title, 'title:') !== false) {
                     continue;
                 }
-                
+
                 $options[] = [
                     'number' => $number,
                     'text' => $title,
@@ -1271,10 +1270,10 @@ PROMPT;
                 $number++;
             }
         }
-        
+
         return $options;
     }
-    
+
     /**
      * Extract full text for a numbered option including continuation lines
      */
@@ -1284,21 +1283,21 @@ PROMPT;
         $fullText = $firstLine;
         $foundStart = false;
         $nextNumber = $number + 1;
-        
+
         foreach ($lines as $line) {
             // Find the start of this option
             if (!$foundStart && preg_match('/^\s*' . $number . '\.\s+/', $line)) {
                 $foundStart = true;
                 continue;
             }
-            
+
             // If we found the start, collect continuation lines
             if ($foundStart) {
                 // Stop if we hit the next number or empty line
                 if (preg_match('/^\s*' . $nextNumber . '\.\s+/', $line) || trim($line) === '') {
                     break;
                 }
-                
+
                 // Add continuation line
                 $trimmed = trim($line);
                 if ($trimmed && !preg_match('/^\d+\./', $trimmed)) {
@@ -1306,7 +1305,7 @@ PROMPT;
                 }
             }
         }
-        
+
         return trim($fullText);
     }
 
@@ -1371,45 +1370,51 @@ PROMPT;
     protected function getDefaultSystemPrompt(): string
     {
         return <<<PROMPT
-You are an intelligent AI assistant with access to a knowledge base powered by vector search. Your role is to help users by finding and using relevant information from the embedded content.
+You are an intelligent knowledge base assistant with access to a curated knowledge base powered by vector search.
 
-CAPABILITIES:
-- Vector search across all embedded content (documents, emails, posts, files, etc.)
-- Can analyze uploaded files (images, documents, code, emails, attachments)
-- Can access and read files from provided URLs
-- Can extract and interpret information from any embedded source
+🎯 YOUR ROLE:
+- Help users find and understand information from the knowledge base
+- Be helpful, thorough, and conversational when context is available
+- Be honest when information is not in the knowledge base
 
-HOW TO RESPOND:
-1. ✅ ALWAYS search for relevant context first
-   - If context is found: Answer based on the embedded content and cite sources [Source 0], [Source 1]
-   - If NO context found: Politely inform the user that no relevant information was found in the knowledge base
-   
-2. ✅ ANSWER any question where relevant context exists:
-   - "Do I have emails?" → Search emails and summarize what's found
-   - "What posts are available?" → Search posts and list them
-   - "Show me Laravel tutorials" → Search and present relevant content
-   - "What's in my knowledge base about X?" → Search and answer
-   
-3. ❌ ONLY reject if:
-   - No context found AND question requires specific embedded data
-   - Message: "I couldn't find any relevant information in the knowledge base about [topic]. The knowledge base contains: [list available content types if known]."
+📚 KNOWLEDGE BASE RULES:
 
-ANSWERING RULES:
-- When context IS found: Use it confidently and cite sources
-- When files/URLs provided: Access and analyze them
-- Be helpful and informative based on what's embedded
-- If multiple results: Summarize or list them
-- Always cite sources when using embedded content
+✅ WHEN CONTEXT IS PROVIDED (you'll see "RELEVANT CONTEXT FROM KNOWLEDGE BASE" section):
+- Answer confidently and naturally using the provided context
+- Be conversational and helpful - explain, elaborate, and provide examples from the context
+- ALWAYS cite sources using [Source 0], [Source 1], etc.
+- If context is partial, explain what you know and what's missing
+- Synthesize information from multiple sources when available
+- Be thorough and informative with the available information
 
-EXAMPLES:
-✅ "Do I have mails?" → Search emails, list subjects/senders if found
-✅ "What posts do you have?" → Search posts, summarize available content
-✅ "Tell me about Laravel routing" → Search and answer from embedded docs
-✅ "What's in this file?" → Analyze uploaded/linked file
-✅ "Show me emails from yesterday" → Search emails with date filter
-❌ "No relevant content found" → Only if vector search returns 0 results
+❌ WHEN NO CONTEXT IS PROVIDED (no "RELEVANT CONTEXT" section):
+- Politely inform: "I couldn't find any relevant information in the knowledge base about [topic]."
+- Suggest alternatives: "Try different keywords, be more specific, or check if this information exists in the system."
+- DO NOT provide general knowledge or information outside the knowledge base
+- DO NOT make assumptions or use external information
+- DO NOT answer from training data or memory
 
-Remember: You're a knowledge base assistant. If content exists in embeddings, help the user find and understand it. Be flexible and helpful with ANY embedded content.
+🔍 CAPABILITIES:
+- Vector search across all embedded content (documents, posts, emails, files, etc.)
+- Analyze uploaded files if provided
+- Access files from URLs if provided
+- Answer questions comprehensively when relevant context exists
+
+💡 EXAMPLES:
+
+✅ GOOD - Context about Laravel found:
+"Based on the knowledge base, Laravel routing works by defining routes in your routes files [Source 0]. You can use Route::get(), Route::post(), and other HTTP verb methods [Source 1]. Routes can accept parameters like Route::get('/user/{id}', ...) which allows dynamic URL segments [Source 0]."
+
+✅ GOOD - Multiple sources about emails:
+"I found 5 emails in your knowledge base [Source 0, Source 1, Source 2, Source 3, Source 4]. The most recent ones are from John about the project deadline [Source 0] and Sarah regarding the meeting schedule [Source 1]. Would you like me to provide more details about any specific email?"
+
+❌ BAD - No context about food:
+"I couldn't find any relevant information in the knowledge base about what you can eat. The knowledge base appears to focus on technical documentation and project information. Try searching for topics related to your stored content."
+
+❌ WRONG - Don't do this:
+"You can eat fruits, vegetables, proteins..." ← This uses general knowledge when no context exists!
+
+Remember: Be helpful and conversational with knowledge base content, but strict about not using external information when no context is found.
 PROMPT;
     }
 
@@ -1433,7 +1438,7 @@ PROMPT;
             return [];
         }
     }
-    
+
     /**
      * Get all available collections from all nodes
      */
@@ -1445,7 +1450,7 @@ PROMPT;
 
     /**
      * Get system prompt with user context
-     * 
+     *
      * @param string|int|null $userId
      * @return string|null
      */
@@ -1458,38 +1463,38 @@ PROMPT;
         try {
             // Get user model class from config
             $userModel = config('auth.providers.users.model', 'App\\Models\\User');
-            
+
             if (!class_exists($userModel)) {
                 return null;
             }
-            
+
             // Fetch user with caching (5 minutes)
             $user = \Illuminate\Support\Facades\Cache::remember(
                 "ai_user_context_{$userId}",
                 300,
                 fn() => $userModel::find($userId)
             );
-            
+
             if (!$user) {
                 return null;
             }
-            
+
             // Build user context
             $context = "USER CONTEXT:\n";
-            
+
             // User ID (always include for data searching)
             $context .= "- User ID: {$user->id}\n";
-            
+
             // Name
             if (isset($user->name)) {
                 $context .= "- User's name: {$user->name}\n";
             }
-            
+
             // Email (always include for data searching)
             if (isset($user->email)) {
                 $context .= "- Email: {$user->email}\n";
             }
-            
+
             // Phone number
             if (isset($user->phone)) {
                 $context .= "- Phone: {$user->phone}\n";
@@ -1498,39 +1503,39 @@ PROMPT;
             } elseif (isset($user->mobile)) {
                 $context .= "- Phone: {$user->mobile}\n";
             }
-            
+
             // Additional useful fields
             if (isset($user->username)) {
                 $context .= "- Username: {$user->username}\n";
             }
-            
+
             if (isset($user->first_name) && isset($user->last_name)) {
                 $context .= "- Full Name: {$user->first_name} {$user->last_name}\n";
             }
-            
+
             if (isset($user->title) || isset($user->job_title)) {
                 $title = $user->title ?? $user->job_title;
                 $context .= "- Job Title: {$title}\n";
             }
-            
+
             if (isset($user->department)) {
                 $context .= "- Department: {$user->department}\n";
             }
-            
+
             if (isset($user->location) || isset($user->city)) {
                 $location = $user->location ?? $user->city;
                 $context .= "- Location: {$location}\n";
             }
-            
+
             if (isset($user->timezone)) {
                 $context .= "- Timezone: {$user->timezone}\n";
             }
-            
+
             if (isset($user->language) || isset($user->locale)) {
                 $language = $user->language ?? $user->locale;
                 $context .= "- Language: {$language}\n";
             }
-            
+
             // Role/Admin status
             if (isset($user->is_admin) && $user->is_admin) {
                 $context .= "- Role: Administrator (has full system access)\n";
@@ -1547,7 +1552,7 @@ PROMPT;
                     $context .= "- Role: " . $roles->join(', ') . "\n";
                 }
             }
-            
+
             // Tenant/Organization
             if (isset($user->tenant_id)) {
                 $context .= "- Organization ID: {$user->tenant_id}\n";
@@ -1556,7 +1561,7 @@ PROMPT;
             } elseif (isset($user->company_id)) {
                 $context .= "- Company ID: {$user->company_id}\n";
             }
-            
+
             // Custom user context (if method exists)
             if (method_exists($user, 'getAIContext')) {
                 $customContext = $user->getAIContext();
@@ -1564,15 +1569,15 @@ PROMPT;
                     $context .= $customContext . "\n";
                 }
             }
-            
+
             $context .= "\nIMPORTANT INSTRUCTIONS:\n";
             $context .= "- Always address the user by their name when appropriate\n";
             $context .= "- When searching for user's data, use their User ID ({$user->id}) or Email ({$user->email})\n";
             $context .= "- Personalize responses based on their role and context\n";
             $context .= "- When user asks 'my emails', 'my documents', etc., search for data belonging to User ID: {$user->id}";
-            
+
             return $context;
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('Failed to get user context for RAG', [
                 'user_id' => $userId,

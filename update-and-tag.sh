@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo "🚀 Laravel AI Engine - Push and Tag v2.2.18"
+echo "🚀 Laravel AI Engine - Push and Tag v2.2.19"
 echo ""
 
 # Check if we're in a git repository
@@ -26,7 +26,7 @@ CURRENT_BRANCH=$(git branch --show-current)
 echo -e "${BLUE}📍 Current branch: ${YELLOW}${CURRENT_BRANCH}${NC}"
 
 # Tag version
-TAG_VERSION="v2.2.18"
+TAG_VERSION="v2.2.19"
 
 # Check for uncommitted changes
 if [[ -n $(git status -s) ]]; then

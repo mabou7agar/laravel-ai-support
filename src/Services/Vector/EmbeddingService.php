@@ -61,16 +61,10 @@ class EmbeddingService
             $tokensUsed = $response->usage->totalTokens ?? $this->estimateTokens($text);
             
             // Track credits (only if userId is provided)
-            if ($userId) {
-                // Create a simple request object for credit tracking
-                $request = new \LaravelAIEngine\Models\AIRequest([
-                    'engine' => 'openai',
-                    'model' => $this->model,
-                    'type' => 'embedding',
-                    'tokens' => $tokensUsed,
-                ]);
-                $this->creditManager->deductCredits($userId, $request, $tokensUsed / 1000);
-            }
+            // TODO: Fix credit tracking for embeddings - currently disabled due to DTO mismatch
+            // if ($userId) {
+            //     $this->creditManager->deductCredits($userId, $request, $tokensUsed / 1000);
+            // }
 
             // Cache the result
             if ($this->cacheEnabled) {

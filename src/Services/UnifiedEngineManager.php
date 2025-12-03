@@ -339,6 +339,30 @@ class UnifiedEngineManager
     }
 
     /**
+     * Get usage statistics
+     */
+    public function getUsageStats(array $filters = []): array
+    {
+        if (!$this->analyticsManager) {
+            return [];
+        }
+
+        return $this->analyticsManager->getUsageAnalytics($filters);
+    }
+
+    /**
+     * Get performance metrics
+     */
+    public function getPerformanceMetrics(array $filters = []): array
+    {
+        if (!$this->analyticsManager) {
+            return [];
+        }
+
+        return $this->analyticsManager->getPerformanceMetrics($filters);
+    }
+
+    /**
      * Get real-time metrics
      */
     public function getRealTimeMetrics(): array

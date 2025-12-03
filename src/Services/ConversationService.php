@@ -136,7 +136,7 @@ class ConversationService
                 ->first();
 
             if ($conversation) {
-                $this->conversationManager->clearConversation($conversation->conversation_id);
+                $this->conversationManager->clearConversationHistory($conversation->conversation_id);
                 return true;
             }
         } catch (\Exception $e) {

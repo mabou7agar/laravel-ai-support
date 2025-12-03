@@ -2,6 +2,7 @@
 
 namespace LaravelAIEngine\Services\RAG;
 
+use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
 use LaravelAIEngine\Services\AIEngineManager;
 use Illuminate\Support\Collection;
@@ -9,13 +10,13 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * VectorRAGBridge - Manual RAG Service
- * 
+ *
  * This service ALWAYS performs vector search for every query.
  * Use this when you want guaranteed context retrieval.
- * 
+ *
  * For intelligent RAG where AI decides when to search,
  * use IntelligentRAGService instead.
- * 
+ *
  * @see IntelligentRAGService For AI-powered decision making
  */
 class VectorRAGBridge
@@ -96,7 +97,7 @@ class VectorRAGBridge
                     $fullResponse .= $chunk;
                     $callback($chunk);
                 })
-                ->chat($prompt);
+                ->generate($prompt);
 
             // Return metadata with sources
             return [
@@ -175,7 +176,7 @@ PROMPT;
         foreach ($context as $index => $item) {
             $content = $this->extractContent($item);
             $score = $includeScores ? " (Relevance: " . round($item->vector_score * 100, 1) . "%)" : "";
-            
+
             $formatted[] = "[Source " . ($index + 1) . "]{$score}\n{$content}";
         }
 
@@ -206,7 +207,7 @@ PROMPT;
         // Fallback to common fields
         $fields = ['title', 'name', 'content', 'description', 'body'];
         $content = [];
-        
+
         foreach ($fields as $field) {
             if (isset($model->$field)) {
                 $content[] = $model->$field;
@@ -219,7 +220,7 @@ PROMPT;
     /**
      * Generate AI response
      */
-    protected function generateResponse(string $prompt, array $options = []): string
+    protected function generateResponse(string $prompt, array $options = []): AIResponse
     {
         $engine = $options['engine'] ?? config('ai-engine.default');
         $model = $options['model'] ?? 'gpt-4o';
@@ -229,9 +230,9 @@ PROMPT;
         return $this->aiEngine
             ->engine($engine)
             ->model($model)
-            ->temperature($temperature)
-            ->maxTokens($maxTokens)
-            ->chat($prompt);
+            ->withTemperature($temperature)
+            ->withMaxTokens($maxTokens)
+            ->generate($prompt);
     }
 
     /**

@@ -5,6 +5,8 @@ namespace LaravelAIEngine\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Facades\Engine;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\ConversationService;
@@ -17,6 +19,8 @@ use LaravelAIEngine\Http\Requests\UploadFileRequest;
 use LaravelAIEngine\Http\Requests\ExecuteDynamicActionRequest;
 use LaravelAIEngine\Services\DynamicActionService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
+use LaravelAIEngine\Services\RAG\IntelligentRAGService;
+use LaravelAIEngine\Services\MemoryOptimizationService;
 use LaravelAIEngine\DTOs\InteractiveAction;
 use LaravelAIEngine\Enums\ActionTypeEnum;
 use LaravelAIEngine\Services\Vector\VectorAuthorizationService;
@@ -29,7 +33,9 @@ class AIChatController extends Controller
         protected ActionService $actionService,
         protected DynamicActionService $dynamicActionService,
         protected RAGCollectionDiscovery $ragDiscovery,
-        protected VectorAuthorizationService $authService
+        protected VectorAuthorizationService $authService,
+        protected MemoryOptimizationService $memoryOptimization,
+        protected ?IntelligentRAGService $intelligentRAG = null
     ) {
         // Apply auth middleware only if Sanctum or JWT is available
         $this->applyAuthMiddleware();
@@ -144,7 +150,7 @@ class AIChatController extends Controller
                         $metadata  // Pass RAG metadata to generate context-aware actions
                     );
                 } catch (\Exception $e) {
-                    \Log::warning('Failed to generate actions: ' . $e->getMessage());
+                    Log::warning('Failed to generate actions: ' . $e->getMessage());
                 }
             }
 
@@ -361,17 +367,109 @@ class AIChatController extends Controller
     protected function handleStreamingRequest(AIRequest $aiRequest, array $validated): JsonResponse
     {
         try {
+            $sessionId = $validated['session_id'];
+            $message = $validated['message'];
+            $userId = $validated['user_id'] ?? null;
+            $engine = $validated['engine'] ?? 'openai';
+            $model = $validated['model'] ?? 'gpt-4o-mini';
+            $useMemory = $validated['memory'] ?? true;
+            $useIntelligentRAG = $validated['use_intelligent_rag'] ?? true;
+            $ragCollections = $validated['rag_collections'] ?? [];
+
+            // Get or create conversation
+            $conversationId = null;
+            if ($useMemory) {
+                $conversationId = $this->conversationService->getOrCreateConversation(
+                    $sessionId,
+                    $userId,
+                    $engine,
+                    $model
+                );
+            }
+
+            // Load conversation history
+            $messages = [];
+            if ($conversationId) {
+                $messages = $this->memoryOptimization->getOptimizedHistory($conversationId, 20);
+            }
+
+            // Handle RAG context if enabled
+            $enhancedPrompt = $message;
+            $ragMetadata = [];
+            
+            if ($useIntelligentRAG && $this->intelligentRAG) {
+                try {
+                    // Get RAG context
+                    $ragResult = $this->intelligentRAG->enhancePromptWithContext(
+                        $message,
+                        $sessionId,
+                        $ragCollections,
+                        ['user_id' => $userId]
+                    );
+                    
+                    $enhancedPrompt = $ragResult['enhanced_prompt'] ?? $message;
+                    $ragMetadata = [
+                        'sources' => $ragResult['sources'] ?? [],
+                        'context_count' => $ragResult['context_count'] ?? 0,
+                        'rag_enabled' => true,
+                    ];
+                } catch (\Exception $e) {
+                    Log::warning('RAG enhancement failed during streaming', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
             // Start streaming response
             Engine::streamResponse(
-                sessionId: $validated['session_id'],
-                generator: function() use ($aiRequest) {
-                    $response = Engine::engine($aiRequest->engine->value)->send($aiRequest);
-
-                    // Simulate streaming by chunking the response
-                    $chunks = str_split($response->content, 10);
-                    foreach ($chunks as $chunk) {
+                sessionId: $sessionId,
+                generator: function() use ($engine, $model, $enhancedPrompt, $messages, $conversationId, $sessionId, $userId, $ragMetadata) {
+                    $fullResponse = '';
+                    
+                    // Use EngineBuilder for proper streaming
+                    $builder = Engine::engine($engine)
+                        ->model($model)
+                        ->withTemperature(0.7)
+                        ->withMaxTokens(1000);
+                    
+                    // Add conversation context
+                    if (!empty($messages)) {
+                        $builder->withMessages($messages);
+                    }
+                    
+                    // Stream the response
+                    foreach ($builder->generateStream($enhancedPrompt) as $chunk) {
+                        $fullResponse .= $chunk;
                         yield $chunk;
-                        usleep(50000); // 50ms delay between chunks
+                    }
+                    
+                    // Save to conversation history after streaming completes
+                    if ($conversationId) {
+                        try {
+                            $conversationManager = app(\LaravelAIEngine\Services\ConversationManager::class);
+                            
+                            // Save user message
+                            $conversationManager->addUserMessage(
+                                $conversationId,
+                                $enhancedPrompt,
+                                ['user_id' => $userId]
+                            );
+                            
+                            // Save assistant message with RAG metadata
+                            $conversation = $conversationManager->getConversation($conversationId);
+                            if ($conversation) {
+                                $conversation->addMessage('assistant', $fullResponse, array_merge([
+                                    'engine' => $engine,
+                                    'model' => $model,
+                                    'user_id' => $userId,
+                                    'streaming' => true,
+                                ], $ragMetadata));
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('Failed to save streaming conversation', [
+                                'error' => $e->getMessage()
+                            ]);
+                        }
                     }
                 }
             );
@@ -379,11 +477,17 @@ class AIChatController extends Controller
             return response()->json([
                 'success' => true,
                 'streaming' => true,
-                'session_id' => $validated['session_id'],
+                'session_id' => $sessionId,
                 'message' => 'Streaming started',
+                'rag_metadata' => $ragMetadata,
             ]);
 
         } catch (\Exception $e) {
+            Log::error('Streaming request failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),

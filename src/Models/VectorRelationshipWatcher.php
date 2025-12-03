@@ -3,12 +3,10 @@
 namespace LaravelAIEngine\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class VectorRelationshipWatcher extends Model
 {
     protected $fillable = [
-        'vector_configuration_id',
         'parent_model',
         'related_model',
         'relationship_name',
@@ -25,14 +23,6 @@ class VectorRelationshipWatcher extends Model
         'depth' => 'integer',
         'enabled' => 'boolean',
     ];
-
-    /**
-     * Get the configuration for this watcher
-     */
-    public function configuration(): BelongsTo
-    {
-        return $this->belongsTo(VectorConfiguration::class, 'vector_configuration_id');
-    }
 
     /**
      * Check if a field is being watched

@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Http\Controllers\Api;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\ActionService;
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\Validator;
 
 /**
  * RAG Chat API Controller
- * 
+ *
  * RESTful API for AI chat with RAG (Retrieval-Augmented Generation)
  */
 class RagChatApiController extends Controller
@@ -27,7 +28,7 @@ class RagChatApiController extends Controller
 
     /**
      * Send a message to the AI chat
-     * 
+     *
      * @group Chat
      * @bodyParam message string required The message to send. Example: Tell me about Laravel routing
      * @bodyParam session_id string required Unique session identifier. Example: user-123
@@ -38,7 +39,7 @@ class RagChatApiController extends Controller
      * @bodyParam use_intelligent_rag boolean Enable intelligent RAG. Example: true
      * @bodyParam rag_collections array Array of model classes to search. Example: ["App\\Models\\Post"]
      * @bodyParam user_id string Optional user identifier. Example: user-456
-     * 
+     *
      * @response {
      *   "success": true,
      *   "data": {
@@ -116,7 +117,7 @@ class RagChatApiController extends Controller
                         $metadata
                     );
                 } catch (\Exception $e) {
-                    \Log::warning('Failed to generate actions: ' . $e->getMessage());
+                    Log::warning('Failed to generate actions: ' . $e->getMessage());
                 }
             }
 
@@ -150,12 +151,12 @@ class RagChatApiController extends Controller
 
     /**
      * Execute an action
-     * 
+     *
      * @group Actions
      * @bodyParam action_id string required Action identifier. Example: view_source_123
      * @bodyParam action_type string required Action type (button, quick_reply). Example: button
      * @bodyParam payload object required Action payload data. Example: {"action": "view_source", "model_id": 5}
-     * 
+     *
      * @response {
      *   "success": true,
      *   "data": {
@@ -203,11 +204,11 @@ class RagChatApiController extends Controller
 
     /**
      * Get conversation history
-     * 
+     *
      * @group Chat
      * @urlParam session_id string required Session identifier. Example: user-123
      * @queryParam limit integer Maximum number of messages. Example: 50
-     * 
+     *
      * @response {
      *   "success": true,
      *   "data": {
@@ -251,10 +252,10 @@ class RagChatApiController extends Controller
 
     /**
      * Clear conversation history
-     * 
+     *
      * @group Chat
      * @bodyParam session_id string required Session identifier. Example: user-123
-     * 
+     *
      * @response {
      *   "success": true,
      *   "data": {
@@ -299,9 +300,9 @@ class RagChatApiController extends Controller
 
     /**
      * Get available RAG collections
-     * 
+     *
      * @group RAG
-     * 
+     *
      * @response {
      *   "success": true,
      *   "data": {
@@ -333,9 +334,9 @@ class RagChatApiController extends Controller
 
     /**
      * Get available engines and models
-     * 
+     *
      * @group Configuration
-     * 
+     *
      * @response {
      *   "success": true,
      *   "data": {
@@ -385,9 +386,9 @@ class RagChatApiController extends Controller
 
     /**
      * Health check
-     * 
+     *
      * @group System
-     * 
+     *
      * @response {
      *   "success": true,
      *   "data": {
@@ -424,7 +425,7 @@ class RagChatApiController extends Controller
 
     /**
      * Get user conversations
-     * 
+     *
      * @OA\Get(
      *   path="/api/v1/rag/conversations",
      *   summary="Get authenticated user's conversations",

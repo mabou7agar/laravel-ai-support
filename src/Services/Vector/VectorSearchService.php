@@ -26,7 +26,7 @@ class VectorSearchService
 
     /**
      * Search for similar vectors with multi-tenant access control
-     * 
+     *
      * @param string $modelClass Model class to search
      * @param string $query Search query
      * @param int $limit Maximum results
@@ -52,11 +52,11 @@ class VectorSearchService
 
             // SECURITY: Build access control filters (fetches user internally)
             $filters = $this->accessControl->buildSearchFilters($userId, $filters);
-            
+
             // Get access level for logging
             $user = $this->accessControl->getUserById($userId);
             $accessLevel = $this->accessControl->getAccessLevel($user);
-            
+
             Log::debug('Vector search with access control', [
                 'user_id' => $userId,
                 'access_level' => $accessLevel,
@@ -67,6 +67,14 @@ class VectorSearchService
 
             // Search in vector database
             $driver = $this->driverManager->driver();
+            
+            \Log::info('Calling driver->search', [
+                'collection' => $collectionName,
+                'limit' => $limit,
+                'threshold' => $threshold,
+                'filters' => $filters
+            ]);
+            
             $results = $driver->search(
                 $collectionName,
                 $queryEmbedding,
@@ -74,6 +82,11 @@ class VectorSearchService
                 $threshold,
                 $filters
             );
+            
+            \Log::info('Driver returned results', [
+                'count' => count($results),
+                'first_id' => $results[0]['id'] ?? null
+            ]);
 
             // Hydrate models from results
             return $this->hydrateModels($modelClass, $results);
@@ -152,7 +165,7 @@ class VectorSearchService
 
             // Get indexable content from model
             $content = $this->getIndexableContent($model);
-            
+
             if (empty($content)) {
                 Log::warning('No indexable content found', [
                     'model' => $modelClass,
@@ -209,7 +222,7 @@ class VectorSearchService
             // Prepare content for batch embedding
             $contents = [];
             $validModels = [];
-            
+
             foreach ($models as $model) {
                 $content = $this->getIndexableContent($model);
                 if (!empty($content)) {
@@ -297,7 +310,7 @@ class VectorSearchService
             $dimensions = $this->embeddingService->getDimensions();
 
             $driver = $this->driverManager->driver();
-            
+
             if ($driver->collectionExists($collectionName)) {
                 Log::info('Collection already exists', ['collection' => $collectionName]);
                 return true;
@@ -345,20 +358,20 @@ class VectorSearchService
         if (property_exists($model, 'vectorizable')) {
             $fields = $model->vectorizable;
             $content = [];
-            
+
             foreach ($fields as $field) {
                 if (isset($model->$field)) {
                     $content[] = $model->$field;
                 }
             }
-            
+
             return implode(' ', $content);
         }
 
         // Default: use common text fields
         $commonFields = ['title', 'name', 'content', 'description', 'body', 'text'];
         $content = [];
-        
+
         foreach ($commonFields as $field) {
             if (isset($model->$field)) {
                 $content[] = $model->$field;
@@ -393,12 +406,30 @@ class VectorSearchService
      */
     protected function hydrateModels(string $modelClass, array $results): Collection
     {
+        \Log::info('hydrateModels called', [
+            'model' => $modelClass,
+            'results_count' => count($results),
+            'first_result' => $results[0] ?? null
+        ]);
+        
         if (empty($results)) {
+            \Log::warning('hydrateModels: empty results');
             return collect();
         }
 
-        // Extract IDs
-        $ids = array_column($results, 'id');
+        // Extract model IDs from metadata (not point IDs which may be UUIDs)
+        $ids = [];
+        foreach ($results as $result) {
+            // Try to get model_id from metadata first (for UUID-based point IDs)
+            if (isset($result['metadata']['model_id'])) {
+                $ids[] = $result['metadata']['model_id'];
+            } elseif (isset($result['payload']['model_id'])) {
+                $ids[] = $result['payload']['model_id'];
+            } else {
+                // Fallback to point ID if it's an integer
+                $ids[] = $result['id'];
+            }
+        }
 
         // Fetch models from database
         $models = $modelClass::whereIn('id', $ids)->get()->keyBy('id');
@@ -406,10 +437,15 @@ class VectorSearchService
         // Attach scores and return in order
         $hydrated = collect();
         foreach ($results as $result) {
-            $model = $models->get($result['id']);
+            // Get the actual model ID
+            $modelId = $result['metadata']['model_id'] 
+                ?? $result['payload']['model_id'] 
+                ?? $result['id'];
+                
+            $model = $models->get($modelId);
             if ($model) {
                 $model->vector_score = $result['score'];
-                $model->vector_metadata = $result['metadata'];
+                $model->vector_metadata = $result['metadata'] ?? $result['payload'] ?? [];
                 $hydrated->push($model);
             }
         }
@@ -428,11 +464,11 @@ class VectorSearchService
         try {
             $collection = $this->getCollectionName($modelClass);
             $driver = $this->driverManager->driver();
-            
+
             // Get count from vector database
             return $driver->count($collection);
         } catch (\Exception $e) {
-            \Log::warning('Failed to get indexed count', [
+            Log::warning('Failed to get indexed count', [
                 'model' => $modelClass,
                 'error' => $e->getMessage()
             ]);

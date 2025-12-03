@@ -176,8 +176,11 @@ class VectorAccessControl
             'user_id' => $userId,
         ]);
         
+        // Smart type casting: if userId is numeric, cast to int; otherwise keep as string (for UUIDs)
+        $filterUserId = is_numeric($userId) ? (int) $userId : (string) $userId;
+        
         return array_merge($baseFilters, [
-            'user_id' => (string) $userId,
+            'user_id' => $filterUserId,
         ]);
     }
 
