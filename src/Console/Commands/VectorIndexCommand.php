@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
+use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use Illuminate\Support\Facades\DB;
 
 class VectorIndexCommand extends Command
@@ -82,20 +83,35 @@ class VectorIndexCommand extends Command
 
     protected function discoverVectorizableModels(): array
     {
+        try {
+            // Use RAG Collection Discovery service
+            $discovery = app(RAGCollectionDiscovery::class);
+            $models = $discovery->discover(useCache: false, includeFederated: false);
+            
+            $this->line('<fg=gray>✓ Using RAG Collection Discovery service</>');
+            
+            return $models;
+        } catch (\Exception $e) {
+            $this->warn('⚠ RAG Discovery failed, falling back to manual scan: ' . $e->getMessage());
+            
+            // Fallback to manual scanning
+            return $this->manualDiscoverVectorizableModels();
+        }
+    }
+
+    protected function manualDiscoverVectorizableModels(): array
+    {
         // Discover all vectorizable models by scanning multiple paths
         // This logic is also available as a helper: discover_vectorizable_models()
-        
         $models = [];
         
-        // Define paths to scan for models
-        $searchPaths = [
-            app_path('Models'),           // app/Models
-            base_path('modules'),         // modules/*/Models
-            base_path('Modules'),         // Modules/*/Models (capitalized)
-            app_path(),                   // app/* (for custom structures)
+        // Scan app/Models directory
+        $paths = [
+            app_path('Models'),
+            base_path('app/Models'),
         ];
         
-        foreach ($searchPaths as $basePath) {
+        foreach ($paths as $basePath) {
             if (!is_dir($basePath)) {
                 continue;
             }
