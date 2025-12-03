@@ -133,6 +133,56 @@ class VectorIndexCommand extends Command
         return array_unique($models);
     }
 
+    protected function showIndexableFields(string $modelClass): void
+    {
+        try {
+            $instance = new $modelClass();
+            
+            // Determine which strategy will be used and show fields
+            if (!empty($instance->vectorizable)) {
+                $this->line("📋 <fg=cyan>Indexing Fields (Explicit \$vectorizable):</>");
+                foreach ($instance->vectorizable as $field) {
+                    $this->line("   • <fg=green>{$field}</>");
+                }
+            } elseif (!empty($instance->getFillable())) {
+                $this->line("📋 <fg=cyan>Indexing Fields (From \$fillable):</>");
+                
+                // Get filtered fillable fields
+                $fillable = $instance->getFillable();
+                if (method_exists($instance, 'filterFillableToTextFields')) {
+                    $reflection = new \ReflectionMethod($instance, 'filterFillableToTextFields');
+                    $reflection->setAccessible(true);
+                    $fields = $reflection->invoke($instance, $fillable);
+                } else {
+                    $fields = $fillable;
+                }
+                
+                if (!empty($fields)) {
+                    foreach ($fields as $field) {
+                        $this->line("   • <fg=green>{$field}</>");
+                    }
+                    $this->line("   <fg=gray>(Excludes: password, tokens)</>");
+                } else {
+                    $this->line("   <fg=yellow>⚠ No fields after filtering</>");
+                }
+            } else {
+                $this->line("📋 <fg=cyan>Indexing Fields (Auto-detection):</>");
+                $this->line("   <fg=yellow>Will be determined during indexing using AI</>");
+            }
+            
+            // Show if media is included
+            if (method_exists($instance, 'getMediaVectorContent')) {
+                $this->line("   • <fg=magenta>📷 Media content will be included</>");
+            }
+            
+            $this->newLine();
+            $this->line("<fg=gray>💡 Check logs for detailed field list: storage/logs/laravel.log</>");
+            $this->newLine();
+        } catch (\Exception $e) {
+            // Silently fail - not critical
+        }
+    }
+
     protected function indexModel(string $modelClass, VectorSearchService $vectorSearch, bool $showHeader = true): int
     {
         if ($showHeader) {
@@ -140,6 +190,9 @@ class VectorIndexCommand extends Command
         }
 
         try {
+            // Show which fields will be indexed
+            $this->showIndexableFields($modelClass);
+            
             // Create collection if it doesn't exist
             $this->info('Creating vector collection...');
             $vectorSearch->createCollection($modelClass);

@@ -38,7 +38,7 @@ trait Vectorizable
         if (config('ai-engine.vector.auto_index', false)) {
             static::observe(\LaravelAIEngine\Observers\VectorIndexObserver::class);
         }
-        
+
         // Register ContextLimitationObserver if auto_update_limitations is enabled
         if (config('ai-engine.rag.auto_update_limitations', true)) {
             static::observe(\LaravelAIEngine\Observers\ContextLimitationObserver::class);
@@ -96,7 +96,7 @@ trait Vectorizable
     public function getVectorContentChunks(): array
     {
         $strategy = config('ai-engine.vectorization.strategy', 'split');
-        
+
         if ($strategy === 'truncate') {
             // Return single chunk for backward compatibility
             return [$this->getVectorContent()];
@@ -104,7 +104,7 @@ trait Vectorizable
 
         // Get full content without truncation
         $fullContent = $this->getFullVectorContent();
-        
+
         // Split into chunks
         return $this->splitIntoChunks($fullContent);
     }
@@ -117,17 +117,17 @@ trait Vectorizable
     public function getVectorContent(): string
     {
         $fullContent = $this->getFullVectorContent();
-        
+
         // Apply strategy
         $strategy = config('ai-engine.vectorization.strategy', 'split');
-        
+
         if ($strategy === 'split') {
             // For split strategy, return first chunk only
             // Use getVectorContentChunks() for all chunks
             $chunks = $this->splitIntoChunks($fullContent);
             return $chunks[0] ?? '';
         }
-        
+
         // Truncate strategy
         return $this->truncateContent($fullContent);
     }
@@ -145,14 +145,14 @@ trait Vectorizable
         $maxFieldSize = config('ai-engine.vectorization.max_field_size', 100000); // 100KB per field
         $chunkedFields = [];
 
-        // If vectorizable is explicitly set, use it
+        // Priority 1: If vectorizable is explicitly set, use it
         if (!empty($this->vectorizable)) {
             $source = 'explicit $vectorizable property';
             foreach ($this->vectorizable as $field) {
                 if (isset($this->$field)) {
                     $fieldValue = $this->$field;
                     $fieldSize = strlen($fieldValue);
-                    
+
                     // Chunk fields that are too large
                     if ($fieldSize > $maxFieldSize) {
                         $chunked = $this->chunkLargeField($fieldValue, $maxFieldSize);
@@ -161,11 +161,39 @@ trait Vectorizable
                     } else {
                         $content[] = $fieldValue;
                     }
-                    
+
                     $usedFields[] = $field;
                 }
             }
-        } else {
+        }
+        // Priority 2: Use $fillable if available (smart default)
+        elseif (!empty($this->getFillable())) {
+            $source = '$fillable property (smart default)';
+
+            // Filter fillable to only text-based fields
+            $fillableTextFields = $this->filterFillableToTextFields($this->getFillable());
+
+            foreach ($fillableTextFields as $field) {
+                if (isset($this->$field)) {
+                    $fieldValue = $this->$field;
+                    $fieldSize = strlen($fieldValue);
+
+                    // Chunk fields that are too large
+                    if ($fieldSize > $maxFieldSize) {
+                        $chunked = $this->chunkLargeField($fieldValue, $maxFieldSize);
+                        $content[] = $chunked;
+                        $chunkedFields[] = ['field' => $field, 'original_size' => $fieldSize, 'chunked_size' => strlen($chunked)];
+                    } else {
+                        $content[] = $fieldValue;
+                    }
+
+                    $usedFields[] = $field;
+                }
+            }
+        }
+        // Priority 3: Auto-detect vectorizable fields
+        else {
+            $source = 'auto-detected fields';
             // Auto-detect vectorizable fields if not set
             $autoFields = $this->autoDetectVectorizableFields();
 
@@ -175,7 +203,7 @@ trait Vectorizable
                     if (isset($this->$field)) {
                         $fieldValue = $this->$field;
                         $fieldSize = strlen($fieldValue);
-                        
+
                         // Chunk fields that are too large
                         if ($fieldSize > $maxFieldSize) {
                             $chunked = $this->chunkLargeField($fieldValue, $maxFieldSize);
@@ -184,7 +212,7 @@ trait Vectorizable
                         } else {
                             $content[] = $fieldValue;
                         }
-                        
+
                         $usedFields[] = $field;
                     }
                 }
@@ -199,7 +227,7 @@ trait Vectorizable
                 if (isset($this->$field)) {
                     $fieldValue = $this->$field;
                     $fieldSize = strlen($fieldValue);
-                    
+
                     // Chunk fields that are too large
                     if ($fieldSize > $maxFieldSize) {
                         $chunked = $this->chunkLargeField($fieldValue, $maxFieldSize);
@@ -208,7 +236,7 @@ trait Vectorizable
                     } else {
                         $content[] = $fieldValue;
                     }
-                    
+
                     $usedFields[] = $field;
                 }
             }
@@ -223,7 +251,7 @@ trait Vectorizable
                 if (!empty($mediaContent)) {
                     $content[] = $mediaContent;
                     $hasMedia = true;
-                    
+
                     if (config('ai-engine.debug')) {
                         \Log::channel('ai-engine')->debug('Media content integrated', [
                             'model' => get_class($this),
@@ -243,6 +271,18 @@ trait Vectorizable
         }
 
         $fullContent = implode(' ', $content);
+
+        // Always log which fields were indexed (not just in debug mode)
+        \Log::channel('ai-engine')->info('📊 Vectorization Summary', [
+            'model' => class_basename($this),
+            'model_id' => $this->id ?? 'new',
+            'source' => $source,
+            'indexed_fields' => $usedFields,
+            'field_count' => count($usedFields),
+            'total_content_length' => strlen($fullContent),
+            'has_media' => $hasMedia ?? false,
+            'chunked_fields' => !empty($chunkedFields) ? $chunkedFields : null,
+        ]);
 
         if (config('ai-engine.debug')) {
             \Log::channel('ai-engine')->debug('Full vector content generated', [
@@ -279,16 +319,16 @@ trait Vectorizable
 
         $embeddingModel = config('ai-engine.vector.embedding_model', 'text-embedding-3-small');
         $tokenLimit = $this->getModelTokenLimit($embeddingModel);
-        
+
         // Calculate chunk size (leave 10% buffer for safety)
         $chunkSize = config('ai-engine.vectorization.chunk_size');
         if (!$chunkSize) {
             // Auto-calculate: 90% of token limit converted to chars
             $chunkSize = (int) ($tokenLimit * 0.9 * 1.3); // 1.3 chars per token average
         }
-        
+
         $overlap = config('ai-engine.vectorization.chunk_overlap', 200);
-        
+
         // If content fits in one chunk, return it
         if (strlen($content) <= $chunkSize) {
             return [$content];
@@ -301,13 +341,13 @@ trait Vectorizable
         while ($position < $contentLength) {
             // Extract chunk
             $chunk = substr($content, $position, $chunkSize);
-            
+
             // Try to break at sentence boundary
             if ($position + $chunkSize < $contentLength) {
                 $lastPeriod = strrpos($chunk, '.');
                 $lastNewline = strrpos($chunk, "\n");
                 $breakPoint = max($lastPeriod, $lastNewline);
-                
+
                 if ($breakPoint !== false && $breakPoint > $chunkSize * 0.8) {
                     $chunk = substr($chunk, 0, $breakPoint + 1);
                     $position += $breakPoint + 1;
@@ -317,9 +357,9 @@ trait Vectorizable
             } else {
                 $position = $contentLength;
             }
-            
+
             $chunks[] = trim($chunk);
-            
+
             // Move back by overlap amount for next chunk
             if ($position < $contentLength) {
                 $position -= $overlap;
@@ -342,6 +382,30 @@ trait Vectorizable
     }
 
     /**
+     * Filter sensitive fields from fillable array
+     * Includes ALL fields except passwords and tokens
+     *
+     * @param array $fillable
+     * @return array
+     */
+    protected function filterFillableToTextFields(array $fillable): array
+    {
+        // Only skip truly sensitive fields - include everything else!
+        $skipFields = [
+            'password',
+            'remember_token',
+            'api_token',
+            'two_factor_secret',
+            'two_factor_recovery_codes',
+            'email_verification_token',
+            'password_reset_token',
+        ];
+
+        // Include ALL other fields (id, timestamps, numbers, booleans, etc.)
+        return array_values(array_diff($fillable, $skipFields));
+    }
+
+    /**
      * Chunk large field content intelligently
      * Takes beginning and end of content to preserve context
      * Uses semantic separator that won't interfere with embeddings
@@ -358,11 +422,11 @@ trait Vectorizable
 
         // Strategy: Take beginning and end, join with space
         // This preserves semantic meaning for embeddings
-        
+
         // Calculate sizes (leave room for separator)
         $separatorSize = 50; // Space for separator
         $availableSize = $maxSize - $separatorSize;
-        
+
         // Take 70% from beginning and 30% from end to preserve context
         $beginningSize = (int) ($availableSize * 0.7);
         $endSize = (int) ($availableSize * 0.3);
@@ -398,14 +462,14 @@ trait Vectorizable
     {
         // Get the embedding model from config
         $embeddingModel = config('ai-engine.vector.embedding_model', 'text-embedding-3-small');
-        
+
         // Get token limit for the model
         $tokenLimit = $this->getModelTokenLimit($embeddingModel);
-        
+
         // Convert tokens to characters (conservative estimate)
         // Use 1.3 chars per token to stay safe
         $maxChars = (int) ($tokenLimit * 1.3);
-        
+
         // Allow config override
         $maxChars = config('ai-engine.vectorization.max_content_length', $maxChars);
 
@@ -438,7 +502,7 @@ trait Vectorizable
     /**
      * Get token limit for embedding model from database
      * Falls back to hardcoded limits if model not found in DB
-     * 
+     *
      * @param string $model
      * @return int
      */
@@ -447,11 +511,11 @@ trait Vectorizable
         // Try to get from database first (with caching)
         try {
             $aiModel = \LaravelAIEngine\Models\AIModel::findByModelId($model);
-            
+
             if ($aiModel && isset($aiModel->context_window['input'])) {
                 return (int) $aiModel->context_window['input'];
             }
-            
+
             if ($aiModel && isset($aiModel->max_tokens)) {
                 return (int) $aiModel->max_tokens;
             }
@@ -462,59 +526,59 @@ trait Vectorizable
                 'error' => $e->getMessage(),
             ]);
         }
-        
+
         // Fallback to hardcoded limits for common embedding models
         $limits = [
             // OpenAI Models
             'text-embedding-3-small' => 8191,
             'text-embedding-3-large' => 8191,
             'text-embedding-ada-002' => 8191,
-            
+
             // Cohere Models
             'embed-english-v3.0' => 512,
             'embed-multilingual-v3.0' => 512,
-            
+
             // Voyage AI Models
             'voyage-large-2' => 16000,
             'voyage-code-2' => 16000,
             'voyage-2' => 4000,
-            
+
             // Mistral Models
             'mistral-embed' => 8192,
-            
+
             // Jina AI Models
             'jina-embeddings-v2-base-en' => 8192,
             'jina-embeddings-v2-small-en' => 8192,
         ];
-        
+
         // Check if model has known limit
         if (isset($limits[$model])) {
             return $limits[$model];
         }
-        
+
         // Check for model family patterns
         if (str_contains($model, 'text-embedding-3') || str_contains($model, 'text-embedding-ada')) {
             return 8191;
         }
-        
+
         if (str_contains($model, 'voyage')) {
             return 4000;
         }
-        
+
         if (str_contains($model, 'cohere') || str_contains($model, 'embed-')) {
             return 512;
         }
-        
+
         if (str_contains($model, 'jina')) {
             return 8192;
         }
-        
+
         // Default to conservative limit
         \Log::channel('ai-engine')->warning('Unknown embedding model, using default token limit', [
             'model' => $model,
             'default_limit' => 4000,
         ]);
-        
+
         return 4000; // Safe default
     }
 
@@ -527,13 +591,13 @@ trait Vectorizable
     {
         $modelClass = get_class($this);
         $tableName = $this->getTable();
-        
+
         // Check cache first
         $cacheKey = 'vectorizable_fields_' . $tableName;
 
         if (\Cache::has($cacheKey)) {
             $cachedFields = \Cache::get($cacheKey);
-            
+
             if (config('ai-engine.debug')) {
                 \Log::channel('ai-engine')->debug('Auto-detect vectorizable fields (from cache)', [
                     'model' => $modelClass,
@@ -542,7 +606,7 @@ trait Vectorizable
                     'source' => 'cache'
                 ]);
             }
-            
+
             return $cachedFields;
         }
 
@@ -574,9 +638,9 @@ trait Vectorizable
             $textColumns = array_filter($columnInfo, function($type, $column) {
                 // Skip common non-vectorizable columns
                 $skipColumns = [
-                    'id', 'created_at', 'updated_at', 'deleted_at', 
+                    'id', 'created_at', 'updated_at', 'deleted_at',
                     'password', 'remember_token', 'email_verified_at',
-                    'raw_body', 'raw_content', 'raw_data', 'raw_email', // Skip raw fields (contain attachments)
+                    'raw_body', 'raw_data', 'raw_email', // Skip raw fields (contain attachments)
                     'binary_data', 'file_data', 'attachment_data', // Skip binary data
                 ];
                 if (in_array($column, $skipColumns)) {
@@ -587,6 +651,32 @@ trait Vectorizable
                 $textTypes = ['string', 'text', 'longtext', 'mediumtext', 'varchar', 'char'];
                 return in_array(strtolower($type), $textTypes);
             }, ARRAY_FILTER_USE_BOTH);
+
+            $textColumnNames = array_keys($textColumns);
+
+            // Always include certain important text fields if they exist
+            $alwaysIncludeText = ['email', 'username', 'phone', 'address', 'bio', 'description'];
+            $forceIncludedText = array_intersect($alwaysIncludeText, $textColumnNames);
+
+            // Always include foreign key fields (for linking/relationships)
+            $foreignKeyFields = [];
+            foreach ($columns as $column) {
+                // Include fields ending with _id (user_id, post_id, etc.)
+                if (preg_match('/_id$/', $column) && $column !== 'id') {
+                    $foreignKeyFields[] = $column;
+                }
+            }
+
+            $forceIncluded = array_merge($forceIncludedText, $foreignKeyFields);
+
+            if (!empty($forceIncluded)) {
+                \Log::channel('ai-engine')->info('Auto-detect: Force-including important fields', [
+                    'model' => $modelClass,
+                    'force_included_text' => $forceIncludedText,
+                    'force_included_foreign_keys' => $foreignKeyFields,
+                    'total_force_included' => $forceIncluded,
+                ]);
+            }
 
             $textColumnNames = array_keys($textColumns);
 
@@ -914,19 +1004,19 @@ PROMPT;
                 try {
                     // Load the relationship to inspect it
                     $this->loadMissing($relation);
-                    
+
                     if ($this->relationLoaded($relation)) {
                         $related = $this->$relation;
-                        
+
                         // Handle collections
                         if ($related instanceof \Illuminate\Database\Eloquent\Collection) {
                             $related = $related->first();
                         }
-                        
+
                         // Check if related model has vectorRelationships
                         if ($related && is_object($related)) {
                             $nestedRelations = $this->getNestedVectorRelationships($related);
-                            
+
                             if (!empty($nestedRelations)) {
                                 // Recursively traverse nested relationships
                                 $nestedResults = $this->traverseNestedRelationshipsForModel(
@@ -936,7 +1026,7 @@ PROMPT;
                                     $currentDepth + 1,
                                     $fullRelation
                                 );
-                                
+
                                 $result = array_merge($result, $nestedResults);
                             }
                         }
@@ -982,17 +1072,17 @@ PROMPT;
             if ($currentDepth < $maxDepth) {
                 try {
                     $model->loadMissing($relation);
-                    
+
                     if ($model->relationLoaded($relation)) {
                         $related = $model->$relation;
-                        
+
                         if ($related instanceof \Illuminate\Database\Eloquent\Collection) {
                             $related = $related->first();
                         }
-                        
+
                         if ($related && is_object($related)) {
                             $nestedRelations = $this->getNestedVectorRelationships($related);
-                            
+
                             if (!empty($nestedRelations)) {
                                 $nestedResults = $this->traverseNestedRelationshipsForModel(
                                     $related,
@@ -1001,7 +1091,7 @@ PROMPT;
                                     $currentDepth + 1,
                                     $fullRelation
                                 );
-                                
+
                                 $result = array_merge($result, $nestedResults);
                             }
                         }
@@ -1160,7 +1250,7 @@ PROMPT;
 
         // Auto-detect icon based on class name
         $className = strtolower(class_basename(static::class));
-        
+
         if (str_contains($className, 'email')) return '📧';
         if (str_contains($className, 'message')) return '💬';
         if (str_contains($className, 'document')) return '📄';
@@ -1174,7 +1264,7 @@ PROMPT;
         if (str_contains($className, 'task')) return '✅';
         if (str_contains($className, 'note')) return '📝';
         if (str_contains($className, 'comment')) return '💭';
-        
+
         return '📚';
     }
 
