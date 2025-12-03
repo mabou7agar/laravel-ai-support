@@ -7,6 +7,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Facades\Engine;
 use LaravelAIEngine\Events\AISessionStarted;
 use LaravelAIEngine\Services\RAG\IntelligentRAGService;
+use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use Illuminate\Support\Facades\Log;
 
 class ChatService
@@ -16,11 +17,17 @@ class ChatService
         protected AIEngineService $aiEngineService,
         protected MemoryOptimizationService $memoryOptimization,
         protected DynamicActionService $dynamicActionService,
-        protected ?IntelligentRAGService $intelligentRAG = null
+        protected ?IntelligentRAGService $intelligentRAG = null,
+        protected ?RAGCollectionDiscovery $ragDiscovery = null
     ) {
         // Lazy load IntelligentRAGService if available
         if ($this->intelligentRAG === null && app()->bound(IntelligentRAGService::class)) {
             $this->intelligentRAG = app(IntelligentRAGService::class);
+        }
+        
+        // Lazy load RAGCollectionDiscovery if available
+        if ($this->ragDiscovery === null && app()->bound(RAGCollectionDiscovery::class)) {
+            $this->ragDiscovery = app(RAGCollectionDiscovery::class);
         }
     }
 
@@ -91,8 +98,20 @@ class ChatService
         }
 
         // Use Intelligent RAG if enabled and available
-        if ($useIntelligentRAG && $this->intelligentRAG !== null && !empty($ragCollections)) {
+        if ($useIntelligentRAG && $this->intelligentRAG !== null) {
             try {
+                // Auto-discover collections if not provided
+                if (empty($ragCollections) && $this->ragDiscovery !== null) {
+                    $ragCollections = $this->ragDiscovery->discover();
+                    
+                    if (config('ai-engine.debug')) {
+                        Log::channel('ai-engine')->debug('Auto-discovered RAG collections', [
+                            'collections' => $ragCollections,
+                            'count' => count($ragCollections),
+                        ]);
+                    }
+                }
+                
                 $conversationHistory = !empty($messages) ? $messages : [];
                 
                 $response = $this->intelligentRAG->processMessage(

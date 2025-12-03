@@ -33,6 +33,9 @@ class AIEngineServiceProvider extends ServiceProvider
             'ai-engine'
         );
 
+        // Register AI Engine log channel
+        $this->registerLogChannel();
+
         // Core AI Engine Services
         $this->registerCoreServices();
         
@@ -47,14 +50,29 @@ class AIEngineServiceProvider extends ServiceProvider
     }
 
     /**
+     * Register AI Engine log channel
+     */
+    protected function registerLogChannel(): void
+    {
+        $this->app->make('config')->set('logging.channels.ai-engine', [
+            'driver' => 'daily',
+            'path' => storage_path('logs/ai-engine.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 14,
+        ]);
+    }
+
+    /**
      * Register core AI engine services
      */
     protected function registerCoreServices(): void
     {
-        // Register OpenAI Client
+        // Register OpenAI Client (lazy - only throws error when actually used)
         $this->app->singleton(\OpenAI\Client::class, function ($app) {
             $apiKey = config('ai-engine.engines.openai.api_key');
             if (empty($apiKey)) {
+                // Return a null client or throw only when methods are called
+                // This prevents boot-time failures
                 throw new \RuntimeException('OpenAI API key is not configured. Please set OPENAI_API_KEY in your .env file.');
             }
             return \OpenAI::client($apiKey);
@@ -213,6 +231,59 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorAnalyticsService::class, function ($app) {
             return new \LaravelAIEngine\Services\Vector\VectorAnalyticsService();
         });
+        
+        // Node Management Services
+        $this->registerNodeServices();
+    }
+    
+    /**
+     * Register node management services
+     */
+    protected function registerNodeServices(): void
+    {
+        if (!config('ai-engine.nodes.enabled', true)) {
+            return;
+        }
+        
+        // Auth Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeAuthService::class);
+        
+        // Circuit Breaker
+        $this->app->singleton(\LaravelAIEngine\Services\Node\CircuitBreakerService::class);
+        
+        // Cache Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeCacheService::class);
+        
+        // Load Balancer
+        $this->app->singleton(\LaravelAIEngine\Services\Node\LoadBalancerService::class);
+        
+        // Registry Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRegistryService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\NodeRegistryService(
+                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)
+            );
+        });
+        
+        // Federated Search Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\FederatedSearchService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\FederatedSearchService(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeCacheService::class),
+                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
+                $app->make(\LaravelAIEngine\Services\Node\LoadBalancerService::class)
+            );
+        });
+        
+        // Remote Action Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\RemoteActionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\RemoteActionService(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)
+            );
+        });
     }
 
     /**
@@ -294,17 +365,53 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\VectorSearchCommand::class,
                 Console\Commands\VectorAnalyticsCommand::class,
                 Console\Commands\VectorCleanCommand::class,
+                Console\Commands\AnalyzeModelCommand::class,
+                Console\Commands\VectorStatusCommand::class,
+                Console\Commands\ListVectorizableModelsCommand::class,
+                Console\Commands\GenerateVectorConfigCommand::class,
+                Console\Commands\TestVectorJourneyCommand::class,
+                Console\Commands\ConfigureAllModelsCommand::class,
+                Console\Commands\TestMediaEmbeddingsCommand::class,
+                Console\Commands\TestChunkingCommand::class,
+                Console\Commands\TestLargeMediaCommand::class,
             ]);
+            
+            // Node Management Commands
+            if (config('ai-engine.nodes.enabled', true)) {
+                $this->commands([
+                    Console\Commands\Node\MonitorNodesCommand::class,
+                    Console\Commands\Node\RegisterNodeCommand::class,
+                    Console\Commands\Node\UpdateNodeCommand::class,
+                    Console\Commands\Node\ListNodesCommand::class,
+                    Console\Commands\Node\PingNodesCommand::class,
+                    Console\Commands\Node\NodeStatsCommand::class,
+                    Console\Commands\Node\TestNodeSystemCommand::class,
+                    Console\Commands\Node\DemoNodesCommand::class,
+                    Console\Commands\Node\NodeLogsCommand::class,
+                    Console\Commands\Node\DiscoverCollectionsCommand::class,
+                ]);
+            }
         }
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         
         // Load routes
         $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
+        $this->loadRoutesFrom(__DIR__.'/../routes/auth.php');
         
-        // Load demo routes conditionally
-        if (config('ai-engine.enable_demo_routes', $this->app->environment('local'))) {
+        // Load demo routes conditionally (safe for config cache)
+        if (config('ai-engine.enable_demo_routes', false)) {
             $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
+        }
+        
+        // Load node API routes
+        if (config('ai-engine.nodes.enabled', true)) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/node-api.php');
+            
+            // Register middleware
+            $router = $this->app['router'];
+            $router->aliasMiddleware('node.auth', \LaravelAIEngine\Http\Middleware\NodeAuthMiddleware::class);
+            $router->aliasMiddleware('node.rate_limit', \LaravelAIEngine\Http\Middleware\NodeRateLimitMiddleware::class);
         }
         
         // Register views

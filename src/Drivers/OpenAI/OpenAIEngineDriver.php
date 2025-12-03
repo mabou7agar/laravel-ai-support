@@ -318,7 +318,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::OPENAI;
+        return new EngineEnum(EngineEnum::OPENAI);
     }
 
     /**

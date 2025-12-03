@@ -22,13 +22,19 @@ use LaravelAIEngine\Drivers\FalAI\FluxProDriver;
 use LaravelAIEngine\Drivers\FalAI\KlingVideoDriver;
 use LaravelAIEngine\Drivers\DeepSeek\DeepSeekChatDriver;
 use LaravelAIEngine\Drivers\DeepSeek\DeepSeekReasonerDriver;
+use LaravelAIEngine\Services\Models\DynamicModelResolver;
 
 class EntityEnum
 {
+    protected static ?DynamicModelResolver $resolver = null;
+    protected ?array $dynamicModel = null;
     // OpenAI Models
     public const GPT_4O = 'gpt-4o';
     public const GPT_4O_MINI = 'gpt-4o-mini';
     public const GPT_3_5_TURBO = 'gpt-3.5-turbo';
+    public const GPT_5 = 'gpt-5';
+    public const GPT_5_MINI = 'gpt-5-mini';
+    public const GPT_5_NANO = 'gpt-5-nano';
     public const DALL_E_3 = 'dall-e-3';
     public const DALL_E_2 = 'dall-e-2';
     public const WHISPER_1 = 'whisper-1';
@@ -147,6 +153,46 @@ class EntityEnum
     public const OPENROUTER_MIXTRAL_8X7B = 'mistralai/mixtral-8x7b-instruct';
     public const OPENROUTER_QWEN_2_5_72B = 'qwen/qwen-2.5-72b-instruct';
     public const OPENROUTER_DEEPSEEK_V3 = 'deepseek/deepseek-chat';
+
+    // Ollama Models (Local AI Models)
+    // Llama Models
+    public const OLLAMA_LLAMA2 = 'llama2';
+    public const OLLAMA_LLAMA2_7B = 'llama2:7b';
+    public const OLLAMA_LLAMA2_13B = 'llama2:13b';
+    public const OLLAMA_LLAMA2_70B = 'llama2:70b';
+    public const OLLAMA_LLAMA3 = 'llama3';
+    public const OLLAMA_LLAMA3_8B = 'llama3:8b';
+    public const OLLAMA_LLAMA3_70B = 'llama3:70b';
+    public const OLLAMA_LLAMA3_1 = 'llama3.1';
+    public const OLLAMA_LLAMA3_2 = 'llama3.2';
+    
+    // Mistral Models
+    public const OLLAMA_MISTRAL = 'mistral';
+    public const OLLAMA_MISTRAL_7B = 'mistral:7b';
+    public const OLLAMA_MIXTRAL = 'mixtral';
+    public const OLLAMA_MIXTRAL_8X7B = 'mixtral:8x7b';
+    
+    // Code Models
+    public const OLLAMA_CODELLAMA = 'codellama';
+    public const OLLAMA_CODELLAMA_7B = 'codellama:7b';
+    public const OLLAMA_CODELLAMA_13B = 'codellama:13b';
+    public const OLLAMA_CODELLAMA_34B = 'codellama:34b';
+    
+    // Other Popular Ollama Models
+    public const OLLAMA_PHI = 'phi';
+    public const OLLAMA_PHI_2 = 'phi:2.7b';
+    public const OLLAMA_GEMMA = 'gemma';
+    public const OLLAMA_GEMMA_2B = 'gemma:2b';
+    public const OLLAMA_GEMMA_7B = 'gemma:7b';
+    public const OLLAMA_NEURAL_CHAT = 'neural-chat';
+    public const OLLAMA_STARLING = 'starling-lm';
+    public const OLLAMA_ORCA_MINI = 'orca-mini';
+    public const OLLAMA_VICUNA = 'vicuna';
+    public const OLLAMA_NOUS_HERMES = 'nous-hermes';
+    public const OLLAMA_WIZARD_CODER = 'wizardcoder';
+    public const OLLAMA_DEEPSEEK_CODER = 'deepseek-coder';
+    public const OLLAMA_QWEN = 'qwen';
+    public const OLLAMA_SOLAR = 'solar';
     public const OPENROUTER_DEEPSEEK_R1 = 'deepseek/deepseek-r1';
 
     // Free Models (OpenRouter Free Tier)
@@ -163,6 +209,51 @@ class EntityEnum
     public function __construct(string $value)
     {
         $this->value = $value;
+        
+        // Try to load dynamic model info if not a predefined constant
+        if (!$this->isPredefinedModel()) {
+            $this->dynamicModel = $this->getResolver()->resolve($value);
+        }
+    }
+    
+    /**
+     * Get or create the resolver instance
+     */
+    protected function getResolver(): DynamicModelResolver
+    {
+        if (static::$resolver === null) {
+            static::$resolver = new DynamicModelResolver();
+        }
+        return static::$resolver;
+    }
+    
+    /**
+     * Check if this is a predefined model constant
+     */
+    protected function isPredefinedModel(): bool
+    {
+        $reflection = new \ReflectionClass(static::class);
+        $constants = $reflection->getConstants();
+        return in_array($this->value, $constants, true);
+    }
+    
+    /**
+     * Check if this model is loaded dynamically from database
+     */
+    public function isDynamic(): bool
+    {
+        return $this->dynamicModel !== null;
+    }
+    
+    /**
+     * Get dynamic model property or fallback to switch statement
+     */
+    protected function getDynamicOr(string $key, callable $fallback)
+    {
+        if ($this->isDynamic() && isset($this->dynamicModel[$key])) {
+            return $this->dynamicModel[$key];
+        }
+        return $fallback();
     }
 
 
@@ -171,10 +262,18 @@ class EntityEnum
      */
     public function engine(): EngineEnum
     {
+        // Use dynamic model data if available
+        if ($this->isDynamic() && isset($this->dynamicModel['engine'])) {
+            return new EngineEnum($this->dynamicModel['engine']);
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::WHISPER_1:
@@ -235,6 +334,11 @@ class EntityEnum
      */
     public function driverClass(): string
     {
+        // Use dynamic model data if available
+        if ($this->isDynamic() && isset($this->dynamicModel['driver_class'])) {
+            return $this->dynamicModel['driver_class'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
                 return GPT4ODriver::class;
@@ -242,6 +346,11 @@ class EntityEnum
                 return GPT4OMiniDriver::class;
             case self::GPT_3_5_TURBO:
                 return GPT35TurboDriver::class;
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
+                // GPT-5 models use the same driver as GPT-4O for now
+                return GPT4ODriver::class;
             case self::DALL_E_3:
                 return DallE3Driver::class;
             case self::DALL_E_2:
@@ -353,6 +462,11 @@ class EntityEnum
      */
     public function label(): string
     {
+        // Use dynamic model name if available
+        if ($this->isDynamic() && isset($this->dynamicModel['name'])) {
+            return $this->dynamicModel['name'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
                 return 'GPT-4o';
@@ -360,6 +474,12 @@ class EntityEnum
                 return 'GPT-4o Mini';
             case self::GPT_3_5_TURBO:
                 return 'GPT-3.5 Turbo';
+            case self::GPT_5:
+                return 'GPT-5';
+            case self::GPT_5_MINI:
+                return 'GPT-5 Mini';
+            case self::GPT_5_NANO:
+                return 'GPT-5 Nano';
             case self::DALL_E_3:
                 return 'DALL-E 3';
             case self::DALL_E_2:
@@ -472,6 +592,11 @@ class EntityEnum
      */
     public function creditIndex(): float
     {
+        // Use dynamic model credit index if available
+        if ($this->isDynamic() && isset($this->dynamicModel['credit_index'])) {
+            return $this->dynamicModel['credit_index'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
                 return 2.0;
@@ -479,6 +604,12 @@ class EntityEnum
                 return 0.5;
             case self::GPT_3_5_TURBO:
                 return 0.3;
+            case self::GPT_5:
+                return 3.0;  // GPT-5 is more expensive than GPT-4o
+            case self::GPT_5_MINI:
+                return 0.7;  // Between GPT-4o-mini and GPT-4o
+            case self::GPT_5_NANO:
+                return 0.4;  // Similar to GPT-3.5-turbo
             case self::DALL_E_3:
                 return 5.0;
             case self::DALL_E_2:
@@ -647,10 +778,18 @@ class EntityEnum
      */
     public function getContentType(): string
     {
+        // Use dynamic model content type if available
+        if ($this->isDynamic() && isset($this->dynamicModel['content_type'])) {
+            return $this->dynamicModel['content_type'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
             case self::CLAUDE_3_5_SONNET:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
@@ -702,6 +841,11 @@ class EntityEnum
      */
     public function maxTokens(): int
     {
+        // Use dynamic model max tokens if available
+        if ($this->isDynamic() && isset($this->dynamicModel['max_tokens'])) {
+            return $this->dynamicModel['max_tokens'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
                 return 128000;
@@ -709,6 +853,10 @@ class EntityEnum
                 return 128000;
             case self::GPT_3_5_TURBO:
                 return 16385;
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
+                return 200000;  // GPT-5 has larger context window
             case self::CLAUDE_3_5_SONNET:
                 return 200000;
             case self::CLAUDE_3_HAIKU:
@@ -733,13 +881,21 @@ class EntityEnum
      */
     public function supportsVision(): bool
     {
+        // Use dynamic model vision support if available
+        if ($this->isDynamic() && isset($this->dynamicModel['supports_vision'])) {
+            return $this->dynamicModel['supports_vision'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
+            case self::GPT_5:
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
                 return true;
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
                 return false;
             default:
                 throw new \InvalidArgumentException("Unknown model: {$this->value}");
@@ -751,10 +907,18 @@ class EntityEnum
      */
     public function supportsStreaming(): bool
     {
+        // Use dynamic model streaming support if available
+        if ($this->isDynamic() && isset($this->dynamicModel['supports_streaming'])) {
+            return $this->dynamicModel['supports_streaming'];
+        }
+        
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
+            case self::GPT_5:
+            case self::GPT_5_MINI:
+            case self::GPT_5_NANO:
             case self::DEEPSEEK_CHAT:
             case self::DEEPSEEK_REASONER:
                 return true;

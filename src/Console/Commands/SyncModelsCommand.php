@@ -8,11 +8,11 @@ use LaravelAIEngine\Facades\AIEngine;
 
 class SyncModelsCommand extends Command
 {
-    protected $signature = 'ai-engine:sync-models 
+    protected $signature = 'ai-engine:sync-engine-models 
                            {--engine= : Sync models for specific engine only}
                            {--force : Force sync even if models exist}';
 
-    protected $description = 'Sync available models from AI providers';
+    protected $description = 'Sync available models from AI providers (simple list)';
 
     public function handle(): int
     {
@@ -68,41 +68,85 @@ class SyncModelsCommand extends Command
 
     private function isEngineConfigured(EngineEnum $engine): bool
     {
-        $configKey = match ($engine) {
-            EngineEnum::OPENAI => 'ai-engine.engines.openai.api_key',
-            EngineEnum::ANTHROPIC => 'ai-engine.engines.anthropic.api_key',
-            EngineEnum::GEMINI => 'ai-engine.engines.gemini.api_key',
-            default => null,
-        };
-
-        return $configKey && !empty(config($configKey));
+        // Build config key from engine value
+        $configKey = "ai-engine.engines.{$engine->value}.api_key";
+        
+        $apiKey = config($configKey);
+        
+        // Check if API key is a non-empty string
+        return is_string($apiKey) && !empty(trim($apiKey));
     }
 
     private function syncEngineModels(EngineEnum $engine, bool $force): array
     {
-        // This would typically call the AI provider's API to get available models
-        // For now, return predefined models
-        return match ($engine) {
-            EngineEnum::OPENAI => [
-                'gpt-4o',
-                'gpt-4o-mini',
-                'gpt-3.5-turbo',
-                'dall-e-3',
-                'dall-e-2',
-                'whisper-1',
-                'tts-1',
-            ],
-            EngineEnum::ANTHROPIC => [
-                'claude-3-5-sonnet-20241022',
-                'claude-3-haiku-20240307',
-                'claude-3-opus-20240229',
-            ],
-            EngineEnum::GEMINI => [
-                'gemini-1.5-pro',
-                'gemini-1.5-flash',
-                'gemini-pro-vision',
-            ],
-            default => [],
-        };
+        try {
+            return match ($engine->value) {
+                'openai' => $this->syncOpenAIModels(),
+                'anthropic' => $this->syncAnthropicModels(),
+                'openrouter' => $this->syncOpenRouterModels(),
+                default => [],
+            };
+        } catch (\Exception $e) {
+            $this->error("Failed to sync {$engine->value}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    private function syncOpenAIModels(): array
+    {
+        $apiKey = config('ai-engine.engines.openai.api_key');
+        $baseUrl = config('ai-engine.engines.openai.base_url', 'https://api.openai.com/v1');
+        
+        $response = \Illuminate\Support\Facades\Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+        ])->get($baseUrl . '/models');
+
+        if (!$response->successful()) {
+            throw new \Exception('OpenAI API request failed: ' . $response->body());
+        }
+
+        $models = collect($response->json('data', []))
+            ->pluck('id')
+            ->filter(fn($id) => str_contains($id, 'gpt') || str_contains($id, 'dall-e') || str_contains($id, 'whisper') || str_contains($id, 'tts'))
+            ->sort()
+            ->values()
+            ->toArray();
+
+        return $models;
+    }
+
+    private function syncAnthropicModels(): array
+    {
+        // Anthropic doesn't have a public models API endpoint
+        // Return manually maintained list
+        return [
+            'claude-3-5-sonnet-20241022',
+            'claude-3-5-sonnet-20240620',
+            'claude-3-opus-20240229',
+            'claude-3-haiku-20240307',
+        ];
+    }
+
+    private function syncOpenRouterModels(): array
+    {
+        $apiKey = config('ai-engine.engines.openrouter.api_key');
+        
+        $response = \Illuminate\Support\Facades\Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+            'HTTP-Referer' => config('app.url', 'http://localhost'),
+            'X-Title' => config('app.name', 'Laravel'),
+        ])->get('https://openrouter.ai/api/v1/models');
+
+        if (!$response->successful()) {
+            throw new \Exception('OpenRouter API request failed: ' . $response->body());
+        }
+
+        $models = collect($response->json('data', []))
+            ->pluck('id')
+            ->sort()
+            ->values()
+            ->toArray();
+
+        return $models;
     }
 }

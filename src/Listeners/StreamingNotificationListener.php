@@ -73,17 +73,114 @@ class StreamingNotificationListener
                 'timestamp' => now()->toIso8601String(),
             ]);
 
-            // TODO: Implement actual notification sending
-            // This could be email, Slack, SMS, etc.
-            // Example:
-            // Notification::route('slack', config('ai-engine.notifications.slack_webhook'))
-            //     ->notify(new AIAlertNotification($title, $message, $level));
+            // Send notifications based on configuration
+            $channels = config('ai-engine.notifications.channels', []);
+            
+            foreach ($channels as $channel => $config) {
+                if (!($config['enabled'] ?? false)) {
+                    continue;
+                }
+                
+                switch ($channel) {
+                    case 'slack':
+                        $this->sendSlackNotification($title, $message, $level, $config);
+                        break;
+                        
+                    case 'email':
+                        $this->sendEmailNotification($title, $message, $level, $config);
+                        break;
+                        
+                    case 'webhook':
+                        $this->sendWebhookNotification($title, $message, $level, $metadata, $config);
+                        break;
+                }
+            }
             
         } catch (\Exception $e) {
             Log::error('Failed to send AI notification', [
                 'title' => $title,
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * Send Slack notification
+     */
+    protected function sendSlackNotification(string $title, string $message, string $level, array $config): void
+    {
+        try {
+            $webhook = $config['webhook_url'] ?? null;
+            if (!$webhook) {
+                return;
+            }
+
+            $color = match($level) {
+                'critical', 'error' => 'danger',
+                'warning' => 'warning',
+                default => 'good'
+            };
+
+            $payload = [
+                'attachments' => [[
+                    'color' => $color,
+                    'title' => $title,
+                    'text' => $message,
+                    'footer' => 'Laravel AI Engine',
+                    'ts' => now()->timestamp,
+                ]]
+            ];
+
+            \Http::post($webhook, $payload);
+        } catch (\Exception $e) {
+            Log::debug('Failed to send Slack notification', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Send email notification
+     */
+    protected function sendEmailNotification(string $title, string $message, string $level, array $config): void
+    {
+        try {
+            $recipients = $config['recipients'] ?? [];
+            if (empty($recipients)) {
+                return;
+            }
+
+            foreach ($recipients as $email) {
+                \Mail::raw($message, function ($mail) use ($email, $title, $level) {
+                    $mail->to($email)
+                         ->subject("[{$level}] {$title}");
+                });
+            }
+        } catch (\Exception $e) {
+            Log::debug('Failed to send email notification', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Send webhook notification
+     */
+    protected function sendWebhookNotification(string $title, string $message, string $level, array $metadata, array $config): void
+    {
+        try {
+            $url = $config['url'] ?? null;
+            if (!$url) {
+                return;
+            }
+
+            $payload = [
+                'title' => $title,
+                'message' => $message,
+                'level' => $level,
+                'metadata' => $metadata,
+                'timestamp' => now()->toIso8601String(),
+            ];
+
+            \Http::post($url, $payload);
+        } catch (\Exception $e) {
+            Log::debug('Failed to send webhook notification', ['error' => $e->getMessage()]);
         }
     }
 

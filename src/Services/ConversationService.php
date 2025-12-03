@@ -22,10 +22,19 @@ class ConversationService
         string $engine = 'openai',
         string $model = 'gpt-4o-mini'
     ): string {
-        // Check if conversation exists by title (session ID)
-        $existing = DB::table('ai_conversations')
-            ->where('title', $sessionId)
-            ->first();
+        // Check if conversation exists by title (session ID) AND user_id for proper isolation
+        $query = DB::table('ai_conversations')
+            ->where('title', $sessionId);
+        
+        // Add user_id filter if provided to ensure user isolation
+        if ($userId !== null) {
+            $query->where('user_id', $userId);
+        } else {
+            // If no user_id, only match conversations without user_id
+            $query->whereNull('user_id');
+        }
+        
+        $existing = $query->first();
 
         if ($existing) {
             return $existing->conversation_id;

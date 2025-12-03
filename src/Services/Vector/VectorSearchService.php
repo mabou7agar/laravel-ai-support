@@ -390,4 +390,27 @@ class VectorSearchService
 
         return $hydrated;
     }
+
+    /**
+     * Get the count of indexed records for a model
+     *
+     * @param string $modelClass
+     * @return int
+     */
+    public function getIndexedCount(string $modelClass): int
+    {
+        try {
+            $collection = $this->getCollectionName($modelClass);
+            $driver = $this->driverManager->driver();
+            
+            // Get count from vector database
+            return $driver->count($collection);
+        } catch (\Exception $e) {
+            \Log::warning('Failed to get indexed count', [
+                'model' => $modelClass,
+                'error' => $e->getMessage()
+            ]);
+            return 0;
+        }
+    }
 }

@@ -278,7 +278,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::GEMINI;
+        return new EngineEnum(EngineEnum::GEMINI);
     }
 
     /**

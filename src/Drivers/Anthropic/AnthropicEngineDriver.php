@@ -217,7 +217,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::ANTHROPIC;
+        return new EngineEnum(EngineEnum::ANTHROPIC);
     }
 
     /**

@@ -5,100 +5,98 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title ?? 'AI Chat Assistant' }}</title>
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
+
     <style>
         [x-cloak] { display: none !important; }
-        
+
         .message-fade-in {
             animation: fadeIn 0.3s ease-in;
         }
-        
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        
+
         .typing-dot {
             animation: typing 1.4s infinite;
         }
-        
+
         .typing-dot:nth-child(2) {
             animation-delay: 0.2s;
         }
-        
+
         .typing-dot:nth-child(3) {
             animation-delay: 0.4s;
         }
-        
+
         @keyframes typing {
             0%, 60%, 100% { opacity: 0.3; }
             30% { opacity: 1; }
         }
-        
+
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
-        
+
         .glass-effect {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
         
-        /* Option Cards */
+        /* Numbered Options Styling */
         .options-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 12px;
-            margin-top: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.75rem;
+            margin-top: 1rem;
         }
         
         .option-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            padding: 16px;
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem;
             cursor: pointer;
-            transition: all 0.3s ease;
-            border: 2px solid transparent;
-            position: relative;
+            transition: all 0.2s;
+            display: flex;
+            align-items: start;
+            gap: 0.75rem;
         }
         
         .option-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
-            border-color: rgba(255, 255, 255, 0.3);
+            border-color: #8b5cf6;
+            background: #f5f3ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
         
         .option-number {
-            display: inline-flex;
+            flex-shrink: 0;
+            width: 2rem;
+            height: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
             align-items: center;
             justify-content: center;
-            width: 32px;
-            height: 32px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 50%;
-            font-weight: 700;
-            font-size: 16px;
-            color: white;
-            margin-bottom: 8px;
+            font-weight: bold;
+            font-size: 0.875rem;
         }
         
         .option-text {
-            color: white;
-            font-size: 15px;
-            font-weight: 500;
+            flex: 1;
+            color: #374151;
+            font-size: 0.875rem;
             line-height: 1.5;
-        }
-        
-        @media (max-width: 768px) {
-            .options-grid {
-                grid-template-columns: 1fr;
-            }
         }
     </style>
 </head>
@@ -119,28 +117,107 @@
                             <p class="text-sm text-purple-100">Powered by Laravel AI Engine</p>
                         </div>
                     </div>
-                    
-                    <!-- Memory Stats -->
-                    <div class="glass-effect rounded-lg px-4 py-2 text-sm">
-                        <div class="flex items-center space-x-4">
-                            <div>
-                                <span class="text-purple-200">Messages:</span>
-                                <span class="font-bold" x-text="memoryStats.total_messages"></span>
-                            </div>
-                            <div>
-                                <span class="text-purple-200">Tokens:</span>
-                                <span class="font-bold" x-text="memoryStats.estimated_tokens"></span>
+
+                    <div class="flex items-center space-x-4">
+                        <!-- User Info -->
+                        <div x-show="isAuthenticated" class="glass-effect rounded-lg px-4 py-2 text-sm">
+                            <div class="flex items-center space-x-2">
+                                <svg class="w-4 h-4 text-purple-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                </svg>
+                                <span class="text-purple-200">User:</span>
+                                <span class="font-bold" x-text="userId"></span>
                             </div>
                         </div>
+
+                        <!-- Memory Stats -->
+                        <div x-show="isAuthenticated" class="glass-effect rounded-lg px-4 py-2 text-sm">
+                            <div class="flex items-center space-x-4">
+                                <div>
+                                    <span class="text-purple-200">Messages:</span>
+                                    <span class="font-bold" x-text="memoryStats.total_messages"></span>
+                                </div>
+                                <div>
+                                    <span class="text-purple-200">Tokens:</span>
+                                    <span class="font-bold" x-text="memoryStats.estimated_tokens"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Logout Button -->
+                        <button
+                            x-show="isAuthenticated"
+                            @click="logout()"
+                            class="glass-effect rounded-lg px-4 py-2 text-sm font-medium hover:bg-white hover:bg-opacity-20 transition-all"
+                        >
+                            <div class="flex items-center space-x-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                                </svg>
+                                <span>Logout</span>
+                            </div>
+                        </button>
                     </div>
                 </div>
             </div>
         </header>
 
+        <!-- Authentication Modal -->
+        <div x-show="showAuthModal"
+             x-cloak
+             class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+             @click.self="showAuthModal = false">
+            <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6" @click.stop>
+                <div class="text-center mb-6">
+                    <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                        </svg>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800">Welcome to AI Chat</h2>
+                    <p class="text-gray-600 mt-2">Please enter your User ID to continue</p>
+                </div>
+
+                <form @submit.prevent="authenticate" class="space-y-4">
+                    <div>
+                        <label for="userId" class="block text-sm font-medium text-gray-700 mb-2">
+                            User ID
+                        </label>
+                        <input
+                            type="text"
+                            id="userId"
+                            x-model="userId"
+                            placeholder="Enter your user ID"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            required
+                            autofocus
+                        >
+                    </div>
+
+                    <div x-show="authError" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                        <span x-text="authError"></span>
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-3 px-4 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                    >
+                        Authenticate
+                    </button>
+                </form>
+
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <p class="text-xs text-gray-500 text-center">
+                        💡 Your session will be saved and you can continue your conversation later
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <!-- Main Content -->
-        <div class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div x-show="isAuthenticated" class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
-                
+
                 <!-- Sidebar - Available Actions -->
                 <div class="lg:col-span-1 space-y-4">
                     <!-- Settings Panel -->
@@ -152,7 +229,7 @@
                             </svg>
                             Settings
                         </h3>
-                        
+
                         <div class="space-y-3">
                             <!-- Memory Toggle -->
                             <label class="flex items-center justify-between cursor-pointer">
@@ -163,24 +240,45 @@
                                 </div>
                             </label>
 
-                            <!-- Intelligent RAG Status (Always On) -->
-                            <div class="flex items-center justify-between p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                                <div class="flex items-center space-x-2">
-                                    <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-                                    </svg>
-                                    <div>
-                                        <span class="text-sm font-medium text-purple-900">Intelligent RAG</span>
-                                        <p class="text-xs text-purple-700">AI decides when to search</p>
+                            <!-- RAG Mode Toggle -->
+                            <div class="space-y-2">
+                                <label class="text-sm font-medium text-gray-700 block">RAG Mode</label>
+
+                                <!-- Intelligent RAG Option -->
+                                <label class="flex items-center justify-between cursor-pointer p-3 border rounded-lg" :class="!forceRAG ? 'bg-purple-50 border-purple-300' : 'bg-gray-50 border-gray-200'">
+                                    <div class="flex items-center space-x-2">
+                                        <input type="radio" name="rag-mode" :checked="!forceRAG" @change="forceRAG = false" class="text-purple-600">
+                                        <div>
+                                            <span class="text-sm font-medium" :class="!forceRAG ? 'text-purple-900' : 'text-gray-700'">Intelligent</span>
+                                            <p class="text-xs" :class="!forceRAG ? 'text-purple-700' : 'text-gray-500'">AI decides when to search</p>
+                                        </div>
                                     </div>
-                                </div>
-                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    Active
-                                </span>
+                                    <svg x-show="!forceRAG" class="w-5 h-5 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                    </svg>
+                                </label>
+
+                                <!-- Force RAG Option -->
+                                <label class="flex items-center justify-between cursor-pointer p-3 border rounded-lg" :class="forceRAG ? 'bg-blue-50 border-blue-300' : 'bg-gray-50 border-gray-200'">
+                                    <div class="flex items-center space-x-2">
+                                        <input type="radio" name="rag-mode" :checked="forceRAG" @change="forceRAG = true" class="text-blue-600">
+                                        <div>
+                                            <span class="text-sm font-medium" :class="forceRAG ? 'text-blue-900' : 'text-gray-700'">Always Search</span>
+                                            <p class="text-xs" :class="forceRAG ? 'text-blue-700' : 'text-gray-500'">Context-restricted responses</p>
+                                        </div>
+                                    </div>
+                                    <svg x-show="forceRAG" class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                    </svg>
+                                </label>
                             </div>
 
-                            <div class="text-xs text-gray-600 p-3 bg-gray-50 rounded-lg">
-                                <strong>🤖 Smart RAG:</strong> The AI automatically searches your knowledge base when needed. No manual toggle required!
+                            <!-- Info Box -->
+                            <div class="text-xs text-gray-600 p-3 bg-gray-50 rounded-lg" x-show="!forceRAG">
+                                <strong>🤖 Intelligent:</strong> AI analyzes your query and searches only when needed. Best for mixed conversations.
+                            </div>
+                            <div class="text-xs text-gray-600 p-3 bg-blue-50 rounded-lg" x-show="forceRAG">
+                                <strong>🔍 Always Search:</strong> Every response uses your knowledge base. Best for document/email search.
                             </div>
                         </div>
                     </div>
@@ -193,10 +291,10 @@
                             </svg>
                             Available Actions
                         </h3>
-                        
+
                         <div class="space-y-2 max-h-64 overflow-y-auto">
                             <template x-for="action in availableActions" :key="action.id">
-                                <button 
+                                <button
                                     @click="suggestAction(action)"
                                     class="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-50 transition-colors border border-gray-200"
                                 >
@@ -217,7 +315,7 @@
                 <!-- Chat Area -->
                 <div class="lg:col-span-3">
                     <div class="bg-white rounded-lg shadow-md flex flex-col h-[calc(100vh-200px)]">
-                        
+
                         <!-- Chat Messages -->
                         <div class="flex-1 overflow-y-auto p-6 space-y-4" x-ref="messagesContainer">
                             <!-- Welcome Message -->
@@ -244,27 +342,27 @@
 
                             <!-- Messages -->
                             <template x-for="(message, index) in messages" :key="index">
-                                <div 
+                                <div
                                     class="flex items-start space-x-3 message-fade-in"
                                     :class="message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''"
                                 >
-                                    <div 
+                                    <div
                                         class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
                                         :class="message.role === 'user' ? 'bg-blue-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'"
                                     >
                                         <span x-text="message.role === 'user' ? 'You' : 'AI'"></span>
                                     </div>
-                                    <div 
+                                    <div
                                         class="flex-1 rounded-lg p-4 max-w-3xl"
                                         :class="message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'"
                                     >
                                         <p class="whitespace-pre-wrap" x-html="formatMessage(message.content, message.numbered_options)"></p>
-                                        
+
                                         <!-- Option Cards -->
                                         <template x-if="message.numbered_options && message.numbered_options.length > 0">
                                             <div class="options-grid">
                                                 <template x-for="option in message.numbered_options" :key="option.number">
-                                                    <div 
+                                                    <div
                                                         class="option-card"
                                                         @click="selectOption(option.text)"
                                                     >
@@ -274,12 +372,12 @@
                                                 </template>
                                             </div>
                                         </template>
-                                        
+
                                         <!-- Actions -->
                                         <template x-if="message.actions && message.actions.length > 0">
                                             <div class="mt-3 flex flex-wrap gap-2">
                                                 <template x-for="action in message.actions" :key="action.id">
-                                                    <button 
+                                                    <button
                                                         @click="executeAction(action)"
                                                         class="px-3 py-1 text-xs rounded-full border transition-colors"
                                                         :class="message.role === 'user' ? 'border-white text-white hover:bg-white hover:text-blue-500' : 'border-purple-500 text-purple-600 hover:bg-purple-500 hover:text-white'"
@@ -311,7 +409,7 @@
                         <div class="border-t border-gray-200 p-4">
                             <form @submit.prevent="sendMessage" class="flex items-end space-x-3">
                                 <div class="flex-1">
-                                    <textarea 
+                                    <textarea
                                         x-model="currentMessage"
                                         @keydown.enter.prevent="if(!$event.shiftKey) sendMessage()"
                                         placeholder="Type your message... (Shift+Enter for new line)"
@@ -320,7 +418,7 @@
                                         :disabled="isTyping"
                                     ></textarea>
                                 </div>
-                                <button 
+                                <button
                                     type="submit"
                                     :disabled="!currentMessage.trim() || isTyping"
                                     class="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
@@ -330,7 +428,7 @@
                                     </svg>
                                 </button>
                             </form>
-                            
+
                             <!-- Quick Actions -->
                             <div class="mt-3 flex items-center justify-between text-sm text-gray-500">
                                 <div class="flex space-x-4">
@@ -363,6 +461,7 @@
                 currentMessage: '',
                 isTyping: false,
                 memoryEnabled: true,
+                forceRAG: false, // Toggle between Intelligent and Always Search RAG modes
                 availableActions: [],
                 memoryStats: {
                     total_messages: 0,
@@ -370,9 +469,101 @@
                 },
                 contextSummary: 'No conversation yet',
 
+                // Authentication
+                isAuthenticated: false,
+                showAuthModal: false,
+                userId: '',
+                authToken: null,
+                authError: '',
+
                 async init() {
-                    await this.loadAvailableActions();
-                    await this.updateMemoryStats();
+                    // Check if already authenticated
+                    const storedToken = localStorage.getItem('ai_demo_token');
+                    const storedUserId = localStorage.getItem('ai_demo_user_id');
+
+                    if (storedToken && storedUserId) {
+                        this.authToken = storedToken;
+                        this.userId = storedUserId;
+                        this.isAuthenticated = true;
+                        // Update session ID with user ID
+                        this.sessionId = `user-${storedUserId}-session`;
+                    } else {
+                        this.showAuthModal = true;
+                    }
+
+                    if (this.isAuthenticated) {
+                        await this.loadAvailableActions();
+                        await this.updateMemoryStats();
+                        await this.loadHistory();
+                    }
+                },
+
+                async authenticate() {
+                    if (!this.userId.trim()) {
+                        this.authError = 'Please enter a user ID';
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/auth/token', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                            },
+                            body: JSON.stringify({
+                                user_id: this.userId
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        if (data.success && data.token) {
+                            this.authToken = data.token;
+                            this.isAuthenticated = true;
+                            this.showAuthModal = false;
+                            this.authError = '';
+
+                            // Store in localStorage
+                            localStorage.setItem('ai_demo_token', data.token);
+                            localStorage.setItem('ai_demo_user_id', this.userId);
+
+                            // Update session ID with user ID
+                            this.sessionId = `user-${this.userId}-session`;
+
+                            await this.loadAvailableActions();
+                            await this.updateMemoryStats();
+                        } else {
+                            this.authError = data.error || 'Authentication failed';
+                        }
+                    } catch (error) {
+                        console.error('Auth error:', error);
+                        this.authError = 'Failed to authenticate. Please try again.';
+                    }
+                },
+
+                logout() {
+                    this.isAuthenticated = false;
+                    this.authToken = null;
+                    this.userId = '';
+                    this.messages = [];
+                    this.showAuthModal = true;
+
+                    localStorage.removeItem('ai_demo_token');
+                    localStorage.removeItem('ai_demo_user_id');
+                },
+
+                getAuthHeaders() {
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    };
+
+                    if (this.authToken) {
+                        headers['Authorization'] = `Bearer ${this.authToken}`;
+                    }
+
+                    return headers;
                 },
 
                 async sendMessage() {
@@ -394,16 +585,14 @@
                     try {
                         const response = await fetch('/ai-demo/chat/send', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                            },
+                            headers: this.getAuthHeaders(),
                             body: JSON.stringify({
                                 message: userMessage,
                                 session_id: this.sessionId,
                                 memory: this.memoryEnabled,
                                 actions: true,
-                                intelligent_rag: true  // Always enabled
+                                intelligent_rag: !this.forceRAG,  // Use intelligent RAG unless force is enabled
+                                force_rag: this.forceRAG  // Force RAG mode
                             })
                         });
 
@@ -441,7 +630,9 @@
 
                 async loadAvailableActions() {
                     try {
-                        const response = await fetch('/ai-demo/chat/actions');
+                        const response = await fetch('/ai-demo/chat/actions', {
+                            headers: this.getAuthHeaders()
+                        });
                         const data = await response.json();
                         if (data.success) {
                             this.availableActions = data.actions.slice(0, 10);
@@ -453,7 +644,9 @@
 
                 async updateMemoryStats() {
                     try {
-                        const response = await fetch(`/ai-demo/chat/memory-stats/${this.sessionId}`);
+                        const response = await fetch(`/ai-demo/chat/memory-stats/${this.sessionId}`, {
+                            headers: this.getAuthHeaders()
+                        });
                         const data = await response.json();
                         if (data.success) {
                             this.memoryStats = data.stats;
@@ -465,7 +658,9 @@
 
                 async updateContextSummary() {
                     try {
-                        const response = await fetch(`/ai-demo/chat/context-summary/${this.sessionId}`);
+                        const response = await fetch(`/ai-demo/chat/context-summary/${this.sessionId}`, {
+                            headers: this.getAuthHeaders()
+                        });
                         const data = await response.json();
                         if (data.success) {
                             this.contextSummary = data.summary;
@@ -481,10 +676,7 @@
                     try {
                         await fetch('/ai-demo/chat/clear', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                            },
+                            headers: this.getAuthHeaders(),
                             body: JSON.stringify({
                                 session_id: this.sessionId
                             })
@@ -500,7 +692,9 @@
 
                 async loadHistory() {
                     try {
-                        const response = await fetch(`/ai-demo/chat/history/${this.sessionId}`);
+                        const response = await fetch(`/ai-demo/chat/history/${this.sessionId}`, {
+                            headers: this.getAuthHeaders()
+                        });
                         const data = await response.json();
                         if (data.success && data.messages.length > 0) {
                             this.messages = data.messages;
@@ -524,7 +718,7 @@
                     this.currentMessage = value;
                     this.sendMessage();
                 },
-                
+
                 stripMarkdown(text) {
                     // Remove markdown formatting from text
                     return text
@@ -537,7 +731,7 @@
 
                 formatMessage(content, numberedOptions = []) {
                     let formatted = content;
-                    
+
                     // Remove numbered options from content if they exist
                     if (numberedOptions && numberedOptions.length > 0) {
                         numberedOptions.forEach(option => {
@@ -547,8 +741,14 @@
                         // Clean up extra newlines
                         formatted = formatted.replace(/\n{3,}/g, '\n\n').trim();
                     }
-                    
-                    // Basic markdown-like formatting
+
+                    // Escape HTML to prevent email addresses and tags from being removed
+                    formatted = formatted
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+
+                    // Basic markdown-like formatting (after HTML escaping)
                     return formatted
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                         .replace(/\*(.*?)\*/g, '<em>$1</em>')

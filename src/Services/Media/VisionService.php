@@ -63,7 +63,10 @@ class VisionService
 
             // Track credits
             $tokensUsed = $response->usage->totalTokens ?? 0;
-            $this->creditManager->deductCredits($userId, $tokensUsed, 'vision');
+            if ($userId) {
+                // TODO: Integrate with proper credit system
+                // $this->creditManager->deductCredits($userId, $tokensUsed, 'vision');
+            }
 
             Log::info('Image analyzed with GPT-4 Vision', [
                 'image_path' => $imagePath,
@@ -198,7 +201,10 @@ class VisionService
 
             // Track credits
             $tokensUsed = $response->usage->totalTokens ?? 0;
-            $this->creditManager->deductCredits($userId, $tokensUsed, 'vision');
+            if ($userId) {
+                // TODO: Integrate with proper credit system
+                // $this->creditManager->deductCredits($userId, $tokensUsed, 'vision');
+            }
 
             return $comparison;
         } catch (\Exception $e) {

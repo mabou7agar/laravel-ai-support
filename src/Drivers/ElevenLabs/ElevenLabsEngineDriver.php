@@ -341,7 +341,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::ELEVENLABS;
+        return new EngineEnum(EngineEnum::ELEVEN_LABS);
     }
 
     /**
