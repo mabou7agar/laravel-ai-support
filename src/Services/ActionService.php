@@ -111,8 +111,10 @@ class ActionService
         $topSource = $sources[0] ?? null;
         
         if ($topSource) {
-            $modelType = $topSource['model_type'] ?? 'Item';
-            $modelTypeLower = strtolower($modelType);
+            // Get display name - use model_type from source (already processed by IntelligentRAGService)
+            // or fall back to humanized class basename
+            $modelType = $topSource['model_type'] ?? $this->getDisplayName($topSource['model_class'] ?? null);
+            $modelTypeLower = strtolower(str_replace(' ', '_', $modelType));
             
             // Action: View full source
             $actions[] = new InteractiveAction(
@@ -545,5 +547,74 @@ class ActionService
         
         // Fallback to generic URL
         return url("/{$modelName}s/{$modelId}");
+    }
+
+    /**
+     * Get human-readable display name for a model class
+     * 
+     * Checks in order:
+     * 1. getRagDisplayName() method (via instance)
+     * 2. Static $ragDisplayName property
+     * 3. Static $displayName property
+     * 4. Static $vectorDisplayName property
+     * 5. Falls back to humanized class_basename
+     * 
+     * @param string|null $modelClass The model class name
+     * @return string Human-readable display name
+     */
+    protected function getDisplayName(?string $modelClass): string
+    {
+        if (!$modelClass) {
+            return 'Item';
+        }
+
+        if (class_exists($modelClass)) {
+            try {
+                $reflection = new \ReflectionClass($modelClass);
+                
+                // Check for static $ragDisplayName property
+                if ($reflection->hasProperty('ragDisplayName')) {
+                    $prop = $reflection->getProperty('ragDisplayName');
+                    if ($prop->isStatic()) {
+                        $prop->setAccessible(true);
+                        $displayName = $prop->getValue();
+                        if (!empty($displayName)) {
+                            return $displayName;
+                        }
+                    }
+                }
+                
+                // Check for static $displayName property
+                if ($reflection->hasProperty('displayName')) {
+                    $prop = $reflection->getProperty('displayName');
+                    if ($prop->isStatic()) {
+                        $prop->setAccessible(true);
+                        $displayName = $prop->getValue();
+                        if (!empty($displayName)) {
+                            return $displayName;
+                        }
+                    }
+                }
+                
+                // Check for static $vectorDisplayName property
+                if ($reflection->hasProperty('vectorDisplayName')) {
+                    $prop = $reflection->getProperty('vectorDisplayName');
+                    if ($prop->isStatic()) {
+                        $prop->setAccessible(true);
+                        $displayName = $prop->getValue();
+                        if (!empty($displayName)) {
+                            return $displayName;
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                // Ignore reflection errors
+            }
+        }
+        
+        // Fall back to humanized class basename
+        $basename = class_basename($modelClass);
+        // Convert CamelCase to words (e.g., "EmailCache" -> "Email Cache")
+        return preg_replace('/(?<!^)([A-Z])/', ' $1', $basename);
     }
 }

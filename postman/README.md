@@ -7,13 +7,14 @@ Complete Postman collection for testing all Laravel AI Engine APIs.
 ### Collections
 - **Chat APIs** (7 endpoints) - Conversational AI with memory and actions
 - **RAG APIs** (7 endpoints) - Retrieval-Augmented Generation
+- **Smart Actions** (9 endpoints) - AI-powered executable actions ✨ NEW
 - **Node APIs** (4 endpoints) - Federated node management
 - **Vector Search APIs** (4 endpoints) - Semantic search and indexing
 - **Model Registry APIs** (3 endpoints) - Dynamic AI model management
 - **Streaming APIs** (1 endpoint) - Real-time SSE streaming
 - **Health & Status** (2 endpoints) - System monitoring
 
-**Total: 28 API endpoints**
+**Total: 37 API endpoints**
 
 ---
 
@@ -96,7 +97,116 @@ Execute a dynamic action.
 
 ---
 
-### 2️⃣ RAG APIs
+### 2️⃣ Smart Actions APIs ✨ NEW
+
+**Execute Action**
+```http
+POST /api/v1/actions/execute
+```
+Execute any action with automatic remote node routing.
+
+**Execute Email Reply (AI Draft)**
+```http
+POST /api/v1/actions/execute
+{
+  "action_type": "reply_email",
+  "data": {
+    "executor": "email.reply",
+    "params": {
+      "to_email": "sender@example.com",
+      "subject": "Re: Meeting",
+      "original_content": "..."
+    },
+    "ready": true
+  }
+}
+```
+Generate AI-powered email reply drafts.
+
+**Create Calendar Event**
+```http
+POST /api/v1/actions/execute
+{
+  "action_type": "create_event",
+  "data": {
+    "executor": "calendar.create",
+    "params": {
+      "title": "Meeting",
+      "date": "2025-12-10",
+      "time": "15:00",
+      "duration": 60
+    }
+  }
+}
+```
+Create calendar events with ICS data and Google Calendar URL.
+
+**AI Summarize**
+```http
+POST /api/v1/actions/execute
+{
+  "action_type": "summarize",
+  "data": {
+    "executor": "ai.summarize",
+    "params": { "content": "...", "max_length": 100 }
+  }
+}
+```
+Summarize content using AI.
+
+**AI Translate**
+```http
+POST /api/v1/actions/execute
+{
+  "action_type": "translate",
+  "data": {
+    "executor": "ai.translate",
+    "params": { "content": "Hello", "target_language": "Spanish" }
+  }
+}
+```
+Translate content using AI.
+
+**Select Numbered Option**
+```http
+POST /api/v1/actions/select-option
+```
+Select a numbered option from AI response.
+
+**Get Available Actions**
+```http
+GET /api/v1/actions/available?context=email&include_remote=true
+```
+Get available actions for a context.
+
+**Execute on Remote Node**
+```http
+POST /api/v1/actions/execute-remote
+```
+Execute action on a specific federated node.
+
+**Execute on All Nodes**
+```http
+POST /api/v1/actions/execute-all
+```
+Execute action on all federated nodes.
+
+#### Smart Executors
+
+| Executor | Description | Output |
+|----------|-------------|--------|
+| `email.reply` | AI-generated email reply | Draft body, recipient, subject |
+| `email.forward` | Forward email | Forwarded content with note |
+| `calendar.create` | Create calendar event | ICS data + Google Calendar URL |
+| `task.create` | Create task/todo | Task with due date, priority |
+| `ai.summarize` | Summarize content | Concise summary |
+| `ai.translate` | Translate content | Translated text |
+| `source.view` | View source document | Full document data |
+| `source.find_similar` | Find similar content | Related items |
+
+---
+
+### 3️⃣ RAG APIs
 
 **RAG Chat**
 ```http
@@ -142,7 +252,7 @@ Execute a RAG-specific action.
 
 ---
 
-### 3️⃣ Node APIs (Federated)
+### 4️⃣ Node APIs (Federated)
 
 **Get Collections (Child Node)**
 ```http
@@ -170,7 +280,7 @@ Detailed health status of a child node.
 
 ---
 
-### 4️⃣ Vector Search APIs
+### 5️⃣ Vector Search APIs
 
 **Search Vectors**
 ```http
@@ -198,7 +308,7 @@ Get vector search analytics and statistics.
 
 ---
 
-### 5️⃣ Model Registry APIs
+### 6️⃣ Model Registry APIs
 
 **List AI Models**
 ```http
@@ -220,7 +330,7 @@ Get AI-recommended model for a task.
 
 ---
 
-### 6️⃣ Streaming APIs
+### 7️⃣ Streaming APIs
 
 **Stream Chat (SSE)**
 ```http
@@ -230,7 +340,7 @@ Stream chat responses in real-time using Server-Sent Events.
 
 ---
 
-### 7️⃣ Health & Status
+### 8️⃣ Health & Status
 
 **System Health**
 ```http

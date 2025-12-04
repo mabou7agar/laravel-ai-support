@@ -2,16 +2,70 @@
 	"info": {
 		"_postman_id": "ai-engine-collection-2025",
 		"name": "Laravel AI Engine - Complete API Collection",
-		"description": "Complete API collection for Laravel AI Engine including Chat, RAG, Federated Search, Node Management, and Vector Operations",
+		"description": "Complete API collection for Laravel AI Engine including Chat, RAG, Smart Actions, Federated Search, Node Management, Vector Operations, and Module Discovery.\n\n## Features\n- 🤖 Multi-engine AI Chat (OpenAI, Anthropic, Gemini)\n- 📚 RAG (Retrieval-Augmented Generation)\n- 🎯 Smart Actions with AI Parameter Extraction\n- ✉️ AI-Generated Email Drafts\n- 📅 Calendar Event Creation (ICS + Google Calendar)\n- 🔍 Vector Search & Semantic Similarity\n- 🌐 Federated Node Architecture\n- 📦 Dynamic Model Registry\n- 🔄 Real-time Streaming\n\n## Smart Actions\nExecute AI-powered actions with automatic parameter extraction:\n- `email.reply` - AI-generated email drafts\n- `calendar.create` - Calendar events with ICS data\n- `ai.summarize` - Content summarization\n- `ai.translate` - Content translation\n- `source.view` - View source documents\n\n## Authentication\nMost endpoints require Bearer token authentication. Set your `api_token` in the environment variables.\n\n## Getting Started\n1. Import this collection and the environment file\n2. Set your `base_url` and `api_token`\n3. Start with the Health Check endpoint to verify connectivity\n4. Try the Smart Actions folder for AI-powered features",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "laravel-ai-engine"
 	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Auto-generate session ID if not set",
+					"if (!pm.environment.get('session_id') || pm.environment.get('session_id') === 'postman-test-session') {",
+					"    pm.environment.set('session_id', 'postman-' + Date.now());",
+					"}"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test: Check response time",
+					"pm.test('Response time is acceptable', function() {",
+					"    pm.expect(pm.response.responseTime).to.be.below(30000);",
+					"});",
+					"",
+					"// Global test: Check for valid JSON",
+					"pm.test('Response is valid JSON', function() {",
+					"    pm.response.to.be.json;",
+					"});"
+				]
+			}
+		}
+	],
 	"item": [
 		{
 			"name": "Chat APIs",
 			"item": [
 				{
 					"name": "Send Chat Message",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has success flag', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test('Response contains AI response', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.response).to.be.a('string');",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -30,18 +84,53 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"message\": \"Hello! How are you?\",\n    \"session_id\": \"user-123-session\",\n    \"memory\": true,\n    \"actions\": true,\n    \"use_intelligent_rag\": true,\n    \"rag_collections\": []\n}"
+							"raw": "{\n    \"message\": \"Hello! How are you?\",\n    \"session_id\": \"{{session_id}}\",\n    \"engine\": \"openai\",\n    \"model\": \"gpt-4o\",\n    \"memory\": true,\n    \"actions\": true,\n    \"use_intelligent_rag\": true,\n    \"rag_collections\": []\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/ai-demo/chat/send",
 							"host": ["{{base_url}}"],
 							"path": ["ai-demo", "chat", "send"]
 						},
-						"description": "Send a chat message with optional RAG and memory"
-					}
+						"description": "Send a chat message with optional RAG and memory.\n\n**Parameters:**\n- `message` (required): The message to send\n- `session_id` (required): Unique session identifier\n- `engine`: AI engine (openai, anthropic, gemini)\n- `model`: Model to use (gpt-4o, claude-3-5-sonnet, etc.)\n- `memory`: Enable conversation memory\n- `actions`: Enable suggested actions\n- `use_intelligent_rag`: Enable RAG context retrieval\n- `rag_collections`: Array of model classes to search"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/send",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "send"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"response\": \"Hello! I'm doing well, thank you for asking. How can I assist you today?\",\n    \"actions\": [],\n    \"usage\": {\n        \"prompt_tokens\": 15,\n        \"completion_tokens\": 20,\n        \"total_tokens\": 35\n    },\n    \"session_id\": \"user-123-session\",\n    \"rag_enabled\": false,\n    \"context_count\": 0,\n    \"sources\": []\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Chat History",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has messages array', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.messages).to.be.an('array');",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -55,15 +144,57 @@
 							}
 						],
 						"url": {
-							"raw": "{{base_url}}/ai-demo/chat/history/{{session_id}}",
+							"raw": "{{base_url}}/ai-demo/chat/history/{{session_id}}?limit=50",
 							"host": ["{{base_url}}"],
-							"path": ["ai-demo", "chat", "history", "{{session_id}}"]
+							"path": ["ai-demo", "chat", "history", "{{session_id}}"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "50",
+									"description": "Maximum number of messages to return"
+								}
+							]
 						},
-						"description": "Get conversation history for a session"
-					}
+						"description": "Get conversation history for a session.\n\n**Parameters:**\n- `session_id` (path): Session identifier\n- `limit` (query): Maximum messages to return (default: 50)"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/history/{{session_id}}",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "history", "{{session_id}}"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"messages\": [\n        {\n            \"role\": \"user\",\n            \"content\": \"Hello!\",\n            \"timestamp\": \"2025-01-01T12:00:00Z\"\n        },\n        {\n            \"role\": \"assistant\",\n            \"content\": \"Hello! How can I help you?\",\n            \"timestamp\": \"2025-01-01T12:00:01Z\"\n        }\n    ],\n    \"session_id\": \"user-123-session\",\n    \"total_messages\": 2\n}"
+						}
+					]
 				},
 				{
 					"name": "Clear Chat History",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('History cleared successfully', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -82,18 +213,119 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"session_id\": \"user-123-session\"\n}"
+							"raw": "{\n    \"session_id\": \"{{session_id}}\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/ai-demo/chat/clear",
 							"host": ["{{base_url}}"],
 							"path": ["ai-demo", "chat", "clear"]
 						},
-						"description": "Clear conversation history for a session"
-					}
+						"description": "Clear conversation history for a session."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/clear",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "clear"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"message\": \"Chat history cleared successfully\",\n    \"session_id\": \"user-123-session\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Upload File",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "File to upload (image, document, audio)"
+								},
+								{
+									"key": "session_id",
+									"value": "{{session_id}}",
+									"type": "text"
+								},
+								{
+									"key": "type",
+									"value": "image",
+									"type": "text",
+									"description": "File type: image, document, audio, video"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/upload",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "upload"]
+						},
+						"description": "Upload a file for AI processing.\n\n**Supported Types:**\n- Images: jpg, png, gif, webp\n- Documents: pdf, doc, docx, txt\n- Audio: mp3, wav, m4a"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/upload",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "upload"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"file\": {\n        \"name\": \"document.pdf\",\n        \"path\": \"ai-uploads/session-123/document.pdf\",\n        \"url\": \"https://example.com/storage/ai-uploads/session-123/document.pdf\",\n        \"size\": 102400,\n        \"mime_type\": \"application/pdf\",\n        \"type\": \"document\"\n    },\n    \"message\": \"File uploaded successfully\"\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Available Engines",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has engines', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.engines).to.be.an('object');",
+									"});",
+									"",
+									"pm.test('Response has data sources', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data_sources).to.include.members(['database', 'predefined']);",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -107,8 +339,25 @@
 							"host": ["{{base_url}}"],
 							"path": ["ai-demo", "chat", "engines"]
 						},
-						"description": "Get list of available AI engines"
-					}
+						"description": "Get list of available AI engines and their models.\n\n**Data Sources:**\n- **Database**: Models from Dynamic Model Registry (`ai_models` table)\n- **Pre-defined**: Built-in engine configurations from `EngineEnum`\n\nThe response merges models from both sources, with database models taking precedence for pricing and capability information."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/engines",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "engines"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data_sources\": [\"database\", \"predefined\"],\n    \"engines\": {\n        \"openai\": {\n            \"name\": \"OpenAI\",\n            \"source\": \"database\",\n            \"models\": [\n                {\n                    \"id\": \"gpt-4o\",\n                    \"name\": \"GPT-4o\",\n                    \"context_window\": 128000,\n                    \"pricing\": {\n                        \"input_per_1k\": 0.005,\n                        \"output_per_1k\": 0.015\n                    },\n                    \"source\": \"database\"\n                },\n                {\n                    \"id\": \"gpt-4o-mini\",\n                    \"name\": \"GPT-4o Mini\",\n                    \"context_window\": 128000,\n                    \"pricing\": {\n                        \"input_per_1k\": 0.00015,\n                        \"output_per_1k\": 0.0006\n                    },\n                    \"source\": \"database\"\n                },\n                {\n                    \"id\": \"gpt-3.5-turbo\",\n                    \"name\": \"GPT-3.5 Turbo\",\n                    \"context_window\": 16385,\n                    \"pricing\": {\n                        \"input_per_1k\": 0.0005,\n                        \"output_per_1k\": 0.0015\n                    },\n                    \"source\": \"database\"\n                }\n            ],\n            \"capabilities\": [\"text\", \"vision\", \"function_calling\"],\n            \"configured\": true\n        },\n        \"anthropic\": {\n            \"name\": \"Anthropic\",\n            \"source\": \"database\",\n            \"models\": [\n                {\n                    \"id\": \"claude-3-5-sonnet-20241022\",\n                    \"name\": \"Claude 3.5 Sonnet\",\n                    \"context_window\": 200000,\n                    \"pricing\": {\n                        \"input_per_1k\": 0.003,\n                        \"output_per_1k\": 0.015\n                    },\n                    \"source\": \"database\"\n                },\n                {\n                    \"id\": \"claude-3-haiku-20240307\",\n                    \"name\": \"Claude 3 Haiku\",\n                    \"context_window\": 200000,\n                    \"pricing\": {\n                        \"input_per_1k\": 0.00025,\n                        \"output_per_1k\": 0.00125\n                    },\n                    \"source\": \"database\"\n                }\n            ],\n            \"capabilities\": [\"text\", \"vision\", \"function_calling\"],\n            \"configured\": true\n        },\n        \"gemini\": {\n            \"name\": \"Google Gemini\",\n            \"source\": \"predefined\",\n            \"models\": [\n                {\n                    \"id\": \"gemini-1.5-pro\",\n                    \"name\": \"Gemini 1.5 Pro\",\n                    \"source\": \"predefined\"\n                },\n                {\n                    \"id\": \"gemini-1.5-flash\",\n                    \"name\": \"Gemini 1.5 Flash\",\n                    \"source\": \"predefined\"\n                }\n            ],\n            \"capabilities\": [\"text\", \"vision\", \"function_calling\"],\n            \"configured\": false\n        },\n        \"deepseek\": {\n            \"name\": \"DeepSeek\",\n            \"source\": \"database\",\n            \"models\": [\n                {\n                    \"id\": \"deepseek-chat\",\n                    \"name\": \"DeepSeek Chat\",\n                    \"context_window\": 64000,\n                    \"pricing\": {\n                        \"input_per_1k\": 0.00014,\n                        \"output_per_1k\": 0.00028\n                    },\n                    \"source\": \"database\"\n                }\n            ],\n            \"capabilities\": [\"text\", \"function_calling\"],\n            \"configured\": true\n        },\n        \"perplexity\": {\n            \"name\": \"Perplexity\",\n            \"source\": \"database\",\n            \"models\": [\n                {\n                    \"id\": \"llama-3.1-sonar-large-128k-online\",\n                    \"name\": \"Sonar Large Online\",\n                    \"context_window\": 128000,\n                    \"pricing\": {\n                        \"input_per_1k\": 0.001,\n                        \"output_per_1k\": 0.001\n                    },\n                    \"source\": \"database\"\n                }\n            ],\n            \"capabilities\": [\"text\", \"web_search\"],\n            \"configured\": true\n        }\n    },\n    \"default_engine\": \"openai\",\n    \"default_model\": \"gpt-4o\"\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Available Actions",
@@ -121,15 +370,39 @@
 							}
 						],
 						"url": {
-							"raw": "{{base_url}}/ai-demo/chat/actions",
+							"raw": "{{base_url}}/ai-demo/chat/actions?query=",
 							"host": ["{{base_url}}"],
-							"path": ["ai-demo", "chat", "actions"]
+							"path": ["ai-demo", "chat", "actions"],
+							"query": [
+								{
+									"key": "query",
+									"value": "",
+									"description": "Optional: Filter actions by query"
+								}
+							]
 						},
-						"description": "Get list of available dynamic actions"
-					}
+						"description": "Get list of available dynamic actions.\n\n**Parameters:**\n- `query` (optional): Filter actions by relevance to query"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/actions",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "actions"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"actions\": [\n        {\n            \"id\": \"search_database\",\n            \"name\": \"Search Database\",\n            \"description\": \"Search the database for records\",\n            \"parameters\": [\n                {\n                    \"name\": \"query\",\n                    \"type\": \"string\",\n                    \"required\": true\n                }\n            ]\n        }\n    ],\n    \"count\": 1\n}"
+						}
+					]
 				},
 				{
-					"name": "Execute Action",
+					"name": "Execute Dynamic Action",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -148,24 +421,194 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"action\": \"search_database\",\n    \"parameters\": {\n        \"query\": \"Laravel\"\n    },\n    \"session_id\": \"user-123-session\"\n}"
+							"raw": "{\n    \"action\": \"search_database\",\n    \"parameters\": {\n        \"query\": \"Laravel\"\n    },\n    \"session_id\": \"{{session_id}}\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/ai-demo/chat/execute-action",
 							"host": ["{{base_url}}"],
 							"path": ["ai-demo", "chat", "execute-action"]
 						},
-						"description": "Execute a dynamic action"
-					}
+						"description": "Execute a dynamic action.\n\n**Parameters:**\n- `action` (required): Action ID to execute\n- `parameters` (required): Action parameters\n- `session_id` (required): Session identifier"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/execute-action",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "execute-action"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"results\": [\n            {\n                \"id\": 1,\n                \"title\": \"Laravel Tutorial\",\n                \"content\": \"Getting started with Laravel...\"\n            }\n        ],\n        \"count\": 1\n    },\n    \"message\": \"Action executed successfully\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Memory Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/memory-stats/{{session_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "memory-stats", "{{session_id}}"]
+						},
+						"description": "Get memory statistics for a session including token counts and message breakdown."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/memory-stats/{{session_id}}",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "memory-stats", "{{session_id}}"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"stats\": {\n        \"total_messages\": 10,\n        \"user_messages\": 5,\n        \"assistant_messages\": 5,\n        \"system_messages\": 0,\n        \"estimated_tokens\": 1250,\n        \"session_id\": \"user-123-session\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Context Summary",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/context-summary/{{session_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "context-summary", "{{session_id}}"]
+						},
+						"description": "Get a summary of conversation context and discussed topics."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/context-summary/{{session_id}}",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "context-summary", "{{session_id}}"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"summary\": \"Discussed: Laravel routing, Database migrations, API development\",\n    \"topics\": [\n        \"How do I create routes in Laravel?\",\n        \"What are database migrations?\",\n        \"Building REST APIs\"\n    ],\n    \"message_count\": 10\n}"
+						}
+					]
+				},
+				{
+					"name": "Get User Conversations",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/ai-demo/chat/conversations?limit=20&page=1",
+							"host": ["{{base_url}}"],
+							"path": ["ai-demo", "chat", "conversations"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Number of conversations per page"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number"
+								}
+							]
+						},
+						"description": "Get authenticated user's conversation list with pagination.\n\n**Requires Authentication**"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/ai-demo/chat/conversations",
+									"host": ["{{base_url}}"],
+									"path": ["ai-demo", "chat", "conversations"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"conversations\": [\n            {\n                \"conversation_id\": \"conv-123\",\n                \"title\": \"Laravel Discussion\",\n                \"message_count\": 15,\n                \"last_message\": {\n                    \"role\": \"assistant\",\n                    \"content\": \"That's a great question about...\",\n                    \"sent_at\": \"2025-01-01T12:00:00Z\"\n                },\n                \"last_activity_at\": \"2025-01-01T12:00:00Z\",\n                \"created_at\": \"2025-01-01T10:00:00Z\"\n            }\n        ],\n        \"pagination\": {\n            \"total\": 5,\n            \"per_page\": 20,\n            \"current_page\": 1,\n            \"last_page\": 1\n        }\n    }\n}"
+						}
+					]
 				}
 			],
-			"description": "Chat API endpoints for conversational AI"
+			"description": "Chat API endpoints for conversational AI with memory, actions, and file uploads."
 		},
 		{
 			"name": "RAG APIs",
 			"item": [
 				{
 					"name": "RAG Chat",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has success flag', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test('Response contains RAG data', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data).to.have.property('response');",
+									"    pm.expect(jsonData.data).to.have.property('rag_enabled');",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -184,18 +627,53 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"message\": \"What posts do you have about Laravel?\",\n    \"session_id\": \"rag-session-123\",\n    \"rag_collections\": [\"App\\\\Models\\\\Post\"],\n    \"use_intelligent_rag\": true\n}"
+							"raw": "{\n    \"message\": \"What posts do you have about Laravel?\",\n    \"session_id\": \"{{session_id}}\",\n    \"engine\": \"openai\",\n    \"model\": \"gpt-4o\",\n    \"memory\": true,\n    \"actions\": true,\n    \"use_intelligent_rag\": true,\n    \"rag_collections\": [\"App\\\\Models\\\\Post\"]\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/rag/chat",
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "rag", "chat"]
 						},
-						"description": "Send a message with RAG context retrieval"
-					}
+						"description": "Send a message with RAG context retrieval.\n\n**Parameters:**\n- `message` (required): The message to send\n- `session_id` (required): Unique session identifier\n- `engine`: AI engine (openai, anthropic, gemini)\n- `model`: Model to use\n- `memory`: Enable conversation memory\n- `actions`: Enable suggested actions\n- `use_intelligent_rag`: Enable intelligent RAG\n- `rag_collections`: Array of model classes to search"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/rag/chat",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "rag", "chat"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"response\": \"Based on your posts, I found several articles about Laravel...\",\n        \"rag_enabled\": true,\n        \"context_count\": 5,\n        \"sources\": [\n            {\n                \"id\": 1,\n                \"title\": \"Getting Started with Laravel\",\n                \"model_type\": \"Post\",\n                \"score\": 0.92\n            }\n        ],\n        \"actions\": [],\n        \"usage\": {\n            \"prompt_tokens\": 150,\n            \"completion_tokens\": 80,\n            \"total_tokens\": 230\n        },\n        \"session_id\": \"rag-session-123\"\n    }\n}"
+						}
+					]
 				},
 				{
 					"name": "Get RAG Collections",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has collections', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.collections).to.be.an('array');",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -209,8 +687,25 @@
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "rag", "collections"]
 						},
-						"description": "Get available RAG collections (Vectorizable models)"
-					}
+						"description": "Get available RAG collections (Vectorizable models)."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/rag/collections",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "rag", "collections"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"collections\": [\n            \"App\\\\Models\\\\Post\",\n            \"App\\\\Models\\\\Article\",\n            \"App\\\\Models\\\\Document\"\n        ],\n        \"count\": 3\n    }\n}"
+						}
+					]
 				},
 				{
 					"name": "Get RAG Engines",
@@ -227,11 +722,46 @@
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "rag", "engines"]
 						},
-						"description": "Get available AI engines for RAG"
-					}
+						"description": "Get available AI engines for RAG."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/rag/engines",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "rag", "engines"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"engines\": {\n            \"openai\": {\n                \"name\": \"OpenAI\",\n                \"models\": [\"gpt-4o\", \"gpt-4o-mini\"],\n                \"capabilities\": [\"text\", \"vision\", \"function_calling\"]\n            },\n            \"anthropic\": {\n                \"name\": \"Anthropic\",\n                \"models\": [\"claude-3-5-sonnet-20241022\"],\n                \"capabilities\": [\"text\", \"vision\"]\n            }\n        },\n        \"default_engine\": \"openai\",\n        \"default_model\": \"gpt-4o\"\n    }\n}"
+						}
+					]
 				},
 				{
 					"name": "RAG Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('RAG system is healthy', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.status).to.equal('healthy');",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -245,8 +775,25 @@
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "rag", "health"]
 						},
-						"description": "Check RAG system health status"
-					}
+						"description": "Check RAG system health status."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/rag/health",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "rag", "health"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"status\": \"healthy\",\n        \"version\": \"1.0.0\",\n        \"rag_enabled\": true,\n        \"collections_count\": 3,\n        \"timestamp\": \"2025-01-01T12:00:00Z\"\n    }\n}"
+						}
+					]
 				},
 				{
 					"name": "Clear RAG Chat History",
@@ -268,15 +815,32 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"session_id\": \"rag-session-123\"\n}"
+							"raw": "{\n    \"session_id\": \"{{session_id}}\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/rag/chat/clear",
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "rag", "chat", "clear"]
 						},
-						"description": "Clear RAG conversation history"
-					}
+						"description": "Clear RAG conversation history."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/rag/chat/clear",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "rag", "chat", "clear"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"message\": \"Chat history cleared successfully\",\n        \"session_id\": \"rag-session-123\"\n    }\n}"
+						}
+					]
 				},
 				{
 					"name": "Get RAG Chat History",
@@ -293,12 +857,36 @@
 							}
 						],
 						"url": {
-							"raw": "{{base_url}}/api/v1/rag/chat/history/{{session_id}}",
+							"raw": "{{base_url}}/api/v1/rag/chat/history/{{session_id}}?limit=50",
 							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "rag", "chat", "history", "{{session_id}}"]
+							"path": ["api", "v1", "rag", "chat", "history", "{{session_id}}"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "50",
+									"description": "Maximum number of messages"
+								}
+							]
 						},
-						"description": "Get RAG conversation history"
-					}
+						"description": "Get RAG conversation history."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/rag/chat/history/{{session_id}}",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "rag", "chat", "history", "{{session_id}}"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"messages\": [\n            {\n                \"role\": \"user\",\n                \"content\": \"What posts about Laravel?\",\n                \"timestamp\": \"2025-01-01T12:00:00Z\"\n            },\n            {\n                \"role\": \"assistant\",\n                \"content\": \"Based on your posts...\",\n                \"timestamp\": \"2025-01-01T12:00:01Z\"\n            }\n        ],\n        \"session_id\": \"rag-session-123\",\n        \"total\": 2\n    }\n}"
+						}
+					]
 				},
 				{
 					"name": "Execute RAG Action",
@@ -320,24 +908,35 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"action_id\": \"action-123\",\n    \"parameters\": {},\n    \"session_id\": \"rag-session-123\"\n}"
+							"raw": "{\n    \"action_id\": \"view_source_1\",\n    \"action_type\": \"button\",\n    \"payload\": {\n        \"action\": \"view_source\",\n        \"model_id\": 1,\n        \"model_class\": \"App\\\\Models\\\\Post\"\n    }\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/rag/actions/execute",
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "rag", "actions", "execute"]
 						},
-						"description": "Execute a RAG action"
-					}
-				}
-			],
-			"description": "RAG (Retrieval-Augmented Generation) API endpoints"
-		},
-		{
-			"name": "Node APIs (Federated)",
-			"item": [
+						"description": "Execute a RAG action (e.g., view source, follow-up question).\n\n**Parameters:**\n- `action_id` (required): Action identifier\n- `action_type` (required): Type (button, quick_reply)\n- `payload` (required): Action data"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/rag/actions/execute",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "rag", "actions", "execute"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"action\": \"view_source\",\n        \"url\": \"https://example.com/posts/1\",\n        \"message\": \"Opening source document...\"\n    }\n}"
+						}
+					]
+				},
 				{
-					"name": "Get Collections (Child Node)",
+					"name": "Get RAG Conversations",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -347,7 +946,131 @@
 							},
 							{
 								"key": "Authorization",
-								"value": "Bearer {{node_jwt_token}}"
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/rag/conversations?limit=20&page=1",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "rag", "conversations"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Number per page"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number"
+								}
+							]
+						},
+						"description": "Get authenticated user's RAG conversations with pagination.\n\n**Requires Authentication**"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/rag/conversations",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "rag", "conversations"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"data\": {\n        \"conversations\": [\n            {\n                \"conversation_id\": \"rag-conv-123\",\n                \"title\": \"Laravel Posts Discussion\",\n                \"message_count\": 8,\n                \"last_activity_at\": \"2025-01-01T12:00:00Z\"\n            }\n        ],\n        \"pagination\": {\n            \"total\": 3,\n            \"per_page\": 20,\n            \"current_page\": 1,\n            \"last_page\": 1\n        }\n    }\n}"
+						}
+					]
+				}
+			],
+			"description": "RAG (Retrieval-Augmented Generation) API endpoints for semantic search and context-aware AI responses."
+		},
+		{
+			"name": "Node APIs (Federated)",
+			"item": [
+				{
+					"name": "Node Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Node is healthy', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.equal('healthy');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{child_node_url}}/api/ai-engine/health",
+							"host": ["{{child_node_url}}"],
+							"path": ["api", "ai-engine", "health"]
+						},
+						"description": "Get health status of a node. This is a public endpoint."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{child_node_url}}/api/ai-engine/health",
+									"host": ["{{child_node_url}}"],
+									"path": ["api", "ai-engine", "health"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"status\": \"healthy\",\n    \"version\": \"1.0.0\",\n    \"capabilities\": [\"search\", \"actions\"],\n    \"timestamp\": \"2025-01-01T12:00:00Z\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Collections",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has collections', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.collections).to.be.an('array');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
 							}
 						],
 						"url": {
@@ -355,11 +1078,97 @@
 							"host": ["{{child_node_url}}"],
 							"path": ["api", "ai-engine", "collections"]
 						},
-						"description": "Get available collections from a child node"
-					}
+						"description": "Get available Vectorizable collections from a node. This is a public endpoint."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{child_node_url}}/api/ai-engine/collections",
+									"host": ["{{child_node_url}}"],
+									"path": ["api", "ai-engine", "collections"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"collections\": [\n        {\n            \"class\": \"App\\\\Models\\\\Post\",\n            \"name\": \"Post\",\n            \"table\": \"posts\"\n        },\n        {\n            \"class\": \"App\\\\Models\\\\Article\",\n            \"name\": \"Article\",\n            \"table\": \"articles\"\n        }\n    ],\n    \"count\": 2,\n    \"timestamp\": \"2025-01-01T12:00:00Z\"\n}"
+						}
+					]
 				},
 				{
-					"name": "Search (Child Node)",
+					"name": "Register Node",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201', function() {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Node registered successfully', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"    pm.expect(jsonData.auth).to.have.property('access_token');",
+									"});",
+									"",
+									"// Save tokens for subsequent requests",
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set('node_jwt_token', jsonData.auth.access_token);",
+									"    pm.environment.set('node_refresh_token', jsonData.auth.refresh_token);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Child Node 1\",\n    \"url\": \"https://child-node.example.com\",\n    \"capabilities\": [\"search\", \"actions\"],\n    \"metadata\": {\n        \"region\": \"us-east-1\",\n        \"environment\": \"production\"\n    },\n    \"version\": \"1.0.0\"\n}"
+						},
+						"url": {
+							"raw": "{{child_node_url}}/api/ai-engine/register",
+							"host": ["{{child_node_url}}"],
+							"path": ["api", "ai-engine", "register"]
+						},
+						"description": "Register a new node in the federated network.\n\n**Parameters:**\n- `name` (required): Node name\n- `url` (required): Node URL\n- `capabilities`: Array of capabilities\n- `metadata`: Additional metadata\n- `version`: Node version"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{child_node_url}}/api/ai-engine/register",
+									"host": ["{{child_node_url}}"],
+									"path": ["api", "ai-engine", "register"]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"node\": {\n        \"id\": 1,\n        \"slug\": \"child-node-1\",\n        \"name\": \"Child Node 1\"\n    },\n    \"auth\": {\n        \"access_token\": \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...\",\n        \"refresh_token\": \"refresh_abc123...\",\n        \"expires_in\": 3600,\n        \"token_type\": \"Bearer\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Search Collections",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -378,18 +1187,82 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"query\": \"Laravel routing\",\n    \"limit\": 5,\n    \"options\": {\n        \"collections\": [\"App\\\\Models\\\\Post\"],\n        \"threshold\": 0.3\n    }\n}"
+							"raw": "{\n    \"query\": \"Laravel routing best practices\",\n    \"limit\": 10,\n    \"options\": {\n        \"collections\": [\"App\\\\Models\\\\Post\"],\n        \"threshold\": 0.3\n    }\n}"
 						},
 						"url": {
 							"raw": "{{child_node_url}}/api/ai-engine/search",
 							"host": ["{{child_node_url}}"],
 							"path": ["api", "ai-engine", "search"]
 						},
-						"description": "Search collections on a child node"
-					}
+						"description": "Search collections on a node using vector similarity.\n\n**Requires Node Authentication**\n\n**Parameters:**\n- `query` (required): Search query\n- `limit`: Maximum results\n- `options.collections`: Collections to search\n- `options.threshold`: Similarity threshold"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{child_node_url}}/api/ai-engine/search",
+									"host": ["{{child_node_url}}"],
+									"path": ["api", "ai-engine", "search"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"results\": [\n        {\n            \"id\": 1,\n            \"content\": \"Laravel routing allows you to define...\",\n            \"score\": 0.92,\n            \"model_class\": \"App\\\\Models\\\\Post\",\n            \"model_type\": \"Post\",\n            \"metadata\": {\n                \"model_id\": 1\n            },\n            \"title\": \"Laravel Routing Guide\"\n        }\n    ],\n    \"count\": 1,\n    \"duration_ms\": 45.2\n}"
+						}
+					]
 				},
 				{
-					"name": "Ping (Child Node)",
+					"name": "Execute Action",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{node_jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"index\",\n    \"params\": {\n        \"model_class\": \"App\\\\Models\\\\Post\",\n        \"batch_size\": 100\n    }\n}"
+						},
+						"url": {
+							"raw": "{{child_node_url}}/api/ai-engine/actions",
+							"host": ["{{child_node_url}}"],
+							"path": ["api", "ai-engine", "actions"]
+						},
+						"description": "Execute an action on a node.\n\n**Requires Node Authentication**\n\n**Actions:**\n- `index`: Index models for vector search\n- `delete`: Delete indexed vectors\n- `update`: Update indexed vectors\n- `sync`: Synchronize vectors"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{child_node_url}}/api/ai-engine/actions",
+									"host": ["{{child_node_url}}"],
+									"path": ["api", "ai-engine", "actions"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"action\": \"index\",\n    \"result\": {\n        \"message\": \"Index action executed\",\n        \"params\": {\n            \"model_class\": \"App\\\\Models\\\\Post\",\n            \"batch_size\": 100\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Node Status",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -403,18 +1276,61 @@
 							}
 						],
 						"url": {
-							"raw": "{{child_node_url}}/api/ai-engine/ping",
+							"raw": "{{child_node_url}}/api/ai-engine/status",
 							"host": ["{{child_node_url}}"],
-							"path": ["api", "ai-engine", "ping"]
+							"path": ["api", "ai-engine", "status"]
 						},
-						"description": "Ping a child node to check health"
-					}
+						"description": "Get detailed status of a registered node.\n\n**Requires Node Authentication**"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{child_node_url}}/api/ai-engine/status",
+									"host": ["{{child_node_url}}"],
+									"path": ["api", "ai-engine", "status"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"node\": {\n        \"id\": 1,\n        \"name\": \"Child Node 1\",\n        \"status\": \"active\"\n    },\n    \"health\": {\n        \"status\": \"healthy\",\n        \"uptime\": 86400,\n        \"last_ping\": \"2025-01-01T12:00:00Z\"\n    },\n    \"statistics\": {\n        \"total_searches\": 1500,\n        \"avg_response_time_ms\": 42.5\n    }\n}"
+						}
+					]
 				},
 				{
-					"name": "Health Check (Child Node)",
+					"name": "Refresh Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"// Save new tokens",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set('node_jwt_token', jsonData.access_token);",
+									"    if (jsonData.refresh_token) {",
+									"        pm.environment.set('node_refresh_token', jsonData.refresh_token);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
 					"request": {
-						"method": "GET",
+						"method": "POST",
 						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
 							{
 								"key": "Accept",
 								"value": "application/json"
@@ -424,22 +1340,61 @@
 								"value": "Bearer {{node_jwt_token}}"
 							}
 						],
-						"url": {
-							"raw": "{{child_node_url}}/api/ai-engine/health",
-							"host": ["{{child_node_url}}"],
-							"path": ["api", "ai-engine", "health"]
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"refresh_token\": \"{{node_refresh_token}}\"\n}"
 						},
-						"description": "Get health status of a child node"
-					}
+						"url": {
+							"raw": "{{child_node_url}}/api/ai-engine/refresh-token",
+							"host": ["{{child_node_url}}"],
+							"path": ["api", "ai-engine", "refresh-token"]
+						},
+						"description": "Refresh the node's access token using a refresh token.\n\n**Requires Node Authentication**"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{child_node_url}}/api/ai-engine/refresh-token",
+									"host": ["{{child_node_url}}"],
+									"path": ["api", "ai-engine", "refresh-token"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"access_token\": \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...\",\n    \"refresh_token\": \"new_refresh_abc123...\",\n    \"expires_in\": 3600,\n    \"token_type\": \"Bearer\"\n}"
+						}
+					]
 				}
 			],
-			"description": "Federated node API endpoints for distributed RAG"
+			"description": "Federated node API endpoints for distributed RAG architecture. Nodes can register, authenticate, and perform searches across the network."
 		},
 		{
 			"name": "Vector Search APIs",
 			"item": [
 				{
 					"name": "Search Vectors",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has results', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.results).to.be.an('array');",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -458,15 +1413,32 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"query\": \"Laravel routing\",\n    \"model_class\": \"App\\\\Models\\\\Post\",\n    \"limit\": 5,\n    \"threshold\": 0.3\n}"
+							"raw": "{\n    \"query\": \"Laravel routing best practices\",\n    \"model_class\": \"App\\\\Models\\\\Post\",\n    \"limit\": 10,\n    \"threshold\": 0.3\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/vector/search",
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "vector", "search"]
 						},
-						"description": "Search vectors for semantic similarity"
-					}
+						"description": "Search vectors for semantic similarity.\n\n**Parameters:**\n- `query` (required): Search query\n- `model_class` (required): Model class to search\n- `limit`: Maximum results (default: 10)\n- `threshold`: Similarity threshold (default: 0.3)"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/vector/search",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "vector", "search"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"results\": [\n        {\n            \"id\": 1,\n            \"content\": \"Laravel routing allows you to define...\",\n            \"score\": 0.92,\n            \"model_class\": \"App\\\\Models\\\\Post\",\n            \"title\": \"Laravel Routing Guide\"\n        }\n    ],\n    \"count\": 1,\n    \"duration_ms\": 45.2\n}"
+						}
+					]
 				},
 				{
 					"name": "Index Model",
@@ -495,8 +1467,25 @@
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "vector", "index"]
 						},
-						"description": "Index a model for vector search"
-					}
+						"description": "Index a model for vector search.\n\n**Parameters:**\n- `model_class` (required): Model class to index\n- `batch_size`: Number of records per batch (default: 100)"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/vector/index",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "vector", "index"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"message\": \"Indexing started\",\n    \"model_class\": \"App\\\\Models\\\\Post\",\n    \"total_records\": 150,\n    \"batch_size\": 100,\n    \"estimated_time\": \"30 seconds\"\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Vector Status",
@@ -519,12 +1508,30 @@
 							"query": [
 								{
 									"key": "model_class",
-									"value": "App\\Models\\Post"
+									"value": "App\\Models\\Post",
+									"description": "Model class to check status for"
 								}
 							]
 						},
-						"description": "Get indexing status for a model"
-					}
+						"description": "Get indexing status for a model."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/vector/status?model_class=App\\Models\\Post",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "vector", "status"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"model_class\": \"App\\\\Models\\\\Post\",\n    \"status\": \"indexed\",\n    \"total_vectors\": 150,\n    \"last_indexed_at\": \"2025-01-01T12:00:00Z\",\n    \"index_health\": \"healthy\"\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Vector Analytics",
@@ -545,17 +1552,52 @@
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "vector", "analytics"]
 						},
-						"description": "Get vector search analytics"
-					}
+						"description": "Get vector search analytics and statistics."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/vector/analytics",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "vector", "analytics"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"analytics\": {\n        \"total_vectors\": 500,\n        \"total_searches\": 1250,\n        \"avg_search_time_ms\": 42.5,\n        \"collections\": [\n            {\n                \"model_class\": \"App\\\\Models\\\\Post\",\n                \"vector_count\": 150,\n                \"search_count\": 800\n            }\n        ],\n        \"top_queries\": [\n            {\n                \"query\": \"Laravel routing\",\n                \"count\": 45\n            }\n        ]\n    }\n}"
+						}
+					]
 				}
 			],
-			"description": "Vector search and embedding APIs"
+			"description": "Vector search and embedding APIs for semantic similarity search."
 		},
 		{
 			"name": "Model Registry APIs",
 			"item": [
 				{
 					"name": "List AI Models",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has models', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.models).to.be.an('array');",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -565,19 +1607,41 @@
 							}
 						],
 						"url": {
-							"raw": "{{base_url}}/api/v1/models?provider=openai",
+							"raw": "{{base_url}}/api/v1/models?provider=openai&capability=text",
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "models"],
 							"query": [
 								{
 									"key": "provider",
 									"value": "openai",
-									"description": "Filter by provider (optional)"
+									"description": "Filter by provider (openai, anthropic, gemini)"
+								},
+								{
+									"key": "capability",
+									"value": "text",
+									"description": "Filter by capability (text, vision, function_calling)"
 								}
 							]
 						},
-						"description": "Get list of available AI models"
-					}
+						"description": "Get list of available AI models from the Dynamic Model Registry.\n\n**Query Parameters:**\n- `provider`: Filter by provider\n- `capability`: Filter by capability\n- `active`: Filter active models only"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/models",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "models"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"models\": [\n        {\n            \"id\": 1,\n            \"provider\": \"openai\",\n            \"model_id\": \"gpt-4o\",\n            \"display_name\": \"GPT-4o\",\n            \"capabilities\": [\"text\", \"vision\", \"function_calling\"],\n            \"context_window\": 128000,\n            \"pricing\": {\n                \"input_per_1k\": 0.005,\n                \"output_per_1k\": 0.015\n            },\n            \"is_active\": true\n        },\n        {\n            \"id\": 2,\n            \"provider\": \"openai\",\n            \"model_id\": \"gpt-4o-mini\",\n            \"display_name\": \"GPT-4o Mini\",\n            \"capabilities\": [\"text\", \"vision\"],\n            \"context_window\": 128000,\n            \"pricing\": {\n                \"input_per_1k\": 0.00015,\n                \"output_per_1k\": 0.0006\n            },\n            \"is_active\": true\n        }\n    ],\n    \"count\": 2\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Model Details",
@@ -594,8 +1658,25 @@
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "models", "{{model_id}}"]
 						},
-						"description": "Get details of a specific AI model"
-					}
+						"description": "Get detailed information about a specific AI model."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/models/gpt-4o",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "models", "gpt-4o"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"model\": {\n        \"id\": 1,\n        \"provider\": \"openai\",\n        \"model_id\": \"gpt-4o\",\n        \"display_name\": \"GPT-4o\",\n        \"description\": \"Most capable GPT-4 model with vision\",\n        \"capabilities\": [\"text\", \"vision\", \"function_calling\"],\n        \"context_window\": 128000,\n        \"max_output_tokens\": 16384,\n        \"pricing\": {\n            \"input_per_1k\": 0.005,\n            \"output_per_1k\": 0.015\n        },\n        \"version\": \"2024-11-20\",\n        \"is_active\": true,\n        \"is_deprecated\": false,\n        \"deprecation_date\": null\n    }\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Recommended Model",
@@ -613,18 +1694,141 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"task\": \"code_generation\",\n    \"provider\": \"openai\",\n    \"max_cost\": 0.01\n}"
+							"raw": "{\n    \"task\": \"code_generation\",\n    \"provider\": \"openai\",\n    \"max_cost\": 0.01,\n    \"required_capabilities\": [\"function_calling\"]\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/models/recommend",
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "models", "recommend"]
 						},
-						"description": "Get recommended model for a task"
-					}
+						"description": "Get recommended model for a specific task.\n\n**Parameters:**\n- `task`: Task type (code_generation, chat, analysis, etc.)\n- `provider`: Preferred provider\n- `max_cost`: Maximum cost per 1K tokens\n- `required_capabilities`: Required capabilities"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/models/recommend",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "models", "recommend"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"recommendation\": {\n        \"model\": {\n            \"provider\": \"openai\",\n            \"model_id\": \"gpt-4o-mini\",\n            \"display_name\": \"GPT-4o Mini\"\n        },\n        \"reason\": \"Best balance of capability and cost for code generation\",\n        \"estimated_cost\": 0.0008,\n        \"alternatives\": [\n            {\n                \"model_id\": \"gpt-4o\",\n                \"reason\": \"Higher capability but more expensive\"\n            }\n        ]\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Sync Models from Provider",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"provider\": \"openai\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/models/sync",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "models", "sync"]
+						},
+						"description": "Sync models from a provider's API to discover new models.\n\n**Parameters:**\n- `provider`: Provider to sync (openai, anthropic, etc.)"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/models/sync",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "models", "sync"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"message\": \"Models synced successfully\",\n    \"provider\": \"openai\",\n    \"new_models\": 2,\n    \"updated_models\": 5,\n    \"total_models\": 12\n}"
+						}
+					]
 				}
 			],
-			"description": "Dynamic Model Registry APIs"
+			"description": "Dynamic Model Registry APIs for managing AI models. Supports auto-discovery of new models like GPT-5, GPT-6, Claude 4, etc."
+		},
+		{
+			"name": "Module Discovery APIs",
+			"item": [
+				{
+					"name": "Discover Modules",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has modules', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.modules).to.be.an('array');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/modules/discover",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "modules", "discover"]
+						},
+						"description": "Discover available modules and their capabilities in the AI Engine."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/modules/discover",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "modules", "discover"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"modules\": [\n        {\n            \"name\": \"chat\",\n            \"description\": \"AI Chat with memory and actions\",\n            \"version\": \"1.0.0\",\n            \"enabled\": true\n        },\n        {\n            \"name\": \"rag\",\n            \"description\": \"Retrieval-Augmented Generation\",\n            \"version\": \"1.0.0\",\n            \"enabled\": true\n        },\n        {\n            \"name\": \"vector\",\n            \"description\": \"Vector search and embeddings\",\n            \"version\": \"1.0.0\",\n            \"enabled\": true\n        },\n        {\n            \"name\": \"federated\",\n            \"description\": \"Federated node architecture\",\n            \"version\": \"1.0.0\",\n            \"enabled\": true\n        }\n    ],\n    \"count\": 4\n}"
+						}
+					]
+				}
+			],
+			"description": "Module discovery APIs for exploring available AI Engine capabilities."
 		},
 		{
 			"name": "Streaming APIs",
@@ -649,24 +1853,554 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"message\": \"Write a long story about Laravel\",\n    \"session_id\": \"stream-session-123\",\n    \"stream\": true\n}"
+							"raw": "{\n    \"message\": \"Write a detailed explanation of Laravel routing\",\n    \"session_id\": \"{{session_id}}\",\n    \"engine\": \"openai\",\n    \"model\": \"gpt-4o\",\n    \"stream\": true,\n    \"memory\": true,\n    \"use_intelligent_rag\": true\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/chat/stream",
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "chat", "stream"]
 						},
-						"description": "Stream chat responses using Server-Sent Events"
-					}
+						"description": "Stream chat responses using Server-Sent Events (SSE).\n\n**Note:** This endpoint returns a stream of events. Use a client that supports SSE.\n\n**Parameters:**\n- `message` (required): The message to send\n- `session_id` (required): Session identifier\n- `stream`: Must be true\n- `engine`: AI engine to use\n- `model`: Model to use"
+					},
+					"response": [
+						{
+							"name": "Stream Response",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/chat/stream",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "chat", "stream"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "text",
+							"body": "data: {\"type\":\"start\",\"session_id\":\"stream-123\"}\n\ndata: {\"type\":\"chunk\",\"content\":\"Laravel\"}\n\ndata: {\"type\":\"chunk\",\"content\":\" routing\"}\n\ndata: {\"type\":\"chunk\",\"content\":\" is\"}\n\ndata: {\"type\":\"chunk\",\"content\":\" a\"}\n\ndata: {\"type\":\"chunk\",\"content\":\" powerful\"}\n\ndata: {\"type\":\"done\",\"usage\":{\"total_tokens\":150}}"
+						}
+					]
 				}
 			],
-			"description": "Streaming API endpoints for real-time responses"
+			"description": "Streaming API endpoints for real-time AI responses using Server-Sent Events."
+		},
+		{
+			"name": "Smart Actions",
+			"item": [
+				{
+					"name": "Execute Action",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has success flag', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test('Response has result', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.result).to.be.an('object');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action_type\": \"view_source\",\n    \"data\": {\n        \"model_class\": \"App\\\\Models\\\\Email\",\n        \"model_id\": 123\n    },\n    \"session_id\": \"{{session_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/execute",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "execute"]
+						},
+						"description": "Execute any action. Supports local and remote execution.\n\n**Parameters:**\n- `action_type` (required): Type of action to execute\n- `data` (required): Action data including params\n- `session_id`: Session identifier\n\n**Action Types:**\n- `view_source`: View source document\n- `find_similar`: Find similar content\n- `draft_reply`: Draft email reply\n- `regenerate`: Regenerate response\n- `copy`: Copy content"
+					},
+					"response": [
+						{
+							"name": "View Source Success",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/execute",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "execute"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"action_type\": \"view_source\",\n    \"result\": {\n        \"success\": true,\n        \"type\": \"view_source\",\n        \"data\": {\n            \"id\": 123,\n            \"type\": \"Email\",\n            \"attributes\": {\n                \"subject\": \"Meeting Tomorrow\",\n                \"body\": \"Hi, can we meet...\"\n            }\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Execute Email Reply (AI Draft)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has email draft', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.result.type).to.equal('email_reply');",
+									"    pm.expect(jsonData.result.data.body).to.be.a('string');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action_type\": \"reply_email\",\n    \"data\": {\n        \"executor\": \"email.reply\",\n        \"params\": {\n            \"to_email\": \"sender@example.com\",\n            \"subject\": \"Re: Meeting Tomorrow\",\n            \"original_content\": \"Hi, can we meet tomorrow at 3pm to discuss the project?\"\n        },\n        \"ready\": true\n    },\n    \"session_id\": \"{{session_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/execute",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "execute"]
+						},
+						"description": "Execute email reply action with AI-generated draft.\n\n**Smart Executor:** `email.reply`\n\n**Parameters:**\n- `to_email`: Recipient email address\n- `subject`: Email subject\n- `original_content`: Original email content for context\n\n**Returns:**\n- AI-generated professional reply draft\n- Ready-to-send status"
+					},
+					"response": [
+						{
+							"name": "Email Reply Success",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/execute",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "execute"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"action_type\": \"reply_email\",\n    \"result\": {\n        \"success\": true,\n        \"type\": \"email_reply\",\n        \"action\": \"compose_email\",\n        \"data\": {\n            \"to\": \"sender@example.com\",\n            \"subject\": \"Re: Meeting Tomorrow\",\n            \"body\": \"Thank you for your message. I'm available to meet tomorrow at 3pm and look forward to discussing the project with you.\",\n            \"ready_to_send\": true\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Create Calendar Event",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has calendar data', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.result.type).to.equal('calendar_event');",
+									"    pm.expect(jsonData.result.data.ics_data).to.be.a('string');",
+									"    pm.expect(jsonData.result.data.google_calendar_url).to.be.a('string');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action_type\": \"create_event\",\n    \"data\": {\n        \"executor\": \"calendar.create\",\n        \"params\": {\n            \"title\": \"Project Discussion\",\n            \"date\": \"2025-12-10\",\n            \"time\": \"15:00\",\n            \"duration\": 60,\n            \"location\": \"Conference Room A\",\n            \"attendees\": [\"team@example.com\"]\n        },\n        \"ready\": true\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/execute",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "execute"]
+						},
+						"description": "Create a calendar event with ICS data and Google Calendar URL.\n\n**Smart Executor:** `calendar.create`\n\n**Parameters:**\n- `title` (required): Event title\n- `date`: Date in YYYY-MM-DD format\n- `time`: Time in HH:MM format\n- `duration`: Duration in minutes\n- `location`: Event location\n- `attendees`: Array of attendee emails\n\n**Returns:**\n- ICS calendar data (downloadable)\n- Google Calendar URL (one-click add)"
+					},
+					"response": [
+						{
+							"name": "Calendar Event Success",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/execute",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "execute"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"action_type\": \"create_event\",\n    \"result\": {\n        \"success\": true,\n        \"type\": \"calendar_event\",\n        \"action\": \"create_event\",\n        \"data\": {\n            \"title\": \"Project Discussion\",\n            \"date\": \"2025-12-10\",\n            \"time\": \"15:00\",\n            \"duration_minutes\": 60,\n            \"location\": \"Conference Room A\",\n            \"ics_data\": \"BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nBEGIN:VEVENT\\r\\nUID:event-abc123\\r\\nDTSTART:20251210T150000\\r\\nDTEND:20251210T160000\\r\\nSUMMARY:Project Discussion\\r\\nLOCATION:Conference Room A\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n\",\n            \"google_calendar_url\": \"https://calendar.google.com/calendar/render?action=TEMPLATE&text=Project+Discussion&dates=20251210T150000/20251210T160000&location=Conference+Room+A\",\n            \"ready\": true\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "AI Summarize",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action_type\": \"summarize\",\n    \"data\": {\n        \"executor\": \"ai.summarize\",\n        \"params\": {\n            \"content\": \"The Laravel AI Engine is a comprehensive package that provides multi-AI integration with support for OpenAI, Anthropic, Google, and other providers. It includes features like Federated RAG for distributed knowledge bases, intelligent context retrieval, dynamic model registry, and enterprise-grade security with multi-tenant access control. The package also supports real-time streaming, conversation memory, and automatic model discovery.\",\n            \"max_length\": 100\n        },\n        \"ready\": true\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/execute",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "execute"]
+						},
+						"description": "Summarize content using AI.\n\n**Smart Executor:** `ai.summarize`\n\n**Parameters:**\n- `content` (required): Content to summarize\n- `max_length`: Maximum summary length in characters"
+					},
+					"response": [
+						{
+							"name": "Summarize Success",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/execute",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "execute"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"result\": {\n        \"success\": true,\n        \"type\": \"summary\",\n        \"data\": {\n            \"summary\": \"Laravel AI Engine offers multi-AI integration, federated RAG, and enterprise security features.\",\n            \"original_length\": 456\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "AI Translate",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action_type\": \"translate\",\n    \"data\": {\n        \"executor\": \"ai.translate\",\n        \"params\": {\n            \"content\": \"Hello, how are you today?\",\n            \"target_language\": \"Spanish\"\n        },\n        \"ready\": true\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/execute",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "execute"]
+						},
+						"description": "Translate content using AI.\n\n**Smart Executor:** `ai.translate`\n\n**Parameters:**\n- `content` (required): Content to translate\n- `target_language`: Target language (default: English)"
+					},
+					"response": [
+						{
+							"name": "Translate Success",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/execute",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "execute"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"result\": {\n        \"success\": true,\n        \"type\": \"translation\",\n        \"data\": {\n            \"translation\": \"Hola, ¿cómo estás hoy?\",\n            \"target_language\": \"Spanish\"\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Select Numbered Option",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"option_number\": 1,\n    \"session_id\": \"{{session_id}}\",\n    \"source_index\": 0,\n    \"sources\": [\n        {\n            \"model_id\": 123,\n            \"model_class\": \"App\\\\Models\\\\Email\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/select-option",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "select-option"]
+						},
+						"description": "Select a numbered option from AI response.\n\n**Parameters:**\n- `option_number` (required): The option number to select\n- `session_id` (required): Session identifier\n- `source_index`: Index in sources array\n- `sources`: Array of source documents"
+					},
+					"response": [
+						{
+							"name": "Select Option Success",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/select-option",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "select-option"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"result\": {\n        \"success\": true,\n        \"type\": \"view_source\",\n        \"data\": {\n            \"id\": 123,\n            \"type\": \"Email\",\n            \"attributes\": {}\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Available Actions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/available?context=email&include_remote=false",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "available"],
+							"query": [
+								{
+									"key": "context",
+									"value": "email",
+									"description": "Context for filtering actions (email, calendar, task)"
+								},
+								{
+									"key": "include_remote",
+									"value": "false",
+									"description": "Include actions from remote nodes"
+								}
+							]
+						},
+						"description": "Get available actions for a context.\n\n**Query Parameters:**\n- `context`: Filter actions by context (email, calendar, task)\n- `include_remote`: Include actions from federated nodes"
+					},
+					"response": [
+						{
+							"name": "Available Actions",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/available?context=email",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "available"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"actions\": [\n        {\n            \"type\": \"regenerate\",\n            \"label\": \"🔄 Regenerate\",\n            \"description\": \"Generate a new response\",\n            \"always_available\": true\n        },\n        {\n            \"type\": \"copy\",\n            \"label\": \"📋 Copy\",\n            \"description\": \"Copy response to clipboard\",\n            \"always_available\": true\n        },\n        {\n            \"type\": \"draft_reply\",\n            \"label\": \"✉️ Draft Reply\",\n            \"description\": \"Draft a reply to this email\",\n            \"context\": \"email\"\n        }\n    ]\n}"
+						}
+					]
+				},
+				{
+					"name": "Execute on Remote Node",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"node\": \"emails-node\",\n    \"action_type\": \"view_source\",\n    \"data\": {\n        \"params\": {\n            \"model_class\": \"App\\\\Models\\\\Email\",\n            \"model_id\": 123\n        }\n    },\n    \"session_id\": \"{{session_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/execute-remote",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "execute-remote"]
+						},
+						"description": "Execute an action on a specific remote node.\n\n**Parameters:**\n- `node` (required): Target node slug\n- `action_type` (required): Type of action\n- `data` (required): Action data\n- `session_id`: Session identifier"
+					},
+					"response": [
+						{
+							"name": "Remote Execution Success",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/execute-remote",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "execute-remote"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"node\": \"emails-node\",\n    \"action_type\": \"view_source\",\n    \"result\": {\n        \"success\": true,\n        \"executed_on\": \"emails-node\",\n        \"remote\": true,\n        \"result\": {\n            \"type\": \"view_source\",\n            \"data\": {}\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Execute on All Nodes",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{api_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action_type\": \"sync_data\",\n    \"data\": {\n        \"params\": {\n            \"force\": true\n        }\n    },\n    \"parallel\": true,\n    \"node_ids\": null\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/actions/execute-all",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "actions", "execute-all"]
+						},
+						"description": "Execute an action on all federated nodes.\n\n**Parameters:**\n- `action_type` (required): Type of action\n- `data` (required): Action data\n- `parallel`: Execute in parallel (default: true)\n- `node_ids`: Filter to specific nodes (null = all)"
+					},
+					"response": [
+						{
+							"name": "Multi-Node Execution",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{base_url}}/api/v1/actions/execute-all",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "actions", "execute-all"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"action_type\": \"sync_data\",\n    \"nodes_executed\": 3,\n    \"success_count\": 3,\n    \"failure_count\": 0,\n    \"results\": {\n        \"emails-node\": {\n            \"node\": \"emails-node\",\n            \"success\": true\n        },\n        \"documents-node\": {\n            \"node\": \"documents-node\",\n            \"success\": true\n        },\n        \"tasks-node\": {\n            \"node\": \"tasks-node\",\n            \"success\": true\n        }\n    }\n}"
+						}
+					]
+				}
+			],
+			"description": "Smart Action System with AI-powered parameter extraction, federated execution, and built-in executors for email, calendar, tasks, and more.\n\n## Features\n- 🤖 AI Parameter Extraction\n- ✉️ Email Reply Drafts\n- 📅 Calendar Event Creation\n- ✅ Task Creation\n- 📝 AI Summarize & Translate\n- 🌐 Federated Execution\n\n## Executors\n- `email.reply` - AI-generated email drafts\n- `email.forward` - Forward emails\n- `calendar.create` - Create calendar events with ICS\n- `task.create` - Create tasks\n- `ai.summarize` - Summarize content\n- `ai.translate` - Translate content\n- `source.view` - View source documents\n- `source.find_similar` - Find similar content"
 		},
 		{
 			"name": "Health & Status",
 			"item": [
 				{
 					"name": "System Health",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('System is healthy', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.equal('healthy');",
+									"});"
+								]
+							}
+						}
+					],
 					"request": {
 						"method": "GET",
 						"header": [
@@ -680,8 +2414,25 @@
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "health"]
 						},
-						"description": "Get overall system health status"
-					}
+						"description": "Get overall system health status. Use this to verify connectivity."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/health",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "health"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"status\": \"healthy\",\n    \"version\": \"1.0.0\",\n    \"timestamp\": \"2025-01-01T12:00:00Z\",\n    \"components\": {\n        \"database\": \"healthy\",\n        \"cache\": \"healthy\",\n        \"vector_store\": \"healthy\",\n        \"ai_engines\": \"healthy\"\n    }\n}"
+						}
+					]
 				},
 				{
 					"name": "Engine Status",
@@ -698,43 +2449,72 @@
 							"host": ["{{base_url}}"],
 							"path": ["api", "v1", "engines", "status"]
 						},
-						"description": "Get status of all AI engines"
-					}
+						"description": "Get status of all AI engines including availability and configuration."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"url": {
+									"raw": "{{base_url}}/api/v1/engines/status",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "engines", "status"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n    \"success\": true,\n    \"engines\": {\n        \"openai\": {\n            \"status\": \"available\",\n            \"configured\": true,\n            \"default_model\": \"gpt-4o\",\n            \"last_check\": \"2025-01-01T12:00:00Z\"\n        },\n        \"anthropic\": {\n            \"status\": \"available\",\n            \"configured\": true,\n            \"default_model\": \"claude-3-5-sonnet-20241022\",\n            \"last_check\": \"2025-01-01T12:00:00Z\"\n        },\n        \"gemini\": {\n            \"status\": \"not_configured\",\n            \"configured\": false,\n            \"default_model\": null,\n            \"last_check\": null\n        }\n    },\n    \"default_engine\": \"openai\"\n}"
+						}
+					]
 				}
 			],
-			"description": "Health check and status endpoints"
+			"description": "Health check and status endpoints for monitoring the AI Engine."
 		}
 	],
 	"variable": [
 		{
 			"key": "base_url",
 			"value": "https://middleware.test",
-			"type": "string"
+			"type": "string",
+			"description": "Base URL of your Laravel application"
 		},
 		{
 			"key": "child_node_url",
 			"value": "https://ai.test",
-			"type": "string"
+			"type": "string",
+			"description": "URL of a child node in the federated network"
 		},
 		{
 			"key": "api_token",
 			"value": "your-api-token-here",
-			"type": "string"
+			"type": "string",
+			"description": "Bearer token for API authentication (Sanctum/JWT)"
 		},
 		{
 			"key": "node_jwt_token",
-			"value": "your-node-jwt-token-here",
-			"type": "string"
+			"value": "",
+			"type": "string",
+			"description": "JWT token for node authentication (obtained from Register Node)"
+		},
+		{
+			"key": "node_refresh_token",
+			"value": "",
+			"type": "string",
+			"description": "Refresh token for node authentication"
 		},
 		{
 			"key": "session_id",
-			"value": "user-123-session",
-			"type": "string"
+			"value": "postman-test-session",
+			"type": "string",
+			"description": "Session ID for chat conversations"
 		},
 		{
 			"key": "model_id",
-			"value": "gpt-4",
-			"type": "string"
+			"value": "gpt-4o",
+			"type": "string",
+			"description": "AI model ID for model registry queries"
 		}
 	]
 }

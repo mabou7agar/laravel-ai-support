@@ -223,6 +223,87 @@ class NodeRegistryService
     }
     
     /**
+     * Find node that owns a specific collection/model class
+     * 
+     * @param string $modelClass The model class or collection name
+     * @return AINode|null The node that owns this collection, or null if local
+     */
+    public function findNodeForCollection(string $modelClass): ?AINode
+    {
+        $cacheKey = 'node_for_collection:' . md5($modelClass);
+        
+        return Cache::remember($cacheKey, 300, function () use ($modelClass) {
+            $nodes = $this->getActiveNodes();
+            
+            foreach ($nodes as $node) {
+                if ($this->nodeOwnsCollection($node, $modelClass)) {
+                    return $node;
+                }
+            }
+            
+            return null;
+        });
+    }
+    
+    /**
+     * Check if a node owns a specific collection
+     */
+    public function nodeOwnsCollection(AINode $node, string $modelClass): bool
+    {
+        $collections = $node->collections ?? [];
+        
+        if (empty($collections)) {
+            return false;
+        }
+        
+        foreach ($collections as $collection) {
+            // Exact match
+            if ($collection === $modelClass) {
+                return true;
+            }
+            
+            // Check by class basename (e.g., "Email" matches "App\Models\Email")
+            if (class_basename($collection) === class_basename($modelClass)) {
+                return true;
+            }
+            
+            // Check by collection name variations
+            $modelBasename = strtolower(class_basename($modelClass));
+            $collectionLower = strtolower($collection);
+            
+            // Singular/plural matching
+            if ($collectionLower === $modelBasename || 
+                $collectionLower === $modelBasename . 's' ||
+                $collectionLower . 's' === $modelBasename) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Get all collections across all nodes
+     */
+    public function getAllCollections(): array
+    {
+        $collections = [];
+        
+        foreach ($this->getActiveNodes() as $node) {
+            $nodeCollections = $node->collections ?? [];
+            foreach ($nodeCollections as $collection) {
+                $collections[$collection] = [
+                    'collection' => $collection,
+                    'node_slug' => $node->slug,
+                    'node_name' => $node->name,
+                ];
+            }
+        }
+        
+        return $collections;
+    }
+    
+    /**
      * Update node status
      */
     public function updateStatus(AINode $node, string $status): void

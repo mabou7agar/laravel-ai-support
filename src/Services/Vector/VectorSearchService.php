@@ -475,4 +475,46 @@ class VectorSearchService
             return 0;
         }
     }
+
+    /**
+     * Get indexed count with filters (for multi-tenant support)
+     *
+     * @param string $modelClass Model class name
+     * @param array $filters Filters to apply (e.g., ['user_id' => 123])
+     * @return int
+     */
+    public function getIndexedCountWithFilters(string $modelClass, array $filters = []): int
+    {
+        try {
+            $collection = $this->getCollectionName($modelClass);
+            $driver = $this->driverManager->driver();
+
+            // Get count from vector database with filters
+            return $driver->count($collection, $filters);
+        } catch (\Exception $e) {
+            Log::warning('Failed to get indexed count with filters', [
+                'model' => $modelClass,
+                'filters' => $filters,
+                'error' => $e->getMessage()
+            ]);
+            return 0;
+        }
+    }
+
+    /**
+     * Get the vector driver instance
+     *
+     * @return \LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface|null
+     */
+    public function getDriver()
+    {
+        try {
+            return $this->driverManager->driver();
+        } catch (\Exception $e) {
+            Log::warning('Failed to get vector driver', [
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
 }

@@ -85,10 +85,26 @@ class RagChatApiController extends Controller
             $useIntelligentRAG = $request->input('use_intelligent_rag', true);
             $userId = $request->input('user_id');
 
-            // Get RAG collections
+            // Get RAG collections - respect user's explicit choice
             $ragCollections = $request->input('rag_collections');
+            
+            Log::info('RagChatApiController: rag_collections input', [
+                'raw_input' => $request->input('rag_collections'),
+                'is_empty' => empty($ragCollections),
+                'type' => gettype($ragCollections),
+            ]);
+            
             if (empty($ragCollections)) {
                 $ragCollections = $this->ragDiscovery->discover();
+                Log::info('RagChatApiController: Auto-discovered collections', [
+                    'count' => count($ragCollections),
+                    'collections' => $ragCollections,
+                ]);
+            } else {
+                Log::info('RagChatApiController: Using user-passed collections', [
+                    'count' => count($ragCollections),
+                    'collections' => $ragCollections,
+                ]);
             }
 
             // Process message

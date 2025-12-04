@@ -114,14 +114,30 @@ class AIChatController extends Controller
 
             // Get RAG collections from config or request
             $ragCollections = $request->input('rag_collections');
+            
+            Log::info('AIChatController: rag_collections input', [
+                'raw_input' => $request->input('rag_collections'),
+                'is_empty' => empty($ragCollections),
+                'type' => gettype($ragCollections),
+            ]);
 
             // If not provided, auto-discover from RAGgable/Vectorizable models
             if (empty($ragCollections)) {
                 $ragCollections = $this->ragDiscovery->discover();
+                Log::info('AIChatController: Auto-discovered collections', [
+                    'count' => count($ragCollections),
+                ]);
+            } else {
+                Log::info('AIChatController: Using user-passed collections', [
+                    'count' => count($ragCollections),
+                    'collections' => $ragCollections,
+                ]);
             }
 
-            $useIntelligentRAG = $request->input('use_intelligent_rag',
-                config('ai-engine.intelligent_rag.enabled', true)
+            $useIntelligentRAG = $request->input('intelligent_rag',
+                $request->input('use_intelligent_rag',
+                    config('ai-engine.intelligent_rag.enabled', true)
+                )
             );
 
             // Process message using ChatService

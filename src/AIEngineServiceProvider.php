@@ -289,6 +289,30 @@ class AIEngineServiceProvider extends ServiceProvider
                 $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)
             );
         });
+        
+        // Action Execution Service
+        $this->app->singleton(\LaravelAIEngine\Services\ActionExecutionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\ActionExecutionService(
+                $app->bound(\LaravelAIEngine\Services\ChatService::class) 
+                    ? $app->make(\LaravelAIEngine\Services\ChatService::class) 
+                    : null,
+                $app->bound(\LaravelAIEngine\Services\AIEngineService::class) 
+                    ? $app->make(\LaravelAIEngine\Services\AIEngineService::class) 
+                    : null,
+                $app->bound(\LaravelAIEngine\Services\Node\RemoteActionService::class) 
+                    ? $app->make(\LaravelAIEngine\Services\Node\RemoteActionService::class) 
+                    : null
+            );
+        });
+        
+        // Smart Action Service
+        $this->app->singleton(\LaravelAIEngine\Services\SmartActionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\SmartActionService(
+                $app->bound(\LaravelAIEngine\Services\AIEngineService::class) 
+                    ? $app->make(\LaravelAIEngine\Services\AIEngineService::class) 
+                    : null
+            );
+        });
     }
 
     /**

@@ -9,6 +9,7 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Intelligent RAG Service
@@ -99,7 +100,35 @@ class IntelligentRAGService
                 ]);
             }
 
-            // Step 2: Retrieve context if needed
+            // Step 2: Handle aggregate queries (count, how many, etc.)
+            // Use local detection OR AI analysis (local detection is more reliable for patterns)
+            $needsAggregate = $this->isAggregateQuery($message) || ($analysis['needs_aggregate'] ?? false);
+            
+            Log::info('Aggregate query check', [
+                'message' => $message,
+                'needs_aggregate' => $needsAggregate,
+                'is_aggregate_local' => $this->isAggregateQuery($message),
+            ]);
+            
+            $aggregateData = [];
+            if ($needsAggregate) {
+                // Always use availableCollections (discovered models) for aggregate data
+                // The AI-suggested collections might not exist locally
+                $aggregateData = $this->getAggregateData(
+                    $availableCollections,
+                    $userId
+                );
+                
+                Log::channel('ai-engine')->info('Aggregate data retrieved', [
+                    'user_id' => $userId,
+                    'message' => $message,
+                    'available_collections' => $availableCollections,
+                    'collections' => array_keys($aggregateData),
+                    'data' => $aggregateData,
+                ]);
+            }
+
+            // Step 3: Retrieve context if needed (for non-aggregate or combined queries)
             $context = collect();
             if ($analysis['needs_context']) {
                 // If no search queries provided, use the original message
@@ -107,9 +136,31 @@ class IntelligentRAGService
                     ? $analysis['search_queries']
                     : [$message];
 
+                // IMPORTANT: User-passed collections should be strictly respected
+                // AI can only suggest a SUBSET of what user passed, never expand beyond it
+                $suggestedCollections = $analysis['collections'] ?? [];
+                
+                // Validate AI-suggested collections - only use ones that exist in user's passed collections
+                $validCollections = array_filter($suggestedCollections, function ($collection) use ($availableCollections) {
+                    return class_exists($collection) && in_array($collection, $availableCollections);
+                });
+                
+                // If AI suggested valid subset, use it; otherwise use ALL user-passed collections
+                // Never search beyond what user explicitly passed
+                $collectionsToSearch = !empty($validCollections) ? $validCollections : $availableCollections;
+                
+                if (config('ai-engine.debug')) {
+                    Log::channel('ai-engine')->debug('Collection selection', [
+                        'user_passed' => $availableCollections,
+                        'ai_suggested' => $suggestedCollections,
+                        'valid_subset' => $validCollections,
+                        'final_collections' => $collectionsToSearch,
+                    ]);
+                }
+
                 $context = $this->retrieveRelevantContext(
                     $searchQueries,
-                    $analysis['collections'] ?? $availableCollections,
+                    $collectionsToSearch,
                     $options,
                     $userId
                 );
@@ -118,24 +169,46 @@ class IntelligentRAGService
                     Log::channel('ai-engine')->debug('RAG search completed', [
                         'user_id' => $userId,
                         'search_queries' => $searchQueries,
-                        'collections' => $analysis['collections'] ?? $availableCollections,
+                        'collections' => $collectionsToSearch,
                         'results_found' => $context->count(),
                     ]);
                 }
 
-                // If no results found, try again with fallback threshold
-                $fallbackThreshold = $this->config['fallback_threshold'] ?? null;
-                if ($context->isEmpty() && !empty($availableCollections) && $fallbackThreshold !== null) {
-                    Log::channel('ai-engine')->debug('No RAG results found, retrying with fallback threshold', [
+                // If no results found and we didn't search all collections, try ALL collections
+                if ($context->isEmpty() && count($collectionsToSearch) < count($availableCollections)) {
+                    Log::channel('ai-engine')->debug('No results in selected collections, searching ALL collections', [
+                        'user_id' => $userId,
+                        'original_collections' => $collectionsToSearch,
+                        'all_collections' => $availableCollections,
+                    ]);
+                    
+                    $context = $this->retrieveRelevantContext(
+                        $searchQueries,
+                        $availableCollections,
+                        $options,
+                        $userId
+                    );
+                    
+                    if (config('ai-engine.debug')) {
+                        Log::channel('ai-engine')->debug('All-collections search completed', [
+                            'results_found' => $context->count(),
+                        ]);
+                    }
+                }
+                
+                // If still no results, try with lower threshold (0.2 default)
+                $fallbackThreshold = $this->config['fallback_threshold'] ?? 0.2;
+                if ($context->isEmpty() && !empty($availableCollections)) {
+                    Log::channel('ai-engine')->debug('No RAG results found, retrying with lower threshold', [
                         'user_id' => $userId,
                         'fallback_threshold' => $fallbackThreshold,
                         'search_queries' => $searchQueries,
                     ]);
                     $context = $this->retrieveRelevantContext(
                         $searchQueries,
-                        $analysis['collections'] ?? $availableCollections,
+                        $availableCollections,
                         array_merge($options, ['min_score' => $fallbackThreshold]),
-                        $userId  // ← FIX: Pass userId to fallback search too!
+                        $userId
                     );
 
                     if (config('ai-engine.debug')) {
@@ -146,12 +219,15 @@ class IntelligentRAGService
                 }
             }
 
-            // Step 3: Build enhanced prompt with context
+            // Step 4: Build enhanced prompt with context and aggregate data
             $enhancedPrompt = $this->buildEnhancedPrompt(
                 $message,
                 $context,
                 $conversationHistory,
-                $options
+                array_merge($options, [
+                    'available_collections' => $availableCollections,
+                    'aggregate_data' => $aggregateData,
+                ])
             );
 
             // Step 4: Generate response with conversation history and user context
@@ -267,7 +343,7 @@ class IntelligentRAGService
                 $message,
                 $context,
                 $conversationHistory,
-                $options
+                array_merge($options, ['available_collections' => $availableCollections])
             );
 
             // Stream response
@@ -311,31 +387,75 @@ class IntelligentRAGService
      */
     protected function analyzeQuery(string $query, array $conversationHistory = [], array $availableCollections = []): array
     {
-        // Build available collections info
+        // Build available collections info with descriptions
         $collectionsInfo = '';
         if (!empty($availableCollections)) {
             $collectionsInfo = "\n\nAvailable knowledge sources:\n";
             foreach ($availableCollections as $collection) {
-                $collectionsInfo .= "- " . class_basename($collection) . " (class: {$collection})\n";
+                $name = class_basename($collection);
+                $description = '';
+                
+                // Try to get RAG description from the model
+                if (class_exists($collection)) {
+                    try {
+                        $instance = new $collection();
+                        if (method_exists($instance, 'getRAGDescription')) {
+                            $description = $instance->getRAGDescription();
+                        }
+                        if (method_exists($instance, 'getRAGDisplayName')) {
+                            $name = $instance->getRAGDisplayName();
+                        }
+                    } catch (\Exception $e) {
+                        // Silently ignore if we can't instantiate
+                    }
+                }
+                
+                if (!empty($description)) {
+                    $collectionsInfo .= "- {$name}: {$description} (class: {$collection})\n";
+                } else {
+                    $collectionsInfo .= "- {$name} (class: {$collection})\n";
+                }
             }
         }
 
         $systemPrompt = <<<PROMPT
 Query analyzer for knowledge base. Determine if we should search.
 {$collectionsInfo}
+
 RULES:
 1. DEFAULT: needs_context: true (always search unless pure greeting)
 2. Skip search ONLY for: "hi", "hello", simple math
-3. Use EXACT query as search term for short specific queries
+3. ALWAYS generate semantic search terms that will match indexed content
+4. ONLY use collections from the available list above - never invent collection names
 
 RESPOND WITH JSON:
-{"needs_context": true, "reasoning": "brief reason", "search_queries": ["term1", "term2"], "collections": ["App\\\\Models\\\\Post"], "query_type": "informational"}
+{"needs_context": true, "reasoning": "brief reason", "search_queries": ["term1", "term2", "term3"], "collections": ["FullClassName"], "query_type": "informational", "needs_aggregate": false}
 
-SEARCH QUERY RULES:
-- Short specific queries (e.g., "Password Reset Request") → Use EXACT query: ["Password Reset Request"]
-- Technical questions → Extract key terms: ["Laravel routing"]
-- Capabilities questions → Use empty: []
-- Follow-up questions → Extract topic from conversation history
+QUERY TYPES:
+- "aggregate" → Questions about counts, totals, statistics (e.g., "how many emails", "count my documents")
+- "informational" → Questions seeking specific information
+- "conversational" → General chat, greetings
+
+CRITICAL SEARCH QUERY RULES:
+1. NEVER use abstract terms like "most important" or "best" alone - they won't match content
+2. For vague/subjective queries, generate MULTIPLE concrete search terms:
+   - "which is most important" → ["urgent", "deadline", "action required", "priority", "reminder", "important"]
+   - "what should I focus on" → ["urgent", "pending", "deadline", "todo", "action needed"]
+   - "anything urgent" → ["urgent", "asap", "immediately", "deadline", "critical"]
+   - "show me important stuff" → ["important", "priority", "urgent", "flagged", "starred"]
+
+3. For email-related queries, include email-specific terms:
+   - ["unread", "inbox", "reply needed", "follow up", "meeting", "reminder", "deadline"]
+
+4. For follow-up queries ("tell me more", "that one", "this email"):
+   - Extract the ACTUAL topic/subject from conversation history
+   - Use specific terms from previous messages
+
+5. Short specific queries (e.g., "Password Reset Request") → Use EXACT query
+
+6. Technical questions → Extract key terms: ["Laravel routing", "API endpoint"]
+
+7. Aggregate queries (how many, count, total) → Set needs_aggregate: true
 PROMPT;
 
         $conversationContext = '';
@@ -354,12 +474,17 @@ PROMPT;
 
 Query: "{$query}"
 
-INSTRUCTIONS:
-- Follow-up queries ("tell me more", "reply to this", "that email") → Extract topic from conversation history
-- Short specific queries → Use EXACT query as search term
-- Default: needs_context: true
+CRITICAL INSTRUCTIONS:
+1. Generate search_queries that will SEMANTICALLY MATCH indexed content
+2. For vague queries like "which is important/best/urgent" → Use MULTIPLE concrete terms:
+   ["urgent", "deadline", "priority", "action required", "reminder", "meeting", "follow up"]
+3. NEVER return just ["most important"] or ["best"] - these won't match anything
+4. For follow-ups → Extract ACTUAL subject/topic from conversation history
+5. Only use collections from the available list - use FULL class name
+6. Default: needs_context: true
 
-Respond with JSON only.
+Respond with JSON only. Example for vague query:
+{"needs_context": true, "reasoning": "vague query needs multiple search terms", "search_queries": ["urgent", "deadline", "priority", "action required", "reminder"], "collections": ["Bites\\\\Modules\\\\MailBox\\\\Models\\\\EmailCache"], "query_type": "informational", "needs_aggregate": false}
 PROMPT;
 
         try {
@@ -398,6 +523,7 @@ PROMPT;
                 'search_queries' => $searchQueries,
                 'collections' => $collections,
                 'query_type' => $analysis['query_type'] ?? 'conversational',
+                'needs_aggregate' => $analysis['needs_aggregate'] ?? false,
             ];
 
         } catch (\Exception $e) {
@@ -912,6 +1038,30 @@ PROMPT;
 
         $prompt = "{$systemPrompt}\n\n";
 
+        // Add aggregate data if available (for count/statistics queries)
+        $aggregateData = $options['aggregate_data'] ?? [];
+        if (!empty($aggregateData)) {
+            $prompt .= "DATABASE STATISTICS (REAL-TIME FROM DATABASE):\n";
+            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            foreach ($aggregateData as $modelName => $stats) {
+                $displayName = $stats['display_name'] ?? $modelName;
+                // Use database_count as primary, fall back to indexed_count/count
+                $count = $stats['database_count'] ?? $stats['indexed_count'] ?? $stats['count'] ?? 0;
+                
+                if ($count > 0) {
+                    $prompt .= "📊 {$displayName}: {$count} total records\n";
+                    
+                    if (isset($stats['recent_count']) && $stats['recent_count'] > 0) {
+                        $prompt .= "   - Recent (last 7 days): {$stats['recent_count']}\n";
+                    }
+                    if (isset($stats['unread_count']) && $stats['unread_count'] > 0) {
+                        $prompt .= "   - Unread: {$stats['unread_count']}\n";
+                    }
+                }
+            }
+            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        }
+
         // Add context if available
         if ($context->isNotEmpty()) {
             $contextText = $this->formatContext($context);
@@ -931,9 +1081,56 @@ PROMPT;
             $prompt .= "- Don't say 'based on the context' - just answer naturally\n";
             $prompt .= "- For email replies: use actual names from context (from_name, subject), NEVER use placeholders like [Recipient's Name]\n";
             $prompt .= "- User's name is Mohamed - use for signatures\n";
+            $prompt .= "- When listing multiple items (emails, tasks, options), use NUMBERED LISTS (1. 2. 3.) with clear titles\n";
+            $prompt .= "- Format: 1. **Title/Subject**: Brief description [Source X]\n";
         } else {
-            // No KB context - use conversation history if applicable
-            $prompt .= "NO KNOWLEDGE BASE RESULTS FOUND.\n\n";
+            // No KB context - but check if we have aggregate data
+            $hasAggregateData = !empty($aggregateData) && collect($aggregateData)->contains(function ($stats) {
+                return ($stats['database_count'] ?? $stats['count'] ?? 0) > 0;
+            });
+            
+            if ($hasAggregateData) {
+                $prompt .= "INSTRUCTIONS:\n";
+                $prompt .= "- Use the DATABASE STATISTICS above to answer count/quantity questions\n";
+                $prompt .= "- Answer directly with the numbers from the statistics\n";
+                $prompt .= "- Be helpful and offer to provide more details if needed\n\n";
+            } else {
+                $prompt .= "NO KNOWLEDGE BASE RESULTS FOUND FOR THIS QUERY.\n\n";
+            }
+            
+            // Add available collections info so AI knows what data sources exist
+            $availableCollections = $options['available_collections'] ?? [];
+            if (!empty($availableCollections)) {
+                $prompt .= "AVAILABLE DATA SOURCES IN KNOWLEDGE BASE:\n";
+                foreach ($availableCollections as $collection) {
+                    $name = class_basename($collection);
+                    $description = '';
+                    
+                    if (class_exists($collection)) {
+                        try {
+                            $instance = new $collection();
+                            if (method_exists($instance, 'getRAGDescription')) {
+                                $description = $instance->getRAGDescription();
+                            }
+                            if (method_exists($instance, 'getRAGDisplayName')) {
+                                $name = $instance->getRAGDisplayName();
+                            }
+                        } catch (\Exception $e) {
+                            // Silently ignore
+                        }
+                    }
+                    
+                    if (!empty($description)) {
+                        $prompt .= "- {$name}: {$description}\n";
+                    } else {
+                        $prompt .= "- {$name}\n";
+                    }
+                }
+                $prompt .= "\n";
+                $prompt .= "NOTE: The search didn't find matching results, but these data sources exist.\n";
+                $prompt .= "For aggregate queries (counts, summaries), suggest the user try a more specific search.\n\n";
+            }
+            
             $prompt .= "CHECK CONVERSATION HISTORY FIRST:\n";
             $prompt .= "- If this is a follow-up (e.g., 'reply to this mail', 'tell me more'), answer using conversation history\n";
             $prompt .= "- If asking about something we just discussed, answer from that context\n\n";
@@ -1136,11 +1333,14 @@ PROMPT;
                 ]);
             }
 
+            // Get display name - check for custom display name method or property
+            $displayName = $this->getModelDisplayName($item, $modelClass);
+            
             return [
                 'id' => $item->id ?? null,
                 'model_id' => $item->id ?? null,  // Original model ID
                 'model_class' => $modelClass ?? 'Unknown',  // Full model class name
-                'model_type' => $modelClass ? class_basename($modelClass) : 'Unknown',  // Short model name
+                'model_type' => $displayName,  // Human-readable display name
                 'title' => $item->title ?? $item->name ?? "Source " . ($index + 1),
                 'relevance' => round(($item->vector_score ?? 0) * 100, 1),
                 'content_preview' => isset($item->content)
@@ -1178,30 +1378,35 @@ PROMPT;
     {
         $options = [];
 
-        // Pattern 1: Simple numbered lists (1. , 2. , etc.)
-        if (preg_match_all('/^\s*(\d+)\.\s+(.+?)$/m', $content, $matches, PREG_SET_ORDER)) {
+        // Pattern 1: Numbered lists with markdown bold (1. **Title**: Description)
+        if (preg_match_all('/^\s*(\d+)\.\s+\*\*(.+?)\*\*:?\s*(.*)$/m', $content, $matches, PREG_SET_ORDER)) {
             foreach (array_slice($matches, 0, 10) as $match) {
                 $number = (int) $match[1];
-                $fullLine = trim($match[2]);
+                $title = trim($match[2]);
+                $description = trim($match[3] ?? '');
+                $fullText = $title . ($description ? ': ' . $description : '');
 
-                // Extract just the title (before the colon or first sentence)
-                $text = $fullLine;
-                if (strpos($fullLine, ':') !== false) {
-                    $text = trim(substr($fullLine, 0, strpos($fullLine, ':')));
-                } elseif (strpos($fullLine, '.') !== false) {
-                    $text = trim(substr($fullLine, 0, strpos($fullLine, '.')));
+                // Extract source reference if present
+                $sourceRef = null;
+                if (preg_match('/\[Source (\d+)\]/', $fullText, $sourceMatch)) {
+                    $sourceRef = (int) $sourceMatch[1];
                 }
 
                 // Skip very short options
-                if (strlen($text) < 3) {
+                if (strlen($title) < 3) {
                     continue;
                 }
 
+                // Generate unique ID based on number and content hash
+                $uniqueId = 'opt_' . $number . '_' . substr(md5($fullText), 0, 8);
+
                 $options[] = [
+                    'id' => $uniqueId,
                     'number' => $number,
-                    'text' => $text,
-                    'full_text' => $fullLine,
-                    'preview' => substr($text, 0, 100),
+                    'text' => $title,
+                    'full_text' => $fullText,
+                    'preview' => substr($title, 0, 100),
+                    'source_index' => $sourceRef,
                     'clickable' => true,
                     'action' => 'select_option',
                     'value' => (string) $number,
@@ -1209,18 +1414,89 @@ PROMPT;
             }
         }
 
-        // Pattern 2: Markdown bullet points with bold headers (- **Title**: Description)
+        // Pattern 2: Numbered lists with paragraphs (1. text\n\n2. text)
+        if (empty($options) && preg_match_all('/(\d+)\.\s+(.+?)(?=\n\n\d+\.|\n\n[A-Z]|$)/s', $content, $matches, PREG_SET_ORDER)) {
+            foreach (array_slice($matches, 0, 10) as $match) {
+                $number = (int) $match[1];
+                $fullLine = trim($match[2]);
+                
+                // Extract source reference before removing it
+                $sourceRef = null;
+                if (preg_match('/\[Source (\d+)\]/', $fullLine, $sourceMatch)) {
+                    $sourceRef = (int) $sourceMatch[1];
+                }
+                
+                // Remove [Source X] references for display
+                $cleanLine = preg_replace('/\s*\[Source \d+\]\.?/', '', $fullLine);
+
+                // Extract title - try to find quoted title or subject first
+                $text = $cleanLine;
+                
+                // Look for quoted titles like "Frontend Developer Take-Home Task" or 'subject "Hi"'
+                if (preg_match('/(?:titled|subject|called|named)\s*["\']([^"\']+)["\']/i', $cleanLine, $titleMatch)) {
+                    $text = trim($titleMatch[1]);
+                }
+                // Look for **bold** titles
+                elseif (preg_match('/\*\*([^*]+)\*\*/', $cleanLine, $titleMatch)) {
+                    $text = trim($titleMatch[1]);
+                }
+                // Extract sender/source info as fallback
+                elseif (preg_match('/(?:from|by)\s+([A-Z][a-zA-Z\s]+?)(?:\s+on\s+|\s+at\s+|,|\.|$)/i', $cleanLine, $titleMatch)) {
+                    $text = 'From ' . trim($titleMatch[1]);
+                }
+                // Use first meaningful phrase
+                else {
+                    // Get first sentence or up to 80 chars
+                    $firstSentence = preg_split('/[.!?]/', $cleanLine)[0] ?? $cleanLine;
+                    $text = strlen($firstSentence) > 80 ? substr($firstSentence, 0, 77) . '...' : $firstSentence;
+                }
+
+                // Skip very short options
+                if (strlen($text) < 3) {
+                    continue;
+                }
+
+                // Generate unique ID based on number and content hash
+                $uniqueId = 'opt_' . $number . '_' . substr(md5($fullLine), 0, 8);
+
+                $options[] = [
+                    'id' => $uniqueId,
+                    'number' => $number,
+                    'text' => $text,
+                    'full_text' => substr($cleanLine, 0, 200),
+                    'preview' => substr($text, 0, 100),
+                    'source_index' => $sourceRef,
+                    'clickable' => true,
+                    'action' => 'select_option',
+                    'value' => (string) $number,
+                ];
+            }
+        }
+
+        // Pattern 3: Markdown bullet points with bold headers (- **Title**: Description)
         if (empty($options) && preg_match_all('/^-\s+\*\*(.+?)\*\*:?\s*(.+?)(?=\n-|\n\n|$)/ms', $content, $matches, PREG_SET_ORDER)) {
             $number = 1;
             foreach (array_slice($matches, 0, 10) as $match) {
                 $title = trim($match[1]);
                 $description = trim($match[2]);
+                $fullText = $title . ': ' . $description;
+                
+                // Extract source reference if present
+                $sourceRef = null;
+                if (preg_match('/\[Source (\d+)\]/', $fullText, $sourceMatch)) {
+                    $sourceRef = (int) $sourceMatch[1];
+                }
+                
+                // Generate unique ID
+                $uniqueId = 'opt_' . $number . '_' . substr(md5($fullText), 0, 8);
 
                 $options[] = [
+                    'id' => $uniqueId,
                     'number' => $number,
                     'text' => $title,
-                    'full_text' => $title . ': ' . $description,
+                    'full_text' => $fullText,
                     'preview' => substr($title, 0, 100),
+                    'source_index' => $sourceRef,
                     'clickable' => true,
                     'action' => 'select_option',
                     'value' => (string) $number,
@@ -1229,7 +1505,7 @@ PROMPT;
             }
         }
 
-        // Pattern 3: Markdown headers (#### Title)
+        // Pattern 4: Markdown headers (#### Title)
         if (empty($options) && preg_match_all('/^#{2,4}\s+(.+?)$/m', $content, $matches, PREG_SET_ORDER)) {
             $number = 1;
             foreach (array_slice($matches, 0, 10) as $match) {
@@ -1239,12 +1515,17 @@ PROMPT;
                 if (strlen($title) < 5 || stripos($title, 'title:') !== false) {
                     continue;
                 }
+                
+                // Generate unique ID
+                $uniqueId = 'opt_' . $number . '_' . substr(md5($title), 0, 8);
 
                 $options[] = [
+                    'id' => $uniqueId,
                     'number' => $number,
                     'text' => $title,
                     'full_text' => $title,
                     'preview' => substr($title, 0, 100),
+                    'source_index' => null,
                     'clickable' => true,
                     'action' => 'select_option',
                     'value' => (string) $number,
@@ -1599,6 +1880,312 @@ PROMPT;
                 'error' => $e->getMessage(),
             ]);
             return null;
+        }
+    }
+
+    /**
+     * Get aggregate data (counts, statistics) from vector database
+     *
+     * @param array $collections Model classes to query
+     * @param string|int|null $userId User ID for filtering (multi-tenant)
+     * @return array Aggregate data by collection
+     */
+    protected function getAggregateData(array $collections, $userId = null): array
+    {
+        $aggregateData = [];
+
+        foreach ($collections as $collection) {
+            if (!class_exists($collection)) {
+                continue;
+            }
+
+            try {
+                $instance = new $collection();
+                $name = class_basename($collection);
+                $displayName = $name;
+                $description = '';
+
+                // Get display name and description
+                if (method_exists($instance, 'getRAGDisplayName')) {
+                    $displayName = $instance->getRAGDisplayName();
+                }
+                if (method_exists($instance, 'getRAGDescription')) {
+                    $description = $instance->getRAGDescription();
+                }
+
+                // Build filters for vector database query
+                $filters = [];
+                if ($userId !== null) {
+                    $filters['user_id'] = $userId;
+                }
+
+                // Get count from vector database using VectorSearchService
+                $vectorCount = $this->vectorSearch->getIndexedCountWithFilters($collection, $filters);
+
+                // Get additional stats if available
+                $stats = [
+                    'count' => $vectorCount,
+                    'indexed_count' => $vectorCount,
+                    'display_name' => $displayName,
+                    'description' => $description,
+                    'source' => 'vector_database',
+                ];
+
+                // Also get database count for comparison (optional)
+                try {
+                    $dbQuery = $collection::query();
+                    $table = $instance->getTable();
+                    
+                    if ($userId !== null) {
+                        // Check if this is a User model - filter by id instead of user_id
+                        $isUserModel = $table === 'users' || str_ends_with($collection, '\\User');
+                        
+                        if ($isUserModel) {
+                            // For User model: check if user has admin/super admin role
+                            $isAdmin = $this->isUserAdmin($userId);
+                            if (!$isAdmin) {
+                                // Non-admin users can only see their own record
+                                $dbQuery->where('id', $userId);
+                            }
+                            // Admin users can see all users (no filter)
+                        } else {
+                            // For other models: filter by user_id or similar columns
+                            foreach (['user_id', 'owner_id', 'created_by', 'author_id'] as $column) {
+                                if (Schema::hasColumn($table, $column)) {
+                                    $dbQuery->where($column, $userId);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    $stats['database_count'] = $dbQuery->count();
+                    
+                    // Try to get recent items count (last 7 days)
+                    if (Schema::hasColumn($table, 'created_at')) {
+                        $recentQuery = $collection::query();
+                        if ($userId !== null) {
+                            $isUserModel = $table === 'users' || str_ends_with($collection, '\\User');
+                            if ($isUserModel && !$this->isUserAdmin($userId)) {
+                                $recentQuery->where('id', $userId);
+                            } else if (!$isUserModel) {
+                                foreach (['user_id', 'owner_id', 'created_by', 'author_id'] as $column) {
+                                    if (Schema::hasColumn($table, $column)) {
+                                        $recentQuery->where($column, $userId);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        $stats['recent_count'] = $recentQuery->where('created_at', '>=', now()->subDays(7))->count();
+                    }
+
+                    // Try to get unread count for emails
+                    if (Schema::hasColumn($table, 'is_read')) {
+                        $unreadQuery = $collection::query();
+                        if ($userId !== null) {
+                            foreach (['user_id', 'owner_id', 'created_by', 'author_id'] as $column) {
+                                if (Schema::hasColumn($table, $column)) {
+                                    $unreadQuery->where($column, $userId);
+                                    break;
+                                }
+                            }
+                        }
+                        $stats['unread_count'] = $unreadQuery->where('is_read', false)->count();
+                    }
+                } catch (\Exception $e) {
+                    // Database query failed, continue with vector count only
+                    Log::channel('ai-engine')->debug('Database count failed, using vector count only', [
+                        'collection' => $collection,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                $aggregateData[$name] = $stats;
+
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Failed to get aggregate data for collection', [
+                    'collection' => $collection,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $aggregateData;
+    }
+
+    /**
+     * Check if query is an aggregate query (count, how many, total, etc.)
+     *
+     * @param string $query User's query
+     * @return bool
+     */
+    protected function isAggregateQuery(string $query): bool
+    {
+        $query = strtolower($query);
+        
+        // Patterns that indicate aggregate queries
+        $aggregatePatterns = [
+            'how many',
+            'how much',
+            'count',
+            'total',
+            'number of',
+            'amount of',
+            'quantity',
+            'statistics',
+            'stats',
+            'summary',
+            'overview',
+            'all my',
+            'list all',
+        ];
+        
+        foreach ($aggregatePatterns as $pattern) {
+            if (str_contains($query, $pattern)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * Get human-readable display name for a model
+     * 
+     * Checks in order:
+     * 1. getRagDisplayName() method on model
+     * 2. getVectorDisplayName() method on model
+     * 3. $ragDisplayName property on model
+     * 4. $vectorDisplayName property on model
+     * 5. Static $displayName property on model class
+     * 6. Falls back to humanized class_basename
+     *
+     * @param mixed $item The model instance
+     * @param string|null $modelClass The model class name
+     * @return string Human-readable display name
+     */
+    protected function getModelDisplayName($item, ?string $modelClass): string
+    {
+        // Priority 1: Check for getRagDisplayName() method
+        if (method_exists($item, 'getRagDisplayName')) {
+            $displayName = $item->getRagDisplayName();
+            if (!empty($displayName)) {
+                return $displayName;
+            }
+        }
+        
+        // Priority 2: Check for getVectorDisplayName() method
+        if (method_exists($item, 'getVectorDisplayName')) {
+            $displayName = $item->getVectorDisplayName();
+            if (!empty($displayName)) {
+                return $displayName;
+            }
+        }
+        
+        // Priority 3: Check for $ragDisplayName property
+        if (property_exists($item, 'ragDisplayName') && !empty($item->ragDisplayName)) {
+            return $item->ragDisplayName;
+        }
+        
+        // Priority 4: Check for $vectorDisplayName property
+        if (property_exists($item, 'vectorDisplayName') && !empty($item->vectorDisplayName)) {
+            return $item->vectorDisplayName;
+        }
+        
+        // Priority 5: Check for static $displayName on the class
+        if ($modelClass && class_exists($modelClass)) {
+            try {
+                $reflection = new \ReflectionClass($modelClass);
+                if ($reflection->hasProperty('displayName')) {
+                    $prop = $reflection->getProperty('displayName');
+                    if ($prop->isStatic()) {
+                        $prop->setAccessible(true);
+                        $displayName = $prop->getValue();
+                        if (!empty($displayName)) {
+                            return $displayName;
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                // Ignore reflection errors
+            }
+        }
+        
+        // Priority 6: Fall back to humanized class basename
+        if ($modelClass) {
+            $basename = class_basename($modelClass);
+            // Convert CamelCase to words (e.g., "EmailCache" -> "Email Cache")
+            return preg_replace('/(?<!^)([A-Z])/', ' $1', $basename);
+        }
+        
+        return 'Unknown';
+    }
+
+    /**
+     * Check if user has admin or super admin role
+     *
+     * @param string|int $userId User ID to check
+     * @return bool True if user is admin/super admin
+     */
+    protected function isUserAdmin($userId): bool
+    {
+        try {
+            // Get user model class from config or use default
+            $userModel = config('auth.providers.users.model', 'App\\Models\\User');
+            
+            if (!class_exists($userModel)) {
+                return false;
+            }
+            
+            $user = $userModel::find($userId);
+            
+            if (!$user) {
+                return false;
+            }
+            
+            // Check for is_admin flag
+            if (isset($user->is_admin) && $user->is_admin) {
+                return true;
+            }
+            
+            // Check for is_super_admin flag
+            if (isset($user->is_super_admin) && $user->is_super_admin) {
+                return true;
+            }
+            
+            // Check for Spatie Laravel Permission roles
+            if (method_exists($user, 'hasRole')) {
+                if ($user->hasRole(['admin', 'super-admin', 'super_admin', 'superadmin', 'administrator'])) {
+                    return true;
+                }
+            }
+            
+            // Check for roles relationship
+            if (method_exists($user, 'roles')) {
+                $adminRoles = ['admin', 'super-admin', 'super_admin', 'superadmin', 'administrator'];
+                $userRoles = $user->roles()->pluck('name')->map(fn($r) => strtolower($r))->toArray();
+                
+                if (count(array_intersect($adminRoles, $userRoles)) > 0) {
+                    return true;
+                }
+            }
+            
+            // Check for role column
+            if (isset($user->role)) {
+                $role = strtolower($user->role);
+                if (in_array($role, ['admin', 'super-admin', 'super_admin', 'superadmin', 'administrator'])) {
+                    return true;
+                }
+            }
+            
+            return false;
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to check user admin status', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
         }
     }
 }

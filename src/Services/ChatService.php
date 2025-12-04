@@ -109,18 +109,30 @@ class ChatService
         }
 
         // Use Intelligent RAG if enabled and available
+        Log::info('ChatService processMessage', [
+            'useIntelligentRAG' => $useIntelligentRAG,
+            'intelligentRAG_available' => $this->intelligentRAG !== null,
+            'message' => substr($message, 0, 50),
+            'ragCollections_passed' => $ragCollections,
+            'ragCollections_count' => count($ragCollections),
+        ]);
+        
         if ($useIntelligentRAG && $this->intelligentRAG !== null) {
             try {
-                // Auto-discover collections if not provided
+                // Auto-discover collections ONLY if not provided
+                // If user passes specific collections, respect them strictly
                 if (empty($ragCollections) && $this->ragDiscovery !== null) {
                     $ragCollections = $this->ragDiscovery->discover();
                     
-                    if (config('ai-engine.debug')) {
-                        Log::channel('ai-engine')->debug('Auto-discovered RAG collections', [
-                            'collections' => $ragCollections,
-                            'count' => count($ragCollections),
-                        ]);
-                    }
+                    Log::channel('ai-engine')->info('Auto-discovered RAG collections (none passed)', [
+                        'collections' => $ragCollections,
+                        'count' => count($ragCollections),
+                    ]);
+                } else {
+                    Log::channel('ai-engine')->info('Using user-passed RAG collections', [
+                        'collections' => $ragCollections,
+                        'count' => count($ragCollections),
+                    ]);
                 }
                 
                 $conversationHistory = !empty($messages) ? $messages : [];

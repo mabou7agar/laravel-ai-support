@@ -10,11 +10,13 @@
 [![PHP Version](https://img.shields.io/packagist/php-v/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
 [![Laravel](https://img.shields.io/badge/Laravel-9%20%7C%2010%20%7C%2011%20%7C%2012-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 
-**The most advanced Laravel AI package with Federated RAG, Intelligent Context Retrieval, Dynamic Model Registry, and Enterprise-Grade Distributed Search.**
+**The most advanced Laravel AI package with Federated RAG, Smart Action System, Intelligent Context Retrieval, Dynamic Model Registry, and Enterprise-Grade Distributed Search.**
 
 **🎯 100% Future-Proof** - Automatically supports GPT-5, GPT-6, Claude 4, and all future AI models!
 
-[Quick Start](#-quick-start) • [Features](#-key-features) • [Chat Without RAG](#1-simple-chat-without-rag) • [Multi-Tenant Security](#-multi-tenant-access-control) • [Controller Examples](#-complete-controller-examples) • [Documentation](docs/)
+**🆕 New in v2.x:** Smart Action System with AI-powered parameter extraction, federated action execution, and built-in executors for email, calendar, tasks, and more!
+
+[Quick Start](#-quick-start) • [Features](#-key-features) • [Smart Actions](#-interactive-actions) • [Multi-Tenant Security](#-multi-tenant-access-control) • [Documentation](#-documentation)
 
 ---
 
@@ -24,6 +26,11 @@
 |---------|-------------|--------------|
 | **Simple Chat** | Direct AI response (no RAG) | `useIntelligentRAG: false` |
 | **RAG Search** | Search your knowledge base | `useIntelligentRAG: true, ragCollections: [Email::class]` |
+| **Aggregate Queries** | Count, statistics, summaries | `"how many emails do I have"` → Auto-detected |
+| **Numbered Options** | Clickable response options | `numbered_options` in response |
+| **Smart Actions** | AI-powered executable actions | `POST /api/v1/actions/execute` |
+| **Action Execution** | Execute with AI param filling | `executor: 'email.reply'` → AI drafts reply |
+| **Federated Actions** | Actions route to correct node | Collection-based auto-routing |
 | **Conversation Memory** | Remember chat history | `useMemory: true` |
 | **User Isolation** | Secure multi-tenant RAG | `userId: $request->user()->id` |
 | **Admin Access** | Access all data in RAG | `$user->is_admin = true` or `hasRole('admin')` |
@@ -562,6 +569,322 @@ $chat->streamMessage(
 
 ---
 
+## 📊 Aggregate Queries (Counts & Statistics)
+
+The AI automatically detects aggregate queries like "how many", "count", "total" and retrieves statistics from your database:
+
+```php
+// User asks: "How many emails do I have?"
+$response = $chat->processMessage(
+    message: 'How many emails do I have?',
+    sessionId: 'user-123',
+    useIntelligentRAG: true,
+    ragCollections: [Email::class],
+    userId: $request->user()->id
+);
+
+// AI Response: "You have 14 emails in your inbox."
+```
+
+### Supported Aggregate Patterns
+
+| Query Pattern | Example | What Happens |
+|--------------|---------|--------------|
+| `how many` | "How many users are there?" | Counts records |
+| `count` | "Count my documents" | Counts records |
+| `total` | "Total emails this week" | Counts with filters |
+| `summary` | "Give me a summary of my data" | Statistics overview |
+| `statistics` | "Show me statistics" | Full stats breakdown |
+
+### Response with Statistics
+
+```json
+{
+  "response": "Here's a summary of your data:\n- 14 emails\n- 5 documents\n- 3 tasks",
+  "aggregate_data": {
+    "Email": { "database_count": 14, "recent_count": 3 },
+    "Document": { "database_count": 5 },
+    "Task": { "database_count": 3 }
+  }
+}
+```
+
+---
+
+## 🎯 Interactive Actions
+
+The package includes a powerful **Smart Action System** that generates executable, AI-powered actions with automatic parameter extraction.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **AI Parameter Extraction** | Automatically extracts emails, dates, times from content |
+| **Pre-filled Actions** | Actions come ready-to-execute with all required data |
+| **Federated Execution** | Actions automatically route to the correct node |
+| **Smart Executors** | Built-in handlers for email, calendar, tasks, and more |
+
+### Enabling Actions
+
+```bash
+curl -X POST 'https://your-app.test/ai/chat' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "show me my emails",
+    "session_id": "user-123",
+    "intelligent_rag": true,
+    "actions": true
+  }'
+```
+
+### Response with Smart Actions
+
+```json
+{
+  "response": "You have 5 emails...",
+  "actions": [
+    {
+      "id": "reply_email_abc123",
+      "type": "button",
+      "label": "✉️ Reply to Email",
+      "data": {
+        "action": "reply_email",
+        "executor": "email.reply",
+        "params": {
+          "to_email": "sender@example.com",
+          "subject": "Re: Meeting Tomorrow",
+          "original_content": "Hi, can we meet..."
+        },
+        "ready": true
+      }
+    },
+    {
+      "id": "create_event_def456",
+      "type": "button",
+      "label": "📅 Create Calendar Event",
+      "data": {
+        "action": "create_event",
+        "executor": "calendar.create",
+        "params": {
+          "title": "Meeting",
+          "date": "2025-12-05",
+          "time": "15:00"
+        },
+        "ready": true
+      }
+    }
+  ],
+  "numbered_options": [
+    {
+      "id": "opt_1_abc123",
+      "number": 1,
+      "text": "Undelivered Mail Returned to Sender",
+      "source_index": 0,
+      "clickable": true
+    }
+  ],
+  "has_options": true
+}
+```
+
+### Action Execution API
+
+Execute actions via dedicated endpoints:
+
+```bash
+# Execute any action
+POST /api/v1/actions/execute
+{
+  "action_type": "reply_email",
+  "data": {
+    "executor": "email.reply",
+    "params": {
+      "to_email": "user@example.com",
+      "subject": "Re: Meeting",
+      "original_content": "Original email content..."
+    },
+    "ready": true
+  }
+}
+
+# Response with AI-generated draft
+{
+  "success": true,
+  "result": {
+    "type": "email_reply",
+    "action": "compose_email",
+    "data": {
+      "to": "user@example.com",
+      "subject": "Re: Meeting",
+      "body": "Thank you for your message. I'm available...",
+      "ready_to_send": true
+    }
+  }
+}
+```
+
+### Smart Executors
+
+| Executor | Description | Output |
+|----------|-------------|--------|
+| `email.reply` | AI-generated email reply | Draft body, recipient, subject |
+| `email.forward` | Forward email | Forwarded content with note |
+| `calendar.create` | Create calendar event | ICS data + Google Calendar URL |
+| `task.create` | Create task/todo | Task with due date, priority |
+| `ai.summarize` | Summarize content | Concise summary |
+| `ai.translate` | Translate content | Translated text |
+| `source.view` | View source document | Full document data |
+| `source.find_similar` | Find similar content | Related items |
+
+### Calendar Event Example
+
+```bash
+POST /api/v1/actions/execute
+{
+  "action_type": "create_event",
+  "data": {
+    "executor": "calendar.create",
+    "params": {
+      "title": "Project Discussion",
+      "date": "2025-12-05",
+      "time": "15:00",
+      "duration": 60,
+      "location": "Conference Room A"
+    }
+  }
+}
+
+# Response
+{
+  "success": true,
+  "result": {
+    "type": "calendar_event",
+    "data": {
+      "title": "Project Discussion",
+      "date": "2025-12-05",
+      "time": "15:00",
+      "ics_data": "BEGIN:VCALENDAR...",
+      "google_calendar_url": "https://calendar.google.com/..."
+    }
+  }
+}
+```
+
+### Federated Action Execution
+
+Actions automatically route to the correct node based on collection ownership:
+
+```bash
+# Execute on specific remote node
+POST /api/v1/actions/execute-remote
+{
+  "node": "emails-node",
+  "action_type": "view_source",
+  "data": {
+    "params": { "model_class": "App\\Models\\Email", "model_id": 123 }
+  }
+}
+
+# Execute on all nodes
+POST /api/v1/actions/execute-all
+{
+  "action_type": "sync_data",
+  "data": { ... },
+  "parallel": true
+}
+
+# Get actions from all nodes
+GET /api/v1/actions/available?include_remote=true
+```
+
+### Collection-Based Routing
+
+When a node registers its collections, actions automatically route:
+
+```php
+// Node registration with collections
+$registry->register([
+    'name' => 'Emails Node',
+    'slug' => 'emails-node',
+    'url' => 'https://emails.example.com',
+    'collections' => ['App\\Models\\Email', 'App\\Models\\EmailAttachment'],
+]);
+
+// Action automatically routes to emails-node
+POST /api/v1/actions/execute
+{
+  "action_type": "view_source",
+  "data": {
+    "params": { "model_class": "App\\Models\\Email", "model_id": 123 }
+  }
+}
+// → Automatically executed on emails-node!
+```
+
+### Frontend Integration
+
+```javascript
+async function executeAction(action) {
+    const response = await fetch('/api/v1/actions/execute', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            action_type: action.data.action,
+            data: action.data
+        })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+        switch (result.result.type) {
+            case 'email_reply':
+                openEmailComposer(result.result.data);
+                break;
+            case 'calendar_event':
+                // Open Google Calendar or download ICS
+                window.open(result.result.data.google_calendar_url);
+                break;
+            case 'summary':
+                showSummary(result.result.data.summary);
+                break;
+        }
+    }
+}
+```
+
+### Numbered Options
+
+When AI returns a numbered list, options are automatically extracted:
+
+```javascript
+response.numbered_options.forEach(option => {
+    console.log(`${option.number}. ${option.text}`);
+    // Each option has:
+    // - id: Unique identifier (opt_1_abc123)
+    // - number: Display number (1, 2, 3...)
+    // - text: Title/subject
+    // - source_index: Links to sources array
+    // - clickable: true
+});
+
+// Select an option
+POST /api/v1/actions/select-option
+{
+  "option_number": 1,
+  "session_id": "user-123",
+  "source_index": 0,
+  "sources": [{ "model_id": 382, "model_class": "App\\Models\\Email" }]
+}
+```
+
+📖 **Full Documentation:** [docs/actions.md](docs/actions.md)
+
+---
+
 ## 🎓 Complete Controller Examples
 
 ### 1. Simple Chat Controller (No RAG)
@@ -926,11 +1249,60 @@ php artisan ai-engine:test-package
 
 ## 📚 Documentation
 
-- **[Federated RAG Guide](docs/archive/FEDERATED-RAG-GUIDE.md)** - Complete federated setup
-- **[Node Registration](docs/archive/NODE-REGISTRATION-GUIDE.md)** - Register and manage nodes
-- **[Master Node Architecture](docs/archive/MASTER-NODE-ARCHITECTURE.md)** - Architecture overview
-- **[Testing Guide](docs/archive/TESTING-AND-DEPLOYMENT-GUIDE.md)** - Testing and deployment
-- **[API Reference](docs/)** - Full API documentation
+### 📖 Core Documentation
+
+| Guide | Description |
+|-------|-------------|
+| **[Quick Start](docs/quickstart.md)** | Get started in 5 minutes |
+| **[Installation](docs/installation.md)** | Complete installation guide |
+| **[Configuration](docs/configuration.md)** | All configuration options |
+| **[RAG Guide](docs/rag.md)** | Retrieval-Augmented Generation |
+| **[Vector Search](docs/vector-search.md)** | Semantic search setup |
+| **[Conversations](docs/conversations.md)** | Chat with memory |
+| **[Multi-Modal](docs/multimodal.md)** | Images, audio, documents |
+
+### 🔐 Security & Access Control
+
+| Guide | Description |
+|-------|-------------|
+| **[Multi-Tenant Access](docs/MULTI_TENANT_RAG_ACCESS_CONTROL.md)** | User/Tenant/Admin isolation |
+| **[Simplified Access](docs/SIMPLIFIED_ACCESS_CONTROL.md)** | Quick access control setup |
+| **[Security Fixes](SECURITY_FIXES.md)** | Security best practices |
+
+### 🌐 Federated RAG
+
+| Guide | Description |
+|-------|-------------|
+| **[Federated RAG Success](docs/FEDERATED-RAG-SUCCESS.md)** | Complete federated setup |
+| **[Master Node Usage](docs/MASTER_NODE_CLIENT_USAGE.md)** | Master node configuration |
+| **[Node Registration](docs/archive/NODE-REGISTRATION-GUIDE.md)** | Register child nodes |
+
+### 🎯 Advanced Features
+
+| Guide | Description |
+|-------|-------------|
+| **[Chunking Strategies](docs/CHUNKING-STRATEGIES.md)** | Smart content splitting |
+| **[Large Media Processing](docs/LARGE-MEDIA-PROCESSING.md)** | Handle large files |
+| **[URL & Media Embeddings](docs/URL-MEDIA-EMBEDDINGS.md)** | Embed URLs and media |
+| **[User Context Injection](docs/USER_CONTEXT_INJECTION.md)** | Inject user context |
+| **[Troubleshooting RAG](docs/TROUBLESHOOTING_NO_RAG_RESULTS.md)** | Fix common issues |
+
+### 🔧 Integration Guides
+
+| Guide | Description |
+|-------|-------------|
+| **[Ollama Integration](OLLAMA-INTEGRATION.md)** | Local LLM with Ollama |
+| **[Ollama Quickstart](OLLAMA-QUICKSTART.md)** | Quick Ollama setup |
+| **[Performance Optimization](PERFORMANCE_OPTIMIZATION.md)** | Speed & efficiency |
+| **[Postman Collection](postman/README.md)** | API testing with Postman |
+
+### 📋 Reference
+
+| Resource | Description |
+|----------|-------------|
+| **[Changelog](CHANGELOG.md)** | Version history |
+| **[API Reference](docs/README.md)** | Full API documentation |
+| **[Artisan Commands](#-artisan-commands)** | CLI reference |
 
 ---
 
@@ -1144,31 +1516,84 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 
 ---
 
+## 📡 API Endpoints Reference
+
+### Chat Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/ai/chat` | Main chat endpoint with RAG |
+| `POST` | `/api/v1/rag/chat` | RAG chat API |
+| `GET` | `/api/v1/rag/conversations` | List user conversations |
+
+### Action Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/actions/execute` | Execute any action (local or remote) |
+| `POST` | `/api/v1/actions/execute-remote` | Execute on specific remote node |
+| `POST` | `/api/v1/actions/execute-all` | Execute on all nodes |
+| `POST` | `/api/v1/actions/select-option` | Select a numbered option |
+| `GET` | `/api/v1/actions/available` | Get available actions |
+
+### Node/Federation Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/nodes/health` | Node health check |
+| `GET` | `/api/v1/nodes/collections` | List node collections |
+| `POST` | `/api/v1/nodes/search` | Federated search |
+
+---
+
 ## 🎉 What's New
 
 ### Latest Features (December 2025)
+
+✨ **Smart Action System** 🎯 (NEW!)
+- **AI Parameter Extraction**: Automatically extracts emails, dates, times from content
+- **Pre-filled Actions**: Actions come ready-to-execute with all required data
+- **Smart Executors**: Built-in handlers for email, calendar, tasks, summarize, translate
+- **Federated Execution**: Actions automatically route to the correct node
+- **Collection-Based Routing**: Actions route based on which node owns the collection
+
+✨ **Action Execution API** 🚀 (NEW!)
+- **Execute Endpoint**: `POST /api/v1/actions/execute`
+- **Remote Execution**: `POST /api/v1/actions/execute-remote`
+- **Multi-Node Execution**: `POST /api/v1/actions/execute-all`
+- **AI-Generated Drafts**: Email replies, calendar events, task creation
+
+✨ **Aggregate Query Detection** 📊
+- **Auto-Detection**: Queries like "how many", "count", "total" automatically detected
+- **Database Statistics**: Real counts from your database, not just vector search
+- **Smart Fallback**: Uses database counts when vector counts are unavailable
+- **Multi-Collection**: Statistics across all your indexed models
+
+✨ **Interactive Actions System** 🎯
+- **Context-Aware Actions**: AI suggests relevant actions based on response
+- **Numbered Options**: Clickable options extracted from AI responses
+- **Unique IDs**: Each option has unique identifier for reliable selection
+- **Source Linking**: Options link back to source documents
+- **Custom Actions**: Define your own actions in config
+
+✨ **Enhanced Query Analysis** 🧠
+- **Semantic Search Terms**: AI generates better search terms for vague queries
+- **Collection Validation**: Only searches collections that exist locally
+- **Fallback Strategies**: Multiple fallback levels for better results
+- **Conversation Context**: Uses chat history to understand follow-up queries
 
 ✨ **Multi-Tenant Access Control** 🔐
 - **Role-Based Access**: Admin/Tenant/User levels
 - **Automatic User Fetching**: System fetches users internally with caching
 - **Data Isolation**: Users can only access authorized data
-- **Tenant-Scoped**: Team members see organization data
+- **User Model Special Handling**: Non-admins see only their own user record
 - **GDPR Compliant**: Enterprise-grade security
-- **Audit Logging**: Track all access levels
 
 ✨ **Simplified API** 🎯
 - **Pass User ID Only**: No need to pass user objects
 - **Automatic Caching**: User lookups cached for 5 minutes
 - **50% Faster**: Improved performance with caching
-- **30% Less Code**: Cleaner, simpler architecture
 - **Backward Compatible**: Old code still works
-
-✨ **Chat Without RAG** 💬
-- **Simple Conversations**: Send messages without knowledge base
-- **Code Generation**: Generate code without context
-- **Creative Writing**: AI creativity without constraints
-- **Multi-Engine**: Use OpenAI, Claude, Gemini, DeepSeek
-- **Streaming Support**: Real-time responses
 
 ✨ **Federated RAG System** 🌐
 - Distribute collections across multiple nodes
@@ -1176,23 +1601,11 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 - Transparent federated search
 - Health monitoring and circuit breakers
 
-✨ **Flexible System Prompt**
-- Works with ANY embedded content
-- Searches emails, posts, documents, files
-- Smart context-based responses
-- Better user experience
-
-✨ **Optimized Thresholds**
-- Default threshold: 0.3 (balanced)
-- Better search results
-- More relevant context
-- Improved accuracy
-
-✨ **Enhanced Discovery**
-- Auto-discovers Vectorizable models
-- Skips models without trait
-- Handles fatal errors gracefully
-- Faster and more reliable
+✨ **Dynamic Model Registry** 🤖
+- **Auto-Discovery**: Automatically detects new AI models from providers
+- **Zero Code Changes**: GPT-5, Claude 4 work immediately when released
+- **Cost Tracking**: Pricing and capabilities for every model
+- **CLI Management**: `ai-engine:sync-models`, `ai-engine:list-models`
 
 ---
 

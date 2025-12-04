@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\AIChatController;
 use LaravelAIEngine\Http\Controllers\Api\RagChatApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
+use LaravelAIEngine\Http\Controllers\Api\ActionExecutionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -31,10 +32,6 @@ Route::prefix('api/v1/rag')
         Route::post('/chat/clear', [RagChatApiController::class, 'clearHistory'])
             ->name('chat.clear');
         
-        // Action endpoints
-        Route::post('/actions/execute', [RagChatApiController::class, 'executeAction'])
-            ->name('actions.execute');
-        
         // RAG endpoints
         Route::get('/collections', [RagChatApiController::class, 'getCollections'])
             ->name('collections');
@@ -50,6 +47,33 @@ Route::prefix('api/v1/rag')
         // Conversation management
         Route::get('/conversations', [RagChatApiController::class, 'getUserConversations'])
             ->name('conversations.list');
+    });
+
+// Action Execution API Routes (v1)
+Route::prefix('api/v1/actions')
+    ->middleware(['api'])
+    ->name('ai-engine.actions.api.')
+    ->group(function () {
+        
+        // Execute any action (local or auto-detect remote)
+        Route::post('/execute', [ActionExecutionController::class, 'execute'])
+            ->name('execute');
+        
+        // Execute action on specific remote node
+        Route::post('/execute-remote', [ActionExecutionController::class, 'executeRemote'])
+            ->name('execute-remote');
+        
+        // Execute action on all nodes
+        Route::post('/execute-all', [ActionExecutionController::class, 'executeOnAll'])
+            ->name('execute-all');
+        
+        // Select a numbered option
+        Route::post('/select-option', [ActionExecutionController::class, 'selectOption'])
+            ->name('select-option');
+        
+        // Get available actions (local or include remote)
+        Route::get('/available', [ActionExecutionController::class, 'available'])
+            ->name('available');
     });
 
 // Module Discovery Routes (v1)
