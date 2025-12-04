@@ -10,13 +10,13 @@
 [![PHP Version](https://img.shields.io/packagist/php-v/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
 [![Laravel](https://img.shields.io/badge/Laravel-9%20%7C%2010%20%7C%2011%20%7C%2012-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 
-**The most advanced Laravel AI package with Federated RAG, Smart Action System, Intelligent Context Retrieval, Dynamic Model Registry, and Enterprise-Grade Distributed Search.**
+**The most advanced Laravel AI package with Federated RAG, Smart Action System, Intelligent Context Retrieval, Dynamic Model Registry, and Enterprise-Grade Multi-Tenant Security.**
 
 **🎯 100% Future-Proof** - Automatically supports GPT-5, GPT-6, Claude 4, and all future AI models!
 
-**🆕 New in v2.x:** Smart Action System with AI-powered parameter extraction, federated action execution, and built-in executors for email, calendar, tasks, and more!
+**🆕 New in v2.x:** Smart Action System, Workspace Isolation, Multi-Database Tenancy, and AI-powered executors for email, calendar, tasks, and more!
 
-[Quick Start](#-quick-start) • [Features](#-key-features) • [Smart Actions](#-interactive-actions) • [Multi-Tenant Security](#-multi-tenant-access-control) • [Documentation](#-documentation)
+[Quick Start](#-quick-start) • [Features](#-key-features) • [Smart Actions](#-interactive-actions) • [Multi-Tenant Security](#-multi-tenant-access-control) • [Multi-DB Tenancy](#-multi-database-tenancy) • [Documentation](#-documentation)
 
 ---
 
@@ -33,6 +33,8 @@
 | **Federated Actions** | Actions route to correct node | Collection-based auto-routing |
 | **Conversation Memory** | Remember chat history | `useMemory: true` |
 | **User Isolation** | Secure multi-tenant RAG | `userId: $request->user()->id` |
+| **Workspace Isolation** | Data scoped to workspace | `$user->workspace_id = 5` |
+| **Multi-DB Tenancy** | Separate collections per tenant | `AI_ENGINE_MULTI_DB_TENANCY=true` |
 | **Admin Access** | Access all data in RAG | `$user->is_admin = true` or `hasRole('admin')` |
 | **Multi-Engine** | Switch AI providers | `engine: 'openai'` / `'anthropic'` / `'google'` |
 | **Streaming** | Real-time responses | `streamMessage(callback: fn($chunk))` |
@@ -1316,21 +1318,28 @@ The package includes enterprise-grade **multi-tenant access control** for RAG se
 
 ```
 ┌─────────────────────────────────────────┐
-│  ADMIN/SUPER USER                       │
+│  LEVEL 1: ADMIN/SUPER USER              │
 │  ✓ Access ALL data                      │
 │  ✓ No filtering applied                 │
 │  ✓ For: super-admin, admin, support     │
 └─────────────────────────────────────────┘
               ↓
 ┌─────────────────────────────────────────┐
-│  TENANT-SCOPED USER                     │
+│  LEVEL 2: TENANT-SCOPED USER            │
 │  ✓ Access data within organization      │
 │  ✓ Filtered by: tenant_id               │
 │  ✓ For: team members, employees         │
 └─────────────────────────────────────────┘
               ↓
 ┌─────────────────────────────────────────┐
-│  REGULAR USER                           │
+│  LEVEL 2.5: WORKSPACE-SCOPED USER  🆕   │
+│  ✓ Access data within workspace         │
+│  ✓ Filtered by: workspace_id            │
+│  ✓ For: workspace members               │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│  LEVEL 3: REGULAR USER                  │
 │  ✓ Access only own data                 │
 │  ✓ Filtered by: user_id                 │
 │  ✓ For: individual users                │
@@ -1411,13 +1420,40 @@ $response = $chatService->processMessage(
 );
 ```
 
+**4. Workspace-Scoped User (Sees Workspace Data):** 🆕
+
+```php
+// User model with workspace
+class User extends Authenticatable
+{
+    protected $fillable = ['name', 'email', 'workspace_id'];
+}
+
+// Workspace member
+$member = User::find(3);
+$member->workspace_id = 5;  // ✅ Workspace ID
+
+// Member sees all data in their workspace
+$response = $chatService->processMessage(
+    message: 'Show me workspace documents',
+    sessionId: 'workspace-session',
+    ragCollections: [Document::class],
+    userId: $member->id  // ✅ Filtered by workspace_id
+);
+```
+
 ### Configuration
 
 ```bash
 # .env
 AI_ENGINE_ENABLE_TENANT_SCOPE=true
+AI_ENGINE_ENABLE_WORKSPACE_SCOPE=true
 AI_ENGINE_CACHE_USER_LOOKUPS=true
 AI_ENGINE_LOG_ACCESS_LEVEL=true
+
+# Multi-Database Tenancy (optional)
+AI_ENGINE_MULTI_DB_TENANCY=false
+AI_ENGINE_MULTI_DB_COLLECTION_STRATEGY=prefix
 ```
 
 ```php
@@ -1425,14 +1461,16 @@ AI_ENGINE_LOG_ACCESS_LEVEL=true
 return [
     'admin_roles' => ['super-admin', 'admin', 'support'],
     'tenant_fields' => ['tenant_id', 'organization_id', 'company_id'],
+    'workspace_fields' => ['workspace_id', 'current_workspace_id'],
     'enable_tenant_scope' => true,
-    'cache_user_lookups' => true,  // Cache users for 5 minutes
+    'enable_workspace_scope' => true,
+    'cache_user_lookups' => true,
 ];
 ```
 
 ### Model Setup
 
-Add tenant and user fields to your vectorizable models:
+Add tenant, workspace, and user fields to your vectorizable models:
 
 ```php
 use LaravelAIEngine\Traits\Vectorizable;
@@ -1444,11 +1482,18 @@ class Email extends Model
     protected $fillable = [
         'user_id',        // ✅ Owner
         'tenant_id',      // ✅ Organization
+        'workspace_id',   // ✅ Workspace (optional)
         'subject',
         'body',
     ];
 
     protected $vectorizable = ['subject', 'body'];
+    
+    // Optional: Custom display name for actions
+    public function getRagDisplayName(): string
+    {
+        return 'Email';  // Shows "View Full Email" instead of "View Full EmailCache"
+    }
 }
 ```
 
@@ -1456,15 +1501,73 @@ class Email extends Model
 
 ✅ **Automatic User Fetching** - System fetches users internally  
 ✅ **Caching** - User lookups cached for 5 minutes  
-✅ **Role-Based Access** - Admin/Tenant/User levels  
+✅ **Role-Based Access** - Admin/Tenant/Workspace/User levels  
 ✅ **Data Isolation** - Users can't access others' data  
+✅ **Workspace Support** - Isolate data by workspace  
 ✅ **Audit Logging** - All access levels logged  
 ✅ **GDPR Compliant** - Proper data access controls  
+
+---
+
+## 🏢 Multi-Database Tenancy
+
+For applications where each tenant has their own database, the package supports **complete data isolation** at the vector database level using tenant-specific collections.
+
+### Architecture Comparison
+
+```
+Single-DB Tenancy:                    Multi-DB Tenancy:
+┌─────────────────────┐              ┌─────────────────────┐
+│  vec_emails         │              │  acme_vec_emails    │
+│  ├─ tenant_id: 1    │              │  └─ (all Acme data) │
+│  ├─ tenant_id: 2    │              ├─────────────────────┤
+│  └─ tenant_id: 3    │              │  globex_vec_emails  │
+└─────────────────────┘              │  └─ (all Globex)    │
+     (filter by ID)                  └─────────────────────┘
+                                          (separate collections)
+```
+
+### Configuration
+
+```bash
+# .env
+AI_ENGINE_MULTI_DB_TENANCY=true
+AI_ENGINE_MULTI_DB_COLLECTION_STRATEGY=prefix  # prefix, suffix, or separate
+AI_ENGINE_TENANT_RESOLVER=session              # session, config, database, or custom
+```
+
+### Collection Naming Strategies
+
+| Strategy | Example |
+|----------|---------|
+| `prefix` | `acme_vec_emails` |
+| `suffix` | `vec_emails_acme` |
+| `separate` | `acme/vec_emails` |
+
+### Custom Tenant Resolver
+
+```php
+use LaravelAIEngine\Contracts\TenantResolverInterface;
+
+class MyTenantResolver implements TenantResolverInterface
+{
+    public function getCurrentTenantId(): ?string { return tenant()?->id; }
+    public function getCurrentTenantSlug(): ?string { return tenant()?->slug; }
+    public function getTenantConnection(): ?string { return tenant()?->database; }
+    public function hasTenant(): bool { return tenant() !== null; }
+}
+```
+
+### Supported Packages
+
+Auto-detection for: **Spatie Laravel Multitenancy**, **Stancl Tenancy**, **Tenancy for Laravel (Hyn)**
 
 ### Documentation
 
 For complete documentation, see:
 - **[Multi-Tenant RAG Access Control](docs/MULTI_TENANT_RAG_ACCESS_CONTROL.md)**
+- **[Workspace Isolation](docs/WORKSPACE_ISOLATION.md)** 🆕
+- **[Multi-Database Tenancy](docs/MULTI_DATABASE_TENANCY.md)** 🆕
 - **[Simplified Access Control](docs/SIMPLIFIED_ACCESS_CONTROL.md)**
 - **[Security Fixes](SECURITY_FIXES.md)**
 
@@ -1583,11 +1686,17 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 - **Conversation Context**: Uses chat history to understand follow-up queries
 
 ✨ **Multi-Tenant Access Control** 🔐
-- **Role-Based Access**: Admin/Tenant/User levels
+- **Role-Based Access**: Admin/Tenant/Workspace/User levels
+- **Workspace Scoping**: Isolate data by workspace within tenants
 - **Automatic User Fetching**: System fetches users internally with caching
 - **Data Isolation**: Users can only access authorized data
-- **User Model Special Handling**: Non-admins see only their own user record
 - **GDPR Compliant**: Enterprise-grade security
+
+✨ **Multi-Database Tenancy** 🏢 (NEW!)
+- **Separate Collections**: Each tenant gets isolated vector collections
+- **Collection Strategies**: prefix, suffix, or separate naming
+- **Auto-Detection**: Works with Spatie, Stancl, Hyn tenancy packages
+- **Custom Resolvers**: Implement your own tenant resolution logic
 
 ✨ **Simplified API** 🎯
 - **Pass User ID Only**: No need to pass user objects
