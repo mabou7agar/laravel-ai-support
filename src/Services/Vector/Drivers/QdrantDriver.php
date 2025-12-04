@@ -733,6 +733,12 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function ensureAllPayloadIndexes(string $collection, ?string $modelClass = null): void
     {
+        // Check cache first - avoid repeated expensive operations
+        $cacheKey = 'all:' . $collection;
+        if (isset(static::$indexEnsuredCollections[$cacheKey])) {
+            return;
+        }
+        
         // Get existing indexes
         $existingIndexes = $this->getExistingIndexes($collection);
         
@@ -747,14 +753,20 @@ class QdrantDriver implements VectorDriverInterface
             'type',
         ]);
         
-        // Detect additional fields from model
-        $relationFields = $this->detectBelongsToFields($modelClass);
+        // Detect additional fields from model (only if not too expensive)
+        $relationFields = [];
+        if ($modelClass) {
+            $relationFields = $this->detectBelongsToFields($modelClass);
+        }
         
         // Merge all fields
         $allFields = array_unique(array_merge($configFields, $relationFields));
         
         // Find missing indexes
         $missingFields = array_diff($allFields, $existingIndexes);
+        
+        // Mark as ensured (even if no missing fields, to prevent repeated checks)
+        static::$indexEnsuredCollections[$cacheKey] = true;
         
         if (empty($missingFields)) {
             Log::debug('All payload indexes already exist', [
