@@ -480,9 +480,15 @@ class QdrantDriver implements VectorDriverInterface
     public function delete(string $collection, array $ids): bool
     {
         try {
+            // Qdrant requires specific format for point IDs
+            // For string IDs (like "384_chunk_0"), we need to use the points array with string values
+            // For integer IDs, we can pass them directly
             $response = $this->client->post("/collections/{$collection}/points/delete", [
                 'json' => [
-                    'points' => $ids,
+                    'points' => array_map(function($id) {
+                        // Keep as string if it contains non-numeric characters
+                        return is_numeric($id) ? (int) $id : (string) $id;
+                    }, $ids),
                 ],
             ]);
 
@@ -490,6 +496,29 @@ class QdrantDriver implements VectorDriverInterface
         } catch (GuzzleException $e) {
             Log::error('Qdrant delete failed', [
                 'collection' => $collection,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+    
+    /**
+     * Delete points by filter (e.g., by model_id)
+     */
+    public function deleteByFilter(string $collection, array $filter): bool
+    {
+        try {
+            $response = $this->client->post("/collections/{$collection}/points/delete", [
+                'json' => [
+                    'filter' => $filter,
+                ],
+            ]);
+
+            return $response->getStatusCode() === 200;
+        } catch (GuzzleException $e) {
+            Log::error('Qdrant delete by filter failed', [
+                'collection' => $collection,
+                'filter' => $filter,
                 'error' => $e->getMessage(),
             ]);
             return false;

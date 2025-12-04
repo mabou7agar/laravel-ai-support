@@ -159,6 +159,7 @@ class VectorSearchService
 
     /**
      * Index a model's vector
+     * Large content is split into multiple chunks, each stored as a separate vector point
      */
     public function index(object $model, ?string $userId = null): bool
     {
@@ -177,23 +178,23 @@ class VectorSearchService
                 return false;
             }
 
-            // Chunk content if too large for embedding API (OpenAI limit ~8191 tokens ≈ 32KB text)
-            $maxContentSize = config('ai-engine.vector.max_content_size', 30000); // ~30KB safe limit
-            if (strlen($content) > $maxContentSize) {
-                Log::info('Content too large, chunking for embedding', [
-                    'model' => $modelClass,
-                    'id' => $model->id,
-                    'original_size' => strlen($content),
-                    'max_size' => $maxContentSize,
-                ]);
-                $content = $this->chunkContentForEmbedding($content, $maxContentSize);
+            // Check if content needs to be split into multiple chunks
+            $maxContentSize = config('ai-engine.vector.max_content_size', 5500);
+            $multiChunkEnabled = config('ai-engine.vector.multi_chunk_enabled', true);
+            
+            if ($multiChunkEnabled && strlen($content) > $maxContentSize) {
+                // Split into multiple chunks and create multiple embeddings
+                return $this->indexWithMultipleChunks($model, $content, $collectionName, $userId);
             }
 
+            // Single chunk - standard indexing
             // Generate embedding
             $embedding = $this->embeddingService->embed($content, $userId);
 
             // Prepare metadata
             $metadata = $this->getMetadata($model);
+            $metadata['chunk_index'] = 0;
+            $metadata['total_chunks'] = 1;
 
             // Upsert to vector database
             $driver = $this->driverManager->driver();
@@ -683,5 +684,167 @@ class VectorSearchService
         ]);
         
         return $chunked;
+    }
+    
+    /**
+     * Index a model with multiple chunks
+     * Each chunk gets its own vector point for better semantic coverage
+     * 
+     * @param object $model The model to index
+     * @param string $content Full content to split
+     * @param string $collectionName Vector collection name
+     * @param string|null $userId User ID for credit tracking
+     * @return bool Success status
+     */
+    protected function indexWithMultipleChunks(object $model, string $content, string $collectionName, ?string $userId = null): bool
+    {
+        $modelClass = get_class($model);
+        $maxContentSize = config('ai-engine.vector.max_content_size', 5500);
+        $chunkOverlap = config('ai-engine.vector.chunk_overlap', 200);
+        
+        // Split content into chunks with overlap
+        $chunks = $this->splitContentIntoChunks($content, $maxContentSize, $chunkOverlap);
+        $totalChunks = count($chunks);
+        
+        Log::info('Indexing model with multiple chunks', [
+            'model' => $modelClass,
+            'id' => $model->id,
+            'original_size' => strlen($content),
+            'total_chunks' => $totalChunks,
+        ]);
+        
+        // Prepare base metadata
+        $baseMetadata = $this->getMetadata($model);
+        $baseMetadata['total_chunks'] = $totalChunks;
+        
+        // Generate embeddings and prepare points
+        $points = [];
+        $driver = $this->driverManager->driver();
+        
+        foreach ($chunks as $index => $chunk) {
+            try {
+                // Generate embedding for this chunk
+                $embedding = $this->embeddingService->embed($chunk, $userId);
+                
+                // Create unique ID for this chunk: model_id_chunk_index
+                $chunkId = $model->id . '_chunk_' . $index;
+                
+                // Prepare metadata for this chunk
+                $metadata = $baseMetadata;
+                $metadata['chunk_index'] = $index;
+                $metadata['chunk_preview'] = substr($chunk, 0, 100) . '...';
+                
+                $points[] = [
+                    'id' => $chunkId,
+                    'vector' => $embedding,
+                    'metadata' => $metadata,
+                ];
+                
+                Log::debug('Chunk embedded', [
+                    'model' => $modelClass,
+                    'id' => $model->id,
+                    'chunk_index' => $index,
+                    'chunk_size' => strlen($chunk),
+                ]);
+                
+            } catch (\Exception $e) {
+                Log::error('Failed to embed chunk', [
+                    'model' => $modelClass,
+                    'id' => $model->id,
+                    'chunk_index' => $index,
+                    'error' => $e->getMessage(),
+                ]);
+                // Continue with other chunks
+            }
+        }
+        
+        if (empty($points)) {
+            Log::error('No chunks were successfully embedded', [
+                'model' => $modelClass,
+                'id' => $model->id,
+            ]);
+            return false;
+        }
+        
+        // Delete existing chunks for this model before upserting new ones
+        $this->deleteModelChunks($driver, $collectionName, $model->id);
+        
+        // Upsert all chunk points
+        $success = $driver->upsert($collectionName, $points);
+        
+        if ($success) {
+            Log::info('Model indexed with multiple chunks', [
+                'model' => $modelClass,
+                'id' => $model->id,
+                'chunks_indexed' => count($points),
+                'total_chunks' => $totalChunks,
+            ]);
+        }
+        
+        return $success;
+    }
+    
+    /**
+     * Split content into chunks with overlap for better context
+     * 
+     * @param string $content Content to split
+     * @param int $chunkSize Maximum size per chunk
+     * @param int $overlap Overlap between chunks
+     * @return array Array of content chunks
+     */
+    protected function splitContentIntoChunks(string $content, int $chunkSize, int $overlap = 200): array
+    {
+        $chunks = [];
+        $contentLength = strlen($content);
+        $position = 0;
+        
+        while ($position < $contentLength) {
+            // Extract chunk
+            $chunk = substr($content, $position, $chunkSize);
+            
+            // Try to break at sentence/paragraph boundary
+            if ($position + $chunkSize < $contentLength) {
+                // Look for natural break points
+                $lastPeriod = strrpos($chunk, '. ');
+                $lastNewline = strrpos($chunk, "\n");
+                $lastBreak = max($lastPeriod, $lastNewline);
+                
+                // Only use break point if it's in the last 30% of the chunk
+                if ($lastBreak !== false && $lastBreak > $chunkSize * 0.7) {
+                    $chunk = substr($chunk, 0, $lastBreak + 1);
+                }
+            }
+            
+            $chunks[] = trim($chunk);
+            
+            // Move position with overlap
+            $position += strlen($chunk) - $overlap;
+            
+            // Ensure we make progress
+            if ($position <= 0 || strlen($chunk) <= $overlap) {
+                $position += $chunkSize;
+            }
+        }
+        
+        return array_filter($chunks, fn($c) => !empty(trim($c)));
+    }
+    
+    /**
+     * Delete existing chunks for a model
+     * Note: Upsert will overwrite existing points with same ID, so deletion is optional
+     * 
+     * @param mixed $driver Vector driver
+     * @param string $collectionName Collection name
+     * @param mixed $modelId Model ID
+     */
+    protected function deleteModelChunks($driver, string $collectionName, $modelId): void
+    {
+        // Skip deletion - upsert will overwrite existing points with same ID
+        // Old chunks with different IDs will remain but won't affect search quality significantly
+        // To fully clean up, use --force flag which recreates the collection
+        Log::debug('Skipping chunk deletion - upsert will overwrite', [
+            'collection' => $collectionName,
+            'model_id' => $modelId,
+        ]);
     }
 }

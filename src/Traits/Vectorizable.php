@@ -142,7 +142,7 @@ trait Vectorizable
 
     /**
      * Get content to be vectorized
-     * Returns single string for 'truncate' strategy
+     * Returns full content - chunking is handled by VectorSearchService
      * Override this method for custom content generation
      */
     public function getVectorContent(): string
@@ -153,13 +153,12 @@ trait Vectorizable
         $strategy = config('ai-engine.vectorization.strategy', 'split');
 
         if ($strategy === 'split') {
-            // For split strategy, return first chunk only
-            // Use getVectorContentChunks() for all chunks
-            $chunks = $this->splitIntoChunks($fullContent);
-            return $chunks[0] ?? '';
+            // Return full content - VectorSearchService handles chunking for embedding
+            // Large content will be intelligently chunked (beginning + middle + end)
+            return $fullContent;
         }
 
-        // Truncate strategy
+        // Truncate strategy - only use if explicitly configured
         return $this->truncateContent($fullContent);
     }
 

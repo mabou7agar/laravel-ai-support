@@ -741,9 +741,18 @@ return [
             'default_threshold' => env('VECTOR_SEARCH_THRESHOLD', 0.3),
         ],
 
-        // Maximum content size for embedding (content larger than this will be chunked, never skipped)
-        // OpenAI embedding models support ~8191 tokens ≈ 32KB, we use 30KB as safe limit
-        'max_content_size' => env('VECTOR_MAX_CONTENT_SIZE', 30000),
+        // Maximum content size for embedding (content larger than this will be chunked)
+        // OpenAI text-embedding-3-* has 8191 token limit ≈ ~6000 chars (avg 1.3 chars/token)
+        // Using 5500 chars as safe default to account for special characters and encoding
+        'max_content_size' => env('VECTOR_MAX_CONTENT_SIZE', 5500),
+        
+        // Multi-chunk indexing: create multiple vector points for large documents
+        // When enabled, large content is split into chunks, each with its own embedding
+        // This provides better semantic coverage for large documents
+        'multi_chunk_enabled' => env('VECTOR_MULTI_CHUNK_ENABLED', true),
+        
+        // Overlap between chunks (in characters) for context continuity
+        'chunk_overlap' => env('VECTOR_CHUNK_OVERLAP', 200),
 
         // Health check configuration
         'health_check' => [
