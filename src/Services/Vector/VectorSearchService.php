@@ -177,6 +177,18 @@ class VectorSearchService
                 return false;
             }
 
+            // Chunk content if too large for embedding API (OpenAI limit ~8191 tokens ≈ 32KB text)
+            $maxContentSize = config('ai-engine.vector.max_content_size', 30000); // ~30KB safe limit
+            if (strlen($content) > $maxContentSize) {
+                Log::info('Content too large, chunking for embedding', [
+                    'model' => $modelClass,
+                    'id' => $model->id,
+                    'original_size' => strlen($content),
+                    'max_size' => $maxContentSize,
+                ]);
+                $content = $this->chunkContentForEmbedding($content, $maxContentSize);
+            }
+
             // Generate embedding
             $embedding = $this->embeddingService->embed($content, $userId);
 
@@ -601,5 +613,75 @@ class VectorSearchService
             ]);
             return $filters;
         }
+    }
+    
+    /**
+     * Chunk content for embedding when it exceeds the max size
+     * 
+     * Instead of skipping large content, we intelligently chunk it to preserve
+     * the most important information for semantic search.
+     * 
+     * @param string $content Original content
+     * @param int $maxSize Maximum size in bytes
+     * @return string Chunked content that fits within the limit
+     */
+    protected function chunkContentForEmbedding(string $content, int $maxSize): string
+    {
+        // Strategy: Keep beginning (context/headers) + end (conclusions/recent) + middle sample
+        $separatorSize = 100; // Space for separator text
+        $availableSize = $maxSize - $separatorSize;
+        
+        // Allocate: 50% beginning, 30% end, 20% middle sample
+        $beginningSize = (int) ($availableSize * 0.5);
+        $endSize = (int) ($availableSize * 0.3);
+        $middleSize = (int) ($availableSize * 0.2);
+        
+        $contentLength = strlen($content);
+        
+        // Get beginning
+        $beginning = substr($content, 0, $beginningSize);
+        // Try to end at a word boundary
+        $lastSpace = strrpos($beginning, ' ');
+        if ($lastSpace !== false && $lastSpace > $beginningSize * 0.8) {
+            $beginning = substr($beginning, 0, $lastSpace);
+        }
+        
+        // Get end
+        $end = substr($content, -$endSize);
+        // Try to start at a word boundary
+        $firstSpace = strpos($end, ' ');
+        if ($firstSpace !== false && $firstSpace < $endSize * 0.2) {
+            $end = substr($end, $firstSpace + 1);
+        }
+        
+        // Get middle sample (from the center of the content)
+        $middleStart = (int) (($contentLength - $middleSize) / 2);
+        $middle = substr($content, $middleStart, $middleSize);
+        // Try to start and end at word boundaries
+        $firstSpace = strpos($middle, ' ');
+        if ($firstSpace !== false && $firstSpace < $middleSize * 0.1) {
+            $middle = substr($middle, $firstSpace + 1);
+        }
+        $lastSpace = strrpos($middle, ' ');
+        if ($lastSpace !== false && $lastSpace > strlen($middle) * 0.9) {
+            $middle = substr($middle, 0, $lastSpace);
+        }
+        
+        // Combine with clear separators
+        $chunked = $beginning . 
+                   "\n\n[... content truncated for embedding ...]\n\n" . 
+                   $middle .
+                   "\n\n[... content truncated ...]\n\n" .
+                   $end;
+        
+        Log::debug('Content chunked for embedding', [
+            'original_size' => $contentLength,
+            'chunked_size' => strlen($chunked),
+            'beginning_size' => strlen($beginning),
+            'middle_size' => strlen($middle),
+            'end_size' => strlen($end),
+        ]);
+        
+        return $chunked;
     }
 }

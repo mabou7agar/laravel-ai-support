@@ -155,16 +155,16 @@ class VectorIndexCommand extends Command
         try {
             // Get the driver and check for existing indexes
             $driver = $vectorSearch->getDriver();
-            
+
             if (!method_exists($driver, 'getExistingIndexes')) {
                 return;
             }
-            
+
             // Get collection name using the service (supports multi-tenant)
             $collectionName = $vectorSearch->getCollectionName($modelClass);
-            
+
             $indexes = $driver->getExistingIndexes($collectionName);
-            
+
             if (!empty($indexes)) {
                 $this->info("🔑 Payload indexes for '{$collectionName}':");
                 foreach ($indexes as $index) {
@@ -178,6 +178,64 @@ class VectorIndexCommand extends Command
         } catch (\Exception $e) {
             // Silently fail - not critical
             $this->line("<fg=gray>   Could not verify indexes: {$e->getMessage()}</>");
+        }
+    }
+
+    /**
+     * Ensure payload indexes exist for filtering
+     * Creates missing indexes on existing collections
+     */
+    protected function ensurePayloadIndexes($driver, string $collectionName, string $modelClass): void
+    {
+        if (!$driver || !method_exists($driver, 'getExistingIndexes')) {
+            return;
+        }
+
+        try {
+            $this->info('🔍 Checking payload indexes...');
+
+            // Get existing indexes
+            $existingIndexes = $driver->getExistingIndexes($collectionName);
+
+            // Get required indexes from config
+            $requiredIndexes = config('ai-engine.vector.payload_index_fields', [
+                'user_id',
+                'tenant_id',
+                'workspace_id',
+                'model_id',
+                'status',
+                'visibility',
+                'type',
+            ]);
+
+            // Find missing indexes
+            $missingIndexes = array_diff($requiredIndexes, $existingIndexes);
+
+            if (empty($missingIndexes)) {
+                $this->info('   ✓ All required payload indexes exist');
+                foreach ($existingIndexes as $index) {
+                    $this->line("      • <fg=green>{$index}</>");
+                }
+            } else {
+                $this->warn('   ⚠️  Missing payload indexes detected:');
+                foreach ($missingIndexes as $index) {
+                    $this->line("      • <fg=yellow>{$index}</>");
+                }
+
+                // Create missing indexes
+                $this->info('   🔧 Creating missing indexes...');
+
+                if (method_exists($driver, 'ensureAllPayloadIndexes')) {
+                    $driver->ensureAllPayloadIndexes($collectionName, $modelClass);
+                    $this->info('   ✓ Missing indexes created');
+                } else {
+                    $this->warn('   Driver does not support auto-creating indexes');
+                }
+            }
+
+            $this->newLine();
+        } catch (\Exception $e) {
+            $this->error("   Failed to check/create indexes: {$e->getMessage()}");
         }
     }
 
@@ -243,13 +301,25 @@ class VectorIndexCommand extends Command
 
             // Create collection (force will delete and recreate with correct schema)
             $force = $this->option('force');
+            $driver = $vectorSearch->getDriver();
+            $collectionName = $vectorSearch->getCollectionName($modelClass);
+
+            // Check if collection exists
+            $collectionExists = $driver && method_exists($driver, 'collectionExists') && $driver->collectionExists(
+                    $collectionName
+                );
+
             if ($force) {
                 $this->info('🔄 Force mode: recreating vector collection with fresh schema...');
+            } elseif ($collectionExists) {
+                $this->info("✓ Collection '{$collectionName}' already exists");
+                // Check and ensure payload indexes exist
+                $this->ensurePayloadIndexes($driver, $collectionName, $modelClass);
             } else {
-                $this->info('Creating vector collection...');
+                $this->info("Creating vector collection '{$collectionName}'...");
             }
-            
-            // Create collection and show created indexes
+
+            // Create collection and ensure indexes
             $vectorSearch->createCollection($modelClass, $force);
             $this->showCreatedIndexes($vectorSearch, $modelClass);
 

@@ -106,6 +106,7 @@ class AIEngineServiceProvider extends ServiceProvider
             );
         });
 
+        // ConversationManager - no constructor dependencies (RAG service is lazy-loaded)
         $this->app->singleton(ConversationManager::class, function ($app) {
             return new ConversationManager();
         });
@@ -137,7 +138,7 @@ class AIEngineServiceProvider extends ServiceProvider
         });
 
         // WebSocket Streaming System (only if Ratchet is installed)
-        if (interface_exists(\Ratchet\MessageComponentInterface::class)) {
+        if (interface_exists('Ratchet\MessageComponentInterface')) {
             $this->app->singleton(WebSocketManager::class, function ($app) {
                 return new WebSocketManager();
             });

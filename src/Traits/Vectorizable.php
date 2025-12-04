@@ -76,14 +76,21 @@ trait Vectorizable
 
     /**
      * Get the collection name for vector storage
-     * Override this method for custom collection names
+     * Always includes the configured prefix (default: vec_)
+     * Override this method for fully custom collection names
      *
      * @return string
      */
     public function getVectorCollectionName(): string
     {
-        // Get base collection name
+        // Get base collection name with prefix
+        $prefix = config('ai-engine.vector.collection_prefix', 'vec_');
         $baseCollection = $this->getBaseVectorCollectionName();
+        
+        // Ensure prefix is applied (avoid double prefix)
+        if (!str_starts_with($baseCollection, $prefix)) {
+            $baseCollection = $prefix . $baseCollection;
+        }
 
         // Apply multi-db tenancy prefix if enabled
         if (config('vector-access-control.multi_db_tenancy', false)) {
@@ -95,7 +102,7 @@ trait Vectorizable
     }
 
     /**
-     * Get the base collection name (without tenant prefix)
+     * Get the base collection name (without vec_ prefix, but may include tenant prefix)
      * Override this method for custom collection names
      *
      * @return string
