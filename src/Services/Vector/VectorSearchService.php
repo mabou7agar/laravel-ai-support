@@ -50,6 +50,9 @@ class VectorSearchService
             // Get collection name
             $collectionName = $this->getCollectionName($modelClass);
 
+            // PARENT LOOKUP: Check if model has parent lookup and resolve parent IDs
+            $filters = $this->applyParentLookupFilters($modelClass, $query, $filters);
+
             // SECURITY: Build access control filters (fetches user internally)
             $filters = $this->accessControl->buildSearchFilters($userId, $filters);
 
@@ -515,6 +518,63 @@ class VectorSearchService
                 'error' => $e->getMessage()
             ]);
             return null;
+        }
+    }
+
+    /**
+     * Apply parent lookup filters to search query
+     * 
+     * This enables searching for related records by first looking up the parent.
+     * For example, searching "emails from john@example.com" on EmailCache will:
+     * 1. Auto-detect BelongsTo relationship to Email model
+     * 2. Find Email records where email = "john@example.com"
+     * 3. Add filter for mailbox_id IN (parent IDs)
+     * 
+     * @param string $modelClass Model class being searched
+     * @param string $query Search query
+     * @param array $filters Existing filters
+     * @return array Updated filters
+     */
+    protected function applyParentLookupFilters(string $modelClass, string $query, array $filters): array
+    {
+        if (!class_exists($modelClass)) {
+            return $filters;
+        }
+
+        try {
+            $instance = new $modelClass();
+
+            // Check if model uses Vectorizable trait and has parent lookup (auto-detected or manual)
+            if (!method_exists($instance, 'hasVectorParentLookup') || !$instance->hasVectorParentLookup()) {
+                return $filters;
+            }
+
+            // Resolve parent IDs from query (returns ['parent_key' => 'mailbox_id', 'parent_ids' => [1,2,3]])
+            $result = $modelClass::resolveParentIdsFromQuery($query);
+            $parentKey = $result['parent_key'] ?? null;
+            $parentIds = $result['parent_ids'] ?? [];
+
+            if (empty($parentIds) || !$parentKey) {
+                return $filters;
+            }
+
+            Log::debug('Applied parent lookup filter (auto-detected)', [
+                'model' => $modelClass,
+                'parent_key' => $parentKey,
+                'parent_ids' => $parentIds,
+            ]);
+
+            // Add parent ID filter
+            // For single ID, use direct match; for multiple, use array (Qdrant handles this)
+            $filters[$parentKey] = count($parentIds) === 1 ? $parentIds[0] : $parentIds;
+
+            return $filters;
+        } catch (\Exception $e) {
+            Log::warning('Failed to apply parent lookup filters', [
+                'model' => $modelClass,
+                'error' => $e->getMessage(),
+            ]);
+            return $filters;
         }
     }
 }

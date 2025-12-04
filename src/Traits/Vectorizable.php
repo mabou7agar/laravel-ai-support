@@ -70,6 +70,10 @@ trait Vectorizable
      */
     protected int $ragPriority = 50;
 
+    // Parent lookup is auto-detected from BelongsTo relationships.
+    // The system will automatically find parent models when searching
+    // by email addresses or other identifiers found in the query.
+
     /**
      * Get the collection name for vector storage
      * Override this method for custom collection names
@@ -1228,6 +1232,254 @@ PROMPT;
         }
 
         return [];
+    }
+
+    /**
+     * Auto-detect parent lookup from BelongsTo relationships
+     * 
+     * Scans the model for BelongsTo relationships and returns lookup config
+     * for relationships where the parent model uses Vectorizable trait.
+     * 
+     * @return array
+     */
+    public function getVectorParentLookup(): array
+    {
+        // Check for manual override first
+        if (property_exists($this, 'vectorParentLookup') && !empty($this->vectorParentLookup)) {
+            return $this->vectorParentLookup;
+        }
+
+        // Auto-detect from BelongsTo relationships
+        return $this->autoDetectParentLookup();
+    }
+
+    /**
+     * Auto-detect parent lookup configuration from model relationships
+     * 
+     * @return array
+     */
+    protected function autoDetectParentLookup(): array
+    {
+        $lookups = [];
+
+        // Common relationship method names that are likely BelongsTo
+        $commonBelongsToNames = [
+            'mailbox', 'email', 'user', 'owner', 'parent', 'category', 
+            'author', 'creator', 'company', 'organization', 'tenant',
+            'workspace', 'team', 'department', 'project', 'account'
+        ];
+
+        try {
+            $reflection = new \ReflectionClass($this);
+
+            foreach ($commonBelongsToNames as $methodName) {
+                if (!$reflection->hasMethod($methodName)) {
+                    continue;
+                }
+
+                $method = $reflection->getMethod($methodName);
+                
+                // Skip if not public or has parameters
+                if (!$method->isPublic() || $method->getNumberOfParameters() > 0) {
+                    continue;
+                }
+
+                try {
+                    $result = $method->invoke($this);
+
+                    // Check if it's a BelongsTo relationship
+                    if ($result instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
+                        $relatedModel = $result->getRelated();
+                        $foreignKey = $result->getForeignKeyName();
+
+                        // Check if related model uses Vectorizable
+                        if (in_array(Vectorizable::class, class_uses_recursive($relatedModel))) {
+                            // Get searchable fields from related model
+                            $lookupFields = $this->getSearchableFieldsFromModel($relatedModel);
+
+                            if (!empty($lookupFields)) {
+                                $lookups[] = [
+                                    'model' => get_class($relatedModel),
+                                    'parent_key' => $foreignKey,
+                                    'lookup_fields' => $lookupFields,
+                                    'relationship' => $methodName,
+                                ];
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Skip methods that throw exceptions
+                    continue;
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::debug('Failed to auto-detect parent lookup', [
+                'model' => get_class($this),
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Return first lookup (most common case is single parent)
+        return $lookups[0] ?? [];
+    }
+
+    /**
+     * Get searchable fields from a model (email, name, title, etc.)
+     * 
+     * @param object $model
+     * @return array
+     */
+    protected function getSearchableFieldsFromModel(object $model): array
+    {
+        $searchableFields = [];
+        $commonFields = ['email', 'name', 'title', 'username', 'slug', 'code', 'identifier'];
+
+        try {
+            // Get fillable fields
+            $fillable = $model->getFillable();
+
+            foreach ($commonFields as $field) {
+                if (in_array($field, $fillable)) {
+                    $searchableFields[] = $field;
+                }
+            }
+
+            // Also check if model has vectorizable fields
+            if (property_exists($model, 'vectorizable') && !empty($model->vectorizable)) {
+                foreach ($model->vectorizable as $field) {
+                    if (!in_array($field, $searchableFields)) {
+                        $searchableFields[] = $field;
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // Fallback to common fields
+            $searchableFields = ['email', 'name'];
+        }
+
+        return $searchableFields;
+    }
+
+    /**
+     * Check if this model has parent lookup configured (manual or auto-detected)
+     * 
+     * @return bool
+     */
+    public function hasVectorParentLookup(): bool
+    {
+        $lookup = $this->getVectorParentLookup();
+        return !empty($lookup['model']) && !empty($lookup['parent_key']) && !empty($lookup['lookup_fields']);
+    }
+
+    /**
+     * Resolve parent IDs from a search query
+     * 
+     * This allows searching for related records by looking up the parent first.
+     * For example, searching "emails from john@example.com" will:
+     * 1. Find Email records where email = "john@example.com"
+     * 2. Return their IDs to filter EmailCache by mailbox_id
+     * 
+     * @param string $query The search query
+     * @return array ['parent_key' => 'mailbox_id', 'parent_ids' => [1, 2, 3]]
+     */
+    public static function resolveParentIdsFromQuery(string $query): array
+    {
+        $instance = new static();
+        
+        if (!$instance->hasVectorParentLookup()) {
+            return ['parent_key' => null, 'parent_ids' => []];
+        }
+
+        $lookup = $instance->getVectorParentLookup();
+        $parentModel = $lookup['model'];
+        $parentKey = $lookup['parent_key'];
+        $lookupFields = $lookup['lookup_fields'];
+
+        if (!class_exists($parentModel)) {
+            return ['parent_key' => null, 'parent_ids' => []];
+        }
+
+        // Extract potential identifiers from query (emails, names, etc.)
+        $identifiers = static::extractIdentifiersFromQuery($query);
+        
+        if (empty($identifiers)) {
+            return ['parent_key' => $parentKey, 'parent_ids' => []];
+        }
+
+        try {
+            $parentQuery = $parentModel::query();
+            
+            $parentQuery->where(function ($q) use ($lookupFields, $identifiers) {
+                foreach ($lookupFields as $field) {
+                    foreach ($identifiers as $identifier) {
+                        $q->orWhere($field, 'LIKE', "%{$identifier}%");
+                    }
+                }
+            });
+
+            $parentIds = $parentQuery->pluck('id')->toArray();
+
+            \Log::debug('Resolved parent IDs from query', [
+                'model' => static::class,
+                'parent_model' => $parentModel,
+                'parent_key' => $parentKey,
+                'identifiers' => $identifiers,
+                'parent_ids' => $parentIds,
+            ]);
+
+            return [
+                'parent_key' => $parentKey,
+                'parent_ids' => $parentIds,
+            ];
+        } catch (\Exception $e) {
+            \Log::warning('Failed to resolve parent IDs', [
+                'model' => static::class,
+                'error' => $e->getMessage(),
+            ]);
+            return ['parent_key' => null, 'parent_ids' => []];
+        }
+    }
+
+    /**
+     * Extract potential identifiers from a search query
+     * 
+     * @param string $query
+     * @return array
+     */
+    protected static function extractIdentifiersFromQuery(string $query): array
+    {
+        $identifiers = [];
+
+        // Extract email addresses
+        preg_match_all('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', $query, $emails);
+        if (!empty($emails[0])) {
+            $identifiers = array_merge($identifiers, $emails[0]);
+        }
+
+        // Extract quoted strings
+        preg_match_all('/"([^"]+)"/', $query, $quoted);
+        if (!empty($quoted[1])) {
+            $identifiers = array_merge($identifiers, $quoted[1]);
+        }
+
+        // Extract single-quoted strings
+        preg_match_all("/\'([^\']+)\'/", $query, $singleQuoted);
+        if (!empty($singleQuoted[1])) {
+            $identifiers = array_merge($identifiers, $singleQuoted[1]);
+        }
+
+        return array_unique(array_filter($identifiers));
+    }
+
+    /**
+     * Get the parent key field name for filtering
+     * 
+     * @return string|null
+     */
+    public function getVectorParentKey(): ?string
+    {
+        $lookup = $this->getVectorParentLookup();
+        return $lookup['parent_key'] ?? null;
     }
 
     /**
