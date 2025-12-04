@@ -78,6 +78,26 @@ trait Vectorizable
      */
     public function getVectorCollectionName(): string
     {
+        // Get base collection name
+        $baseCollection = $this->getBaseVectorCollectionName();
+
+        // Apply multi-db tenancy prefix if enabled
+        if (config('vector-access-control.multi_db_tenancy', false)) {
+            $tenantService = app(\LaravelAIEngine\Services\Tenant\MultiTenantVectorService::class);
+            return $tenantService->getTenantCollectionName($baseCollection);
+        }
+
+        return $baseCollection;
+    }
+
+    /**
+     * Get the base collection name (without tenant prefix)
+     * Override this method for custom collection names
+     *
+     * @return string
+     */
+    public function getBaseVectorCollectionName(): string
+    {
         // Use table name as collection name by default
         if (property_exists($this, 'table') && !empty($this->table)) {
             return $this->table;
@@ -948,6 +968,17 @@ PROMPT;
 
         if (isset($this->visibility)) {
             $metadata['visibility'] = $this->visibility;
+        }
+
+        // MULTI-DB TENANCY: Add tenant metadata if enabled
+        if (config('vector-access-control.multi_db_tenancy', false)) {
+            try {
+                $tenantService = app(\LaravelAIEngine\Services\Tenant\MultiTenantVectorService::class);
+                $tenantMetadata = $tenantService->buildTenantMetadata();
+                $metadata = array_merge($metadata, $tenantMetadata);
+            } catch (\Exception $e) {
+                // Silently ignore if service not available
+            }
         }
 
         return $metadata;

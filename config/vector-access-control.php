@@ -19,6 +19,39 @@ return [
     // Enable workspace-scoped access (users can see data within their current workspace)
     'enable_workspace_scope' => env('AI_ENGINE_ENABLE_WORKSPACE_SCOPE', true),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Multi-Database Tenancy
+    |--------------------------------------------------------------------------
+    |
+    | For multi-database tenant architectures where each tenant has their own
+    | database, vectors should be stored in separate collections per tenant.
+    | This provides complete data isolation at the vector database level.
+    |
+    */
+
+    // Enable multi-database tenant mode (each tenant gets separate vector collection)
+    'multi_db_tenancy' => env('AI_ENGINE_MULTI_DB_TENANCY', false),
+
+    // Collection naming strategy for multi-db tenancy
+    // Options: 'prefix' (tenant_slug_collection), 'suffix' (collection_tenant_slug), 'separate' (tenant_slug/collection)
+    'multi_db_collection_strategy' => env('AI_ENGINE_MULTI_DB_COLLECTION_STRATEGY', 'prefix'),
+
+    // Method to get current tenant identifier (for collection naming)
+    // This should return a unique slug/id for the current tenant
+    // Supports: 'config', 'session', 'database', 'custom'
+    'tenant_resolver' => env('AI_ENGINE_TENANT_RESOLVER', 'session'),
+
+    // Config key for tenant identifier (when tenant_resolver = 'config')
+    'tenant_config_key' => 'database.default',
+
+    // Session key for tenant identifier (when tenant_resolver = 'session')
+    'tenant_session_key' => 'tenant_id',
+
+    // Custom tenant resolver class (when tenant_resolver = 'custom')
+    // Must implement: LaravelAIEngine\Contracts\TenantResolverInterface
+    'custom_tenant_resolver' => null,
+
     // Admin roles that can access ALL data
     'admin_roles' => [
         'super-admin',

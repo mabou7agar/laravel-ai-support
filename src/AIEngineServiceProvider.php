@@ -176,6 +176,11 @@ class AIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\Vector\VectorAccessControl();
         });
 
+        // Multi-Tenant Vector Service (for multi-database tenancy)
+        $this->app->singleton(\LaravelAIEngine\Services\Tenant\MultiTenantVectorService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Tenant\MultiTenantVectorService();
+        });
+
         $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorSearchService::class, function ($app) {
             return new \LaravelAIEngine\Services\Vector\VectorSearchService(
                 $app->make(\LaravelAIEngine\Services\Vector\VectorDriverManager::class),
