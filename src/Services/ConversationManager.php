@@ -6,18 +6,18 @@ use LaravelAIEngine\Models\Conversation;
 use LaravelAIEngine\Models\Message;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
-use LaravelAIEngine\Services\RAG\VectorRAGBridge;
+use LaravelAIEngine\Services\RAG\IntelligentRAGService;
 use Illuminate\Support\Collection;
 
 class ConversationManager
 {
-    protected ?VectorRAGBridge $ragBridge = null;
+    protected ?IntelligentRAGService $ragService = null;
 
     public function __construct()
     {
-        // Inject RAG bridge if available
-        if (class_exists(VectorRAGBridge::class)) {
-            $this->ragBridge = app(VectorRAGBridge::class);
+        // Inject RAG service if available
+        if (class_exists(IntelligentRAGService::class)) {
+            $this->ragService = app(IntelligentRAGService::class);
         }
     }
     public function createConversation(
@@ -260,8 +260,8 @@ class ConversationManager
         string $modelClass,
         array $options = []
     ): array {
-        if (!$this->ragBridge) {
-            throw new \RuntimeException('RAG bridge is not available');
+        if (!$this->ragService) {
+            throw new \RuntimeException('RAG service is not available');
         }
 
         $conversation = $this->getConversation($conversationId);
@@ -272,28 +272,41 @@ class ConversationManager
         // Add user message
         $this->addUserMessage($conversationId, $query);
 
-        // Get RAG response
-        $result = $this->ragBridge->chat(
+        // Get conversation history
+        $conversationHistory = $this->getConversationHistory($conversationId);
+
+        // Get RAG response using IntelligentRAGService
+        // Use intelligent: false to always search (like old VectorRAGBridge behavior)
+        $response = $this->ragService->processMessage(
             $query,
-            $modelClass,
-            $conversation->user_id,
-            $options
+            $conversationId,
+            [$modelClass],
+            $conversationHistory,
+            array_merge($options, ['intelligent' => false]),
+            $conversation->user_id
         );
 
         // Add assistant message with sources
-        $conversation->addMessage('assistant', $result['response'], [
-            'sources' => $result['sources'],
-            'context_count' => $result['context_count'],
+        $metadata = $response->getMetadata();
+        $conversation->addMessage('assistant', $response->content, [
+            'sources' => $metadata['sources'] ?? [],
+            'context_count' => count($metadata['sources'] ?? []),
             'rag_enabled' => true,
         ]);
 
         $conversation->touch('last_activity_at');
 
-        return $result;
+        return [
+            'response' => $response->content,
+            'sources' => $metadata['sources'] ?? [],
+            'context_count' => count($metadata['sources'] ?? []),
+            'query' => $query,
+        ];
     }
 
     /**
      * Stream chat with RAG
+     * Note: Streaming is handled by the AI engine, this method processes and stores the result
      */
     public function streamChatWithRAG(
         string $conversationId,
@@ -302,8 +315,8 @@ class ConversationManager
         callable $callback,
         array $options = []
     ): array {
-        if (!$this->ragBridge) {
-            throw new \RuntimeException('RAG bridge is not available');
+        if (!$this->ragService) {
+            throw new \RuntimeException('RAG service is not available');
         }
 
         $conversation = $this->getConversation($conversationId);
@@ -314,25 +327,38 @@ class ConversationManager
         // Add user message
         $this->addUserMessage($conversationId, $query);
 
-        // Stream RAG response
-        $result = $this->ragBridge->streamChat(
+        // Get conversation history
+        $conversationHistory = $this->getConversationHistory($conversationId);
+
+        // Get RAG response (streaming handled at AI engine level)
+        $response = $this->ragService->processMessage(
             $query,
-            $modelClass,
-            $callback,
-            $conversation->user_id,
-            $options
+            $conversationId,
+            [$modelClass],
+            $conversationHistory,
+            array_merge($options, ['intelligent' => false, 'stream_callback' => $callback]),
+            $conversation->user_id
         );
 
+        // Call callback with final response
+        $callback($response->content, true);
+
         // Add assistant message with sources
-        $conversation->addMessage('assistant', $result['response'], [
-            'sources' => $result['sources'],
-            'context_count' => $result['context_count'],
+        $metadata = $response->getMetadata();
+        $conversation->addMessage('assistant', $response->content, [
+            'sources' => $metadata['sources'] ?? [],
+            'context_count' => count($metadata['sources'] ?? []),
             'rag_enabled' => true,
         ]);
 
         $conversation->touch('last_activity_at');
 
-        return $result;
+        return [
+            'response' => $response->content,
+            'sources' => $metadata['sources'] ?? [],
+            'context_count' => count($metadata['sources'] ?? []),
+            'query' => $query,
+        ];
     }
 
     /**

@@ -189,14 +189,6 @@ class AIEngineServiceProvider extends ServiceProvider
             );
         });
 
-        // RAG (Retrieval Augmented Generation) System
-        $this->app->singleton(\LaravelAIEngine\Services\RAG\VectorRAGBridge::class, function ($app) {
-            return new \LaravelAIEngine\Services\RAG\VectorRAGBridge(
-                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
-                $app->make(AIEngineManager::class)
-            );
-        });
-
         // Media Processing Services
         $this->app->singleton(\LaravelAIEngine\Services\Media\VisionService::class, function ($app) {
             return new \LaravelAIEngine\Services\Media\VisionService(

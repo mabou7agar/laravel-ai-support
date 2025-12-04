@@ -1748,8 +1748,16 @@ PROMPT;
      */
     protected function getDefaultSystemPrompt(): string
     {
-        return <<<PROMPT
-You are an intelligent knowledge base assistant with access to a curated knowledge base powered by vector search.
+        $projectContext = $this->buildProjectContextSection();
+        
+        $basePrompt = "You are an intelligent knowledge base assistant with access to a curated knowledge base powered by vector search.";
+        
+        // Inject project context if available
+        if (!empty($projectContext)) {
+            $basePrompt .= "\n\n" . $projectContext;
+        }
+        
+        $restOfPrompt = <<<'PROMPT'
 
 🎯 YOUR ROLE:
 - Help users find and understand information from the knowledge base
@@ -1828,6 +1836,97 @@ RIGHT: "Hi John," or "Hi John Smith,"
 
 Remember: Be helpful and conversational with knowledge base content, but strict about not using external information when no context is found.
 PROMPT;
+
+        return $basePrompt . $restOfPrompt;
+    }
+    
+    /**
+     * Build project context section for system prompt
+     * 
+     * This injects application-specific context to help the AI understand
+     * the domain and make better decisions.
+     */
+    protected function buildProjectContextSection(): string
+    {
+        $config = config('ai-engine.project_context', []);
+        
+        // Check if project context is enabled
+        if (!($config['enabled'] ?? true)) {
+            return '';
+        }
+        
+        $sections = [];
+        
+        // Main description
+        $description = $config['description'] ?? '';
+        if (!empty($description)) {
+            $sections[] = "📋 APPLICATION CONTEXT:\n{$description}";
+        }
+        
+        // Industry/domain
+        $industry = $config['industry'] ?? '';
+        if (!empty($industry)) {
+            $sections[] = "🏢 Industry/Domain: {$industry}";
+        }
+        
+        // Target users
+        $targetUsers = $config['target_users'] ?? '';
+        if (!empty($targetUsers)) {
+            $sections[] = "👥 Target Users: {$targetUsers}";
+        }
+        
+        // Key entities
+        $keyEntities = $config['key_entities'] ?? [];
+        if (!empty($keyEntities)) {
+            $entitiesList = implode(', ', $keyEntities);
+            $sections[] = "📊 Key Entities: {$entitiesList}";
+        }
+        
+        // Business rules
+        $businessRules = $config['business_rules'] ?? [];
+        if (!empty($businessRules)) {
+            $rulesList = array_map(fn($rule) => "  • {$rule}", $businessRules);
+            $sections[] = "📜 Business Rules:\n" . implode("\n", $rulesList);
+        }
+        
+        // Terminology
+        $terminology = $config['terminology'] ?? [];
+        if (!empty($terminology)) {
+            $termsList = [];
+            foreach ($terminology as $term => $definition) {
+                $termsList[] = "  • {$term}: {$definition}";
+            }
+            $sections[] = "📖 Domain Terminology:\n" . implode("\n", $termsList);
+        }
+        
+        // Data sensitivity
+        $dataSensitivity = $config['data_sensitivity'] ?? 'internal';
+        if (!empty($dataSensitivity) && $dataSensitivity !== 'public') {
+            $sensitivityNote = match($dataSensitivity) {
+                'confidential' => '⚠️ Data Sensitivity: CONFIDENTIAL - Handle all data with strict confidentiality',
+                'restricted' => '🔒 Data Sensitivity: RESTRICTED - Highly sensitive data, maximum security required',
+                'internal' => '🔐 Data Sensitivity: INTERNAL - Data is for internal use only',
+                default => '',
+            };
+            if (!empty($sensitivityNote)) {
+                $sections[] = $sensitivityNote;
+            }
+        }
+        
+        // Additional context
+        $additionalContext = $config['additional_context'] ?? '';
+        if (!empty($additionalContext)) {
+            $sections[] = "ℹ️ Additional Context:\n{$additionalContext}";
+        }
+        
+        if (empty($sections)) {
+            return '';
+        }
+        
+        return "🏗️ PROJECT CONTEXT\n" . 
+               "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" .
+               implode("\n\n", $sections) . 
+               "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
     }
 
     /**

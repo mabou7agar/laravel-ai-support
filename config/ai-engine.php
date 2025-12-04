@@ -26,6 +26,53 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Project Context
+    |--------------------------------------------------------------------------
+    |
+    | Provide context about your project/application to help the AI understand
+    | the domain and make better decisions. This context is injected into AI
+    | prompts to improve relevance and accuracy of responses.
+    |
+    | Example: "This is a CRM system for HR departments that manages employee
+    | data, recruitment, payroll, and performance reviews."
+    |
+    */
+    'project_context' => [
+        // Enable/disable project context injection
+        'enabled' => env('AI_ENGINE_PROJECT_CONTEXT_ENABLED', true),
+        
+        // Main project description - describe what your application does
+        // This helps the AI understand the domain and make better decisions
+        'description' => env('AI_ENGINE_PROJECT_DESCRIPTION', ''),
+        
+        // Industry/domain (e.g., 'healthcare', 'finance', 'e-commerce', 'hr', 'education')
+        'industry' => env('AI_ENGINE_PROJECT_INDUSTRY', ''),
+        
+        // Key entities/concepts in your system
+        // Example: ['employees', 'departments', 'payroll', 'leave requests', 'performance reviews']
+        'key_entities' => [],
+        
+        // Business rules or constraints the AI should be aware of
+        // Example: ['All employee data is confidential', 'Payroll calculations follow local tax laws']
+        'business_rules' => [],
+        
+        // Terminology/glossary specific to your domain
+        // Example: ['PTO' => 'Paid Time Off', 'FTE' => 'Full Time Employee']
+        'terminology' => [],
+        
+        // Target users of the system
+        // Example: 'HR managers, department heads, and employees'
+        'target_users' => env('AI_ENGINE_PROJECT_TARGET_USERS', ''),
+        
+        // Data sensitivity level: 'public', 'internal', 'confidential', 'restricted'
+        'data_sensitivity' => env('AI_ENGINE_PROJECT_DATA_SENSITIVITY', 'internal'),
+        
+        // Additional custom context (free-form text)
+        'additional_context' => env('AI_ENGINE_PROJECT_ADDITIONAL_CONTEXT', ''),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Vectorization Settings
     |--------------------------------------------------------------------------
     |

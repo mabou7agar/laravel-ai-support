@@ -13,6 +13,12 @@ class QdrantDriver implements VectorDriverInterface
     protected string $host;
     protected ?string $apiKey;
     protected int $timeout;
+    
+    /**
+     * Cache of collections where indexes have been ensured
+     * Prevents repeated API calls to check/create indexes
+     */
+    protected static array $indexEnsuredCollections = [];
 
     public function __construct(array $config = [])
     {
@@ -406,6 +412,11 @@ class QdrantDriver implements VectorDriverInterface
         array $filters = []
     ): array {
         try {
+            // Auto-ensure indexes exist for filter fields before searching
+            if (!empty($filters)) {
+                $this->ensureFilterIndexes($collection, array_keys($filters));
+            }
+            
             $body = [
                 'vector' => $vector,
                 'limit' => $limit,
@@ -603,5 +614,148 @@ class QdrantDriver implements VectorDriverInterface
         }
 
         return ['must' => $must];
+    }
+    
+    /**
+     * Ensure payload indexes exist for filter fields
+     * This is called automatically before search to prevent "index required" errors
+     * 
+     * @param string $collection Collection name
+     * @param array $filterFields Fields being used in filters
+     */
+    public function ensureFilterIndexes(string $collection, array $filterFields): void
+    {
+        // Check if we've already ensured indexes for this collection
+        $cacheKey = $collection . ':' . implode(',', $filterFields);
+        if (isset(static::$indexEnsuredCollections[$cacheKey])) {
+            return;
+        }
+        
+        try {
+            // Get existing indexes for this collection
+            $existingIndexes = $this->getExistingIndexes($collection);
+            
+            // Find missing indexes
+            $missingFields = array_diff($filterFields, $existingIndexes);
+            
+            if (!empty($missingFields)) {
+                Log::info('Auto-creating missing payload indexes', [
+                    'collection' => $collection,
+                    'missing_fields' => $missingFields,
+                    'existing_indexes' => $existingIndexes,
+                ]);
+                
+                foreach ($missingFields as $field) {
+                    $fieldType = $this->guessFieldType($field);
+                    $this->createPayloadIndex($collection, $field, $fieldType);
+                }
+            }
+            
+            // Mark as ensured
+            static::$indexEnsuredCollections[$cacheKey] = true;
+            
+        } catch (\Exception $e) {
+            Log::warning('Failed to ensure filter indexes', [
+                'collection' => $collection,
+                'fields' => $filterFields,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+    
+    /**
+     * Get existing payload indexes for a collection
+     * 
+     * @param string $collection Collection name
+     * @return array List of indexed field names
+     */
+    public function getExistingIndexes(string $collection): array
+    {
+        try {
+            $response = $this->client->get("/collections/{$collection}");
+            $data = json_decode($response->getBody()->getContents(), true);
+            
+            $payloadSchema = $data['result']['payload_schema'] ?? [];
+            
+            // Extract field names that have indexes
+            $indexedFields = [];
+            foreach ($payloadSchema as $fieldName => $schema) {
+                // Check if field has an index (data_type indicates indexed field)
+                if (isset($schema['data_type']) || isset($schema['params'])) {
+                    $indexedFields[] = $fieldName;
+                }
+            }
+            
+            return $indexedFields;
+        } catch (GuzzleException $e) {
+            Log::warning('Failed to get existing indexes', [
+                'collection' => $collection,
+                'error' => $e->getMessage(),
+            ]);
+            return [];
+        }
+    }
+    
+    /**
+     * Ensure all configured payload indexes exist for a collection
+     * Call this for existing collections that may be missing indexes
+     * 
+     * @param string $collection Collection name
+     * @param string|null $modelClass Optional model class for schema detection
+     */
+    public function ensureAllPayloadIndexes(string $collection, ?string $modelClass = null): void
+    {
+        // Get existing indexes
+        $existingIndexes = $this->getExistingIndexes($collection);
+        
+        // Get configured fields
+        $configFields = config('ai-engine.vector.payload_index_fields', [
+            'user_id',
+            'tenant_id', 
+            'workspace_id',
+            'model_id',
+            'status',
+            'visibility',
+            'type',
+        ]);
+        
+        // Detect additional fields from model
+        $relationFields = $this->detectBelongsToFields($modelClass);
+        
+        // Merge all fields
+        $allFields = array_unique(array_merge($configFields, $relationFields));
+        
+        // Find missing indexes
+        $missingFields = array_diff($allFields, $existingIndexes);
+        
+        if (empty($missingFields)) {
+            Log::debug('All payload indexes already exist', [
+                'collection' => $collection,
+                'existing_indexes' => $existingIndexes,
+            ]);
+            return;
+        }
+        
+        Log::info('Creating missing payload indexes for existing collection', [
+            'collection' => $collection,
+            'missing_fields' => $missingFields,
+            'existing_indexes' => $existingIndexes,
+        ]);
+        
+        // Detect field types
+        $fieldTypes = $this->detectFieldTypes($modelClass, $missingFields);
+        
+        foreach ($fieldTypes as $fieldName => $fieldType) {
+            $this->createPayloadIndex($collection, $fieldName, $fieldType);
+        }
+    }
+    
+    /**
+     * Clear the index ensured cache
+     * Useful when indexes might have been deleted externally
+     */
+    public static function clearIndexCache(): void
+    {
+        static::$indexEnsuredCollections = [];
     }
 }
