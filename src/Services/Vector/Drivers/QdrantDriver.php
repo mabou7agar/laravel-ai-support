@@ -58,9 +58,19 @@ class QdrantDriver implements VectorDriverInterface
                 return false;
             }
             
+            // Wait a moment for collection to be fully ready before creating indexes
+            // Qdrant cloud may need a brief delay after collection creation
+            usleep(500000); // 500ms
+            
             // Create payload indexes for filterable fields
             // Model class can be passed in config for schema detection
             $modelClass = $config['model_class'] ?? null;
+            
+            Log::info('Creating payload indexes for new collection', [
+                'collection' => $name,
+                'model_class' => $modelClass,
+            ]);
+            
             $this->createPayloadIndexes($name, $modelClass);
             
             return true;
@@ -197,26 +207,44 @@ class QdrantDriver implements VectorDriverInterface
     public function createPayloadIndex(string $collection, string $fieldName, string $fieldType): bool
     {
         try {
-            $this->client->put("/collections/{$collection}/index", [
+            $response = $this->client->put("/collections/{$collection}/index", [
                 'json' => [
                     'field_name' => $fieldName,
                     'field_schema' => $fieldType,
                 ],
             ]);
             
-            Log::debug('Created payload index', [
+            $statusCode = $response->getStatusCode();
+            $body = $response->getBody()->getContents();
+            
+            Log::info('Created payload index', [
                 'collection' => $collection,
                 'field' => $fieldName,
                 'type' => $fieldType,
+                'status' => $statusCode,
             ]);
             
-            return true;
+            return $statusCode === 200;
         } catch (GuzzleException $e) {
-            // Log but don't fail - index might already exist
-            Log::warning('Failed to create payload index', [
+            // Check if it's "already exists" error (which is OK)
+            $errorMessage = $e->getMessage();
+            $isAlreadyExists = str_contains($errorMessage, 'already exists') || 
+                               str_contains($errorMessage, 'already indexed');
+            
+            if ($isAlreadyExists) {
+                Log::debug('Payload index already exists', [
+                    'collection' => $collection,
+                    'field' => $fieldName,
+                ]);
+                return true;
+            }
+            
+            // Log actual failures
+            Log::error('Failed to create payload index', [
                 'collection' => $collection,
                 'field' => $fieldName,
-                'error' => $e->getMessage(),
+                'type' => $fieldType,
+                'error' => $errorMessage,
             ]);
             return false;
         }

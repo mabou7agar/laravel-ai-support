@@ -150,6 +150,38 @@ class VectorIndexCommand extends Command
         return array_unique($models);
     }
 
+    protected function showCreatedIndexes(VectorSearchService $vectorSearch, string $modelClass): void
+    {
+        try {
+            // Get the driver and check for existing indexes
+            $driver = $vectorSearch->getDriver();
+            
+            if (!method_exists($driver, 'getExistingIndexes')) {
+                return;
+            }
+            
+            // Get collection name
+            $instance = new $modelClass();
+            $collectionName = config('ai-engine.vector.collection_prefix', 'vec_') . $instance->getTable();
+            
+            $indexes = $driver->getExistingIndexes($collectionName);
+            
+            if (!empty($indexes)) {
+                $this->info('🔑 Payload indexes created:');
+                foreach ($indexes as $index) {
+                    $this->line("   • <fg=green>{$index}</>");
+                }
+                $this->newLine();
+            } else {
+                $this->warn('⚠️  No payload indexes found - filtering may not work');
+                $this->newLine();
+            }
+        } catch (\Exception $e) {
+            // Silently fail - not critical
+            $this->line("<fg=gray>   Could not verify indexes: {$e->getMessage()}</>");
+        }
+    }
+
     protected function showIndexableFields(string $modelClass): void
     {
         try {
@@ -217,7 +249,10 @@ class VectorIndexCommand extends Command
             } else {
                 $this->info('Creating vector collection...');
             }
+            
+            // Create collection and show created indexes
             $vectorSearch->createCollection($modelClass, $force);
+            $this->showCreatedIndexes($vectorSearch, $modelClass);
 
             // Check if relationships should be included (default: true, unless --no-relationships is set)
             $withRelationships = !$this->option('no-relationships') && $this->option('with-relationships') !== 'false';

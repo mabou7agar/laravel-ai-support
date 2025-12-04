@@ -322,7 +322,13 @@ class VectorSearchService
                 Log::info('Force mode: deleting existing collection', ['collection' => $collectionName]);
                 $driver->deleteCollection($collectionName);
             } elseif ($driver->collectionExists($collectionName)) {
-                Log::info('Collection already exists', ['collection' => $collectionName]);
+                Log::info('Collection already exists, ensuring indexes', ['collection' => $collectionName]);
+                
+                // Ensure payload indexes exist on existing collection
+                if (method_exists($driver, 'ensureAllPayloadIndexes')) {
+                    $driver->ensureAllPayloadIndexes($collectionName, $modelClass);
+                }
+                
                 return true;
             }
 
