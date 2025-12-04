@@ -6,10 +6,15 @@
 ```
 Total: 8-15 seconds
 ├── Query Analysis (AI): 2-5 seconds (40%)
-├── Vector Search: 1-3 seconds (20%)
+├── Embedding Generation: 0.5-1.5 seconds per query (15%)
+├── Vector Search: 0.5-1 seconds (10%)
 ├── AI Generation: 3-10 seconds (35%)
 └── Other: 0.5-1 second (5%)
 ```
+
+### Key Insight: Embedding Calls Add Up!
+Each unique search query requires an embedding API call (~500ms-1s).
+If query analyzer generates 3 queries → 1.5-3 seconds just for embeddings!
 
 ## Quick Wins (Immediate Impact)
 
