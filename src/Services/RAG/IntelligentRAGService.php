@@ -390,7 +390,7 @@ class IntelligentRAGService
         // Build available collections info with descriptions
         $collectionsInfo = '';
         if (!empty($availableCollections)) {
-            $collectionsInfo = "\n\nAvailable knowledge sources:\n";
+            $collectionsInfo = "\n\nAvailable knowledge sources (READ DESCRIPTIONS CAREFULLY):\n";
             foreach ($availableCollections as $collection) {
                 $name = class_basename($collection);
                 $description = '';
@@ -411,9 +411,9 @@ class IntelligentRAGService
                 }
                 
                 if (!empty($description)) {
-                    $collectionsInfo .= "- {$name}: {$description} (class: {$collection})\n";
+                    $collectionsInfo .= "- **{$name}**: {$description}\n  → Use class: {$collection}\n";
                 } else {
-                    $collectionsInfo .= "- {$name} (class: {$collection})\n";
+                    $collectionsInfo .= "- **{$name}**\n  → Use class: {$collection}\n";
                 }
             }
         }
@@ -436,6 +436,12 @@ QUERY TYPES:
 - "informational" → Questions seeking specific information
 - "conversational" → General chat, greetings
 
+CRITICAL COLLECTION SELECTION RULES:
+1. READ the description of each collection carefully to select the RIGHT one
+2. "accounts", "configurations", "settings" → Look for collections about ACCOUNTS/SETTINGS, not messages/content
+3. "messages", "emails", "inbox", "mail content" → Look for collections about MESSAGES/CONTENT
+4. When in doubt, include MULTIPLE relevant collections
+
 CRITICAL SEARCH QUERY RULES:
 1. NEVER use abstract terms like "most important" or "best" alone - they won't match content
 2. For vague/subjective queries, generate MULTIPLE concrete search terms:
@@ -456,6 +462,10 @@ CRITICAL SEARCH QUERY RULES:
 6. Technical questions → Extract key terms: ["Laravel routing", "API endpoint"]
 
 7. Aggregate queries (how many, count, total) → Set needs_aggregate: true
+
+8. For "accounts" queries (email accounts, user accounts, etc.):
+   - Search for collections with "account" in description
+   - Use search terms: ["account", "configuration", "settings", "profile"]
 PROMPT;
 
         $conversationContext = '';

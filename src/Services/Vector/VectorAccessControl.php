@@ -124,6 +124,48 @@ class VectorAccessControl
     }
 
     /**
+     * Get workspace ID for user (if workspace-based system)
+     * 
+     * Checks for:
+     * 1. Direct workspace_id on user
+     * 2. Current workspace from session/context
+     * 3. Workspace relationship on user
+     */
+    public function getUserWorkspaceId($user): mixed
+    {
+        if (!$user) {
+            return null;
+        }
+
+        // Check direct workspace_id field
+        if (isset($user->workspace_id) && $user->workspace_id) {
+            return $user->workspace_id;
+        }
+
+        // Check for current_workspace_id (common pattern for multi-workspace users)
+        if (isset($user->current_workspace_id) && $user->current_workspace_id) {
+            return $user->current_workspace_id;
+        }
+
+        // Check for workspace relationship
+        if (method_exists($user, 'workspace') && $user->workspace) {
+            return $user->workspace->id ?? null;
+        }
+
+        // Check for currentWorkspace relationship
+        if (method_exists($user, 'currentWorkspace') && $user->currentWorkspace) {
+            return $user->currentWorkspace->id ?? null;
+        }
+
+        // Check session for current workspace (if available)
+        if (function_exists('session') && session()->has('current_workspace_id')) {
+            return session('current_workspace_id');
+        }
+
+        return null;
+    }
+
+    /**
      * Build vector search filters based on user access level
      * 
      * @param string|int|null $userId User ID (will fetch user internally)
@@ -160,14 +202,31 @@ class VectorAccessControl
 
         // LEVEL 2: Tenant-scoped - Access all data within tenant
         $tenantId = $this->getUserTenantId($user);
-        if ($tenantId !== null && config('ai-engine.vector.enable_tenant_scope', false)) {
+        if ($tenantId !== null && config('vector-access-control.enable_tenant_scope', true)) {
             Log::debug('Tenant-scoped search', [
                 'user_id' => $userId,
                 'tenant_id' => $tenantId,
             ]);
             
+            $filterTenantId = is_numeric($tenantId) ? (int) $tenantId : (string) $tenantId;
+            
             return array_merge($baseFilters, [
-                'tenant_id' => $tenantId,
+                'tenant_id' => $filterTenantId,
+            ]);
+        }
+
+        // LEVEL 2.5: Workspace-scoped - Access all data within workspace
+        $workspaceId = $this->getUserWorkspaceId($user);
+        if ($workspaceId !== null && config('vector-access-control.enable_workspace_scope', true)) {
+            Log::debug('Workspace-scoped search', [
+                'user_id' => $userId,
+                'workspace_id' => $workspaceId,
+            ]);
+            
+            $filterWorkspaceId = is_numeric($workspaceId) ? (int) $workspaceId : (string) $workspaceId;
+            
+            return array_merge($baseFilters, [
+                'workspace_id' => $filterWorkspaceId,
             ]);
         }
 
@@ -201,6 +260,10 @@ class VectorAccessControl
             return 'tenant';
         }
 
+        if ($this->getUserWorkspaceId($user) !== null) {
+            return 'workspace';
+        }
+
         return 'user';
     }
 
@@ -231,6 +294,15 @@ class VectorAccessControl
         if ($tenantId !== null) {
             $modelTenantId = $model->tenant_id ?? $model->organization_id ?? $model->company_id ?? null;
             if ($modelTenantId && $modelTenantId == $tenantId) {
+                return true;
+            }
+        }
+
+        // Check workspace access
+        $workspaceId = $this->getUserWorkspaceId($user);
+        if ($workspaceId !== null) {
+            $modelWorkspaceId = $model->workspace_id ?? null;
+            if ($modelWorkspaceId && $modelWorkspaceId == $workspaceId) {
                 return true;
             }
         }

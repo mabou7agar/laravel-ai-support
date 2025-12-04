@@ -898,19 +898,34 @@ PROMPT;
         $metadata = [];
 
         // SECURITY: Add user ownership metadata
+        // Use integer for numeric IDs (better Qdrant filtering), string for UUIDs
         if (isset($this->user_id)) {
-            $metadata['user_id'] = (string) $this->user_id;
+            $metadata['user_id'] = is_numeric($this->user_id) ? (int) $this->user_id : (string) $this->user_id;
         }
 
         // MULTI-TENANT: Add tenant/organization metadata
         if (isset($this->tenant_id)) {
-            $metadata['tenant_id'] = (string) $this->tenant_id;
+            $metadata['tenant_id'] = is_numeric($this->tenant_id) ? (int) $this->tenant_id : (string) $this->tenant_id;
         } elseif (isset($this->organization_id)) {
-            $metadata['tenant_id'] = (string) $this->organization_id;
+            $metadata['tenant_id'] = is_numeric($this->organization_id) ? (int) $this->organization_id : (string) $this->organization_id;
         } elseif (isset($this->company_id)) {
-            $metadata['tenant_id'] = (string) $this->company_id;
+            $metadata['tenant_id'] = is_numeric($this->company_id) ? (int) $this->company_id : (string) $this->company_id;
         } elseif (isset($this->team_id)) {
-            $metadata['tenant_id'] = (string) $this->team_id;
+            $metadata['tenant_id'] = is_numeric($this->team_id) ? (int) $this->team_id : (string) $this->team_id;
+        }
+
+        // WORKSPACE: Add workspace metadata for workspace-scoped access
+        if (isset($this->workspace_id)) {
+            $metadata['workspace_id'] = is_numeric($this->workspace_id) ? (int) $this->workspace_id : (string) $this->workspace_id;
+        }
+        // Also index workspace relationship if it exists
+        if (isset($this->workspace) && is_object($this->workspace)) {
+            if (isset($this->workspace->id)) {
+                $metadata['workspace_id'] = is_numeric($this->workspace->id) ? (int) $this->workspace->id : (string) $this->workspace->id;
+            }
+            if (isset($this->workspace->name)) {
+                $metadata['workspace_name'] = $this->workspace->name;
+            }
         }
 
         // Add common metadata

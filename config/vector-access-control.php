@@ -16,6 +16,9 @@ return [
     // Enable tenant-scoped access (users can see data within their tenant/organization)
     'enable_tenant_scope' => env('AI_ENGINE_ENABLE_TENANT_SCOPE', true),
 
+    // Enable workspace-scoped access (users can see data within their current workspace)
+    'enable_workspace_scope' => env('AI_ENGINE_ENABLE_WORKSPACE_SCOPE', true),
+
     // Admin roles that can access ALL data
     'admin_roles' => [
         'super-admin',
@@ -30,7 +33,12 @@ return [
         'organization_id',
         'company_id',
         'team_id',
+    ],
+
+    // Workspace field names to check (in order of priority)
+    'workspace_fields' => [
         'workspace_id',
+        'current_workspace_id',
     ],
 
     // User ownership field names to check
