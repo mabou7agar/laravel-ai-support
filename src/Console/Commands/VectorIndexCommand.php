@@ -15,7 +15,8 @@ class VectorIndexCommand extends Command
                             {--batch=100 : Batch size for indexing}
                             {--force : Force re-indexing of already indexed models}
                             {--queue : Queue the indexing jobs}
-                            {--with-relationships : Include relationships in indexing}
+                            {--with-relationships=true : Include relationships in indexing (default: true)}
+                            {--no-relationships : Disable relationship indexing}
                             {--relationship-depth=1 : Maximum relationship depth to traverse}';
 
     protected $description = 'Index models in the vector database. If no model specified, indexes all vectorizable models';
@@ -23,12 +24,12 @@ class VectorIndexCommand extends Command
     public function handle(VectorSearchService $vectorSearch): int
     {
         $modelClass = $this->argument('model');
-        
+
         // If no model specified, index all vectorizable models
         if (!$modelClass) {
             return $this->indexAllVectorizableModels($vectorSearch);
         }
-        
+
         if (!class_exists($modelClass)) {
             $this->error("Model class not found: {$modelClass}");
             return self::FAILURE;
@@ -40,9 +41,9 @@ class VectorIndexCommand extends Command
     protected function indexAllVectorizableModels(VectorSearchService $vectorSearch): int
     {
         $this->info('🔍 Discovering vectorizable models...');
-        
+
         $models = $this->discoverVectorizableModels();
-        
+
         if (empty($models)) {
             $this->warn('No vectorizable models found.');
             $this->line('');
@@ -50,20 +51,20 @@ class VectorIndexCommand extends Command
             $this->line('  use LaravelAIEngine\Traits\Vectorizable;');
             return self::SUCCESS;
         }
-        
+
         $this->info("Found " . count($models) . " vectorizable model(s):");
         foreach ($models as $model) {
             $this->line("  • {$model}");
         }
         $this->newLine();
-        
+
         $totalIndexed = 0;
         $totalFailed = 0;
-        
+
         foreach ($models as $modelClass) {
             $this->info("📦 Indexing {$modelClass}...");
             $result = $this->indexModel($modelClass, $vectorSearch, false);
-            
+
             if ($result === self::SUCCESS) {
                 $totalIndexed++;
             } else {
@@ -71,13 +72,13 @@ class VectorIndexCommand extends Command
             }
             $this->newLine();
         }
-        
+
         $this->info("✅ Summary:");
         $this->info("  • Successfully indexed: {$totalIndexed} model(s)");
         if ($totalFailed > 0) {
             $this->warn("  • Failed: {$totalFailed} model(s)");
         }
-        
+
         return self::SUCCESS;
     }
 
@@ -87,13 +88,13 @@ class VectorIndexCommand extends Command
             // Use RAG Collection Discovery service
             $discovery = app(RAGCollectionDiscovery::class);
             $models = $discovery->discover(useCache: false, includeFederated: false);
-            
+
             $this->line('<fg=gray>✓ Using RAG Collection Discovery service</>');
-            
+
             return $models;
         } catch (\Exception $e) {
             $this->warn('⚠ RAG Discovery failed, falling back to manual scan: ' . $e->getMessage());
-            
+
             // Fallback to manual scanning
             return $this->manualDiscoverVectorizableModels();
         }
@@ -104,18 +105,18 @@ class VectorIndexCommand extends Command
         // Discover all vectorizable models by scanning multiple paths
         // This logic is also available as a helper: discover_vectorizable_models()
         $models = [];
-        
+
         // Scan app/Models directory
         $paths = [
             app_path('Models'),
             base_path('app/Models'),
         ];
-        
+
         foreach ($paths as $basePath) {
             if (!is_dir($basePath)) {
                 continue;
             }
-            
+
             try {
                 $files = new \RecursiveIteratorIterator(
                     new \RecursiveDirectoryIterator($basePath, \RecursiveDirectoryIterator::SKIP_DOTS)
@@ -123,20 +124,20 @@ class VectorIndexCommand extends Command
             } catch (\Exception $e) {
                 continue;
             }
-            
+
             foreach ($files as $file) {
                 if ($file->isFile() && $file->getExtension() === 'php') {
                     // Read file content and check for Vectorizable trait usage
                     $content = file_get_contents($file->getPathname());
-                    
+
                     // Check if file uses Vectorizable trait
                     if (preg_match('/use\s+LaravelAIEngine\\\\Traits\\\\Vectorizable\s*;/i', $content) ||
                         preg_match('/use\s+Vectorizable\s*;/i', $content)) {
-                        
+
                         // Extract namespace and class name
                         if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatches) &&
                             preg_match('/class\s+(\w+)/', $content, $classMatches)) {
-                            
+
                             $namespace = trim($nsMatches[1]);
                             $className = trim($classMatches[1]);
                             $models[] = $namespace . '\\' . $className;
@@ -145,7 +146,7 @@ class VectorIndexCommand extends Command
                 }
             }
         }
-        
+
         return array_unique($models);
     }
 
@@ -153,7 +154,7 @@ class VectorIndexCommand extends Command
     {
         try {
             $instance = new $modelClass();
-            
+
             // Determine which strategy will be used and show fields
             if (!empty($instance->vectorizable)) {
                 $this->line("📋 <fg=cyan>Indexing Fields (Explicit \$vectorizable):</>");
@@ -162,7 +163,7 @@ class VectorIndexCommand extends Command
                 }
             } elseif (!empty($instance->getFillable())) {
                 $this->line("📋 <fg=cyan>Indexing Fields (From \$fillable):</>");
-                
+
                 // Get filtered fillable fields
                 $fillable = $instance->getFillable();
                 if (method_exists($instance, 'filterFillableToTextFields')) {
@@ -172,7 +173,7 @@ class VectorIndexCommand extends Command
                 } else {
                     $fields = $fillable;
                 }
-                
+
                 if (!empty($fields)) {
                     foreach ($fields as $field) {
                         $this->line("   • <fg=green>{$field}</>");
@@ -185,12 +186,12 @@ class VectorIndexCommand extends Command
                 $this->line("📋 <fg=cyan>Indexing Fields (Auto-detection):</>");
                 $this->line("   <fg=yellow>Will be determined during indexing using AI</>");
             }
-            
+
             // Show if media is included
             if (method_exists($instance, 'getMediaVectorContent')) {
                 $this->line("   • <fg=magenta>📷 Media content will be included</>");
             }
-            
+
             $this->newLine();
             $this->line("<fg=gray>💡 Check logs for detailed field list: storage/logs/laravel.log</>");
             $this->newLine();
@@ -208,22 +209,24 @@ class VectorIndexCommand extends Command
         try {
             // Show which fields will be indexed
             $this->showIndexableFields($modelClass);
-            
+
             // Create collection if it doesn't exist
             $this->info('Creating vector collection...');
             $vectorSearch->createCollection($modelClass);
 
-            // Check if relationships should be included
-            $withRelationships = $this->option('with-relationships');
+            // Check if relationships should be included (default: true, unless --no-relationships is set)
+            $withRelationships = !$this->option('no-relationships') && $this->option('with-relationships') !== 'false';
             $relationshipDepth = (int) $this->option('relationship-depth');
-            
+
             if ($withRelationships) {
-                $this->info("Including relationships (depth: {$relationshipDepth})");
+                $this->info("📎 Including relationships (depth: {$relationshipDepth})");
+            } else {
+                $this->line("<fg=gray>📎 Relationships disabled</>");
             }
 
             // Get models to index
             $query = $modelClass::query();
-            
+
             if ($ids = $this->option('id')) {
                 $query->whereIn('id', $ids);
             }
@@ -266,7 +269,7 @@ class VectorIndexCommand extends Command
                         $failed++;
                         $this->error("\nFailed to index model {$model->id}: {$e->getMessage()}");
                     }
-                    
+
                     $bar->advance();
                 }
             });
@@ -275,7 +278,7 @@ class VectorIndexCommand extends Command
             $this->newLine(2);
 
             $this->info("✓ Indexed {$indexed} models");
-            
+
             if ($failed > 0) {
                 $this->warn("✗ Failed to index {$failed} models");
             }
