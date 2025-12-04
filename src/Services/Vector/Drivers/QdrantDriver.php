@@ -48,7 +48,16 @@ class QdrantDriver implements VectorDriverInterface
                 ],
             ]);
 
-            return $response->getStatusCode() === 200;
+            if ($response->getStatusCode() !== 200) {
+                return false;
+            }
+            
+            // Create payload indexes for filterable fields
+            // Model class can be passed in config for schema detection
+            $modelClass = $config['model_class'] ?? null;
+            $this->createPayloadIndexes($name, $modelClass);
+            
+            return true;
         } catch (GuzzleException $e) {
             Log::error('Qdrant create collection failed', [
                 'collection' => $name,
@@ -56,6 +65,279 @@ class QdrantDriver implements VectorDriverInterface
             ]);
             return false;
         }
+    }
+    
+    /**
+     * Create payload indexes for a collection based on model schema
+     * This enables filtering on these fields during search
+     * 
+     * @param string $collection Collection name
+     * @param string|null $modelClass Optional model class to detect field types from schema
+     */
+    public function createPayloadIndexes(string $collection, ?string $modelClass = null): void
+    {
+        // Get base fields from config
+        $configFields = config('ai-engine.vector.payload_index_fields', [
+            'user_id',
+            'tenant_id', 
+            'workspace_id',
+            'model_id',
+            'status',
+            'visibility',
+            'type',
+        ]);
+        
+        // Detect additional fields from model's belongsTo relationships
+        $relationFields = $this->detectBelongsToFields($modelClass);
+        
+        // Merge all fields (unique)
+        $indexableFields = array_unique(array_merge($configFields, $relationFields));
+        
+        Log::debug('Payload index fields detected', [
+            'collection' => $collection,
+            'config_fields' => $configFields,
+            'relation_fields' => $relationFields,
+            'total_fields' => $indexableFields,
+        ]);
+        
+        // Detect field types from model schema if available
+        $fieldTypes = $this->detectFieldTypes($modelClass, $indexableFields);
+        
+        foreach ($fieldTypes as $fieldName => $fieldType) {
+            $this->createPayloadIndex($collection, $fieldName, $fieldType);
+        }
+    }
+    
+    /**
+     * Detect foreign key fields from model's belongsTo relationships
+     */
+    protected function detectBelongsToFields(?string $modelClass): array
+    {
+        $fields = [];
+        
+        if (!$modelClass || !class_exists($modelClass)) {
+            return $fields;
+        }
+        
+        try {
+            $instance = new $modelClass();
+            $reflection = new \ReflectionClass($instance);
+            
+            foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+                // Skip non-model methods
+                if ($method->class !== $modelClass && !is_subclass_of($method->class, \Illuminate\Database\Eloquent\Model::class)) {
+                    continue;
+                }
+                
+                // Skip methods with parameters
+                if ($method->getNumberOfParameters() > 0) {
+                    continue;
+                }
+                
+                // Skip common non-relation methods
+                $skipMethods = ['getKey', 'getTable', 'getFillable', 'getHidden', 'getCasts', 'toArray', 'toJson'];
+                if (in_array($method->getName(), $skipMethods)) {
+                    continue;
+                }
+                
+                try {
+                    $returnType = $method->getReturnType();
+                    if ($returnType) {
+                        $typeName = $returnType->getName();
+                        if ($typeName === \Illuminate\Database\Eloquent\Relations\BelongsTo::class || 
+                            str_ends_with($typeName, 'BelongsTo')) {
+                            
+                            // Call the method to get the relation
+                            $relation = $method->invoke($instance);
+                            if ($relation instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
+                                $foreignKey = $relation->getForeignKeyName();
+                                $fields[] = $foreignKey;
+                                
+                                Log::debug('Detected belongsTo foreign key', [
+                                    'model' => $modelClass,
+                                    'method' => $method->getName(),
+                                    'foreign_key' => $foreignKey,
+                                ]);
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // Skip methods that fail
+                    continue;
+                }
+            }
+            
+            // Also check for vectorParentLookup if defined
+            if (method_exists($instance, 'getVectorParentKey')) {
+                $parentKey = $instance->getVectorParentKey();
+                if ($parentKey) {
+                    $fields[] = $parentKey;
+                }
+            }
+            
+        } catch (\Exception $e) {
+            Log::warning('Failed to detect belongsTo fields', [
+                'model' => $modelClass,
+                'error' => $e->getMessage(),
+            ]);
+        }
+        
+        return array_unique($fields);
+    }
+    
+    /**
+     * Create a single payload index
+     */
+    public function createPayloadIndex(string $collection, string $fieldName, string $fieldType): bool
+    {
+        try {
+            $this->client->put("/collections/{$collection}/index", [
+                'json' => [
+                    'field_name' => $fieldName,
+                    'field_schema' => $fieldType,
+                ],
+            ]);
+            
+            Log::debug('Created payload index', [
+                'collection' => $collection,
+                'field' => $fieldName,
+                'type' => $fieldType,
+            ]);
+            
+            return true;
+        } catch (GuzzleException $e) {
+            // Log but don't fail - index might already exist
+            Log::warning('Failed to create payload index', [
+                'collection' => $collection,
+                'field' => $fieldName,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+    
+    /**
+     * Detect field types from model's database schema
+     */
+    protected function detectFieldTypes(?string $modelClass, array $fields): array
+    {
+        $fieldTypes = [];
+        
+        if ($modelClass && class_exists($modelClass)) {
+            try {
+                $instance = new $modelClass();
+                $table = $instance->getTable();
+                $connection = $instance->getConnection();
+                $schemaBuilder = $connection->getSchemaBuilder();
+                
+                // Get column information from database (compatible with Laravel 9+)
+                $columnMap = [];
+                
+                // Try getColumns() first (Laravel 10+), fallback to getColumnListing + getColumnType
+                if (method_exists($schemaBuilder, 'getColumns')) {
+                    $columns = $schemaBuilder->getColumns($table);
+                    foreach ($columns as $column) {
+                        $columnMap[$column['name']] = $column['type_name'] ?? $column['type'] ?? 'string';
+                    }
+                } else {
+                    // Fallback for Laravel 9 and earlier
+                    $columnNames = $schemaBuilder->getColumnListing($table);
+                    foreach ($columnNames as $columnName) {
+                        if (in_array($columnName, $fields)) {
+                            try {
+                                $columnMap[$columnName] = $connection->getDoctrineColumn($table, $columnName)->getType()->getName();
+                            } catch (\Exception $e) {
+                                // If Doctrine fails, use guessing
+                                $columnMap[$columnName] = 'string';
+                            }
+                        }
+                    }
+                }
+                
+                foreach ($fields as $field) {
+                    if (isset($columnMap[$field])) {
+                        $fieldTypes[$field] = $this->mapDatabaseTypeToQdrant($columnMap[$field]);
+                    }
+                }
+                
+                Log::debug('Detected field types from schema', [
+                    'model' => $modelClass,
+                    'table' => $table,
+                    'field_types' => $fieldTypes,
+                ]);
+                
+            } catch (\Exception $e) {
+                Log::warning('Failed to detect field types from schema, using defaults', [
+                    'model' => $modelClass,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+        
+        // For fields not detected, use sensible defaults
+        foreach ($fields as $field) {
+            if (!isset($fieldTypes[$field])) {
+                $fieldTypes[$field] = $this->guessFieldType($field);
+            }
+        }
+        
+        return $fieldTypes;
+    }
+    
+    /**
+     * Map database column type to Qdrant field schema type
+     */
+    protected function mapDatabaseTypeToQdrant(string $dbType): string
+    {
+        $dbType = strtolower($dbType);
+        
+        // Integer types
+        if (in_array($dbType, ['int', 'integer', 'bigint', 'smallint', 'tinyint', 'mediumint', 'int4', 'int8', 'int2'])) {
+            return 'integer';
+        }
+        
+        // Float types
+        if (in_array($dbType, ['float', 'double', 'decimal', 'numeric', 'real', 'float4', 'float8'])) {
+            return 'float';
+        }
+        
+        // Boolean
+        if (in_array($dbType, ['bool', 'boolean'])) {
+            return 'bool';
+        }
+        
+        // UUID - treat as keyword (string) in Qdrant
+        if (in_array($dbType, ['uuid', 'guid'])) {
+            return 'keyword';
+        }
+        
+        // Default to keyword for strings, varchar, text, etc.
+        return 'keyword';
+    }
+    
+    /**
+     * Guess field type based on field name conventions
+     */
+    protected function guessFieldType(string $fieldName): string
+    {
+        // Fields ending with _id are typically integers or UUIDs
+        // We default to keyword to support both
+        if (str_ends_with($fieldName, '_id')) {
+            return 'keyword'; // Safe default that works for both int and UUID
+        }
+        
+        // Common string/enum fields
+        if (in_array($fieldName, ['status', 'type', 'visibility', 'role', 'category', 'slug'])) {
+            return 'keyword';
+        }
+        
+        // Common boolean fields
+        if (str_starts_with($fieldName, 'is_') || str_starts_with($fieldName, 'has_')) {
+            return 'bool';
+        }
+        
+        // Default to keyword
+        return 'keyword';
     }
 
     public function deleteCollection(string $name): bool

@@ -103,13 +103,13 @@ class IntelligentRAGService
             // Step 2: Handle aggregate queries (count, how many, etc.)
             // Use local detection OR AI analysis (local detection is more reliable for patterns)
             $needsAggregate = $this->isAggregateQuery($message) || ($analysis['needs_aggregate'] ?? false);
-            
+
             Log::info('Aggregate query check', [
                 'message' => $message,
                 'needs_aggregate' => $needsAggregate,
                 'is_aggregate_local' => $this->isAggregateQuery($message),
             ]);
-            
+
             $aggregateData = [];
             if ($needsAggregate) {
                 // Always use availableCollections (discovered models) for aggregate data
@@ -118,7 +118,7 @@ class IntelligentRAGService
                     $availableCollections,
                     $userId
                 );
-                
+
                 Log::channel('ai-engine')->info('Aggregate data retrieved', [
                     'user_id' => $userId,
                     'message' => $message,
@@ -139,16 +139,16 @@ class IntelligentRAGService
                 // IMPORTANT: User-passed collections should be strictly respected
                 // AI can only suggest a SUBSET of what user passed, never expand beyond it
                 $suggestedCollections = $analysis['collections'] ?? [];
-                
+
                 // Validate AI-suggested collections - only use ones that exist in user's passed collections
                 $validCollections = array_filter($suggestedCollections, function ($collection) use ($availableCollections) {
                     return class_exists($collection) && in_array($collection, $availableCollections);
                 });
-                
+
                 // If AI suggested valid subset, use it; otherwise use ALL user-passed collections
                 // Never search beyond what user explicitly passed
                 $collectionsToSearch = !empty($validCollections) ? $validCollections : $availableCollections;
-                
+
                 if (config('ai-engine.debug')) {
                     Log::channel('ai-engine')->debug('Collection selection', [
                         'user_passed' => $availableCollections,
@@ -181,21 +181,21 @@ class IntelligentRAGService
                         'original_collections' => $collectionsToSearch,
                         'all_collections' => $availableCollections,
                     ]);
-                    
+
                     $context = $this->retrieveRelevantContext(
                         $searchQueries,
                         $availableCollections,
                         $options,
                         $userId
                     );
-                    
+
                     if (config('ai-engine.debug')) {
                         Log::channel('ai-engine')->debug('All-collections search completed', [
                             'results_found' => $context->count(),
                         ]);
                     }
                 }
-                
+
                 // If still no results, try with lower threshold (0.2 default)
                 $fallbackThreshold = $this->config['fallback_threshold'] ?? 0.2;
                 if ($context->isEmpty() && !empty($availableCollections)) {
@@ -348,9 +348,10 @@ class IntelligentRAGService
 
             // Stream response
             $fullResponse = '';
+            $responseModel = $options['model'] ?? $this->config['response_model'] ?? config('ai-engine.default_model', 'gpt-4o');
             $this->aiEngine
                 ->engine($options['engine'] ?? config('ai-engine.default'))
-                ->model($options['model'] ?? 'gpt-4o')
+                ->model($responseModel)
                 ->stream(function ($chunk) use (&$fullResponse, $callback) {
                     $fullResponse .= $chunk;
                     $callback($chunk);
@@ -394,7 +395,7 @@ class IntelligentRAGService
             foreach ($availableCollections as $collection) {
                 $name = class_basename($collection);
                 $description = '';
-                
+
                 // Try to get RAG description from the model
                 if (class_exists($collection)) {
                     try {
@@ -409,7 +410,7 @@ class IntelligentRAGService
                         // Silently ignore if we can't instantiate
                     }
                 }
-                
+
                 if (!empty($description)) {
                     $collectionsInfo .= "- **{$name}**: {$description}\n  → Use class: {$collection}\n";
                 } else {
@@ -493,37 +494,60 @@ PROMPT;
 Query: "{$query}"
 
 CRITICAL INSTRUCTIONS:
-1. Generate search_queries that will SEMANTICALLY MATCH indexed content
+1. If query looks like an EMAIL SUBJECT or DOCUMENT TITLE (e.g., "Undelivered Mail Returned to Sender", "Re: Check App", "Password Reset"):
+   → Use ONLY that EXACT phrase as search_queries: ["Undelivered Mail Returned to Sender"]
+   → Do NOT expand or rephrase it - the user wants that specific item
 2. For vague queries like "which is important/best/urgent" → Use MULTIPLE concrete terms:
    ["urgent", "deadline", "priority", "action required", "reminder", "meeting", "follow up"]
 3. NEVER return just ["most important"] or ["best"] - these won't match anything
 4. For follow-ups about specific items from history:
    - If query matches an email subject, document title, or item name from previous response → Use EXACT query
-   - Example: Query "Re: Check App" after email list → search_queries: ["Re: Check App"]
    - Keep the same collection as the previous search
 5. Only use collections from the available list - use FULL class name
 6. Default: needs_context: true
-7. If query is a short phrase that looks like a title/subject (e.g., "Re: Check App", "Password Reset") → Use it EXACTLY as search term
+7. PERFORMANCE: Prefer 1-2 search queries over many. More queries = slower response
 
 Respond with JSON only. Example for follow-up about specific email:
 {"needs_context": true, "reasoning": "user asking about specific email from previous list", "search_queries": ["Re: Check App"], "collections": ["Bites\\\\Modules\\\\MailBox\\\\Models\\\\EmailCache"], "query_type": "informational", "needs_aggregate": false}
 PROMPT;
 
         try {
-            // Create AI request for analysis
-            $analysisModel = $this->config['analysis_model'] ?? 'gpt-4o';
+            // Get analysis model from config (null = use default from openai config)
+            $analysisModel = $this->config['analysis_model'] 
+                ?? config('ai-engine.vector.rag.analysis_model');
 
-            $request = new AIRequest(
-                prompt:       $analysisPrompt,
-                engine:       new \LaravelAIEngine\Enums\EngineEnum(config('ai-engine.default')),
-                model:        new \LaravelAIEngine\Enums\EntityEnum($analysisModel),
-                systemPrompt: $systemPrompt,
-                maxTokens:    300,
-                temperature:  0.3
+            Log::channel('ai-engine')->debug('Query analysis starting', [
+                'model' => $analysisModel ?? 'default',
+                'query' => $query,
+            ]);
+
+            // Use the driver's generateJsonAnalysis which handles all model-specific logic
+            $driver = $this->aiEngine->getEngineDriver(
+                new \LaravelAIEngine\Enums\EngineEnum(config('ai-engine.default', 'openai'))
             );
 
-            $aiResponse = $this->aiEngine->processRequest($request);
-            $response = $aiResponse->getContent();
+            $response = $driver->generateJsonAnalysis(
+                prompt: $analysisPrompt,
+                systemPrompt: $systemPrompt,
+                model: $analysisModel,
+                maxTokens: 300
+            );
+
+            // Handle empty response - default to context search
+            if (empty(trim($response))) {
+                Log::channel('ai-engine')->warning('Query analysis returned empty response', [
+                    'query' => $query,
+                    'model' => $analysisModel ?? 'default',
+                ]);
+                return [
+                    'needs_context' => true,
+                    'reasoning' => 'Empty analysis response, using default search',
+                    'search_queries' => [$query],
+                    'collections' => $availableCollections,
+                    'query_type' => 'informational',
+                    'needs_aggregate' => false,
+                ];
+            }
 
             // Parse JSON response
             $analysis = $this->parseJsonResponse($response);
@@ -549,17 +573,19 @@ PROMPT;
             ];
 
         } catch (\Exception $e) {
-            Log::channel('ai-engine')->warning('Query analysis failed, defaulting to no context', [
+            Log::channel('ai-engine')->warning('Query analysis failed, defaulting to context search', [
                 'error' => $e->getMessage(),
+                'query' => $query,
             ]);
 
-            // Default to not using context if analysis fails
+            // Default to using context search if analysis fails (safer fallback)
             return [
-                'needs_context' => false,
-                'reasoning' => 'Analysis failed',
-                'search_queries' => [],
+                'needs_context' => true,
+                'reasoning' => 'Analysis failed, using default search',
+                'search_queries' => [$query],
                 'collections' => $availableCollections,
-                'query_type' => 'conversational',
+                'query_type' => 'informational',
+                'needs_aggregate' => false,
             ];
         }
     }
@@ -1069,10 +1095,10 @@ PROMPT;
                 $displayName = $stats['display_name'] ?? $modelName;
                 // Use database_count as primary, fall back to indexed_count/count
                 $count = $stats['database_count'] ?? $stats['indexed_count'] ?? $stats['count'] ?? 0;
-                
+
                 if ($count > 0) {
                     $prompt .= "📊 {$displayName}: {$count} total records\n";
-                    
+
                     if (isset($stats['recent_count']) && $stats['recent_count'] > 0) {
                         $prompt .= "   - Recent (last 7 days): {$stats['recent_count']}\n";
                     }
@@ -1110,7 +1136,7 @@ PROMPT;
             $hasAggregateData = !empty($aggregateData) && collect($aggregateData)->contains(function ($stats) {
                 return ($stats['database_count'] ?? $stats['count'] ?? 0) > 0;
             });
-            
+
             if ($hasAggregateData) {
                 $prompt .= "INSTRUCTIONS:\n";
                 $prompt .= "- Use the DATABASE STATISTICS above to answer count/quantity questions\n";
@@ -1119,7 +1145,7 @@ PROMPT;
             } else {
                 $prompt .= "NO KNOWLEDGE BASE RESULTS FOUND FOR THIS QUERY.\n\n";
             }
-            
+
             // Add available collections info so AI knows what data sources exist
             $availableCollections = $options['available_collections'] ?? [];
             if (!empty($availableCollections)) {
@@ -1127,7 +1153,7 @@ PROMPT;
                 foreach ($availableCollections as $collection) {
                     $name = class_basename($collection);
                     $description = '';
-                    
+
                     if (class_exists($collection)) {
                         try {
                             $instance = new $collection();
@@ -1141,7 +1167,7 @@ PROMPT;
                             // Silently ignore
                         }
                     }
-                    
+
                     if (!empty($description)) {
                         $prompt .= "- {$name}: {$description}\n";
                     } else {
@@ -1152,7 +1178,7 @@ PROMPT;
                 $prompt .= "NOTE: The search didn't find matching results, but these data sources exist.\n";
                 $prompt .= "For aggregate queries (counts, summaries), suggest the user try a more specific search.\n\n";
             }
-            
+
             $prompt .= "CHECK CONVERSATION HISTORY FIRST:\n";
             $prompt .= "- If this is a follow-up (e.g., 'reply to this mail', 'tell me more'), answer using conversation history\n";
             $prompt .= "- If asking about something we just discussed, answer from that context\n\n";
@@ -1264,24 +1290,37 @@ PROMPT;
     }
 
     /**
-     * Extract content from model
+     * Extract content from model (with truncation for performance)
      */
     protected function extractContent($model): string
     {
+        // Max characters per context item to prevent huge prompts
+        $maxLength = $this->config['max_context_item_length'] 
+            ?? config('ai-engine.vector.rag.max_context_item_length', 2000);
+        
+        $content = '';
+        
         if (method_exists($model, 'getVectorContent')) {
-            return $model->getVectorContent();
-        }
+            $content = $model->getVectorContent();
+        } else {
+            $fields = ['content', 'body', 'description', 'text', 'title', 'name'];
+            $parts = [];
 
-        $fields = ['content', 'body', 'description', 'text', 'title', 'name'];
-        $content = [];
-
-        foreach ($fields as $field) {
-            if (isset($model->$field)) {
-                $content[] = $model->$field;
+            foreach ($fields as $field) {
+                if (isset($model->$field)) {
+                    $parts[] = $model->$field;
+                }
             }
-        }
 
-        return implode(' ', $content);
+            $content = implode(' ', $parts);
+        }
+        
+        // Truncate if too long to prevent slow API calls
+        if (strlen($content) > $maxLength) {
+            $content = substr($content, 0, $maxLength) . '... [truncated]';
+        }
+        
+        return $content;
     }
 
     /**
@@ -1290,7 +1329,7 @@ PROMPT;
     protected function generateResponse(string $prompt, array $options = []): AIResponse
     {
         $engine = $options['engine'] ?? config('ai-engine.default');
-        $model = $options['model'] ?? 'gpt-4o';
+        $model = $options['model'] ?? $this->config['response_model'] ?? config('ai-engine.default_model', 'gpt-4o');
         $temperature = $options['temperature'] ?? 0.7;
         $maxTokens = $options['max_tokens'] ?? 2000;
         $userId = $options['user_id'] ?? null;
@@ -1357,7 +1396,7 @@ PROMPT;
 
             // Get display name - check for custom display name method or property
             $displayName = $this->getModelDisplayName($item, $modelClass);
-            
+
             return [
                 'id' => $item->id ?? null,
                 'model_id' => $item->id ?? null,  // Original model ID
@@ -1400,29 +1439,29 @@ PROMPT;
     protected function extractNumberedOptions(string $content): array
     {
         $options = [];
-        
+
         // Detect if this is a detail view vs a list by checking structure:
         // - Detail view: Has only 1 numbered item with multiple sub-fields (bullet points or bold fields)
         // - List view: Has multiple numbered items (2+)
-        
+
         // Count numbered items (1. xxx, 2. xxx, etc.)
         preg_match_all('/^\s*\d+\.\s+/m', $content, $numberedItems);
         $numberedCount = count($numberedItems[0]);
-        
+
         // Count sub-fields (bullet points or bold field labels within the content)
         preg_match_all('/(?:^\s*-\s+|\*\*[A-Za-z]+\*\*:)/m', $content, $subFields);
         $subFieldCount = count($subFields[0]);
-        
+
         // If only 1 numbered item but many sub-fields, it's a detail view
         if ($numberedCount <= 1 && $subFieldCount >= 3) {
             return [];
         }
-        
+
         // Common metadata field names that shouldn't be clickable options
         $metadataFields = [
-            'from', 'to', 'cc', 'bcc', 'date', 'subject', 'content', 'body', 
-            'attachment', 'attachments', 'sent', 'received', 'reply-to', 
-            'status', 'priority', 'size', 'type', 'category', 'tags', 'label', 
+            'from', 'to', 'cc', 'bcc', 'date', 'subject', 'content', 'body',
+            'attachment', 'attachments', 'sent', 'received', 'reply-to',
+            'status', 'priority', 'size', 'type', 'category', 'tags', 'label',
             'folder', 'email subject', 'email from', 'email to', 'email date',
             'sender', 'recipient', 'recipients', 'message', 'details', 'info',
             'description', 'summary', 'note', 'notes', 'created', 'updated',
@@ -1435,12 +1474,12 @@ PROMPT;
                 $number = (int) $match[1];
                 $title = trim($match[2]);
                 $description = trim($match[3] ?? '');
-                
+
                 // Skip metadata fields - these are document details, not selectable options
                 if (in_array(strtolower($title), $metadataFields)) {
                     continue;
                 }
-                
+
                 $fullText = $title . ($description ? ': ' . $description : '');
 
                 // Extract source reference if present
@@ -1476,19 +1515,19 @@ PROMPT;
             foreach (array_slice($matches, 0, 10) as $match) {
                 $number = (int) $match[1];
                 $fullLine = trim($match[2]);
-                
+
                 // Extract source reference before removing it
                 $sourceRef = null;
                 if (preg_match('/\[Source (\d+)\]/', $fullLine, $sourceMatch)) {
                     $sourceRef = (int) $sourceMatch[1];
                 }
-                
+
                 // Remove [Source X] references for display
                 $cleanLine = preg_replace('/\s*\[Source \d+\]\.?/', '', $fullLine);
 
                 // Extract title - try to find quoted title or subject first
                 $text = $cleanLine;
-                
+
                 // Look for quoted titles like "Frontend Developer Take-Home Task" or 'subject "Hi"'
                 if (preg_match('/(?:titled|subject|called|named)\s*["\']([^"\']+)["\']/i', $cleanLine, $titleMatch)) {
                     $text = trim($titleMatch[1]);
@@ -1521,7 +1560,7 @@ PROMPT;
                 if (strlen($text) < 3) {
                     continue;
                 }
-                
+
                 // Skip if the extracted text is still a metadata field
                 if (in_array(strtolower($text), $metadataFields)) {
                     continue;
@@ -1550,20 +1589,20 @@ PROMPT;
             foreach (array_slice($matches, 0, 10) as $match) {
                 $title = trim($match[1]);
                 $description = trim($match[2]);
-                
+
                 // Skip metadata fields - these are email/document details, not selectable options
                 if (in_array(strtolower($title), $metadataFields)) {
                     continue;
                 }
-                
+
                 $fullText = $title . ': ' . $description;
-                
+
                 // Extract source reference if present
                 $sourceRef = null;
                 if (preg_match('/\[Source (\d+)\]/', $fullText, $sourceMatch)) {
                     $sourceRef = (int) $sourceMatch[1];
                 }
-                
+
                 // Generate unique ID
                 $uniqueId = 'opt_' . $number . '_' . substr(md5($fullText), 0, 8);
 
@@ -1592,7 +1631,7 @@ PROMPT;
                 if (strlen($title) < 5 || stripos($title, 'title:') !== false) {
                     continue;
                 }
-                
+
                 // Generate unique ID
                 $uniqueId = 'opt_' . $number . '_' . substr(md5($title), 0, 8);
 
@@ -1796,6 +1835,7 @@ PROMPT;
      */
     protected function parseJsonResponse(string $response): array
     {
+        $originalResponse = $response;
         // Extract JSON from response (handle markdown code blocks)
         $response = preg_replace('/```json\s*|\s*```/', '', $response);
         $response = trim($response);
@@ -1804,7 +1844,7 @@ PROMPT;
             return json_decode($response, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             Log::channel('ai-engine')->warning('Failed to parse JSON response', [
-                'response' => $response,
+                'response' => $originalResponse,
                 'error' => $e->getMessage(),
             ]);
 
@@ -2012,11 +2052,11 @@ PROMPT;
                 try {
                     $dbQuery = $collection::query();
                     $table = $instance->getTable();
-                    
+
                     if ($userId !== null) {
                         // Check if this is a User model - filter by id instead of user_id
                         $isUserModel = $table === 'users' || str_ends_with($collection, '\\User');
-                        
+
                         if ($isUserModel) {
                             // For User model: check if user has admin/super admin role
                             $isAdmin = $this->isUserAdmin($userId);
@@ -2036,7 +2076,7 @@ PROMPT;
                         }
                     }
                     $stats['database_count'] = $dbQuery->count();
-                    
+
                     // Try to get recent items count (last 7 days)
                     if (Schema::hasColumn($table, 'created_at')) {
                         $recentQuery = $collection::query();
@@ -2099,7 +2139,7 @@ PROMPT;
     protected function isAggregateQuery(string $query): bool
     {
         $query = strtolower($query);
-        
+
         // Patterns that indicate aggregate queries
         $aggregatePatterns = [
             'how many',
@@ -2116,19 +2156,19 @@ PROMPT;
             'all my',
             'list all',
         ];
-        
+
         foreach ($aggregatePatterns as $pattern) {
             if (str_contains($query, $pattern)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
     /**
      * Get human-readable display name for a model
-     * 
+     *
      * Checks in order:
      * 1. getRagDisplayName() method on model
      * 2. getVectorDisplayName() method on model
@@ -2150,7 +2190,7 @@ PROMPT;
                 return $displayName;
             }
         }
-        
+
         // Priority 2: Check for getVectorDisplayName() method
         if (method_exists($item, 'getVectorDisplayName')) {
             $displayName = $item->getVectorDisplayName();
@@ -2158,17 +2198,17 @@ PROMPT;
                 return $displayName;
             }
         }
-        
+
         // Priority 3: Check for $ragDisplayName property
         if (property_exists($item, 'ragDisplayName') && !empty($item->ragDisplayName)) {
             return $item->ragDisplayName;
         }
-        
+
         // Priority 4: Check for $vectorDisplayName property
         if (property_exists($item, 'vectorDisplayName') && !empty($item->vectorDisplayName)) {
             return $item->vectorDisplayName;
         }
-        
+
         // Priority 5: Check for static $displayName on the class
         if ($modelClass && class_exists($modelClass)) {
             try {
@@ -2187,14 +2227,14 @@ PROMPT;
                 // Ignore reflection errors
             }
         }
-        
+
         // Priority 6: Fall back to humanized class basename
         if ($modelClass) {
             $basename = class_basename($modelClass);
             // Convert CamelCase to words (e.g., "EmailCache" -> "Email Cache")
             return preg_replace('/(?<!^)([A-Z])/', ' $1', $basename);
         }
-        
+
         return 'Unknown';
     }
 
@@ -2209,44 +2249,44 @@ PROMPT;
         try {
             // Get user model class from config or use default
             $userModel = config('auth.providers.users.model', 'App\\Models\\User');
-            
+
             if (!class_exists($userModel)) {
                 return false;
             }
-            
+
             $user = $userModel::find($userId);
-            
+
             if (!$user) {
                 return false;
             }
-            
+
             // Check for is_admin flag
             if (isset($user->is_admin) && $user->is_admin) {
                 return true;
             }
-            
+
             // Check for is_super_admin flag
             if (isset($user->is_super_admin) && $user->is_super_admin) {
                 return true;
             }
-            
+
             // Check for Spatie Laravel Permission roles
             if (method_exists($user, 'hasRole')) {
                 if ($user->hasRole(['admin', 'super-admin', 'super_admin', 'superadmin', 'administrator'])) {
                     return true;
                 }
             }
-            
+
             // Check for roles relationship
             if (method_exists($user, 'roles')) {
                 $adminRoles = ['admin', 'super-admin', 'super_admin', 'superadmin', 'administrator'];
                 $userRoles = $user->roles()->pluck('name')->map(fn($r) => strtolower($r))->toArray();
-                
+
                 if (count(array_intersect($adminRoles, $userRoles)) > 0) {
                     return true;
                 }
             }
-            
+
             // Check for role column
             if (isset($user->role)) {
                 $role = strtolower($user->role);
@@ -2254,9 +2294,9 @@ PROMPT;
                     return true;
                 }
             }
-            
+
             return false;
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('Failed to check user admin status', [
                 'user_id' => $userId,

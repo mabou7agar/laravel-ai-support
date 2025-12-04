@@ -507,6 +507,44 @@ class ChatController extends Controller
 3. Use cheaper models (gpt-4o-mini)
 4. Implement query deduplication
 
+## Performance Tuning
+
+### Model Selection
+
+Choose the right models for optimal performance:
+
+```env
+# .env
+INTELLIGENT_RAG_ANALYSIS_MODEL=gpt-4o-mini    # Fast query classification
+INTELLIGENT_RAG_RESPONSE_MODEL=gpt-5-mini     # Quality responses
+```
+
+| Task | Recommended Model | Why |
+|------|------------------|-----|
+| Query Analysis | `gpt-4o-mini` | Fast, cheap, sufficient for classification |
+| Response Generation | `gpt-5-mini` | Good quality, balanced cost |
+| Complex Reasoning | `gpt-5.1` | Best quality, higher cost |
+
+### Context Optimization
+
+```env
+# Truncate long content to prevent slow API calls
+VECTOR_RAG_MAX_ITEM_LENGTH=2000
+
+# Limit context items
+INTELLIGENT_RAG_MAX_CONTEXT=5
+```
+
+### Performance Benchmarks
+
+| Config | Analysis | Response | Total |
+|--------|----------|----------|-------|
+| Both gpt-4o-mini | ~2s | ~2s | ~3-4s |
+| gpt-4o-mini + gpt-5-mini | ~2s | ~3s | ~5-6s |
+| Both GPT-5 | ~6s | ~6s | ~12s |
+
+**Note:** GPT-5 models have reasoning overhead. Use `gpt-4o-mini` for analysis tasks.
+
 ## Next Steps
 
 - [Vector Search Guide](vector-search.md)

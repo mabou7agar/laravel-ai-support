@@ -305,8 +305,11 @@ class VectorSearchService
 
     /**
      * Create collection for model
+     * 
+     * @param string $modelClass Model class name
+     * @param bool $force If true, delete existing collection first
      */
-    public function createCollection(string $modelClass): bool
+    public function createCollection(string $modelClass, bool $force = false): bool
     {
         try {
             $collectionName = $this->getCollectionName($modelClass);
@@ -314,17 +317,25 @@ class VectorSearchService
 
             $driver = $this->driverManager->driver();
 
-            if ($driver->collectionExists($collectionName)) {
+            // If force, delete existing collection first
+            if ($force && $driver->collectionExists($collectionName)) {
+                Log::info('Force mode: deleting existing collection', ['collection' => $collectionName]);
+                $driver->deleteCollection($collectionName);
+            } elseif ($driver->collectionExists($collectionName)) {
                 Log::info('Collection already exists', ['collection' => $collectionName]);
                 return true;
             }
 
-            $success = $driver->createCollection($collectionName, $dimensions);
+            // Pass model class for schema-based index detection
+            $success = $driver->createCollection($collectionName, $dimensions, [
+                'model_class' => $modelClass,
+            ]);
 
             if ($success) {
                 Log::info('Collection created', [
                     'collection' => $collectionName,
                     'dimensions' => $dimensions,
+                    'model_class' => $modelClass,
                 ]);
             }
 

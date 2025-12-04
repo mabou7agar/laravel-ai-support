@@ -23,9 +23,44 @@ class EmbeddingService
         $this->client = $client;
         $this->creditManager = $creditManager;
         $this->model = config('ai-engine.vector.embedding_model', 'text-embedding-3-large');
-        $this->dimensions = config('ai-engine.vector.embedding_dimensions', 3072);
+        $this->dimensions = $this->getDimensionsForModel($this->model);
         $this->cacheEnabled = config('ai-engine.vector.cache_embeddings', true);
         $this->cacheTtl = config('ai-engine.vector.cache_ttl', 86400); // 24 hours
+    }
+    
+    /**
+     * Get dimensions for the embedding model
+     * Uses config value if set, otherwise defaults to model's max
+     */
+    protected function getDimensionsForModel(string $model): int
+    {
+        // Max dimensions per model
+        $modelMaxDimensions = [
+            'text-embedding-3-large' => 3072,
+            'text-embedding-3-small' => 1536,
+            'text-embedding-ada-002' => 1536,
+        ];
+        
+        $maxForModel = $modelMaxDimensions[$model] ?? 1536;
+        
+        // Use config if explicitly set, otherwise use model's max
+        $configDimensions = config('ai-engine.vector.embedding_dimensions');
+        
+        if ($configDimensions === null) {
+            return $maxForModel;
+        }
+        
+        // If config exceeds model max, use max
+        if ((int) $configDimensions > $maxForModel) {
+            Log::info("Embedding dimensions capped to model max", [
+                'configured' => $configDimensions,
+                'max' => $maxForModel,
+                'model' => $model,
+            ]);
+            return $maxForModel;
+        }
+        
+        return (int) $configDimensions;
     }
 
     /**
@@ -49,11 +84,24 @@ class EmbeddingService
         }
 
         try {
-            $response = $this->client->embeddings()->create([
+            $params = [
                 'model' => $this->model,
                 'input' => $text,
+            ];
+            
+            // Only include dimensions if model supports custom dimensions
+            // text-embedding-ada-002 doesn't support dimensions parameter
+            if ($this->model !== 'text-embedding-ada-002') {
+                $params['dimensions'] = $this->dimensions;
+            }
+            
+            Log::debug('Creating embedding', [
+                'model' => $this->model,
                 'dimensions' => $this->dimensions,
+                'text_length' => strlen($text),
             ]);
+            
+            $response = $this->client->embeddings()->create($params);
 
             $embedding = $response->embeddings[0]->embedding;
             

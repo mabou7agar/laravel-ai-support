@@ -210,9 +210,14 @@ class VectorIndexCommand extends Command
             // Show which fields will be indexed
             $this->showIndexableFields($modelClass);
 
-            // Create collection if it doesn't exist
-            $this->info('Creating vector collection...');
-            $vectorSearch->createCollection($modelClass);
+            // Create collection (force will delete and recreate with correct schema)
+            $force = $this->option('force');
+            if ($force) {
+                $this->info('🔄 Force mode: recreating vector collection with fresh schema...');
+            } else {
+                $this->info('Creating vector collection...');
+            }
+            $vectorSearch->createCollection($modelClass, $force);
 
             // Check if relationships should be included (default: true, unless --no-relationships is set)
             $withRelationships = !$this->option('no-relationships') && $this->option('with-relationships') !== 'false';

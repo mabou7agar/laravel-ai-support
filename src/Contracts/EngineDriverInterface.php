@@ -44,4 +44,21 @@ interface EngineDriverInterface
      * Test the engine connection
      */
     public function test(): bool;
+    
+    /**
+     * Generate JSON analysis using the best approach for the model
+     * Used for structured output tasks like query analysis
+     * 
+     * @param string $prompt The analysis prompt
+     * @param string $systemPrompt System instructions
+     * @param string|null $model Model to use (null = use default)
+     * @param int $maxTokens Maximum tokens for response
+     * @return string JSON response content
+     */
+    public function generateJsonAnalysis(
+        string $prompt,
+        string $systemPrompt,
+        ?string $model = null,
+        int $maxTokens = 300
+    ): string;
 }

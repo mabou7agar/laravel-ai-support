@@ -47,7 +47,7 @@ return [
         // Each chunk will be this size (respecting token limits)
         // Leave null to auto-calculate based on embedding model
         'chunk_size' => env('AI_ENGINE_CHUNK_SIZE', null),
-        
+
         // Chunk overlap (in characters)
         // Overlap between chunks to maintain context
         'chunk_overlap' => env('AI_ENGINE_CHUNK_OVERLAP', 200),
@@ -56,11 +56,11 @@ return [
         // Leave null to auto-calculate based on embedding model token limits
         // Or set a specific value to override (e.g., 6000 for conservative limit)
         'max_content_length' => env('AI_ENGINE_MAX_CONTENT_LENGTH', null),
-        
+
         // Embedding model to use for vectorization
         // Different models have different token limits:
         // - text-embedding-3-small: 8191 tokens
-        // - text-embedding-3-large: 8191 tokens  
+        // - text-embedding-3-large: 8191 tokens
         // - text-embedding-ada-002: 8191 tokens
         // - voyage-large-2: 16000 tokens
         // - cohere embed-*: 512 tokens
@@ -254,19 +254,19 @@ return [
                 'llama3:70b' => ['enabled' => true, 'credit_index' => 0.0],
                 'llama3.1' => ['enabled' => true, 'credit_index' => 0.0],
                 'llama3.2' => ['enabled' => true, 'credit_index' => 0.0],
-                
+
                 // Mistral Models
                 'mistral' => ['enabled' => true, 'credit_index' => 0.0],
                 'mistral:7b' => ['enabled' => true, 'credit_index' => 0.0],
                 'mixtral' => ['enabled' => true, 'credit_index' => 0.0],
                 'mixtral:8x7b' => ['enabled' => true, 'credit_index' => 0.0],
-                
+
                 // Code Models
                 'codellama' => ['enabled' => true, 'credit_index' => 0.0],
                 'codellama:7b' => ['enabled' => true, 'credit_index' => 0.0],
                 'codellama:13b' => ['enabled' => true, 'credit_index' => 0.0],
                 'codellama:34b' => ['enabled' => true, 'credit_index' => 0.0],
-                
+
                 // Other Popular Models
                 'phi' => ['enabled' => true, 'credit_index' => 0.0],
                 'phi:2.7b' => ['enabled' => true, 'credit_index' => 0.0],
@@ -606,6 +606,19 @@ return [
         // Collection settings
         'collection_prefix' => env('VECTOR_COLLECTION_PREFIX', 'vec_'),
 
+        // Payload index fields - fields that will be indexed for filtering
+        // Types are auto-detected from database schema
+        // These are automatically created when collections are created
+        'payload_index_fields' => [
+            'user_id',
+            'tenant_id',
+            'workspace_id',
+            'model_id',
+            'status',
+            'visibility',
+            'type',
+        ],
+
         // Caching
         'cache_embeddings' => env('VECTOR_CACHE_EMBEDDINGS', true),
         'cache_ttl' => env('VECTOR_CACHE_TTL', 86400), // 24 hours
@@ -629,7 +642,7 @@ return [
             'default_limit' => env('VECTOR_SEARCH_LIMIT', 20),
             'default_threshold' => env('VECTOR_SEARCH_THRESHOLD', 0.3),
         ],
-        
+
         // Health check configuration
         'health_check' => [
             'enabled' => env('VECTOR_HEALTH_CHECK_ENABLED', true),
@@ -663,13 +676,20 @@ return [
         'rag' => [
             'enabled' => env('VECTOR_RAG_ENABLED', true),
             'max_context_items' => env('VECTOR_RAG_MAX_CONTEXT', 5),
+            'max_context_item_length' => env('VECTOR_RAG_MAX_ITEM_LENGTH', 2000), // chars per item
             'include_sources' => env('VECTOR_RAG_INCLUDE_SOURCES', true),
             'min_relevance_score' => env('VECTOR_RAG_MIN_SCORE', 0.5),
-            
+
+            // Query Analysis Model
+            // The model used for analyzing queries and determining search strategy
+            // null = use default model from engines.openai.model
+            // Driver automatically handles model-specific parameters (GPT-5, o1, etc.)
+            'analysis_model' => env('AI_ENGINE_RAG_ANALYSIS_MODEL', null),
+
             // Dynamic Context Limitations
             'auto_update_limitations' => env('RAG_AUTO_UPDATE_LIMITATIONS', true),
             'limitations_cache_ttl' => env('RAG_LIMITATIONS_CACHE_TTL', 300), // 5 minutes
-            
+
             // Access Level Limits
             'access_levels' => [
                 'admin' => [
@@ -693,7 +713,7 @@ return [
                     'time_range_days' => 7,
                 ],
             ],
-            
+
             // Data Volume Adjustments
             'volume_thresholds' => [
                 'low' => 100,      // < 100 records
@@ -757,7 +777,7 @@ return [
         // Auto-discovery settings
         'auto_discover' => env('INTELLIGENT_RAG_AUTO_DISCOVER', true),
         'discovery_cache_ttl' => env('INTELLIGENT_RAG_DISCOVERY_CACHE', 3600), // 1 hour
-        
+
         // Discovery paths - where to look for models with Vectorizable trait
         // Namespaces are auto-detected from the actual PHP files
         // Supports glob patterns for modular architectures
@@ -779,8 +799,13 @@ return [
         // Fallback threshold when no results found (0.0 = return anything, null = no fallback)
         'fallback_threshold' => env('INTELLIGENT_RAG_FALLBACK_THRESHOLD', 0.0),
 
-        // Model to use for query analysis (can use gpt-4o, gpt-4o-mini, or any available model)
-        'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o'),
+        // Model to use for query analysis (fast model recommended: gpt-4o-mini, gpt-4o)
+        // GPT-5 models are slower due to reasoning overhead - not recommended for analysis
+        'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'),
+
+        // Model to use for final response generation
+        // gpt-4o-mini is faster and cheaper, gpt-4o is more capable
+        'response_model' => env('INTELLIGENT_RAG_RESPONSE_MODEL', 'gpt-5-mini'),
 
         // Include source citations in response
         'include_sources' => env('INTELLIGENT_RAG_INCLUDE_SOURCES', true),
@@ -798,37 +823,37 @@ return [
     'nodes' => [
         // Enable node management
         'enabled' => env('AI_ENGINE_NODES_ENABLED', true),
-        
+
         // Is this the master node?
         'is_master' => env('AI_ENGINE_IS_MASTER', true),
-        
+
         // Master node URL (for child nodes)
         'master_url' => env('AI_ENGINE_MASTER_URL'),
-        
+
         // JWT secret for node authentication
         'jwt_secret' => env('AI_ENGINE_JWT_SECRET', env('APP_KEY')),
-        
+
         // Node capabilities
         'capabilities' => ['search', 'actions', 'rag'],
-        
+
         // Auto-register with master on boot
         'auto_register' => env('AI_ENGINE_AUTO_REGISTER', false),
-        
+
         // Health check interval (seconds)
         'health_check_interval' => env('AI_ENGINE_HEALTH_CHECK_INTERVAL', 300),
-        
+
         // Request timeout (seconds)
         'request_timeout' => env('AI_ENGINE_REQUEST_TIMEOUT', 30),
-        
+
         // SSL certificate verification (disable for self-signed certs in development)
         'verify_ssl' => env('AI_ENGINE_VERIFY_SSL', true),
-        
+
         // Cache TTL (seconds)
         'cache_ttl' => env('AI_ENGINE_CACHE_TTL', 900),
-        
+
         // Max parallel requests
         'max_parallel_requests' => env('AI_ENGINE_MAX_PARALLEL_REQUESTS', 10),
-        
+
         // Circuit breaker settings
         'circuit_breaker' => [
             'failure_threshold' => env('AI_ENGINE_CB_FAILURE_THRESHOLD', 5),
@@ -836,14 +861,14 @@ return [
             'timeout' => env('AI_ENGINE_CB_TIMEOUT', 60),
             'retry_timeout' => env('AI_ENGINE_CB_RETRY_TIMEOUT', 30),
         ],
-        
+
         // Rate limiting
         'rate_limit' => [
             'enabled' => env('AI_ENGINE_RATE_LIMIT_ENABLED', true),
             'max_attempts' => env('AI_ENGINE_RATE_LIMIT_MAX', 60),
             'decay_minutes' => env('AI_ENGINE_RATE_LIMIT_DECAY', 1),
         ],
-        
+
         // Logging & Debugging
         'logging' => [
             'enabled' => env('AI_ENGINE_NODE_LOGGING', true),

@@ -154,13 +154,12 @@ class OpenAIEngineDriver extends BaseEngineDriver
         try {
             $messages = $this->buildMessages($request);
             
-            $stream = $this->openAIClient->chat()->createStreamed([
-                'model' => $request->model->value,
-                'messages' => $messages,
-                'max_tokens' => $request->maxTokens,
-                'temperature' => $request->temperature ?? 0.7,
+            // Build payload using the base method which handles model-specific parameters
+            $payload = $this->buildChatPayload($request, $messages, [
                 'seed' => $request->seed,
             ]);
+            
+            $stream = $this->openAIClient->chat()->createStreamed($payload);
 
             foreach ($stream as $response) {
                 $content = $response->choices[0]->delta->content ?? '';
@@ -346,5 +345,91 @@ class OpenAIEngineDriver extends BaseEngineDriver
     {
         // Use centralized method from BaseEngineDriver
         return $this->buildStandardMessages($request);
+    }
+    
+    /**
+     * Generate JSON analysis using the best approach for the given model
+     * Automatically selects between standard chat and JSON mode based on model type
+     * 
+     * @param string $prompt The analysis prompt
+     * @param string $systemPrompt System instructions
+     * @param string|null $model Model to use (null = use config default)
+     * @param int $maxTokens Maximum tokens for response
+     * @return string JSON response content
+     */
+    public function generateJsonAnalysis(
+        string $prompt,
+        string $systemPrompt,
+        ?string $model = null,
+        int $maxTokens = 300
+    ): string {
+        $model = $model ?? config('ai-engine.engines.openai.model', 'gpt-4o');
+        
+        try {
+            $payload = [
+                'model' => $model,
+                'messages' => [
+                    ['role' => 'system', 'content' => $systemPrompt],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ];
+            
+            // GPT-5 and reasoning models: use JSON mode + appropriate parameters
+            if ($this->isGpt5FamilyModel($model)) {
+                $payload['response_format'] = ['type' => 'json_object'];
+                // GPT-5 needs more tokens for reasoning before output
+                $payload['max_completion_tokens'] = max($maxTokens, 1000);
+                // GPT-5 with json_object format works better with low reasoning for fast analysis
+                $payload['reasoning_effort'] = 'low';
+            } elseif ($this->isReasoningModel($model)) {
+                $payload['response_format'] = ['type' => 'json_object'];
+                $payload['max_completion_tokens'] = $maxTokens;
+                $payload['temperature'] = 1;
+            } else {
+                // Standard models (GPT-4o, etc.): JSON mode + standard params
+                $payload['response_format'] = ['type' => 'json_object'];
+                $payload['max_tokens'] = $maxTokens;
+                $payload['temperature'] = 0.3;
+            }
+            
+            \Log::channel('ai-engine')->debug('JSON analysis request', [
+                'model' => $model,
+                'prompt_length' => strlen($prompt),
+                'is_gpt5' => $this->isGpt5FamilyModel($model),
+            ]);
+            
+            $response = $this->openAIClient->chat()->create($payload);
+            
+            // Debug: log full response structure for GPT-5 models
+            if ($this->isGpt5FamilyModel($model)) {
+                \Log::channel('ai-engine')->debug('GPT-5 raw response', [
+                    'model' => $model,
+                    'choices_count' => count($response->choices ?? []),
+                    'first_choice' => isset($response->choices[0]) ? [
+                        'finish_reason' => $response->choices[0]->finishReason ?? null,
+                        'message_role' => $response->choices[0]->message->role ?? null,
+                        'message_content' => substr($response->choices[0]->message->content ?? '', 0, 200),
+                    ] : null,
+                ]);
+            }
+            
+            $content = $response->choices[0]->message->content ?? '';
+            
+            \Log::channel('ai-engine')->debug('JSON analysis response', [
+                'model' => $model,
+                'content_length' => strlen($content),
+                'has_content' => !empty(trim($content)),
+            ]);
+            
+            return trim($content);
+            
+        } catch (\Exception $e) {
+            \Log::channel('ai-engine')->error('JSON analysis failed', [
+                'model' => $model,
+                'error' => $e->getMessage(),
+            ]);
+            
+            throw new \RuntimeException('JSON analysis error: ' . $e->getMessage(), 0, $e);
+        }
     }
 }

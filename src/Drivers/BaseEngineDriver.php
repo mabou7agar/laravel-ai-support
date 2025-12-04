@@ -8,6 +8,7 @@ use LaravelAIEngine\Contracts\EngineDriverInterface;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 
 abstract class BaseEngineDriver implements EngineDriverInterface
 {
@@ -138,7 +139,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     /**
      * Get the default model for this engine
      */
-    abstract protected function getDefaultModel(): \LaravelAIEngine\Enums\EntityEnum;
+    abstract protected function getDefaultModel(): EntityEnum;
 
     /**
      * Validate the engine configuration
@@ -252,12 +253,12 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Build standard messages array with conversation history
-     * 
+     *
      * This centralizes the logic for building messages across all drivers:
      * 1. Add system prompt if provided
      * 2. Add conversation history if provided
      * 3. Add current user message
-     * 
+     *
      * @param AIRequest $request
      * @param bool $includeSystemPrompt Whether to include system prompt (default: true)
      * @return array Standard message format: [['role' => 'user|assistant|system', 'content' => '...']]
@@ -291,9 +292,9 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Get conversation history from request
-     * 
+     *
      * Centralized method to safely get conversation history
-     * 
+     *
      * @param AIRequest $request
      * @return array
      */
@@ -304,7 +305,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Handle API errors consistently across all drivers
-     * 
+     *
      * @param \Exception $exception
      * @param AIRequest $request
      * @param string $context Additional context (e.g., 'text generation', 'image generation')
@@ -333,7 +334,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Safely test engine connection
-     * 
+     *
      * @param AIRequest $testRequest
      * @param callable $testCallback
      * @return bool
@@ -351,9 +352,9 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Extract token usage from API response
-     * 
+     *
      * Handles different API response formats for token counting
-     * 
+     *
      * @param array $data API response data
      * @param string $content Fallback content for estimation
      * @param string $format API format ('openai', 'anthropic', 'gemini', etc.)
@@ -373,7 +374,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Build standard request payload for chat completion
-     * 
+     *
      * @param AIRequest $request
      * @param array $messages
      * @param array $additionalParams
@@ -381,17 +382,88 @@ abstract class BaseEngineDriver implements EngineDriverInterface
      */
     protected function buildChatPayload(AIRequest $request, array $messages, array $additionalParams = []): array
     {
-        return array_merge([
-            'model' => $request->model->value,
+        $model = $request->model->value;
+
+        $payload = [
+            'model' => $model,
             'messages' => $messages,
-            'max_tokens' => $request->maxTokens,
-            'temperature' => $request->temperature ?? 0.7,
-        ], $additionalParams);
+        ];
+
+        // GPT-5 family models have different parameter requirements
+        if ($this->isGpt5FamilyModel($model)) {
+            // GPT-5 uses max_completion_tokens and doesn't support temperature
+            $payload['max_completion_tokens'] = $request->maxTokens;
+            // Use reasoning_effort instead of temperature for GPT-5
+            $payload['reasoning_effort'] = $this->mapTemperatureToReasoningEffort($request->temperature ?? 0.7);
+        } elseif ($this->isReasoningModel($model)) {
+            // o1, o3 models use max_completion_tokens
+            $payload['max_completion_tokens'] = $request->maxTokens;
+            $payload['temperature'] = 1; // Reasoning models only support temperature=1
+        } else {
+            // Standard models (GPT-4, GPT-3.5, etc.)
+            $payload['max_tokens'] = $request->maxTokens;
+            $payload['temperature'] = $request->temperature ?? 0.7;
+        }
+
+        return array_merge($payload, $additionalParams);
+    }
+
+    /**
+     * Check if model is GPT-5 family (gpt-5, gpt-5-mini, gpt-5-nano, gpt-5.1, etc.)
+     *
+     * @param string $model
+     * @return bool
+     */
+    protected function isGpt5FamilyModel(string $model): bool
+    {
+        return str_starts_with($model, 'gpt-5');
+    }
+
+    /**
+     * Check if model is a reasoning model (o1, o3, etc.)
+     *
+     * @param string $model
+     * @return bool
+     */
+    protected function isReasoningModel(string $model): bool
+    {
+        $reasoningPrefixes = ['o1', 'o3'];
+        foreach ($reasoningPrefixes as $prefix) {
+            if (str_starts_with($model, $prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Map temperature value to GPT-5 reasoning_effort
+     * GPT-5 doesn't support temperature, uses reasoning_effort instead
+     *
+     * @param float $temperature
+     * @return string
+     */
+    protected function mapTemperatureToReasoningEffort(float $temperature): string
+    {
+        // Map temperature (0-2) to reasoning effort levels
+        // 'none' = fast, minimal reasoning (good for simple tasks)
+        // 'low' = light reasoning
+        // 'medium' = balanced
+        // 'high' = deep reasoning
+        if ($temperature <= 0.2) {
+            return 'none';
+        } elseif ($temperature <= 0.5) {
+            return 'low';
+        } elseif ($temperature <= 0.8) {
+            return 'medium';
+        } else {
+            return 'high';
+        }
     }
 
     /**
      * Log API request for debugging
-     * 
+     *
      * @param string $operation
      * @param AIRequest $request
      * @param array $additionalData
@@ -412,7 +484,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Validate required files in request
-     * 
+     *
      * @param AIRequest $request
      * @param int $minFiles
      * @param int $maxFiles
@@ -422,11 +494,11 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     protected function validateFiles(AIRequest $request, int $minFiles = 1, int $maxFiles = 1): void
     {
         $fileCount = count($request->files);
-        
+
         if ($fileCount < $minFiles) {
             throw new \InvalidArgumentException("At least {$minFiles} file(s) required");
         }
-        
+
         if ($fileCount > $maxFiles) {
             throw new \InvalidArgumentException("Maximum {$maxFiles} file(s) allowed");
         }
@@ -434,7 +506,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Build successful AIResponse with common metadata
-     * 
+     *
      * @param string $content
      * @param AIRequest $request
      * @param array $apiResponse Raw API response data
@@ -447,7 +519,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
         array $apiResponse = [],
         string $format = 'openai'
     ): AIResponse {
-        $tokensUsed = !empty($apiResponse) 
+        $tokensUsed = !empty($apiResponse)
             ? $this->extractTokenUsage($apiResponse, $content, $format)
             : $this->calculateTokensUsed($content);
 
@@ -480,7 +552,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Extract request ID from API response
-     * 
+     *
      * @param array $data
      * @param string $format
      * @return string|null
@@ -496,7 +568,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Extract finish reason from API response
-     * 
+     *
      * @param array $data
      * @param string $format
      * @return string|null
@@ -513,7 +585,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Extract detailed token usage from API response
-     * 
+     *
      * @param array $data
      * @param string $format
      * @return array|null
@@ -554,7 +626,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Create error response for unsupported operations
-     * 
+     *
      * @param string $operation
      * @param AIRequest $request
      * @return AIResponse
@@ -570,7 +642,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Parse JSON response safely
-     * 
+     *
      * @param string $jsonString
      * @param bool $associative
      * @return array|object|null
@@ -589,7 +661,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Calculate credits used based on tokens and model
-     * 
+     *
      * @param int $tokens
      * @param EntityEnum $model
      * @return float
@@ -601,14 +673,14 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
     /**
      * Merge metadata arrays safely
-     * 
+     *
      * @param array ...$metadataArrays
      * @return array
      */
     protected function mergeMetadata(array ...$metadataArrays): array
     {
         $merged = [];
-        
+
         foreach ($metadataArrays as $metadata) {
             foreach ($metadata as $key => $value) {
                 if (is_array($value) && isset($merged[$key]) && is_array($merged[$key])) {
@@ -618,7 +690,40 @@ abstract class BaseEngineDriver implements EngineDriverInterface
                 }
             }
         }
-        
+
         return $merged;
+    }
+
+    /**
+     * Generate JSON analysis using the best approach for the model
+     * Default implementation uses standard text generation with JSON instructions
+     * Drivers can override this for model-specific optimizations (e.g., response_format)
+     *
+     * @param string $prompt The analysis prompt
+     * @param string $systemPrompt System instructions
+     * @param string|null $model Model to use (null = use default)
+     * @param int $maxTokens Maximum tokens for response
+     * @return string JSON response content
+     */
+    public function generateJsonAnalysis(
+        string $prompt,
+        string $systemPrompt,
+        ?string $model = null,
+        int $maxTokens = 300
+    ): string {
+        // Default implementation: use standard text generation
+        // The prompt should already instruct the model to respond with JSON
+        $request = new AIRequest(
+            prompt: $prompt,
+            engine: $this->getEngineEnum(),
+            model: new EntityEnum($model ?? $this->getDefaultModel()->value),
+            systemPrompt: $systemPrompt,
+            maxTokens: $maxTokens,
+            temperature: 0.3
+        );
+
+        $response = $this->generateText($request);
+
+        return $response->getContent() ?? '';
     }
 }

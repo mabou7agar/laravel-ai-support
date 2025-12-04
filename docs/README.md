@@ -32,10 +32,12 @@ Welcome to the Laravel AI Engine documentation! This comprehensive guide will he
 - [URL & Media Embeddings](URL-MEDIA-EMBEDDINGS.md) - Embed URLs and media
 - [Media Auto-Detection](MEDIA-AUTO-DETECTION.md) - Automatic media handling
 - [Service-Based Architecture](SERVICE-BASED-ARCHITECTURE.md) - Architecture overview
+- [Performance Optimization](PERFORMANCE.md) - Speed and cost optimization 🆕
 
 ### Guides
 - [Multi-Modal AI](multimodal.md) - Images, audio, video, documents
 - [Troubleshooting RAG](TROUBLESHOOTING_NO_RAG_RESULTS.md) - Fix common issues
+- [GPT-5 Support](PERFORMANCE.md#gpt-5-family-considerations) - GPT-5 model usage 🆕
 
 ### Reference
 - [Artisan Commands](../README.md#-artisan-commands) - CLI tools reference
@@ -60,6 +62,9 @@ $conversation = app(ConversationManager::class)->createConversation(
 ```bash
 # Index models
 php artisan ai-engine:vector-index "App\Models\Post"
+
+# Force recreate with fresh schema
+php artisan ai-engine:vector-index --force
 
 # Search
 $results = Post::vectorSearch('Laravel tutorials');

@@ -196,8 +196,62 @@ php artisan ai-engine:vector-index "App\Models\Post" --batch=100
 # Queue for background processing
 php artisan ai-engine:vector-index "App\Models\Post" --queue
 
-# Force re-indexing
+# Force re-indexing (deletes and recreates collection)
 php artisan ai-engine:vector-index "App\Models\Post" --force
+```
+
+### Force Recreate Collections
+
+The `--force` flag is powerful for fixing dimension mismatches or updating payload indexes:
+
+```bash
+# Force recreate all collections
+php artisan ai-engine:vector-index --force
+
+# Force recreate specific model collection
+php artisan ai-engine:vector-index "App\Models\Email" --force
+```
+
+**What `--force` does:**
+1. **Deletes existing collection** - Removes old collection with wrong dimensions/indexes
+2. **Creates new collection** - With correct embedding dimensions (e.g., 1536 for text-embedding-3-small)
+3. **Auto-detects relationships** - Creates payload indexes for all `belongsTo` foreign keys
+4. **Schema-based types** - Detects field types (integer, UUID, string) from database
+
+### Smart Payload Indexes
+
+The system automatically creates payload indexes for efficient filtering:
+
+```php
+// Example: EmailCache model with belongsTo relations
+class EmailCache extends Model
+{
+    use Vectorizable;
+    
+    public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function mailbox(): BelongsTo { return $this->belongsTo(Mailbox::class); }
+}
+
+// Automatically creates payload indexes for:
+// - user_id (integer - detected from schema)
+// - mailbox_id (keyword - UUID detected from schema)
+// - Plus config fields: tenant_id, workspace_id, status, etc.
+```
+
+Configure base payload index fields in `config/ai-engine.php`:
+
+```php
+'vector' => [
+    'payload_index_fields' => [
+        'user_id',
+        'tenant_id', 
+        'workspace_id',
+        'model_id',
+        'status',
+        'visibility',
+        'type',
+    ],
+],
 ```
 
 ### Auto-Indexing

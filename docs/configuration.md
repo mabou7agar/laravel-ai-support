@@ -190,6 +190,7 @@ VECTOR_EMBEDDING_DIMENSIONS=3072
 'rag' => [
     'enabled' => env('VECTOR_RAG_ENABLED', true),
     'max_context_items' => env('VECTOR_RAG_MAX_CONTEXT', 5),
+    'max_context_item_length' => env('VECTOR_RAG_MAX_ITEM_LENGTH', 2000), // chars per item
     'include_sources' => env('VECTOR_RAG_INCLUDE_SOURCES', true),
     'min_relevance_score' => env('VECTOR_RAG_MIN_SCORE', 0.5),
 ],
@@ -200,9 +201,70 @@ Environment:
 ```env
 VECTOR_RAG_ENABLED=true
 VECTOR_RAG_MAX_CONTEXT=5
+VECTOR_RAG_MAX_ITEM_LENGTH=2000
 VECTOR_RAG_INCLUDE_SOURCES=true
 VECTOR_RAG_MIN_SCORE=0.5
 ```
+
+### Intelligent RAG Configuration
+
+```php
+'intelligent_rag' => [
+    // Model for query analysis (fast model recommended)
+    'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'),
+    
+    // Model for final response generation
+    'response_model' => env('INTELLIGENT_RAG_RESPONSE_MODEL', 'gpt-5-mini'),
+    
+    // Maximum context items to retrieve
+    'max_context_items' => env('INTELLIGENT_RAG_MAX_CONTEXT', 5),
+    
+    // Minimum relevance score (0-1)
+    'min_relevance_score' => env('INTELLIGENT_RAG_MIN_SCORE', 0.3),
+    
+    // Include source citations in response
+    'include_sources' => env('INTELLIGENT_RAG_INCLUDE_SOURCES', true),
+],
+```
+
+Environment:
+
+```env
+# Model Selection (Performance Tuning)
+INTELLIGENT_RAG_ANALYSIS_MODEL=gpt-4o-mini    # Fast query classification
+INTELLIGENT_RAG_RESPONSE_MODEL=gpt-5-mini     # Quality responses
+
+# Context Settings
+INTELLIGENT_RAG_MAX_CONTEXT=5
+INTELLIGENT_RAG_MIN_SCORE=0.3
+INTELLIGENT_RAG_INCLUDE_SOURCES=true
+```
+
+**Model Recommendations:**
+
+| Task | Recommended Model | Why |
+|------|------------------|-----|
+| Query Analysis | `gpt-4o-mini` | Fast, cheap, sufficient for classification |
+| Response Generation | `gpt-5-mini` | Good quality, balanced cost |
+| Complex Reasoning | `gpt-5.1` | Best quality, higher cost |
+
+### Payload Index Fields
+
+Configure which fields should be indexed for filtering in vector search:
+
+```php
+'payload_index_fields' => [
+    'user_id',
+    'tenant_id',
+    'workspace_id',
+    'model_id',
+    'status',
+    'visibility',
+    'type',
+],
+```
+
+**Note:** Field types are automatically detected from database schema. The system also auto-detects foreign key fields from `belongsTo` relationships.
 
 ### Authorization
 

@@ -37,8 +37,10 @@
 | **Multi-DB Tenancy** | Separate collections per tenant | `AI_ENGINE_MULTI_DB_TENANCY=true` |
 | **Admin Access** | Access all data in RAG | `$user->is_admin = true` or `hasRole('admin')` |
 | **Multi-Engine** | Switch AI providers | `engine: 'openai'` / `'anthropic'` / `'google'` |
+| **GPT-5 Support** | Full GPT-5 family support | `model: 'gpt-5-mini'` / `'gpt-5.1'` |
 | **Streaming** | Real-time responses | `streamMessage(callback: fn($chunk))` |
 | **Federated RAG** | Distributed search | `AI_ENGINE_NODES_ENABLED=true` |
+| **Force Reindex** | Recreate collections | `php artisan ai-engine:vector-index --force` |
 
 **💡 Key Point:** `useIntelligentRAG: false` = **NO RAG at all** (direct AI response)
 
@@ -111,12 +113,13 @@ php artisan ai-engine:sync-models
 - **Threshold Optimization**: Balanced precision/recall (0.3 default)
 
 ### 🤖 Multi-AI Engine Support
-- **OpenAI**: GPT-4, GPT-4 Turbo, GPT-3.5, O1, O3
+- **OpenAI**: GPT-4o, GPT-4 Turbo, GPT-5, GPT-5.1, GPT-5-mini, O1, O3
 - **Anthropic**: Claude 3.5 Sonnet, Claude 3 Opus/Haiku
 - **Google**: Gemini 1.5 Pro/Flash, Gemini 2.0
 - **DeepSeek**: DeepSeek V3, DeepSeek Chat
 - **Perplexity**: Sonar Pro, Sonar
 - **Unified API**: Same interface for all providers
+- **GPT-5 Ready**: Full support for GPT-5 family with reasoning parameters
 
 ### 📊 Dynamic Model Registry
 - **Auto-Discovery**: Automatically detects new AI models
@@ -143,6 +146,9 @@ php artisan ai-engine:sync-models
 - **Hybrid Search**: Combine vector + keyword search
 - **Media Support**: Images, PDFs, documents
 - **Chunking Strategies**: Smart content splitting
+- **Auto Payload Indexes**: Automatically detects and creates indexes from model relationships
+- **Schema-Based Types**: Detects field types (integer, UUID, string) from database schema
+- **Force Recreate**: `--force` flag to delete and recreate collections with fresh schema
 
 ### 🎯 Smart Features
 - **Dynamic Actions**: AI-suggested next actions
@@ -464,14 +470,42 @@ php artisan ai-engine:add-model gpt-5 --interactive
 ### 5. Vector Indexing
 
 ```bash
-# Index a model
+# Index all vectorizable models
+php artisan ai-engine:vector-index
+
+# Index specific model
 php artisan ai-engine:vector-index "App\Models\Post"
+
+# Force recreate collection (deletes old, creates new with fresh schema)
+php artisan ai-engine:vector-index --force
 
 # Check status
 php artisan ai-engine:vector-status
 
 # Search
 php artisan ai-engine:vector-search "Laravel routing" --model="App\Models\Post"
+```
+
+**New in v2.x: Smart Payload Indexes**
+
+The `--force` flag now:
+1. **Deletes existing collection** - Removes old collection with wrong dimensions/indexes
+2. **Creates new collection** - With correct embedding dimensions
+3. **Auto-detects relationships** - Creates indexes for all `belongsTo` foreign keys
+4. **Schema-based types** - Detects field types (integer, UUID, string) from database
+
+```php
+// Example: EmailCache model with belongsTo relations
+class EmailCache extends Model
+{
+    public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function mailbox(): BelongsTo { return $this->belongsTo(Mailbox::class); }
+}
+
+// Automatically creates payload indexes for:
+// - user_id (integer - from schema)
+// - mailbox_id (keyword - UUID detected from schema)
+// - Plus config fields: tenant_id, workspace_id, status, etc.
 ```
 
 ---
@@ -1607,6 +1641,59 @@ return [
 
 ---
 
+## ⚡ Performance Tuning
+
+### Model Selection for RAG
+
+Choose the right models for optimal performance:
+
+```bash
+# .env
+INTELLIGENT_RAG_ANALYSIS_MODEL=gpt-4o-mini    # Fast query classification
+INTELLIGENT_RAG_RESPONSE_MODEL=gpt-5-mini     # Quality responses
+```
+
+| Task | Recommended Model | Why |
+|------|------------------|-----|
+| **Query Analysis** | `gpt-4o-mini` | Fast, cheap, sufficient for classification |
+| **Response Generation** | `gpt-5-mini` | Good quality, balanced cost |
+| **Complex Reasoning** | `gpt-5.1` | Best quality, higher cost |
+| **High Throughput** | `gpt-4o-mini` | Fastest, lowest cost |
+
+### Context Optimization
+
+```bash
+# .env
+VECTOR_RAG_MAX_ITEM_LENGTH=2000    # Truncate long content (chars)
+VECTOR_RAG_MAX_CONTEXT=5           # Max context items
+```
+
+### Vector Index Performance
+
+```bash
+# Force recreate collections with fresh schema
+php artisan ai-engine:vector-index --force
+
+# This ensures:
+# - Correct embedding dimensions
+# - Proper payload indexes for filtering
+# - Schema-based field types
+```
+
+### GPT-5 vs GPT-4 Performance
+
+| Model | Analysis Time | Response Time | Best For |
+|-------|--------------|---------------|----------|
+| gpt-4o-mini | ~1-2s | ~2s | Fast, cheap tasks |
+| gpt-4o | ~2s | ~3s | Balanced quality |
+| gpt-5-nano | ~5-6s | ~5s | Simple reasoning |
+| gpt-5-mini | ~5-6s | ~5s | Quality responses |
+| gpt-5.1 | ~8-10s | ~8s | Complex reasoning |
+
+**Note:** GPT-5 models have reasoning overhead even for simple tasks. Use `gpt-4o-mini` for analysis.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
@@ -1652,6 +1739,40 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 ## 🎉 What's New
 
 ### Latest Features (December 2025)
+
+✨ **Performance Optimizations** ⚡ (NEW!)
+- **Configurable Models**: Separate models for analysis vs response generation
+- **Context Truncation**: Limits context item length to prevent huge prompts (2000 chars default)
+- **Smart Query Analysis**: Uses exact phrases for title-like queries instead of expanding
+- **Optimized Defaults**: `gpt-4o-mini` for analysis, `gpt-5-mini` for responses
+
+```php
+// config/ai-engine.php
+'intelligent_rag' => [
+    'analysis_model' => 'gpt-4o-mini',   // Fast, cheap - for query classification
+    'response_model' => 'gpt-5-mini',    // Quality - for final response
+    'max_context_item_length' => 2000,   // Truncate long content
+]
+```
+
+**Performance Results:**
+| Config | Analysis | Response | Total Time |
+|--------|----------|----------|------------|
+| Both gpt-4o-mini | ~2s | ~2s | ~3-4s |
+| gpt-4o-mini + gpt-5-mini | ~2s | ~3s | ~5-6s |
+| Both GPT-5 | ~6s | ~6s | ~12s |
+
+✨ **Smart Payload Indexes** 🔍 (NEW!)
+- **Auto-detect belongsTo**: Automatically creates indexes for foreign key fields
+- **Schema-based types**: Detects integer, UUID, string from database
+- **Force recreate**: `--force` deletes and recreates collections with fresh schema
+- **Config + Relations**: Merges config fields with detected relationship fields
+
+✨ **GPT-5 Family Support** 🤖 (NEW!)
+- **Full GPT-5 support**: gpt-5, gpt-5.1, gpt-5-mini, gpt-5-nano, gpt-5-pro
+- **Reasoning parameters**: `max_completion_tokens`, `reasoning_effort` handled automatically
+- **JSON mode**: Proper JSON output for structured responses
+- **Model detection**: Automatically uses correct parameters per model family
 
 ✨ **Smart Action System** 🎯 (NEW!)
 - **AI Parameter Extraction**: Automatically extracts emails, dates, times from content
