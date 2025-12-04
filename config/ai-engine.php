@@ -741,6 +741,10 @@ return [
             'default_threshold' => env('VECTOR_SEARCH_THRESHOLD', 0.3),
         ],
 
+        // Maximum content size for embedding (content larger than this will be chunked, never skipped)
+        // OpenAI embedding models support ~8191 tokens ≈ 32KB, we use 30KB as safe limit
+        'max_content_size' => env('VECTOR_MAX_CONTENT_SIZE', 30000),
+
         // Health check configuration
         'health_check' => [
             'enabled' => env('VECTOR_HEALTH_CHECK_ENABLED', true),

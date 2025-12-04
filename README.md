@@ -145,10 +145,13 @@ php artisan ai-engine:sync-models
 - **Auto-Indexing**: Automatic vector generation
 - **Hybrid Search**: Combine vector + keyword search
 - **Media Support**: Images, PDFs, documents
-- **Chunking Strategies**: Smart content splitting
+- **Smart Chunking**: Large content automatically chunked (never skipped)
 - **Auto Payload Indexes**: Automatically detects and creates indexes from model relationships
 - **Schema-Based Types**: Detects field types (integer, UUID, string) from database schema
 - **Force Recreate**: `--force` flag to delete and recreate collections with fresh schema
+- **Index Verification**: Auto-checks and creates missing payload indexes during indexing
+- **Multi-Tenant Collections**: Configurable collection prefix with `vec_` default
+- **Project Context Injection**: Configure domain-specific context for better AI understanding
 
 ### 🎯 Smart Features
 - **Dynamic Actions**: AI-suggested next actions
@@ -233,6 +236,92 @@ $response = $rag->processMessage(
 ✅ **Load Balancing**: Distribute search across nodes  
 ✅ **Secure**: JWT authentication between nodes  
 ✅ **Caching**: Smart result caching for performance  
+
+---
+
+## 🔧 Vector Indexing
+
+### Index Your Models
+
+```bash
+# Index a specific model
+php artisan ai-engine:vector-index "App\Models\Document"
+
+# Force recreate collection with fresh schema and indexes
+php artisan ai-engine:vector-index "App\Models\Document" --force
+
+# Index with specific batch size
+php artisan ai-engine:vector-index "App\Models\Document" --batch=50
+```
+
+### What Happens During Indexing
+
+1. **Collection Check**: Verifies if collection exists
+2. **Index Verification**: Checks for missing payload indexes (user_id, tenant_id, etc.)
+3. **Auto-Create Indexes**: Creates any missing indexes automatically
+4. **Content Chunking**: Large content is chunked (never skipped)
+5. **Embedding Generation**: Creates vector embeddings via OpenAI
+6. **Upsert to Qdrant**: Stores vectors with metadata
+
+### Example Output
+
+```
+Indexing App\Models\EmailCache...
+📋 Indexing Fields (From $fillable):
+   • subject
+   • from_address
+   • body_text
+   
+✓ Collection 'vec_email_cache' already exists
+🔍 Checking payload indexes...
+   ✓ All required payload indexes exist
+      • user_id
+      • tenant_id
+      • model_id
+
+🔑 Payload indexes for 'vec_email_cache':
+   • user_id
+   • tenant_id
+   • model_id
+   • workspace_id
+   • visibility
+
+Found 150 models to index
+ 150/150 [============================] 100%
+
+✓ Indexed 150 models successfully
+```
+
+---
+
+## 🎯 Project Context Configuration
+
+Provide domain-specific context to improve AI understanding:
+
+```php
+// config/ai-engine.php
+'project_context' => [
+    'description' => 'Email management system for enterprise customers',
+    'industry' => 'SaaS / Enterprise Software',
+    'key_entities' => [
+        'EmailCache' => 'Cached email messages with full content',
+        'Mailbox' => 'User email accounts and configurations',
+        'User' => 'System users with workspace assignments',
+    ],
+    'business_rules' => [
+        'Users can only access emails from their assigned mailboxes',
+        'Admins can access all emails in their workspace',
+    ],
+    'terminology' => [
+        'workspace' => 'Isolated tenant environment',
+        'mailbox' => 'Connected email account',
+    ],
+    'target_users' => 'Business professionals managing email communications',
+    'data_sensitivity' => 'Contains confidential business communications',
+],
+```
+
+This context is automatically injected into AI prompts for better domain understanding.
 
 ---
 
@@ -1751,6 +1840,29 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 ## 🎉 What's New
 
 ### Latest Features (December 2025)
+
+✨ **Smart Content Chunking** 📄 (NEW!)
+- **Never Skip**: Large content is automatically chunked, never skipped
+- **Intelligent Splitting**: 50% beginning + 30% end + 20% middle sample
+- **Configurable Limits**: `VECTOR_MAX_CONTENT_SIZE=30000` (30KB default)
+- **Word Boundaries**: Chunks break at natural word boundaries
+
+✨ **Project Context Injection** 🎯 (NEW!)
+- **Domain Understanding**: Configure project description, industry, entities
+- **Business Rules**: Define rules the AI should follow
+- **Terminology**: Custom vocabulary for your domain
+- **Auto-Injection**: Context automatically added to AI prompts
+
+✨ **Enhanced Vector Indexing** 🔧 (NEW!)
+- **Index Verification**: Auto-checks for missing payload indexes
+- **Auto-Create**: Missing indexes created automatically during indexing
+- **Collection Prefix**: Always uses `vec_` prefix for consistency
+- **Multi-Tenant Ready**: Custom collection names via `getVectorCollectionName()`
+
+✨ **Circular Dependency Fix** 🔄 (NEW!)
+- **Lazy Loading**: Services use lazy loading to avoid circular deps
+- **Proper DI**: Constructor injection with explicit service registration
+- **No Memory Issues**: Fixed memory exhaustion during app boot
 
 ✨ **Performance Optimizations** ⚡ (NEW!)
 - **Configurable Models**: Separate models for analysis vs response generation
