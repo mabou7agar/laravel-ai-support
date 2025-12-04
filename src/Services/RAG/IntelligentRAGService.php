@@ -1395,10 +1395,39 @@ PROMPT;
 
     /**
      * Extract numbered options from response content
+     * Only extracts options when there are multiple items to choose from
      */
     protected function extractNumberedOptions(string $content): array
     {
         $options = [];
+        
+        // Detect if this is a detail view vs a list by checking structure:
+        // - Detail view: Has only 1 numbered item with multiple sub-fields (bullet points or bold fields)
+        // - List view: Has multiple numbered items (2+)
+        
+        // Count numbered items (1. xxx, 2. xxx, etc.)
+        preg_match_all('/^\s*\d+\.\s+/m', $content, $numberedItems);
+        $numberedCount = count($numberedItems[0]);
+        
+        // Count sub-fields (bullet points or bold field labels within the content)
+        preg_match_all('/(?:^\s*-\s+|\*\*[A-Za-z]+\*\*:)/m', $content, $subFields);
+        $subFieldCount = count($subFields[0]);
+        
+        // If only 1 numbered item but many sub-fields, it's a detail view
+        if ($numberedCount <= 1 && $subFieldCount >= 3) {
+            return [];
+        }
+        
+        // Common metadata field names that shouldn't be clickable options
+        $metadataFields = [
+            'from', 'to', 'cc', 'bcc', 'date', 'subject', 'content', 'body', 
+            'attachment', 'attachments', 'sent', 'received', 'reply-to', 
+            'status', 'priority', 'size', 'type', 'category', 'tags', 'label', 
+            'folder', 'email subject', 'email from', 'email to', 'email date',
+            'sender', 'recipient', 'recipients', 'message', 'details', 'info',
+            'description', 'summary', 'note', 'notes', 'created', 'updated',
+            'author', 'title', 'name', 'id', 'reference', 'source'
+        ];
 
         // Pattern 1: Numbered lists with markdown bold (1. **Title**: Description)
         if (preg_match_all('/^\s*(\d+)\.\s+\*\*(.+?)\*\*:?\s*(.*)$/m', $content, $matches, PREG_SET_ORDER)) {
@@ -1406,6 +1435,12 @@ PROMPT;
                 $number = (int) $match[1];
                 $title = trim($match[2]);
                 $description = trim($match[3] ?? '');
+                
+                // Skip metadata fields - these are document details, not selectable options
+                if (in_array(strtolower($title), $metadataFields)) {
+                    continue;
+                }
+                
                 $fullText = $title . ($description ? ': ' . $description : '');
 
                 // Extract source reference if present
@@ -1458,9 +1493,18 @@ PROMPT;
                 if (preg_match('/(?:titled|subject|called|named)\s*["\']([^"\']+)["\']/i', $cleanLine, $titleMatch)) {
                     $text = trim($titleMatch[1]);
                 }
-                // Look for **bold** titles
+                // Look for **bold** titles (skip if it's a metadata field)
                 elseif (preg_match('/\*\*([^*]+)\*\*/', $cleanLine, $titleMatch)) {
-                    $text = trim($titleMatch[1]);
+                    $boldText = trim($titleMatch[1]);
+                    // If the bold text is a metadata field, try to extract the value after it
+                    if (in_array(strtolower($boldText), $metadataFields)) {
+                        // Try to get the value after the metadata field (e.g., "**Subject**: Actual Title")
+                        if (preg_match('/\*\*[^*]+\*\*:\s*(.+?)(?:\s{2,}|\n|$)/', $cleanLine, $valueMatch)) {
+                            $text = trim($valueMatch[1]);
+                        }
+                    } else {
+                        $text = $boldText;
+                    }
                 }
                 // Extract sender/source info as fallback
                 elseif (preg_match('/(?:from|by)\s+([A-Z][a-zA-Z\s]+?)(?:\s+on\s+|\s+at\s+|,|\.|$)/i', $cleanLine, $titleMatch)) {
@@ -1475,6 +1519,11 @@ PROMPT;
 
                 // Skip very short options
                 if (strlen($text) < 3) {
+                    continue;
+                }
+                
+                // Skip if the extracted text is still a metadata field
+                if (in_array(strtolower($text), $metadataFields)) {
                     continue;
                 }
 
@@ -1501,6 +1550,12 @@ PROMPT;
             foreach (array_slice($matches, 0, 10) as $match) {
                 $title = trim($match[1]);
                 $description = trim($match[2]);
+                
+                // Skip metadata fields - these are email/document details, not selectable options
+                if (in_array(strtolower($title), $metadataFields)) {
+                    continue;
+                }
+                
                 $fullText = $title . ': ' . $description;
                 
                 // Extract source reference if present
