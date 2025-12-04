@@ -472,16 +472,28 @@ class VectorSearchService
             }
         }
 
+        // Deduplicate IDs (multiple chunks from same model may appear)
+        $uniqueIds = array_unique($ids);
+        
         // Fetch models from database
-        $models = $modelClass::whereIn('id', $ids)->get()->keyBy('id');
+        $models = $modelClass::whereIn('id', $uniqueIds)->get()->keyBy('id');
 
-        // Attach scores and return in order
+        // Attach scores and return in order, deduplicating by model_id
+        // Keep the highest scoring chunk for each model
         $hydrated = collect();
+        $seenModelIds = [];
+        
         foreach ($results as $result) {
             // Get the actual model ID
             $modelId = $result['metadata']['model_id'] 
                 ?? $result['payload']['model_id'] 
                 ?? $result['id'];
+            
+            // Skip if we've already added this model (keep first = highest score)
+            if (in_array($modelId, $seenModelIds)) {
+                continue;
+            }
+            $seenModelIds[] = $modelId;
                 
             $model = $models->get($modelId);
             if ($model) {
@@ -842,9 +854,5 @@ class VectorSearchService
         // Skip deletion - upsert will overwrite existing points with same ID
         // Old chunks with different IDs will remain but won't affect search quality significantly
         // To fully clean up, use --force flag which recreates the collection
-        Log::debug('Skipping chunk deletion - upsert will overwrite', [
-            'collection' => $collectionName,
-            'model_id' => $modelId,
-        ]);
     }
 }
