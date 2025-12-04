@@ -456,6 +456,49 @@ class AIEngineServiceProvider extends ServiceProvider
         
         // Register event listeners
         $this->registerEventListeners();
+        
+        // Register scheduled tasks
+        $this->registerScheduledTasks();
+    }
+    
+    /**
+     * Register scheduled tasks for health monitoring
+     */
+    protected function registerScheduledTasks(): void
+    {
+        $this->callAfterResolving(\Illuminate\Console\Scheduling\Schedule::class, function ($schedule) {
+            // Ping nodes every 5 minutes (if nodes are enabled)
+            if (config('ai-engine.nodes.enabled', false)) {
+                $schedule->command('ai-engine:node-ping --all')
+                    ->everyFiveMinutes()
+                    ->withoutOverlapping()
+                    ->runInBackground()
+                    ->appendOutputTo(storage_path('logs/ai-engine-ping.log'));
+            }
+            
+            // Vector database health check every 10 minutes
+            if (config('ai-engine.vector.health_check.enabled', true)) {
+                $schedule->call(function () {
+                    try {
+                        $driver = app(\LaravelAIEngine\Services\Vector\VectorDriverManager::class)->driver();
+                        // Use a simple collection check as health ping
+                        $testCollection = config('ai-engine.vector.collection_prefix', 'vec_') . 'health_check';
+                        $exists = $driver->collectionExists($testCollection);
+                        \Log::channel('ai-engine')->debug('Vector DB health check passed', [
+                            'connection' => 'ok',
+                            'test_collection_exists' => $exists,
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::channel('ai-engine')->error('Vector DB health check failed', [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                })
+                ->everyTenMinutes()
+                ->name('ai-engine:vector-health-check')
+                ->withoutOverlapping();
+            }
+        });
     }
 
     /**

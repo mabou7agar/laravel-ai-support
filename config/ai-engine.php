@@ -629,6 +629,12 @@ return [
             'default_limit' => env('VECTOR_SEARCH_LIMIT', 20),
             'default_threshold' => env('VECTOR_SEARCH_THRESHOLD', 0.3),
         ],
+        
+        // Health check configuration
+        'health_check' => [
+            'enabled' => env('VECTOR_HEALTH_CHECK_ENABLED', true),
+            'interval_minutes' => env('VECTOR_HEALTH_CHECK_INTERVAL', 10),
+        ],
 
         // Chunking configuration for large texts
         'chunking' => [
