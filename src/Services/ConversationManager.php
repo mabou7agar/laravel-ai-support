@@ -12,13 +12,26 @@ use Illuminate\Support\Collection;
 class ConversationManager
 {
     protected ?IntelligentRAGService $ragService = null;
+    protected bool $ragServiceResolved = false;
 
     public function __construct()
     {
-        // Inject RAG service if available
-        if (class_exists(IntelligentRAGService::class)) {
-            $this->ragService = app(IntelligentRAGService::class);
+        // RAG service is lazy-loaded to avoid circular dependency
+        // ConversationManager -> IntelligentRAGService -> ConversationService -> ConversationManager
+    }
+    
+    /**
+     * Get RAG service (lazy loaded to avoid circular dependency)
+     */
+    protected function getRagService(): ?IntelligentRAGService
+    {
+        if (!$this->ragServiceResolved) {
+            $this->ragServiceResolved = true;
+            if (class_exists(IntelligentRAGService::class)) {
+                $this->ragService = app(IntelligentRAGService::class);
+            }
         }
+        return $this->ragService;
     }
     public function createConversation(
         ?string $userId = null,
@@ -260,7 +273,8 @@ class ConversationManager
         string $modelClass,
         array $options = []
     ): array {
-        if (!$this->ragService) {
+        $ragService = $this->getRagService();
+        if (!$ragService) {
             throw new \RuntimeException('RAG service is not available');
         }
 
@@ -273,11 +287,11 @@ class ConversationManager
         $this->addUserMessage($conversationId, $query);
 
         // Get conversation history
-        $conversationHistory = $this->getConversationHistory($conversationId);
+        $conversationHistory = $this->getConversationContext($conversationId);
 
         // Get RAG response using IntelligentRAGService
         // Use intelligent: false to always search (like old VectorRAGBridge behavior)
-        $response = $this->ragService->processMessage(
+        $response = $ragService->processMessage(
             $query,
             $conversationId,
             [$modelClass],
@@ -315,7 +329,8 @@ class ConversationManager
         callable $callback,
         array $options = []
     ): array {
-        if (!$this->ragService) {
+        $ragService = $this->getRagService();
+        if (!$ragService) {
             throw new \RuntimeException('RAG service is not available');
         }
 
@@ -328,10 +343,10 @@ class ConversationManager
         $this->addUserMessage($conversationId, $query);
 
         // Get conversation history
-        $conversationHistory = $this->getConversationHistory($conversationId);
+        $conversationHistory = $this->getConversationContext($conversationId);
 
         // Get RAG response (streaming handled at AI engine level)
-        $response = $this->ragService->processMessage(
+        $response = $ragService->processMessage(
             $query,
             $conversationId,
             [$modelClass],
