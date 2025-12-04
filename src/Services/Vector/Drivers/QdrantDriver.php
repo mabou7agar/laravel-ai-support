@@ -440,11 +440,6 @@ class QdrantDriver implements VectorDriverInterface
         array $filters = []
     ): array {
         try {
-            // Auto-ensure indexes exist for filter fields before searching
-            if (!empty($filters)) {
-                $this->ensureFilterIndexes($collection, array_keys($filters));
-            }
-            
             $body = [
                 'vector' => $vector,
                 'limit' => $limit,

@@ -160,20 +160,19 @@ class VectorIndexCommand extends Command
                 return;
             }
             
-            // Get collection name
-            $instance = new $modelClass();
-            $collectionName = config('ai-engine.vector.collection_prefix', 'vec_') . $instance->getTable();
+            // Get collection name using the service (supports multi-tenant)
+            $collectionName = $vectorSearch->getCollectionName($modelClass);
             
             $indexes = $driver->getExistingIndexes($collectionName);
             
             if (!empty($indexes)) {
-                $this->info('🔑 Payload indexes created:');
+                $this->info("🔑 Payload indexes for '{$collectionName}':");
                 foreach ($indexes as $index) {
                     $this->line("   • <fg=green>{$index}</>");
                 }
                 $this->newLine();
             } else {
-                $this->warn('⚠️  No payload indexes found - filtering may not work');
+                $this->warn("⚠️  No payload indexes found for '{$collectionName}' - filtering may not work");
                 $this->newLine();
             }
         } catch (\Exception $e) {

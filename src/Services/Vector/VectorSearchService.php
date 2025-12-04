@@ -357,10 +357,18 @@ class VectorSearchService
 
     /**
      * Get collection name for model
+     * Supports multi-tenant by checking for getVectorCollectionName method on model
      */
-    protected function getCollectionName(string $modelClass): string
+    public function getCollectionName(string $modelClass): string
     {
-        $tableName = (new $modelClass)->getTable();
+        $instance = new $modelClass();
+        
+        // Check if model defines custom collection name (multi-tenant support)
+        if (method_exists($instance, 'getVectorCollectionName')) {
+            return $instance->getVectorCollectionName();
+        }
+        
+        $tableName = $instance->getTable();
         return config('ai-engine.vector.collection_prefix', 'vec_') . $tableName;
     }
 
