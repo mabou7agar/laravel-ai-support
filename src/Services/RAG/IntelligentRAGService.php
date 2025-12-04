@@ -457,7 +457,12 @@ CRITICAL SEARCH QUERY RULES:
    - Extract the ACTUAL topic/subject from conversation history
    - Use specific terms from previous messages
 
-5. Short specific queries (e.g., "Password Reset Request") → Use EXACT query
+5. Short specific queries that match items from previous response:
+   - If query looks like an email subject, document title, or item name from history → Use EXACT query as search term
+   - Example: User asks about "Re: Check App" after seeing email list → Search for "Re: Check App" exactly
+   - Include any context identifiers (email addresses, account names) from history in search
+
+6. Short specific queries (e.g., "Password Reset Request") → Use EXACT query
 
 6. Technical questions → Extract key terms: ["Laravel routing", "API endpoint"]
 
@@ -470,13 +475,16 @@ PROMPT;
 
         $conversationContext = '';
         if (!empty($conversationHistory)) {
-            // Only include brief previews to save tokens
-            $recentMessages = array_slice($conversationHistory, -3);
-            $conversationContext = "\n\nRecent topics:\n";
+            // Include more context for better follow-up understanding
+            $recentMessages = array_slice($conversationHistory, -4);
+            $conversationContext = "\n\nConversation history (for context):\n";
             foreach ($recentMessages as $m) {
-                $preview = mb_substr($m['content'], 0, 120);
-                $conversationContext .= "- {$m['role']}: {$preview}" . (strlen($m['content']) > 120 ? '...' : '') . "\n";
+                // Include more content for assistant messages (they contain the results)
+                $maxLen = $m['role'] === 'assistant' ? 500 : 150;
+                $preview = mb_substr($m['content'], 0, $maxLen);
+                $conversationContext .= "- {$m['role']}: {$preview}" . (strlen($m['content']) > $maxLen ? '...' : '') . "\n";
             }
+            $conversationContext .= "\nIMPORTANT: If user's query matches an item title/subject from the assistant's previous response, search for that EXACT item.\n";
         }
 
         $analysisPrompt = <<<PROMPT
@@ -489,12 +497,16 @@ CRITICAL INSTRUCTIONS:
 2. For vague queries like "which is important/best/urgent" → Use MULTIPLE concrete terms:
    ["urgent", "deadline", "priority", "action required", "reminder", "meeting", "follow up"]
 3. NEVER return just ["most important"] or ["best"] - these won't match anything
-4. For follow-ups → Extract ACTUAL subject/topic from conversation history
+4. For follow-ups about specific items from history:
+   - If query matches an email subject, document title, or item name from previous response → Use EXACT query
+   - Example: Query "Re: Check App" after email list → search_queries: ["Re: Check App"]
+   - Keep the same collection as the previous search
 5. Only use collections from the available list - use FULL class name
 6. Default: needs_context: true
+7. If query is a short phrase that looks like a title/subject (e.g., "Re: Check App", "Password Reset") → Use it EXACTLY as search term
 
-Respond with JSON only. Example for vague query:
-{"needs_context": true, "reasoning": "vague query needs multiple search terms", "search_queries": ["urgent", "deadline", "priority", "action required", "reminder"], "collections": ["Bites\\\\Modules\\\\MailBox\\\\Models\\\\EmailCache"], "query_type": "informational", "needs_aggregate": false}
+Respond with JSON only. Example for follow-up about specific email:
+{"needs_context": true, "reasoning": "user asking about specific email from previous list", "search_queries": ["Re: Check App"], "collections": ["Bites\\\\Modules\\\\MailBox\\\\Models\\\\EmailCache"], "query_type": "informational", "needs_aggregate": false}
 PROMPT;
 
         try {
