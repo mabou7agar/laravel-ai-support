@@ -55,9 +55,23 @@ Environment:
 ```env
 OPENAI_API_KEY=sk-...
 OPENAI_ORGANIZATION=org-...
-OPENAI_CHAT_MODEL=gpt-4o
+OPENAI_CHAT_MODEL=gpt-5-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-large
 ```
+
+**Available OpenAI Models:**
+| Model | Best For | Cost |
+|-------|----------|------|
+| `gpt-5.1` | Most complex reasoning | Highest |
+| `gpt-5` | Complex tasks | High |
+| `gpt-5-mini` | Quality responses, balanced | Medium |
+| `gpt-5-nano` | Fast, simple tasks | Low |
+| `gpt-4o` | Previous gen flagship | Medium |
+| `gpt-4o-mini` | Fast, cheap | Low |
+| `o3` | Advanced reasoning | Highest |
+| `o3-mini` | Reasoning, balanced | High |
+| `o1` | Reasoning tasks | High |
+| `o1-mini` | Reasoning, cheaper | Medium |
 
 ### Anthropic (Claude)
 
@@ -66,7 +80,7 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-large
     'enabled' => true,
     'api_key' => env('ANTHROPIC_API_KEY'),
     'models' => [
-        'chat' => env('ANTHROPIC_CHAT_MODEL', 'claude-3-5-sonnet-20241022'),
+        'chat' => env('ANTHROPIC_CHAT_MODEL', 'claude-4.5-sonnet'),
     ],
     'timeout' => 120,
     'max_retries' => 3,
@@ -77,8 +91,17 @@ Environment:
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_CHAT_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_CHAT_MODEL=claude-4.5-sonnet
 ```
+
+**Available Claude Models:**
+| Model | Best For | Cost |
+|-------|----------|------|
+| `claude-4.5-sonnet` | Latest, best quality | High |
+| `claude-4-opus` | Complex reasoning | Highest |
+| `claude-4-sonnet` | Balanced quality/cost | Medium |
+| `claude-3-5-sonnet-20241022` | Previous gen, reliable | Medium |
+| `claude-3-5-haiku-20241022` | Fast, cheap | Low |
 
 ### Google Gemini
 
@@ -87,7 +110,7 @@ ANTHROPIC_CHAT_MODEL=claude-3-5-sonnet-20241022
     'enabled' => true,
     'api_key' => env('GEMINI_API_KEY'),
     'models' => [
-        'chat' => env('GEMINI_CHAT_MODEL', 'gemini-1.5-flash'),
+        'chat' => env('GEMINI_CHAT_MODEL', 'gemini-2.5-pro'),
     ],
     'timeout' => 120,
 ],
@@ -97,8 +120,51 @@ Environment:
 
 ```env
 GEMINI_API_KEY=...
-GEMINI_CHAT_MODEL=gemini-1.5-pro
+GEMINI_CHAT_MODEL=gemini-2.5-pro
 ```
+
+**Available Gemini Models:**
+| Model | Best For | Cost |
+|-------|----------|------|
+| `gemini-3-pro-preview` | Latest, best multimodal | Highest |
+| `gemini-3-pro-image` | Image generation | High |
+| `gemini-2.5-pro` | Complex reasoning | High |
+| `gemini-2.5-flash` | Fast, quality | Medium |
+| `gemini-2.0-pro` | Reliable reasoning | Medium |
+| `gemini-2.0-flash` | Balanced | Low |
+| `gemini-2.0-flash-thinking` | Reasoning tasks | Medium |
+| `gemini-1.5-pro` | Previous gen, reliable | Medium |
+| `gemini-1.5-flash` | Fast, cheap | Low |
+
+### DeepSeek
+
+```php
+'deepseek' => [
+    'enabled' => true,
+    'api_key' => env('DEEPSEEK_API_KEY'),
+    'base_url' => 'https://api.deepseek.com',
+    'models' => [
+        'chat' => env('DEEPSEEK_CHAT_MODEL', 'deepseek-v3'),
+    ],
+    'timeout' => 60,
+],
+```
+
+Environment:
+
+```env
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_CHAT_MODEL=deepseek-v3
+```
+
+**Available DeepSeek Models:**
+| Model | Best For | Cost |
+|-------|----------|------|
+| `deepseek-v3` | Latest, advanced reasoning | Low |
+| `deepseek-r1` | Reasoning-focused | Medium |
+| `deepseek-r1-lite` | Lightweight reasoning | Low |
+| `deepseek-chat` | General chat | Low |
+| `deepseek-coder` | Code generation | Low |
 
 ### OpenRouter
 

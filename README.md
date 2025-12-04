@@ -113,13 +113,13 @@ php artisan ai-engine:sync-models
 - **Threshold Optimization**: Balanced precision/recall (0.3 default)
 
 ### 🤖 Multi-AI Engine Support
-- **OpenAI**: GPT-4o, GPT-4 Turbo, GPT-5, GPT-5.1, GPT-5-mini, O1, O3
-- **Anthropic**: Claude 3.5 Sonnet, Claude 3 Opus/Haiku
-- **Google**: Gemini 1.5 Pro/Flash, Gemini 2.0
+- **OpenAI**: GPT-5.1, GPT-5, GPT-5-mini, GPT-4o, O1, O3
+- **Anthropic**: Claude 4.5 Sonnet, Claude 4 Opus, Claude 3.5 Sonnet
+- **Google**: Gemini 3 Pro, Gemini 2.5 Pro/Flash, Gemini 2.0
 - **DeepSeek**: DeepSeek V3, DeepSeek Chat
 - **Perplexity**: Sonar Pro, Sonar
 - **Unified API**: Same interface for all providers
-- **GPT-5 Ready**: Full support for GPT-5 family with reasoning parameters
+- **Future-Proof**: Full support for latest models with auto-discovery
 
 ### 📊 Dynamic Model Registry
 - **Auto-Discovery**: Automatically detects new AI models
@@ -457,8 +457,14 @@ $chat->processMessage(
 ### 5. Model Registry
 
 ```bash
-# Sync latest models
+# Sync all providers (OpenAI, Anthropic, Google, OpenRouter)
 php artisan ai-engine:sync-models
+
+# Sync specific provider
+php artisan ai-engine:sync-models --provider=openai
+php artisan ai-engine:sync-models --provider=anthropic
+php artisan ai-engine:sync-models --provider=google
+php artisan ai-engine:sync-models --provider=deepseek
 
 # List all models
 php artisan ai-engine:list-models
@@ -466,6 +472,12 @@ php artisan ai-engine:list-models
 # Add custom model
 php artisan ai-engine:add-model gpt-5 --interactive
 ```
+
+**Supported Models (December 2025):**
+- **OpenAI**: GPT-5.1, GPT-5, GPT-5-mini, GPT-5-nano, GPT-4o, O1, O3
+- **Anthropic**: Claude 4.5 Sonnet, Claude 4 Opus, Claude 4 Sonnet, Claude 3.5
+- **Google**: Gemini 3 Pro, Gemini 2.5 Pro/Flash, Gemini 2.0
+- **DeepSeek**: DeepSeek V3, DeepSeek R1, DeepSeek Chat/Coder
 
 ### 5. Vector Indexing
 
@@ -1768,11 +1780,12 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 - **Force recreate**: `--force` deletes and recreates collections with fresh schema
 - **Config + Relations**: Merges config fields with detected relationship fields
 
-✨ **GPT-5 Family Support** 🤖 (NEW!)
-- **Full GPT-5 support**: gpt-5, gpt-5.1, gpt-5-mini, gpt-5-nano, gpt-5-pro
+✨ **Latest AI Models Support** 🤖 (NEW!)
+- **OpenAI GPT-5**: gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano + O3 reasoning models
+- **Anthropic Claude 4**: claude-4.5-sonnet, claude-4-opus, claude-4-sonnet
+- **Google Gemini 3**: gemini-3-pro-preview, gemini-3-pro-image + Gemini 2.5/2.0
 - **Reasoning parameters**: `max_completion_tokens`, `reasoning_effort` handled automatically
-- **JSON mode**: Proper JSON output for structured responses
-- **Model detection**: Automatically uses correct parameters per model family
+- **Auto-detection**: Correct parameters per model family
 
 ✨ **Smart Action System** 🎯 (NEW!)
 - **AI Parameter Extraction**: Automatically extracts emails, dates, times from content

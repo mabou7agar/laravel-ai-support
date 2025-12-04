@@ -128,9 +128,22 @@ return [
             'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
             'timeout' => env('OPENAI_TIMEOUT', 30),
             'models' => [
+                // GPT-5 Family (Latest)
+                'gpt-5.1' => ['enabled' => true, 'credit_index' => 5.0],
+                'gpt-5' => ['enabled' => true, 'credit_index' => 4.0],
+                'gpt-5-mini' => ['enabled' => true, 'credit_index' => 1.0],
+                'gpt-5-nano' => ['enabled' => true, 'credit_index' => 0.5],
+                // GPT-4 Family
                 'gpt-4o' => ['enabled' => true, 'credit_index' => 2.0],
                 'gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.5],
+                'gpt-4-turbo' => ['enabled' => true, 'credit_index' => 2.5],
                 'gpt-3.5-turbo' => ['enabled' => true, 'credit_index' => 0.3],
+                // O-Series (Reasoning)
+                'o1' => ['enabled' => true, 'credit_index' => 6.0],
+                'o1-mini' => ['enabled' => true, 'credit_index' => 3.0],
+                'o3' => ['enabled' => true, 'credit_index' => 8.0],
+                'o3-mini' => ['enabled' => true, 'credit_index' => 4.0],
+                // Image & Audio
                 'dall-e-3' => ['enabled' => true, 'credit_index' => 5.0],
                 'dall-e-2' => ['enabled' => true, 'credit_index' => 3.0],
                 'whisper-1' => ['enabled' => true, 'credit_index' => 1.0],
@@ -143,8 +156,17 @@ return [
             'base_url' => env('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
             'timeout' => env('ANTHROPIC_TIMEOUT', 30),
             'models' => [
+                // Claude 4 Family (Latest)
+                'claude-4-opus' => ['enabled' => true, 'credit_index' => 6.0],
+                'claude-4-sonnet' => ['enabled' => true, 'credit_index' => 4.0],
+                'claude-4.5-sonnet' => ['enabled' => true, 'credit_index' => 5.0],
+                // Claude 3.5 Family
+                'claude-3-5-sonnet-20241022' => ['enabled' => true, 'credit_index' => 2.0],
                 'claude-3-5-sonnet-20240620' => ['enabled' => true, 'credit_index' => 1.8],
+                'claude-3-5-haiku-20241022' => ['enabled' => true, 'credit_index' => 0.5],
+                // Claude 3 Family
                 'claude-3-opus-20240229' => ['enabled' => true, 'credit_index' => 3.0],
+                'claude-3-sonnet-20240229' => ['enabled' => true, 'credit_index' => 1.5],
                 'claude-3-haiku-20240307' => ['enabled' => true, 'credit_index' => 0.8],
             ],
         ],
@@ -155,8 +177,37 @@ return [
             'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com'),
             'timeout' => env('GEMINI_TIMEOUT', 30),
             'models' => [
+                // Gemini 3 Family (Latest - December 2025)
+                'gemini-3-pro-preview' => ['enabled' => true, 'credit_index' => 6.0],
+                'gemini-3-pro-image' => ['enabled' => true, 'credit_index' => 5.0],
+                // Gemini 2.5 Family
+                'gemini-2.5-pro' => ['enabled' => true, 'credit_index' => 4.0],
+                'gemini-2.5-flash' => ['enabled' => true, 'credit_index' => 1.5],
+                // Gemini 2.0 Family
+                'gemini-2.0-pro' => ['enabled' => true, 'credit_index' => 3.0],
+                'gemini-2.0-flash' => ['enabled' => true, 'credit_index' => 1.0],
+                'gemini-2.0-flash-thinking' => ['enabled' => true, 'credit_index' => 2.0],
+                // Gemini 1.5 Family
                 'gemini-1.5-pro' => ['enabled' => true, 'credit_index' => 1.5],
                 'gemini-1.5-flash' => ['enabled' => true, 'credit_index' => 0.4],
+                'gemini-1.5-flash-8b' => ['enabled' => true, 'credit_index' => 0.2],
+            ],
+        ],
+
+        'deepseek' => [
+            'driver' => 'deepseek',
+            'api_key' => env('DEEPSEEK_API_KEY'),
+            'base_url' => env('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'),
+            'timeout' => env('DEEPSEEK_TIMEOUT', 60),
+            'models' => [
+                // DeepSeek V3 (Latest)
+                'deepseek-v3' => ['enabled' => true, 'credit_index' => 1.0],
+                // DeepSeek R1 (Reasoning)
+                'deepseek-r1' => ['enabled' => true, 'credit_index' => 2.0],
+                'deepseek-r1-lite' => ['enabled' => true, 'credit_index' => 0.5],
+                // DeepSeek Chat & Coder
+                'deepseek-chat' => ['enabled' => true, 'credit_index' => 0.5],
+                'deepseek-coder' => ['enabled' => true, 'credit_index' => 0.5],
             ],
         ],
 

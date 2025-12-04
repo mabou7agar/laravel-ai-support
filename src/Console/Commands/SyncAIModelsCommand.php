@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\AIModelRegistry;
 class SyncAIModelsCommand extends Command
 {
     protected $signature = 'ai-engine:sync-models
-                            {--provider= : Sync specific provider (openai, anthropic, openrouter, all)}
+                            {--provider= : Sync specific provider (openai, anthropic, google, deepseek, openrouter, all)}
                             {--auto-discover : Auto-discover new models from APIs}';
 
     protected $description = 'Sync AI models from providers and auto-discover new models';
@@ -26,6 +26,14 @@ class SyncAIModelsCommand extends Command
 
         if ($provider === 'all' || $provider === 'anthropic') {
             $this->syncAnthropic($registry);
+        }
+
+        if ($provider === 'all' || $provider === 'google' || $provider === 'gemini') {
+            $this->syncGoogle($registry);
+        }
+
+        if ($provider === 'all' || $provider === 'deepseek') {
+            $this->syncDeepSeek($registry);
         }
 
         if ($provider === 'all' || $provider === 'openrouter') {
@@ -66,6 +74,36 @@ class SyncAIModelsCommand extends Command
         $result = $registry->syncAnthropicModels();
         
         $this->info("✅ {$result['message']}");
+        
+        if (isset($result['new']) && $result['new'] > 0) {
+            $this->warn("🆕 Added {$result['new']} new Claude models");
+        }
+    }
+
+    protected function syncGoogle(AIModelRegistry $registry): void
+    {
+        $this->line('📡 Syncing Google Gemini models...');
+        
+        $result = $registry->syncGeminiModels();
+        
+        $this->info("✅ {$result['message']}");
+        
+        if (isset($result['new']) && $result['new'] > 0) {
+            $this->warn("🆕 Added {$result['new']} new Gemini models");
+        }
+    }
+
+    protected function syncDeepSeek(AIModelRegistry $registry): void
+    {
+        $this->line('📡 Syncing DeepSeek models...');
+        
+        $result = $registry->syncDeepSeekModels();
+        
+        $this->info("✅ {$result['message']}");
+        
+        if (isset($result['new']) && $result['new'] > 0) {
+            $this->warn("🆕 Added {$result['new']} new DeepSeek models");
+        }
     }
 
     protected function syncOpenRouter(AIModelRegistry $registry): void
@@ -75,7 +113,12 @@ class SyncAIModelsCommand extends Command
         $result = $registry->syncOpenRouterModels();
 
         if (isset($result['error'])) {
-            $this->error("❌ {$result['error']}");
+            // Just skip if not configured - OpenRouter is optional
+            if (str_contains($result['error'], 'not configured')) {
+                $this->line('   ⏭️  Skipped (API key not configured - optional)');
+            } else {
+                $this->error("❌ {$result['error']}");
+            }
             return;
         }
 
