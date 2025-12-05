@@ -450,7 +450,6 @@ class VectorSearchService
         \Log::info('hydrateModels called', [
             'model' => $modelClass,
             'results_count' => count($results),
-            'first_result' => $results[0] ?? null
         ]);
         
         if (empty($results)) {

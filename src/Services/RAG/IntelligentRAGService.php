@@ -8,6 +8,7 @@ use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
@@ -23,6 +24,7 @@ class IntelligentRAGService
     protected AIEngineManager $aiEngine;
     protected ConversationService $conversationService;
     protected array $config;
+    protected array $historyConfig;
 
     protected $nodeRegistry = null;
     protected $federatedSearch = null;
@@ -36,6 +38,7 @@ class IntelligentRAGService
         $this->aiEngine = $aiEngine;
         $this->conversationService = $conversationService;
         $this->config = config('ai-engine.intelligent_rag', []);
+        $this->historyConfig = config('ai-engine.conversation_history', []);
 
         // Lazy load node services if available
         if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
@@ -78,9 +81,19 @@ class IntelligentRAGService
         $userId = null
     ): AIResponse {
         try {
-            // Load conversation history from session if not provided
+            // Load conversation history
             if (empty($conversationHistory)) {
                 $conversationHistory = $this->loadConversationHistory($sessionId);
+            }
+            
+            // Simple optimization: just take recent messages (no summarization for now)
+            if (($this->historyConfig['enabled'] ?? true) && count($conversationHistory) > 10) {
+                $recentCount = $this->historyConfig['recent_messages'] ?? 5;
+                $conversationHistory = array_slice($conversationHistory, -$recentCount);
+                
+                Log::channel('ai-engine')->debug('Conversation history optimized', [
+                    'kept_recent' => $recentCount,
+                ]);
             }
 
             // Check if intelligent mode is enabled (default: true)
@@ -388,6 +401,40 @@ class IntelligentRAGService
      */
     protected function analyzeQuery(string $query, array $conversationHistory = [], array $availableCollections = []): array
     {
+        // Handle "show more" type queries by extracting topic from history
+        $showMorePatterns = ['show me more', 'more results', 'show more', 'what else', 'any more', 'give me more', 'other results'];
+        $isShowMore = false;
+        foreach ($showMorePatterns as $pattern) {
+            if (stripos($query, $pattern) !== false) {
+                $isShowMore = true;
+                break;
+            }
+        }
+        
+        Log::channel('ai-engine')->debug('Query analysis - show more check', [
+            'query' => $query,
+            'is_show_more' => $isShowMore,
+            'history_count' => count($conversationHistory),
+            'history_preview' => array_map(fn($m) => [
+                'role' => $m['role'] ?? 'unknown',
+                'content_preview' => substr($m['content'] ?? '', 0, 50),
+            ], array_slice($conversationHistory, -3)),
+        ]);
+        
+        // If "show more" and we have history, extract the original search topic
+        if ($isShowMore && !empty($conversationHistory)) {
+            $originalTopic = $this->extractTopicFromHistory($conversationHistory);
+            Log::channel('ai-engine')->info('Show more query - extracted topic', [
+                'original_query' => $query,
+                'extracted_topic' => $originalTopic,
+                'will_replace' => $originalTopic !== null,
+            ]);
+            if ($originalTopic) {
+                // Replace vague query with the actual topic
+                $query = $originalTopic;
+            }
+        }
+        
         // Build available collections info with descriptions
         $collectionsInfo = '';
         if (!empty($availableCollections)) {
@@ -752,25 +799,93 @@ PROMPT;
 
     /**
      * Extract topics from conversation history
+     * Returns the main subjects discussed based on user queries
      */
     protected function extractTopicsFromConversation(array $conversationHistory): array
     {
         $topics = [];
 
-        // Common keywords to extract
-        $keywords = ['laravel', 'php', 'product', 'book', 'tutorial', 'customer', 'order', 'article', 'support', 'ticket', 'purchase', 'learn'];
-
         foreach ($conversationHistory as $msg) {
-            $content = strtolower($msg['content'] ?? '');
-
-            foreach ($keywords as $keyword) {
-                if (str_contains($content, $keyword) && !in_array($keyword, $topics)) {
-                    $topics[] = $keyword;
+            // Only extract from user messages
+            if (($msg['role'] ?? '') !== 'user') {
+                continue;
+            }
+            
+            $content = trim($msg['content'] ?? '');
+            
+            // Skip short/empty messages
+            if (strlen($content) < 5) {
+                continue;
+            }
+            
+            // Skip follow-up patterns
+            $contentLower = strtolower($content);
+            $skipPatterns = ['show me more', 'more', 'yes', 'no', 'ok', 'thanks', 'continue'];
+            $skip = false;
+            foreach ($skipPatterns as $pattern) {
+                if (strpos($contentLower, $pattern) === 0) {
+                    $skip = true;
+                    break;
                 }
+            }
+            
+            if (!$skip && !in_array($content, $topics)) {
+                $topics[] = $content;
             }
         }
 
-        return $topics;
+        // Return last 3 topics (most recent)
+        return array_slice($topics, -3);
+    }
+    
+    /**
+     * Extract the original search topic from conversation history
+     * Used for "show more" type queries
+     * 
+     * Simply finds the most recent substantive user query that isn't a follow-up request
+     */
+    protected function extractTopicFromHistory(array $conversationHistory): ?string
+    {
+        // Generic follow-up patterns to skip
+        $followUpPatterns = [
+            'show me more', 'more results', 'show more', 'what else', 'any more', 
+            'give me more', 'other results', 'tell me more', 'continue', 'go on',
+            'next', 'more please', 'keep going', 'and more', 'what about more',
+            'yes', 'no', 'ok', 'okay', 'thanks', 'thank you', 'got it',
+        ];
+        
+        // Reverse to find most recent first
+        $reversed = array_reverse($conversationHistory);
+        
+        foreach ($reversed as $msg) {
+            if (($msg['role'] ?? '') !== 'user') {
+                continue;
+            }
+            
+            $content = trim($msg['content'] ?? '');
+            if (empty($content) || strlen($content) < 4) {
+                continue;
+            }
+            
+            $contentLower = strtolower($content);
+            
+            // Skip if this is a follow-up/acknowledgment
+            $isFollowUp = false;
+            foreach ($followUpPatterns as $pattern) {
+                // Check if content IS the pattern or STARTS with it
+                if ($contentLower === $pattern || strpos($contentLower, $pattern) === 0) {
+                    $isFollowUp = true;
+                    break;
+                }
+            }
+            
+            // Return first substantive query found
+            if (!$isFollowUp) {
+                return $content;
+            }
+        }
+        
+        return null;
     }
 
     /**
@@ -2402,6 +2517,107 @@ PROMPT;
                 'error' => $e->getMessage(),
             ]);
             return false;
+        }
+    }
+
+    /**
+     * Optimize conversation history using sliding window + summarization
+     * 
+     * Returns: [Summary of old messages] + [Recent N messages in full]
+     */
+    protected function optimizeConversationHistory(array $history, string $sessionId): array
+    {
+        if (empty($history)) {
+            return [];
+        }
+        
+        $recentCount = $this->historyConfig['recent_messages'] ?? 5;
+        $summarizeAfter = $this->historyConfig['summarize_after'] ?? 10;
+        
+        // If history is short, return as-is
+        if (count($history) <= $summarizeAfter) {
+            return $history;
+        }
+        
+        // Split: old messages (to summarize) + recent messages (keep full)
+        $oldMessages = array_slice($history, 0, -$recentCount);
+        $recentMessages = array_slice($history, -$recentCount);
+        
+        // Get or generate summary of old messages
+        $summary = $this->getSummary($oldMessages, $sessionId);
+        
+        // Return: [summary message] + [recent messages]
+        $optimized = [];
+        if ($summary) {
+            $optimized[] = [
+                'role' => 'system',
+                'content' => "Previous conversation summary: {$summary}",
+            ];
+        }
+        
+        return array_merge($optimized, $recentMessages);
+    }
+    
+    /**
+     * Get summary of messages (cached for performance)
+     */
+    protected function getSummary(array $messages, string $sessionId): ?string
+    {
+        if (empty($messages)) {
+            return null;
+        }
+        
+        $cacheKey = "conversation_summary:{$sessionId}:" . md5(json_encode($messages));
+        
+        // Check cache if enabled
+        if ($this->historyConfig['cache_summaries'] ?? true) {
+            $cached = Cache::get($cacheKey);
+            if ($cached) {
+                return $cached;
+            }
+        }
+        
+        try {
+            // Build summary prompt
+            $conversationText = '';
+            foreach ($messages as $msg) {
+                $role = ucfirst($msg['role'] ?? 'user');
+                $content = $msg['content'] ?? '';
+                $conversationText .= "{$role}: {$content}\n\n";
+            }
+            
+            $prompt = "Summarize this conversation in 2-3 sentences, focusing on key topics and decisions:\n\n{$conversationText}";
+            
+            // Generate summary using AI
+            $engineName = config('ai-engine.default', 'openai');
+            $engine = new \LaravelAIEngine\Enums\EngineEnum($engineName);
+            $driver = $this->aiEngine->getEngineDriver($engine);
+            
+            $request = new AIRequest(
+                prompt: $prompt,
+                engine: $engine,
+                model: config("ai-engine.engines.{$engineName}.default_model", 'gpt-4o-mini'),
+                maxTokens: $this->historyConfig['summary_max_tokens'] ?? 200,
+                temperature: 0.3
+            );
+            
+            $response = $driver->generate($request);
+            $summary = trim($response->getContent());
+            
+            // Cache the summary
+            if ($this->historyConfig['cache_summaries'] ?? true) {
+                $ttl = ($this->historyConfig['cache_ttl'] ?? 60) * 60; // Convert minutes to seconds
+                Cache::put($cacheKey, $summary, $ttl);
+            }
+            
+            return $summary;
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to generate conversation summary', [
+                'session_id' => $sessionId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
         }
     }
 }
