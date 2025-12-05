@@ -82,6 +82,8 @@ class NodeApiController extends Controller
         
         try {
             $collections = $validated['options']['collections'] ?? [];
+            $userId = $validated['options']['user_id'] ?? null;
+            $filters = $validated['options']['filters'] ?? [];
             $results = [];
             
             foreach ($collections as $collection) {
@@ -93,7 +95,9 @@ class NodeApiController extends Controller
                     $collection,
                     $validated['query'],
                     $validated['limit'] ?? 10,
-                    $validated['options']['threshold'] ?? 0.3
+                    $validated['options']['threshold'] ?? 0.3,
+                    $filters,
+                    $userId
                 );
                 
                 foreach ($searchResults as $result) {
