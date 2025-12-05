@@ -11,6 +11,7 @@ use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\ActionService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use Illuminate\Support\Facades\Validator;
+use LaravelAIEngine\Http\Requests\SendMessageRequest;
 
 /**
  * RAG Chat API Controller
@@ -53,37 +54,19 @@ class RagChatApiController extends Controller
      *   }
      * }
      */
-    public function sendMessage(Request $request): JsonResponse
+    public function sendMessage(SendMessageRequest $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'message' => 'required|string|max:5000',
-            'session_id' => 'required|string|max:255',
-            'engine' => 'nullable|string|in:openai,anthropic,gemini',
-            'model' => 'nullable|string',
-            'memory' => 'nullable|boolean',
-            'actions' => 'nullable|boolean',
-            'use_intelligent_rag' => 'nullable|boolean',
-            'rag_collections' => 'nullable|array',
-            'user_id' => 'nullable|string|max:255',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            $message = $request->input('message');
-            $sessionId = $request->input('session_id');
-            $engine = $request->input('engine', 'openai');
-            $model = $request->input('model', 'gpt-4o');
-            $useMemory = $request->input('memory', true);
-            $useActions = $request->input('actions', true);
+            $dto = $request->toDTO();
+            
+            $message = $dto->message;
+            $sessionId = $dto->sessionId;
+            $engine = $dto->engine;
+            $model = $dto->model;
+            $useMemory = $dto->memory;
+            $useActions = $dto->actions;
             $useIntelligentRAG = $request->input('use_intelligent_rag', true);
-            $userId = $request->input('user_id');
+            $userId = $dto->userId; // SECURITY: Uses authenticated user or demo user
 
             // Get RAG collections - respect user's explicit choice
             $ragCollections = $request->input('rag_collections');

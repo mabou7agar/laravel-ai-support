@@ -57,7 +57,7 @@ class SendMessageRequest extends FormRequest
             memory: $this->validated('memory', true),
             actions: $this->validated('actions', true),
             streaming: $this->validated('streaming', false),
-            userId: auth()->id()
+            userId: auth()->user()?->id ?? config('ai-engine.demo_user_id', '1')
         );
     }
 }

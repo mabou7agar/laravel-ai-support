@@ -106,13 +106,17 @@ class QdrantDriver implements VectorDriverInterface
         // Detect additional fields from model's belongsTo relationships
         $relationFields = $this->detectBelongsToFields($modelClass);
         
+        // Get custom indexes from model if defined
+        $customIndexes = $this->getModelCustomIndexes($modelClass);
+        
         // Merge all fields (unique)
-        $indexableFields = array_unique(array_merge($configFields, $relationFields));
+        $indexableFields = array_unique(array_merge($configFields, $relationFields, $customIndexes));
         
         Log::debug('Payload index fields detected', [
             'collection' => $collection,
             'config_fields' => $configFields,
             'relation_fields' => $relationFields,
+            'custom_indexes' => $customIndexes,
             'total_fields' => $indexableFields,
         ]);
         
@@ -122,6 +126,38 @@ class QdrantDriver implements VectorDriverInterface
         foreach ($fieldTypes as $fieldName => $fieldType) {
             $this->createPayloadIndex($collection, $fieldName, $fieldType);
         }
+    }
+    
+    /**
+     * Get custom indexes defined by model's getQdrantIndexes() method
+     */
+    protected function getModelCustomIndexes(?string $modelClass): array
+    {
+        if (!$modelClass || !class_exists($modelClass)) {
+            return [];
+        }
+        
+        try {
+            $instance = new $modelClass();
+            
+            if (method_exists($instance, 'getQdrantIndexes')) {
+                $indexes = $instance->getQdrantIndexes();
+                
+                Log::debug('Model custom indexes detected', [
+                    'model' => $modelClass,
+                    'indexes' => $indexes,
+                ]);
+                
+                return is_array($indexes) ? $indexes : [];
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to get model custom indexes', [
+                'model' => $modelClass,
+                'error' => $e->getMessage(),
+            ]);
+        }
+        
+        return [];
     }
     
     /**
@@ -290,7 +326,7 @@ class QdrantDriver implements VectorDriverInterface
                 
                 foreach ($fields as $field) {
                     if (isset($columnMap[$field])) {
-                        $fieldTypes[$field] = $this->mapDatabaseTypeToQdrant($columnMap[$field]);
+                        $fieldTypes[$field] = $this->mapDatabaseTypeToQdrant($columnMap[$field], $field);
                     }
                 }
                 
@@ -321,9 +357,14 @@ class QdrantDriver implements VectorDriverInterface
     /**
      * Map database column type to Qdrant field schema type
      */
-    protected function mapDatabaseTypeToQdrant(string $dbType): string
+    protected function mapDatabaseTypeToQdrant(string $dbType, string $fieldName = ''): string
     {
         $dbType = strtolower($dbType);
+        
+        // ID fields should always be keyword for filtering, even if they're integers in DB
+        if (str_ends_with($fieldName, '_id') || $fieldName === 'id') {
+            return 'keyword';
+        }
         
         // Integer types
         if (in_array($dbType, ['int', 'integer', 'bigint', 'smallint', 'tinyint', 'mediumint', 'int4', 'int8', 'int2'])) {
