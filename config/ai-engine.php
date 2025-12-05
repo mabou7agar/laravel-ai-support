@@ -26,6 +26,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Demo User ID
+    |--------------------------------------------------------------------------
+    |
+    | Default user ID to use when no authenticated user is present.
+    | This allows the system to work with or without authentication.
+    | Set to null to require authentication for all requests.
+    |
+    */
+    'demo_user_id' => env('AI_ENGINE_DEMO_USER_ID', '1'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Project Context
     |--------------------------------------------------------------------------
     |

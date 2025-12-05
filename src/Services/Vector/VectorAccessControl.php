@@ -174,6 +174,13 @@ class VectorAccessControl
      */
     public function buildSearchFilters($userId, array $baseFilters = []): array
     {
+        // If no userId provided, try to use demo user as fallback
+        if (!$userId) {
+            $demoUserId = config('ai-engine.demo_user_id', '1');
+            Log::debug('No userId provided, using demo user', ['demo_user_id' => $demoUserId]);
+            $userId = $demoUserId;
+        }
+        
         // Fetch user by ID
         $user = $this->getUserById($userId);
         
@@ -184,8 +191,13 @@ class VectorAccessControl
                 return $baseFilters;
             }
             
-            // Return impossible filter to ensure no results
-            return array_merge($baseFilters, ['user_id' => '__anonymous_no_access__']);
+            // Last resort: try demo user ID directly in filter
+            $demoUserId = config('ai-engine.demo_user_id', '1');
+            Log::warning('User not found, using demo user ID in filter', [
+                'requested_user_id' => $userId,
+                'demo_user_id' => $demoUserId,
+            ]);
+            return array_merge($baseFilters, ['user_id' => $demoUserId]);
         }
 
         $userId = method_exists($user, 'getAuthIdentifier') 

@@ -25,6 +25,7 @@ class AIResponse
     private array $actions;
     private ?string $error;
     private bool $success;
+    private ?string $conversationId;
 
     public function __construct(
         string $content,
@@ -41,8 +42,8 @@ class AIResponse
         array $files = [],
         array $actions = [],
         ?string $error = null,
-        bool $success = true
-    
+        bool $success = true,
+        ?string $conversationId = null
     ) {
         $this->content = $content;
         $this->engine = $engine;
@@ -59,6 +60,7 @@ class AIResponse
         $this->actions = $actions;
         $this->error = $error;
         $this->success = $success;
+        $this->conversationId = $conversationId;
     }
 
     /**
@@ -123,7 +125,8 @@ class AIResponse
             files: $this->files,
             actions: $this->actions,
             error: $this->error,
-            success: $this->success
+            success: $this->success,
+            conversationId: $this->conversationId
         );
     }
 
@@ -147,7 +150,33 @@ class AIResponse
             files: $this->files,
             actions: $this->actions,
             error: $this->error,
-            success: $this->success
+            success: $this->success,
+            conversationId: $this->conversationId
+        );
+    }
+
+    /**
+     * Add conversation ID
+     */
+    public function withConversationId(string $conversationId): self
+    {
+        return new self(
+            content: $this->content,
+            engine: $this->engine,
+            model: $this->model,
+            metadata: $this->metadata,
+            tokensUsed: $this->tokensUsed,
+            creditsUsed: $this->creditsUsed,
+            latency: $this->latency,
+            requestId: $this->requestId,
+            usage: $this->usage,
+            cached: $this->cached,
+            finishReason: $this->finishReason,
+            files: $this->files,
+            actions: $this->actions,
+            error: $this->error,
+            success: $this->success,
+            conversationId: $conversationId
         );
     }
 
@@ -219,7 +248,8 @@ class AIResponse
             files: $this->files,
             actions: $actions,
             error: $this->error,
-            success: $this->success
+            success: $this->success,
+            conversationId: $this->conversationId
         );
     }
 
@@ -567,6 +597,11 @@ class AIResponse
     public function getSuccess(): bool
     {
         return $this->success;
+    }
+
+    public function getConversationId(): ?string
+    {
+        return $this->conversationId;
     }
 
     /**

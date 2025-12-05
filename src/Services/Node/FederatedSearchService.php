@@ -25,9 +25,15 @@ class FederatedSearchService
         string $query,
         ?array $nodeIds = null,
         int $limit = 10,
-        array $options = []
+        array $options = [],
+        $userId = null
     ): array {
         $startTime = microtime(true);
+        
+        // Add userId to options if provided
+        if ($userId !== null) {
+            $options['user_id'] = $userId;
+        }
         
         // Generate cache key
         $cacheKey = $this->generateCacheKey($query, $nodeIds, $options);
@@ -84,6 +90,7 @@ class FederatedSearchService
     {
         try {
             $collections = $options['collections'] ?? [];
+            $userId = $options['user_id'] ?? null;
             $results = [];
             
             if (empty($collections)) {
@@ -106,7 +113,9 @@ class FederatedSearchService
                         $collection,
                         $query,
                         $limit,
-                        $options['threshold'] ?? 0.3
+                        $options['threshold'] ?? 0.3,
+                        $options['filters'] ?? [],
+                        $userId
                     );
                     
                     foreach ($searchResults as $result) {

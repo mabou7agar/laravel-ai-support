@@ -346,6 +346,7 @@ class IntelligentRAGService
      * @param array $availableCollections Model classes to search
      * @param array $conversationHistory Optional conversation history
      * @param array $options Additional options
+     * @param string|int|null $userId User ID for access control
      * @return array Legacy format for backward compatibility
      */
     public function processMessageStream(
@@ -354,7 +355,8 @@ class IntelligentRAGService
         callable $callback,
         array $availableCollections = [],
         array $conversationHistory = [],
-        array $options = []
+        array $options = [],
+        $userId = null
     ): array {
         try {
             // Load conversation history
@@ -376,7 +378,8 @@ class IntelligentRAGService
                 $context = $this->retrieveRelevantContext(
                     $analysis['search_queries'],
                     $analysis['collections'] ?? $availableCollections,
-                    $options
+                    $options,
+                    $userId
                 );
             }
 
@@ -1014,7 +1017,8 @@ PROMPT;
                     options: array_merge($options, [
                         'collections' => $collections,
                         'threshold' => $threshold,
-                    ])
+                    ]),
+                    userId: $userId
                 );
 
                 // Extract results from federated response
