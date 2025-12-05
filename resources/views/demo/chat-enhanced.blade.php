@@ -599,10 +599,27 @@
                         const data = await response.json();
 
                         if (data.success) {
+                            // Extract actions from metadata if present
+                            const actions = data.metadata?.actions || data.actions || [];
+                            
+                            console.log('Raw actions from API:', actions);
+                            
+                            // Convert ACTION format to button format
+                            const actionButtons = actions.map(action => {
+                                const button = {
+                                    id: action.type.toLowerCase(), // e.g., 'send_email'
+                                    type: action.type,
+                                    params: action.params || {},
+                                    label: this.getActionLabel(action.type)
+                                };
+                                console.log('Created button:', button);
+                                return button;
+                            });
+                            
                             this.messages.push({
                                 role: 'assistant',
                                 content: data.response,
-                                actions: data.actions || [],
+                                actions: actionButtons,
                                 numbered_options: data.numbered_options || []
                             });
 
@@ -709,9 +726,74 @@
                     this.currentMessage = `Can you help me ${action.label.toLowerCase()}?`;
                 },
 
+                getActionLabel(type) {
+                    const labels = {
+                        'SEND_EMAIL': '📧 Send Email',
+                        'CREATE_TASK': '✅ Create Task',
+                        'SCHEDULE_MEETING': '📅 Schedule Meeting',
+                        'SAVE_NOTE': '📝 Save Note'
+                    };
+                    return labels[type] || type;
+                },
+
                 async executeAction(action) {
                     console.log('Executing action:', action);
-                    // Implement action execution
+                    
+                    // Show confirmation dialog
+                    const confirmMessage = this.getConfirmMessage(action);
+                    if (!confirm(confirmMessage)) {
+                        return;
+                    }
+                    
+                    try {
+                        // Call dynamic action execution API
+                        const response = await fetch('/ai-demo/chat/execute-action', {
+                            method: 'POST',
+                            headers: this.getAuthHeaders(),
+                            body: JSON.stringify({
+                                action_id: action.id,
+                                parameters: action.params
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            this.messages.push({
+                                role: 'assistant',
+                                content: data.message || `✅ ${action.label} completed successfully!`,
+                                actions: []
+                            });
+                        } else {
+                            this.messages.push({
+                                role: 'assistant',
+                                content: `❌ Failed: ${data.error || 'Unknown error'}`,
+                                actions: []
+                            });
+                        }
+                    } catch (error) {
+                        console.error('Error executing action:', error);
+                        this.messages.push({
+                            role: 'assistant',
+                            content: `❌ Error executing ${action.label}. Please try again.`,
+                            actions: []
+                        });
+                    }
+                    
+                    this.scrollToBottom();
+                },
+                
+                getConfirmMessage(action) {
+                    switch(action.type) {
+                        case 'SEND_EMAIL':
+                            return `Send email to ${action.params.to}?\n\nSubject: ${action.params.subject}`;
+                        case 'CREATE_TASK':
+                            return `Create task: ${action.params.title}?`;
+                        case 'SCHEDULE_MEETING':
+                            return `Schedule meeting: ${action.params.title}?`;
+                        default:
+                            return `Execute ${action.label}?`;
+                    }
                 },
 
                 selectOption(value) {

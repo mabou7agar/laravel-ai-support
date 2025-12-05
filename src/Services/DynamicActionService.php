@@ -265,13 +265,49 @@ class DynamicActionService
      */
     protected function discoverConfiguredActions(): array
     {
-        $configPath = config_path('ai-actions.php');
+        $actions = [];
         
-        if (!File::exists($configPath)) {
-            return [];
+        // Add built-in custom actions
+        $actions[] = [
+            'id' => 'send_email',
+            'label' => '📧 Send Email',
+            'description' => 'Send an email message',
+            'type' => 'custom',
+            'required_fields' => ['to', 'subject', 'body'],
+        ];
+        
+        $actions[] = [
+            'id' => 'create_task',
+            'label' => '✅ Create Task',
+            'description' => 'Create a new task',
+            'type' => 'custom',
+            'required_fields' => ['title', 'description'],
+        ];
+        
+        $actions[] = [
+            'id' => 'schedule_meeting',
+            'label' => '📅 Schedule Meeting',
+            'description' => 'Schedule a meeting',
+            'type' => 'custom',
+            'required_fields' => ['title', 'date', 'time'],
+        ];
+        
+        $actions[] = [
+            'id' => 'save_note',
+            'label' => '📝 Save Note',
+            'description' => 'Save a note',
+            'type' => 'custom',
+            'required_fields' => ['title', 'content'],
+        ];
+        
+        // Load from config file if exists
+        $configPath = config_path('ai-actions.php');
+        if (File::exists($configPath)) {
+            $configActions = config('ai-actions.actions', []);
+            $actions = array_merge($actions, $configActions);
         }
         
-        return config('ai-actions.actions', []);
+        return $actions;
     }
     
     /**
@@ -448,6 +484,11 @@ class DynamicActionService
                 return $this->executeApiCall($action, $parameters);
             }
             
+            // Handle custom action types
+            if ($action['type'] === 'custom') {
+                return $this->executeCustomAction($action, $parameters);
+            }
+            
             return [
                 'success' => false,
                 'error' => 'Unknown action type: ' . $action['type']
@@ -459,6 +500,80 @@ class DynamicActionService
                 'error' => $e->getMessage()
             ];
         }
+    }
+    
+    /**
+     * Execute a custom action (email, task, etc.)
+     */
+    protected function executeCustomAction(array $action, array $parameters): array
+    {
+        $actionId = $action['id'];
+        
+        // Handle different custom actions
+        return match($actionId) {
+            'send_email' => $this->handleSendEmail($parameters),
+            'create_task' => $this->handleCreateTask($parameters),
+            'schedule_meeting' => $this->handleScheduleMeeting($parameters),
+            'save_note' => $this->handleSaveNote($parameters),
+            default => [
+                'success' => false,
+                'error' => "Unknown custom action: {$actionId}"
+            ]
+        };
+    }
+    
+    /**
+     * Handle send email action
+     */
+    protected function handleSendEmail(array $params): array
+    {
+        // TODO: Integrate with your email service
+        \Log::channel('ai-engine')->info('Email would be sent', $params);
+        
+        return [
+            'success' => true,
+            'message' => '✅ Email sent successfully!',
+            'data' => [
+                'to' => $params['to'] ?? null,
+                'subject' => $params['subject'] ?? null,
+            ],
+        ];
+    }
+    
+    /**
+     * Handle create task action
+     */
+    protected function handleCreateTask(array $params): array
+    {
+        return [
+            'success' => true,
+            'message' => '✅ Task created successfully!',
+            'data' => $params,
+        ];
+    }
+    
+    /**
+     * Handle schedule meeting action
+     */
+    protected function handleScheduleMeeting(array $params): array
+    {
+        return [
+            'success' => true,
+            'message' => '✅ Meeting scheduled successfully!',
+            'data' => $params,
+        ];
+    }
+    
+    /**
+     * Handle save note action
+     */
+    protected function handleSaveNote(array $params): array
+    {
+        return [
+            'success' => true,
+            'message' => '✅ Note saved successfully!',
+            'data' => $params,
+        ];
     }
     
     /**

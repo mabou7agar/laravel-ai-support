@@ -20,6 +20,9 @@ Route::prefix('api/ai-chat')->middleware(['web'])->group(function () {
     // Execute interactive action
     Route::post('/action', [AIChatController::class, 'executeAction'])->name('ai-chat.action');
     
+    // Execute dynamic action (for AI-generated actions)
+    Route::post('/execute-action', [AIChatController::class, 'executeDynamicAction'])->name('ai-chat.execute-action');
+    
     // Get chat history
     Route::get('/history/{session_id}', [AIChatController::class, 'getHistory'])->name('ai-chat.history');
     

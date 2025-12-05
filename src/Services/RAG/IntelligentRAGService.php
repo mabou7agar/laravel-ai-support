@@ -263,6 +263,32 @@ class IntelligentRAGService
                 $metadata = array_merge($metadata, $response->getMetadata());
             }
 
+            // Detect and extract actions from response
+            $content = $response->getContent();
+            $actions = $this->extractActions($content);
+            if (!empty($actions)) {
+                $metadata['actions'] = $actions;
+                
+                // Remove ACTION lines from content so they don't show to user
+                $cleanContent = preg_replace('/ACTION:[A-Z_]+\|[^\n]+\n?/i', '', $content);
+                $response = new AIResponse(
+                    content: trim($cleanContent),
+                    engine: $response->getEngine(),
+                    model: $response->getModel(),
+                    metadata: $response->getMetadata(),
+                    tokensUsed: $response->getTokensUsed(),
+                    creditsUsed: $response->getCreditsUsed(),
+                    latency: $response->getLatency(),
+                    requestId: $response->getRequestId(),
+                    conversationId: $response->getConversationId()
+                );
+                
+                Log::channel('ai-engine')->info('Actions detected in response', [
+                    'session_id' => $sessionId,
+                    'actions' => $actions,
+                ]);
+            }
+
             // Create new response with updated metadata
             return new AIResponse(
                 content: $response->getContent(),
@@ -797,6 +823,41 @@ PROMPT;
     }
 
     /**
+     * Extract actions from AI response
+     * Format: ACTION:TYPE|param1=value1|param2=value2
+     */
+    protected function extractActions(string $content): array
+    {
+        $actions = [];
+        
+        // Match ACTION:TYPE|param=value|param=value
+        if (preg_match_all('/ACTION:([A-Z_]+)\|([^\n]+)/i', $content, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $type = strtoupper($match[1]);
+                $paramsString = $match[2];
+                
+                // Parse parameters
+                $params = [];
+                $paramPairs = explode('|', $paramsString);
+                foreach ($paramPairs as $pair) {
+                    if (strpos($pair, '=') !== false) {
+                        [$key, $value] = explode('=', $pair, 2);
+                        $params[trim($key)] = trim($value);
+                    }
+                }
+                
+                $actions[] = [
+                    'type' => $type,
+                    'params' => $params,
+                    'raw' => $match[0],
+                ];
+            }
+        }
+        
+        return $actions;
+    }
+
+    /**
      * Get context-aware analysis prompt
      */
     protected function getContextAwareAnalysisPrompt(string $nodeInfo): string
@@ -1157,7 +1218,14 @@ PROMPT;
             $prompt .= "- Include ALL relevant details in the list (subject, sender, date, preview) - don't just show titles\n";
             $prompt .= "- CRITICAL: If user responds with JUST a number (e.g., '1'), they want the FULL email content\n";
             $prompt .= "- Look at your previous response, find item #N, extract its subject/title, and show the COMPLETE details from the context above\n";
-            $prompt .= "- Don't ask what they want - directly show the full email content with all fields (from, to, subject, body, date)\n";
+            $prompt .= "- Don't ask what they want - directly show the full email content with all fields (from, to, subject, body, date)\n\n";
+            
+            $prompt .= "EMAIL REPLY WORKFLOW:\n";
+            $prompt .= "- When user asks to 'reply' or 'suggest a reply' to an email, draft a professional response\n";
+            $prompt .= "- Include: To, Subject (Re: original), and full message body\n";
+            $prompt .= "- After showing the draft, ask: 'Would you like me to send this reply? (yes/no)'\n";
+            $prompt .= "- If user confirms (yes/send/ok), respond with: ACTION:SEND_EMAIL with the email details\n";
+            $prompt .= "- Format: ACTION:SEND_EMAIL|to=email@example.com|subject=Re: Subject|body=Message body here\n";
         } else {
             // No KB context - but check if we have aggregate data
             $hasAggregateData = !empty($aggregateData) && collect($aggregateData)->contains(function ($stats) {
