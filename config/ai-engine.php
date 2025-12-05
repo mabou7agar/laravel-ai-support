@@ -996,27 +996,15 @@ return [
     | Conversation History Optimization
     |--------------------------------------------------------------------------
     |
-    | Sliding window + summarization to reduce prompt size while maintaining context.
-    | Instead of sending full history, we send: [Summary of old messages] + [Recent messages]
+    | Simple sliding window to reduce prompt size.
+    | When conversation exceeds threshold, only recent messages are sent.
     |
     */
     'conversation_history' => [
-        // Enable history optimization
+        // Enable history optimization (sliding window)
         'enabled' => env('AI_CONVERSATION_HISTORY_OPTIMIZATION', true),
         
-        // Number of recent messages to send in full
-        'recent_messages' => env('AI_CONVERSATION_RECENT_MESSAGES', 5),
-        
-        // Summarize messages older than this count
-        'summarize_after' => env('AI_CONVERSATION_SUMMARIZE_AFTER', 10),
-        
-        // Maximum tokens for summary
-        'summary_max_tokens' => env('AI_CONVERSATION_SUMMARY_TOKENS', 200),
-        
-        // Cache summaries for performance
-        'cache_summaries' => env('AI_CONVERSATION_CACHE_SUMMARIES', true),
-        
-        // Summary cache TTL in minutes
-        'cache_ttl' => env('AI_CONVERSATION_CACHE_TTL', 60),
+        // Number of recent messages to keep when history is long
+        'recent_messages' => env('AI_CONVERSATION_RECENT_MESSAGES', 10),
     ],
 ];
