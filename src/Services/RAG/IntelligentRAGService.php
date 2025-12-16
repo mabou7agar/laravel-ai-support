@@ -503,20 +503,13 @@ class IntelligentRAGService
                 // Try to get RAG description from the model
                 if (class_exists($collection)) {
                     try {
-                        // Try static method first (preferred)
-                        if (method_exists($collection, 'getRAGDescription')) {
-                            $description = $collection::getRAGDescription();
-                        } else {
-                            // Fallback to instance method
-                            $instance = new $collection();
-                            if (method_exists($instance, 'getRAGDescription')) {
-                                $description = $instance->getRAGDescription();
-                            }
+                        $instance = new $collection();
+                        
+                        if (method_exists($instance, 'getRAGDescription')) {
+                            $description = $instance->getRAGDescription();
                         }
                         
-                        if (method_exists($collection, 'getRAGDisplayName')) {
-                            $name = $collection::getRAGDisplayName();
-                        } elseif (isset($instance) && method_exists($instance, 'getRAGDisplayName')) {
+                        if (method_exists($instance, 'getRAGDisplayName')) {
                             $name = $instance->getRAGDisplayName();
                         }
                     } catch (\Exception $e) {
@@ -1611,11 +1604,15 @@ PROMPT;
         })->toArray();
 
         // Detect numbered options in the response
-        $numberedOptions = $this->extractNumberedOptions($response->getContent());
+        $responseContent = $response->getContent();
+        $numberedOptions = $this->extractNumberedOptions($responseContent);
+        
+        // Strip the OPTIONS_JSON block from content (user shouldn't see it)
+        $cleanContent = preg_replace('/\s*<!--OPTIONS_JSON.*?OPTIONS_JSON-->\s*/s', '', $responseContent);
 
         // Create new response with enriched metadata
         return new AIResponse(
-            content: $response->getContent(),
+            content: trim($cleanContent),
             engine: $response->getEngine(),
             model: $response->getModel(),
             metadata: array_merge(
@@ -1634,258 +1631,71 @@ PROMPT;
 
     /**
      * Extract numbered options from response content
-     * Only extracts options when there are multiple items to choose from
+     * Parses OPTIONS_JSON block if present, falls back to markdown parsing
      */
     protected function extractNumberedOptions(string $content): array
     {
+        // Try to extract JSON block first
+        if (preg_match('/<!--OPTIONS_JSON\s*(.*?)\s*OPTIONS_JSON-->/s', $content, $match)) {
+            $json = trim($match[1]);
+            $parsed = json_decode($json, true);
+            
+            if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
+                $options = [];
+                foreach ($parsed as $item) {
+                    $number = $item['number'] ?? count($options) + 1;
+                    $title = $item['title'] ?? '';
+                    $description = $item['description'] ?? '';
+                    
+                    $options[] = [
+                        'id' => 'opt_' . $number . '_' . substr(md5($title), 0, 8),
+                        'number' => $number,
+                        'text' => $title,
+                        'full_text' => $title . ($description ? ' - ' . $description : ''),
+                        'preview' => substr($title, 0, 100),
+                        'source_index' => $item['source'] ?? null,
+                        'clickable' => true,
+                        'action' => 'select_option',
+                        'value' => (string) $number,
+                    ];
+                }
+                return $options;
+            }
+        }
+
+        // Fallback: parse markdown numbered list (1. **Title** - Description)
         $options = [];
-
-        // Detect if this is a detail view vs a list by checking structure:
-        // - Detail view: Has only 1 numbered item with multiple sub-fields (bullet points or bold fields)
-        // - List view: Has multiple numbered items (2+)
-
-        // Count numbered items (1. xxx, 2. xxx, etc.)
         preg_match_all('/^\s*\d+\.\s+/m', $content, $numberedItems);
-        $numberedCount = count($numberedItems[0]);
-
-        // Count sub-fields (bullet points or bold field labels within the content)
-        preg_match_all('/(?:^\s*-\s+|\*\*[A-Za-z]+\*\*:)/m', $content, $subFields);
-        $subFieldCount = count($subFields[0]);
-
-        // If only 1 numbered item but many sub-fields, it's a detail view
-        if ($numberedCount <= 1 && $subFieldCount >= 3) {
+        if (count($numberedItems[0]) < 2) {
             return [];
         }
 
-        // Common metadata field names that shouldn't be clickable options
-        $metadataFields = [
-            'from', 'to', 'cc', 'bcc', 'date', 'subject', 'content', 'body',
-            'attachment', 'attachments', 'sent', 'received', 'reply-to',
-            'status', 'priority', 'size', 'type', 'category', 'tags', 'label',
-            'folder', 'email subject', 'email from', 'email to', 'email date',
-            'sender', 'recipient', 'recipients', 'message', 'details', 'info',
-            'description', 'summary', 'note', 'notes', 'created', 'updated',
-            'author', 'title', 'name', 'id', 'reference', 'source'
-        ];
-
-        // Pattern 1: Numbered lists with markdown bold (1. **Title**: Description)
-        if (preg_match_all('/^\s*(\d+)\.\s+\*\*(.+?)\*\*:?\s*(.*)$/m', $content, $matches, PREG_SET_ORDER)) {
+        if (preg_match_all('/^\s*(\d+)\.\s+\*\*(.+?)\*\*[\s:\-]*(.*)$/m', $content, $matches, PREG_SET_ORDER)) {
             foreach (array_slice($matches, 0, 10) as $match) {
                 $number = (int) $match[1];
                 $title = trim($match[2]);
                 $description = trim($match[3] ?? '');
 
-                // Skip metadata fields - these are document details, not selectable options
-                if (in_array(strtolower($title), $metadataFields)) {
-                    continue;
-                }
-
-                $fullText = $title . ($description ? ': ' . $description : '');
-
-                // Extract source reference if present
                 $sourceRef = null;
-                if (preg_match('/\[Source (\d+)\]/', $fullText, $sourceMatch)) {
+                if (preg_match('/\[Source (\d+)\]/', $description, $sourceMatch)) {
                     $sourceRef = (int) $sourceMatch[1];
                 }
 
-                // Skip very short options
-                if (strlen($title) < 3) {
-                    continue;
-                }
-
-                // Generate unique ID based on number and content hash
-                $uniqueId = 'opt_' . $number . '_' . substr(md5($fullText), 0, 8);
-
                 $options[] = [
-                    'id' => $uniqueId,
+                    'id' => 'opt_' . $number . '_' . substr(md5($title), 0, 8),
                     'number' => $number,
                     'text' => $title,
-                    'full_text' => $fullText,
+                    'full_text' => $title . ($description ? ' - ' . $description : ''),
                     'preview' => substr($title, 0, 100),
                     'source_index' => $sourceRef,
                     'clickable' => true,
                     'action' => 'select_option',
                     'value' => (string) $number,
                 ];
-            }
-        }
-
-        // Pattern 2: Numbered lists with paragraphs (1. text\n\n2. text)
-        if (empty($options) && preg_match_all('/(\d+)\.\s+(.+?)(?=\n\n\d+\.|\n\n[A-Z]|$)/s', $content, $matches, PREG_SET_ORDER)) {
-            foreach (array_slice($matches, 0, 10) as $match) {
-                $number = (int) $match[1];
-                $fullLine = trim($match[2]);
-
-                // Extract source reference before removing it
-                $sourceRef = null;
-                if (preg_match('/\[Source (\d+)\]/', $fullLine, $sourceMatch)) {
-                    $sourceRef = (int) $sourceMatch[1];
-                }
-
-                // Remove [Source X] references for display
-                $cleanLine = preg_replace('/\s*\[Source \d+\]\.?/', '', $fullLine);
-
-                // Extract title - try to find quoted title or subject first
-                $text = $cleanLine;
-
-                // Look for quoted titles like "Frontend Developer Take-Home Task" or 'subject "Hi"'
-                if (preg_match('/(?:titled|subject|called|named)\s*["\']([^"\']+)["\']/i', $cleanLine, $titleMatch)) {
-                    $text = trim($titleMatch[1]);
-                }
-                // Look for **bold** titles (skip if it's a metadata field)
-                elseif (preg_match('/\*\*([^*]+)\*\*/', $cleanLine, $titleMatch)) {
-                    $boldText = trim($titleMatch[1]);
-                    // If the bold text is a metadata field, try to extract the value after it
-                    if (in_array(strtolower($boldText), $metadataFields)) {
-                        // Try to get the value after the metadata field (e.g., "**Subject**: Actual Title")
-                        if (preg_match('/\*\*[^*]+\*\*:\s*(.+?)(?:\s{2,}|\n|$)/', $cleanLine, $valueMatch)) {
-                            $text = trim($valueMatch[1]);
-                        }
-                    } else {
-                        $text = $boldText;
-                    }
-                }
-                // Extract sender/source info as fallback
-                elseif (preg_match('/(?:from|by)\s+([A-Z][a-zA-Z\s]+?)(?:\s+on\s+|\s+at\s+|,|\.|$)/i', $cleanLine, $titleMatch)) {
-                    $text = 'From ' . trim($titleMatch[1]);
-                }
-                // Use first meaningful phrase
-                else {
-                    // Get first sentence or up to 80 chars
-                    $firstSentence = preg_split('/[.!?]/', $cleanLine)[0] ?? $cleanLine;
-                    $text = strlen($firstSentence) > 80 ? substr($firstSentence, 0, 77) . '...' : $firstSentence;
-                }
-
-                // Skip very short options
-                if (strlen($text) < 3) {
-                    continue;
-                }
-
-                // Skip if the extracted text is still a metadata field
-                if (in_array(strtolower($text), $metadataFields)) {
-                    continue;
-                }
-
-                // Generate unique ID based on number and content hash
-                $uniqueId = 'opt_' . $number . '_' . substr(md5($fullLine), 0, 8);
-
-                $options[] = [
-                    'id' => $uniqueId,
-                    'number' => $number,
-                    'text' => $text,
-                    'full_text' => substr($cleanLine, 0, 200),
-                    'preview' => substr($text, 0, 100),
-                    'source_index' => $sourceRef,
-                    'clickable' => true,
-                    'action' => 'select_option',
-                    'value' => (string) $number,
-                ];
-            }
-        }
-
-        // Pattern 3: Markdown bullet points with bold headers (- **Title**: Description)
-        if (empty($options) && preg_match_all('/^-\s+\*\*(.+?)\*\*:?\s*(.+?)(?=\n-|\n\n|$)/ms', $content, $matches, PREG_SET_ORDER)) {
-            $number = 1;
-            foreach (array_slice($matches, 0, 10) as $match) {
-                $title = trim($match[1]);
-                $description = trim($match[2]);
-
-                // Skip metadata fields - these are email/document details, not selectable options
-                if (in_array(strtolower($title), $metadataFields)) {
-                    continue;
-                }
-
-                $fullText = $title . ': ' . $description;
-
-                // Extract source reference if present
-                $sourceRef = null;
-                if (preg_match('/\[Source (\d+)\]/', $fullText, $sourceMatch)) {
-                    $sourceRef = (int) $sourceMatch[1];
-                }
-
-                // Generate unique ID
-                $uniqueId = 'opt_' . $number . '_' . substr(md5($fullText), 0, 8);
-
-                $options[] = [
-                    'id' => $uniqueId,
-                    'number' => $number,
-                    'text' => $title,
-                    'full_text' => $fullText,
-                    'preview' => substr($title, 0, 100),
-                    'source_index' => $sourceRef,
-                    'clickable' => true,
-                    'action' => 'select_option',
-                    'value' => (string) $number,
-                ];
-                $number++;
-            }
-        }
-
-        // Pattern 4: Markdown headers (#### Title)
-        if (empty($options) && preg_match_all('/^#{2,4}\s+(.+?)$/m', $content, $matches, PREG_SET_ORDER)) {
-            $number = 1;
-            foreach (array_slice($matches, 0, 10) as $match) {
-                $title = trim($match[1]);
-
-                // Skip main title or very short headers
-                if (strlen($title) < 5 || stripos($title, 'title:') !== false) {
-                    continue;
-                }
-
-                // Generate unique ID
-                $uniqueId = 'opt_' . $number . '_' . substr(md5($title), 0, 8);
-
-                $options[] = [
-                    'id' => $uniqueId,
-                    'number' => $number,
-                    'text' => $title,
-                    'full_text' => $title,
-                    'preview' => substr($title, 0, 100),
-                    'source_index' => null,
-                    'clickable' => true,
-                    'action' => 'select_option',
-                    'value' => (string) $number,
-                ];
-                $number++;
             }
         }
 
         return $options;
-    }
-
-    /**
-     * Extract full text for a numbered option including continuation lines
-     */
-    protected function extractFullOptionText(string $content, int $number, string $firstLine): string
-    {
-        $lines = explode("\n", $content);
-        $fullText = $firstLine;
-        $foundStart = false;
-        $nextNumber = $number + 1;
-
-        foreach ($lines as $line) {
-            // Find the start of this option
-            if (!$foundStart && preg_match('/^\s*' . $number . '\.\s+/', $line)) {
-                $foundStart = true;
-                continue;
-            }
-
-            // If we found the start, collect continuation lines
-            if ($foundStart) {
-                // Stop if we hit the next number or empty line
-                if (preg_match('/^\s*' . $nextNumber . '\.\s+/', $line) || trim($line) === '') {
-                    break;
-                }
-
-                // Add continuation line
-                $trimmed = trim($line);
-                if ($trimmed && !preg_match('/^\d+\./', $trimmed)) {
-                    $fullText .= ' ' . $trimmed;
-                }
-            }
-        }
-
-        return trim($fullText);
     }
 
     /**
@@ -1994,10 +1804,10 @@ PROMPT;
 💡 EXAMPLES:
 
 ✅ GOOD - Context about Laravel found (direct, natural):
-"Laravel routing works by defining routes in your routes files [Source 0]. You can use Route::get(), Route::post(), and other HTTP verb methods [Source 1]. Routes can accept parameters like Route::get('/user/{id}', ...) which allows dynamic URL segments [Source 0]."
+"Laravel routing works by defining routes in your routes files. You can use Route::get(), Route::post(), and other HTTP verb methods. Routes can accept parameters like Route::get('/user/{id}', ...) which allows dynamic URL segments."
 
 ✅ GOOD - Multiple sources about emails (direct, no meta-commentary):
-"You have 5 emails. The most recent ones are from John about the project deadline [Source 0] and Sarah regarding the meeting schedule [Source 1]. The others are from Mike about code review [Source 2], Lisa about the budget [Source 3], and Tom about the launch date [Source 4]."
+"You have 5 emails. The most recent ones are from John about the project deadline and Sarah regarding the meeting schedule. The others are from Mike about code review, Lisa about the budget, and Tom about the launch date."
 
 ✅ GOOD - No KB context, but can use conversation history:
 User: "What did we discuss about the project earlier?"
@@ -2033,6 +1843,34 @@ Email from: "John Smith <john@example.com>"
 User asks: "how can I reply this mail"
 WRONG: "Hi [Recipient's Name],"
 RIGHT: "Hi John," or "Hi John Smith,"
+
+📋 LIST/OPTIONS FORMATTING:
+When presenting multiple items (2+) that the user can select from, include a JSON block at the END of your response:
+
+1. Write your natural response text first (intro + numbered list for readability)
+2. Do NOT include [Source X] references in the text - sources are tracked internally
+3. At the very end, add a JSON block with the options data
+
+FORMAT:
+```
+Your natural response here with numbered items for readability...
+
+1. **Title One** - Description
+2. **Title Two** - Description
+
+<!--OPTIONS_JSON
+[
+  {"number": 1, "title": "Title One", "description": "Description", "source": 0},
+  {"number": 2, "title": "Title Two", "description": "Description", "source": 1}
+]
+OPTIONS_JSON-->
+```
+
+RULES:
+- Only include OPTIONS_JSON when there are 2+ selectable items
+- Never include [Source X] in the visible text - keep source references only in the JSON block
+- Do NOT include OPTIONS_JSON for single item details or general responses
+- The JSON must be valid and match the numbered items in your response
 
 Remember: Be helpful and conversational with knowledge base content, but strict about not using external information when no context is found.
 PROMPT;
