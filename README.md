@@ -40,9 +40,14 @@
 | **GPT-5 Support** | Full GPT-5 family support | `model: 'gpt-5-mini'` / `'gpt-5.1'` |
 | **Streaming** | Real-time responses | `streamMessage(callback: fn($chunk))` |
 | **Federated RAG** | Distributed search | `AI_ENGINE_NODES_ENABLED=true` |
+| **Intelligent Search** | AI selects collections | `availableCollections: []` = auto-discovery |
+| **RAG Descriptions** | Describe collection content | `getRAGDescription()` method |
+| **Simple Filters** | Property-based access control | `public static $skipUserFilter = true` |
 | **Force Reindex** | Recreate collections | `php artisan ai-engine:vector-index --force` |
 
 **💡 Key Point:** `useIntelligentRAG: false` = **NO RAG at all** (direct AI response)
+
+**🆕 New:** Intelligent Federated Search - AI automatically discovers and selects the right collections across all nodes!
 
 </div>
 
@@ -1911,6 +1916,15 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 - **Remote Execution**: `POST /api/v1/actions/execute-remote`
 - **Multi-Node Execution**: `POST /api/v1/actions/execute-all`
 - **AI-Generated Drafts**: Email replies, calendar events, task creation
+
+✨ **Intelligent Federated Search** 🌐 (NEW!)
+- **Auto-Discovery**: Automatically discovers collections from all connected nodes
+- **AI Selection**: AI analyzes queries and selects relevant collections to search
+- **RAG Descriptions**: Collections describe their content for better AI understanding
+- **Simple Filters**: Property-based access control with `public static $skipUserFilter = true`
+- **Auto-Generated Descriptions**: Collections without descriptions get defaults with warnings
+- **Node Routing**: Automatically routes searches to the correct nodes
+- **See**: [Full Documentation](docs/INTELLIGENT_FEDERATED_SEARCH.md)
 
 ✨ **Aggregate Query Detection** 📊
 - **Auto-Detection**: Queries like "how many", "count", "total" automatically detected
