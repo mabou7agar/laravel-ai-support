@@ -174,6 +174,13 @@ php artisan ai-engine:sync-models
 - **Enhancement Mode**: Users can modify fields after initial collection
 - **Interactive Actions**: Quick reply buttons and field options
 
+### 📝 Template Engine
+- **Pre-built Templates**: Summarize, translate, code review, sentiment analysis, and more
+- **Custom Templates**: Create and store your own prompt templates
+- **Variable Substitution**: `{{variable}}` placeholders in prompts
+- **Template Categories**: Writing, coding, translation, analysis, email, data
+- **Execute with AI**: Run templates directly with any AI engine/model
+
 ---
 
 ## 🌐 Federated RAG (Distributed Knowledge Base)
@@ -1996,6 +2003,28 @@ $config = new DataCollectorConfig(
 
 $response = DataCollector::startCollection('session-123', $config);
 $response = DataCollector::processMessage('session-123', 'Laravel Fundamentals');
+```
+
+✨ **Template Engine** 📝 (NEW!)
+- **Pre-built Templates**: 12+ templates for summarize, translate, code review, sentiment analysis
+- **Custom Templates**: Create and store your own prompt templates with variables
+- **Categories**: Writing, coding, translation, analysis, email, data
+- **Execute with AI**: Run templates directly with any engine/model
+
+```php
+// Execute a template
+$templateEngine = app(TemplateEngine::class);
+$response = $templateEngine->execute('summarize', [
+    'content' => $longText,
+    'length' => 'brief',
+]);
+
+// Create custom template
+$templateEngine->createTemplate([
+    'name' => 'My Template',
+    'user_prompt' => 'Analyze: {{content}}',
+    'variables' => [['name' => 'content', 'required' => true]],
+]);
 ```
 
 ✨ **Simplified API** 🎯

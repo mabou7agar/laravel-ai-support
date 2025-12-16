@@ -42,8 +42,6 @@ class AIEngineServiceProvider extends ServiceProvider
         // Enterprise Features
         $this->registerEnterpriseServices();
 
-        // Unified Engine Manager (combines all services)
-        $this->registerUnifiedEngine();
 
         // Service Aliases
         $this->registerAliases();
@@ -102,7 +100,16 @@ class AIEngineServiceProvider extends ServiceProvider
                 $app->make(CreditManager::class),
                 $app->make(CacheManager::class),
                 $app->make(RateLimitManager::class),
-                $app->make(AnalyticsManager::class)
+                $app->make(AnalyticsManager::class),
+                $app->bound(\LaravelAIEngine\Services\Memory\MemoryManager::class)
+                    ? $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class)
+                    : null,
+                $app->bound(ActionManager::class)
+                    ? $app->make(ActionManager::class)
+                    : null,
+                $app->bound(WebSocketManager::class)
+                    ? $app->make(WebSocketManager::class)
+                    : null
             );
         });
 
@@ -311,29 +318,24 @@ class AIEngineServiceProvider extends ServiceProvider
                     : null
             );
         });
-    }
 
-    /**
-     * Register unified engine manager
-     */
-    protected function registerUnifiedEngine(): void
-    {
-        $this->app->singleton(\LaravelAIEngine\Services\UnifiedEngineManager::class, function ($app) {
-            // Only pass WebSocketManager if it's registered
-            $webSocketManager = $app->bound(WebSocketManager::class)
-                ? $app->make(WebSocketManager::class)
-                : null;
+        // Action Service (with SmartActionService integration)
+        $this->app->singleton(\LaravelAIEngine\Services\ActionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\ActionService(
+                $app->make(\LaravelAIEngine\Services\SmartActionService::class)
+            );
+        });
 
-            return new \LaravelAIEngine\Services\UnifiedEngineManager(
-                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
-                $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class),
-                $app->make(ActionManager::class),
-                $app->make(FailoverManager::class),
-                $webSocketManager,
-                $app->make(NewAnalyticsManager::class)
+        // Template Engine
+        $this->app->singleton(\LaravelAIEngine\Services\TemplateEngine::class, function ($app) {
+            return new \LaravelAIEngine\Services\TemplateEngine(
+                $app->bound(\LaravelAIEngine\Services\AIEngineService::class)
+                    ? $app->make(\LaravelAIEngine\Services\AIEngineService::class)
+                    : null
             );
         });
     }
+
 
     /**
      * Register service aliases
@@ -342,7 +344,6 @@ class AIEngineServiceProvider extends ServiceProvider
     {
         // Core aliases
         $this->app->alias(AIEngineManager::class, 'ai-engine');
-        $this->app->alias(\LaravelAIEngine\Services\UnifiedEngineManager::class, 'unified-engine');
 
         // Enterprise aliases
         $this->app->alias(ActionManager::class, 'ai-actions');

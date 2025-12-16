@@ -66,11 +66,11 @@ class SmartActionService
             'executor' => 'calendar.create',
         ]);
 
-        // Create Task/Todo
+        // Create Task
         $this->registerAction('create_task', [
             'label' => '✅ Create Task',
-            'description' => 'Add this as a task',
-            'context_triggers' => ['task', 'todo', 'reminder', 'deadline', 'due', 'action item'],
+            'description' => 'Create a task from this content',
+            'context_triggers' => ['task', 'todo', 'reminder', 'follow up', 'action item', 'deadline'],
             'required_params' => ['title'],
             'optional_params' => ['due_date', 'priority', 'description', 'assignee'],
             'extractor' => function ($content, $sources, $metadata) {
@@ -79,80 +79,28 @@ class SmartActionService
             'executor' => 'task.create',
         ]);
 
-        // View Source Document
-        $this->registerAction('view_source', [
-            'label' => '📖 View Full Document',
-            'description' => 'View the complete source document',
-            'context_triggers' => [], // Always available when sources exist
-            'required_params' => ['model_class', 'model_id'],
-            'optional_params' => [],
-            'extractor' => function ($content, $sources, $metadata) {
-                return $this->extractSourceParams($sources);
-            },
-            'executor' => 'source.view',
-            'requires_sources' => true,
-        ]);
-
-        // Find Similar
-        $this->registerAction('find_similar', [
-            'label' => '🔍 Find Similar',
-            'description' => 'Find similar content in your data',
-            'context_triggers' => ['similar', 'related', 'like this'],
-            'required_params' => ['model_class', 'model_id'],
-            'optional_params' => ['limit'],
-            'extractor' => function ($content, $sources, $metadata) {
-                $params = $this->extractSourceParams($sources);
-                $params['limit'] = 5;
-                return $params;
-            },
-            'executor' => 'source.find_similar',
-            'requires_sources' => true,
-        ]);
-
-        // Mark Priority
-        $this->registerAction('mark_priority', [
-            'label' => '⭐ Mark as Priority',
-            'description' => 'Mark this item as high priority',
-            'context_triggers' => ['urgent', 'important', 'priority', 'asap', 'critical'],
-            'required_params' => ['model_class', 'model_id'],
-            'optional_params' => ['priority_level'],
-            'extractor' => function ($content, $sources, $metadata) {
-                $params = $this->extractSourceParams($sources);
-                $params['priority_level'] = 'high';
-                return $params;
-            },
-            'executor' => 'item.mark_priority',
-            'requires_sources' => true,
-        ]);
-
-        // Summarize
+        // Summarize Content
         $this->registerAction('summarize', [
             'label' => '📝 Summarize',
-            'description' => 'Get a brief summary',
-            'context_triggers' => ['long', 'detailed', 'comprehensive'],
+            'description' => 'Get a summary of this content',
+            'context_triggers' => ['long', 'detailed', 'article', 'document', 'report'],
             'required_params' => ['content'],
-            'optional_params' => ['max_length'],
+            'optional_params' => ['length', 'format'],
             'extractor' => function ($content, $sources, $metadata) {
-                return [
-                    'content' => $content,
-                    'max_length' => 200,
-                ];
+                return ['content' => $content, 'length' => 'brief'];
             },
             'executor' => 'ai.summarize',
         ]);
 
-        // Translate
+        // Translate Content
         $this->registerAction('translate', [
             'label' => '🌐 Translate',
             'description' => 'Translate this content',
-            'context_triggers' => [], // Manual trigger only
+            'context_triggers' => [],
             'required_params' => ['content'],
-            'optional_params' => ['target_language'],
+            'optional_params' => ['target_language', 'source_language'],
             'extractor' => function ($content, $sources, $metadata) {
-                return [
-                    'content' => $content,
-                    'target_language' => 'en', // Default
-                ];
+                return ['content' => $content, 'target_language' => 'en'];
             },
             'executor' => 'ai.translate',
         ]);
@@ -163,175 +111,88 @@ class SmartActionService
      */
     public function registerAction(string $id, array $definition): void
     {
-        $this->actionDefinitions[$id] = $definition;
+        $this->actionDefinitions[$id] = array_merge([
+            'id' => $id,
+            'label' => $id,
+            'description' => '',
+            'context_triggers' => [],
+            'required_params' => [],
+            'optional_params' => [],
+            'extractor' => null,
+            'executor' => null,
+        ], $definition);
     }
 
     /**
-     * Generate smart actions with pre-filled parameters
+     * Generate smart actions based on content and context
      */
     public function generateSmartActions(
         string $content,
-        string $sessionId,
         array $sources = [],
         array $metadata = []
     ): array {
         $actions = [];
-        $contentLower = strtolower($content);
 
-        foreach ($this->actionDefinitions as $actionId => $definition) {
-            // Check if action requires sources
-            if (($definition['requires_sources'] ?? false) && empty($sources)) {
-                continue;
-            }
+        foreach ($this->actionDefinitions as $id => $definition) {
+            // Check if any context triggers match
+            if ($this->matchesTriggers($content, $definition['context_triggers'])) {
+                // Extract parameters using the extractor
+                $params = [];
+                if (is_callable($definition['extractor'])) {
+                    $params = call_user_func($definition['extractor'], $content, $sources, $metadata);
+                }
 
-            // Check context triggers
-            $triggered = empty($definition['context_triggers']);
-            foreach ($definition['context_triggers'] as $trigger) {
-                if (stripos($contentLower, strtolower($trigger)) !== false) {
-                    $triggered = true;
-                    break;
+                // Only add action if required params can be extracted
+                if ($this->hasRequiredParams($params, $definition['required_params'])) {
+                    $actions[] = new InteractiveAction(
+                        id: $id . '_' . uniqid(),
+                        type: ActionTypeEnum::from(ActionTypeEnum::BUTTON),
+                        label: $definition['label'],
+                        description: $definition['description'],
+                        data: [
+                            'action' => $id,
+                            'executor' => $definition['executor'],
+                            'params' => $params,
+                            'ready_to_execute' => true,
+                        ]
+                    );
                 }
             }
-
-            if (!$triggered) {
-                continue;
-            }
-
-            // Extract parameters using the extractor function
-            $params = [];
-            if (isset($definition['extractor']) && is_callable($definition['extractor'])) {
-                try {
-                    $params = $definition['extractor']($content, $sources, $metadata);
-                } catch (\Exception $e) {
-                    Log::warning("Failed to extract params for action {$actionId}: " . $e->getMessage());
-                    continue;
-                }
-            }
-
-            // Check if all required params are filled
-            $missingParams = [];
-            foreach ($definition['required_params'] as $param) {
-                if (!isset($params[$param]) || empty($params[$param])) {
-                    $missingParams[] = $param;
-                }
-            }
-
-            // If missing required params, try AI extraction
-            if (!empty($missingParams) && $this->aiService) {
-                $aiParams = $this->extractParamsWithAI($content, $missingParams, $actionId, $definition);
-                $params = array_merge($params, $aiParams);
-                
-                // Re-check missing params
-                $missingParams = [];
-                foreach ($definition['required_params'] as $param) {
-                    if (!isset($params[$param]) || empty($params[$param])) {
-                        $missingParams[] = $param;
-                    }
-                }
-            }
-
-            // Check if source is from a remote node
-            $sourceNode = $this->extractSourceNode($sources, $metadata);
-            
-            // Create the action
-            $actionData = [
-                'action' => $actionId,
-                'executor' => $definition['executor'],
-                'params' => $params,
-                'missing_params' => $missingParams,
-                'ready' => empty($missingParams),
-                'session_id' => $sessionId,
-            ];
-            
-            // Add node info if source is from remote node
-            if ($sourceNode) {
-                $actionData['node'] = $sourceNode;
-                $actionData['remote'] = true;
-            }
-            
-            $action = new InteractiveAction(
-                id: $actionId . '_' . uniqid(),
-                type: ActionTypeEnum::from(ActionTypeEnum::BUTTON),
-                label: $definition['label'] . ($sourceNode ? " ({$sourceNode})" : ''),
-                description: $definition['description'],
-                data: $actionData
-            );
-
-            $actions[] = $action;
         }
-
-        // Always add standard actions
-        $actions[] = $this->createCopyAction($content);
-        $actions[] = $this->createRegenerateAction($sessionId);
-
-        // Add quick replies based on content
-        $actions = array_merge($actions, $this->generateQuickReplies($content, $sources));
 
         return $actions;
     }
 
     /**
-     * Extract parameters using AI
+     * Check if content matches any triggers
      */
-    protected function extractParamsWithAI(string $content, array $missingParams, string $actionId, array $definition): array
+    protected function matchesTriggers(string $content, array $triggers): bool
     {
-        if (!$this->aiService) {
-            return [];
+        if (empty($triggers)) {
+            return false;
         }
 
-        $paramDescriptions = [
-            'to_email' => 'email address to send to',
-            'subject' => 'email subject line',
-            'original_content' => 'the original email content being replied to',
-            'draft_body' => 'suggested reply text',
-            'title' => 'title or name for the item',
-            'date' => 'date in YYYY-MM-DD format',
-            'time' => 'time in HH:MM format',
-            'duration' => 'duration in minutes',
-            'location' => 'location or venue',
-            'attendees' => 'list of attendee emails',
-            'description' => 'detailed description',
-            'due_date' => 'due date in YYYY-MM-DD format',
-            'priority' => 'priority level (low, medium, high)',
-            'assignee' => 'person assigned to this task',
-        ];
-
-        $paramsToExtract = [];
-        foreach ($missingParams as $param) {
-            $paramsToExtract[$param] = $paramDescriptions[$param] ?? $param;
-        }
-
-        $prompt = "Extract the following information from this content. Return ONLY valid JSON.\n\n";
-        $prompt .= "Content:\n{$content}\n\n";
-        $prompt .= "Extract these fields:\n";
-        foreach ($paramsToExtract as $param => $desc) {
-            $prompt .= "- {$param}: {$desc}\n";
-        }
-        $prompt .= "\nReturn JSON like: {\"param1\": \"value1\", \"param2\": \"value2\"}\n";
-        $prompt .= "If a value cannot be determined, use null.";
-
-        try {
-            $response = $this->aiService->generate(new \LaravelAIEngine\DTOs\AIRequest(
-                prompt: $prompt,
-                model: 'gpt-4o-mini',
-                maxTokens: 500,
-            ));
-
-            $responseText = $response->getContent();
-            
-            // Extract JSON from response
-            if (preg_match('/\{[^{}]*\}/', $responseText, $matches)) {
-                $extracted = json_decode($matches[0], true);
-                if (is_array($extracted)) {
-                    // Filter out null values
-                    return array_filter($extracted, fn($v) => $v !== null && $v !== '');
-                }
+        $contentLower = strtolower($content);
+        foreach ($triggers as $trigger) {
+            if (stripos($contentLower, strtolower($trigger)) !== false) {
+                return true;
             }
-        } catch (\Exception $e) {
-            Log::warning("AI param extraction failed: " . $e->getMessage());
         }
 
-        return [];
+        return false;
+    }
+
+    /**
+     * Check if all required params are present
+     */
+    protected function hasRequiredParams(array $params, array $required): bool
+    {
+        foreach ($required as $param) {
+            if (!isset($params[$param]) || empty($params[$param])) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -341,36 +202,42 @@ class SmartActionService
     {
         $params = [];
 
-        // Try to get from first email source
-        $emailSource = null;
+        // Try to extract from sources (RAG results)
         foreach ($sources as $source) {
-            $type = strtolower($source['model_type'] ?? '');
-            if (strpos($type, 'email') !== false || strpos($type, 'mail') !== false) {
-                $emailSource = $source;
-                break;
+            if (isset($source['metadata'])) {
+                $meta = $source['metadata'];
+                if (isset($meta['from_email'])) {
+                    $params['to_email'] = $meta['from_email'];
+                }
+                if (isset($meta['subject'])) {
+                    $params['subject'] = 'Re: ' . $meta['subject'];
+                }
+                if (isset($meta['content']) || isset($meta['body'])) {
+                    $params['original_content'] = $meta['content'] ?? $meta['body'];
+                }
             }
         }
 
-        if ($emailSource) {
-            // Extract from source metadata
-            $params['to_email'] = $emailSource['from_email'] ?? $emailSource['from'] ?? null;
-            $params['subject'] = 'Re: ' . ($emailSource['subject'] ?? '');
-            $params['original_content'] = $emailSource['content'] ?? $emailSource['body'] ?? substr($content, 0, 500);
-            $params['model_id'] = $emailSource['model_id'] ?? $emailSource['id'] ?? null;
-            $params['model_class'] = $emailSource['model_class'] ?? null;
-        }
-
-        // Extract email from content if not found
+        // Extract email from content using regex
         if (empty($params['to_email'])) {
-            if (preg_match('/from[:\s]+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i', $content, $matches)) {
-                $params['to_email'] = $matches[1];
+            if (preg_match('/[\w\.-]+@[\w\.-]+\.\w+/', $content, $matches)) {
+                $params['to_email'] = $matches[0];
             }
         }
 
         // Extract subject from content
-        if (empty($params['subject']) || $params['subject'] === 'Re: ') {
-            if (preg_match('/subject[:\s]+["\']?([^"\'\n]+)["\']?/i', $content, $matches)) {
+        if (empty($params['subject'])) {
+            if (preg_match('/subject[:\s]+([^\n]+)/i', $content, $matches)) {
                 $params['subject'] = 'Re: ' . trim($matches[1]);
+            }
+        }
+
+        // Use AI to generate draft reply if available
+        if ($this->aiService && !empty($params['original_content'])) {
+            try {
+                $params['draft_body'] = $this->generateDraftReply($params['original_content']);
+            } catch (\Exception $e) {
+                Log::warning('Failed to generate draft reply: ' . $e->getMessage());
             }
         }
 
@@ -382,13 +249,20 @@ class SmartActionService
      */
     protected function extractForwardParams(string $content, array $sources, array $metadata): array
     {
-        $params = $this->extractEmailParams($content, $sources, $metadata);
-        
-        if (isset($params['subject'])) {
-            $params['original_subject'] = str_replace('Re: ', 'Fwd: ', $params['subject']);
+        $params = [];
+
+        foreach ($sources as $source) {
+            if (isset($source['metadata'])) {
+                $meta = $source['metadata'];
+                if (isset($meta['subject'])) {
+                    $params['original_subject'] = 'Fwd: ' . $meta['subject'];
+                }
+                if (isset($meta['content']) || isset($meta['body'])) {
+                    $params['original_content'] = $meta['content'] ?? $meta['body'];
+                }
+            }
         }
-        $params['original_content'] = $params['original_content'] ?? substr($content, 0, 500);
-        
+
         return $params;
     }
 
@@ -399,65 +273,46 @@ class SmartActionService
     {
         $params = [];
 
-        // Extract title - look for meeting/event context
-        if (preg_match('/(?:meeting|call|appointment|event)[:\s]+["\']?([^"\'\n,]+)/i', $content, $matches)) {
-            $params['title'] = trim($matches[1]);
-        } elseif (preg_match('/(?:about|regarding|for)[:\s]+["\']?([^"\'\n,]+)/i', $content, $matches)) {
-            $params['title'] = trim($matches[1]);
-        }
-
-        // Extract date patterns
+        // Extract date/time patterns
         $datePatterns = [
-            '/(\d{4}-\d{2}-\d{2})/' => 'Y-m-d',
-            '/(\d{1,2}\/\d{1,2}\/\d{2,4})/' => 'm/d/Y',
-            '/(\d{1,2}-\d{1,2}-\d{2,4})/' => 'm-d-Y',
-            '/(tomorrow)/i' => 'tomorrow',
-            '/(next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))/i' => 'next_day',
-            '/((?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))/i' => 'day',
+            '/(\d{1,2}\/\d{1,2}\/\d{2,4})/' => 'date',
+            '/(\d{4}-\d{2}-\d{2})/' => 'date',
+            '/(\d{1,2}:\d{2}\s*(?:am|pm)?)/i' => 'time',
+            '/tomorrow/i' => 'date_relative',
+            '/next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i' => 'date_relative',
         ];
 
-        foreach ($datePatterns as $pattern => $format) {
+        foreach ($datePatterns as $pattern => $type) {
             if (preg_match($pattern, $content, $matches)) {
-                if ($format === 'tomorrow') {
-                    $params['date'] = date('Y-m-d', strtotime('+1 day'));
-                } elseif ($format === 'next_day' || $format === 'day') {
-                    $params['date'] = date('Y-m-d', strtotime($matches[1]));
-                } else {
+                if ($type === 'date') {
                     $params['date'] = $matches[1];
+                } elseif ($type === 'time') {
+                    $params['time'] = $matches[1];
+                } elseif ($type === 'date_relative') {
+                    $params['date'] = $this->parseRelativeDate($matches[0]);
                 }
-                break;
             }
         }
 
-        // Extract time patterns
-        if (preg_match('/(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i', $content, $matches)) {
-            $params['time'] = $matches[1];
-        } elseif (preg_match('/at\s+(\d{1,2})\s*([AP]M)?/i', $content, $matches)) {
-            $hour = (int) $matches[1];
-            $ampm = strtoupper($matches[2] ?? 'AM');
-            if ($ampm === 'PM' && $hour < 12) $hour += 12;
-            $params['time'] = sprintf('%02d:00', $hour);
+        // Extract title from content (first line or meeting keyword context)
+        if (preg_match('/meeting\s+(?:about|for|with|on)\s+([^\n\.]+)/i', $content, $matches)) {
+            $params['title'] = trim($matches[1]);
+        } elseif (preg_match('/schedule\s+([^\n\.]+)/i', $content, $matches)) {
+            $params['title'] = trim($matches[1]);
+        } else {
+            // Use first sentence as title
+            $params['title'] = strtok($content, ".\n");
         }
 
         // Extract duration
-        if (preg_match('/(\d+)\s*(?:hour|hr|h)/i', $content, $matches)) {
-            $params['duration'] = (int) $matches[1] * 60;
-        } elseif (preg_match('/(\d+)\s*(?:minute|min|m)/i', $content, $matches)) {
-            $params['duration'] = (int) $matches[1];
+        if (preg_match('/(\d+)\s*(?:hour|hr|minute|min)/i', $content, $matches)) {
+            $params['duration'] = $matches[0];
         }
 
-        // Extract location
-        if (preg_match('/(?:at|in|location)[:\s]+["\']?([^"\'\n,]+)/i', $content, $matches)) {
-            $location = trim($matches[1]);
-            if (!preg_match('/^\d{1,2}/', $location)) { // Not a time
-                $params['location'] = $location;
-            }
-        }
-
-        // Extract attendees (emails)
-        preg_match_all('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/', $content, $emailMatches);
-        if (!empty($emailMatches[1])) {
-            $params['attendees'] = array_unique($emailMatches[1]);
+        // Extract attendees (email addresses)
+        preg_match_all('/[\w\.-]+@[\w\.-]+\.\w+/', $content, $emailMatches);
+        if (!empty($emailMatches[0])) {
+            $params['attendees'] = array_unique($emailMatches[0]);
         }
 
         return $params;
@@ -471,184 +326,90 @@ class SmartActionService
         $params = [];
 
         // Extract title
-        if (preg_match('/(?:task|todo|reminder)[:\s]+["\']?([^"\'\n]+)/i', $content, $matches)) {
+        if (preg_match('/(?:task|todo|reminder)[:\s]+([^\n\.]+)/i', $content, $matches)) {
             $params['title'] = trim($matches[1]);
-        } elseif (preg_match('/(?:need to|should|must|have to)[:\s]+([^.\n]+)/i', $content, $matches)) {
-            $params['title'] = trim($matches[1]);
+        } else {
+            $params['title'] = strtok($content, ".\n");
         }
 
         // Extract due date
-        if (preg_match('/(?:due|by|before|deadline)[:\s]+([^.\n,]+)/i', $content, $matches)) {
-            $dateStr = trim($matches[1]);
-            $timestamp = strtotime($dateStr);
-            if ($timestamp) {
-                $params['due_date'] = date('Y-m-d', $timestamp);
-            }
+        if (preg_match('/(?:due|by|deadline)[:\s]+([^\n\.]+)/i', $content, $matches)) {
+            $params['due_date'] = trim($matches[1]);
         }
 
         // Extract priority
-        if (preg_match('/(urgent|critical|high\s*priority|asap)/i', $content)) {
+        if (preg_match('/(?:urgent|high\s*priority|important)/i', $content)) {
             $params['priority'] = 'high';
-        } elseif (preg_match('/(low\s*priority|when\s*possible|eventually)/i', $content)) {
+        } elseif (preg_match('/(?:low\s*priority)/i', $content)) {
             $params['priority'] = 'low';
         } else {
-            $params['priority'] = 'medium';
+            $params['priority'] = 'normal';
         }
+
+        $params['description'] = $content;
 
         return $params;
     }
 
     /**
-     * Extract source parameters
+     * Parse relative date strings
      */
-    protected function extractSourceParams(array $sources): array
+    protected function parseRelativeDate(string $relative): string
     {
-        if (empty($sources)) {
-            return [];
+        $relative = strtolower($relative);
+
+        if ($relative === 'tomorrow') {
+            return date('Y-m-d', strtotime('+1 day'));
         }
 
-        $source = $sources[0];
-        return [
-            'model_class' => $source['model_class'] ?? null,
-            'model_id' => $source['model_id'] ?? $source['id'] ?? null,
-            'model_type' => $source['model_type'] ?? null,
-        ];
-    }
-
-    /**
-     * Create copy action
-     */
-    protected function createCopyAction(string $content): InteractiveAction
-    {
-        return new InteractiveAction(
-            id: 'copy_' . uniqid(),
-            type: ActionTypeEnum::from(ActionTypeEnum::BUTTON),
-            label: '📋 Copy',
-            description: 'Copy response to clipboard',
-            data: [
-                'action' => 'copy',
-                'executor' => 'clipboard.copy',
-                'params' => ['content' => $content],
-                'ready' => true,
-            ]
-        );
-    }
-
-    /**
-     * Create regenerate action
-     */
-    protected function createRegenerateAction(string $sessionId): InteractiveAction
-    {
-        return new InteractiveAction(
-            id: 'regenerate_' . uniqid(),
-            type: ActionTypeEnum::from(ActionTypeEnum::BUTTON),
-            label: '🔄 Regenerate',
-            description: 'Generate a new response',
-            data: [
-                'action' => 'regenerate',
-                'executor' => 'chat.regenerate',
-                'params' => ['session_id' => $sessionId],
-                'ready' => true,
-            ]
-        );
-    }
-
-    /**
-     * Generate quick replies based on content
-     */
-    protected function generateQuickReplies(string $content, array $sources): array
-    {
-        $replies = [];
-        $contentLower = strtolower($content);
-
-        // If there are numbered options, add quick replies for them
-        if (preg_match_all('/^(\d+)\.\s+\*\*([^*]+)\*\*/m', $content, $matches)) {
-            foreach (array_slice($matches[1], 0, 3) as $i => $num) {
-                $title = trim($matches[2][$i]);
-                $replies[] = new InteractiveAction(
-                    id: 'quick_option_' . $num . '_' . uniqid(),
-                    type: ActionTypeEnum::from(ActionTypeEnum::QUICK_REPLY),
-                    label: "#{$num}: " . substr($title, 0, 30) . (strlen($title) > 30 ? '...' : ''),
-                    data: [
-                        'action' => 'quick_reply',
-                        'executor' => 'chat.send',
-                        'params' => [
-                            'message' => "Tell me more about option {$num}: {$title}",
-                        ],
-                        'ready' => true,
-                    ]
-                );
-            }
+        if (preg_match('/next\s+(\w+)/', $relative, $matches)) {
+            return date('Y-m-d', strtotime('next ' . $matches[1]));
         }
 
-        // Standard quick replies
-        if (strpos($contentLower, '?') !== false || strpos($contentLower, 'question') !== false) {
-            $replies[] = new InteractiveAction(
-                id: 'quick_more_' . uniqid(),
-                type: ActionTypeEnum::from(ActionTypeEnum::QUICK_REPLY),
-                label: 'Tell me more',
-                data: [
-                    'action' => 'quick_reply',
-                    'executor' => 'chat.send',
-                    'params' => ['message' => 'Can you tell me more about that?'],
-                    'ready' => true,
-                ]
+        return date('Y-m-d');
+    }
+
+    /**
+     * Generate a draft reply using AI
+     */
+    protected function generateDraftReply(string $originalContent): string
+    {
+        if (!$this->aiService) {
+            return '';
+        }
+
+        $prompt = "Generate a brief, professional reply to this email. Keep it concise:\n\n" . $originalContent;
+
+        try {
+            $response = $this->aiService->generate(
+                new \LaravelAIEngine\DTOs\AIRequest(
+                    prompt: $prompt,
+                    engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                    model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
+                    parameters: ['max_tokens' => 200]
+                )
             );
-        }
 
-        if (strpos($contentLower, 'email') !== false && !empty($sources)) {
-            $replies[] = new InteractiveAction(
-                id: 'quick_reply_email_' . uniqid(),
-                type: ActionTypeEnum::from(ActionTypeEnum::QUICK_REPLY),
-                label: 'Draft a reply',
-                data: [
-                    'action' => 'quick_reply',
-                    'executor' => 'chat.send',
-                    'params' => ['message' => 'Draft a professional reply to this email'],
-                    'ready' => true,
-                ]
-            );
+            return $response->getContent();
+        } catch (\Exception $e) {
+            Log::warning('Failed to generate draft reply: ' . $e->getMessage());
+            return '';
         }
-
-        return $replies;
     }
 
     /**
-     * Extract source node from sources or metadata
+     * Get all registered action definitions
      */
-    protected function extractSourceNode(array $sources, array $metadata): ?string
+    public function getActionDefinitions(): array
     {
-        // Check metadata for node info
-        if (!empty($metadata['source_node'])) {
-            return $metadata['source_node'];
-        }
-        
-        if (!empty($metadata['node'])) {
-            return $metadata['node'];
-        }
+        return $this->actionDefinitions;
+    }
 
-        // Check first source for node info
-        if (!empty($sources)) {
-            $firstSource = $sources[0];
-            
-            if (!empty($firstSource['node'])) {
-                return $firstSource['node'];
-            }
-            
-            if (!empty($firstSource['source_node'])) {
-                return $firstSource['source_node'];
-            }
-            
-            // Check if model_class contains node prefix (format: "node_slug:ModelClass")
-            if (!empty($firstSource['model_class'])) {
-                $modelClass = $firstSource['model_class'];
-                if (strpos($modelClass, ':') !== false) {
-                    [$nodeSlug, ] = explode(':', $modelClass, 2);
-                    return $nodeSlug;
-                }
-            }
-        }
-
-        return null;
+    /**
+     * Get a specific action definition
+     */
+    public function getActionDefinition(string $id): ?array
+    {
+        return $this->actionDefinitions[$id] ?? null;
     }
 }

@@ -7,12 +7,29 @@ use LaravelAIEngine\Enums\ActionTypeEnum;
 
 class ActionService
 {
+    protected ?SmartActionService $smartActionService = null;
+
+    public function __construct(?SmartActionService $smartActionService = null)
+    {
+        $this->smartActionService = $smartActionService;
+    }
+
     /**
      * Generate suggested actions based on AI response
      */
     public function generateSuggestedActions(string $content, string $sessionId, array $ragMetadata = []): array
     {
         $actions = [];
+        
+        // Use SmartActionService for intelligent, pre-filled actions
+        if ($this->smartActionService) {
+            $smartActions = $this->smartActionService->generateSmartActions(
+                $content,
+                $ragMetadata['sources'] ?? [],
+                $ragMetadata
+            );
+            $actions = array_merge($actions, $smartActions);
+        }
         
         // RAG-aware actions (if sources are available)
         if (!empty($ragMetadata['sources'])) {

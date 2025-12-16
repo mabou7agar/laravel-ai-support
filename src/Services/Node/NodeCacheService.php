@@ -80,20 +80,30 @@ class NodeCacheService
         Cache::put($key, $results, $ttl);
         
         // Store in database cache
-        DB::table('ai_node_search_cache')->updateOrInsert(
-            ['query_hash' => $key],
-            [
-                'query' => $query,
-                'node_ids' => json_encode($nodeIds),
-                'results' => json_encode($results),
-                'result_count' => count($results['results'] ?? []),
-                'duration_ms' => $durationMs,
-                'expires_at' => now()->addSeconds($ttl),
-                'hit_count' => 0,
-                'updated_at' => now(),
-                'created_at' => DB::raw('COALESCE(created_at, NOW())'),
-            ]
-        );
+        $existing = DB::table('ai_node_search_cache')
+            ->where('query_hash', $key)
+            ->first();
+
+        $data = [
+            'query' => $query,
+            'node_ids' => json_encode($nodeIds),
+            'results' => json_encode($results),
+            'result_count' => count($results['results'] ?? []),
+            'duration_ms' => $durationMs,
+            'expires_at' => now()->addSeconds($ttl),
+            'hit_count' => 0,
+            'updated_at' => now(),
+        ];
+
+        if ($existing) {
+            DB::table('ai_node_search_cache')
+                ->where('query_hash', $key)
+                ->update($data);
+        } else {
+            $data['query_hash'] = $key;
+            $data['created_at'] = now();
+            DB::table('ai_node_search_cache')->insert($data);
+        }
         
         Log::channel('ai-engine')->debug('Search results cached', [
             'query_hash' => $key,

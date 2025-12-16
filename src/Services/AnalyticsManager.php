@@ -87,6 +87,60 @@ class AnalyticsManager
     }
 
     /**
+     * Track a request (simple array-based tracking)
+     */
+    public function trackRequest(array $data): void
+    {
+        if (!config('ai-engine.analytics.enabled', true)) {
+            return;
+        }
+
+        $this->storeAnalytics('ai_request_tracking', array_merge($data, [
+            'created_at' => now(),
+        ]));
+    }
+
+    /**
+     * Track an action
+     */
+    public function trackAction(array $data): void
+    {
+        if (!config('ai-engine.analytics.enabled', true)) {
+            return;
+        }
+
+        $this->storeAnalytics('ai_action_tracking', array_merge($data, [
+            'created_at' => now(),
+        ]));
+    }
+
+    /**
+     * Track streaming
+     */
+    public function trackStreaming(array $data): void
+    {
+        if (!config('ai-engine.analytics.enabled', true)) {
+            return;
+        }
+
+        $this->storeAnalytics('ai_streaming_tracking', array_merge($data, [
+            'created_at' => now(),
+        ]));
+    }
+
+    /**
+     * Get dashboard data
+     */
+    public function getDashboardData(array $filters = []): array
+    {
+        return [
+            'usage' => $this->getUsageStats($filters),
+            'performance' => $this->getPerformanceMetrics($filters),
+            'costs' => $this->getCostAnalysis($filters),
+        ];
+    }
+
+    /**
      * Get usage statistics
      */
     public function getUsageStats(array $filters = []): array

@@ -9,9 +9,13 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\InteractiveAction;
+use LaravelAIEngine\DTOs\ActionResponse;
 use LaravelAIEngine\Contracts\EngineDriverInterface;
 use LaravelAIEngine\Exceptions\EngineNotSupportedException;
 use LaravelAIEngine\Exceptions\ModelNotSupportedException;
+use LaravelAIEngine\Services\Memory\MemoryManager;
+use LaravelAIEngine\Services\Streaming\WebSocketManager;
 
 class AIEngineManager
 {
@@ -22,7 +26,10 @@ class AIEngineManager
         private CreditManager $creditManager,
         private CacheManager $cacheManager,
         private RateLimitManager $rateLimitManager,
-        private AnalyticsManager $analyticsManager
+        private AnalyticsManager $analyticsManager,
+        private ?MemoryManager $memoryManager = null,
+        private ?ActionManager $actionManager = null,
+        private ?WebSocketManager $webSocketManager = null
     ) {}
 
     /**
@@ -321,5 +328,224 @@ class AIEngineManager
             'minutes' => $request->parameters['audio_minutes'] ?? 1,
             default => 1,
         };
+    }
+
+    // ========================================
+    // Methods migrated from UnifiedEngineManager
+    // ========================================
+
+    /**
+     * Get memory manager for conversation history
+     */
+    public function memory(?string $driver = null): MemoryManager
+    {
+        if (!$this->memoryManager) {
+            $this->memoryManager = $this->app->make(MemoryManager::class);
+        }
+        
+        if ($driver) {
+            $this->memoryManager->driver($driver);
+        }
+        
+        return $this->memoryManager;
+    }
+
+    /**
+     * Track a request for analytics
+     */
+    public function trackRequest(array $data): void
+    {
+        $this->analyticsManager->trackRequest($data);
+    }
+
+    /**
+     * Track an action for analytics
+     */
+    public function trackAction(array $data): void
+    {
+        $this->analyticsManager->trackAction($data);
+    }
+
+    /**
+     * Track streaming for analytics
+     */
+    public function trackStreaming(array $data): void
+    {
+        $this->analyticsManager->trackStreaming($data);
+    }
+
+    /**
+     * Execute an interactive action
+     */
+    public function executeAction(InteractiveAction $action, array $payload = []): ActionResponse
+    {
+        if (!$this->actionManager) {
+            $this->actionManager = $this->app->make(ActionManager::class);
+        }
+        
+        return $this->actionManager->executeAction($action, $payload);
+    }
+
+    /**
+     * Create an interactive action
+     */
+    public function createAction(array $data): InteractiveAction
+    {
+        return InteractiveAction::fromArray($data);
+    }
+
+    /**
+     * Create multiple interactive actions
+     */
+    public function createActions(array $actionsData): array
+    {
+        return array_map(fn($data) => InteractiveAction::fromArray($data), $actionsData);
+    }
+
+    /**
+     * Get supported action types
+     */
+    public function getSupportedActionTypes(): array
+    {
+        if (!$this->actionManager) {
+            $this->actionManager = $this->app->make(ActionManager::class);
+        }
+        
+        return $this->actionManager->getSupportedActionTypes();
+    }
+
+    /**
+     * Validate an action
+     */
+    public function validateAction(InteractiveAction $action, array $payload = []): array
+    {
+        if (!$this->actionManager) {
+            $this->actionManager = $this->app->make(ActionManager::class);
+        }
+        
+        return $this->actionManager->validateAction($action, $payload);
+    }
+
+    /**
+     * Stream response via WebSocket
+     */
+    public function streamResponse(string $sessionId, callable $generator, array $options = []): void
+    {
+        if (!$this->webSocketManager) {
+            $this->webSocketManager = $this->app->bound(WebSocketManager::class)
+                ? $this->app->make(WebSocketManager::class)
+                : null;
+        }
+        
+        if ($this->webSocketManager) {
+            $this->webSocketManager->streamResponse($sessionId, $generator, $options);
+        } else {
+            // Fallback: just execute the generator
+            foreach ($generator() as $chunk) {
+                // Process chunks without WebSocket
+            }
+        }
+    }
+
+    /**
+     * Stream response with actions
+     */
+    public function streamWithActions(string $sessionId, callable $generator, array $actions = [], array $options = []): void
+    {
+        if (!$this->webSocketManager) {
+            $this->webSocketManager = $this->app->bound(WebSocketManager::class)
+                ? $this->app->make(WebSocketManager::class)
+                : null;
+        }
+        
+        if ($this->webSocketManager) {
+            $this->webSocketManager->streamWithActions($sessionId, $generator, $actions, $options);
+        }
+    }
+
+    /**
+     * Get streaming stats
+     */
+    public function getStreamingStats(): array
+    {
+        if (!$this->webSocketManager) {
+            return [];
+        }
+        
+        return $this->webSocketManager->getStats();
+    }
+
+    /**
+     * Get dashboard data
+     */
+    public function getDashboardData(array $filters = []): array
+    {
+        return $this->analyticsManager->getDashboardData($filters);
+    }
+
+    /**
+     * Get usage stats
+     */
+    public function getUsageStats(array $filters = []): array
+    {
+        return $this->analyticsManager->getUsageStats($filters);
+    }
+
+    /**
+     * Get performance metrics
+     */
+    public function getPerformanceMetrics(array $filters = []): array
+    {
+        return $this->analyticsManager->getPerformanceMetrics($filters);
+    }
+
+    /**
+     * Get available engines (alias for getAvailableEngines)
+     */
+    public function getEngines(): array
+    {
+        return $this->getAvailableEngines();
+    }
+
+    /**
+     * Get available models (alias for getAvailableModels)
+     */
+    public function getModels(?string $engine = null): array
+    {
+        return $this->getAvailableModels($engine);
+    }
+
+    /**
+     * Create an AI request object
+     */
+    public function createRequest(
+        string $prompt,
+        ?string $engine = null,
+        ?string $model = null,
+        ?int $maxTokens = null,
+        ?float $temperature = null,
+        ?string $systemPrompt = null,
+        array $parameters = []
+    ): AIRequest {
+        $engineEnum = EngineEnum::fromSlug($engine ?? config('ai-engine.default_engine', 'openai'));
+        $modelEnum = EntityEnum::fromSlug($model ?? config('ai-engine.default_model', 'gpt-4o'));
+
+        $params = $parameters;
+        if ($maxTokens !== null) {
+            $params['max_tokens'] = $maxTokens;
+        }
+        if ($temperature !== null) {
+            $params['temperature'] = $temperature;
+        }
+        if ($systemPrompt !== null) {
+            $params['system_prompt'] = $systemPrompt;
+        }
+
+        return new AIRequest(
+            prompt: $prompt,
+            engine: $engineEnum,
+            model: $modelEnum,
+            parameters: $params
+        );
     }
 }

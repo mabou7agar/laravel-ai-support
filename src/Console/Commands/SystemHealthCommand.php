@@ -3,7 +3,7 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\UnifiedEngineManager;
+use LaravelAIEngine\Services\AIEngineManager;
 
 class SystemHealthCommand extends Command
 {
@@ -13,13 +13,13 @@ class SystemHealthCommand extends Command
 
     protected $description = 'Check overall AI Engine system health and status';
 
-    public function handle(UnifiedEngineManager $unifiedEngine): int
+    public function handle(AIEngineManager $aiEngine): int
     {
         try {
             $this->info('=== AI Engine System Health Check ===');
             $this->newLine();
 
-            $systemStatus = $unifiedEngine->getSystemStatus();
+            $systemStatus = $this->getSystemStatus($aiEngine);
 
             if ($this->option('format') === 'json') {
                 $this->line(json_encode($systemStatus, JSON_PRETTY_PRINT));
@@ -114,5 +114,28 @@ class SystemHealthCommand extends Command
         $factor = floor(log($bytes, 1024));
         
         return round($bytes / pow(1024, $factor), 2) . ' ' . $units[$factor];
+    }
+
+    /**
+     * Get system status from AIEngineManager
+     */
+    protected function getSystemStatus(AIEngineManager $aiEngine): array
+    {
+        return [
+            'core' => [
+                'ai_engine' => true,
+                'memory_manager' => app()->bound(\LaravelAIEngine\Services\Memory\MemoryManager::class),
+                'action_manager' => app()->bound(\LaravelAIEngine\Services\ActionManager::class),
+                'analytics_manager' => app()->bound(\LaravelAIEngine\Services\AnalyticsManager::class),
+            ],
+            'enterprise' => [
+                'failover' => app()->bound(\LaravelAIEngine\Services\Failover\FailoverManager::class),
+                'streaming' => app()->bound(\LaravelAIEngine\Services\Streaming\WebSocketManager::class),
+                'federated_rag' => config('ai-engine.federated.enabled', false),
+            ],
+            'health' => [],
+            'metrics' => [],
+            'timestamp' => now()->toIso8601String(),
+        ];
     }
 }

@@ -14,8 +14,9 @@ class TemplateEngine
 {
     private array $defaultTemplates;
 
-    public function __construct()
-    {
+    public function __construct(
+        protected ?AIEngineService $aiService = null
+    ) {
         $this->defaultTemplates = $this->loadDefaultTemplates();
     }
 
@@ -24,7 +25,7 @@ class TemplateEngine
      */
     public function getAllTemplates(): array
     {
-        $customTemplates = Cache::get('custom_templates', []);
+        $customTemplates = Cache::get('ai_custom_templates', []);
         return array_merge($this->defaultTemplates, $customTemplates);
     }
 
@@ -38,440 +39,428 @@ class TemplateEngine
     }
 
     /**
+     * Get templates by category
+     */
+    public function getTemplatesByCategory(string $category): array
+    {
+        return array_filter($this->getAllTemplates(), function ($template) use ($category) {
+            return ($template['category'] ?? 'general') === $category;
+        });
+    }
+
+    /**
+     * Get available categories
+     */
+    public function getCategories(): array
+    {
+        $categories = [];
+        foreach ($this->getAllTemplates() as $template) {
+            $category = $template['category'] ?? 'general';
+            if (!in_array($category, $categories)) {
+                $categories[] = $category;
+            }
+        }
+        return $categories;
+    }
+
+    /**
      * Create custom template
      */
     public function createTemplate(array $templateData): array
     {
         $template = [
-            'id' => $templateData['id'] ?? uniqid('template_'),
+            'id' => $templateData['id'] ?? 'custom_' . uniqid(),
             'name' => $templateData['name'],
             'description' => $templateData['description'] ?? '',
             'category' => $templateData['category'] ?? 'custom',
             'system_prompt' => $templateData['system_prompt'] ?? '',
-            'user_prompt_template' => $templateData['user_prompt_template'],
+            'user_prompt' => $templateData['user_prompt'] ?? '',
             'variables' => $templateData['variables'] ?? [],
-            'engine' => $templateData['engine'] ?? EngineEnum::OPENAI->value,
-            'model' => $templateData['model'] ?? EntityEnum::GPT_4O->value,
-            'temperature' => $templateData['temperature'] ?? 0.7,
-            'max_tokens' => $templateData['max_tokens'] ?? null,
-            'tags' => $templateData['tags'] ?? [],
-            'examples' => $templateData['examples'] ?? [],
-            'created_at' => now()->toISOString(),
-            'updated_at' => now()->toISOString(),
+            'default_engine' => $templateData['default_engine'] ?? 'openai',
+            'default_model' => $templateData['default_model'] ?? 'gpt-4o',
+            'default_parameters' => $templateData['default_parameters'] ?? [],
             'is_custom' => true,
+            'created_at' => now()->toIso8601String(),
         ];
 
-        $this->storeCustomTemplate($template);
+        $customTemplates = Cache::get('ai_custom_templates', []);
+        $customTemplates[$template['id']] = $template;
+        Cache::put('ai_custom_templates', $customTemplates, now()->addYear());
+
         return $template;
     }
 
     /**
-     * Generate content using template
+     * Update custom template
      */
-    public function generateFromTemplate(string $templateId, array $variables = [], array $options = []): AIResponse
+    public function updateTemplate(string $templateId, array $templateData): ?array
     {
-        $template = $this->getTemplate($templateId);
-        
-        if (!$template) {
-            return AIResponse::error(
-                "Template '{$templateId}' not found",
-                EngineEnum::OPENAI,
-                EntityEnum::GPT_4O
-            );
-        }
-
-        // Process template variables
-        $processedPrompt = $this->processTemplateVariables($template['user_prompt_template'], $variables);
-        $processedSystemPrompt = $this->processTemplateVariables($template['system_prompt'], $variables);
-
-        // Create AI request
-        $request = new AIRequest(
-            prompt: $processedPrompt,
-            engine: EngineEnum::from($options['engine'] ?? $template['engine']),
-            model: EntityEnum::from($options['model'] ?? $template['model']),
-            systemPrompt: $processedSystemPrompt,
-            temperature: $options['temperature'] ?? $template['temperature'],
-            maxTokens: $options['max_tokens'] ?? $template['max_tokens'],
-            parameters: array_merge($options['parameters'] ?? [], [
-                'template_id' => $templateId,
-                'template_used' => true,
-            ])
-        );
-
-        // Generate content
-        $aiEngine = app('ai-engine');
-        $response = $aiEngine->generateText($request);
-
-        if ($response->isSuccess()) {
-            return $response->withDetailedUsage(array_merge(
-                $response->detailedUsage ?? [],
-                [
-                    'template_id' => $templateId,
-                    'template_name' => $template['name'],
-                    'variables_used' => $variables,
-                ]
-            ));
-        }
-
-        return $response;
-    }
-
-    /**
-     * Get templates by category
-     */
-    public function getTemplatesByCategory(string $category): array
-    {
-        $templates = $this->getAllTemplates();
-        return array_filter($templates, fn($template) => $template['category'] === $category);
-    }
-
-    /**
-     * Search templates
-     */
-    public function searchTemplates(string $query): array
-    {
-        $templates = $this->getAllTemplates();
-        $query = strtolower($query);
-        
-        return array_filter($templates, function($template) use ($query) {
-            return str_contains(strtolower($template['name']), $query) ||
-                   str_contains(strtolower($template['description']), $query) ||
-                   in_array($query, array_map('strtolower', $template['tags'] ?? []));
-        });
-    }
-
-    /**
-     * Update template
-     */
-    public function updateTemplate(string $templateId, array $updates): array
-    {
-        if (isset($this->defaultTemplates[$templateId])) {
-            throw new \InvalidArgumentException('Cannot update default template');
-        }
-
-        $customTemplates = Cache::get('custom_templates', []);
+        $customTemplates = Cache::get('ai_custom_templates', []);
         
         if (!isset($customTemplates[$templateId])) {
-            throw new \InvalidArgumentException('Template not found');
+            return null;
         }
 
-        $customTemplates[$templateId] = array_merge(
-            $customTemplates[$templateId],
-            $updates,
-            ['updated_at' => now()->toISOString()]
-        );
-
-        Cache::put('custom_templates', $customTemplates, now()->addDays(30));
+        $customTemplates[$templateId] = array_merge($customTemplates[$templateId], $templateData, [
+            'updated_at' => now()->toIso8601String(),
+        ]);
         
+        Cache::put('ai_custom_templates', $customTemplates, now()->addYear());
+
         return $customTemplates[$templateId];
     }
 
     /**
-     * Delete template
+     * Delete custom template
      */
     public function deleteTemplate(string $templateId): bool
     {
-        if (isset($this->defaultTemplates[$templateId])) {
-            throw new \InvalidArgumentException('Cannot delete default template');
+        $customTemplates = Cache::get('ai_custom_templates', []);
+        
+        if (!isset($customTemplates[$templateId])) {
+            return false;
         }
 
-        $customTemplates = Cache::get('custom_templates', []);
-        
-        if (isset($customTemplates[$templateId])) {
-            unset($customTemplates[$templateId]);
-            Cache::put('custom_templates', $customTemplates, now()->addDays(30));
-            return true;
-        }
-        
-        return false;
+        unset($customTemplates[$templateId]);
+        Cache::put('ai_custom_templates', $customTemplates, now()->addYear());
+
+        return true;
     }
 
     /**
-     * Validate template variables
+     * Execute a template with variables
      */
-    public function validateTemplateVariables(string $templateId, array $variables): array
+    public function execute(string $templateId, array $variables = [], array $options = []): ?AIResponse
     {
         $template = $this->getTemplate($templateId);
         
         if (!$template) {
-            return ['valid' => false, 'error' => 'Template not found'];
+            return null;
         }
 
-        $requiredVariables = $template['variables'] ?? [];
-        $missingVariables = [];
-        $invalidVariables = [];
+        // Build the prompt with variable substitution
+        $systemPrompt = $this->substituteVariables($template['system_prompt'] ?? '', $variables);
+        $userPrompt = $this->substituteVariables($template['user_prompt'] ?? '', $variables);
 
-        foreach ($requiredVariables as $variable) {
-            $varName = $variable['name'];
-            
-            if (!isset($variables[$varName])) {
-                if ($variable['required'] ?? true) {
-                    $missingVariables[] = $varName;
-                }
-            } else {
-                // Validate variable type if specified
-                if (isset($variable['type'])) {
-                    if (!$this->validateVariableType($variables[$varName], $variable['type'])) {
-                        $invalidVariables[] = [
-                            'name' => $varName,
-                            'expected' => $variable['type'],
-                            'actual' => gettype($variables[$varName]),
-                        ];
-                    }
-                }
-            }
+        // Get engine and model
+        $engine = $options['engine'] ?? $template['default_engine'] ?? 'openai';
+        $model = $options['model'] ?? $template['default_model'] ?? 'gpt-4o';
+        $parameters = array_merge($template['default_parameters'] ?? [], $options['parameters'] ?? []);
+
+        if (!$this->aiService) {
+            return null;
         }
 
-        return [
-            'valid' => empty($missingVariables) && empty($invalidVariables),
-            'missing_variables' => $missingVariables,
-            'invalid_variables' => $invalidVariables,
-        ];
+        try {
+            $request = new AIRequest(
+                prompt: $userPrompt,
+                engine: EngineEnum::fromSlug($engine),
+                model: EntityEnum::fromSlug($model),
+                parameters: array_merge($parameters, [
+                    'system_prompt' => $systemPrompt,
+                ])
+            );
+
+            return $this->aiService->generate($request);
+        } catch (\Exception $e) {
+            return AIResponse::error($e->getMessage(), EngineEnum::fromSlug($engine), EntityEnum::fromSlug($model));
+        }
     }
 
     /**
-     * Get template suggestions based on content type
+     * Substitute variables in a string
      */
-    public function getTemplateSuggestions(string $contentType, string $industry = null): array
+    protected function substituteVariables(string $text, array $variables): string
     {
-        $templates = $this->getAllTemplates();
-        
-        $suggestions = array_filter($templates, function($template) use ($contentType, $industry) {
-            $categoryMatch = $template['category'] === $contentType;
-            $industryMatch = !$industry || in_array($industry, $template['tags'] ?? []);
-            
-            return $categoryMatch && $industryMatch;
-        });
-
-        // Sort by relevance (you could implement more sophisticated scoring)
-        uasort($suggestions, function($a, $b) {
-            return strcmp($a['name'], $b['name']);
-        });
-
-        return array_values($suggestions);
-    }
-
-    /**
-     * Process template variables in text
-     */
-    private function processTemplateVariables(string $text, array $variables): string
-    {
-        $processedText = $text;
-        
         foreach ($variables as $key => $value) {
-            $placeholders = [
-                "{{$key}}",
-                "{{{$key}}}",
-                "[$key]",
-                "%{$key}%",
-            ];
-            
-            foreach ($placeholders as $placeholder) {
-                $processedText = str_replace($placeholder, $value, $processedText);
+            if (is_string($value) || is_numeric($value)) {
+                $text = str_replace('{{' . $key . '}}', (string) $value, $text);
+                $text = str_replace('{{ ' . $key . ' }}', (string) $value, $text);
             }
         }
-        
-        return $processedText;
-    }
-
-    /**
-     * Validate variable type
-     */
-    private function validateVariableType($value, string $expectedType): bool
-    {
-        return match ($expectedType) {
-            'string' => is_string($value),
-            'number' => is_numeric($value),
-            'integer' => is_int($value),
-            'boolean' => is_bool($value),
-            'array' => is_array($value),
-            'email' => filter_var($value, FILTER_VALIDATE_EMAIL) !== false,
-            'url' => filter_var($value, FILTER_VALIDATE_URL) !== false,
-            default => true,
-        };
-    }
-
-    /**
-     * Store custom template
-     */
-    private function storeCustomTemplate(array $template): void
-    {
-        $customTemplates = Cache::get('custom_templates', []);
-        $customTemplates[$template['id']] = $template;
-        Cache::put('custom_templates', $customTemplates, now()->addDays(30));
+        return $text;
     }
 
     /**
      * Load default templates
      */
-    private function loadDefaultTemplates(): array
+    protected function loadDefaultTemplates(): array
     {
         return [
-            'blog_post' => [
-                'id' => 'blog_post',
-                'name' => 'Blog Post Writer',
-                'description' => 'Create engaging blog posts with SEO optimization',
-                'category' => 'content',
-                'system_prompt' => 'You are an expert blog writer. Create engaging, SEO-optimized content that provides value to readers. Use clear headings, include relevant keywords naturally, and maintain a conversational yet professional tone.',
-                'user_prompt_template' => 'Write a comprehensive blog post about {topic}. Target audience: {audience}. Desired length: {length} words. Include these keywords: {keywords}. Tone: {tone}.',
+            // Writing Templates
+            'summarize' => [
+                'id' => 'summarize',
+                'name' => 'Summarize Content',
+                'description' => 'Create a concise summary of the provided content',
+                'category' => 'writing',
+                'system_prompt' => 'You are an expert at creating clear, concise summaries. Focus on the key points and main ideas.',
+                'user_prompt' => "Please summarize the following content:\n\n{{content}}\n\nProvide a {{length}} summary.",
                 'variables' => [
-                    ['name' => 'topic', 'type' => 'string', 'required' => true, 'description' => 'Main topic of the blog post'],
-                    ['name' => 'audience', 'type' => 'string', 'required' => true, 'description' => 'Target audience'],
-                    ['name' => 'length', 'type' => 'number', 'required' => false, 'default' => 1000, 'description' => 'Desired word count'],
-                    ['name' => 'keywords', 'type' => 'string', 'required' => false, 'description' => 'SEO keywords to include'],
-                    ['name' => 'tone', 'type' => 'string', 'required' => false, 'default' => 'professional', 'description' => 'Writing tone'],
+                    ['name' => 'content', 'description' => 'The content to summarize', 'required' => true],
+                    ['name' => 'length', 'description' => 'Summary length (brief, detailed, comprehensive)', 'required' => false, 'default' => 'brief'],
                 ],
-                'engine' => EngineEnum::OPENAI->value,
-                'model' => EntityEnum::GPT_4O->value,
-                'temperature' => 0.7,
-                'tags' => ['content', 'seo', 'marketing'],
-                'examples' => [
-                    [
-                        'variables' => ['topic' => 'AI in Healthcare', 'audience' => 'healthcare professionals', 'length' => 1500],
-                        'description' => 'Technical blog post for medical professionals'
-                    ]
-                ],
-                'is_custom' => false,
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o-mini',
+                'default_parameters' => ['max_tokens' => 500],
             ],
 
-            'social_media_post' => [
-                'id' => 'social_media_post',
-                'name' => 'Social Media Post',
-                'description' => 'Create engaging social media content',
-                'category' => 'social',
-                'system_prompt' => 'You are a social media expert. Create engaging, shareable content that drives engagement. Use appropriate hashtags, emojis, and platform-specific best practices.',
-                'user_prompt_template' => 'Create a {platform} post about {topic}. Target audience: {audience}. Tone: {tone}. Include relevant hashtags and call-to-action.',
+            'rewrite' => [
+                'id' => 'rewrite',
+                'name' => 'Rewrite Content',
+                'description' => 'Rewrite content in a different tone or style',
+                'category' => 'writing',
+                'system_prompt' => 'You are an expert writer who can adapt content to different tones and styles while preserving the original meaning.',
+                'user_prompt' => "Rewrite the following content in a {{tone}} tone:\n\n{{content}}",
                 'variables' => [
-                    ['name' => 'platform', 'type' => 'string', 'required' => true, 'description' => 'Social media platform (Twitter, LinkedIn, Instagram, etc.)'],
-                    ['name' => 'topic', 'type' => 'string', 'required' => true, 'description' => 'Post topic or message'],
-                    ['name' => 'audience', 'type' => 'string', 'required' => true, 'description' => 'Target audience'],
-                    ['name' => 'tone', 'type' => 'string', 'required' => false, 'default' => 'engaging', 'description' => 'Post tone'],
+                    ['name' => 'content', 'description' => 'The content to rewrite', 'required' => true],
+                    ['name' => 'tone', 'description' => 'Target tone (professional, casual, formal, friendly)', 'required' => false, 'default' => 'professional'],
                 ],
-                'engine' => EngineEnum::OPENAI->value,
-                'model' => EntityEnum::GPT_4O_MINI->value,
-                'temperature' => 0.8,
-                'tags' => ['social', 'marketing', 'engagement'],
-                'is_custom' => false,
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 1000],
             ],
 
-            'email_marketing' => [
-                'id' => 'email_marketing',
-                'name' => 'Email Marketing Campaign',
-                'description' => 'Create compelling marketing emails',
-                'category' => 'marketing',
-                'system_prompt' => 'You are an email marketing expert. Create compelling emails that drive conversions. Use persuasive copy, clear CTAs, and personalization.',
-                'user_prompt_template' => 'Create an email for {campaign_type} campaign. Product/Service: {product}. Target audience: {audience}. Goal: {goal}. Include subject line and email body.',
+            'expand' => [
+                'id' => 'expand',
+                'name' => 'Expand Content',
+                'description' => 'Expand brief content into more detailed text',
+                'category' => 'writing',
+                'system_prompt' => 'You are an expert at expanding brief content into detailed, well-structured text while maintaining the original intent.',
+                'user_prompt' => "Expand the following content into a more detailed version:\n\n{{content}}\n\nTarget length: {{target_length}}",
                 'variables' => [
-                    ['name' => 'campaign_type', 'type' => 'string', 'required' => true, 'description' => 'Type of email campaign'],
-                    ['name' => 'product', 'type' => 'string', 'required' => true, 'description' => 'Product or service being promoted'],
-                    ['name' => 'audience', 'type' => 'string', 'required' => true, 'description' => 'Target audience'],
-                    ['name' => 'goal', 'type' => 'string', 'required' => true, 'description' => 'Campaign goal'],
+                    ['name' => 'content', 'description' => 'The content to expand', 'required' => true],
+                    ['name' => 'target_length', 'description' => 'Target length (paragraph, page, article)', 'required' => false, 'default' => 'paragraph'],
                 ],
-                'engine' => EngineEnum::OPENAI->value,
-                'model' => EntityEnum::GPT_4O->value,
-                'temperature' => 0.6,
-                'tags' => ['email', 'marketing', 'conversion'],
-                'is_custom' => false,
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 2000],
             ],
 
-            'product_description' => [
-                'id' => 'product_description',
-                'name' => 'Product Description',
-                'description' => 'Create compelling product descriptions',
-                'category' => 'ecommerce',
-                'system_prompt' => 'You are an e-commerce copywriter. Create compelling product descriptions that highlight benefits, address pain points, and drive sales.',
-                'user_prompt_template' => 'Write a product description for {product_name}. Key features: {features}. Target audience: {audience}. Price point: {price_point}. Highlight benefits and include persuasive elements.',
+            // Translation Templates
+            'translate' => [
+                'id' => 'translate',
+                'name' => 'Translate Content',
+                'description' => 'Translate content to another language',
+                'category' => 'translation',
+                'system_prompt' => 'You are an expert translator. Provide accurate, natural-sounding translations that preserve the original meaning and tone.',
+                'user_prompt' => "Translate the following content to {{target_language}}:\n\n{{content}}",
                 'variables' => [
-                    ['name' => 'product_name', 'type' => 'string', 'required' => true, 'description' => 'Name of the product'],
-                    ['name' => 'features', 'type' => 'string', 'required' => true, 'description' => 'Key product features'],
-                    ['name' => 'audience', 'type' => 'string', 'required' => true, 'description' => 'Target customer'],
-                    ['name' => 'price_point', 'type' => 'string', 'required' => false, 'description' => 'Price range (budget, mid-range, premium)'],
+                    ['name' => 'content', 'description' => 'The content to translate', 'required' => true],
+                    ['name' => 'target_language', 'description' => 'Target language', 'required' => true],
                 ],
-                'engine' => EngineEnum::OPENAI->value,
-                'model' => EntityEnum::GPT_4O->value,
-                'temperature' => 0.7,
-                'tags' => ['ecommerce', 'sales', 'product'],
-                'is_custom' => false,
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 2000],
             ],
 
-            'press_release' => [
-                'id' => 'press_release',
-                'name' => 'Press Release',
-                'description' => 'Create professional press releases',
-                'category' => 'pr',
-                'system_prompt' => 'You are a PR professional. Write newsworthy press releases that follow industry standards and capture media attention.',
-                'user_prompt_template' => 'Write a press release about {announcement}. Company: {company}. Key details: {details}. Target media: {media_type}. Include headline, dateline, and quotes.',
+            // Code Templates
+            'code_review' => [
+                'id' => 'code_review',
+                'name' => 'Code Review',
+                'description' => 'Review code for issues, improvements, and best practices',
+                'category' => 'coding',
+                'system_prompt' => 'You are an expert code reviewer. Analyze code for bugs, security issues, performance problems, and suggest improvements following best practices.',
+                'user_prompt' => "Review the following {{language}} code:\n\n```{{language}}\n{{code}}\n```\n\nProvide feedback on:\n1. Potential bugs\n2. Security issues\n3. Performance improvements\n4. Code style and best practices",
                 'variables' => [
-                    ['name' => 'announcement', 'type' => 'string', 'required' => true, 'description' => 'What is being announced'],
-                    ['name' => 'company', 'type' => 'string', 'required' => true, 'description' => 'Company name'],
-                    ['name' => 'details', 'type' => 'string', 'required' => true, 'description' => 'Key details and facts'],
-                    ['name' => 'media_type', 'type' => 'string', 'required' => false, 'description' => 'Target media type'],
+                    ['name' => 'code', 'description' => 'The code to review', 'required' => true],
+                    ['name' => 'language', 'description' => 'Programming language', 'required' => false, 'default' => 'php'],
                 ],
-                'engine' => EngineEnum::OPENAI->value,
-                'model' => EntityEnum::GPT_4O->value,
-                'temperature' => 0.5,
-                'tags' => ['pr', 'news', 'media'],
-                'is_custom' => false,
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 2000],
             ],
 
-            'ad_copy' => [
-                'id' => 'ad_copy',
-                'name' => 'Advertisement Copy',
-                'description' => 'Create persuasive ad copy for various platforms',
-                'category' => 'advertising',
-                'system_prompt' => 'You are an advertising copywriter. Create persuasive, attention-grabbing ad copy that drives action. Focus on benefits, create urgency, and include strong CTAs.',
-                'user_prompt_template' => 'Create ad copy for {platform} advertising {product}. Target audience: {audience}. Key benefit: {benefit}. Ad format: {format}. Include headline and description.',
+            'code_explain' => [
+                'id' => 'code_explain',
+                'name' => 'Explain Code',
+                'description' => 'Explain what code does in plain language',
+                'category' => 'coding',
+                'system_prompt' => 'You are an expert at explaining code in clear, simple terms. Break down complex logic into understandable explanations.',
+                'user_prompt' => "Explain what this {{language}} code does:\n\n```{{language}}\n{{code}}\n```\n\nExplanation level: {{level}}",
                 'variables' => [
-                    ['name' => 'platform', 'type' => 'string', 'required' => true, 'description' => 'Advertising platform (Google, Facebook, etc.)'],
-                    ['name' => 'product', 'type' => 'string', 'required' => true, 'description' => 'Product or service'],
-                    ['name' => 'audience', 'type' => 'string', 'required' => true, 'description' => 'Target audience'],
-                    ['name' => 'benefit', 'type' => 'string', 'required' => true, 'description' => 'Main benefit or value proposition'],
-                    ['name' => 'format', 'type' => 'string', 'required' => false, 'description' => 'Ad format or size'],
+                    ['name' => 'code', 'description' => 'The code to explain', 'required' => true],
+                    ['name' => 'language', 'description' => 'Programming language', 'required' => false, 'default' => 'php'],
+                    ['name' => 'level', 'description' => 'Explanation level (beginner, intermediate, advanced)', 'required' => false, 'default' => 'intermediate'],
                 ],
-                'engine' => EngineEnum::OPENAI->value,
-                'model' => EntityEnum::GPT_4O->value,
-                'temperature' => 0.8,
-                'tags' => ['advertising', 'ppc', 'conversion'],
-                'is_custom' => false,
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 1500],
             ],
 
-            'technical_documentation' => [
-                'id' => 'technical_documentation',
-                'name' => 'Technical Documentation',
-                'description' => 'Create clear technical documentation',
-                'category' => 'technical',
-                'system_prompt' => 'You are a technical writer. Create clear, comprehensive documentation that helps users understand and implement technical concepts.',
-                'user_prompt_template' => 'Create technical documentation for {topic}. Audience: {audience}. Include overview, step-by-step instructions, examples, and troubleshooting tips.',
+            'code_generate' => [
+                'id' => 'code_generate',
+                'name' => 'Generate Code',
+                'description' => 'Generate code based on requirements',
+                'category' => 'coding',
+                'system_prompt' => 'You are an expert programmer. Generate clean, well-documented, production-ready code following best practices.',
+                'user_prompt' => "Generate {{language}} code for the following requirement:\n\n{{requirement}}\n\nInclude comments and follow best practices.",
                 'variables' => [
-                    ['name' => 'topic', 'type' => 'string', 'required' => true, 'description' => 'Technical topic or feature'],
-                    ['name' => 'audience', 'type' => 'string', 'required' => true, 'description' => 'Target audience (developers, end-users, etc.)'],
+                    ['name' => 'requirement', 'description' => 'What the code should do', 'required' => true],
+                    ['name' => 'language', 'description' => 'Programming language', 'required' => false, 'default' => 'php'],
                 ],
-                'engine' => EngineEnum::OPENAI->value,
-                'model' => EntityEnum::GPT_4O->value,
-                'temperature' => 0.3,
-                'tags' => ['technical', 'documentation', 'tutorial'],
-                'is_custom' => false,
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 3000],
             ],
 
-            'video_script' => [
-                'id' => 'video_script',
-                'name' => 'Video Script',
-                'description' => 'Create engaging video scripts',
-                'category' => 'video',
-                'system_prompt' => 'You are a video script writer. Create engaging scripts with clear structure, compelling hooks, and strong calls-to-action.',
-                'user_prompt_template' => 'Write a video script for {video_type} about {topic}. Duration: {duration} minutes. Target audience: {audience}. Include hook, main content, and CTA.',
+            // Analysis Templates
+            'sentiment' => [
+                'id' => 'sentiment',
+                'name' => 'Sentiment Analysis',
+                'description' => 'Analyze the sentiment of content',
+                'category' => 'analysis',
+                'system_prompt' => 'You are an expert at sentiment analysis. Analyze text for emotional tone and provide detailed insights.',
+                'user_prompt' => "Analyze the sentiment of the following content:\n\n{{content}}\n\nProvide:\n1. Overall sentiment (positive, negative, neutral)\n2. Confidence score (0-100%)\n3. Key emotional indicators\n4. Brief explanation",
                 'variables' => [
-                    ['name' => 'video_type', 'type' => 'string', 'required' => true, 'description' => 'Type of video (explainer, promotional, tutorial, etc.)'],
-                    ['name' => 'topic', 'type' => 'string', 'required' => true, 'description' => 'Video topic'],
-                    ['name' => 'duration', 'type' => 'number', 'required' => true, 'description' => 'Video duration in minutes'],
-                    ['name' => 'audience', 'type' => 'string', 'required' => true, 'description' => 'Target audience'],
+                    ['name' => 'content', 'description' => 'The content to analyze', 'required' => true],
                 ],
-                'engine' => EngineEnum::OPENAI->value,
-                'model' => EntityEnum::GPT_4O->value,
-                'temperature' => 0.7,
-                'tags' => ['video', 'script', 'content'],
-                'is_custom' => false,
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o-mini',
+                'default_parameters' => ['max_tokens' => 500],
+            ],
+
+            'extract_entities' => [
+                'id' => 'extract_entities',
+                'name' => 'Extract Entities',
+                'description' => 'Extract named entities from content',
+                'category' => 'analysis',
+                'system_prompt' => 'You are an expert at named entity recognition. Extract and categorize all entities from the provided text.',
+                'user_prompt' => "Extract all named entities from the following content:\n\n{{content}}\n\nCategorize them as:\n- People\n- Organizations\n- Locations\n- Dates/Times\n- Products\n- Other",
+                'variables' => [
+                    ['name' => 'content', 'description' => 'The content to analyze', 'required' => true],
+                ],
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o-mini',
+                'default_parameters' => ['max_tokens' => 1000],
+            ],
+
+            // Email Templates
+            'email_reply' => [
+                'id' => 'email_reply',
+                'name' => 'Draft Email Reply',
+                'description' => 'Generate a professional email reply',
+                'category' => 'email',
+                'system_prompt' => 'You are an expert at writing professional emails. Create clear, concise, and appropriate email responses.',
+                'user_prompt' => "Draft a {{tone}} reply to this email:\n\nOriginal email:\n{{original_email}}\n\nKey points to address:\n{{key_points}}",
+                'variables' => [
+                    ['name' => 'original_email', 'description' => 'The email to reply to', 'required' => true],
+                    ['name' => 'key_points', 'description' => 'Key points to include in reply', 'required' => false, 'default' => ''],
+                    ['name' => 'tone', 'description' => 'Email tone (professional, friendly, formal)', 'required' => false, 'default' => 'professional'],
+                ],
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 1000],
+            ],
+
+            'email_compose' => [
+                'id' => 'email_compose',
+                'name' => 'Compose Email',
+                'description' => 'Compose a new email from scratch',
+                'category' => 'email',
+                'system_prompt' => 'You are an expert at writing professional emails. Create clear, well-structured emails appropriate for the context.',
+                'user_prompt' => "Compose a {{tone}} email about:\n\nSubject: {{subject}}\nPurpose: {{purpose}}\nRecipient context: {{recipient}}",
+                'variables' => [
+                    ['name' => 'subject', 'description' => 'Email subject', 'required' => true],
+                    ['name' => 'purpose', 'description' => 'Purpose of the email', 'required' => true],
+                    ['name' => 'recipient', 'description' => 'Who is receiving this email', 'required' => false, 'default' => 'colleague'],
+                    ['name' => 'tone', 'description' => 'Email tone', 'required' => false, 'default' => 'professional'],
+                ],
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 1000],
+            ],
+
+            // Data Templates
+            'json_generate' => [
+                'id' => 'json_generate',
+                'name' => 'Generate JSON',
+                'description' => 'Generate structured JSON data',
+                'category' => 'data',
+                'system_prompt' => 'You are an expert at generating structured JSON data. Always return valid JSON without markdown code blocks.',
+                'user_prompt' => "Generate JSON data based on this schema:\n\n{{schema}}\n\nContext/Requirements:\n{{requirements}}",
+                'variables' => [
+                    ['name' => 'schema', 'description' => 'JSON schema or structure description', 'required' => true],
+                    ['name' => 'requirements', 'description' => 'Additional requirements or context', 'required' => false, 'default' => ''],
+                ],
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 2000],
+            ],
+
+            'data_transform' => [
+                'id' => 'data_transform',
+                'name' => 'Transform Data',
+                'description' => 'Transform data from one format to another',
+                'category' => 'data',
+                'system_prompt' => 'You are an expert at data transformation. Convert data between formats accurately while preserving all information.',
+                'user_prompt' => "Transform this data from {{source_format}} to {{target_format}}:\n\n{{data}}",
+                'variables' => [
+                    ['name' => 'data', 'description' => 'The data to transform', 'required' => true],
+                    ['name' => 'source_format', 'description' => 'Source format (JSON, XML, CSV, etc.)', 'required' => true],
+                    ['name' => 'target_format', 'description' => 'Target format', 'required' => true],
+                ],
+                'default_engine' => 'openai',
+                'default_model' => 'gpt-4o',
+                'default_parameters' => ['max_tokens' => 3000],
             ],
         ];
+    }
+
+    /**
+     * Search templates by name or description
+     */
+    public function searchTemplates(string $query): array
+    {
+        $query = strtolower($query);
+        return array_filter($this->getAllTemplates(), function ($template) use ($query) {
+            return str_contains(strtolower($template['name'] ?? ''), $query) ||
+                   str_contains(strtolower($template['description'] ?? ''), $query);
+        });
+    }
+
+    /**
+     * Validate variables for a template
+     */
+    public function validateVariables(string $templateId, array $variables): array
+    {
+        $template = $this->getTemplate($templateId);
+        
+        if (!$template) {
+            return ['error' => 'Template not found'];
+        }
+
+        $errors = [];
+        foreach ($template['variables'] ?? [] as $varDef) {
+            $name = $varDef['name'];
+            $required = $varDef['required'] ?? false;
+            
+            if ($required && (!isset($variables[$name]) || empty($variables[$name]))) {
+                $errors[$name] = "Variable '{$name}' is required";
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Get template with default values filled in
+     */
+    public function getTemplateWithDefaults(string $templateId): ?array
+    {
+        $template = $this->getTemplate($templateId);
+        
+        if (!$template) {
+            return null;
+        }
+
+        $defaults = [];
+        foreach ($template['variables'] ?? [] as $varDef) {
+            if (isset($varDef['default'])) {
+                $defaults[$varDef['name']] = $varDef['default'];
+            }
+        }
+
+        $template['default_values'] = $defaults;
+        return $template;
     }
 }
