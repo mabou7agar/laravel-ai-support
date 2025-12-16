@@ -50,7 +50,8 @@ class EngineBuilder
         $this->model = EntityEnum::fromSlug($model);
         
         // Validate that model belongs to this engine
-        if ($this->model->engine() !== $this->engine) {
+        // Compare values since EngineEnum is a class, not a native enum
+        if ($this->model->engine()->value !== $this->engine->value) {
             throw new \InvalidArgumentException(
                 "Model {$model} does not belong to engine {$this->engine->value}"
             );

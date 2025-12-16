@@ -88,6 +88,21 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery();
         });
 
+        // Register Data Collector Services
+        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class, function ($app) {
+            return new \LaravelAIEngine\Services\DataCollector\DataCollectorService(
+                $app->make(\LaravelAIEngine\Services\AIEngineManager::class),
+                $app->make(\LaravelAIEngine\Services\ConversationService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorChatService::class, function ($app) {
+            return new \LaravelAIEngine\Services\DataCollector\DataCollectorChatService(
+                $app->make(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class),
+                $app->make(\LaravelAIEngine\Services\ChatService::class)
+            );
+        });
+
         // Register Model Resolver (bridges database models with EntityEnum)
         $this->app->singleton(\LaravelAIEngine\Services\ModelResolver::class, function ($app) {
             return new \LaravelAIEngine\Services\ModelResolver();
@@ -132,6 +147,7 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
                 \LaravelAIEngine\Console\Commands\ListAIModelsCommand::class,
                 \LaravelAIEngine\Console\Commands\AddAIModelCommand::class,
                 \LaravelAIEngine\Console\Commands\ListRAGCollectionsCommand::class,
+                \LaravelAIEngine\Console\Commands\TestDataCollectorCommand::class,
                 \LaravelAIEngine\Console\Commands\TestRAGFeaturesCommand::class,
                 \LaravelAIEngine\Console\Commands\TestIntelligentSearchCommand::class,
                 

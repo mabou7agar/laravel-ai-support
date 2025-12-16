@@ -5,6 +5,7 @@ use LaravelAIEngine\Http\Controllers\AIChatController;
 use LaravelAIEngine\Http\Controllers\Api\RagChatApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\ActionExecutionController;
+use LaravelAIEngine\Http\Controllers\DataCollectorController;
 
 /*
 |--------------------------------------------------------------------------
@@ -83,6 +84,37 @@ Route::prefix('api/v1/modules')
     ->group(function () {
         Route::get('/discover', [ModuleController::class, 'discover'])
             ->name('discover');
+    });
+
+// Data Collector Chat Routes (v1)
+Route::prefix('api/v1/data-collector')
+    ->middleware(['api'])
+    ->name('ai-engine.data-collector.')
+    ->group(function () {
+        
+        // Start a new data collection session (with registered config)
+        Route::post('/start', [DataCollectorController::class, 'start'])
+            ->name('start');
+        
+        // Start a new data collection session (with inline config)
+        Route::post('/start-custom', [DataCollectorController::class, 'startCustom'])
+            ->name('start-custom');
+        
+        // Process a message in an active session
+        Route::post('/message', [DataCollectorController::class, 'message'])
+            ->name('message');
+        
+        // Get session status
+        Route::get('/status/{sessionId}', [DataCollectorController::class, 'status'])
+            ->name('status');
+        
+        // Cancel a session
+        Route::post('/cancel', [DataCollectorController::class, 'cancel'])
+            ->name('cancel');
+        
+        // Get collected data
+        Route::get('/data/{sessionId}', [DataCollectorController::class, 'getData'])
+            ->name('data');
     });
 
 // Legacy AI Demo Routes
