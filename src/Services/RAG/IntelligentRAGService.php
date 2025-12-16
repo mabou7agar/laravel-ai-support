@@ -156,14 +156,28 @@ class IntelligentRAGService
                 // AI can only suggest a SUBSET of what user passed, never expand beyond it
                 $suggestedCollections = $analysis['collections'] ?? [];
 
-                // Validate AI-suggested collections - only use ones that exist in user's passed collections
-                $validCollections = array_filter($suggestedCollections, function ($collection) use ($availableCollections) {
-                    return class_exists($collection) && in_array($collection, $availableCollections);
-                });
+                // If user passed collections, validate AI suggestions against them
+                // If using auto-discovery (empty availableCollections), trust AI's selection
+                if (!empty($availableCollections)) {
+                    // Validate AI-suggested collections - only use ones that exist in user's passed collections
+                    $validCollections = array_filter($suggestedCollections, function ($collection) use ($availableCollections) {
+                        return class_exists($collection) && in_array($collection, $availableCollections);
+                    });
 
-                // If AI suggested valid subset, use it; otherwise use ALL user-passed collections
-                // Never search beyond what user explicitly passed
-                $collectionsToSearch = !empty($validCollections) ? $validCollections : $availableCollections;
+                    // If AI suggested valid subset, use it; otherwise use ALL user-passed collections
+                    // Never search beyond what user explicitly passed
+                    $collectionsToSearch = !empty($validCollections) ? $validCollections : $availableCollections;
+                } else {
+                    // Auto-discovery mode: trust AI's selection from discovered collections
+                    $collectionsToSearch = array_filter($suggestedCollections, function ($collection) {
+                        return class_exists($collection);
+                    });
+                    
+                    // If AI didn't suggest any, use all discovered collections
+                    if (empty($collectionsToSearch)) {
+                        $collectionsToSearch = $availableCollections;
+                    }
+                }
 
                 if (config('ai-engine.debug')) {
                     Log::channel('ai-engine')->debug('Collection selection', [
@@ -435,7 +449,52 @@ class IntelligentRAGService
     {
         // Build available collections info with descriptions
         $collectionsInfo = '';
-        if (!empty($availableCollections)) {
+        
+        // Check if federated search is enabled and we should discover remote collections
+        $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
+        $discoveredCollections = [];
+        
+        if ($useFederatedSearch && empty($availableCollections)) {
+            // Discover collections from all nodes with their RAG descriptions
+            try {
+                $discoveryService = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
+                $collections = $discoveryService->discoverWithDescriptions(useCache: true);
+                
+                if (!empty($collections)) {
+                    $collectionsInfo = "\n\nAvailable knowledge sources across all nodes (READ DESCRIPTIONS CAREFULLY):\n";
+                    
+                    foreach ($collections as $collection) {
+                        $name = $collection['display_name'];
+                        $description = $collection['description'];
+                        $nodeCount = count($collection['nodes']);
+                        $nodeNames = array_map(fn($n) => $n['node_name'], $collection['nodes']);
+                        
+                        // Store discovered collection class for actual searching
+                        $discoveredCollections[] = $collection['class'];
+                        
+                        if (!empty($description)) {
+                            $collectionsInfo .= "- **{$name}**: {$description}\n";
+                            $collectionsInfo .= "  → Use class: {$collection['class']}\n";
+                            $collectionsInfo .= "  → Available on {$nodeCount} node(s): " . implode(', ', $nodeNames) . "\n";
+                        } else {
+                            $collectionsInfo .= "- **{$name}**\n";
+                            $collectionsInfo .= "  → Use class: {$collection['class']}\n";
+                            $collectionsInfo .= "  → Available on {$nodeCount} node(s): " . implode(', ', $nodeNames) . "\n";
+                        }
+                    }
+                    
+                    // Use discovered collections as availableCollections for searching
+                    $availableCollections = $discoveredCollections;
+                }
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Failed to discover remote collections', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+        
+        // If no federated discovery or availableCollections provided, use local collections
+        if (empty($collectionsInfo) && !empty($availableCollections)) {
             $collectionsInfo = "\n\nAvailable knowledge sources (READ DESCRIPTIONS CAREFULLY):\n";
             foreach ($availableCollections as $collection) {
                 $name = class_basename($collection);
@@ -444,11 +503,20 @@ class IntelligentRAGService
                 // Try to get RAG description from the model
                 if (class_exists($collection)) {
                     try {
-                        $instance = new $collection();
-                        if (method_exists($instance, 'getRAGDescription')) {
-                            $description = $instance->getRAGDescription();
+                        // Try static method first (preferred)
+                        if (method_exists($collection, 'getRAGDescription')) {
+                            $description = $collection::getRAGDescription();
+                        } else {
+                            // Fallback to instance method
+                            $instance = new $collection();
+                            if (method_exists($instance, 'getRAGDescription')) {
+                                $description = $instance->getRAGDescription();
+                            }
                         }
-                        if (method_exists($instance, 'getRAGDisplayName')) {
+                        
+                        if (method_exists($collection, 'getRAGDisplayName')) {
+                            $name = $collection::getRAGDisplayName();
+                        } elseif (isset($instance) && method_exists($instance, 'getRAGDisplayName')) {
                             $name = $instance->getRAGDisplayName();
                         }
                     } catch (\Exception $e) {
@@ -484,9 +552,25 @@ QUERY TYPES:
 
 CRITICAL COLLECTION SELECTION RULES:
 1. READ the description of each collection carefully to select the RIGHT one
-2. "accounts", "configurations", "settings" → Look for collections about ACCOUNTS/SETTINGS, not messages/content
-3. "messages", "emails", "inbox", "mail content" → Look for collections about MESSAGES/CONTENT
-4. When in doubt, include MULTIPLE relevant collections
+2. MATCH query keywords to collection descriptions:
+   - Query contains "article", "post", "blog", "tutorial", "guide" → Look for collections mentioning these
+   - Query contains "email", "message", "inbox" → Look for email-related collections
+   - Query contains "document", "file", "contract" → Look for document collections
+   - Query contains "user", "account", "profile" → Look for user collections
+3. Examples:
+   - "Find Milk products" → Select Product collection (description mentions "products", "items")
+   - "Show contract with Acme" → Select Document collection (description mentions "contracts", "agreements")
+   - "Did John email me?" → Select Email collection (description mentions "email", "messages")
+   - "Find Laravel articles" → Select Post/Article collection (description mentions "articles", "blog posts", "tutorials")
+   - "Show me Laravel tutorials" → Select Post/Article collection (description mentions "tutorials", "guides")
+4. DO NOT select all collections - be selective based on query relevance
+5. When query clearly matches ONE collection, use ONLY that collection
+6. Use multiple collections ONLY when query spans multiple domains
+7. IMPORTANT: If a collection description explicitly mentions the query topic (e.g., "Laravel" in description), SELECT IT
+8. Collections without descriptions: If a collection has no description or generic description like "Search through X", INCLUDE IT if:
+   - Query is ambiguous or general
+   - Collection name matches query keywords (e.g., "Post" for "posts", "Document" for "documents")
+   - No other collections have clear matches
 
 CRITICAL SEARCH QUERY RULES:
 1. NEVER use abstract terms like "most important" or "best" alone - they won't match content
@@ -539,18 +623,23 @@ PROMPT;
 Query: "{$query}"
 
 CRITICAL INSTRUCTIONS:
-1. If query looks like an EMAIL SUBJECT or DOCUMENT TITLE (e.g., "Undelivered Mail Returned to Sender", "Re: Check App", "Password Reset"):
+1. MATCH query keywords to collection descriptions:
+   - "articles", "posts", "blog", "tutorials" in query → Select collections with these in description
+   - "Laravel articles" → Look for collection mentioning "articles", "blog posts", "Laravel", "tutorials"
+   - Example: "Blog Posts & Articles" collection with description "Blog posts and articles about Laravel, PHP..." → SELECT THIS for Laravel article queries
+2. If query looks like an EMAIL SUBJECT or DOCUMENT TITLE (e.g., "Undelivered Mail Returned to Sender", "Re: Check App", "Password Reset"):
    → Use ONLY that EXACT phrase as search_queries: ["Undelivered Mail Returned to Sender"]
    → Do NOT expand or rephrase it - the user wants that specific item
-2. For vague queries like "which is important/best/urgent" → Use MULTIPLE concrete terms:
+3. For vague queries like "which is important/best/urgent" → Use MULTIPLE concrete terms:
    ["urgent", "deadline", "priority", "action required", "reminder", "meeting", "follow up"]
-3. NEVER return just ["most important"] or ["best"] - these won't match anything
-4. For follow-ups about specific items from history:
+4. NEVER return just ["most important"] or ["best"] - these won't match anything
+5. For follow-ups about specific items from history:
    - If query matches an email subject, document title, or item name from previous response → Use EXACT query
    - Keep the same collection as the previous search
-5. Only use collections from the available list - use FULL class name
-6. Default: needs_context: true
-7. PERFORMANCE: Prefer 1-2 search queries over many. More queries = slower response
+6. Only use collections from the available list - use FULL class name (e.g., "App\\\\Models\\\\Post")
+7. Default: needs_context: true
+8. PERFORMANCE: Prefer 1-2 search queries over many. More queries = slower response
+9. BE DECISIVE: If collection description clearly matches query intent, SELECT IT - don't be overly conservative
 
 Respond with JSON only. Example for follow-up about specific email:
 {"needs_context": true, "reasoning": "user asking about specific email from previous list", "search_queries": ["Re: Check App"], "collections": ["Bites\\\\Modules\\\\MailBox\\\\Models\\\\EmailCache"], "query_type": "informational", "needs_aggregate": false}
@@ -608,7 +697,7 @@ PROMPT;
                 $collections = $availableCollections;
             }
 
-            return [
+            $result = [
                 'needs_context' => $analysis['needs_context'] ?? false,
                 'reasoning' => $analysis['reasoning'] ?? '',
                 'search_queries' => $searchQueries,
@@ -616,6 +705,16 @@ PROMPT;
                 'query_type' => $analysis['query_type'] ?? 'conversational',
                 'needs_aggregate' => $analysis['needs_aggregate'] ?? false,
             ];
+            
+            Log::channel('ai-engine')->info('Query analysis result', [
+                'query' => $query,
+                'needs_context' => $result['needs_context'],
+                'collections_count' => count($result['collections']),
+                'collections' => array_map('class_basename', $result['collections']),
+                'search_queries' => $result['search_queries'],
+            ]);
+            
+            return $result;
 
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('Query analysis failed, defaulting to context search', [
@@ -1009,10 +1108,12 @@ PROMPT;
 
         foreach ($searchQueries as $searchQuery) {
             try {
-                // Use federated search across all nodes
+                // Use federated search across all nodes or specific nodes if provided
+                $nodeIds = $options['node_ids'] ?? null;
+                
                 $federatedResults = $this->federatedSearch->search(
                     query: $searchQuery,
-                    nodeIds: null, // Auto-select nodes based on context
+                    nodeIds: $nodeIds, // Use specific nodes if provided, otherwise auto-select
                     limit: $maxResults,
                     options: array_merge($options, [
                         'collections' => $collections,

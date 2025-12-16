@@ -54,6 +54,8 @@ class VectorSearchService
             $filters = $this->applyParentLookupFilters($modelClass, $query, $filters);
 
             // SECURITY: Build access control filters (fetches user internally)
+            // Pass model class so it can use model-specific filter logic
+            $filters['model_class'] = $modelClass;
             $filters = $this->accessControl->buildSearchFilters($userId, $filters);
 
             // Get access level for logging

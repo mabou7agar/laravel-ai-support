@@ -34,21 +34,74 @@ class NodeApiController extends Controller
             // Get local collections only (no federated, no cache for fresh results)
             $classNames = $discoveryService->discover(useCache: false, includeFederated: false);
             
-            // Format as detailed collection info
+            // Format as detailed collection info with RAG descriptions
             $collections = [];
             foreach ($classNames as $className) {
                 try {
-                    $instance = new $className;
+                    $name = class_basename($className);
+                    $description = '';
+                    $displayName = $name;
+                    $table = 'unknown';
+                    
+                    // Use reflection to check if methods are static
+                    $reflection = new \ReflectionClass($className);
+                    
+                    if ($reflection->hasMethod('getRAGDescription')) {
+                        $method = $reflection->getMethod('getRAGDescription');
+                        if ($method->isStatic()) {
+                            $description = $className::getRAGDescription();
+                        } else {
+                            // Fallback to instance method
+                            try {
+                                $instance = new $className;
+                                $description = $instance->getRAGDescription();
+                            } catch (\Exception $e) {
+                                // Ignore
+                            }
+                        }
+                    }
+                    
+                    if ($reflection->hasMethod('getRAGDisplayName')) {
+                        $method = $reflection->getMethod('getRAGDisplayName');
+                        if ($method->isStatic()) {
+                            $displayName = $className::getRAGDisplayName();
+                        } else {
+                            // Fallback to instance method
+                            try {
+                                if (!isset($instance)) {
+                                    $instance = new $className;
+                                }
+                                $displayName = $instance->getRAGDisplayName();
+                            } catch (\Exception $e) {
+                                // Ignore
+                            }
+                        }
+                    }
+                    
+                    // Get table name
+                    try {
+                        if (!isset($instance)) {
+                            $instance = new $className;
+                        }
+                        $table = $instance->getTable();
+                    } catch (\Exception $e) {
+                        // Couldn't instantiate, use default
+                    }
+                    
                     $collections[] = [
                         'class' => $className,
-                        'name' => class_basename($className),
-                        'table' => $instance->getTable(),
+                        'name' => $name,
+                        'display_name' => $displayName,
+                        'table' => $table,
+                        'description' => $description,  // ✅ RAG description for AI
                     ];
                 } catch (\Exception $e) {
                     $collections[] = [
                         'class' => $className,
                         'name' => class_basename($className),
+                        'display_name' => class_basename($className),
                         'table' => 'unknown',
+                        'description' => '',
                     ];
                 }
             }
@@ -92,12 +145,11 @@ class NodeApiController extends Controller
                 }
                 
                 $searchResults = $searchService->search(
-                    $collection,
-                    $validated['query'],
-                    $validated['limit'] ?? 10,
-                    $validated['options']['threshold'] ?? 0.3,
-                    $filters,
-                    $userId
+                    query: $validated['query'],
+                    modelClass: $collection,
+                    limit: $validated['limit'] ?? 10,
+                    userId: $userId,
+                    filters: $filters
                 );
                 
                 foreach ($searchResults as $result) {

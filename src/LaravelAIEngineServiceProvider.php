@@ -133,6 +133,9 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
                 \LaravelAIEngine\Console\Commands\AddAIModelCommand::class,
                 \LaravelAIEngine\Console\Commands\ListRAGCollectionsCommand::class,
                 \LaravelAIEngine\Console\Commands\TestRAGFeaturesCommand::class,
+                \LaravelAIEngine\Console\Commands\TestIntelligentSearchCommand::class,
+                
+                // Note: Node commands are registered in AIEngineServiceProvider.php
             ]);
         }
 

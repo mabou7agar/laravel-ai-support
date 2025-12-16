@@ -174,6 +174,70 @@ class VectorAccessControl
      */
     public function buildSearchFilters($userId, array $baseFilters = []): array
     {
+        // Check if model has custom filter logic
+        if (isset($baseFilters['model_class'])) {
+            $modelClass = $baseFilters['model_class'];
+            unset($baseFilters['model_class']); // Remove from filters
+            
+            // Check for public property first (simplest approach)
+            $skipUserFilter = false;
+            if (property_exists($modelClass, 'skipUserFilter')) {
+                $reflection = new \ReflectionClass($modelClass);
+                $property = $reflection->getProperty('skipUserFilter');
+                if ($property->isPublic() && $property->isStatic()) {
+                    $skipUserFilter = $modelClass::$skipUserFilter;
+                    
+                    Log::debug('Using model public property for skip_user_filter', [
+                        'model' => $modelClass,
+                        'skip_user_filter' => $skipUserFilter,
+                    ]);
+                    
+                    if ($skipUserFilter) {
+                        return $baseFilters;
+                    }
+                }
+            }
+            
+            // Fallback to method-based approach
+            if (method_exists($modelClass, 'getVectorSearchFilters')) {
+                Log::debug('Using model-specific search filters', [
+                    'model' => $modelClass,
+                    'user_id' => $userId,
+                ]);
+                
+                // Let model define its own filters
+                $customFilters = $modelClass::getVectorSearchFilters($userId, $baseFilters);
+                
+                // Check if model wants to skip user filtering (from filters or config)
+                $skipUserFilter = $customFilters['skip_user_filter'] ?? false;
+                if (method_exists($modelClass, 'getVectorSearchConfig')) {
+                    $config = $modelClass::getVectorSearchConfig();
+                    $skipUserFilter = $skipUserFilter || ($config['skip_user_filter'] ?? false);
+                }
+                
+                // Remove the meta-flag before returning
+                unset($customFilters['skip_user_filter']);
+                
+                if ($skipUserFilter) {
+                    Log::debug('Model requested skip_user_filter', [
+                        'model' => $modelClass,
+                        'returning_filters' => $customFilters,
+                    ]);
+                }
+                
+                return $customFilters;
+            }
+        }
+        
+        // Check if user filtering should be skipped (for workspace/org-level searches)
+        if (isset($baseFilters['skip_user_filter']) && $baseFilters['skip_user_filter']) {
+            unset($baseFilters['skip_user_filter']);
+            Log::debug('Skipping user_id filter as requested', [
+                'custom_filters' => $baseFilters,
+            ]);
+            return $baseFilters;
+        }
+        
         // If no userId provided, try to use demo user as fallback
         if (!$userId) {
             $demoUserId = config('ai-engine.demo_user_id', '1');
