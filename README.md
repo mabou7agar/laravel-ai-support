@@ -165,6 +165,15 @@ php artisan ai-engine:sync-models
 - **Multi-Modal**: Text, images, documents
 - **Batch Processing**: Process multiple requests efficiently
 
+### 💬 Data Collector Chat
+- **Conversational Forms**: Replace traditional forms with AI-guided conversations
+- **Field Validation**: Built-in validation with helpful error messages
+- **AI-Generated Summaries**: Dynamic previews of what will be created
+- **Structured Output**: Generate complex JSON data (courses with lessons, etc.)
+- **Multi-Language Support**: Force specific language or auto-detect from user input
+- **Enhancement Mode**: Users can modify fields after initial collection
+- **Interactive Actions**: Quick reply buttons and field options
+
 ---
 
 ## 🌐 Federated RAG (Distributed Knowledge Base)
@@ -1957,6 +1966,37 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 - **Collection Strategies**: prefix, suffix, or separate naming
 - **Auto-Detection**: Works with Spatie, Stancl, Hyn tenancy packages
 - **Custom Resolvers**: Implement your own tenant resolution logic
+
+✨ **Data Collector Chat** 💬 (NEW!)
+- **Conversational Forms**: Replace traditional forms with AI-guided conversations
+- **Field Validation**: Built-in validation with helpful error messages
+- **AI-Generated Summaries**: Dynamic previews of what will be created
+- **Structured Output**: Generate complex JSON (courses with lessons, products with variants)
+- **Multi-Language**: Force specific language (`locale: 'ar'`) or auto-detect (`detectLocale: true`)
+- **Enhancement Mode**: Users can modify fields after initial collection
+- **Interactive Actions**: Quick reply buttons and field options
+- **See**: [Full Documentation](docs/guides/DATA_COLLECTOR_CHAT_GUIDE.md)
+
+```php
+// Quick example
+$config = new DataCollectorConfig(
+    name: 'course_creator',
+    title: 'Create a New Course',
+    fields: [
+        'name' => 'Course name | required | min:3',
+        'level' => ['type' => 'select', 'options' => ['beginner', 'intermediate', 'advanced']],
+    ],
+    outputSchema: [
+        'course' => ['name' => 'string', 'level' => 'string'],
+        'lessons' => ['type' => 'array', 'count' => 10, 'items' => ['name' => 'string', 'description' => 'string']],
+    ],
+    locale: 'ar', // Force Arabic responses
+    onComplete: fn($data) => Course::create($data['_generated_output']['course']),
+);
+
+$response = DataCollector::startCollection('session-123', $config);
+$response = DataCollector::processMessage('session-123', 'Laravel Fundamentals');
+```
 
 ✨ **Simplified API** 🎯
 - **Pass User ID Only**: No need to pass user objects
