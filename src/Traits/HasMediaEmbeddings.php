@@ -7,6 +7,8 @@ use LaravelAIEngine\Services\Media\VisionService;
 use LaravelAIEngine\Services\Media\AudioService;
 use LaravelAIEngine\Services\Media\VideoService;
 use LaravelAIEngine\Services\Media\DocumentService;
+use LaravelAIEngine\Models\Transcription;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 trait HasMediaEmbeddings
 {
@@ -512,16 +514,70 @@ trait HasMediaEmbeddings
     }
 
     /**
-     * Transcribe audio field
+     * Get the transcription for this model.
      */
-    public function transcribeAudio(string $field): ?string
+    public function transcription(): MorphOne
+    {
+        return $this->morphOne(Transcription::class, 'transcribable');
+    }
+
+    /**
+     * Check if this model has a stored transcription.
+     */
+    public function hasTranscription(): bool
+    {
+        return $this->transcription()->where('status', Transcription::STATUS_COMPLETED)->exists();
+    }
+
+    /**
+     * Get stored transcription content.
+     */
+    public function getTranscriptionContent(): ?string
+    {
+        return $this->transcription?->content;
+    }
+
+    /**
+     * Transcribe audio field (with caching to database)
+     */
+    public function transcribeAudio(string $field, bool $forceRefresh = false): ?string
     {
         if (!isset($this->$field)) {
             return null;
         }
 
+        // Check for cached transcription
+        if (!$forceRefresh && $this->hasTranscription()) {
+            return $this->getTranscriptionContent();
+        }
+
         $audioService = app(AudioService::class);
-        return $audioService->transcribe($this->$field);
+        $transcription = $audioService->transcribe($this->$field);
+
+        // Store transcription
+        if ($transcription) {
+            $this->saveTranscription($transcription, [
+                'engine' => 'openai',
+                'model' => 'whisper-1',
+                'language' => $audioService->detectLanguage($this->$field),
+            ]);
+        }
+
+        return $transcription;
+    }
+
+    /**
+     * Save transcription to database.
+     */
+    public function saveTranscription(string $content, array $attributes = []): Transcription
+    {
+        return $this->transcription()->updateOrCreate(
+            [],
+            array_merge([
+                'content' => $content,
+                'status' => Transcription::STATUS_COMPLETED,
+            ], $attributes)
+        );
     }
 
     /**
