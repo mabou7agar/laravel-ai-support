@@ -20,22 +20,23 @@ class DocumentService
         try {
             return match ($extension) {
                 'pdf' => $this->extractFromPDF($filePath),
-                'doc', 'docx' => $this->extractFromDOCX($filePath),
-                'txt', 'text' => $this->extractFromTXT($filePath),
+                'docx' => $this->extractFromDOCX($filePath),
+                'doc' => $this->extractFromDOC($filePath),
+                'txt', 'text', 'md', 'markdown', 'log', 'json', 'xml', 'html', 'htm', 'css', 'js', 'php', 'py', 'rb', 'java', 'c', 'cpp', 'h', 'sh', 'bash', 'yml', 'yaml', 'ini', 'conf', 'cfg' => $this->extractFromTXT($filePath),
                 'rtf' => $this->extractFromRTF($filePath),
                 'odt' => $this->extractFromODT($filePath),
                 'csv' => $this->extractFromCSV($filePath),
                 'xls', 'xlsx' => $this->extractFromExcel($filePath),
                 'ppt', 'pptx' => $this->extractFromPowerPoint($filePath),
-                default => throw new \InvalidArgumentException("Unsupported document format: {$extension}"),
+                default => $this->extractFromTXT($filePath), // Try as text for unknown formats
             };
         } catch (\Exception $e) {
-            Log::error('Document text extraction failed', [
+            Log::warning('Document text extraction failed, returning empty', [
                 'file_path' => $filePath,
                 'extension' => $extension,
                 'error' => $e->getMessage(),
             ]);
-            throw $e;
+            return ''; // Return empty instead of throwing to allow graceful degradation
         }
     }
 
@@ -114,6 +115,77 @@ class DocumentService
         }
 
         return implode(' ', $text);
+    }
+
+    /**
+     * Extract text from legacy DOC (binary format)
+     * Uses antiword or catdoc if available, otherwise attempts basic extraction
+     */
+    protected function extractFromDOC(string $filePath): string
+    {
+        // Try antiword first (best quality)
+        if ($this->isCommandAvailable('antiword')) {
+            $command = sprintf('antiword %s 2>&1', escapeshellarg($filePath));
+            exec($command, $output, $returnCode);
+            
+            if ($returnCode === 0) {
+                return implode("\n", $output);
+            }
+        }
+
+        // Try catdoc as fallback
+        if ($this->isCommandAvailable('catdoc')) {
+            $command = sprintf('catdoc %s 2>&1', escapeshellarg($filePath));
+            exec($command, $output, $returnCode);
+            
+            if ($returnCode === 0) {
+                return implode("\n", $output);
+            }
+        }
+
+        // Try LibreOffice/OpenOffice conversion
+        if ($this->isCommandAvailable('soffice')) {
+            $tempDir = sys_get_temp_dir();
+            $command = sprintf(
+                'soffice --headless --convert-to txt:Text --outdir %s %s 2>&1',
+                escapeshellarg($tempDir),
+                escapeshellarg($filePath)
+            );
+            exec($command, $output, $returnCode);
+            
+            if ($returnCode === 0) {
+                $txtFile = $tempDir . '/' . pathinfo($filePath, PATHINFO_FILENAME) . '.txt';
+                if (file_exists($txtFile)) {
+                    $content = file_get_contents($txtFile);
+                    @unlink($txtFile);
+                    return $content;
+                }
+            }
+        }
+
+        // Last resort: try to extract readable text from binary
+        $content = file_get_contents($filePath);
+        
+        // Remove binary characters and extract readable text
+        $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\xFF]/', ' ', $content);
+        $text = preg_replace('/\s+/', ' ', $text);
+        
+        // If we got mostly garbage, throw an error
+        if (strlen(trim($text)) < 50) {
+            throw new \RuntimeException('Cannot extract text from DOC file. Please install antiword or catdoc.');
+        }
+
+        return trim($text);
+    }
+
+    /**
+     * Check if a command is available on the system
+     */
+    protected function isCommandAvailable(string $command): bool
+    {
+        $which = PHP_OS_FAMILY === 'Windows' ? 'where' : 'which';
+        exec("$which $command 2>&1", $output, $returnCode);
+        return $returnCode === 0;
     }
 
     /**

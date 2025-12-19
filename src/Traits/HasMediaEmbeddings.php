@@ -29,8 +29,10 @@ trait HasMediaEmbeddings
         $content = [];
         $maxMediaContent = config('ai-engine.vectorization.max_media_content', 50000); // 50KB per media
 
-        // Auto-detect media fields if not explicitly set
-        if (empty($this->mediaFields)) {
+        // Use getMediaFields() method if available, otherwise use property or auto-detect
+        if (method_exists($this, 'getMediaFields')) {
+            $this->mediaFields = $this->getMediaFields();
+        } elseif (empty($this->mediaFields)) {
             $this->mediaFields = $this->autoDetectMediaFields();
         }
 
@@ -55,10 +57,39 @@ trait HasMediaEmbeddings
                 if (isset($this->$field)) {
                     $fieldValue = $this->$field;
                     
-                    // Handle array of URLs/paths
+                    // Handle array of URLs/paths or attachment objects
                     if (is_array($fieldValue)) {
+                        if (config('ai-engine.debug')) {
+                            \Log::channel('ai-engine')->debug('Processing attachment array field', [
+                                'model' => get_class($this),
+                                'id' => $this->id ?? 'new',
+                                'field' => $field,
+                                'type' => $type,
+                                'attachment_count' => count($fieldValue),
+                            ]);
+                        }
+                        
                         foreach ($fieldValue as $index => $item) {
-                            $mediaContent = $this->processMediaItem($item, $type, $mediaService, $field);
+                            // Handle attachment objects with url/path fields
+                            $mediaUrl = $this->extractUrlFromItem($item);
+                            if ($mediaUrl) {
+                                if (config('ai-engine.debug')) {
+                                    \Log::channel('ai-engine')->debug('Processing attachment URL', [
+                                        'model' => get_class($this),
+                                        'id' => $this->id ?? 'new',
+                                        'field' => "{$field}[{$index}]",
+                                        'url' => substr($mediaUrl, 0, 100) . (strlen($mediaUrl) > 100 ? '...' : ''),
+                                        'type' => $type,
+                                    ]);
+                                }
+                                $mediaContent = $this->processMediaItem($mediaUrl, $type, $mediaService, $field);
+                            } elseif (is_string($item)) {
+                                // Handle simple string URLs/paths
+                                $mediaContent = $this->processMediaItem($item, $type, $mediaService, $field);
+                            } else {
+                                $mediaContent = null;
+                            }
+                            
                             if ($mediaContent) {
                                 // Truncate if too large
                                 if (strlen($mediaContent) > $maxMediaContent) {
@@ -105,6 +136,38 @@ trait HasMediaEmbeddings
         }
 
         return $truncated;
+    }
+
+    /**
+     * Extract URL from attachment item (array or object)
+     * Handles common attachment structures like {url, path, file_path, file_url}
+     */
+    protected function extractUrlFromItem($item): ?string
+    {
+        if (is_string($item)) {
+            return $item;
+        }
+
+        if (is_array($item)) {
+            // Common URL field names in attachment objects
+            $urlFields = ['url', 'path', 'file_path', 'file_url', 'src', 'source', 'link', 'href'];
+            foreach ($urlFields as $field) {
+                if (isset($item[$field]) && is_string($item[$field]) && !empty($item[$field])) {
+                    return $item[$field];
+                }
+            }
+        }
+
+        if (is_object($item)) {
+            $urlFields = ['url', 'path', 'file_path', 'file_url', 'src', 'source', 'link', 'href'];
+            foreach ($urlFields as $field) {
+                if (isset($item->$field) && is_string($item->$field) && !empty($item->$field)) {
+                    return $item->$field;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -211,6 +274,27 @@ trait HasMediaEmbeddings
                 'document' => ['document', 'file', 'pdf', 'doc', 'attachment'],
             ];
 
+            // Check for JSON array fields that might contain attachment objects
+            // These are typically named 'attachments', 'files', 'media', etc.
+            $jsonArrayFields = ['attachments', 'files', 'media', 'documents', 'images'];
+            foreach ($columns as $column) {
+                $columnLower = strtolower($column);
+                if (in_array($columnLower, $jsonArrayFields)) {
+                    // Check if this column is cast to array (JSON field)
+                    $casts = $this->getCasts();
+                    if (isset($casts[$column]) && $casts[$column] === 'array') {
+                        // Determine type from column name
+                        $type = match(true) {
+                            str_contains($columnLower, 'image') || str_contains($columnLower, 'photo') => 'image',
+                            str_contains($columnLower, 'audio') => 'audio',
+                            str_contains($columnLower, 'video') => 'video',
+                            default => 'document', // Default for attachments, files, media, documents
+                        };
+                        $detectedFields[$type] = $column;
+                    }
+                }
+            }
+
             foreach ($columns as $column) {
                 $columnLower = strtolower($column);
                 
@@ -297,6 +381,12 @@ trait HasMediaEmbeddings
             $fileSize = filesize($tempFile);
             $maxFileSize = config('ai-engine.vectorization.max_media_file_size', 10485760);
 
+            // Get extension from URL for document processing
+            $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
+            if (empty($extension)) {
+                $extension = 'txt'; // Default to txt if no extension
+            }
+
             // Process based on type and size
             if ($fileSize > $maxFileSize && $processLargeMedia && in_array($type, ['video', 'audio'])) {
                 // Process large media in chunks
@@ -307,7 +397,7 @@ trait HasMediaEmbeddings
                     'image' => app(VisionService::class)->analyzeImage($tempFile),
                     'audio' => app(AudioService::class)->transcribe($tempFile),
                     'video' => app(VideoService::class)->processVideo($tempFile),
-                    'document' => app(DocumentService::class)->extractText($tempFile),
+                    'document' => app(DocumentService::class)->extractText($tempFile, $extension),
                     default => null,
                 };
             }
