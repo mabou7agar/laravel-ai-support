@@ -4,9 +4,12 @@ namespace LaravelAIEngine\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use LaravelAIEngine\Traits\Vectorizable;
 
 class Transcription extends Model
 {
+    use Vectorizable;
+    
     protected $table = 'ai_transcriptions';
 
     protected $fillable = [
@@ -97,10 +100,34 @@ class Transcription extends Model
     }
 
     /**
+     * Determine if this transcription should be indexed.
+     * Only completed transcriptions with content should be indexed.
+     */
+    public function shouldBeIndexed(): bool
+    {
+        return $this->status === self::STATUS_COMPLETED && !empty($this->content);
+    }
+
+    /**
      * Get content for vector embedding.
      */
     public function getEmbeddingContent(): string
     {
         return $this->content ?? '';
+    }
+
+    /**
+     * Get metadata for vector storage.
+     */
+    public function getVectorMetadata(): array
+    {
+        return [
+            'transcribable_type' => $this->transcribable_type,
+            'transcribable_id' => $this->transcribable_id,
+            'language' => $this->language,
+            'engine' => $this->engine,
+            'duration_seconds' => $this->duration_seconds,
+            'confidence' => $this->confidence,
+        ];
     }
 }

@@ -49,7 +49,7 @@ trait Vectorizable
      * Define which fields should be vectorized
      * Override this in your model
      */
-    public array $vectorizable = [];
+    protected array $vectorizable = [];
 
     /**
      * Define which relationships to include in vector content
