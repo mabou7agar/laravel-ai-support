@@ -402,6 +402,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\TestMediaEmbeddingsCommand::class,
                 Console\Commands\TestChunkingCommand::class,
                 Console\Commands\TestLargeMediaCommand::class,
+                Console\Commands\CreateQdrantIndexesCommand::class,
             ]);
 
             // Node Management Commands
