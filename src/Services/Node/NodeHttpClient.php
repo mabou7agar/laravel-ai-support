@@ -65,7 +65,8 @@ class NodeHttpClient
      */
     public static function makeForSearch(\LaravelAIEngine\Models\AINode $node, string $traceId = null): PendingRequest
     {
-        $http = static::makeAuthenticated($node, true);
+        // Use synchronous requests for reliability (async can have issues with promise resolution)
+        $http = static::makeAuthenticated($node, false);
         
         if ($traceId) {
             $http = $http->withHeaders(['X-Trace-Id' => $traceId]);

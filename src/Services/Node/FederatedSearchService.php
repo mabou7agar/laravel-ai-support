@@ -207,33 +207,28 @@ class FederatedSearchService
             // Increment active connections
             $node->incrementConnections();
             
-            $promises[$node->slug] = [
-                'node' => $node,
-                'promise' => NodeHttpClient::makeForSearch($node, $traceId)
+            try {
+                $response = NodeHttpClient::makeForSearch($node, $traceId)
                     ->post($node->getApiUrl('search'), [
                         'query' => $query,
                         'limit' => $limit,
                         'options' => $options,
-                    ])
-            ];
-        }
-        
-        // Wait for all responses
-        $responses = [];
-        foreach ($promises as $slug => $data) {
-            try {
-                $response = $data['promise']->wait();
-                $responses[$slug] = [
-                    'node' => $data['node'],
+                    ]);
+                    
+                $promises[$node->slug] = [
+                    'node' => $node,
                     'response' => $response,
                 ];
             } catch (\Exception $e) {
-                $responses[$slug] = [
-                    'node' => $data['node'],
+                $promises[$node->slug] = [
+                    'node' => $node,
                     'error' => $e,
                 ];
             }
         }
+        
+        // Process responses (now synchronous)
+        $responses = $promises;
         
         // Process responses
         $results = [];

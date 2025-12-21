@@ -30,24 +30,50 @@ class NodeAuthMiddleware
         $nodeData = $this->authService->validateToken($token);
         
         if ($nodeData) {
-            // JWT token is valid, load the node
-            $node = AINode::find($nodeData['sub'] ?? null);
+            // JWT token is valid
+            $isMaster = config('ai-engine.nodes.is_master', false);
             
-            if (!$node) {
-                return $this->unauthorized('Node not found');
+            if ($isMaster) {
+                // Master node: load the node from database
+                $node = AINode::find($nodeData['sub'] ?? null);
+                
+                if (!$node) {
+                    return $this->unauthorized('Node not found');
+                }
+                
+                if ($node->status !== 'active') {
+                    return $this->forbidden('Node is not active', $node->status);
+                }
+                
+                // Attach node to request
+                $request->attributes->set('node', $node);
+            } else {
+                // Child node: trust the JWT claims from master
+                // Create a virtual node object from JWT claims
+                $virtualNode = new AINode([
+                    'id' => $nodeData['sub'] ?? 0,
+                    'name' => $nodeData['node_name'] ?? 'master',
+                    'slug' => $nodeData['node_slug'] ?? 'master',
+                    'type' => $nodeData['type'] ?? 'master',
+                    'capabilities' => $nodeData['capabilities'] ?? [],
+                    'status' => 'active',
+                ]);
+                
+                // Attach virtual node to request
+                $request->attributes->set('node', $virtualNode);
+                
+                Log::channel('ai-engine')->debug('Child node accepted JWT from master', [
+                    'node_slug' => $nodeData['node_slug'] ?? 'unknown',
+                    'issuer' => $nodeData['iss'] ?? 'unknown',
+                ]);
             }
             
-            if ($node->status !== 'active') {
-                return $this->forbidden('Node is not active', $node->status);
-            }
-            
-            // Attach node to request
-            $request->attributes->set('node', $node);
             $request->attributes->set('auth_type', 'jwt');
+            $request->attributes->set('node_data', $nodeData);
             
             Log::channel('ai-engine')->debug('Node authenticated via JWT', [
-                'node_id' => $node->id,
-                'node_slug' => $node->slug,
+                'node_slug' => $nodeData['node_slug'] ?? 'unknown',
+                'is_master' => $isMaster,
             ]);
             
             return $next($request);

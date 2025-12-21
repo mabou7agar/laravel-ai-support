@@ -26,8 +26,9 @@ class NodeRateLimitMiddleware
             return response()->json(['error' => 'Unauthorized'], 401);
         }
         
-        // Rate limit key based on node ID
-        $key = $this->resolveRequestSignature($node->id, $request);
+        // Rate limit key based on node ID or slug (for virtual nodes from JWT)
+        $nodeIdentifier = $node->id ?? $node->slug ?? 'unknown';
+        $key = $this->resolveRequestSignature($nodeIdentifier, $request);
         
         // Check if too many attempts
         if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
@@ -59,7 +60,7 @@ class NodeRateLimitMiddleware
     /**
      * Resolve request signature
      */
-    protected function resolveRequestSignature(int $nodeId, Request $request): string
+    protected function resolveRequestSignature(int|string $nodeId, Request $request): string
     {
         return 'node_rate_limit:' . $nodeId . ':' . $request->path();
     }
