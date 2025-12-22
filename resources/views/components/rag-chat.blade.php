@@ -72,6 +72,13 @@
     <!-- Input Area -->
     <div class="rag-chat-input">
         <div class="input-wrapper">
+            <!-- File Upload Button -->
+            <input type="file" id="file-input-{{ $sessionId }}" class="hidden-file-input" accept=".pdf,.txt,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp" />
+            <button class="file-upload-btn" onclick="document.getElementById('file-input-{{ $sessionId }}').click()" title="Upload file (PDF, Image, Text)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                </svg>
+            </button>
             <textarea 
                 id="input-{{ $sessionId }}"
                 class="chat-input"
@@ -86,6 +93,8 @@
                 </svg>
             </button>
         </div>
+        <!-- File Preview -->
+        <div id="file-preview-{{ $sessionId }}" class="file-preview hidden"></div>
         <div class="input-footer">
             <span class="powered-by">Powered by RAG • {{ strtoupper($engine) }} {{ $model }}</span>
         </div>
@@ -436,6 +445,91 @@
     align-items: flex-end;
 }
 
+.hidden-file-input {
+    display: none;
+}
+
+.file-upload-btn {
+    background: transparent;
+    border: 2px solid #e5e7eb;
+    padding: 10px;
+    border-radius: 12px;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.file-upload-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+    background: rgba(102, 126, 234, 0.05);
+}
+
+.file-upload-btn.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.rag-chat-container.dark .file-upload-btn {
+    border-color: #4a4a4a;
+    color: #9ca3af;
+}
+
+.rag-chat-container.dark .file-upload-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+}
+
+.file-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #f3f4f6;
+    border-radius: 8px;
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+.file-preview.hidden {
+    display: none;
+}
+
+.file-preview .file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-preview .file-remove {
+    background: none;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+}
+
+.file-preview .file-icon {
+    color: #667eea;
+}
+
+.file-preview img.file-thumbnail {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.rag-chat-container.dark .file-preview {
+    background: #3a3a3a;
+}
+
 .chat-input {
     flex: 1;
     border: 2px solid #e5e7eb;
@@ -548,6 +642,12 @@
     const messagesDiv = document.getElementById(`messages-${sessionId}`);
     const inputField = document.getElementById(`input-${sessionId}`);
     const sendBtn = document.getElementById(`send-btn-${sessionId}`);
+    const fileInput = document.getElementById(`file-input-${sessionId}`);
+    const filePreview = document.getElementById(`file-preview-${sessionId}`);
+    const fileUploadBtn = container.querySelector('.file-upload-btn');
+    
+    // Current attached file
+    let attachedFile = null;
     
     // Configuration
     const config = {
@@ -617,6 +717,144 @@
             sendBtn.disabled = false;
             inputField.focus();
         }
+    };
+    
+    // File upload handler
+    fileInput.addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        // Validate file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            alert('File size must be less than 10MB');
+            fileInput.value = '';
+            return;
+        }
+        
+        // Show file preview
+        attachedFile = file;
+        showFilePreview(file);
+    });
+    
+    // Show file preview
+    function showFilePreview(file) {
+        const isImage = file.type.startsWith('image/');
+        
+        let previewHTML = '';
+        if (isImage) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                filePreview.innerHTML = `
+                    <img src="${e.target.result}" class="file-thumbnail" alt="Preview">
+                    <span class="file-name">${file.name}</span>
+                    <button class="file-remove" onclick="removeFile${sessionId}()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                `;
+                filePreview.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        } else {
+            const icon = getFileIcon(file.type);
+            filePreview.innerHTML = `
+                <span class="file-icon">${icon}</span>
+                <span class="file-name">${file.name}</span>
+                <button class="file-remove" onclick="removeFile${sessionId}()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            `;
+            filePreview.classList.remove('hidden');
+        }
+    }
+    
+    // Get file icon based on type
+    function getFileIcon(mimeType) {
+        if (mimeType.includes('pdf')) return '📄';
+        if (mimeType.includes('word') || mimeType.includes('document')) return '📝';
+        if (mimeType.includes('text')) return '📃';
+        return '📎';
+    }
+    
+    // Remove attached file
+    window[`removeFile${sessionId}`] = function() {
+        attachedFile = null;
+        fileInput.value = '';
+        filePreview.classList.add('hidden');
+        filePreview.innerHTML = '';
+    };
+    
+    // Send message with file
+    async function sendMessageWithFile(message, file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('message', message || 'Analyze this file');
+        formData.append('session_id', config.sessionId);
+        formData.append('engine', config.engine);
+        formData.append('model', config.model);
+        formData.append('memory', config.memory);
+        formData.append('use_intelligent_rag', config.useIntelligentRAG);
+        formData.append('rag_collections', JSON.stringify(config.ragCollections));
+        
+        const response = await fetch('/api/v1/rag/analyze-file', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: formData
+        });
+        
+        return await response.json();
+    }
+    
+    // Override send message to handle file attachments
+    const originalSendMessage = window[`sendMessage${sessionId}`];
+    window[`sendMessage${sessionId}`] = async function() {
+        const message = inputField.value.trim();
+        
+        // If there's an attached file, send with file
+        if (attachedFile) {
+            const file = attachedFile;
+            const displayMessage = message || `📎 Analyzing: ${file.name}`;
+            
+            // Add user message
+            addMessage(displayMessage, 'user');
+            inputField.value = '';
+            inputField.style.height = 'auto';
+            
+            // Clear file preview
+            window[`removeFile${sessionId}`]();
+            
+            // Show typing indicator
+            const typingId = showTyping();
+            sendBtn.disabled = true;
+            
+            try {
+                const data = await sendMessageWithFile(message, file);
+                removeTyping(typingId);
+                
+                if (data.success) {
+                    addAssistantMessage(data.data);
+                } else {
+                    addMessage(data.error || 'Sorry, there was an error analyzing the file.', 'assistant');
+                }
+            } catch (error) {
+                removeTyping(typingId);
+                addMessage('Sorry, there was an error uploading the file.', 'assistant');
+                console.error('File upload error:', error);
+            } finally {
+                sendBtn.disabled = false;
+                inputField.focus();
+            }
+            return;
+        }
+        
+        // No file, use original send message
+        if (!message) return;
+        originalSendMessage();
     };
     
     // Add user/assistant message

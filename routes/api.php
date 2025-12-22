@@ -33,6 +33,10 @@ Route::prefix('api/v1/rag')
         Route::post('/chat/clear', [RagChatApiController::class, 'clearHistory'])
             ->name('chat.clear');
         
+        // File analysis endpoint
+        Route::post('/analyze-file', [RagChatApiController::class, 'analyzeFile'])
+            ->name('analyze-file');
+        
         // RAG endpoints
         Route::get('/collections', [RagChatApiController::class, 'getCollections'])
             ->name('collections');

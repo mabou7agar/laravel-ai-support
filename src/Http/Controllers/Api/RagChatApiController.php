@@ -529,4 +529,430 @@ class RagChatApiController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Analyze an uploaded file with RAG context
+     *
+     * @group Chat
+     * @bodyParam file file required The file to analyze (PDF, TXT, DOC, DOCX, or image). Example: receipt.pdf
+     * @bodyParam message string Optional message/question about the file. Example: Extract the total amount from this receipt
+     * @bodyParam session_id string required Session identifier. Example: user-123
+     * @bodyParam engine string AI engine to use. Example: openai
+     * @bodyParam model string AI model to use. Example: gpt-4o
+     *
+     * @response {
+     *   "success": true,
+     *   "data": {
+     *     "response": "I found the following information in the receipt...",
+     *     "extracted_data": {...},
+     *     "file_type": "image/jpeg"
+     *   }
+     * }
+     */
+    public function analyzeFile(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|max:10240|mimes:pdf,txt,doc,docx,png,jpg,jpeg,gif,webp',
+            'message' => 'nullable|string|max:2000',
+            'session_id' => 'required|string',
+            'engine' => 'nullable|string',
+            'model' => 'nullable|string',
+            'use_intelligent_rag' => 'nullable|boolean',
+            'rag_collections' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $file = $request->file('file');
+            $message = $request->input('message', 'Analyze this file and extract relevant information.');
+            $sessionId = $request->input('session_id');
+            $engine = $request->input('engine', 'openai');
+            $model = $request->input('model', 'gpt-4o');
+            $useIntelligentRAG = filter_var($request->input('use_intelligent_rag', true), FILTER_VALIDATE_BOOLEAN);
+            $ragCollections = json_decode($request->input('rag_collections', '[]'), true) ?: [];
+            $userId = $request->user()?->id ?? config('ai-engine.demo_user_id', '1');
+
+            // Determine if this is an image or document
+            $mimeType = $file->getMimeType();
+            $isImage = str_starts_with($mimeType, 'image/');
+
+            if ($isImage) {
+                // Use vision model for image analysis
+                $response = $this->analyzeImageFile($file, $message, $sessionId, $engine, $userId);
+            } else {
+                // Extract text and use RAG for document analysis
+                $response = $this->analyzeDocumentFile($file, $message, $sessionId, $engine, $model, $useIntelligentRAG, $ragCollections, $userId);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'response' => $response['content'],
+                    'extracted_data' => $response['extracted_data'] ?? null,
+                    'file_type' => $mimeType,
+                    'file_name' => $file->getClientOriginalName(),
+                    'sources' => $response['sources'] ?? [],
+                    'rag_enabled' => $response['rag_enabled'] ?? false,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('File analysis error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Analyze an image file using vision model
+     */
+    protected function analyzeImageFile($file, string $message, string $sessionId, string $engine, $userId): array
+    {
+        // Read image as base64
+        $imageData = base64_encode(file_get_contents($file->getRealPath()));
+        $mimeType = $file->getMimeType();
+        $dataUrl = "data:{$mimeType};base64,{$imageData}";
+
+        // Use OpenAI client directly for vision
+        $apiKey = config('ai-engine.engines.openai.api_key');
+        
+        if (empty($apiKey)) {
+            throw new \Exception('OpenAI API key is not configured for image analysis.');
+        }
+
+        $client = \OpenAI::client($apiKey);
+        
+        $systemPrompt = "You are an expert at analyzing images and extracting information. When analyzing receipts, invoices, or documents, extract all relevant data in a structured format. Be thorough and accurate. For receipts, extract: store name, date, items with prices, subtotal, tax, total, payment method if visible.";
+        
+        $response = $client->chat()->create([
+            'model' => 'gpt-4o',
+            'max_tokens' => 2000,
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => $systemPrompt,
+                ],
+                [
+                    'role' => 'user',
+                    'content' => [
+                        [
+                            'type' => 'text',
+                            'text' => $message,
+                        ],
+                        [
+                            'type' => 'image_url',
+                            'image_url' => [
+                                'url' => $dataUrl,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $content = $response->choices[0]->message->content ?? '';
+
+        // Try to extract structured data from the response
+        $extractedData = $this->tryExtractStructuredData($content);
+
+        return [
+            'content' => $content,
+            'extracted_data' => $extractedData,
+            'rag_enabled' => false,
+        ];
+    }
+
+    /**
+     * Analyze a document file - pass directly to AI when possible
+     */
+    protected function analyzeDocumentFile($file, string $message, string $sessionId, string $engine, string $model, bool $useIntelligentRAG, array $ragCollections, $userId): array
+    {
+        $extension = strtolower($file->getClientOriginalExtension());
+        $fileName = $file->getClientOriginalName();
+        
+        // For PDF files, try to pass directly to GPT-4o (it supports PDF via base64)
+        if ($extension === 'pdf') {
+            try {
+                return $this->analyzeFileDirectly($file, $message, $sessionId, $engine);
+            } catch (\Exception $e) {
+                // Fallback to text extraction if direct analysis fails
+                Log::warning('Direct PDF analysis failed, falling back to text extraction: ' . $e->getMessage());
+            }
+        }
+        
+        // For other documents or as fallback, extract text first
+        $content = $this->extractFileContent($file);
+
+        if (empty($content)) {
+            // If text extraction fails for PDF, try direct analysis
+            if ($extension === 'pdf') {
+                return $this->analyzeFileDirectly($file, $message, $sessionId, $engine);
+            }
+            throw new \Exception('Could not extract text from the file. The file may be empty, corrupted, or in an unsupported format.');
+        }
+
+        // Truncate very long content to avoid token limits
+        $maxContentLength = 15000;
+        if (strlen($content) > $maxContentLength) {
+            $content = substr($content, 0, $maxContentLength) . "\n\n[Content truncated due to length...]";
+        }
+
+        // Build prompt with file content and analysis instructions
+        $fileType = strtoupper($extension);
+        
+        $fullMessage = "I've uploaded a {$fileType} document named '{$fileName}' with the following content:\n\n---\n{$content}\n---\n\n";
+        
+        // Add specific instructions based on user message or default
+        if (empty($message) || $message === 'Analyze this file and extract relevant information.') {
+            $fullMessage .= "Please analyze this document and extract all relevant information. If this is a receipt or invoice, extract: vendor/store name, date, line items with prices, subtotal, tax, total amount, and payment method if available. Present the data in a clear, structured format.";
+        } else {
+            $fullMessage .= $message;
+        }
+
+        // Use ChatService for RAG-enabled analysis
+        $response = $this->chatService->processMessage(
+            message: $fullMessage,
+            sessionId: $sessionId,
+            engine: $engine,
+            model: $model,
+            useMemory: true,
+            useActions: false,
+            useIntelligentRAG: $useIntelligentRAG,
+            ragCollections: $ragCollections,
+            userId: $userId
+        );
+
+        $metadata = $response->getMetadata();
+
+        // Try to extract structured data
+        $extractedData = $this->tryExtractStructuredData($response->getContent());
+
+        return [
+            'content' => $response->getContent(),
+            'extracted_data' => $extractedData,
+            'sources' => $metadata['sources'] ?? [],
+            'rag_enabled' => $metadata['rag_enabled'] ?? false,
+        ];
+    }
+
+    /**
+     * Analyze file directly using OpenAI Assistants API (for PDFs)
+     * Note: Only images can be passed via base64 to chat completions.
+     * For PDFs, we use the Files API + Assistants API.
+     */
+    protected function analyzeFileDirectly($file, string $message, string $sessionId, string $engine): array
+    {
+        $apiKey = config('ai-engine.engines.openai.api_key');
+        
+        if (empty($apiKey)) {
+            throw new \Exception('OpenAI API key is not configured.');
+        }
+
+        $fileName = $file->getClientOriginalName();
+        $client = \OpenAI::client($apiKey);
+        
+        // Step 1: Upload file to OpenAI
+        $uploadedFile = $client->files()->upload([
+            'purpose' => 'assistants',
+            'file' => fopen($file->getRealPath(), 'r'),
+        ]);
+        
+        $fileId = $uploadedFile->id;
+        
+        try {
+            // Step 2: Create an assistant with file search capability
+            $assistant = $client->assistants()->create([
+                'name' => 'Document Analyzer',
+                'instructions' => "You are an expert document analyst. Analyze uploaded files thoroughly and extract all relevant information. For receipts and invoices, extract: vendor/store name, date, line items with prices, subtotal, tax, total amount, and payment method. For other documents, provide a comprehensive summary and extract key data points. Be thorough and accurate. Always respond in a structured format.",
+                'model' => 'gpt-4o',
+                'tools' => [
+                    ['type' => 'file_search'],
+                ],
+            ]);
+            
+            // Step 3: Create a thread with the file attached
+            $thread = $client->threads()->create([
+                'messages' => [
+                    [
+                        'role' => 'user',
+                        'content' => empty($message) || $message === 'Analyze this file and extract relevant information.'
+                            ? "Please analyze this document ({$fileName}) and extract all relevant information in a structured format."
+                            : $message,
+                        'attachments' => [
+                            [
+                                'file_id' => $fileId,
+                                'tools' => [['type' => 'file_search']],
+                            ],
+                        ],
+                    ],
+                ],
+            ]);
+            
+            // Step 4: Run the assistant
+            $run = $client->threads()->runs()->create($thread->id, [
+                'assistant_id' => $assistant->id,
+            ]);
+            
+            // Step 5: Wait for completion (with timeout)
+            $maxAttempts = 30;
+            $attempts = 0;
+            while ($run->status !== 'completed' && $attempts < $maxAttempts) {
+                sleep(1);
+                $run = $client->threads()->runs()->retrieve($thread->id, $run->id);
+                $attempts++;
+                
+                if (in_array($run->status, ['failed', 'cancelled', 'expired'])) {
+                    throw new \Exception("Assistant run failed with status: {$run->status}");
+                }
+            }
+            
+            if ($run->status !== 'completed') {
+                throw new \Exception('Assistant run timed out');
+            }
+            
+            // Step 6: Get the response
+            $messages = $client->threads()->messages()->list($thread->id);
+            $content = '';
+            foreach ($messages->data as $msg) {
+                if ($msg->role === 'assistant') {
+                    foreach ($msg->content as $contentBlock) {
+                        if ($contentBlock->type === 'text') {
+                            $content = $contentBlock->text->value;
+                            break 2;
+                        }
+                    }
+                }
+            }
+            
+            // Cleanup: Delete assistant and file
+            $client->assistants()->delete($assistant->id);
+            $client->files()->delete($fileId);
+            
+            // Try to extract structured data from the response
+            $extractedData = $this->tryExtractStructuredData($content);
+
+            return [
+                'content' => $content,
+                'extracted_data' => $extractedData,
+                'rag_enabled' => false,
+                'direct_analysis' => true,
+            ];
+            
+        } catch (\Exception $e) {
+            // Cleanup file on error
+            try {
+                $client->files()->delete($fileId);
+            } catch (\Exception $cleanupError) {
+                // Ignore cleanup errors
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Extract text content from uploaded file
+     */
+    protected function extractFileContent($file): string
+    {
+        $extension = strtolower($file->getClientOriginalExtension());
+        $path = $file->getRealPath();
+
+        switch ($extension) {
+            case 'txt':
+                return file_get_contents($path);
+
+            case 'pdf':
+                // Try pdftotext command
+                $output = [];
+                $returnCode = 0;
+                exec("pdftotext -layout " . escapeshellarg($path) . " -", $output, $returnCode);
+                if ($returnCode === 0 && !empty($output)) {
+                    return implode("\n", $output);
+                }
+                // Fallback: try Smalot PDF Parser if available
+                if (class_exists(\Smalot\PdfParser\Parser::class)) {
+                    $parser = new \Smalot\PdfParser\Parser();
+                    $pdf = $parser->parseFile($path);
+                    return $pdf->getText();
+                }
+                return '';
+
+            case 'doc':
+            case 'docx':
+                // Try antiword for .doc
+                if ($extension === 'doc') {
+                    $output = [];
+                    exec("antiword " . escapeshellarg($path), $output);
+                    if (!empty($output)) {
+                        return implode("\n", $output);
+                    }
+                }
+                // Try PhpWord for .docx
+                if (class_exists(\PhpOffice\PhpWord\IOFactory::class)) {
+                    $phpWord = \PhpOffice\PhpWord\IOFactory::load($path);
+                    $text = '';
+                    foreach ($phpWord->getSections() as $section) {
+                        foreach ($section->getElements() as $element) {
+                            if (method_exists($element, 'getText')) {
+                                $text .= $element->getText() . "\n";
+                            }
+                        }
+                    }
+                    return $text;
+                }
+                return '';
+
+            default:
+                return '';
+        }
+    }
+
+    /**
+     * Try to extract structured data from AI response
+     */
+    protected function tryExtractStructuredData(string $content): ?array
+    {
+        // Look for JSON blocks in the response
+        if (preg_match('/```(?:json)?\s*([\s\S]*?)\s*```/', $content, $matches)) {
+            $jsonStr = trim($matches[1]);
+            $data = json_decode($jsonStr, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $data;
+            }
+        }
+
+        // Try to parse the entire content as JSON
+        $data = json_decode($content, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
+            return $data;
+        }
+
+        // Extract key-value pairs from common patterns
+        $extracted = [];
+        
+        // Pattern: "Key: Value" or "**Key**: Value"
+        if (preg_match_all('/\*?\*?([A-Za-z\s]+)\*?\*?:\s*([^\n]+)/', $content, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $key = trim(strtolower(str_replace(' ', '_', $match[1])));
+                $value = trim($match[2]);
+                if (strlen($key) < 30 && strlen($value) < 200) {
+                    $extracted[$key] = $value;
+                }
+            }
+        }
+
+        return !empty($extracted) ? $extracted : null;
+    }
 }
