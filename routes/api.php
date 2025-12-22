@@ -115,6 +115,14 @@ Route::prefix('api/v1/data-collector')
         // Get collected data
         Route::get('/data/{sessionId}', [DataCollectorController::class, 'getData'])
             ->name('data');
+        
+        // Analyze uploaded file and extract data
+        Route::post('/analyze-file', [DataCollectorController::class, 'analyzeFile'])
+            ->name('analyze-file');
+        
+        // Apply extracted data to session
+        Route::post('/apply-extracted', [DataCollectorController::class, 'applyExtracted'])
+            ->name('apply-extracted');
     });
 
 // Legacy AI Demo Routes

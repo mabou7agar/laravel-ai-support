@@ -40,11 +40,24 @@ class DataCollectorService
     }
 
     /**
-     * Get a registered configuration
+     * Get a registered configuration (from memory or cache)
      */
     public function getConfig(string $name): ?DataCollectorConfig
     {
-        return $this->registeredConfigs[$name] ?? null;
+        // First check in-memory registry
+        if (isset($this->registeredConfigs[$name])) {
+            return $this->registeredConfigs[$name];
+        }
+        
+        // Then check cache (for configs created via API)
+        $cached = $this->loadConfig($name);
+        if ($cached) {
+            // Also register in memory for this request
+            $this->registeredConfigs[$name] = $cached;
+            return $cached;
+        }
+        
+        return null;
     }
 
     /**
@@ -67,6 +80,9 @@ class DataCollectorService
         if (!isset($this->registeredConfigs[$config->name])) {
             $this->registerConfig($config);
         }
+        
+        // Save config to cache for persistence across requests
+        $this->saveConfig($config);
 
         $this->saveState($state);
 
@@ -208,17 +224,29 @@ class DataCollectorService
                     ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model)
                     : $config->generateActionSummary($state->getData());
                 
-                // Build full confirmation message
+                // Build full confirmation message (with locale support)
+                $locale = $config->locale ?? 'en';
                 $fullMessage = $cleanResponse . "\n\n";
                 $fullMessage .= $summary;
                 $fullMessage .= "\n---\n\n";
-                $fullMessage .= "## What will happen:\n\n";
-                $fullMessage .= $actionSummary;
-                $fullMessage .= "\n\n---\n\n";
-                $fullMessage .= "**Please confirm:**\n";
-                $fullMessage .= "- Say **'yes'** or **'confirm'** to proceed\n";
-                $fullMessage .= "- Say **'no'** or **'change'** to modify any information\n";
-                $fullMessage .= "- Say **'cancel'** to abort the process\n";
+                
+                if ($locale === 'ar') {
+                    $fullMessage .= "## ما سيحدث:\n\n";
+                    $fullMessage .= $actionSummary;
+                    $fullMessage .= "\n\n---\n\n";
+                    $fullMessage .= "**يرجى التأكيد:**\n";
+                    $fullMessage .= "- قل **'نعم'** أو **'تأكيد'** للمتابعة\n";
+                    $fullMessage .= "- قل **'لا'** أو **'تغيير'** لتعديل أي معلومات\n";
+                    $fullMessage .= "- قل **'إلغاء'** لإلغاء العملية\n";
+                } else {
+                    $fullMessage .= "## What will happen:\n\n";
+                    $fullMessage .= $actionSummary;
+                    $fullMessage .= "\n\n---\n\n";
+                    $fullMessage .= "**Please confirm:**\n";
+                    $fullMessage .= "- Say **'yes'** or **'confirm'** to proceed\n";
+                    $fullMessage .= "- Say **'no'** or **'change'** to modify any information\n";
+                    $fullMessage .= "- Say **'cancel'** to abort the process\n";
+                }
                 
                 return new DataCollectorResponse(
                     success: true,
@@ -370,16 +398,29 @@ class DataCollectorService
                 ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model)
                 : $config->generateActionSummary($state->getData());
             
-            // Build confirmation message
-            $fullMessage = "Here's your updated information:\n\n";
-            $fullMessage .= $summary;
-            $fullMessage .= "\n---\n\n";
-            $fullMessage .= "## What will happen:\n\n";
-            $fullMessage .= $actionSummary;
-            $fullMessage .= "\n\n---\n\n";
-            $fullMessage .= "**Please confirm:**\n";
-            $fullMessage .= "- Say **'yes'** or **'confirm'** to proceed\n";
-            $fullMessage .= "- Say **'no'** or **'change'** to modify any information\n";
+            // Build confirmation message (with locale support)
+            $locale = $config->locale ?? 'en';
+            if ($locale === 'ar') {
+                $fullMessage = "إليك معلوماتك المحدثة:\n\n";
+                $fullMessage .= $summary;
+                $fullMessage .= "\n---\n\n";
+                $fullMessage .= "## ما سيحدث:\n\n";
+                $fullMessage .= $actionSummary;
+                $fullMessage .= "\n\n---\n\n";
+                $fullMessage .= "**يرجى التأكيد:**\n";
+                $fullMessage .= "- قل **'نعم'** أو **'تأكيد'** للمتابعة\n";
+                $fullMessage .= "- قل **'لا'** أو **'تغيير'** لتعديل أي معلومات\n";
+            } else {
+                $fullMessage = "Here's your updated information:\n\n";
+                $fullMessage .= $summary;
+                $fullMessage .= "\n---\n\n";
+                $fullMessage .= "## What will happen:\n\n";
+                $fullMessage .= $actionSummary;
+                $fullMessage .= "\n\n---\n\n";
+                $fullMessage .= "**Please confirm:**\n";
+                $fullMessage .= "- Say **'yes'** or **'confirm'** to proceed\n";
+                $fullMessage .= "- Say **'no'** or **'change'** to modify any information\n";
+            }
             
             return new DataCollectorResponse(
                 success: true,
@@ -400,9 +441,17 @@ class DataCollectorService
         // For enhancement mode, use static summary to avoid repeated AI calls
         $actionSummary = $config->generateActionSummary($state->getData());
 
+        // Build enhancement message (with locale support)
+        $locale = $config->locale ?? 'en';
+        if ($locale === 'ar') {
+            $enhanceMessage = $cleanResponse . "\n\n" . $summary . "\n\n**ما سيحدث:** " . $actionSummary . "\n\nهل تريد إجراء أي تغييرات أخرى؟ قل 'تم' عند الانتهاء، أو 'نعم' للتأكيد.";
+        } else {
+            $enhanceMessage = $cleanResponse . "\n\n" . $summary . "\n\n**What will happen:** " . $actionSummary . "\n\nWould you like to make any other changes? Say 'done' when you're finished, or 'yes' to confirm.";
+        }
+
         return new DataCollectorResponse(
             success: true,
-            message: $cleanResponse . "\n\n" . $summary . "\n\n**What will happen:** " . $actionSummary . "\n\nWould you like to make any other changes? Say 'done' when you're finished, or 'yes' to confirm.",
+            message: $enhanceMessage,
             state: $state,
             aiResponse: $aiResponse,
             allowsEnhancement: true,
@@ -1020,6 +1069,32 @@ class DataCollectorService
     }
 
     /**
+     * Save config to cache for persistence across requests
+     */
+    protected function saveConfig(DataCollectorConfig $config): void
+    {
+        Cache::put(
+            $this->cachePrefix . 'config_' . $config->name,
+            $config->toArray(),
+            $this->cacheTtl
+        );
+    }
+
+    /**
+     * Load config from cache
+     */
+    protected function loadConfig(string $name): ?DataCollectorConfig
+    {
+        $data = Cache::get($this->cachePrefix . 'config_' . $name);
+        
+        if (!$data) {
+            return null;
+        }
+
+        return DataCollectorConfig::fromArray($data);
+    }
+
+    /**
      * Delete session state
      */
     public function deleteState(string $sessionId): void
@@ -1040,17 +1115,309 @@ class DataCollectorService
      */
     public function getGreeting(DataCollectorConfig $config): string
     {
-        $greeting = $config->title ? "## {$config->title}\n\n" : "";
+        $locale = $config->locale ?? 'en';
         
-        if ($config->description) {
-            $greeting .= "{$config->description}\n\n";
-        }
+        // Localized greeting phrases
+        $greetings = [
+            'en' => [
+                'hello' => "Hello! I'll help you collect the required information. Let's get started!",
+                'provide' => "Please provide the",
+            ],
+            'ar' => [
+                'hello' => "مرحباً! سأساعدك في جمع المعلومات المطلوبة. لنبدأ!",
+                'provide' => "يرجى تقديم",
+            ],
+        ];
+        
+        $phrases = $greetings[$locale] ?? $greetings['en'];
+        
+        $greeting = $phrases['hello'] . "\n\n";
 
         $firstField = $config->getFirstField();
         if ($firstField) {
-            $greeting .= "Let's get started! " . $firstField->getCollectionPrompt();
+            $fieldName = $firstField->description ?: $firstField->name;
+            $greeting .= $phrases['provide'] . ": " . $fieldName;
+            
+            // Add validation hints
+            if ($firstField->validation) {
+                $hints = $this->getValidationHints($firstField->validation, $locale);
+                if ($hints) {
+                    $greeting .= "\n\n" . $hints;
+                }
+            }
         }
 
         return $greeting;
+    }
+    
+    /**
+     * Get human-readable validation hints
+     */
+    protected function getValidationHints(string $validation, string $locale = 'en'): string
+    {
+        $hints = [];
+        $rules = explode('|', $validation);
+        
+        $labels = [
+            'en' => [
+                'required' => 'Required',
+                'min' => 'minimum %d characters',
+                'max' => 'maximum %d characters',
+            ],
+            'ar' => [
+                'required' => 'مطلوب',
+                'min' => 'الحد الأدنى %d حرف',
+                'max' => 'الحد الأقصى %d حرف',
+            ],
+        ];
+        
+        $l = $labels[$locale] ?? $labels['en'];
+        
+        foreach ($rules as $rule) {
+            if ($rule === 'required') {
+                // Skip required, it's implied
+                continue;
+            }
+            if (preg_match('/^min:(\d+)$/', $rule, $matches)) {
+                $hints[] = sprintf($l['min'], $matches[1]);
+            }
+            if (preg_match('/^max:(\d+)$/', $rule, $matches)) {
+                $hints[] = sprintf($l['max'], $matches[1]);
+            }
+        }
+        
+        if (empty($hints)) {
+            return '';
+        }
+        
+        $prefix = $locale === 'ar' ? 'المتطلبات: ' : 'Requirements: ';
+        return $prefix . implode(', ', $hints);
+    }
+
+    /**
+     * Extract structured data from file content using AI
+     * 
+     * @param string $sessionId
+     * @param string $content File content
+     * @param array $fields Field names to extract
+     * @param string $language
+     * @return array Extracted data
+     */
+    public function extractDataFromContent(
+        string $sessionId,
+        string $content,
+        array $fields,
+        string $language = 'en',
+        array $fieldConfig = []
+    ): array {
+        // Get config from session if available
+        $state = $this->getState($sessionId);
+        $config = $state ? $this->getConfig($state->configName) : null;
+        
+        // Build field descriptions with validation hints for the AI
+        $fieldDescriptions = [];
+        foreach ($fields as $fieldName) {
+            // Try to get field from config, or use passed fieldConfig
+            $field = $config?->getField($fieldName);
+            $fieldData = $fieldConfig[$fieldName] ?? [];
+            
+            $description = $field?->description ?? $fieldData['description'] ?? ucfirst(str_replace('_', ' ', $fieldName));
+            $validation = $field?->validation ?? $fieldData['validation'] ?? '';
+            $type = $field?->type ?? $fieldData['type'] ?? 'text';
+            $options = $field?->options ?? $fieldData['options'] ?? [];
+            
+            // Add validation hints
+            $hints = [];
+            if ($validation) {
+                if (str_contains($validation, 'numeric')) {
+                    $hints[] = 'must be a number only (no text)';
+                }
+                if (str_contains($validation, 'integer')) {
+                    $hints[] = 'must be an integer';
+                }
+                if (preg_match('/min:(\d+)/', $validation, $matches)) {
+                    $hints[] = "minimum: {$matches[1]}";
+                }
+                if (preg_match('/max:(\d+)/', $validation, $matches)) {
+                    $hints[] = "maximum: {$matches[1]}";
+                }
+            }
+            
+            // Add options for select fields
+            if ($type === 'select' && !empty($options)) {
+                $hints[] = 'must be one of: ' . implode(', ', $options);
+            }
+            
+            $fieldDescriptions[$fieldName] = $description . ($hints ? ' (' . implode(', ', $hints) . ')' : '');
+        }
+
+        // Build extraction prompt
+        $prompt = $this->buildExtractionPrompt($content, $fieldDescriptions, $language);
+
+        try {
+            // Use AI to extract data
+            $systemPrompt = "You are a data extraction assistant. Extract structured data from the provided content and return it as valid JSON only. Do not include any text outside the JSON object.";
+            
+            $response = $this->aiEngine
+                ->engine('openai')
+                ->model('gpt-4o')
+                ->withSystemPrompt($systemPrompt)
+                ->withMaxTokens(2000)
+                ->generate($prompt);
+
+            $responseContent = $response->getContent();
+            
+            // Clean markdown code blocks if present
+            $responseContent = trim($responseContent);
+            if (preg_match('/```(?:json)?\s*([\s\S]*?)\s*```/', $responseContent, $matches)) {
+                $responseContent = trim($matches[1]);
+            }
+            
+            $extracted = json_decode($responseContent, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::warning('Failed to parse AI extraction response', ['response' => $responseContent]);
+                return [];
+            }
+
+            // Filter to only include requested fields
+            $result = [];
+            foreach ($fields as $field) {
+                if (isset($extracted[$field]) && !empty($extracted[$field])) {
+                    $result[$field] = $extracted[$field];
+                }
+            }
+
+            return $result;
+
+        } catch (\Exception $e) {
+            Log::error('AI extraction failed: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Build the extraction prompt for AI
+     */
+    protected function buildExtractionPrompt(string $content, array $fieldDescriptions, string $language): string
+    {
+        $fieldsJson = json_encode($fieldDescriptions, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        
+        if ($language === 'ar') {
+            return <<<PROMPT
+قم بتحليل المحتوى التالي واستخراج المعلومات المطلوبة.
+
+المحتوى:
+{$content}
+
+الحقول المطلوبة:
+{$fieldsJson}
+
+قم بإرجاع البيانات المستخرجة بتنسيق JSON فقط. إذا لم تجد قيمة لحقل معين، اتركه فارغاً.
+لا تضف أي نص إضافي، فقط JSON.
+
+مثال على التنسيق المطلوب:
+{"field_name": "extracted_value", "another_field": "another_value"}
+PROMPT;
+        }
+
+        return <<<PROMPT
+Analyze the following content and extract the required information.
+
+Content:
+{$content}
+
+Required fields:
+{$fieldsJson}
+
+Return the extracted data in JSON format only. If you cannot find a value for a field, leave it empty.
+Do not add any additional text, only JSON.
+
+Example format:
+{"field_name": "extracted_value", "another_field": "another_value"}
+PROMPT;
+    }
+
+    /**
+     * Apply extracted data to session and move to confirmation
+     * 
+     * @param string $sessionId
+     * @param array $extractedData
+     * @param string $language
+     * @return DataCollectorResponse
+     */
+    public function applyExtractedData(
+        string $sessionId,
+        array $extractedData,
+        string $language = 'en'
+    ): DataCollectorResponse {
+        $state = $this->getState($sessionId);
+        
+        if (!$state) {
+            return new DataCollectorResponse(
+                success: false,
+                message: $language === 'ar' 
+                    ? 'لم يتم العثور على جلسة نشطة.' 
+                    : 'No active session found.',
+                state: null,
+            );
+        }
+
+        $config = $this->getConfig($state->configName);
+        
+        if (!$config) {
+            return new DataCollectorResponse(
+                success: false,
+                message: $language === 'ar' 
+                    ? 'لم يتم العثور على التكوين.' 
+                    : 'Configuration not found.',
+                state: $state,
+            );
+        }
+
+        // Apply extracted data to state
+        foreach ($extractedData as $field => $value) {
+            if (!empty($value)) {
+                $state->collectedData[$field] = $value;
+            }
+        }
+
+        // Mark all fields as collected
+        $state->currentField = null;
+        $state->status = DataCollectorState::STATUS_CONFIRMING;
+
+        // Save updated state
+        $this->saveState($state);
+
+        // Build confirmation summary
+        $summary = $this->buildConfirmationSummary($state, $config, $language);
+
+        $message = $language === 'ar'
+            ? "تم استخراج البيانات من الملف وتطبيقها. يرجى مراجعة المعلومات التالية:\n\n{$summary}\n\nهل هذه المعلومات صحيحة؟"
+            : "Data extracted from file and applied. Please review the following information:\n\n{$summary}\n\nIs this information correct?";
+
+        return new DataCollectorResponse(
+            success: true,
+            message: $message,
+            state: $state,
+            requiresConfirmation: true,
+            collectedFields: array_keys($state->collectedData),
+        );
+    }
+
+    /**
+     * Build confirmation summary for extracted data
+     */
+    protected function buildConfirmationSummary(DataCollectorState $state, DataCollectorConfig $config, string $language): string
+    {
+        $summary = '';
+        
+        foreach ($state->collectedData as $fieldName => $value) {
+            $field = $config->getField($fieldName);
+            $label = $field?->description ?? ucfirst(str_replace('_', ' ', $fieldName));
+            $summary .= "• **{$label}**: {$value}\n";
+        }
+
+        return $summary ?: ($language === 'ar' ? 'لا توجد بيانات' : 'No data');
     }
 }

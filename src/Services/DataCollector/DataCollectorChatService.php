@@ -401,4 +401,63 @@ class DataCollectorChatService
         $this->registerConfig($config);
         return $config;
     }
+
+    /**
+     * Extract structured data from file content using AI
+     * 
+     * @param string $sessionId
+     * @param string $content File content
+     * @param array $fields Field names to extract
+     * @param string $language
+     * @return array Extracted data
+     */
+    public function extractDataFromContent(
+        string $sessionId,
+        string $content,
+        array $fields,
+        string $language = 'en',
+        array $fieldConfig = []
+    ): array {
+        return $this->dataCollector->extractDataFromContent($sessionId, $content, $fields, $language, $fieldConfig);
+    }
+
+    /**
+     * Apply extracted data to session and move to confirmation
+     * 
+     * @param string $sessionId
+     * @param array $extractedData
+     * @param string $language
+     * @return AIResponse
+     */
+    public function applyExtractedData(
+        string $sessionId,
+        array $extractedData,
+        string $language = 'en'
+    ): AIResponse {
+        $response = $this->dataCollector->applyExtractedData($sessionId, $extractedData, $language);
+        
+        // Get config for building actions
+        $config = $this->dataCollector->getConfig($response->state?->configName ?? '');
+        
+        // Build actions based on response state
+        $actions = $this->buildActions($response->state, $config);
+
+        // Get collected field names
+        $collectedFieldNames = array_keys($response->state?->collectedData ?? []);
+        $totalFields = $config ? count($config->getFieldNames()) : count($collectedFieldNames);
+        
+        return $this->buildResponse(
+            content: $response->message,
+            state: $response->state,
+            actions: $actions,
+            metadata: [
+                'data_collector' => true,
+                'status' => $response->state?->status ?? 'confirming',
+                'requires_confirmation' => true,
+                'collected_fields' => $collectedFieldNames,
+                'fields' => $config?->getFieldNames() ?? $collectedFieldNames,
+                'progress' => 100,
+            ]
+        );
+    }
 }

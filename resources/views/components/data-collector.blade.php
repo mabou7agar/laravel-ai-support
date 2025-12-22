@@ -12,6 +12,7 @@
     'showFieldList' => true,
     'autoStart' => true,
     'config' => [],
+    'language' => 'en',
 ])
 
 <div 
@@ -25,6 +26,7 @@
     data-model="{{ $model }}"
     data-auto-start="{{ $autoStart ? 'true' : 'false' }}"
     data-config="{{ json_encode($config) }}"
+    data-language="{{ $language }}"
 >
     <!-- Header -->
     <div class="dc-header">
@@ -74,17 +76,7 @@
 
     <!-- Messages Container -->
     <div class="dc-messages" id="messages-{{ $sessionId }}">
-        <!-- Welcome Message -->
-        <div class="dc-message assistant">
-            <div class="dc-message-avatar">
-                <div class="dc-avatar-ai">AI</div>
-            </div>
-            <div class="dc-message-content">
-                <div class="dc-message-text">
-                    Hello! I'll help you collect the required information. Let's get started!
-                </div>
-            </div>
-        </div>
+        <!-- Welcome message will be added dynamically from API response -->
     </div>
 
     <!-- Quick Actions (for options/buttons) -->
@@ -111,6 +103,22 @@
     <!-- Input Container -->
     <div class="dc-input-container">
         <div class="dc-input-wrapper">
+            <input 
+                type="file" 
+                id="file-input-{{ $sessionId }}" 
+                class="dc-file-input" 
+                accept=".pdf,.txt,.doc,.docx"
+                style="display: none;"
+            />
+            <button 
+                id="file-btn-{{ $sessionId }}"
+                class="dc-file-btn"
+                title="Upload PDF or text file to auto-fill"
+            >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                </svg>
+            </button>
             <textarea 
                 id="input-{{ $sessionId }}"
                 class="dc-input"
@@ -444,9 +452,16 @@
     background: #f3f4f6;
     padding: 12px 16px;
     border-radius: 16px;
-    line-height: 1.5;
+    line-height: 1.8;
     word-wrap: break-word;
     font-size: 14px;
+}
+
+/* RTL Support for Arabic and other RTL languages */
+.dc-message-text[dir="rtl"],
+.dc-message-text.rtl {
+    text-align: right;
+    direction: rtl;
 }
 
 .dc-message.user .dc-message-text {
@@ -461,49 +476,135 @@
 
 /* Quick Actions */
 .dc-quick-actions {
-    padding: 8px 16px;
+    padding: 12px 16px;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     border-top: 1px solid #e5e7eb;
-    background: #f9fafb;
+    background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
+    align-items: center;
 }
 
 .dark .dc-quick-actions {
-    background: #111827;
+    background: linear-gradient(to bottom, #1f2937 0%, #111827 100%);
     border-top-color: #374151;
+}
+
+/* Action Groups */
+.dc-action-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.dc-action-group:not(:last-child) {
+    padding-right: 12px;
+    border-right: 1px solid #e5e7eb;
+    margin-right: 4px;
+}
+
+.dark .dc-action-group:not(:last-child) {
+    border-right-color: #374151;
+}
+
+.dc-action-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #6b7280;
+    margin-right: 4px;
+}
+
+.dark .dc-action-label {
+    color: #9ca3af;
+}
+
+/* RTL Support for Quick Actions */
+.dc-quick-actions.rtl,
+.dc-quick-actions[dir="rtl"] {
+    flex-direction: row-reverse;
+}
+
+.dc-action-group.rtl {
+    flex-direction: row-reverse;
 }
 
 .dc-quick-btn {
     padding: 8px 16px;
-    border: 1px solid #e5e7eb;
+    border: 1.5px solid #e5e7eb;
     background: white;
-    border-radius: 20px;
+    border-radius: 8px;
     font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     color: #374151;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .dc-quick-btn:hover {
-    background: #f3f4f6;
+    background: #f8fafc;
     border-color: #667eea;
     color: #667eea;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(102, 126, 234, 0.15);
+}
+
+.dc-quick-btn:active {
+    transform: translateY(0);
 }
 
 .dc-quick-btn.primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     border-color: transparent;
     color: white;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
 }
 
 .dc-quick-btn.primary:hover {
-    opacity: 0.9;
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.4);
+    transform: translateY(-1px);
 }
 
 .dc-quick-btn.secondary {
-    background: #f3f4f6;
+    background: white;
     border-color: #d1d5db;
+    color: #4b5563;
+}
+
+.dc-quick-btn.secondary:hover {
+    background: #f9fafb;
+    border-color: #9ca3af;
+    color: #374151;
+}
+
+.dc-quick-btn.option {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: transparent;
+    color: white;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+.dc-quick-btn.option:hover {
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+    transform: translateY(-1px);
+}
+
+.dc-quick-btn.danger {
+    background: white;
+    border-color: #fca5a5;
+    color: #dc2626;
+}
+
+.dc-quick-btn.danger:hover {
+    background: #fef2f2;
+    border-color: #f87171;
 }
 
 .dc-quick-btn.skip {
@@ -511,12 +612,37 @@
     border-color: #d1d5db;
     color: #6b7280;
     font-size: 12px;
+    padding: 6px 12px;
+}
+
+.dc-quick-btn.skip:hover {
+    background: #f3f4f6;
+    color: #4b5563;
 }
 
 .dark .dc-quick-btn {
     background: #374151;
     border-color: #4b5563;
-    color: #d1d5db;
+    color: #e5e7eb;
+}
+
+.dark .dc-quick-btn:hover {
+    background: #4b5563;
+    border-color: #667eea;
+}
+
+.dark .dc-quick-btn.primary {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.dark .dc-quick-btn.option {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.dark .dc-quick-btn.danger {
+    background: #374151;
+    border-color: #f87171;
+    color: #f87171;
 }
 
 /* Typing Indicator */
@@ -575,6 +701,39 @@
     display: flex;
     gap: 10px;
     align-items: flex-end;
+}
+
+.dc-file-btn {
+    padding: 10px;
+    border: 1px solid #d1d5db;
+    background: white;
+    border-radius: 50%;
+    cursor: pointer;
+    color: #6b7280;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.dc-file-btn:hover {
+    background: #f3f4f6;
+    border-color: #667eea;
+    color: #667eea;
+}
+
+.dc-file-btn.loading {
+    animation: pulse 1s infinite;
+    pointer-events: none;
+}
+
+.dark .dc-file-btn {
+    background: #374151;
+    border-color: #4b5563;
+    color: #9ca3af;
+}
+
+.dark .dc-file-btn:hover {
+    background: #4b5563;
+    color: #667eea;
 }
 
 .dc-input {
@@ -862,6 +1021,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const fieldsToggle = document.getElementById('fields-toggle-{{ $sessionId }}');
     const fieldsList = document.getElementById('fields-list-{{ $sessionId }}');
     
+    // File upload
+    const fileInput = document.getElementById('file-input-{{ $sessionId }}');
+    const fileBtn = document.getElementById('file-btn-{{ $sessionId }}');
+    
     // Modals
     const confirmModal = document.getElementById('confirm-modal-{{ $sessionId }}');
     const confirmBody = document.getElementById('confirm-body-{{ $sessionId }}');
@@ -878,6 +1041,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const model = container.dataset.model;
     const autoStart = container.dataset.autoStart === 'true';
     const config = JSON.parse(container.dataset.config || '{}');
+    const language = container.dataset.language || 'en';
     
     let currentState = null;
     let fields = [];
@@ -892,6 +1056,12 @@ document.addEventListener('DOMContentLoaded', function() {
     input.addEventListener('keydown', handleKeyDown);
     sendBtn.addEventListener('click', sendMessage);
     cancelBtn.addEventListener('click', cancelSession);
+    
+    // File upload listeners
+    if (fileBtn && fileInput) {
+        fileBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileUpload);
+    }
     
     if (fieldsToggle) {
         fieldsToggle.addEventListener('click', toggleFieldsList);
@@ -933,19 +1103,32 @@ document.addEventListener('DOMContentLoaded', function() {
         showTyping();
         
         try {
-            const response = await fetch(`${apiEndpoint}/start`, {
+            // Use /start-custom if inline config is provided, otherwise use /start with config_name
+            const hasInlineConfig = config && config.fields && Object.keys(config.fields).length > 0;
+            const endpoint = hasInlineConfig ? `${apiEndpoint}/start-custom` : `${apiEndpoint}/start`;
+            
+            const requestBody = hasInlineConfig ? {
+                session_id: sessionId,
+                name: config.name || 'inline_config',
+                title: config.title || '',
+                description: config.description || '',
+                fields: config.fields,
+                confirm_before_complete: config.confirmBeforeComplete ?? true,
+                allow_enhancement: config.allowEnhancement ?? true,
+                language: language,
+            } : {
+                session_id: sessionId,
+                config_name: configName,
+                language: language,
+            };
+            
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 },
-                body: JSON.stringify({
-                    session_id: sessionId,
-                    config_name: configName,
-                    config: config,
-                    engine: engine,
-                    model: model
-                })
+                body: JSON.stringify(requestBody)
             });
             
             const data = await response.json();
@@ -953,6 +1136,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (data.success) {
                 currentState = data;
+                
+                // Initialize fields from config if not in response
+                initializeFieldsFromConfig(data);
+                
                 updateUI(data);
                 addMessage('assistant', data.message);
                 showQuickActions(data);
@@ -1010,6 +1197,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 addMessage('assistant', data.message);
                 showQuickActions(data);
+                // Scroll after quick actions are rendered
+                setTimeout(scrollToBottom, 50);
             }
             
             updateStatus('Ready');
@@ -1041,22 +1230,222 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    function updateUI(data) {
-        // Update progress
-        if (progressFill && data.progress !== undefined) {
-            progressFill.style.width = `${data.progress}%`;
-            progressText.textContent = `${Math.round(data.progress)}% complete`;
+    async function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        // Validate file type
+        const allowedTypes = ['application/pdf', 'text/plain', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        if (!allowedTypes.includes(file.type) && !file.name.match(/\.(pdf|txt|doc|docx)$/i)) {
+            addMessage('assistant', currentLang === 'ar' 
+                ? 'يرجى تحميل ملف PDF أو نص فقط.' 
+                : 'Please upload a PDF or text file only.');
+            return;
         }
         
-        // Update field counter
-        if (fieldCounter && data.collected_fields && data.remaining_fields) {
-            const total = data.collected_fields.length + data.remaining_fields.length;
-            fieldCounter.textContent = `${data.collected_fields.length} of ${total} fields`;
+        // Validate file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            addMessage('assistant', currentLang === 'ar' 
+                ? 'حجم الملف كبير جداً. الحد الأقصى 10 ميجابايت.' 
+                : 'File is too large. Maximum size is 10MB.');
+            return;
+        }
+        
+        fileBtn.classList.add('loading');
+        updateStatus(currentLang === 'ar' ? 'جاري تحليل الملف...' : 'Analyzing file...');
+        addMessage('user', currentLang === 'ar' 
+            ? `📎 تم تحميل: ${file.name}` 
+            : `📎 Uploaded: ${file.name}`);
+        showTyping();
+        
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('session_id', sessionId);
+            formData.append('language', language);
+            
+            // Add full field config (including validation rules) for AI extraction
+            if (config.fields) {
+                formData.append('fields', JSON.stringify(Object.keys(config.fields)));
+                formData.append('field_config', JSON.stringify(config.fields));
+            }
+            
+            const response = await fetch(`${apiEndpoint}/analyze-file`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: formData
+            });
+            
+            const data = await response.json();
+            hideTyping();
+            fileBtn.classList.remove('loading');
+            
+            if (data.success && data.extracted_data) {
+                // Show extracted data summary
+                const summaryMsg = currentLang === 'ar' 
+                    ? `✅ تم استخراج البيانات من الملف:\n\n${formatExtractedData(data.extracted_data)}\n\nهل تريد استخدام هذه البيانات؟`
+                    : `✅ Extracted data from file:\n\n${formatExtractedData(data.extracted_data)}\n\nWould you like to use this data?`;
+                
+                addMessage('assistant', summaryMsg);
+                
+                // Store extracted data for confirmation
+                window.extractedFileData = data.extracted_data;
+                
+                // Show confirm/modify buttons
+                showFileDataActions();
+            } else {
+                addMessage('assistant', data.message || (currentLang === 'ar' 
+                    ? 'لم نتمكن من استخراج البيانات من الملف.' 
+                    : 'Could not extract data from the file.'));
+            }
+            
+            updateStatus('Ready');
+        } catch (error) {
+            hideTyping();
+            fileBtn.classList.remove('loading');
+            addMessage('assistant', currentLang === 'ar' 
+                ? 'فشل في تحليل الملف. يرجى المحاولة مرة أخرى.' 
+                : 'Failed to analyze file. Please try again.');
+            updateStatus('Error');
+            console.error('File upload error:', error);
+        }
+        
+        // Reset file input
+        fileInput.value = '';
+    }
+    
+    function formatExtractedData(data) {
+        let formatted = '';
+        for (const [key, value] of Object.entries(data)) {
+            if (value) {
+                const label = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+                formatted += `• **${label}**: ${value}\n`;
+            }
+        }
+        return formatted || (currentLang === 'ar' ? 'لا توجد بيانات' : 'No data');
+    }
+    
+    function showFileDataActions() {
+        const html = `
+            <div class="dc-action-group">
+                <button class="dc-quick-btn primary" data-action="use-file-data">${currentLang === 'ar' ? '✓ استخدام البيانات' : '✓ Use Data'}</button>
+                <button class="dc-quick-btn secondary" data-action="modify-file-data">${currentLang === 'ar' ? '✎ تعديل' : '✎ Modify'}</button>
+                <button class="dc-quick-btn danger" data-action="discard-file-data">${currentLang === 'ar' ? '✕ تجاهل' : '✕ Discard'}</button>
+            </div>
+        `;
+        quickActionsContainer.innerHTML = html;
+        quickActionsContainer.style.display = 'flex';
+        
+        // Add click handlers
+        quickActionsContainer.querySelector('[data-action="use-file-data"]')?.addEventListener('click', useExtractedData);
+        quickActionsContainer.querySelector('[data-action="modify-file-data"]')?.addEventListener('click', modifyExtractedData);
+        quickActionsContainer.querySelector('[data-action="discard-file-data"]')?.addEventListener('click', discardExtractedData);
+        
+        setTimeout(scrollToBottom, 10);
+    }
+    
+    async function useExtractedData() {
+        if (!window.extractedFileData) return;
+        
+        hideQuickActions();
+        showTyping();
+        updateStatus(currentLang === 'ar' ? 'جاري تطبيق البيانات...' : 'Applying data...');
+        
+        try {
+            const response = await fetch(`${apiEndpoint}/apply-extracted`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    extracted_data: window.extractedFileData,
+                    language: language
+                })
+            });
+            
+            const data = await response.json();
+            hideTyping();
+            
+            if (data.success) {
+                currentState = data;
+                updateUI(data);
+                addMessage('assistant', data.message);
+                
+                if (data.requires_confirmation || data.metadata?.requires_confirmation) {
+                    showQuickActions(data);
+                }
+            } else {
+                addMessage('assistant', data.message || 'Failed to apply data.');
+            }
+            
+            updateStatus('Ready');
+        } catch (error) {
+            hideTyping();
+            addMessage('assistant', 'Failed to apply extracted data.');
+            updateStatus('Error');
+            console.error('Apply extracted data error:', error);
+        }
+        
+        window.extractedFileData = null;
+    }
+    
+    function modifyExtractedData() {
+        hideQuickActions();
+        addMessage('assistant', currentLang === 'ar' 
+            ? 'حسناً، دعنا نراجع البيانات معاً. سأسألك عن كل حقل.' 
+            : 'Okay, let\'s review the data together. I\'ll ask you about each field.');
+        window.extractedFileData = null;
+        // Continue with normal flow
+        showQuickActions(currentState || {});
+    }
+    
+    function discardExtractedData() {
+        hideQuickActions();
+        addMessage('assistant', currentLang === 'ar' 
+            ? 'تم تجاهل البيانات المستخرجة. يمكنك الاستمرار في إدخال البيانات يدوياً.' 
+            : 'Extracted data discarded. You can continue entering data manually.');
+        window.extractedFileData = null;
+        showQuickActions(currentState || {});
+    }
+    
+    function updateUI(data) {
+        // Data can be at root level or in metadata object
+        const meta = data.metadata || data;
+        
+        // Update progress
+        const progress = meta.progress ?? data.progress;
+        if (progressFill && progress !== undefined) {
+            progressFill.style.width = `${progress}%`;
+            const completeText = currentLang === 'ar' ? 'مكتمل' : 'complete';
+            progressText.textContent = `${Math.round(progress)}% ${completeText}`;
+        }
+        
+        // Update field counter - check multiple sources for collected fields
+        const collectedFields = meta.collected_fields || data.collected_fields || data.collectedFields || [];
+        const remainingFields = meta.remaining_fields || data.remaining_fields || [];
+        const totalFields = meta.fields?.length || fields.length || (collectedFields.length + remainingFields.length);
+        
+        if (fieldCounter && totalFields > 0) {
+            const collected = collectedFields.length || (progress === 100 ? totalFields : 0);
+            if (currentLang === 'ar') {
+                fieldCounter.textContent = `${collected} من ${totalFields} حقول`;
+            } else {
+                fieldCounter.textContent = `${collected} of ${totalFields} fields`;
+            }
         }
         
         // Update fields list
-        if (fieldsList && data.collected_fields) {
-            updateFieldsList(data);
+        if (fieldsList && (collectedFields.length > 0 || remainingFields.length > 0)) {
+            updateFieldsList({
+                collected_fields: collectedFields,
+                remaining_fields: remainingFields,
+                current_field: meta.current_field || data.current_field,
+                validation_errors: meta.validation_errors || data.validation_errors
+            });
         }
     }
     
@@ -1097,35 +1486,170 @@ document.addEventListener('DOMContentLoaded', function() {
         return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
     
+    function initializeFieldsFromConfig(data) {
+        // Get fields from metadata or config
+        const meta = data.metadata || {};
+        let allFieldNames = meta.fields || [];
+        
+        // If no fields in response, get from local config
+        if (allFieldNames.length === 0 && config.fields) {
+            allFieldNames = Object.keys(config.fields);
+        }
+        
+        // Set up collected/remaining fields if not present
+        if (!data.metadata) {
+            data.metadata = {};
+        }
+        
+        if (!data.metadata.collected_fields) {
+            data.metadata.collected_fields = [];
+        }
+        
+        if (!data.metadata.remaining_fields || data.metadata.remaining_fields.length === 0) {
+            data.metadata.remaining_fields = allFieldNames;
+        }
+        
+        // Set current field if not set
+        if (!data.metadata.current_field && allFieldNames.length > 0) {
+            data.metadata.current_field = allFieldNames[0];
+        }
+        
+        // Calculate progress
+        const total = allFieldNames.length;
+        const collected = data.metadata.collected_fields.length;
+        data.metadata.progress = total > 0 ? Math.round((collected / total) * 100) : 0;
+    }
+    
     function showQuickActions(data) {
         if (!quickActionsContainer) return;
         
-        const actions = [];
+        const meta = data.metadata || data;
+        const currentField = meta.current_field || data.current_field;
+        const requiresConfirmation = meta.requires_confirmation || data.requires_confirmation;
         
-        // Add options for select fields
-        if (data.current_field && config.fields?.[data.current_field]?.options) {
-            const options = config.fields[data.current_field].options;
+        // Detect language from the AI's response
+        if (data.message) {
+            currentLang = detectLanguage(data.message);
+        }
+        
+        // Track unique values to prevent duplicates
+        const seenValues = new Set();
+        
+        // Separate action groups
+        const confirmActions = [];
+        const optionActions = [];
+        const otherActions = [];
+        
+        // Helper to add action if not duplicate
+        const addAction = (action, targetArray) => {
+            const normalizedValue = action.value.toString().toLowerCase();
+            if (!seenValues.has(normalizedValue)) {
+                seenValues.add(normalizedValue);
+                targetArray.push(action);
+            }
+        };
+        
+        // Add options for select fields from config (priority)
+        if (currentField && config.fields?.[currentField]?.options) {
+            const options = config.fields[currentField].options;
             options.forEach(opt => {
-                actions.push({ label: opt, value: opt, type: 'option' });
+                addAction({ 
+                    label: translateOption(opt), 
+                    value: opt, 
+                    type: 'option' 
+                }, optionActions);
             });
         }
         
-        // Add confirmation buttons
-        if (data.requires_confirmation) {
-            actions.push({ label: '✓ Confirm', value: 'yes', type: 'primary' });
-            actions.push({ label: '✎ Modify', value: 'no', type: 'secondary' });
+        // Process API actions
+        if (data.actions && Array.isArray(data.actions) && data.actions.length > 0) {
+            data.actions.forEach(action => {
+                const reply = action.data?.reply || action.label;
+                const label = action.label;
+                const normalizedReply = reply.toString().toLowerCase();
+                
+                // Categorize actions - use translated labels
+                if (normalizedReply === 'yes' || normalizedReply === 'confirm') {
+                    addAction({ label: t('confirm'), value: reply, type: 'primary', group: 'confirm' }, confirmActions);
+                } else if (normalizedReply === 'no' || normalizedReply === 'change' || normalizedReply === 'modify') {
+                    addAction({ label: t('modify'), value: reply, type: 'secondary', group: 'confirm' }, confirmActions);
+                } else if (normalizedReply === 'cancel') {
+                    addAction({ label: t('cancel'), value: reply, type: 'danger', group: 'other' }, otherActions);
+                } else if (!seenValues.has(normalizedReply)) {
+                    // Skip if it's an option we already have
+                    addAction({ label, value: reply, type: 'secondary' }, otherActions);
+                }
+            });
+        }
+        
+        // Add confirmation buttons if requires confirmation and not already present
+        // Also check if message contains confirmation keywords (in multiple languages)
+        const messageText = (data.message || '').toLowerCase();
+        const needsConfirmation = requiresConfirmation || 
+            messageText.includes('confirm') || 
+            messageText.includes('please confirm') ||
+            messageText.includes('is this correct') ||
+            messageText.includes('let me know if') ||
+            messageText.includes('تأكيد') ||
+            messageText.includes('هل هذا صحيح') ||
+            messageText.includes('يرجى التأكيد');
+            
+        if (needsConfirmation && optionActions.length === 0) {
+            if (!seenValues.has('yes') && !seenValues.has('confirm')) {
+                addAction({ label: t('confirm'), value: 'yes', type: 'primary' }, confirmActions);
+            }
+            if (!seenValues.has('no') && !seenValues.has('change')) {
+                addAction({ label: t('modify'), value: 'no', type: 'secondary' }, confirmActions);
+            }
         }
         
         // Add skip button for optional fields
-        if (data.current_field && !config.fields?.[data.current_field]?.required) {
-            actions.push({ label: 'Skip', value: 'skip', type: 'skip' });
+        if (currentField && config.fields?.[currentField] && !config.fields[currentField].required) {
+            addAction({ label: t('skip'), value: 'skip', type: 'skip' }, otherActions);
         }
         
-        if (actions.length > 0) {
-            quickActionsContainer.innerHTML = actions.map(action => 
+        // Build HTML with grouped actions
+        let html = '';
+        const isRtlLang = currentLang === 'ar';
+        
+        if (optionActions.length > 0) {
+            html += `<div class="dc-action-group${isRtlLang ? ' rtl' : ''}">`;
+            html += `<span class="dc-action-label">${t('choose')}</span>`;
+            html += optionActions.map(action => 
                 `<button class="dc-quick-btn ${action.type || ''}" data-value="${action.value}">${action.label}</button>`
             ).join('');
+            html += `</div>`;
+        }
+        
+        if (confirmActions.length > 0) {
+            html += `<div class="dc-action-group${isRtlLang ? ' rtl' : ''}">`;
+            html += confirmActions.map(action => 
+                `<button class="dc-quick-btn ${action.type || ''}" data-value="${action.value}">${action.label}</button>`
+            ).join('');
+            html += `</div>`;
+        }
+        
+        if (otherActions.length > 0) {
+            html += `<div class="dc-action-group${isRtlLang ? ' rtl' : ''}">`;
+            html += otherActions.map(action => 
+                `<button class="dc-quick-btn ${action.type || ''}" data-value="${action.value}">${action.label}</button>`
+            ).join('');
+            html += `</div>`;
+        }
+        
+        if (html) {
+            quickActionsContainer.innerHTML = html;
             quickActionsContainer.style.display = 'flex';
+            // Apply RTL to container if needed
+            if (isRtlLang) {
+                quickActionsContainer.classList.add('rtl');
+                quickActionsContainer.setAttribute('dir', 'rtl');
+            } else {
+                quickActionsContainer.classList.remove('rtl');
+                quickActionsContainer.removeAttribute('dir');
+            }
+            // Scroll to show the new buttons
+            setTimeout(scrollToBottom, 10);
         } else {
             quickActionsContainer.style.display = 'none';
         }
@@ -1157,7 +1681,8 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '</div>';
         
         if (data.action_summary) {
-            html += `<div class="dc-action-preview"><strong>What will happen:</strong><br>${data.action_summary}</div>`;
+            const whatWillHappen = currentLang === 'ar' ? 'ما سيحدث:' : 'What will happen:';
+            html += `<div class="dc-action-preview"><strong>${whatWillHappen}</strong><br>${data.action_summary}</div>`;
         }
         
         confirmBody.innerHTML = html;
@@ -1195,6 +1720,13 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const textDiv = document.createElement('div');
         textDiv.className = 'dc-message-text';
+        
+        // Apply RTL if content contains RTL characters
+        if (isRTL(content)) {
+            textDiv.classList.add('rtl');
+            textDiv.setAttribute('dir', 'rtl');
+        }
+        
         textDiv.innerHTML = formatMessage(content);
         
         contentDiv.appendChild(textDiv);
@@ -1210,6 +1742,64 @@ document.addEventListener('DOMContentLoaded', function() {
         return content
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
             .replace(/\n/g, '<br>');
+    }
+    
+    function isRTL(text) {
+        // Check if text contains RTL characters (Arabic, Hebrew, Persian, etc.)
+        const rtlRegex = /[\u0591-\u07FF\u200F\u202B\u202E\uFB1D-\uFDFD\uFE70-\uFEFC]/;
+        return rtlRegex.test(text);
+    }
+    
+    // Current detected language (initialized from prop)
+    let currentLang = language;
+    
+    // Translations for UI elements
+    const translations = {
+        en: {
+            confirm: '✓ Confirm',
+            modify: '✎ Modify',
+            cancel: '✕ Cancel',
+            skip: 'Skip →',
+            choose: 'Choose:',
+            beginner: 'Beginner',
+            intermediate: 'Intermediate',
+            advanced: 'Advanced',
+            yes: 'Yes',
+            no: 'No'
+        },
+        ar: {
+            confirm: '✓ تأكيد',
+            modify: '✎ تعديل',
+            cancel: '✕ إلغاء',
+            skip: '← تخطي',
+            choose: 'اختر:',
+            beginner: 'مبتدئ',
+            intermediate: 'متوسط',
+            advanced: 'متقدم',
+            yes: 'نعم',
+            no: 'لا'
+        }
+    };
+    
+    function detectLanguage(text) {
+        // Detect Arabic
+        if (/[\u0600-\u06FF]/.test(text)) {
+            return 'ar';
+        }
+        return 'en';
+    }
+    
+    function t(key) {
+        return translations[currentLang]?.[key] || translations['en'][key] || key;
+    }
+    
+    function translateOption(option) {
+        const lowerOption = option.toLowerCase();
+        if (translations[currentLang]?.[lowerOption]) {
+            return translations[currentLang][lowerOption];
+        }
+        // Capitalize first letter for display
+        return option.charAt(0).toUpperCase() + option.slice(1);
     }
     
     function showTyping() {

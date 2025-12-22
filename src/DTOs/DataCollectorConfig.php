@@ -407,7 +407,10 @@ class DataCollectorConfig
             return $summary;
         }
 
-        // Default action summary based on title
+        // Default action summary based on title (with locale support)
+        if ($this->locale === 'ar') {
+            return "سيتم إكمال عملية '{$this->title}' بالمعلومات التي قدمتها.";
+        }
         return "This will complete the '{$this->title}' process with the information you provided.";
     }
 
@@ -418,13 +421,24 @@ class DataCollectorConfig
     {
         $message = $this->generateSummary($data);
         $message .= "\n---\n\n";
-        $message .= "## What will happen:\n\n";
-        $message .= $this->generateActionSummary($data);
-        $message .= "\n\n---\n\n";
-        $message .= "**Please confirm:**\n";
-        $message .= "- Say **'yes'** or **'confirm'** to proceed\n";
-        $message .= "- Say **'no'** or **'change'** to modify any information\n";
-        $message .= "- Say **'cancel'** to abort the process\n";
+        
+        if ($this->locale === 'ar') {
+            $message .= "## ما سيحدث:\n\n";
+            $message .= $this->generateActionSummary($data);
+            $message .= "\n\n---\n\n";
+            $message .= "**يرجى التأكيد:**\n";
+            $message .= "- قل **'نعم'** أو **'تأكيد'** للمتابعة\n";
+            $message .= "- قل **'لا'** أو **'تغيير'** لتعديل أي معلومات\n";
+            $message .= "- قل **'إلغاء'** لإلغاء العملية\n";
+        } else {
+            $message .= "## What will happen:\n\n";
+            $message .= $this->generateActionSummary($data);
+            $message .= "\n\n---\n\n";
+            $message .= "**Please confirm:**\n";
+            $message .= "- Say **'yes'** or **'confirm'** to proceed\n";
+            $message .= "- Say **'no'** or **'change'** to modify any information\n";
+            $message .= "- Say **'cancel'** to abort the process\n";
+        }
         
         return $message;
     }
