@@ -375,6 +375,11 @@ class AIEngineServiceProvider extends ServiceProvider
                 __DIR__.'/../resources/views' => resource_path('views/vendor/ai-engine'),
             ], 'ai-engine-views');
 
+            // Laravel 8 specific: publish components to app/View/Components for manual registration
+            $this->publishes([
+                __DIR__.'/../resources/views/components' => resource_path('views/components/ai-engine'),
+            ], 'ai-engine-components');
+
             $this->publishes([
                 __DIR__.'/../resources/js' => public_path('vendor/ai-engine/js'),
             ], 'ai-engine-assets');

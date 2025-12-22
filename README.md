@@ -8,7 +8,7 @@
 [![Total Downloads](https://img.shields.io/packagist/dt/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
 [![License](https://img.shields.io/packagist/l/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
 [![PHP Version](https://img.shields.io/packagist/php-v/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
-[![Laravel](https://img.shields.io/badge/Laravel-9%20%7C%2010%20%7C%2011%20%7C%2012-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
+[![Laravel](https://img.shields.io/badge/Laravel-8%20%7C%209%20%7C%2010%20%7C%2011%20%7C%2012-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 
 **The most advanced Laravel AI package with Federated RAG, Smart Action System, Intelligent Context Retrieval, Dynamic Model Registry, and Enterprise-Grade Multi-Tenant Security.**
 
@@ -352,6 +352,15 @@ This context is automatically injected into AI prompts for better domain underst
 composer require m-tech-stack/laravel-ai-engine
 ```
 
+### Requirements
+
+| Requirement | Version |
+|-------------|---------|
+| **PHP** | 8.1+ |
+| **Laravel** | 8.x, 9.x, 10.x, 11.x, 12.x |
+
+> **Note:** Laravel 8 requires PHP 8.1+ due to the use of `readonly` properties.
+
 ### Publish Configuration
 
 ```bash
@@ -372,6 +381,37 @@ php artisan migrate
 OPENAI_API_KEY=your-openai-key
 ANTHROPIC_API_KEY=your-anthropic-key
 GOOGLE_API_KEY=your-google-key
+```
+
+### Laravel 8 Users: Blade Components
+
+Laravel 8 doesn't support automatic anonymous component registration. To use the package's Blade components, publish them manually:
+
+```bash
+# Publish components to resources/views/components/ai-engine/
+php artisan vendor:publish --tag=ai-engine-components
+```
+
+Then use them in your Blade templates:
+
+```blade
+{{-- Laravel 9+ (automatic) --}}
+<x-ai-engine::chat />
+
+{{-- Laravel 8 (after publishing) --}}
+@include('components.ai-engine.chat')
+{{-- Or create an alias in AppServiceProvider --}}
+```
+
+**Optional:** Register components in `AppServiceProvider` for Laravel 8:
+
+```php
+// app/Providers/AppServiceProvider.php
+public function boot()
+{
+    // Register AI Engine components for Laravel 8
+    Blade::anonymousComponentNamespace('components.ai-engine', 'ai-engine');
+}
 ```
 
 ---
