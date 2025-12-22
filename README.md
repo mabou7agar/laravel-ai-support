@@ -2072,7 +2072,7 @@ $templateEngine->createTemplate([
 
 ## 💬 Data Collector Component
 
-The Data Collector provides a conversational UI for collecting structured data from users.
+The Data Collector provides a conversational UI for collecting structured data from users with AI-powered file extraction and multilingual support.
 
 ### Blade Component Usage
 
@@ -2084,21 +2084,38 @@ The Data Collector provides a conversational UI for collecting structured data f
     :description="'I will help you create a course step by step.'"
 />
 
-{{-- With inline config --}}
+{{-- With inline config and Arabic support --}}
 <x-ai-engine::data-collector 
     :session-id="'user-' . auth()->id() . '-' . time()"
-    :title="'Contact Form'"
+    :title="'إنشاء دورة جديدة'"
+    :description="'سأساعدك في إنشاء دورة خطوة بخطوة.'"
+    :language="'ar'"
     :config="[
+        'name' => 'course_creator',
+        'locale' => 'ar',
         'fields' => [
-            'name' => 'Your full name | required | min:2',
-            'email' => 'Email address | required | email',
-            'message' => 'Your message | required | min:10',
-        ]
+            'name' => [
+                'description' => 'اسم الدورة',
+                'validation' => 'required|min:3|max:255',
+            ],
+            'description' => [
+                'description' => 'وصف الدورة',
+                'validation' => 'required|min:50',
+            ],
+            'level' => [
+                'type' => 'select',
+                'description' => 'مستوى الصعوبة',
+                'options' => ['beginner', 'intermediate', 'advanced'],
+            ],
+            'duration' => [
+                'description' => 'المدة بالساعات',
+                'validation' => 'required|numeric|min:1',
+            ],
+        ],
+        'confirmBeforeComplete' => true,
     ]"
     :show-progress="true"
-    :show-field-list="true"
     :theme="'light'"
-    :height="'500px'"
 />
 ```
 
@@ -2110,6 +2127,7 @@ The Data Collector provides a conversational UI for collecting structured data f
 | `configName` | string | '' | Registered config name |
 | `title` | string | 'Data Collection' | Header title |
 | `description` | string | '' | Header description |
+| `language` | string | 'en' | Language: `en` or `ar` for RTL support |
 | `theme` | string | 'light' | Theme: `light` or `dark` |
 | `height` | string | '500px' | Container height |
 | `apiEndpoint` | string | '/api/v1/data-collector' | API endpoint |
@@ -2122,14 +2140,57 @@ The Data Collector provides a conversational UI for collecting structured data f
 
 ### Features
 
+- **📎 File Upload**: Upload PDF, TXT, DOC, DOCX files to auto-fill fields with AI extraction
+- **🌐 Multilingual Support**: Full Arabic/RTL support with translated UI elements
 - **Progress Tracking**: Visual progress bar and field counter
 - **Field Status**: Shows pending, current, completed, and error states
 - **Quick Actions**: Auto-generated buttons for select options
-- **Confirmation Modal**: Review data before submission
+- **Confirmation Modal**: Review data before submission with "What will happen" preview
 - **Success Modal**: Completion feedback
 - **Dark Mode**: Full dark theme support
 - **Responsive**: Mobile-friendly design
 - **Keyboard Support**: Enter to send, Shift+Enter for new line
+
+### File Upload Feature
+
+Users can upload documents (PDF, TXT, DOC, DOCX) and the AI will automatically extract relevant data:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  📎 Upload File                                          │
+│                                                          │
+│  User uploads: course_outline.pdf                        │
+│                    ↓                                     │
+│  AI extracts:                                            │
+│  • Name: "Laravel Fundamentals"                          │
+│  • Description: "Complete course covering..."            │
+│  • Level: "intermediate"                                 │
+│  • Duration: 12                                          │
+│                    ↓                                     │
+│  [✓ Use Data] [✎ Modify] [✕ Discard]                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+The AI respects field validation rules when extracting:
+- **Numeric fields**: Returns numbers only (not "12 hours", just "12")
+- **Select fields**: Returns valid options only
+- **Required fields**: Attempts to extract all required data
+
+### Arabic/RTL Support
+
+The component fully supports Arabic with:
+- RTL text direction
+- Translated UI elements (buttons, progress, field labels)
+- Arabic AI responses and prompts
+
+| English | Arabic |
+|---------|--------|
+| 100% complete | 100% مكتمل |
+| 4 of 4 fields | 4 من 4 حقول |
+| Confirm | تأكيد |
+| Modify | تعديل |
+| Cancel | إلغاء |
+| Use Data | استخدام البيانات |
 
 ### Backend Configuration
 
@@ -2142,6 +2203,7 @@ use LaravelAIEngine\Facades\DataCollector;
 DataCollector::registerConfig(new DataCollectorConfig(
     name: 'course_creator',
     title: 'Create a New Course',
+    locale: 'en', // or 'ar' for Arabic
     fields: [
         'name' => 'Course name | required | min:3 | max:255',
         'description' => [
@@ -2161,6 +2223,17 @@ DataCollector::registerConfig(new DataCollectorConfig(
     allowEnhancement: true,
 ));
 ```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/data-collector/start` | POST | Start a new session |
+| `/api/v1/data-collector/message` | POST | Send a message |
+| `/api/v1/data-collector/analyze-file` | POST | Upload and analyze file |
+| `/api/v1/data-collector/apply-extracted` | POST | Apply extracted data |
+| `/api/v1/data-collector/status/{sessionId}` | GET | Get session status |
+| `/api/v1/data-collector/cancel` | POST | Cancel session |
 
 ✨ **Simplified API** 🎯
 - **Pass User ID Only**: No need to pass user objects
