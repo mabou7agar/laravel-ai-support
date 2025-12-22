@@ -145,11 +145,12 @@ class NodeApiController extends Controller
                 }
                 
                 $searchResults = $searchService->search(
-                    query: $validated['query'],
                     modelClass: $collection,
+                    query: $validated['query'],
                     limit: $validated['limit'] ?? 10,
-                    userId: $userId,
-                    filters: $filters
+                    threshold: $validated['options']['threshold'] ?? 0.3,
+                    filters: $filters,
+                    userId: $userId
                 );
                 
                 foreach ($searchResults as $result) {

@@ -452,6 +452,8 @@ class VectorSearchService
         \Log::info('hydrateModels called', [
             'model' => $modelClass,
             'results_count' => count($results),
+            'app_name' => config('app.name'),
+            'is_master' => config('ai-engine.nodes.is_master', false),
         ]);
         
         if (empty($results)) {

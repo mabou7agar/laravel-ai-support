@@ -308,14 +308,11 @@ class FederatedSearchService
     {
         $allResults = [];
         
-        // Debug: Log first local result
-        if (!empty($local['results'])) {
-            \Log::info('Local result before merge', [
-                'keys' => array_keys($local['results'][0]),
-                'has_metadata' => isset($local['results'][0]['metadata']),
-                'metadata' => $local['results'][0]['metadata'] ?? 'not set',
-            ]);
-        }
+        \Log::info('mergeResults called', [
+            'local_count' => count($local['results'] ?? []),
+            'remote_nodes_count' => count($remote),
+            'limit' => $limit,
+        ]);
         
         // Add local results
         foreach ($local['results'] as $result) {
@@ -326,7 +323,17 @@ class FederatedSearchService
         }
         
         // Add remote results
+        $remoteResultsCount = 0;
         foreach ($remote as $nodeResults) {
+            $nodeResultCount = count($nodeResults['results'] ?? []);
+            $remoteResultsCount += $nodeResultCount;
+            
+            \Log::info('Adding remote node results', [
+                'node' => $nodeResults['node'] ?? 'unknown',
+                'node_name' => $nodeResults['node_name'] ?? 'unknown',
+                'results_count' => $nodeResultCount,
+            ]);
+            
             foreach ($nodeResults['results'] as $result) {
                 $allResults[] = array_merge($result, [
                     'source_node' => $nodeResults['node'],
@@ -335,14 +342,31 @@ class FederatedSearchService
             }
         }
         
+        \Log::info('After adding all results', [
+            'total_before_sort' => count($allResults),
+            'local_count' => count($local['results'] ?? []),
+            'remote_count' => $remoteResultsCount,
+        ]);
+        
         // Sort by score (descending)
         usort($allResults, fn ($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
         
         // Deduplicate by content hash
+        $beforeDedup = count($allResults);
         $allResults = $this->deduplicateResults($allResults);
+        
+        \Log::info('After deduplication', [
+            'before' => $beforeDedup,
+            'after' => count($allResults),
+        ]);
         
         // Limit results
         $allResults = array_slice($allResults, 0, $limit);
+        
+        \Log::info('mergeResults final', [
+            'final_count' => count($allResults),
+            'first_result_content_preview' => isset($allResults[0]['content']) ? substr($allResults[0]['content'], 0, 100) : 'no content',
+        ]);
         
         return [
             'query' => $query,

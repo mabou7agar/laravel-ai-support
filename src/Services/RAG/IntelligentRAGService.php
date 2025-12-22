@@ -195,6 +195,21 @@ class IntelligentRAGService
                     $userId
                 );
 
+                // Always log context results for debugging federated search issues
+                Log::channel('ai-engine')->info('RAG context retrieved', [
+                    'user_id' => $userId,
+                    'search_queries' => $searchQueries,
+                    'collections' => $collectionsToSearch,
+                    'results_found' => $context->count(),
+                    'first_result' => $context->isNotEmpty() ? [
+                        'id' => $context->first()->id ?? null,
+                        'has_content' => isset($context->first()->content),
+                        'has_title' => isset($context->first()->title),
+                        'has_name' => isset($context->first()->name),
+                        'vector_score' => $context->first()->vector_score ?? null,
+                    ] : null,
+                ]);
+
                 if (config('ai-engine.debug')) {
                     Log::channel('ai-engine')->debug('RAG search completed', [
                         'user_id' => $userId,
@@ -1029,10 +1044,17 @@ PROMPT;
         // Use federated search if available and enabled
         $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
 
+        Log::channel('ai-engine')->info('retrieveRelevantContext decision', [
+            'federatedSearch_available' => $this->federatedSearch !== null,
+            'nodes_enabled_config' => config('ai-engine.nodes.enabled', false),
+            'useFederatedSearch' => $useFederatedSearch,
+            'collections_count' => count($collections),
+        ]);
+
         if ($useFederatedSearch) {
             // For federated search, we trust the collections array
             // The child nodes will validate if they have the class
-            Log::channel('ai-engine')->debug('Using federated search - delegating collection validation to nodes', [
+            Log::channel('ai-engine')->info('Using federated search - delegating collection validation to nodes', [
                 'collections' => $collections,
                 'note' => 'Collections may exist on remote nodes even if not available locally',
             ]);
@@ -1156,10 +1178,11 @@ PROMPT;
                     }
                 }
 
-                Log::channel('ai-engine')->debug('Federated search completed', [
+                Log::channel('ai-engine')->info('Federated search completed', [
                     'query' => $searchQuery,
                     'nodes_searched' => $federatedResults['nodes_searched'] ?? 0,
                     'total_results' => $federatedResults['total_results'] ?? 0,
+                    'allResults_count_so_far' => $allResults->count(),
                 ]);
             } catch (\Exception $e) {
                 Log::channel('ai-engine')->warning('Federated search failed, falling back to local', [
@@ -1174,10 +1197,18 @@ PROMPT;
         }
 
         // Deduplicate and sort by relevance
-        return $allResults
+        $finalResults = $allResults
             ->unique('id')
             ->sortByDesc('vector_score')
             ->take($maxResults);
+            
+        Log::channel('ai-engine')->info('retrieveFromFederatedSearch final results', [
+            'allResults_before_dedup' => $allResults->count(),
+            'finalResults_after_dedup' => $finalResults->count(),
+            'first_result_id' => $finalResults->isNotEmpty() ? ($finalResults->first()->id ?? 'no id') : 'empty',
+        ]);
+        
+        return $finalResults;
     }
 
     /**
