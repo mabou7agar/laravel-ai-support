@@ -591,13 +591,51 @@ class RagChatApiController extends Controller
                 $response = $this->analyzeDocumentFile($file, $message, $sessionId, $engine, $model, $useIntelligentRAG, $ragCollections, $userId);
             }
 
+            // Store the file analysis in conversation history for follow-up questions
+            $fileName = $file->getClientOriginalName();
+            $fileContent = $response['file_content'] ?? '';
+            
+            // Add user message about the file
+            $userMessage = "[Uploaded file: {$fileName}]\n\n{$message}";
+            if (!empty($fileContent)) {
+                $userMessage .= "\n\n--- File Content ---\n" . mb_substr($fileContent, 0, 10000); // Limit to 10k chars
+            }
+            
+            // Get or create conversation and add messages to history
+            try {
+                $conversationId = $this->conversationService->getOrCreateConversation($sessionId, $userId, $engine, $model);
+                $conversationManager = app(\LaravelAIEngine\Services\ConversationManager::class);
+                
+                // Add user message
+                $conversationManager->addUserMessage($conversationId, $userMessage, [
+                    'file_name' => $fileName,
+                    'file_type' => $mimeType,
+                    'is_file_upload' => true,
+                ]);
+                
+                // Add assistant response (create a simple AIResponse for the manager)
+                $aiResponse = new \LaravelAIEngine\DTOs\AIResponse(
+                    content: $response['content'],
+                    engine: new \LaravelAIEngine\Enums\EngineEnum($engine),
+                    model: new \LaravelAIEngine\Enums\EntityEnum($model),
+                    metadata: [
+                        'file_analysis' => true,
+                        'extracted_data' => $response['extracted_data'] ?? null,
+                    ]
+                );
+                $conversationManager->addAssistantMessage($conversationId, $response['content'], $aiResponse);
+            } catch (\Exception $e) {
+                // Log but don't fail the request if history storage fails
+                Log::warning('Failed to store file analysis in conversation history: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => [
                     'response' => $response['content'],
                     'extracted_data' => $response['extracted_data'] ?? null,
                     'file_type' => $mimeType,
-                    'file_name' => $file->getClientOriginalName(),
+                    'file_name' => $fileName,
                     'sources' => $response['sources'] ?? [],
                     'rag_enabled' => $response['rag_enabled'] ?? false,
                 ]
@@ -671,6 +709,7 @@ class RagChatApiController extends Controller
             'content' => $content,
             'extracted_data' => $extractedData,
             'rag_enabled' => false,
+            'file_content' => "[Image: {$file->getClientOriginalName()}]\n\nAI Analysis:\n{$content}",
         ];
     }
 
@@ -744,6 +783,7 @@ class RagChatApiController extends Controller
             'extracted_data' => $extractedData,
             'sources' => $metadata['sources'] ?? [],
             'rag_enabled' => $metadata['rag_enabled'] ?? false,
+            'file_content' => $content, // Include file content for history storage
         ];
     }
 
@@ -851,11 +891,21 @@ class RagChatApiController extends Controller
             // Try to extract structured data from the response
             $extractedData = $this->tryExtractStructuredData($content);
 
+            // Try to extract text content from PDF for history storage
+            $fileContent = '';
+            try {
+                $fileContent = $this->extractFileContent($file);
+            } catch (\Exception $e) {
+                // If extraction fails, use the AI response as context
+                $fileContent = "[PDF document: {$fileName}]";
+            }
+
             return [
                 'content' => $content,
                 'extracted_data' => $extractedData,
                 'rag_enabled' => false,
                 'direct_analysis' => true,
+                'file_content' => $fileContent ?: "[PDF document: {$fileName}]",
             ];
             
         } catch (\Exception $e) {
