@@ -125,9 +125,13 @@ class MemoryManager
         $this->drivers['redis'] = app(RedisMemoryDriver::class);
         $this->drivers['file'] = app(FileMemoryDriver::class);
         
-        // Only register MongoDB driver if the extension is available
-        if (class_exists(\MongoDB\Client::class)) {
-            $this->drivers['mongodb'] = app(MongoMemoryDriver::class);
+        // Only register MongoDB driver if both the library and driver extension are available
+        if (class_exists(\MongoDB\Client::class) && extension_loaded('mongodb')) {
+            try {
+                $this->drivers['mongodb'] = app(MongoMemoryDriver::class);
+            } catch (\Throwable $e) {
+                // MongoDB driver not available, skip silently
+            }
         }
     }
 }

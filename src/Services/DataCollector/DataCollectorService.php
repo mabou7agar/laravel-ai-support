@@ -215,6 +215,7 @@ class DataCollectorService
         if ($config->isComplete($state->getData())) {
             if ($config->confirmBeforeComplete) {
                 $state->setStatus(DataCollectorState::STATUS_CONFIRMING);
+                $state->setCurrentField(null); // Clear current field to prevent showing field options
                 
                 // Generate data summary
                 $summary = $config->generateSummary($state->getData());
@@ -291,13 +292,15 @@ class DataCollectorService
     ): DataCollectorResponse {
         $lowerMessage = strtolower(trim($message));
 
-        // Check for confirmation
-        if (in_array($lowerMessage, ['yes', 'y', 'confirm', 'correct', 'ok', 'okay', 'looks good', 'perfect', 'submit'])) {
+        // Check for confirmation (English and Arabic)
+        $confirmWords = ['yes', 'y', 'confirm', 'correct', 'ok', 'okay', 'looks good', 'perfect', 'submit', 'نعم', 'تأكيد', 'تاكيد', 'صحيح', 'موافق', 'اكيد', 'أكيد'];
+        if (in_array($lowerMessage, $confirmWords)) {
             return $this->handleCompletion($state, $config, $engine, $model);
         }
 
-        // Check for rejection/modification request
-        if (in_array($lowerMessage, ['no', 'n', 'change', 'modify', 'edit', 'wrong', 'incorrect'])) {
+        // Check for rejection/modification request (English and Arabic)
+        $rejectWords = ['no', 'n', 'change', 'modify', 'edit', 'wrong', 'incorrect', 'لا', 'تغيير', 'تعديل', 'خطأ', 'غلط'];
+        if (in_array($lowerMessage, $rejectWords)) {
             if ($config->allowEnhancement) {
                 $state->setStatus(DataCollectorState::STATUS_ENHANCING);
                 
@@ -469,10 +472,23 @@ class DataCollectorService
         string $engine = 'openai',
         string $model = 'gpt-4o'
     ): DataCollectorResponse {
+        // Log state data for debugging
+        Log::channel('ai-engine')->info('Data collection completion attempt', [
+            'session_id' => $state->sessionId,
+            'collected_data' => $state->getData(),
+            'status' => $state->status,
+        ]);
+        
         // Final validation
         $errors = $config->validateAll($state->getData());
         
         if (!empty($errors)) {
+            Log::channel('ai-engine')->warning('Data collection validation failed', [
+                'session_id' => $state->sessionId,
+                'errors' => $errors,
+                'data' => $state->getData(),
+            ]);
+            
             $state->setValidationErrors($errors);
             $state->setStatus(DataCollectorState::STATUS_COLLECTING);
             
