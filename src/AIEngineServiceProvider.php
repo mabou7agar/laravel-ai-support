@@ -574,8 +574,11 @@ class AIEngineServiceProvider extends ServiceProvider
     {
         $compiler = $this->app->make('blade.compiler');
 
-        // Register anonymous components
-        $compiler->anonymousComponentPath(__DIR__.'/../resources/views/components', 'ai-engine');
+        // Register anonymous components (Laravel 9+ only)
+        // anonymousComponentPath was introduced in Laravel 9
+        if (method_exists($compiler, 'anonymousComponentPath')) {
+            $compiler->anonymousComponentPath(__DIR__.'/../resources/views/components', 'ai-engine');
+        }
 
         // Register class-based components (if they exist)
         if (class_exists(\LaravelAIEngine\View\Components\AiChat::class)) {
