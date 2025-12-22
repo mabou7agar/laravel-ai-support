@@ -763,11 +763,19 @@ class RagChatApiController extends Controller
         $fileName = $file->getClientOriginalName();
         $client = \OpenAI::client($apiKey);
         
-        // Step 1: Upload file to OpenAI
+        // Step 1: Copy file to temp location with original filename to preserve extension
+        $tempDir = sys_get_temp_dir();
+        $tempPath = $tempDir . DIRECTORY_SEPARATOR . $fileName;
+        copy($file->getRealPath(), $tempPath);
+        
+        // Step 1: Upload file to OpenAI with proper filename
         $uploadedFile = $client->files()->upload([
             'purpose' => 'assistants',
-            'file' => fopen($file->getRealPath(), 'r'),
+            'file' => fopen($tempPath, 'r'),
         ]);
+        
+        // Clean up temp file
+        @unlink($tempPath);
         
         $fileId = $uploadedFile->id;
         
