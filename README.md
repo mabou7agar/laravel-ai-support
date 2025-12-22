@@ -173,6 +173,7 @@ php artisan ai-engine:sync-models
 - **Multi-Language Support**: Force specific language or auto-detect from user input
 - **Enhancement Mode**: Users can modify fields after initial collection
 - **Interactive Actions**: Quick reply buttons and field options
+- **Blade Component**: Ready-to-use `<x-ai-engine::data-collector />` component
 
 ### 📝 Template Engine
 - **Pre-built Templates**: Summarize, translate, code review, sentiment analysis, and more
@@ -2065,6 +2066,100 @@ $templateEngine->createTemplate([
     'user_prompt' => 'Analyze: {{content}}',
     'variables' => [['name' => 'content', 'required' => true]],
 ]);
+```
+
+---
+
+## 💬 Data Collector Component
+
+The Data Collector provides a conversational UI for collecting structured data from users.
+
+### Blade Component Usage
+
+```blade
+{{-- Basic usage --}}
+<x-ai-engine::data-collector 
+    :config-name="'course_creator'"
+    :title="'Create a New Course'"
+    :description="'I will help you create a course step by step.'"
+/>
+
+{{-- With inline config --}}
+<x-ai-engine::data-collector 
+    :session-id="'user-' . auth()->id() . '-' . time()"
+    :title="'Contact Form'"
+    :config="[
+        'fields' => [
+            'name' => 'Your full name | required | min:2',
+            'email' => 'Email address | required | email',
+            'message' => 'Your message | required | min:10',
+        ]
+    ]"
+    :show-progress="true"
+    :show-field-list="true"
+    :theme="'light'"
+    :height="'500px'"
+/>
+```
+
+### Component Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sessionId` | string | auto | Unique session identifier |
+| `configName` | string | '' | Registered config name |
+| `title` | string | 'Data Collection' | Header title |
+| `description` | string | '' | Header description |
+| `theme` | string | 'light' | Theme: `light` or `dark` |
+| `height` | string | '500px' | Container height |
+| `apiEndpoint` | string | '/api/v1/data-collector' | API endpoint |
+| `engine` | string | 'openai' | AI engine |
+| `model` | string | 'gpt-4o' | AI model |
+| `showProgress` | bool | true | Show progress bar |
+| `showFieldList` | bool | true | Show collapsible field list |
+| `autoStart` | bool | true | Auto-start session |
+| `config` | array | [] | Inline field configuration |
+
+### Features
+
+- **Progress Tracking**: Visual progress bar and field counter
+- **Field Status**: Shows pending, current, completed, and error states
+- **Quick Actions**: Auto-generated buttons for select options
+- **Confirmation Modal**: Review data before submission
+- **Success Modal**: Completion feedback
+- **Dark Mode**: Full dark theme support
+- **Responsive**: Mobile-friendly design
+- **Keyboard Support**: Enter to send, Shift+Enter for new line
+
+### Backend Configuration
+
+Register your data collector config in a service provider:
+
+```php
+use LaravelAIEngine\DTOs\DataCollectorConfig;
+use LaravelAIEngine\Facades\DataCollector;
+
+DataCollector::registerConfig(new DataCollectorConfig(
+    name: 'course_creator',
+    title: 'Create a New Course',
+    fields: [
+        'name' => 'Course name | required | min:3 | max:255',
+        'description' => [
+            'type' => 'text',
+            'description' => 'Course description',
+            'validation' => 'required|min:50',
+        ],
+        'level' => [
+            'type' => 'select',
+            'options' => ['beginner', 'intermediate', 'advanced'],
+            'required' => true,
+        ],
+        'duration' => 'Duration in hours | required | numeric | min:1',
+    ],
+    onComplete: fn($data) => Course::create($data),
+    confirmBeforeComplete: true,
+    allowEnhancement: true,
+));
 ```
 
 ✨ **Simplified API** 🎯
