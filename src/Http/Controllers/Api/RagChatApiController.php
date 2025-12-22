@@ -606,6 +606,15 @@ class RagChatApiController extends Controller
                 $conversationId = $this->conversationService->getOrCreateConversation($sessionId, $userId, $engine, $model);
                 $conversationManager = app(\LaravelAIEngine\Services\ConversationManager::class);
                 
+                Log::info('File analysis: Storing in conversation history', [
+                    'session_id' => $sessionId,
+                    'conversation_id' => $conversationId,
+                    'user_id' => $userId,
+                    'file_name' => $fileName,
+                    'user_message_length' => strlen($userMessage),
+                    'response_length' => strlen($response['content']),
+                ]);
+                
                 // Add user message
                 $conversationManager->addUserMessage($conversationId, $userMessage, [
                     'file_name' => $fileName,
@@ -624,9 +633,21 @@ class RagChatApiController extends Controller
                     ]
                 );
                 $conversationManager->addAssistantMessage($conversationId, $response['content'], $aiResponse);
+                
+                // Clear conversation history cache so follow-up questions see the new messages
+                \Illuminate\Support\Facades\Cache::forget("conversation_history:{$conversationId}");
+                
+                Log::info('File analysis: Successfully stored in conversation history', [
+                    'conversation_id' => $conversationId,
+                ]);
             } catch (\Exception $e) {
-                // Log but don't fail the request if history storage fails
-                Log::warning('Failed to store file analysis in conversation history: ' . $e->getMessage());
+                // Log the full error for debugging
+                Log::error('Failed to store file analysis in conversation history', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'session_id' => $sessionId,
+                    'user_id' => $userId,
+                ]);
             }
 
             return response()->json([
