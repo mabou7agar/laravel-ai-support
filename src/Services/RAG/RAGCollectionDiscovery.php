@@ -449,8 +449,9 @@ class RAGCollectionDiscovery
     {
         $uses = class_uses_recursive($className);
 
-        // Only check for Vectorizable trait (all-in-one trait)
-        return isset($uses['LaravelAIEngine\Traits\Vectorizable']);
+        // Check for both Vectorizable and VectorizableWithMedia traits
+        return isset($uses['LaravelAIEngine\Traits\Vectorizable']) 
+            || isset($uses['LaravelAIEngine\Traits\VectorizableWithMedia']);
     }
 
     /**
