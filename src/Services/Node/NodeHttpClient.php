@@ -88,4 +88,25 @@ class NodeHttpClient
         
         return $http;
     }
+    
+    /**
+     * Get headers for search requests (used by HTTP Pool)
+     */
+    public static function getSearchHeaders(\LaravelAIEngine\Models\AINode $node, string $traceId = null): array
+    {
+        $authService = app(NodeAuthService::class);
+        $token = $authService->generateToken($node, 300);
+        
+        $headers = [
+            'Authorization' => 'Bearer ' . $token,
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        ];
+        
+        if ($traceId) {
+            $headers['X-Trace-Id'] = $traceId;
+        }
+        
+        return $headers;
+    }
 }

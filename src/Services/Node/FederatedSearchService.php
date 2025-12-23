@@ -173,7 +173,7 @@ class FederatedSearchService
     }
     
     /**
-     * Search remote nodes in parallel
+     * Search remote nodes in parallel using HTTP Pool
      */
     protected function searchRemoteNodes(
         Collection $nodes,
@@ -192,59 +192,72 @@ class FederatedSearchService
             $options['load_balance_strategy'] ?? LoadBalancerService::STRATEGY_RESPONSE_TIME
         );
         
-        $promises = [];
-        $traceId = \Str::random(16);
-        
+        // Filter nodes by circuit breaker
+        $nodesToSearch = [];
         foreach ($selectedNodes as $node) {
-            // Check circuit breaker
             if ($this->circuitBreaker->isOpen($node)) {
                 Log::channel('ai-engine')->debug('Skipping node - circuit breaker open', [
                     'node_slug' => $node->slug,
                 ]);
                 continue;
             }
-            
-            // Increment active connections
-            $node->incrementConnections();
-            
-            try {
-                $response = NodeHttpClient::makeForSearch($node, $traceId)
-                    ->post($node->getApiUrl('search'), [
-                        'query' => $query,
-                        'limit' => $limit,
-                        'options' => $options,
-                    ]);
-                    
-                $promises[$node->slug] = [
-                    'node' => $node,
-                    'response' => $response,
-                ];
-            } catch (\Exception $e) {
-                $promises[$node->slug] = [
-                    'node' => $node,
-                    'error' => $e,
-                ];
-            }
+            $nodesToSearch[$node->slug] = $node;
         }
         
-        // Process responses (now synchronous)
-        $responses = $promises;
+        if (empty($nodesToSearch)) {
+            return [];
+        }
         
-        // Process responses
+        $traceId = \Str::random(16);
+        
+        // Increment active connections for all nodes
+        foreach ($nodesToSearch as $node) {
+            $node->incrementConnections();
+        }
+        
+        // Use HTTP Pool for TRUE parallel requests
+        $verifySSL = config('ai-engine.nodes.verify_ssl', true);
+        $timeout = config('ai-engine.nodes.request_timeout', 30);
+        
+        $responses = Http::pool(function ($pool) use ($nodesToSearch, $query, $limit, $options, $traceId, $verifySSL, $timeout) {
+            foreach ($nodesToSearch as $slug => $node) {
+                $request = $pool->as($slug)
+                    ->withHeaders(NodeHttpClient::getSearchHeaders($node, $traceId))
+                    ->timeout($timeout);
+                
+                // Disable SSL verification if configured
+                if (!$verifySSL) {
+                    $request = $request->withOptions(['verify' => false]);
+                }
+                
+                $request->post($node->getApiUrl('search'), [
+                    'query' => $query,
+                    'limit' => $limit,
+                    'options' => $options,
+                ]);
+            }
+        });
+        
+        // Process responses from HTTP Pool
         $results = [];
         
-        foreach ($responses as $slug => $data) {
-            $node = $data['node'];
+        foreach ($responses as $slug => $response) {
+            $node = $nodesToSearch[$slug] ?? null;
+            
+            if (!$node) {
+                continue;
+            }
             
             // Decrement active connections
             $node->decrementConnections();
             
-            if (isset($data['error'])) {
+            // Check if response is an exception (pool returns exceptions for failed requests)
+            if ($response instanceof \Exception) {
                 $this->circuitBreaker->recordFailure($node);
                 
                 Log::channel('ai-engine')->warning('Node search failed', [
                     'node' => $slug,
-                    'error' => $data['error']->getMessage(),
+                    'error' => $response->getMessage(),
                 ]);
                 
                 $results[] = [
@@ -257,8 +270,6 @@ class FederatedSearchService
                 
                 continue;
             }
-            
-            $response = $data['response'];
             
             if ($response->successful()) {
                 $responseData = $response->json();

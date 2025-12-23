@@ -256,6 +256,49 @@ class EntityEnum
         return $fallback();
     }
 
+    /**
+     * Detect engine from model name pattern (for models not in switch statement)
+     */
+    protected function detectEngineFromModelName(): EngineEnum
+    {
+        $model = $this->value;
+        
+        // First, check database for model
+        try {
+            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($model);
+            if ($dbModel) {
+                return new EngineEnum($dbModel->provider);
+            }
+        } catch (\Exception $e) {
+            // Database not available or table doesn't exist, continue with config check
+        }
+        
+        // OpenRouter models have format: provider/model-name (e.g., meta-llama/llama-3.1-8b-instruct:free)
+        if (str_contains($model, '/')) {
+            // Check if model exists in OpenRouter config
+            $openrouterModels = config('ai-engine.engines.openrouter.models', []);
+            if (isset($openrouterModels[$model])) {
+                return new EngineEnum(EngineEnum::OPENROUTER);
+            }
+        }
+        
+        // Check all engine configs to find the model
+        $engines = config('ai-engine.engines', []);
+        foreach ($engines as $engineName => $engineConfig) {
+            $models = $engineConfig['models'] ?? [];
+            if (isset($models[$model])) {
+                return new EngineEnum($engineName);
+            }
+        }
+        
+        // Default to OpenRouter for provider/model format
+        if (str_contains($model, '/')) {
+            return new EngineEnum(EngineEnum::OPENROUTER);
+        }
+        
+        // Fallback to OpenAI
+        return new EngineEnum(EngineEnum::OPENAI);
+    }
 
     /**
      * Get the engine this entity belongs to
@@ -325,7 +368,8 @@ class EntityEnum
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return new EngineEnum(EngineEnum::OPENROUTER);
             default:
-                throw new \InvalidArgumentException("Unknown model: {$this->value}");
+                // Try to detect engine from model name pattern
+                return $this->detectEngineFromModelName();
         }
     }
 
@@ -453,8 +497,28 @@ class EntityEnum
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return GPT4ODriver::class;
             default:
-                throw new \InvalidArgumentException("Unknown model: {$this->value}");
+                // For unknown models, use engine-based driver detection
+                return $this->detectDriverFromEngine();
         }
+    }
+    
+    /**
+     * Detect driver class from engine for unknown models
+     */
+    protected function detectDriverFromEngine(): string
+    {
+        $engine = $this->detectEngineFromModelName();
+        
+        // Map engines to their default drivers
+        return match ($engine->value) {
+            EngineEnum::OPENAI => GPT4ODriver::class,
+            EngineEnum::ANTHROPIC => Claude35SonnetDriver::class,
+            EngineEnum::GEMINI => Gemini15ProDriver::class,
+            EngineEnum::OPENROUTER => OpenRouterDriver::class,
+            EngineEnum::DEEPSEEK => DeepSeekDriver::class,
+            EngineEnum::OLLAMA => OllamaDriver::class,
+            default => GPT4ODriver::class,
+        };
     }
 
     /**
@@ -583,7 +647,8 @@ class EntityEnum
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return 'OpenChat 3.5 (Free)';
             default:
-                throw new \InvalidArgumentException("Unknown model: {$this->value}");
+                // Return model name as label for unknown models
+                return ucwords(str_replace(['-', '_', '/'], ' ', $this->value));
         }
     }
 
@@ -761,8 +826,34 @@ class EntityEnum
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return 0.0;
             default:
-                throw new \InvalidArgumentException("Unknown model: {$this->value}");
+                // Try to get credit index from config, default to 1.0
+                return $this->getCreditIndexFromConfig();
         }
+    }
+    
+    /**
+     * Get credit index from config or database for unknown models
+     */
+    protected function getCreditIndexFromConfig(): float
+    {
+        // First, check database for model
+        try {
+            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($this->value);
+            if ($dbModel && isset($dbModel->metadata['credit_index'])) {
+                return (float) $dbModel->metadata['credit_index'];
+            }
+        } catch (\Exception $e) {
+            // Database not available, continue with config check
+        }
+        
+        $engines = config('ai-engine.engines', []);
+        foreach ($engines as $engineConfig) {
+            $models = $engineConfig['models'] ?? [];
+            if (isset($models[$this->value]['credit_index'])) {
+                return (float) $models[$this->value]['credit_index'];
+            }
+        }
+        return 1.0; // Default credit index
     }
 
     /**
@@ -832,7 +923,7 @@ class EntityEnum
             case self::AZURE_COMPUTER_VISION:
                 return 'image';
             default:
-                throw new \InvalidArgumentException("Unknown model: {$this->value}");
+                return 'text'; // Default content type for unknown models
         }
     }
 
@@ -872,8 +963,25 @@ class EntityEnum
             case self::DEEPSEEK_REASONER:
                 return 65536;
             default:
-                throw new \InvalidArgumentException("Unknown model: {$this->value}");
+                // Try to get max tokens from database
+                return $this->getMaxTokensFromDatabase();
         }
+    }
+    
+    /**
+     * Get max tokens from database for unknown models
+     */
+    protected function getMaxTokensFromDatabase(): int
+    {
+        try {
+            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($this->value);
+            if ($dbModel && $dbModel->max_tokens) {
+                return (int) $dbModel->max_tokens;
+            }
+        } catch (\Exception $e) {
+            // Database not available
+        }
+        return 128000; // Default max tokens
     }
 
     /**
@@ -898,8 +1006,25 @@ class EntityEnum
             case self::GPT_5_NANO:
                 return false;
             default:
-                throw new \InvalidArgumentException("Unknown model: {$this->value}");
+                // Check database for vision support
+                return $this->getSupportsVisionFromDatabase();
         }
+    }
+    
+    /**
+     * Get vision support from database for unknown models
+     */
+    protected function getSupportsVisionFromDatabase(): bool
+    {
+        try {
+            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($this->value);
+            if ($dbModel) {
+                return (bool) $dbModel->supports_vision;
+            }
+        } catch (\Exception $e) {
+            // Database not available
+        }
+        return false; // Default: no vision support
     }
 
     /**
@@ -923,8 +1048,25 @@ class EntityEnum
             case self::DEEPSEEK_REASONER:
                 return true;
             default:
-                throw new \InvalidArgumentException("Unknown model: {$this->value}");
+                // Check database for streaming support
+                return $this->getSupportsStreamingFromDatabase();
         }
+    }
+    
+    /**
+     * Get streaming support from database for unknown models
+     */
+    protected function getSupportsStreamingFromDatabase(): bool
+    {
+        try {
+            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($this->value);
+            if ($dbModel) {
+                return (bool) $dbModel->supports_streaming;
+            }
+        } catch (\Exception $e) {
+            // Database not available
+        }
+        return true; // Default: assume streaming support
     }
 
     /**
@@ -1069,12 +1211,10 @@ class EntityEnum
 
     /**
      * Create model from value
+     * Accepts any model string - validation is done via config, not enum
      */
     public static function from(string $value): self
     {
-        if (!in_array($value, self::all())) {
-            throw new \InvalidArgumentException("Invalid model value: {$value}");
-        }
         return new self($value);
     }
 
