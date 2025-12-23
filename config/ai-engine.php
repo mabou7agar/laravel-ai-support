@@ -974,6 +974,27 @@ return [
         // Cache TTL (seconds)
         'cache_ttl' => env('AI_ENGINE_CACHE_TTL', 900),
 
+        // Cache configuration
+        'cache' => [
+            // Enable caching for federated search
+            'enabled' => env('AI_ENGINE_CACHE_ENABLED', true),
+            
+            // Cache driver: null (use default), 'file', 'redis', 'memcached', 'database', 'array'
+            'driver' => env('AI_ENGINE_CACHE_DRIVER'),
+            
+            // Cache store name (if using a specific store from config/cache.php)
+            'store' => env('AI_ENGINE_CACHE_STORE'),
+            
+            // Cache prefix for all keys
+            'prefix' => env('AI_ENGINE_CACHE_PREFIX', 'ai_engine'),
+            
+            // Use database as fallback/persistent cache (requires ai_node_search_cache table)
+            'use_database' => env('AI_ENGINE_CACHE_USE_DATABASE', false),
+            
+            // Enable cache tags (only works with Redis/Memcached)
+            'use_tags' => env('AI_ENGINE_CACHE_USE_TAGS', false),
+        ],
+
         // Max parallel requests
         'max_parallel_requests' => env('AI_ENGINE_MAX_PARALLEL_REQUESTS', 10),
 
