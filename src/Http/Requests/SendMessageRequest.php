@@ -32,6 +32,7 @@ class SendMessageRequest extends FormRequest
             'force_rag' => 'sometimes|boolean',
             'rag_collections' => 'sometimes|array',
             'rag_collections.*' => 'string',
+            'search_instructions' => 'sometimes|string|max:500',
         ];
     }
 
@@ -64,7 +65,8 @@ class SendMessageRequest extends FormRequest
             userId: auth()->user()?->id ?? config('ai-engine.demo_user_id', '1'),
             intelligentRag: $this->validated('intelligent_rag', false),
             forceRag: $this->validated('force_rag', false),
-            ragCollections: $this->validated('rag_collections', null)
+            ragCollections: $this->validated('rag_collections', null),
+            searchInstructions: $this->validated('search_instructions', null)
         );
     }
 }

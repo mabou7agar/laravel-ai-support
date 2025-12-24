@@ -54,7 +54,8 @@ class ChatService
         bool $useActions = true,
         bool $useIntelligentRAG = true,
         array $ragCollections = [],
-        $userId = null
+        $userId = null,
+        ?string $searchInstructions = null
     ): AIResponse {
         // Preprocess message to detect numbered selections
         $processedMessage = $this->preprocessMessage($message, $sessionId, $useMemory);
@@ -147,6 +148,7 @@ class ChatService
                         'engine' => $engine,
                         'model' => $model,
                         'max_tokens' => 2000,
+                        'search_instructions' => $searchInstructions,
                     ],
                     $userId // CRITICAL: User ID for access control (fetched internally)
                 );

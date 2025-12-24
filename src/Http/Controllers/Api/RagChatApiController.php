@@ -100,7 +100,8 @@ class RagChatApiController extends Controller
                 useActions: $useActions,
                 useIntelligentRAG: $useIntelligentRAG,
                 ragCollections: $ragCollections,
-                userId: $userId
+                userId: $userId,
+                searchInstructions: $dto->searchInstructions
             );
 
             // Get metadata

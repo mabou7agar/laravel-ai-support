@@ -15,7 +15,8 @@ class SendMessageDTO
         public readonly ?string $userId = null,
         public readonly bool $intelligentRag = false,
         public readonly bool $forceRag = false,
-        public readonly ?array $ragCollections = null
+        public readonly ?array $ragCollections = null,
+        public readonly ?string $searchInstructions = null
     ) {}
 
     public function toArray(): array
@@ -32,6 +33,7 @@ class SendMessageDTO
             'intelligent_rag' => $this->intelligentRag,
             'force_rag' => $this->forceRag,
             'rag_collections' => $this->ragCollections,
+            'search_instructions' => $this->searchInstructions,
         ];
     }
 }

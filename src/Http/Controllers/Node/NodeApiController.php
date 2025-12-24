@@ -222,6 +222,88 @@ class NodeApiController extends Controller
     }
     
     /**
+     * Aggregate data endpoint
+     * Returns counts and stats for specified collections
+     */
+    public function aggregate(Request $request)
+    {
+        $validated = $request->validate([
+            'collections' => 'required|array',
+            'collections.*' => 'string',
+            'user_id' => 'nullable|integer',
+        ]);
+        
+        $startTime = microtime(true);
+        
+        try {
+            $collections = $validated['collections'];
+            $userId = $validated['user_id'] ?? null;
+            $aggregateData = [];
+            
+            $vectorSearch = app(VectorSearchService::class);
+            
+            foreach ($collections as $collection) {
+                if (!class_exists($collection)) {
+                    continue;
+                }
+                
+                try {
+                    $instance = new $collection();
+                    $displayName = class_basename($collection);
+                    $description = '';
+                    
+                    // Get display name and description
+                    if (method_exists($instance, 'getRAGDisplayName')) {
+                        $displayName = $instance->getRAGDisplayName();
+                    }
+                    if (method_exists($instance, 'getRAGDescription')) {
+                        $description = $instance->getRAGDescription();
+                    }
+                    
+                    // Build filters for vector database query
+                    $filters = [];
+                    if ($userId !== null) {
+                        $filters['user_id'] = $userId;
+                    }
+                    
+                    // Get count from vector database
+                    $vectorCount = $vectorSearch->getIndexedCountWithFilters($collection, $filters);
+                    
+                    $aggregateData[$collection] = [
+                        'count' => $vectorCount,
+                        'indexed_count' => $vectorCount,
+                        'display_name' => $displayName,
+                        'description' => $description,
+                        'source' => 'vector_database',
+                    ];
+                    
+                } catch (\Exception $e) {
+                    \Log::warning('Failed to get aggregate for collection', [
+                        'collection' => $collection,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            
+            $duration = (microtime(true) - $startTime) * 1000;
+            
+            return response()->json([
+                'success' => true,
+                'aggregate_data' => $aggregateData,
+                'count' => count($aggregateData),
+                'duration_ms' => round($duration, 2),
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Aggregate query failed',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    
+    /**
      * Action execution endpoint
      */
     public function executeAction(Request $request)

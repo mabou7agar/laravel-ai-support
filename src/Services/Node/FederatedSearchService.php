@@ -495,6 +495,136 @@ class FederatedSearchService
     }
 
     /**
+     * Get aggregate data from all nodes (local + remote)
+     */
+    public function getAggregateData(array $collections, $userId = null): array
+    {
+        $startTime = microtime(true);
+        $aggregateData = [];
+        
+        try {
+            // Get nodes to query (pass null to get all active nodes)
+            $nodes = $this->getSearchableNodes(null);
+            
+            // Get local aggregate data first
+            $localAggregate = $this->getLocalAggregateData($collections, $userId);
+            $aggregateData = $localAggregate;
+            
+            // Get remote aggregate data from each node
+            foreach ($nodes as $node) {
+                try {
+                    $response = Http::timeout(5)
+                        ->withToken($node->api_key)
+                        ->post($node->url . '/api/ai-engine/aggregate', [
+                            'collections' => $collections,
+                            'user_id' => $userId,
+                        ]);
+                    
+                    if ($response->successful()) {
+                        $responseData = $response->json();
+                        $remoteData = $responseData['aggregate_data'] ?? [];
+                        
+                        // Merge remote data with local data
+                        foreach ($remoteData as $collection => $stats) {
+                            if (!isset($aggregateData[$collection])) {
+                                // New collection from remote node
+                                $aggregateData[$collection] = $stats;
+                                $aggregateData[$collection]['source'] = 'remote_node';
+                                $aggregateData[$collection]['node'] = $node->name;
+                            } else {
+                                // Collection exists locally, sum the counts
+                                $aggregateData[$collection]['count'] += $stats['count'] ?? 0;
+                                $aggregateData[$collection]['indexed_count'] += $stats['indexed_count'] ?? 0;
+                                $aggregateData[$collection]['source'] = 'federated';
+                            }
+                        }
+                        
+                        Log::channel('ai-engine')->info('Fetched aggregate from remote node', [
+                            'node' => $node->name,
+                            'collections_count' => count($remoteData),
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::channel('ai-engine')->warning('Failed to get aggregate from node', [
+                        'node' => $node->name,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            
+            $duration = (microtime(true) - $startTime) * 1000;
+            
+            Log::channel('ai-engine')->info('Federated aggregate completed', [
+                'collections_count' => count($aggregateData),
+                'duration_ms' => round($duration, 2),
+            ]);
+            
+            return $aggregateData;
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Federated aggregate failed', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Fallback to local only
+            return $this->getLocalAggregateData($collections, $userId);
+        }
+    }
+    
+    /**
+     * Get local aggregate data only
+     */
+    protected function getLocalAggregateData(array $collections, $userId = null): array
+    {
+        $aggregateData = [];
+        
+        foreach ($collections as $collection) {
+            if (!class_exists($collection)) {
+                continue;
+            }
+            
+            try {
+                $instance = new $collection();
+                $displayName = class_basename($collection);
+                $description = '';
+                
+                // Get display name and description
+                if (method_exists($instance, 'getRAGDisplayName')) {
+                    $displayName = $instance->getRAGDisplayName();
+                }
+                if (method_exists($instance, 'getRAGDescription')) {
+                    $description = $instance->getRAGDescription();
+                }
+                
+                // Build filters for vector database query
+                $filters = [];
+                if ($userId !== null) {
+                    $filters['user_id'] = $userId;
+                }
+                
+                // Get count from vector database
+                $vectorCount = $this->localSearch->getIndexedCountWithFilters($collection, $filters);
+                
+                $aggregateData[$collection] = [
+                    'count' => $vectorCount,
+                    'indexed_count' => $vectorCount,
+                    'display_name' => $displayName,
+                    'description' => $description,
+                    'source' => 'local',
+                ];
+                
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Failed to get local aggregate for collection', [
+                    'collection' => $collection,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+        
+        return $aggregateData;
+    }
+
+    /**
      * Generate cache key
      */
     protected function generateCacheKey(string $query, ?array $nodeIds, array $options): string

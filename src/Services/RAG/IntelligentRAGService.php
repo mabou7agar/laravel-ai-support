@@ -291,6 +291,7 @@ class IntelligentRAGService
                 array_merge($options, [
                     'available_collections' => $availableCollections,
                     'aggregate_data' => $aggregateData,
+                    'search_instructions' => $options['search_instructions'] ?? null,
                 ])
             );
 
@@ -1196,6 +1197,14 @@ PROMPT;
                             $obj->vector_score = $result['score'];
                         }
 
+                        // CRITICAL: Preserve source node attribution from federated search
+                        if (isset($result['source_node'])) {
+                            $obj->source_node = $result['source_node'];
+                        }
+                        if (isset($result['source_node_name'])) {
+                            $obj->source_node_name = $result['source_node_name'];
+                        }
+
                         $allResults->push($obj);
                     }
                 }
@@ -1355,6 +1364,31 @@ PROMPT;
         }
 
         $prompt .= "CURRENT QUESTION: {$message}\n\n";
+
+        // Collect search instructions from models and merge with API-level instructions
+        $modelInstructions = null;
+        $availableCollections = $options['available_collections'] ?? [];
+        if (!empty($availableCollections)) {
+            $modelInstructions = $this->collectModelSearchInstructions($availableCollections);
+        }
+        
+        $apiInstructions = $options['search_instructions'] ?? null;
+        
+        // Merge model-level and API-level instructions
+        $combinedInstructions = [];
+        if (!empty($modelInstructions)) {
+            $combinedInstructions[] = $modelInstructions;
+        }
+        if (!empty($apiInstructions)) {
+            $combinedInstructions[] = $apiInstructions;
+        }
+        
+        if (!empty($combinedInstructions)) {
+            $prompt .= "SPECIAL INSTRUCTIONS FOR THIS SEARCH:\n";
+            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            $prompt .= implode("\n\n", $combinedInstructions) . "\n";
+            $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        }
 
         if ($context->isNotEmpty()) {
             // Context found - answer directly with email-aware instructions
@@ -2206,6 +2240,18 @@ PROMPT;
      */
     protected function getAggregateData(array $collections, $userId = null): array
     {
+        // Use federated search for aggregate if enabled
+        $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
+        
+        if ($useFederatedSearch) {
+            Log::channel('ai-engine')->info('Using federated aggregate data', [
+                'collections_count' => count($collections),
+                'user_id' => $userId,
+            ]);
+            return $this->federatedSearch->getAggregateData($collections, $userId);
+        }
+        
+        // Otherwise use local only
         $aggregateData = [];
 
         foreach ($collections as $collection) {
@@ -2433,6 +2479,41 @@ PROMPT;
         }
 
         return 'Unknown';
+    }
+
+    /**
+     * Collect search instructions from models being searched
+     *
+     * @param array $collections Array of model class names
+     * @return string|null Combined search instructions from all models
+     */
+    protected function collectModelSearchInstructions(array $collections): ?string
+    {
+        $instructions = [];
+
+        foreach ($collections as $collection) {
+            if (!class_exists($collection)) {
+                continue;
+            }
+
+            try {
+                // Check if model has getRagSearchInstructions method
+                if (method_exists($collection, 'getRagSearchInstructions')) {
+                    $modelInstructions = $collection::getRagSearchInstructions();
+                    if (!empty($modelInstructions)) {
+                        $modelName = class_basename($collection);
+                        $instructions[] = "For {$modelName}: {$modelInstructions}";
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Failed to get search instructions from model', [
+                    'model' => $collection,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return !empty($instructions) ? implode("\n", $instructions) : null;
     }
 
     /**
