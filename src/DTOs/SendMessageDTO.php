@@ -12,7 +12,10 @@ class SendMessageDTO
         public readonly bool $memory = true,
         public readonly bool $actions = true,
         public readonly bool $streaming = false,
-        public readonly ?string $userId = null
+        public readonly ?string $userId = null,
+        public readonly bool $intelligentRag = false,
+        public readonly bool $forceRag = false,
+        public readonly ?array $ragCollections = null
     ) {}
 
     public function toArray(): array
@@ -26,6 +29,9 @@ class SendMessageDTO
             'actions' => $this->actions,
             'streaming' => $this->streaming,
             'user_id' => $this->userId,
+            'intelligent_rag' => $this->intelligentRag,
+            'force_rag' => $this->forceRag,
+            'rag_collections' => $this->ragCollections,
         ];
     }
 }

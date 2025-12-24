@@ -159,19 +159,38 @@ class IntelligentRAGService
                 // If user passed collections, validate AI suggestions against them
                 // If using auto-discovery (empty availableCollections), trust AI's selection
                 if (!empty($availableCollections)) {
-                    // Validate AI-suggested collections - only use ones that exist in user's passed collections
-                    $validCollections = array_filter($suggestedCollections, function ($collection) use ($availableCollections) {
-                        return class_exists($collection) && in_array($collection, $availableCollections);
-                    });
+                    // When federated search is enabled, skip class_exists check
+                    // Child nodes will validate if they have the class
+                    $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
+                    
+                    if ($useFederatedSearch) {
+                        // For federated search, only check if collection is in user's passed list
+                        $validCollections = array_filter($suggestedCollections, function ($collection) use ($availableCollections) {
+                            return in_array($collection, $availableCollections);
+                        });
+                    } else {
+                        // For local search only, validate collections exist locally
+                        $validCollections = array_filter($suggestedCollections, function ($collection) use ($availableCollections) {
+                            return class_exists($collection) && in_array($collection, $availableCollections);
+                        });
+                    }
 
                     // If AI suggested valid subset, use it; otherwise use ALL user-passed collections
                     // Never search beyond what user explicitly passed
                     $collectionsToSearch = !empty($validCollections) ? $validCollections : $availableCollections;
                 } else {
                     // Auto-discovery mode: trust AI's selection from discovered collections
-                    $collectionsToSearch = array_filter($suggestedCollections, function ($collection) {
-                        return class_exists($collection);
-                    });
+                    $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
+                    
+                    if ($useFederatedSearch) {
+                        // For federated search, accept all suggested collections
+                        $collectionsToSearch = $suggestedCollections;
+                    } else {
+                        // For local search, validate collections exist locally
+                        $collectionsToSearch = array_filter($suggestedCollections, function ($collection) {
+                            return class_exists($collection);
+                        });
+                    }
                     
                     // If AI didn't suggest any, use all discovered collections
                     if (empty($collectionsToSearch)) {
@@ -546,9 +565,11 @@ Query analyzer for knowledge base. Determine if we should search.
 
 RULES:
 1. DEFAULT: needs_context: true (always search unless pure greeting)
-2. Skip search ONLY for: "hi", "hello", simple math
+2. Skip search ONLY for: "hi", "hello", "thanks", simple math, pure acknowledgments
 3. ALWAYS generate semantic search terms that will match indexed content
 4. ONLY use collections from the available list above - never invent collection names
+5. CRITICAL: Queries like "tell me about X", "more info on X", "details about X" → ALWAYS needs_context: true, search for X
+6. If query mentions ANY specific item/product/topic name → needs_context: true
 
 RESPOND WITH JSON:
 {"needs_context": true, "reasoning": "brief reason", "search_queries": ["term1", "term2", "term3"], "collections": ["FullClassName"], "query_type": "informational", "needs_aggregate": false}
@@ -559,26 +580,17 @@ QUERY TYPES:
 - "conversational" → General chat, greetings
 
 CRITICAL COLLECTION SELECTION RULES:
-1. READ the description of each collection carefully to select the RIGHT one
-2. MATCH query keywords to collection descriptions:
-   - Query contains "article", "post", "blog", "tutorial", "guide" → Look for collections mentioning these
-   - Query contains "email", "message", "inbox" → Look for email-related collections
-   - Query contains "document", "file", "contract" → Look for document collections
-   - Query contains "user", "account", "profile" → Look for user collections
-3. Examples:
-   - "Find Milk products" → Select Product collection (description mentions "products", "items")
-   - "Show contract with Acme" → Select Document collection (description mentions "contracts", "agreements")
-   - "Did John email me?" → Select Email collection (description mentions "email", "messages")
-   - "Find Laravel articles" → Select Post/Article collection (description mentions "articles", "blog posts", "tutorials")
-   - "Show me Laravel tutorials" → Select Post/Article collection (description mentions "tutorials", "guides")
-4. DO NOT select all collections - be selective based on query relevance
-5. When query clearly matches ONE collection, use ONLY that collection
-6. Use multiple collections ONLY when query spans multiple domains
-7. IMPORTANT: If a collection description explicitly mentions the query topic (e.g., "Laravel" in description), SELECT IT
-8. Collections without descriptions: If a collection has no description or generic description like "Search through X", INCLUDE IT if:
-   - Query is ambiguous or general
-   - Collection name matches query keywords (e.g., "Post" for "posts", "Document" for "documents")
-   - No other collections have clear matches
+1. MATCH query keywords to collection descriptions - read descriptions carefully
+2. Look for keyword overlap between query and collection description
+3. Collections may exist on different nodes - select based on description match, not node location
+4. If query mentions specific data type (products, services, invoices, orders, emails), find collections whose description mentions that type
+5. If multiple collections could match, include ALL relevant ones from ALL nodes
+6. BE DECISIVE: If collection description clearly matches query intent, SELECT IT regardless of which node it's on
+7. Default to searching ALL collections if uncertain - better to over-search than miss results
+8. Examples:
+   - Query "show me products" + Collection with description "Products and services catalog" → SELECT IT
+   - Query "gardening services" + Collection with description "Search through Product Service" → SELECT IT (services match)
+   - Query "my emails" + Collection with description "Email messages from mailboxes" → SELECT IT
 
 CRITICAL SEARCH QUERY RULES:
 1. NEVER use abstract terms like "most important" or "best" alone - they won't match content
@@ -591,18 +603,24 @@ CRITICAL SEARCH QUERY RULES:
 3. For email-related queries, include email-specific terms:
    - ["unread", "inbox", "reply needed", "follow up", "meeting", "reminder", "deadline"]
 
-4. For follow-up queries ("tell me more", "that one", "this email"):
-   - Extract the ACTUAL topic/subject from conversation history
-   - Use specific terms from previous messages
+4. For queries asking about specific items (with or without conversation history):
+   - If user asks "tell me about X", "more info on X", "details about X" → Extract X and use as EXACT search query
+   - Example: "tell me about Sprinkler Heads" → Search for "Sprinkler Heads" exactly
+   - Example: "more info on Gardening" → Search for "Gardening" exactly
+   - If conversation history shows X was in previous results, keep the SAME collection
+   - If no history, let collection selection rules determine appropriate collection based on X
 
-5. Short specific queries that match items from previous response:
-   - If query looks like an email subject, document title, or item name from history → Use EXACT query as search term
-   - Example: User asks about "Re: Check App" after seeing email list → Search for "Re: Check App" exactly
-   - Include any context identifiers (email addresses, account names) from history in search
+5. For numbered references (e.g., "tell me about #2", "more on option 3"):
+   - Look at previous assistant response for numbered items
+   - Extract the title/name of that numbered item
+   - Use exact title as search query
+   - Example: Previous showed "2. Sprinkler Heads" → User asks "tell me about #2" → Search for "Sprinkler Heads"
 
-6. Short specific queries (e.g., "Password Reset Request") → Use EXACT query
+6. Short specific queries that match items from previous response:
+   - If query looks like a product name, email subject, or document title from history → Use EXACT query as search term
+   - Include any context identifiers (IDs, names) from history in search
 
-6. Technical questions → Extract key terms: ["Laravel routing", "API endpoint"]
+7. Technical questions → Extract key terms: ["Laravel routing", "API endpoint"]
 
 7. Aggregate queries (how many, count, total) → Set needs_aggregate: true
 
@@ -622,7 +640,11 @@ PROMPT;
                 $preview = mb_substr($m['content'], 0, $maxLen);
                 $conversationContext .= "- {$m['role']}: {$preview}" . (strlen($m['content']) > $maxLen ? '...' : '') . "\n";
             }
-            $conversationContext .= "\nIMPORTANT: If user's query matches an item title/subject from the assistant's previous response, search for that EXACT item.\n";
+            $conversationContext .= "\nCRITICAL FOLLOW-UP RULES:\n";
+            $conversationContext .= "1. If user asks about a specific item/product name from previous response → Use EXACT name as search query\n";
+            $conversationContext .= "2. If user uses numbered reference (#1, #2, option 3) → Extract item name from that number in previous response\n";
+            $conversationContext .= "3. If user asks 'tell me more', 'details', 'info about that' → Look for item name in their message or previous context\n";
+            $conversationContext .= "4. Keep the SAME collection as the previous search for follow-up queries\n";
         }
 
         $analysisPrompt = <<<PROMPT
@@ -1621,6 +1643,10 @@ PROMPT;
             // Get display name - check for custom display name method or property
             $displayName = $this->getModelDisplayName($item, $modelClass);
 
+            // Extract source node information from federated search results
+            $sourceNode = $item->source_node ?? null;
+            $sourceNodeName = $item->source_node_name ?? null;
+
             return [
                 'id' => $item->id ?? null,
                 'model_id' => $item->id ?? null,  // Original model ID
@@ -1631,6 +1657,9 @@ PROMPT;
                 'content_preview' => isset($item->content)
                     ? substr($item->content, 0, 200)
                     : (isset($item->body) ? substr($item->body, 0, 200) : null),
+                'source_node' => $sourceNode,  // Node slug (e.g., 'dash', 'inbusiness')
+                'source_node_name' => $sourceNodeName,  // Node display name (e.g., 'Dash', 'InBusiness')
+                'score' => $item->vector_score ?? $item->score ?? null,  // Include score for debugging
             ];
         })->toArray();
 

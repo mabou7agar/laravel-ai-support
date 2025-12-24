@@ -123,7 +123,7 @@ class NodeApiController extends Controller
     /**
      * Search endpoint (for remote nodes to call)
      */
-    public function search(Request $request, VectorSearchService $searchService)
+    public function search(Request $request)
     {
         $validated = $request->validate([
             'query' => 'required|string',
@@ -144,14 +144,21 @@ class NodeApiController extends Controller
                     continue;
                 }
                 
-                $searchResults = $searchService->search(
-                    modelClass: $collection,
+                // Use the model's vectorSearch trait method directly
+                // This works regardless of whether VectorSearchService is registered
+                $searchResults = $collection::vectorSearch(
                     query: $validated['query'],
                     limit: $validated['limit'] ?? 10,
                     threshold: $validated['options']['threshold'] ?? 0.3,
-                    filters: $filters,
                     userId: $userId
                 );
+                
+                \Log::info('NodeApiController: vectorSearch returned', [
+                    'collection' => $collection,
+                    'count' => count($searchResults),
+                    'is_collection' => $searchResults instanceof \Illuminate\Support\Collection,
+                    'first_item_class' => $searchResults->first() ? get_class($searchResults->first()) : null,
+                ]);
                 
                 foreach ($searchResults as $result) {
                     \Log::info('NodeApiController: Adding result with metadata', [
@@ -186,11 +193,25 @@ class NodeApiController extends Controller
             
             $duration = (microtime(true) - $startTime) * 1000;
             
-            return response()->json([
+            \Log::info('NodeApiController: About to return response', [
+                'results_count' => count($results),
+                'results_ids' => array_column($results, 'id'),
+                'results_sample' => array_slice($results, 0, 1),
+            ]);
+            
+            $responseData = [
                 'results' => $results,
                 'count' => count($results),
                 'duration_ms' => round($duration, 2),
+            ];
+            
+            \Log::info('NodeApiController: Response data prepared', [
+                'response_count' => $responseData['count'],
+                'response_results_count' => count($responseData['results']),
+                'response_json_preview' => substr(json_encode($responseData), 0, 500),
             ]);
+            
+            return response()->json($responseData);
             
         } catch (\Exception $e) {
             return response()->json([

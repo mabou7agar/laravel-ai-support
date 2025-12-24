@@ -17,7 +17,7 @@ class FederatedSearchService
         protected CircuitBreakerService $circuitBreaker,
         protected LoadBalancerService $loadBalancer
     ) {}
-    
+
     /**
      * Search across all nodes (federated search)
      */
@@ -29,15 +29,15 @@ class FederatedSearchService
         $userId = null
     ): array {
         $startTime = microtime(true);
-        
+
         // Add userId to options if provided
         if ($userId !== null) {
             $options['user_id'] = $userId;
         }
-        
+
         // Generate cache key
         $cacheKey = $this->generateCacheKey($query, $nodeIds, $options);
-        
+
         // Check cache
         if ($cached = $this->cache->getCachedSearch($query, $nodeIds ?? [], $options)) {
             Log::channel('ai-engine')->debug('Federated search cache hit', [
@@ -45,44 +45,44 @@ class FederatedSearchService
             ]);
             return $cached;
         }
-        
+
         try {
             // Get nodes to search
             $nodes = $this->getSearchableNodes($nodeIds);
-            
+
             // Search local node first
             $localResults = $this->searchLocal($query, $limit, $options);
-            
+
             // Search remote nodes in parallel
             $remoteResults = $this->searchRemoteNodes($nodes, $query, $limit, $options);
-            
+
             \Log::debug('🔍 Remote search results', [
                 'remote_count' => count($remoteResults),
                 'remote_results' => $remoteResults,
             ]);
-            
+
             // Merge and rank results
             $mergedResults = $this->mergeResults($localResults, $remoteResults, $limit, $query);
-            
+
             $duration = (int) ((microtime(true) - $startTime) * 1000);
-            
+
             // Cache results
             $this->cache->cacheSearch($query, $nodeIds ?? [], $mergedResults, $duration, $options);
-            
+
             return $mergedResults;
-            
+
         } catch (\Exception $e) {
             \Log::error('🚨 Federated search failed', [
                 'query' => $query,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-            
+
             // Fallback to local search only
             return $this->fallbackToLocal($query, $limit, $options);
         }
     }
-    
+
     /**
      * Search local node
      */
@@ -92,7 +92,7 @@ class FederatedSearchService
             $collections = $options['collections'] ?? [];
             $userId = $options['user_id'] ?? null;
             $results = [];
-            
+
             if (empty($collections)) {
                 Log::channel('ai-engine')->debug('No collections specified for local search');
                 return [
@@ -102,12 +102,12 @@ class FederatedSearchService
                     'count' => 0,
                 ];
             }
-            
+
             foreach ($collections as $collection) {
                 if (!class_exists($collection)) {
                     continue;
                 }
-                
+
                 try {
                     $searchResults = $this->localSearch->search(
                         $collection,
@@ -117,7 +117,7 @@ class FederatedSearchService
                         $options['filters'] ?? [],
                         $userId
                     );
-                    
+
                     foreach ($searchResults as $result) {
                         $results[] = [
                             'id' => $result->id ?? null,
@@ -148,20 +148,20 @@ class FederatedSearchService
                     ]);
                 }
             }
-            
+
             return [
                 'node' => 'master',
                 'node_name' => 'Master Node',
                 'results' => $results,
                 'count' => count($results),
             ];
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Local search failed', [
                 'query' => $query,
                 'error' => $e->getMessage(),
             ]);
-            
+
             return [
                 'node' => 'master',
                 'node_name' => 'Master Node',
@@ -171,7 +171,7 @@ class FederatedSearchService
             ];
         }
     }
-    
+
     /**
      * Search remote nodes in parallel using HTTP Pool
      */
@@ -184,14 +184,14 @@ class FederatedSearchService
         if ($nodes->isEmpty()) {
             return [];
         }
-        
+
         // Use load balancer to select best nodes
         $selectedNodes = $this->loadBalancer->selectNodes(
             $nodes,
             $options['max_nodes'] ?? null,
             $options['load_balance_strategy'] ?? LoadBalancerService::STRATEGY_RESPONSE_TIME
         );
-        
+
         // Filter nodes by circuit breaker
         $nodesToSearch = [];
         foreach ($selectedNodes as $node) {
@@ -203,33 +203,33 @@ class FederatedSearchService
             }
             $nodesToSearch[$node->slug] = $node;
         }
-        
+
         if (empty($nodesToSearch)) {
             return [];
         }
-        
+
         $traceId = \Str::random(16);
-        
+
         // Increment active connections for all nodes
         foreach ($nodesToSearch as $node) {
             $node->incrementConnections();
         }
-        
+
         // Use HTTP Pool for TRUE parallel requests
         $verifySSL = config('ai-engine.nodes.verify_ssl', true);
         $timeout = config('ai-engine.nodes.request_timeout', 30);
-        
+
         $responses = Http::pool(function ($pool) use ($nodesToSearch, $query, $limit, $options, $traceId, $verifySSL, $timeout) {
             foreach ($nodesToSearch as $slug => $node) {
                 $request = $pool->as($slug)
                     ->withHeaders(NodeHttpClient::getSearchHeaders($node, $traceId))
                     ->timeout($timeout);
-                
+
                 // Disable SSL verification if configured
                 if (!$verifySSL) {
                     $request = $request->withOptions(['verify' => false]);
                 }
-                
+
                 $request->post($node->getApiUrl('search'), [
                     'query' => $query,
                     'limit' => $limit,
@@ -237,29 +237,29 @@ class FederatedSearchService
                 ]);
             }
         });
-        
+
         // Process responses from HTTP Pool
         $results = [];
-        
+
         foreach ($responses as $slug => $response) {
             $node = $nodesToSearch[$slug] ?? null;
-            
+
             if (!$node) {
                 continue;
             }
-            
+
             // Decrement active connections
             $node->decrementConnections();
-            
+
             // Check if response is an exception (pool returns exceptions for failed requests)
             if ($response instanceof \Exception) {
                 $this->circuitBreaker->recordFailure($node);
-                
+
                 Log::channel('ai-engine')->warning('Node search failed', [
                     'node' => $slug,
                     'error' => $response->getMessage(),
                 ]);
-                
+
                 $results[] = [
                     'node' => $slug,
                     'node_name' => $node->name,
@@ -267,13 +267,29 @@ class FederatedSearchService
                     'count' => 0,
                     'error' => 'Request failed',
                 ];
-                
+
                 continue;
             }
-            
+
             if ($response->successful()) {
                 $responseData = $response->json();
-                
+
+                \Log::info('Master: Raw HTTP response received', [
+                    'node' => $slug,
+                    'status' => $response->status(),
+                    'body_length' => strlen($response->body()),
+                    'body_preview' => substr($response->body(), 0, 1000),
+                ]);
+
+                \Log::info('Master: Decoded JSON response', [
+                    'node' => $slug,
+                    'response_data' => $responseData,
+                    'results_key_exists' => isset($responseData['results']),
+                    'results_is_array' => is_array($responseData['results'] ?? null),
+                    'results_count' => count($responseData['results'] ?? []),
+                    'count_key_value' => $responseData['count'] ?? 'not set',
+                ]);
+
                 $results[] = [
                     'node' => $slug,
                     'node_name' => $node->name,
@@ -281,10 +297,10 @@ class FederatedSearchService
                     'count' => count($responseData['results'] ?? []),
                     'duration_ms' => $responseData['duration_ms'] ?? 0,
                 ];
-                
+
                 // Record success
                 $this->circuitBreaker->recordSuccess($node);
-                
+
                 Log::channel('ai-engine')->debug('Node search successful', [
                     'node' => $slug,
                     'count' => count($responseData['results'] ?? []),
@@ -292,13 +308,13 @@ class FederatedSearchService
                 ]);
             } else {
                 $this->circuitBreaker->recordFailure($node);
-                
+
                 Log::channel('ai-engine')->warning('Node search failed', [
                     'node' => $slug,
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
-                
+
                 $results[] = [
                     'node' => $slug,
                     'node_name' => $node->name,
@@ -308,23 +324,23 @@ class FederatedSearchService
                 ];
             }
         }
-        
+
         return $results;
     }
-    
+
     /**
      * Merge and rank results from all nodes
      */
     protected function mergeResults(array $local, array $remote, int $limit, string $query): array
     {
         $allResults = [];
-        
+
         \Log::info('mergeResults called', [
             'local_count' => count($local['results'] ?? []),
             'remote_nodes_count' => count($remote),
             'limit' => $limit,
         ]);
-        
+
         // Add local results
         foreach ($local['results'] as $result) {
             $allResults[] = array_merge($result, [
@@ -332,19 +348,19 @@ class FederatedSearchService
                 'source_node_name' => 'Master Node',
             ]);
         }
-        
+
         // Add remote results
         $remoteResultsCount = 0;
         foreach ($remote as $nodeResults) {
             $nodeResultCount = count($nodeResults['results'] ?? []);
             $remoteResultsCount += $nodeResultCount;
-            
+
             \Log::info('Adding remote node results', [
                 'node' => $nodeResults['node'] ?? 'unknown',
                 'node_name' => $nodeResults['node_name'] ?? 'unknown',
                 'results_count' => $nodeResultCount,
             ]);
-            
+
             foreach ($nodeResults['results'] as $result) {
                 $allResults[] = array_merge($result, [
                     'source_node' => $nodeResults['node'],
@@ -352,33 +368,33 @@ class FederatedSearchService
                 ]);
             }
         }
-        
+
         \Log::info('After adding all results', [
             'total_before_sort' => count($allResults),
             'local_count' => count($local['results'] ?? []),
             'remote_count' => $remoteResultsCount,
         ]);
-        
+
         // Sort by score (descending)
         usort($allResults, fn ($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
-        
+
         // Deduplicate by content hash
         $beforeDedup = count($allResults);
         $allResults = $this->deduplicateResults($allResults);
-        
+
         \Log::info('After deduplication', [
             'before' => $beforeDedup,
             'after' => count($allResults),
         ]);
-        
+
         // Limit results
         $allResults = array_slice($allResults, 0, $limit);
-        
+
         \Log::info('mergeResults final', [
             'final_count' => count($allResults),
             'first_result_content_preview' => isset($allResults[0]['content']) ? substr($allResults[0]['content'], 0, 100) : 'no content',
         ]);
-        
+
         return [
             'query' => $query,
             'total_results' => count($allResults),
@@ -387,7 +403,7 @@ class FederatedSearchService
             'node_breakdown' => $this->getNodeBreakdown($allResults),
         ];
     }
-    
+
     /**
      * Deduplicate results by content similarity
      */
@@ -395,58 +411,58 @@ class FederatedSearchService
     {
         $unique = [];
         $hashes = [];
-        
+
         foreach ($results as $result) {
             $content = $result['content'] ?? '';
             $hash = md5($content);
-            
+
             if (!in_array($hash, $hashes)) {
                 $unique[] = $result;
                 $hashes[] = $hash;
             }
         }
-        
+
         return $unique;
     }
-    
+
     /**
      * Get node breakdown
      */
     protected function getNodeBreakdown(array $results): array
     {
         $breakdown = [];
-        
+
         foreach ($results as $result) {
             $node = $result['source_node'] ?? 'unknown';
             $breakdown[$node] = ($breakdown[$node] ?? 0) + 1;
         }
-        
+
         return $breakdown;
     }
-    
+
     /**
      * Get searchable nodes
      */
     protected function getSearchableNodes(?array $nodeIds): Collection
     {
         $query = AINode::active()->healthy()->child();
-        
+
         if ($nodeIds) {
             $query->whereIn('id', $nodeIds);
         }
-        
+
         return $query->get();
     }
-    
+
     /**
      * Fallback to local search only
      */
     protected function fallbackToLocal(string $query, int $limit, array $options): array
     {
         Log::channel('ai-engine')->warning('Falling back to local search only');
-        
+
         $localResults = $this->searchLocal($query, $limit, $options);
-        
+
         return [
             'query' => $query,
             'total_results' => $localResults['count'],
@@ -456,7 +472,7 @@ class FederatedSearchService
             'fallback' => true,
         ];
     }
-    
+
     /**
      * Extract content from result
      */
@@ -465,19 +481,19 @@ class FederatedSearchService
         if (method_exists($model, 'getVectorContent')) {
             return $model->getVectorContent();
         }
-        
+
         $fields = ['content', 'body', 'description', 'text', 'title', 'name'];
         $content = [];
-        
+
         foreach ($fields as $field) {
             if (isset($model->$field)) {
                 $content[] = $model->$field;
             }
         }
-        
+
         return implode(' ', $content);
     }
-    
+
     /**
      * Generate cache key
      */
