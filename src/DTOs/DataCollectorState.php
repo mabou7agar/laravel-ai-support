@@ -29,6 +29,7 @@ class DataCollectorState
         public mixed $result = null,
         public ?array $embeddedConfig = null,  // Embedded config for persistence
         public array $metadata = [],  // Additional metadata (e.g., output modifications)
+        public ?string $confirmedActionSummary = null,  // The action summary that was confirmed by user
     ) {
         $this->startedAt = $this->startedAt ?? new \DateTimeImmutable();
     }
@@ -224,6 +225,7 @@ class DataCollectorState
             'completed_at' => $this->completedAt?->format('c'),
             'embedded_config' => $this->embeddedConfig,
             'metadata' => $this->metadata,
+            'confirmed_action_summary' => $this->confirmedActionSummary,
         ];
     }
 
@@ -245,6 +247,7 @@ class DataCollectorState
             completedAt: isset($data['completed_at']) ? new \DateTimeImmutable($data['completed_at']) : null,
             embeddedConfig: $data['embedded_config'] ?? null,
             metadata: $data['metadata'] ?? [],
+            confirmedActionSummary: $data['confirmed_action_summary'] ?? null,
         );
     }
 }

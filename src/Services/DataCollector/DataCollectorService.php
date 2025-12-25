@@ -214,6 +214,9 @@ class DataCollectorService
         // Parse AI response for field extractions
         $extractedFields = $this->parseFieldExtractions($responseContent);
         
+        // Track if we used direct extraction
+        $usedDirectExtraction = false;
+        
         // If no fields extracted and we have a current field, try to extract from user message directly
         if (empty($extractedFields) && $state->currentField) {
             Log::channel('ai-engine')->warning('No fields extracted from AI response, trying direct extraction', [
@@ -226,6 +229,7 @@ class DataCollectorService
             
             // Direct extraction: assume user's message is the value for current field
             $extractedFields = $this->extractFromUserMessage($message, $state->currentField, $config);
+            $usedDirectExtraction = !empty($extractedFields);
         }
         
         foreach ($extractedFields as $fieldName => $value) {
@@ -236,8 +240,19 @@ class DataCollectorService
                 if (empty($errors)) {
                     $state->setFieldValue($fieldName, $value);
                     $state->clearValidationErrors();
+                    Log::channel('ai-engine')->info('Field value saved successfully', [
+                        'field' => $fieldName,
+                        'value' => $value,
+                        'session_id' => $state->sessionId,
+                    ]);
                 } else {
                     $state->setValidationErrors([$fieldName => $errors]);
+                    Log::channel('ai-engine')->warning('Field validation failed', [
+                        'field' => $fieldName,
+                        'value' => $value,
+                        'errors' => $errors,
+                        'session_id' => $state->sessionId,
+                    ]);
                 }
             }
         }
@@ -252,8 +267,22 @@ class DataCollectorService
             return $this->handleCancellation($state, $config);
         }
 
-        // Clean the response (remove field extraction markers)
-        $cleanResponse = $this->cleanAIResponse($responseContent);
+        // If we used direct extraction, override the AI response to acknowledge the collected value
+        if ($usedDirectExtraction && !empty($extractedFields)) {
+            $fieldName = array_key_first($extractedFields);
+            $fieldValue = $extractedFields[$fieldName];
+            $field = $config->getField($fieldName);
+            
+            $locale = $config->locale ?? 'en';
+            if ($locale === 'ar') {
+                $cleanResponse = "رائع! لقد سجلت {$field->description}: {$fieldValue}";
+            } else {
+                $cleanResponse = "Great! I've recorded {$field->description}: {$fieldValue}";
+            }
+        } else {
+            // Clean the response (remove field extraction markers)
+            $cleanResponse = $this->cleanAIResponse($responseContent);
+        }
         
         // Update state
         $state->setLastAIResponse($cleanResponse);
@@ -345,6 +374,24 @@ class DataCollectorService
         // Check for confirmation (English and Arabic)
         $confirmWords = ['yes', 'y', 'confirm', 'correct', 'ok', 'okay', 'looks good', 'perfect', 'submit', 'نعم', 'تأكيد', 'تاكيد', 'صحيح', 'موافق', 'اكيد', 'أكيد'];
         if (in_array($lowerMessage, $confirmWords)) {
+            // Store the confirmed action summary before completion
+            // This will be used as the source for JSON generation
+            if ($config->actionSummaryPrompt) {
+                $modificationContext = '';
+                if (!empty($state->metadata['output_modifications'])) {
+                    $modificationContext = "\n\nUSER REQUESTED MODIFICATIONS:\n";
+                    foreach ($state->metadata['output_modifications'] as $mod) {
+                        $modificationContext .= "- {$mod}\n";
+                    }
+                }
+                $state->confirmedActionSummary = $this->generateAIActionSummary(
+                    $config,
+                    $state->getData(),
+                    $engine,
+                    $model,
+                    $modificationContext
+                );
+            }
             return $this->handleCompletion($state, $config, $engine, $model);
         }
 
@@ -457,8 +504,17 @@ class DataCollectorService
                 : $config->generateSummary($state->getData());
             
             // Generate action summary - use AI if actionSummaryPrompt is configured
+            // Include any output modifications that were stored
+            $modificationContext = '';
+            if (!empty($state->metadata['output_modifications'])) {
+                $modificationContext = "\n\nUSER REQUESTED MODIFICATIONS:\n";
+                foreach ($state->metadata['output_modifications'] as $mod) {
+                    $modificationContext .= "- {$mod}\n";
+                }
+            }
+            
             $actionSummary = $config->actionSummaryPrompt
-                ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model)
+                ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model, $modificationContext)
                 : $config->generateActionSummary($state->getData());
             
             // Build confirmation message (with locale support)
@@ -637,7 +693,7 @@ class DataCollectorService
         // Generate structured output if schema is defined
         $generatedOutput = null;
         if ($config->outputSchema) {
-            $generatedOutput = $this->generateStructuredOutput($config, $state->getData(), $engine, $model);
+            $generatedOutput = $this->generateStructuredOutput($config, $state, $engine, $model);
         }
 
         // Execute completion callback
@@ -871,7 +927,7 @@ class DataCollectorService
      */
     public function generateStructuredOutput(
         DataCollectorConfig $config,
-        array $data,
+        DataCollectorState $state,
         string $engine = 'openai',
         string $model = 'gpt-4o'
     ): ?array {
@@ -880,6 +936,8 @@ class DataCollectorService
         }
 
         try {
+            $data = $state->getData();
+            
             // Get engine/model from config or use defaults
             $outputConfig = $config->outputConfig ?? [];
             $useEngine = $outputConfig['engine'] ?? $engine;
@@ -909,7 +967,26 @@ class DataCollectorService
                 }
             }
 
-            $fullPrompt = $dataContext . "\n---\n\n" . $prompt;
+            // If we have a confirmed action summary, use it as the source
+            // This ensures the JSON matches what the user confirmed
+            $actionSummaryContext = '';
+            if ($state->confirmedActionSummary) {
+                $actionSummaryContext = "\n\nCONFIRMED STRUCTURE (USE THIS AS THE SOURCE):\n";
+                $actionSummaryContext .= $state->confirmedActionSummary;
+                $actionSummaryContext .= "\n\nIMPORTANT: Convert the above confirmed structure into JSON format. ";
+                $actionSummaryContext .= "Do NOT generate new content. Use the exact lessons, descriptions, and details shown above.\n";
+            } else {
+                // Fallback: Include output modifications if any
+                if (!empty($state->metadata['output_modifications'])) {
+                    $actionSummaryContext = "\n\nIMPORTANT - USER REQUESTED MODIFICATIONS:\n";
+                    foreach ($state->metadata['output_modifications'] as $mod) {
+                        $actionSummaryContext .= "- {$mod}\n";
+                    }
+                    $actionSummaryContext .= "\nMake sure to apply ALL these modifications to the generated output.\n";
+                }
+            }
+
+            $fullPrompt = $dataContext . "\n---\n\n" . $prompt . $actionSummaryContext;
 
             $systemPrompt = "You are a data generation assistant. Generate structured JSON output based on user input.\n\n";
             $systemPrompt .= "OUTPUT SCHEMA:\n" . $schemaDescription . "\n\n";
