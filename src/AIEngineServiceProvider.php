@@ -384,6 +384,14 @@ class AIEngineServiceProvider extends ServiceProvider
                 __DIR__.'/../resources/js' => public_path('vendor/ai-engine/js'),
             ], 'ai-engine-assets');
 
+            $this->publishes([
+                __DIR__.'/../routes/api.php' => base_path('routes/ai-engine-api.php'),
+            ], 'ai-engine-routes');
+
+            $this->publishes([
+                __DIR__.'/../routes/node-api.php' => base_path('routes/ai-engine-node-api.php'),
+            ], 'ai-engine-node-routes');
+
             $this->commands([
                 Console\Commands\TestEnginesCommand::class,
                 Console\Commands\SyncModelsCommand::class,
@@ -438,9 +446,22 @@ class AIEngineServiceProvider extends ServiceProvider
             $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
         }
 
-        // Load node API routes
+        // Load API routes (check for published version first)
+        $publishedApiRoutes = base_path('routes/ai-engine-api.php');
+        if (file_exists($publishedApiRoutes)) {
+            $this->loadRoutesFrom($publishedApiRoutes);
+        } else {
+            $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
+        }
+
+        // Load node API routes (check for published version first)
         if (config('ai-engine.nodes.enabled', true)) {
-            $this->loadRoutesFrom(__DIR__.'/../routes/node-api.php');
+            $publishedNodeApiRoutes = base_path('routes/ai-engine-node-api.php');
+            if (file_exists($publishedNodeApiRoutes)) {
+                $this->loadRoutesFrom($publishedNodeApiRoutes);
+            } else {
+                $this->loadRoutesFrom(__DIR__.'/../routes/node-api.php');
+            }
 
             // Register middleware
             $router = $this->app['router'];
