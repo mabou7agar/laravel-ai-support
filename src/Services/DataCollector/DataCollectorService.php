@@ -40,7 +40,7 @@ class DataCollectorService
     }
 
     /**
-     * Get a registered configuration (from memory or cache)
+     * Get a registered configuration (from memory, cache, or session state)
      */
     public function getConfig(string $name): ?DataCollectorConfig
     {
@@ -55,6 +55,24 @@ class DataCollectorService
             // Also register in memory for this request
             $this->registeredConfigs[$name] = $cached;
             return $cached;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Try to load config from session state's embedded config (fallback for cache misses)
+     */
+    protected function loadConfigFromSessionState(string $sessionId): ?DataCollectorConfig
+    {
+        $state = $this->getState($sessionId);
+        
+        if ($state && $state->embeddedConfig) {
+            Log::channel('ai-engine')->debug('Loading config from embedded state', [
+                'session_id' => $sessionId,
+                'config_name' => $state->configName,
+            ]);
+            return DataCollectorConfig::fromArray($state->embeddedConfig);
         }
         
         return null;
@@ -74,6 +92,7 @@ class DataCollectorService
             status: DataCollectorState::STATUS_COLLECTING,
             collectedData: $initialData,
             currentField: $config->getFirstField()?->name,
+            embeddedConfig: $config->toArray(),  // Embed config in state for reliable persistence
         );
 
         // Register config if not already registered
@@ -115,6 +134,19 @@ class DataCollectorService
         }
 
         $config = $this->getConfig($state->configName);
+        
+        // Fallback: try to load from embedded config in state
+        if (!$config && $state->embeddedConfig) {
+            $config = DataCollectorConfig::fromArray($state->embeddedConfig);
+            // Re-register and cache for future requests
+            $this->registerConfig($config);
+            $this->saveConfig($config);
+            
+            Log::channel('ai-engine')->info('Config restored from embedded state', [
+                'session_id' => $sessionId,
+                'config_name' => $config->name,
+            ]);
+        }
         
         if (!$config) {
             return new DataCollectorResponse(
@@ -1087,26 +1119,44 @@ class DataCollectorService
     /**
      * Save config to cache for persistence across requests
      */
-    protected function saveConfig(DataCollectorConfig $config): void
+    public function saveConfig(DataCollectorConfig $config): void
     {
+        $key = $this->cachePrefix . 'config_' . $config->name;
+        
         Cache::put(
-            $this->cachePrefix . 'config_' . $config->name,
+            $key,
             $config->toArray(),
             $this->cacheTtl
         );
+        
+        Log::channel('ai-engine')->debug('Config saved to cache', [
+            'key' => $key,
+            'name' => $config->name,
+            'title' => $config->title,
+        ]);
     }
 
     /**
      * Load config from cache
      */
-    protected function loadConfig(string $name): ?DataCollectorConfig
+    public function loadConfig(string $name): ?DataCollectorConfig
     {
-        $data = Cache::get($this->cachePrefix . 'config_' . $name);
+        $key = $this->cachePrefix . 'config_' . $name;
+        $data = Cache::get($key);
         
         if (!$data) {
+            Log::channel('ai-engine')->debug('Config not found in cache', [
+                'key' => $key,
+                'name' => $name,
+            ]);
             return null;
         }
 
+        Log::channel('ai-engine')->debug('Config loaded from cache', [
+            'key' => $key,
+            'name' => $name,
+        ]);
+        
         return DataCollectorConfig::fromArray($data);
     }
 

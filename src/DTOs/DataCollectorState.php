@@ -27,6 +27,7 @@ class DataCollectorState
         public ?\DateTimeImmutable $startedAt = null,
         public ?\DateTimeImmutable $completedAt = null,
         public mixed $result = null,
+        public ?array $embeddedConfig = null,  // Embedded config for persistence
     ) {
         $this->startedAt = $this->startedAt ?? new \DateTimeImmutable();
     }
@@ -203,6 +204,7 @@ class DataCollectorState
             'last_ai_response' => $this->lastAIResponse,
             'started_at' => $this->startedAt?->format('c'),
             'completed_at' => $this->completedAt?->format('c'),
+            'embedded_config' => $this->embeddedConfig,
         ];
     }
 
@@ -222,6 +224,7 @@ class DataCollectorState
             lastAIResponse: $data['last_ai_response'] ?? null,
             startedAt: isset($data['started_at']) ? new \DateTimeImmutable($data['started_at']) : null,
             completedAt: isset($data['completed_at']) ? new \DateTimeImmutable($data['completed_at']) : null,
+            embeddedConfig: $data['embedded_config'] ?? null,
         );
     }
 }

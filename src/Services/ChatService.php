@@ -9,6 +9,7 @@ use LaravelAIEngine\Events\AISessionStarted;
 use LaravelAIEngine\Services\RAG\IntelligentRAGService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class ChatService
 {
@@ -300,7 +301,7 @@ class ChatService
                     );
                     
                     // Check if any action is ready to execute automatically
-                    $autoExecuteAction = $this->checkAutoExecuteAction($smartActions, $processedMessage);
+                    $autoExecuteAction = $this->checkAutoExecuteAction($smartActions, $processedMessage, $sessionId);
                     
                     Log::channel('ai-engine')->info('Checked for auto-execute', [
                         'message' => $processedMessage,
@@ -318,6 +319,9 @@ class ChatService
                         
                         $executionResult = $this->executeSmartActionInline($autoExecuteAction, $userId);
                         
+                        // Remove executed action from pending list
+                        $this->removeExecutedAction($sessionId, $autoExecuteAction->id);
+                        
                         if ($executionResult['success']) {
                             // Append execution result to response content
                             $originalContent = $response->getContent();
@@ -325,9 +329,14 @@ class ChatService
                             
                             // Update response by modifying metadata directly
                             $metadata = $response->getMetadata();
+                            
+                            // Get remaining pending actions count
+                            $remainingActions = $this->getPendingActionsCount($sessionId);
+                            
                             $metadata['action_executed'] = [
                                 'action' => $autoExecuteAction->label,
                                 'result' => $executionResult,
+                                'remaining_pending_actions' => $remainingActions,
                             ];
                             
                             // Create new response with all required parameters
@@ -361,14 +370,29 @@ class ChatService
                             'optional_params' => $this->getOptionalParamsForAction($action),
                         ], $smartActions);
                         
-                        // Store first action for potential confirmation
+                        // Store all actions for potential confirmation (support multiple actions per session)
                         if (!empty($smartActions)) {
-                            $metadata['pending_action'] = [
+                            // Get existing pending actions from cache
+                            $cacheKey = "pending_actions_{$sessionId}";
+                            $existingActions = Cache::get($cacheKey, []);
+                            
+                            // Add new action to the list
+                            $newAction = [
                                 'id' => $smartActions[0]->id,
                                 'label' => $smartActions[0]->label,
                                 'data' => $smartActions[0]->data,
                                 'optional_params' => $this->getOptionalParamsForAction($smartActions[0]),
+                                'created_at' => now()->toIso8601String(),
                             ];
+                            
+                            $existingActions[] = $newAction;
+                            
+                            // Store updated list in cache (24 hour TTL)
+                            Cache::put($cacheKey, $existingActions, 86400);
+                            
+                            // Keep backward compatibility - store most recent action
+                            $metadata['pending_action'] = $newAction;
+                            $metadata['pending_actions_count'] = count($existingActions);
                         }
                         
                         // Add prompt for optional parameters to response
@@ -380,8 +404,12 @@ class ChatService
                         $originalContent = "I can help you with that. Let me gather the necessary information.";
                         
                         $optionalParamsPrompt = $this->generateOptionalParamsPrompt($smartActions[0]);
+                        
+                        // Add confirmation prompt at the end
+                        $confirmationPrompt = "\n\n**Would you like to proceed with this action?** Reply with 'yes' to confirm.";
+                        
                         if ($optionalParamsPrompt) {
-                            $newContent = $originalContent . "\n\n" . $optionalParamsPrompt;
+                            $newContent = $originalContent . "\n\n" . $optionalParamsPrompt . $confirmationPrompt;
                             
                             // Create new response with updated content
                             $response = new AIResponse(
@@ -403,9 +431,11 @@ class ChatService
                                 conversationId: $response->getConversationId()
                             );
                         } else {
-                            // Just update metadata
+                            // No optional params, just add confirmation prompt
+                            $newContent = $originalContent . $confirmationPrompt;
+                            
                             $response = new AIResponse(
-                                content: $response->getContent(),
+                                content: $newContent,
                                 engine: $response->getEngine(),
                                 model: $response->getModel(),
                                 metadata: $metadata,
@@ -967,7 +997,7 @@ class ChatService
     /**
      * Check if any smart action should be auto-executed
      */
-    protected function checkAutoExecuteAction(array $smartActions, string $message): ?\LaravelAIEngine\DTOs\InteractiveAction
+    protected function checkAutoExecuteAction(array $smartActions, string $message, string $sessionId = null): ?\LaravelAIEngine\DTOs\InteractiveAction
     {
         $messageLower = strtolower($message);
         
@@ -982,7 +1012,32 @@ class ChatService
             }
         }
         
-        // If user is confirming and there's a ready action, execute it
+        // If user is confirming, check for pending actions in cache
+        if ($isConfirmation && $sessionId) {
+            $cacheKey = "pending_actions_{$sessionId}";
+            $pendingActions = Cache::get($cacheKey, []);
+            
+            // If there are multiple pending actions, execute the most recent one
+            if (!empty($pendingActions)) {
+                $mostRecentAction = end($pendingActions);
+                
+                Log::channel('ai-engine')->info('Auto-executing most recent pending action', [
+                    'action' => $mostRecentAction['label'],
+                    'total_pending' => count($pendingActions),
+                ]);
+                
+                // Convert array back to InteractiveAction
+                return new \LaravelAIEngine\DTOs\InteractiveAction(
+                    id: $mostRecentAction['id'],
+                    type: \LaravelAIEngine\Enums\ActionTypeEnum::from(\LaravelAIEngine\Enums\ActionTypeEnum::BUTTON),
+                    label: $mostRecentAction['label'],
+                    description: '',
+                    data: $mostRecentAction['data']
+                );
+            }
+        }
+        
+        // Fallback to checking current smart actions
         if ($isConfirmation) {
             foreach ($smartActions as $action) {
                 if (isset($action->data['ready_to_execute']) && $action->data['ready_to_execute']) {
@@ -1440,6 +1495,46 @@ class ChatService
         return null;
     }
 
+    /**
+     * Remove executed action from pending list
+     */
+    protected function removeExecutedAction(string $sessionId, string $actionId): void
+    {
+        $cacheKey = "pending_actions_{$sessionId}";
+        $pendingActions = Cache::get($cacheKey, []);
+        
+        // Remove the executed action
+        $pendingActions = array_filter($pendingActions, function($action) use ($actionId) {
+            return $action['id'] !== $actionId;
+        });
+        
+        // Re-index array
+        $pendingActions = array_values($pendingActions);
+        
+        // Update cache
+        if (empty($pendingActions)) {
+            Cache::forget($cacheKey);
+        } else {
+            Cache::put($cacheKey, $pendingActions, 86400);
+        }
+        
+        Log::channel('ai-engine')->info('Removed executed action from pending list', [
+            'session_id' => $sessionId,
+            'action_id' => $actionId,
+            'remaining' => count($pendingActions),
+        ]);
+    }
+    
+    /**
+     * Get count of pending actions for a session
+     */
+    protected function getPendingActionsCount(string $sessionId): int
+    {
+        $cacheKey = "pending_actions_{$sessionId}";
+        $pendingActions = Cache::get($cacheKey, []);
+        return count($pendingActions);
+    }
+    
     /**
      * Execute email reply
      */
