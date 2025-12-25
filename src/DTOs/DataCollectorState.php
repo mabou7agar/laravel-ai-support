@@ -28,6 +28,7 @@ class DataCollectorState
         public ?\DateTimeImmutable $completedAt = null,
         public mixed $result = null,
         public ?array $embeddedConfig = null,  // Embedded config for persistence
+        public array $metadata = [],  // Additional metadata (e.g., output modifications)
     ) {
         $this->startedAt = $this->startedAt ?? new \DateTimeImmutable();
     }
@@ -148,6 +149,23 @@ class DataCollectorState
     }
 
     /**
+     * Set metadata
+     */
+    public function setMetadata(array $metadata): self
+    {
+        $this->metadata = $metadata;
+        return $this;
+    }
+
+    /**
+     * Get metadata value
+     */
+    public function getMetadata(string $key, mixed $default = null): mixed
+    {
+        return $this->metadata[$key] ?? $default;
+    }
+
+    /**
      * Check if collection is complete
      */
     public function isComplete(): bool
@@ -205,6 +223,7 @@ class DataCollectorState
             'started_at' => $this->startedAt?->format('c'),
             'completed_at' => $this->completedAt?->format('c'),
             'embedded_config' => $this->embeddedConfig,
+            'metadata' => $this->metadata,
         ];
     }
 
@@ -225,6 +244,7 @@ class DataCollectorState
             startedAt: isset($data['started_at']) ? new \DateTimeImmutable($data['started_at']) : null,
             completedAt: isset($data['completed_at']) ? new \DateTimeImmutable($data['completed_at']) : null,
             embeddedConfig: $data['embedded_config'] ?? null,
+            metadata: $data['metadata'] ?? [],
         );
     }
 }

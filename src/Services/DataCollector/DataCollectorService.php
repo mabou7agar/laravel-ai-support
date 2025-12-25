@@ -200,11 +200,11 @@ class DataCollectorService
         // Add current state context
         $contextPrompt = $this->buildContextPrompt($state, $config);
         
-        // Generate AI response
+        // Generate AI response (using context summary instead of full history)
         $aiResponse = $this->generateAIResponse(
             $systemPrompt,
             $contextPrompt . "\n\nUser: " . $message,
-            $state->conversationHistory,
+            [], // Empty history - context prompt provides all needed state
             $engine,
             $model
         );
@@ -213,6 +213,20 @@ class DataCollectorService
         
         // Parse AI response for field extractions
         $extractedFields = $this->parseFieldExtractions($responseContent);
+        
+        // If no fields extracted and we have a current field, try to extract from user message directly
+        if (empty($extractedFields) && $state->currentField) {
+            Log::channel('ai-engine')->warning('No fields extracted from AI response, trying direct extraction', [
+                'session_id' => $state->sessionId,
+                'current_field' => $state->currentField,
+                'user_message' => $message,
+                'response_preview' => substr($responseContent, 0, 200),
+                'has_field_collected_marker' => str_contains($responseContent, 'FIELD_COLLECTED:'),
+            ]);
+            
+            // Direct extraction: assume user's message is the value for current field
+            $extractedFields = $this->extractFromUserMessage($message, $state->currentField, $config);
+        }
         
         foreach ($extractedFields as $fieldName => $value) {
             $field = $config->getField($fieldName);
@@ -385,7 +399,15 @@ class DataCollectorService
         string $engine,
         string $model
     ): DataCollectorResponse {
-        // Build enhancement prompt
+        // Check if user wants to modify the generated output (lessons, etc.)
+        $isOutputModification = $this->isOutputModificationRequest($message, $config);
+        
+        if ($isOutputModification && $config->actionSummaryPrompt) {
+            // User wants to modify the generated output (e.g., lessons)
+            return $this->handleOutputModification($state, $config, $message, $engine, $model);
+        }
+        
+        // Build enhancement prompt for input fields
         $systemPrompt = "You are helping the user modify their previously collected data.\n\n";
         $systemPrompt .= "Current data:\n" . $config->generateSummary($state->getData()) . "\n\n";
         $systemPrompt .= "Available fields: " . implode(', ', $config->getFieldNames()) . "\n\n";
@@ -399,7 +421,7 @@ class DataCollectorService
         $aiResponse = $this->generateAIResponse(
             $systemPrompt,
             "User wants to modify: " . $message,
-            $state->conversationHistory,
+            [], // Empty history - context prompt provides all needed state
             $engine,
             $model
         );
@@ -498,6 +520,75 @@ class DataCollectorService
             allowsEnhancement: true,
             summary: $summary,
             actionSummary: $actionSummary,
+        );
+    }
+
+    /**
+     * Check if the user wants to modify generated output (lessons, etc.)
+     */
+    protected function isOutputModificationRequest(string $message, DataCollectorConfig $config): bool
+    {
+        $lowerMessage = strtolower($message);
+        
+        // Keywords that suggest output modification
+        $outputKeywords = ['lesson', 'lessons', 'structure', 'curriculum', 'content', 'outline', 'syllabus'];
+        
+        foreach ($outputKeywords as $keyword) {
+            if (str_contains($lowerMessage, $keyword)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * Handle modification of generated output (lessons, etc.)
+     */
+    protected function handleOutputModification(
+        DataCollectorState $state,
+        DataCollectorConfig $config,
+        string $message,
+        string $engine,
+        string $model
+    ): DataCollectorResponse {
+        // Store the modification request
+        $modifications = $state->metadata['output_modifications'] ?? [];
+        $modifications[] = $message;
+        $state->setMetadata(array_merge($state->metadata, ['output_modifications' => $modifications]));
+        
+        // Build prompt to regenerate action summary with modifications
+        $modificationContext = "\n\nUSER REQUESTED MODIFICATIONS:\n";
+        foreach ($modifications as $mod) {
+            $modificationContext .= "- {$mod}\n";
+        }
+        
+        // Regenerate action summary with modifications
+        $actionSummary = $this->generateAIActionSummary(
+            $config,
+            $state->getData(),
+            $engine,
+            $model,
+            $modificationContext
+        );
+        
+        $locale = $config->locale ?? 'en';
+        if ($locale === 'ar') {
+            $response = "لقد قمت بتحديث الهيكل بناءً على ملاحظاتك:\n\n";
+            $response .= $actionSummary;
+            $response .= "\n\nهل تريد أي تغييرات أخرى، أم نتابع بهذا؟";
+        } else {
+            $response = "I've updated the structure based on your feedback:\n\n";
+            $response .= $actionSummary;
+            $response .= "\n\nWould you like any other changes, or shall we proceed with this?";
+        }
+        
+        return new DataCollectorResponse(
+            success: true,
+            message: $response,
+            state: $state,
+            actionSummary: $actionSummary,
+            requiresConfirmation: false,
         );
     }
 
@@ -636,7 +727,8 @@ class DataCollectorService
         DataCollectorConfig $config,
         array $data,
         string $engine = 'openai',
-        string $model = 'gpt-4o'
+        string $model = 'gpt-4o',
+        string $modificationContext = ''
     ): string {
         if (!$config->actionSummaryPrompt) {
             return $config->generateActionSummary($data);
@@ -668,7 +760,7 @@ class DataCollectorService
             }
             $dataContext .= "\n---\n\n";
 
-            $fullPrompt = $dataContext . $prompt;
+            $fullPrompt = $dataContext . $prompt . $modificationContext;
 
             $systemPrompt = "You are a helpful assistant generating a preview/summary of what will be created based on user input. "
                 . "Format your response in a clear, readable way using markdown. "
@@ -928,22 +1020,18 @@ class DataCollectorService
         string $model
     ): AIResponse {
         try {
-            $messages = [];
-            
-            // Add conversation history (limited)
-            $recentHistory = array_slice($conversationHistory, -10);
-            foreach ($recentHistory as $msg) {
-                $messages[] = [
-                    'role' => $msg['role'],
-                    'content' => $msg['content'],
-                ];
-            }
+            // Note: We don't use conversation history anymore
+            // The context prompt (in userPrompt) contains all necessary state:
+            // - Already collected fields
+            // - Remaining fields to collect
+            // - Current field being asked
+            // - Validation errors
+            // This reduces token usage significantly while maintaining context
 
             $response = $this->aiEngine
                 ->engine($engine)
                 ->model($model)
                 ->withSystemPrompt($systemPrompt)
-                ->withMessages($messages)
                 ->generate($userPrompt);
 
             return $response;
@@ -973,17 +1061,25 @@ class DataCollectorService
         // Pattern: FIELD_COLLECTED:field_name=value
         preg_match_all('/FIELD_COLLECTED:(\w+)=(.+?)(?=\n|FIELD_COLLECTED:|$)/s', $response, $matches, PREG_SET_ORDER);
         
+        Log::channel('ai-engine')->debug('Parsing field extractions', [
+            'found_markers' => count($matches),
+            'has_marker_text' => str_contains($response, 'FIELD_COLLECTED:'),
+        ]);
+        
         foreach ($matches as $match) {
             $fieldName = trim($match[1]);
             $value = trim($match[2]);
             $extracted[$fieldName] = $value;
         }
 
-        // Always try fallback parser and merge results (fallback fills in missing fields)
-        $fallbackExtracted = $this->parseFieldsFromSummary($response);
-        foreach ($fallbackExtracted as $key => $value) {
-            if (!isset($extracted[$key]) || empty($extracted[$key])) {
-                $extracted[$key] = $value;
+        // Only use fallback parser if we found at least one FIELD_COLLECTED marker
+        // This prevents extracting from conversational text
+        if (!empty($extracted)) {
+            $fallbackExtracted = $this->parseFieldsFromSummary($response);
+            foreach ($fallbackExtracted as $key => $value) {
+                if (!isset($extracted[$key]) || empty($extracted[$key])) {
+                    $extracted[$key] = $value;
+                }
             }
         }
 
@@ -1070,6 +1166,62 @@ class DataCollectorService
     }
 
     /**
+     * Extract field value directly from user message when AI doesn't use markers
+     */
+    protected function extractFromUserMessage(string $message, string $currentField, DataCollectorConfig $config): array
+    {
+        $extracted = [];
+        $field = $config->getField($currentField);
+        
+        if (!$field) {
+            return $extracted;
+        }
+        
+        // Clean the message
+        $value = trim($message);
+        
+        // For select fields, try to match against options
+        if ($field->type === 'select' && !empty($field->options)) {
+            $lowerValue = strtolower($value);
+            foreach ($field->options as $option) {
+                if (str_contains($lowerValue, strtolower($option))) {
+                    $extracted[$currentField] = $option;
+                    Log::channel('ai-engine')->info('Direct extraction matched select option', [
+                        'field' => $currentField,
+                        'value' => $option,
+                        'user_message' => $message,
+                    ]);
+                    return $extracted;
+                }
+            }
+        }
+        
+        // For numeric fields, extract numbers
+        if ($field->type === 'number' || str_contains($field->validation ?? '', 'numeric')) {
+            if (preg_match('/(\d+(?:\.\d+)?)/', $value, $match)) {
+                $extracted[$currentField] = $match[1];
+                Log::channel('ai-engine')->info('Direct extraction found number', [
+                    'field' => $currentField,
+                    'value' => $match[1],
+                    'user_message' => $message,
+                ]);
+                return $extracted;
+            }
+        }
+        
+        // For text fields, use the entire message (unless it's too short or looks like a question)
+        if (strlen($value) >= 2 && !str_ends_with($value, '?')) {
+            $extracted[$currentField] = $value;
+            Log::channel('ai-engine')->info('Direct extraction using full message', [
+                'field' => $currentField,
+                'value' => $value,
+            ]);
+        }
+        
+        return $extracted;
+    }
+
+    /**
      * Clean AI response by removing field extraction markers
      */
     protected function cleanAIResponse(string $response): string
@@ -1132,8 +1284,14 @@ class DataCollectorService
             }
         }
 
-        // Reminder to use field markers
-        $prompt .= "\nREMINDER: When you extract field values, add FIELD_COLLECTED:field_name=value markers at the end of your response.\n";
+        // Strong reminder to use field markers (repeated in every request)
+        $prompt .= "\n" . str_repeat('=', 70) . "\n";
+        $prompt .= "⚠️  CRITICAL FORMAT REQUIREMENT (MUST FOLLOW):\n";
+        $prompt .= "When you extract ANY field value, you MUST add this marker:\n";
+        $prompt .= "FIELD_COLLECTED:field_name=value\n";
+        $prompt .= "Place ALL markers at the END of your response.\n";
+        $prompt .= "Missing markers = DATA LOSS = FAILURE\n";
+        $prompt .= str_repeat('=', 70) . "\n";
 
         return $prompt;
     }
