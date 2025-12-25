@@ -61,18 +61,27 @@ class DataCollectorService
     }
     
     /**
-     * Try to load config from session state's embedded config (fallback for cache misses)
+     * Get config for a session - checks registry, cache, then embedded state
      */
-    protected function loadConfigFromSessionState(string $sessionId): ?DataCollectorConfig
+    protected function getConfigForSession(string $sessionId, DataCollectorState $state): ?DataCollectorConfig
     {
-        $state = $this->getState($sessionId);
+        // 1. Try registry/cache first
+        $config = $this->getConfig($state->configName);
+        if ($config) {
+            return $config;
+        }
         
-        if ($state && $state->embeddedConfig) {
-            Log::channel('ai-engine')->debug('Loading config from embedded state', [
+        // 2. Load from embedded config in state
+        if ($state->embeddedConfig) {
+            $config = DataCollectorConfig::fromArray($state->embeddedConfig);
+            // Register for future use in this request
+            $this->registerConfig($config);
+            
+            Log::channel('ai-engine')->debug('Config loaded from embedded state', [
                 'session_id' => $sessionId,
-                'config_name' => $state->configName,
+                'config_name' => $config->name,
             ]);
-            return DataCollectorConfig::fromArray($state->embeddedConfig);
+            return $config;
         }
         
         return null;
@@ -138,17 +147,8 @@ class DataCollectorService
             );
         }
 
-        // Priority 1: Load from embedded config in state (most reliable)
-        if ($state->embeddedConfig) {
-            $config = DataCollectorConfig::fromArray($state->embeddedConfig);
-            // Also cache it for performance
-            if (!isset($this->registeredConfigs[$config->name])) {
-                $this->registerConfig($config);
-            }
-        } else {
-            // Fallback: try cache/registry
-            $config = $this->getConfig($state->configName);
-        }
+        // Get config - tries registry, cache, then embedded state
+        $config = $this->getConfigForSession($sessionId, $state);
         
         if (!$config) {
             return new DataCollectorResponse(
@@ -251,10 +251,12 @@ class DataCollectorService
                 $state->setStatus(DataCollectorState::STATUS_CONFIRMING);
                 $state->setCurrentField(null); // Clear current field to prevent showing field options
                 
-                // Generate data summary
-                $summary = $config->generateSummary($state->getData());
+                // Generate data summary - use AI if summaryPrompt is configured
+                $summary = $config->summaryPrompt
+                    ? $this->generateAISummary($config, $state->getData(), $engine, $model)
+                    : $config->generateSummary($state->getData());
                 
-                // Generate action summary - use AI if prompt is configured
+                // Generate action summary - use AI if actionSummaryPrompt is configured
                 $actionSummary = $config->actionSummaryPrompt
                     ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model)
                     : $config->generateActionSummary($state->getData());
@@ -310,7 +312,7 @@ class DataCollectorService
             aiResponse: $aiResponse,
             currentField: $state->currentField,
             collectedFields: array_keys(array_filter($state->getData(), fn($v) => $v !== null && $v !== '')),
-            remainingFields: array_keys($config->getMissingFields($state->getData())),
+            remainingFields: array_keys($config->getUncollectedFields($state->getData())),
         );
     }
 
@@ -427,10 +429,12 @@ class DataCollectorService
         if (str_contains(strtolower($message), 'done') || str_contains(strtolower($message), 'finish')) {
             $state->setStatus(DataCollectorState::STATUS_CONFIRMING);
             
-            // Generate data summary
-            $summary = $config->generateSummary($state->getData());
+            // Generate data summary - use AI if summaryPrompt is configured
+            $summary = $config->summaryPrompt
+                ? $this->generateAISummary($config, $state->getData(), $engine, $model)
+                : $config->generateSummary($state->getData());
             
-            // Generate action summary - use AI if prompt is configured
+            // Generate action summary - use AI if actionSummaryPrompt is configured
             $actionSummary = $config->actionSummaryPrompt
                 ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model)
                 : $config->generateActionSummary($state->getData());
@@ -693,6 +697,77 @@ class DataCollectorService
 
             // Fallback to static summary
             return $config->generateActionSummary($data);
+        }
+    }
+
+    /**
+     * Generate AI-powered data summary using the configured summaryPrompt
+     */
+    public function generateAISummary(
+        DataCollectorConfig $config,
+        array $data,
+        string $engine = 'openai',
+        string $model = 'gpt-4o'
+    ): string {
+        if (!$config->summaryPrompt) {
+            return $config->generateSummary($data);
+        }
+
+        try {
+            // Get engine/model from config or use defaults
+            $promptConfig = $config->summaryPromptConfig ?? [];
+            $useEngine = $promptConfig['engine'] ?? $engine;
+            $useModel = $promptConfig['model'] ?? $model;
+            $maxTokens = $promptConfig['max_tokens'] ?? 2000;
+
+            // Build the prompt with data placeholders replaced
+            $prompt = $config->summaryPrompt;
+            foreach ($data as $key => $value) {
+                if (is_string($value) || is_numeric($value)) {
+                    $prompt = str_replace('{' . $key . '}', (string) $value, $prompt);
+                }
+            }
+
+            // Add collected data context
+            $dataContext = "Based on the following collected information:\n\n";
+            foreach ($data as $key => $value) {
+                $label = ucwords(str_replace('_', ' ', $key));
+                if (is_array($value)) {
+                    $value = implode(', ', $value);
+                }
+                $dataContext .= "- **{$label}**: {$value}\n";
+            }
+            $dataContext .= "\n---\n\n";
+
+            $fullPrompt = $dataContext . $prompt;
+
+            $systemPrompt = "You are a helpful assistant generating a summary of collected data. "
+                . "Format your response in a clear, readable way using markdown. "
+                . "Be concise but comprehensive.";
+
+            Log::channel('ai-engine')->info('Generating AI data summary', [
+                'config' => $config->name,
+                'engine' => $useEngine,
+                'model' => $useModel,
+            ]);
+
+            $response = $this->aiEngine
+                ->engine($useEngine)
+                ->model($useModel)
+                ->withSystemPrompt($systemPrompt)
+                ->withMaxTokens($maxTokens)
+                ->generate($fullPrompt);
+
+            return $response->getContent();
+
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Failed to generate AI data summary', [
+                'config' => $config->name,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Fallback to static summary
+            return $config->generateSummary($data);
         }
     }
 
@@ -962,6 +1037,13 @@ class DataCollectorService
                 }
             }
             
+            if (!empty($value)) {
+                $extracted[$fieldKey] = $value;
+            }
+        }
+
+        // Normalize extracted values
+        foreach ($extracted as $fieldKey => $value) {
             // Normalize level values
             if ($fieldKey === 'level') {
                 $value = strtolower($value);
@@ -973,10 +1055,14 @@ class DataCollectorService
                 } elseif (str_contains($value, 'advanced')) {
                     $value = 'advanced';
                 }
+                $extracted[$fieldKey] = $value;
             }
             
-            if (!empty($value)) {
-                $extracted[$fieldKey] = $value;
+            // Extract numeric values for duration/lessons
+            if (in_array($fieldKey, ['duration', 'lessons_count'])) {
+                if (preg_match('/(\d+)/', $value, $numMatch)) {
+                    $extracted[$fieldKey] = $numMatch[1];
+                }
             }
         }
 
@@ -1045,6 +1131,9 @@ class DataCollectorService
                 $prompt .= "- {$field}: " . implode(', ', $errors) . "\n";
             }
         }
+
+        // Reminder to use field markers
+        $prompt .= "\nREMINDER: When you extract field values, add FIELD_COLLECTED:field_name=value markers at the end of your response.\n";
 
         return $prompt;
     }

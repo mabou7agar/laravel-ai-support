@@ -65,6 +65,8 @@ class DataCollectorConfig
         public readonly ?Closure $actionSummaryGenerator = null, // Dynamic action summary based on data
         public readonly ?string $actionSummaryPrompt = null, // AI prompt to generate action summary
         public readonly ?array $actionSummaryPromptConfig = null, // Config for AI-generated summary (engine, model, etc.)
+        public readonly ?string $summaryPrompt = null, // AI prompt to generate data summary
+        public readonly ?array $summaryPromptConfig = null, // Config for AI-generated data summary
         public readonly ?array $outputSchema = null, // Schema for AI-generated structured output
         public readonly ?string $outputPrompt = null, // Custom prompt for generating output
         public readonly ?array $outputConfig = null, // Config for output generation (engine, model, etc.)
@@ -231,6 +233,24 @@ class DataCollectorConfig
     }
 
     /**
+     * Get all uncollected fields (both required and optional)
+     * 
+     * @return DataCollectorField[]
+     */
+    public function getUncollectedFields(array $data): array
+    {
+        $uncollected = [];
+        
+        foreach ($this->parsedFields as $name => $field) {
+            if (!isset($data[$name]) || $data[$name] === '' || $data[$name] === null) {
+                $uncollected[$name] = $field;
+            }
+        }
+
+        return $uncollected;
+    }
+
+    /**
      * Execute the completion callback
      */
     public function executeOnComplete(array $data): mixed
@@ -299,15 +319,31 @@ class DataCollectorConfig
             $prompt .= "7. Allow skipping optional fields if the user wants to\n";
         }
 
-        $prompt .= "\nRESPONSE FORMAT:\n";
-        $prompt .= "CRITICAL: When you extract ANY field value from the user's message, you MUST include a marker for EACH field:\n";
-        $prompt .= "FIELD_COLLECTED:field_name=value\n\n";
-        $prompt .= "Example - if user says 'The course is called Laravel Basics, it's 10 hours long for beginners':\n";
+        $prompt .= "\nRESPONSE FORMAT (CRITICAL - ALWAYS FOLLOW THIS):\n";
+        $prompt .= "═══════════════════════════════════════════════════════════════\n";
+        $prompt .= "MANDATORY: You MUST include FIELD_COLLECTED markers for EVERY field value you extract.\n";
+        $prompt .= "Format: FIELD_COLLECTED:field_name=value\n\n";
+        $prompt .= "EXAMPLES:\n";
+        $prompt .= "Example 1 (English):\n";
+        $prompt .= "User: 'The course is called Laravel Basics, it's 10 hours long for beginners'\n";
+        $prompt .= "Your response: 'Great! I've noted that down.'\n";
         $prompt .= "FIELD_COLLECTED:name=Laravel Basics\n";
         $prompt .= "FIELD_COLLECTED:duration=10\n";
         $prompt .= "FIELD_COLLECTED:level=beginner\n\n";
-        $prompt .= "IMPORTANT: Extract ALL values mentioned in the user's message, not just one at a time.\n";
-        $prompt .= "Place these markers at the END of your response, after your conversational text.\n\n";
+        $prompt .= "Example 2 (Arabic):\n";
+        $prompt .= "User: 'الدورة اسمها أساسيات Laravel ومدتها 10 ساعات للمبتدئين'\n";
+        $prompt .= "Your response: 'رائع! لقد سجلت ذلك.'\n";
+        $prompt .= "FIELD_COLLECTED:name=أساسيات Laravel\n";
+        $prompt .= "FIELD_COLLECTED:duration=10\n";
+        $prompt .= "FIELD_COLLECTED:level=beginner\n\n";
+        $prompt .= "RULES:\n";
+        $prompt .= "1. Extract ALL field values mentioned in EVERY user message\n";
+        $prompt .= "2. Place markers at the END of your response (after conversational text)\n";
+        $prompt .= "3. Field names MUST be in English (from the field list above)\n";
+        $prompt .= "4. Values can be in any language the user provides\n";
+        $prompt .= "5. Even if you acknowledge a value, you MUST include the marker\n";
+        $prompt .= "6. Missing markers = data loss = failure\n";
+        $prompt .= "═══════════════════════════════════════════════════════════════\n\n";
         $prompt .= "When all fields are collected and user confirms, respond with:\n";
         $prompt .= "DATA_COLLECTION_COMPLETE\n";
         $prompt .= "If user wants to cancel, respond with:\n";
@@ -473,6 +509,8 @@ class DataCollectorConfig
             actionSummaryGenerator: $config['actionSummaryGenerator'] ?? null,
             actionSummaryPrompt: $config['actionSummaryPrompt'] ?? null,
             actionSummaryPromptConfig: $config['actionSummaryPromptConfig'] ?? null,
+            summaryPrompt: $config['summaryPrompt'] ?? null,
+            summaryPromptConfig: $config['summaryPromptConfig'] ?? null,
             outputSchema: $config['outputSchema'] ?? null,
             outputPrompt: $config['outputPrompt'] ?? null,
             outputConfig: $config['outputConfig'] ?? null,
@@ -501,6 +539,8 @@ class DataCollectorConfig
             'actionSummary' => $this->actionSummary,
             'actionSummaryPrompt' => $this->actionSummaryPrompt,
             'actionSummaryPromptConfig' => $this->actionSummaryPromptConfig,
+            'summaryPrompt' => $this->summaryPrompt,
+            'summaryPromptConfig' => $this->summaryPromptConfig,
             'outputSchema' => $this->outputSchema,
             'outputPrompt' => $this->outputPrompt,
             'outputConfig' => $this->outputConfig,
