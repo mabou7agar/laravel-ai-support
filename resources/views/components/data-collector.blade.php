@@ -1,8 +1,6 @@
 @props([
     'sessionId' => 'dc-' . uniqid(),
-    'configName' => '',
-    'title' => 'Data Collection',
-    'description' => '',
+    'configName' => '',           // Reference to registered config (required if no inline config)
     'theme' => 'light',
     'height' => '500px',
     'apiEndpoint' => '/api/v1/data-collector',
@@ -11,9 +9,18 @@
     'showProgress' => true,
     'showFieldList' => true,
     'autoStart' => true,
-    'config' => [],
     'language' => 'en',
+    // Inline config (optional - if not provided, configName is used to fetch from server)
+    'inlineConfig' => null,       // Pass inline config array if needed
 ])
+
+@php
+    // Only pass minimal inline config if provided, otherwise use configName reference
+    $configData = $inlineConfig ? [
+        'name' => $inlineConfig['name'] ?? $configName,
+        'fields' => $inlineConfig['fields'] ?? [],
+    ] : null;
+@endphp
 
 <div 
     id="data-collector-{{ $sessionId }}" 
@@ -25,16 +32,13 @@
     data-engine="{{ $engine }}"
     data-model="{{ $model }}"
     data-auto-start="{{ $autoStart ? 'true' : 'false' }}"
-    data-config="{{ json_encode($config) }}"
-    data-language="{{ $language }}"
->
-    <!-- Header -->
+    data-inline-config="{{ $configData ? json_encode($configData) : '' }}"
+    data-language="{{ $language }}">
+    <!-- Header (title/description loaded from API) -->
     <div class="dc-header">
         <div class="dc-title-section">
-            <h3 class="dc-title">{{ $title }}</h3>
-            @if($description)
-                <p class="dc-description">{{ $description }}</p>
-            @endif
+            <h3 class="dc-title" id="title-{{ $sessionId }}">Loading...</h3>
+            <p class="dc-description" id="description-{{ $sessionId }}" style="display: none;"></p>
         </div>
         <div class="dc-header-actions">
             <button class="dc-action-btn dc-cancel-btn" id="cancel-{{ $sessionId }}" title="Cancel">
@@ -1034,17 +1038,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const successMessage = document.getElementById('success-message-{{ $sessionId }}');
     const successCloseBtn = document.getElementById('success-close-{{ $sessionId }}');
     
+    // Header elements for dynamic update
+    const titleEl = document.getElementById('title-{{ $sessionId }}');
+    const descriptionEl = document.getElementById('description-{{ $sessionId }}');
+    
     const sessionId = container.dataset.sessionId;
     const configName = container.dataset.configName;
     const apiEndpoint = container.dataset.apiEndpoint;
     const engine = container.dataset.engine;
     const model = container.dataset.model;
     const autoStart = container.dataset.autoStart === 'true';
-    const config = JSON.parse(container.dataset.config || '{}');
+    const inlineConfig = container.dataset.inlineConfig ? JSON.parse(container.dataset.inlineConfig) : null;
     const language = container.dataset.language || 'en';
     
     let currentState = null;
     let fields = [];
+    let config = {};  // Will be populated from API response
     
     // Initialize
     if (autoStart) {
@@ -1104,17 +1113,13 @@ document.addEventListener('DOMContentLoaded', function() {
         
         try {
             // Use /start-custom if inline config is provided, otherwise use /start with config_name
-            const hasInlineConfig = config && config.fields && Object.keys(config.fields).length > 0;
+            const hasInlineConfig = inlineConfig && inlineConfig.fields && Object.keys(inlineConfig.fields).length > 0;
             const endpoint = hasInlineConfig ? `${apiEndpoint}/start-custom` : `${apiEndpoint}/start`;
             
             const requestBody = hasInlineConfig ? {
                 session_id: sessionId,
-                name: config.name || 'inline_config',
-                title: config.title || '',
-                description: config.description || '',
-                fields: config.fields,
-                confirm_before_complete: config.confirmBeforeComplete ?? true,
-                allow_enhancement: config.allowEnhancement ?? true,
+                name: inlineConfig.name || configName || 'inline_config',
+                fields: inlineConfig.fields,
                 language: language,
             } : {
                 session_id: sessionId,
@@ -1137,7 +1142,13 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.success) {
                 currentState = data;
                 
-                // Initialize fields from config if not in response
+                // Store config from API response (includes all settings like actionSummary, etc.)
+                config = data.config || data.metadata?.config || {};
+                
+                // Update header with config data from API
+                updateHeader(data);
+                
+                // Initialize fields from API response
                 initializeFieldsFromConfig(data);
                 
                 updateUI(data);
@@ -1145,6 +1156,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 showQuickActions(data);
             } else {
                 addMessage('assistant', data.message || 'Failed to start session.');
+                if (titleEl) titleEl.textContent = 'Error';
             }
             
             updateStatus('Ready');
@@ -1152,7 +1164,28 @@ document.addEventListener('DOMContentLoaded', function() {
             hideTyping();
             addMessage('assistant', 'Failed to connect. Please try again.');
             updateStatus('Error');
+            if (titleEl) titleEl.textContent = 'Connection Error';
             console.error('Start session error:', error);
+        }
+    }
+    
+    function updateHeader(data) {
+        const configData = data.config || data.metadata?.config || {};
+        
+        // Update title
+        if (titleEl) {
+            titleEl.textContent = configData.title || data.config_name || configName || 'Data Collection';
+        }
+        
+        // Update description
+        if (descriptionEl) {
+            const desc = configData.description || '';
+            if (desc) {
+                descriptionEl.textContent = desc;
+                descriptionEl.style.display = 'block';
+            } else {
+                descriptionEl.style.display = 'none';
+            }
         }
     }
     
@@ -1487,13 +1520,28 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function initializeFieldsFromConfig(data) {
-        // Get fields from metadata or config
+        // Get fields from API response metadata
         const meta = data.metadata || {};
-        let allFieldNames = meta.fields || [];
+        let allFieldNames = meta.fields || data.fields || [];
         
-        // If no fields in response, get from local config
-        if (allFieldNames.length === 0 && config.fields) {
-            allFieldNames = Object.keys(config.fields);
+        // Store field definitions from API for use in quick actions
+        const fieldDefs = data.field_definitions || meta.field_definitions || {};
+        if (Object.keys(fieldDefs).length > 0) {
+            // Convert field definitions to config.fields format for quick actions
+            config.fields = {};
+            for (const [name, def] of Object.entries(fieldDefs)) {
+                config.fields[name] = {
+                    options: def.options || [],
+                    required: def.required ?? true,
+                    type: def.type || 'text',
+                    description: def.description || '',
+                };
+            }
+        }
+        
+        // Fallback to inline config if no fields from API
+        if (allFieldNames.length === 0 && inlineConfig?.fields) {
+            allFieldNames = Object.keys(inlineConfig.fields);
         }
         
         // Set up collected/remaining fields if not present
@@ -1664,10 +1712,16 @@ document.addEventListener('DOMContentLoaded', function() {
     function showConfirmationModal(data) {
         if (!confirmModal || !confirmBody) return;
         
+        // Get data from root level or metadata
+        const meta = data.metadata || {};
+        const collectedData = data.data || meta.data || {};
+        const actionSummary = data.action_summary || meta.action_summary || meta.config?.action_summary;
+        const configActionSummary = meta.config?.action_summary;
+        
         let html = '<div class="dc-summary">';
         
-        if (data.data) {
-            Object.entries(data.data).forEach(([key, value]) => {
+        if (collectedData && Object.keys(collectedData).length > 0) {
+            Object.entries(collectedData).forEach(([key, value]) => {
                 if (key.startsWith('_')) return; // Skip internal fields
                 html += `
                     <div class="dc-summary-item">
@@ -1680,9 +1734,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         html += '</div>';
         
-        if (data.action_summary) {
+        // Show action summary (dynamic from AI or static from config)
+        const summaryToShow = actionSummary || configActionSummary;
+        if (summaryToShow) {
             const whatWillHappen = currentLang === 'ar' ? 'ما سيحدث:' : 'What will happen:';
-            html += `<div class="dc-action-preview"><strong>${whatWillHappen}</strong><br>${data.action_summary}</div>`;
+            html += `<div class="dc-action-preview"><strong>${whatWillHappen}</strong><br>${formatMessage(summaryToShow)}</div>`;
         }
         
         confirmBody.innerHTML = html;

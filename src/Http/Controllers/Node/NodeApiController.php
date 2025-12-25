@@ -22,10 +22,84 @@ class NodeApiController extends Controller
             'timestamp' => now()->toIso8601String(),
         ]);
     }
+
+    /**
+     * Execute AI action on a model
+     */
+    public function execute(Request $request)
+    {
+        try {
+            $modelClass = $request->input('model_class');
+            $action = $request->input('action', 'create');
+            $params = $request->input('params', []);
+
+            if (!$modelClass) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Model class is required'
+                ], 400);
+            }
+
+            if (!class_exists($modelClass)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Model class {$modelClass} not found"
+                ], 404);
+            }
+
+            $reflection = new \ReflectionClass($modelClass);
+            
+            if (!$reflection->hasMethod('executeAI')) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Model {$modelClass} does not have executeAI method"
+                ], 400);
+            }
+
+            $method = $reflection->getMethod('executeAI');
+
+            // Execute the model's AI action
+            if ($method->isStatic()) {
+                $result = $modelClass::executeAI($action, $params);
+            } else {
+                $model = new $modelClass();
+                $result = $model->executeAI($action, $params);
+            }
+
+            // Format response
+            if (is_array($result) && isset($result['success'])) {
+                return response()->json($result);
+            } elseif (is_object($result)) {
+                // Model instance returned
+                return response()->json([
+                    'success' => true,
+                    'data' => method_exists($result, 'toArray') ? $result->toArray() : (array) $result,
+                    'id' => $result->id ?? null
+                ]);
+            } else {
+                return response()->json([
+                    'success' => true,
+                    'data' => $result
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Execute AI action failed', [
+                'model' => $request->input('model_class'),
+                'action' => $request->input('action'),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
     
     /**
      * Collections discovery endpoint
-     * Returns all available Vectorizable collections on this node
+     * Returns all available Vectorizable and HasAIActions models on this node
      */
     public function collections()
     {
@@ -33,6 +107,12 @@ class NodeApiController extends Controller
             $discoveryService = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
             // Get local collections only (no federated, no cache for fresh results)
             $classNames = $discoveryService->discover(useCache: false, includeFederated: false);
+            
+            // Also discover models with HasAIActions trait
+            $aiActionModels = $this->discoverAIActionModels();
+            
+            // Merge both lists (remove duplicates)
+            $classNames = array_unique(array_merge($classNames, $aiActionModels));
             
             // Format as detailed collection info with RAG descriptions
             $collections = [];
@@ -88,12 +168,36 @@ class NodeApiController extends Controller
                         // Couldn't instantiate, use default
                     }
                     
+                    // Check for AI action methods
+                    $methods = [];
+                    if ($reflection->hasMethod('executeAI')) {
+                        $methods[] = 'executeAI';
+                    }
+                    if ($reflection->hasMethod('initializeAI')) {
+                        $methods[] = 'initializeAI';
+                    }
+                    
+                    // Get format from initializeAI if available
+                    $format = null;
+                    if ($reflection->hasMethod('initializeAI')) {
+                        try {
+                            $method = $reflection->getMethod('initializeAI');
+                            if ($method->isStatic()) {
+                                $format = $className::initializeAI();
+                            }
+                        } catch (\Exception $e) {
+                            // Ignore errors
+                        }
+                    }
+                    
                     $collections[] = [
                         'class' => $className,
                         'name' => $name,
                         'display_name' => $displayName,
                         'table' => $table,
                         'description' => $description,  // ✅ RAG description for AI
+                        'methods' => $methods,  // ✅ AI action methods
+                        'format' => $format,  // ✅ Expected format for AI extraction
                     ];
                 } catch (\Exception $e) {
                     $collections[] = [
@@ -102,6 +206,8 @@ class NodeApiController extends Controller
                         'display_name' => class_basename($className),
                         'table' => 'unknown',
                         'description' => '',
+                        'methods' => [],
+                        'format' => null,
                     ];
                 }
             }
@@ -118,6 +224,66 @@ class NodeApiController extends Controller
                 'message' => $e->getMessage(),
             ], 500);
         }
+    }
+    
+    /**
+     * Discover models with HasAIActions trait
+     */
+    protected function discoverAIActionModels(): array
+    {
+        $models = [];
+        $paths = config('ai-engine.intelligent_rag.discovery_paths', [app_path('Models')]);
+        
+        // Expand glob patterns
+        $expandedPaths = [];
+        foreach ($paths as $path) {
+            if (str_contains($path, '*')) {
+                $globbed = glob($path);
+                $expandedPaths = array_merge($expandedPaths, $globbed);
+            } else {
+                $expandedPaths[] = $path;
+            }
+        }
+        
+        foreach ($expandedPaths as $path) {
+            if (!is_dir($path)) {
+                continue;
+            }
+            
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($path)
+            );
+            
+            foreach ($files as $file) {
+                if ($file->isDir() || $file->getExtension() !== 'php') {
+                    continue;
+                }
+                
+                $content = file_get_contents($file->getPathname());
+                
+                // Extract namespace
+                if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatch)) {
+                    $namespace = $nsMatch[1];
+                    
+                    // Extract class name
+                    if (preg_match('/class\s+(\w+)/', $content, $classMatch)) {
+                        $className = $namespace . '\\' . $classMatch[1];
+                        
+                        // Check if class uses HasAIActions trait
+                        if (class_exists($className)) {
+                            $reflection = new \ReflectionClass($className);
+                            $traits = $reflection->getTraitNames();
+                            
+                            if (in_array('LaravelAIEngine\\Traits\\HasAIActions', $traits)) {
+                                $models[] = $className;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return $models;
     }
     
     /**

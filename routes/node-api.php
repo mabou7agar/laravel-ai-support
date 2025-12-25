@@ -19,6 +19,7 @@ Route::prefix('api/ai-engine')->group(function () {
         Route::post('search', [NodeApiController::class, 'search']);
         Route::post('aggregate', [NodeApiController::class, 'aggregate']);
         Route::post('actions', [NodeApiController::class, 'executeAction']);
+        Route::post('execute', [NodeApiController::class, 'execute']);
         Route::get('status', [NodeApiController::class, 'status']);
         Route::post('refresh-token', [NodeApiController::class, 'refreshToken']);
     });

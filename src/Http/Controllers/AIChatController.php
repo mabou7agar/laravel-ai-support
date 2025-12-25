@@ -197,6 +197,10 @@ class AIChatController extends Controller
                 'sources' => $metadata['sources'] ?? [],
                 'numbered_options' => $metadata['numbered_options'] ?? [],
                 'has_options' => $metadata['has_options'] ?? false,
+                'aggregate_data' => $metadata['aggregate_data'] ?? [],
+                // Smart actions metadata (inline action system)
+                'smart_actions' => $metadata['smart_actions'] ?? [],
+                'action_executed' => $metadata['action_executed'] ?? null,
             ]);
 
         } catch (\Exception $e) {

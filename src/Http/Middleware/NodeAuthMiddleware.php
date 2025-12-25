@@ -79,6 +79,26 @@ class NodeAuthMiddleware
             return $next($request);
         }
         
+        // Check for shared secret from environment
+        $sharedSecret = config('ai-engine.nodes.shared_secret');
+        if ($sharedSecret && $token === $sharedSecret) {
+            // Create a virtual node for shared secret auth
+            $virtualNode = new AINode([
+                'id' => 0,
+                'name' => 'federated-node',
+                'slug' => 'federated',
+                'type' => 'federated',
+                'status' => 'active',
+            ]);
+            
+            $request->attributes->set('node', $virtualNode);
+            $request->attributes->set('auth_type', 'shared_secret');
+            
+            Log::channel('ai-engine')->debug('Node authenticated via shared secret');
+            
+            return $next($request);
+        }
+        
         // Fallback to API key authentication
         $node = $this->authService->validateApiKey($token);
         

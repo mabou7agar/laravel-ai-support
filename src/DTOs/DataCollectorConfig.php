@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\DTOs;
 
 use Closure;
+use Illuminate\Support\Str;
 
 /**
  * Configuration for a Data Collector Chat session
@@ -42,10 +43,13 @@ class DataCollectorConfig
 {
     /** @var DataCollectorField[] */
     protected array $parsedFields = [];
+    
+    /** @var string Internal identifier (auto-generated UUID if not provided) */
+    public readonly string $name;
 
     public function __construct(
-        public readonly string $name,
-        public readonly string $title = '',
+        ?string $name = null,                        // Internal identifier (auto-generated UUID if not provided)
+        public readonly string $title = '',          // Display title for the user
         public readonly string $description = '',
         public readonly array $fields = [],
         public readonly ?Closure $onComplete = null,
@@ -67,6 +71,9 @@ class DataCollectorConfig
         public readonly ?string $locale = null, // Force AI responses in specific language (e.g., 'en', 'ar', 'fr')
         public readonly bool $detectLocale = false, // Auto-detect language from user's first message
     ) {
+        // Auto-generate UUID for name if not provided
+        $this->name = $name ?? 'dc_' . Str::uuid()->toString();
+        
         $this->parseFields();
     }
 
@@ -449,7 +456,7 @@ class DataCollectorConfig
     public static function fromArray(array $config): self
     {
         return new self(
-            name: $config['name'] ?? 'data_collector',
+            name: $config['name'] ?? null,  // Will auto-generate UUID if null
             title: $config['title'] ?? '',
             description: $config['description'] ?? '',
             fields: $config['fields'] ?? [],
@@ -475,7 +482,7 @@ class DataCollectorConfig
     }
 
     /**
-     * Convert to array
+     * Convert to array (includes all configuration for cache/database persistence)
      */
     public function toArray(): array
     {
@@ -490,9 +497,18 @@ class DataCollectorConfig
             'successMessage' => $this->successMessage,
             'cancelMessage' => $this->cancelMessage,
             'metadata' => $this->metadata,
+            'systemPrompt' => $this->systemPrompt,
             'actionSummary' => $this->actionSummary,
+            'actionSummaryPrompt' => $this->actionSummaryPrompt,
+            'actionSummaryPromptConfig' => $this->actionSummaryPromptConfig,
+            'outputSchema' => $this->outputSchema,
+            'outputPrompt' => $this->outputPrompt,
+            'outputConfig' => $this->outputConfig,
             'locale' => $this->locale,
             'detectLocale' => $this->detectLocale,
+            // Note: onComplete and actionSummaryGenerator closures cannot be serialized
+            // They must be re-registered when loading from cache/database
+            'onCompleteAction' => $this->onCompleteAction,
         ];
     }
 }

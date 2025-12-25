@@ -25,6 +25,9 @@ class DynamicActionService
             // Discover model-based actions
             $actions = array_merge($actions, $this->discoverModelActions());
             
+            // Discover remote model actions from federated nodes
+            $actions = array_merge($actions, $this->discoverRemoteModelActions());
+            
             // Discover configured API actions
             $actions = array_merge($actions, $this->discoverConfiguredActions());
             
@@ -67,6 +70,74 @@ class DynamicActionService
             } catch (\Exception $e) {
                 continue;
             }
+        }
+        
+        return $actions;
+    }
+    
+    /**
+     * Discover actions from remote nodes via collections endpoint
+     */
+    protected function discoverRemoteModelActions(): array
+    {
+        $actions = [];
+        
+        try {
+            $nodes = \LaravelAIEngine\Models\AINode::where('status', 'active')->get();
+            
+            foreach ($nodes as $node) {
+                try {
+                    $response = \Illuminate\Support\Facades\Http::withoutVerifying()
+                        ->timeout(5)
+                        ->get($node->url . '/api/ai-engine/collections');
+                    
+                    if (!$response->successful()) {
+                        continue;
+                    }
+                    
+                    $data = $response->json();
+                    $collections = $data['collections'] ?? [];
+                    
+                    foreach ($collections as $collection) {
+                        $className = $collection['class'] ?? null;
+                        $methods = $collection['methods'] ?? [];
+                        
+                        // Check if model has executeAI and initializeAI methods
+                        if ($className && 
+                            in_array('executeAI', $methods) && 
+                            in_array('initializeAI', $methods)) {
+                            
+                            $format = $collection['format'] ?? null;
+                            
+                            if ($format) {
+                                $actions[] = [
+                                    'id' => 'create_' . strtolower(class_basename($className)),
+                                    'label' => $format['label'] ?? '🎯 Create ' . class_basename($className),
+                                    'description' => $format['description'] ?? 'Create a new ' . class_basename($className),
+                                    'endpoint' => null,
+                                    'method' => 'POST',
+                                    'model_class' => $className,
+                                    'required_params' => $format['required_params'] ?? $format['required'] ?? [],
+                                    'optional_params' => $format['optional_params'] ?? $format['optional'] ?? [],
+                                    'context_triggers' => $format['context_triggers'] ?? $format['triggers'] ?? [],
+                                    'is_remote' => true,
+                                    'node_url' => $node->url,
+                                    'node_name' => $node->name,
+                                ];
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::warning('Failed to discover actions from node: ' . $node->name, [
+                        'error' => $e->getMessage()
+                    ]);
+                    continue;
+                }
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to discover remote model actions', [
+                'error' => $e->getMessage()
+            ]);
         }
         
         return $actions;

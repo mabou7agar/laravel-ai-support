@@ -51,13 +51,24 @@ class DataCollectorController extends Controller
         }
 
         $response = $this->dataCollector->startCollection($sessionId, $config, $initialData);
+        $metadata = $response->getMetadata();
 
         return response()->json([
             'success' => true,
             'session_id' => $sessionId,
             'message' => $response->getContent(),
             'actions' => $response->getActions(),
-            'metadata' => $response->getMetadata(),
+            'metadata' => $metadata,
+            // Flatten commonly used fields for easier frontend access
+            'config_name' => $metadata['config_name'] ?? $configName,
+            'fields' => $metadata['fields'] ?? [],
+            'current_field' => $metadata['current_field'] ?? null,
+            'collected_fields' => $metadata['collected_fields'] ?? [],
+            'remaining_fields' => $metadata['remaining_fields'] ?? [],
+            'progress' => $metadata['progress'] ?? 0,
+            'data' => $metadata['data'] ?? [],
+            'config' => $metadata['config'] ?? null,
+            'field_definitions' => $metadata['field_definitions'] ?? [],
         ]);
     }
 
@@ -72,27 +83,53 @@ class DataCollectorController extends Controller
     public function startCustom(Request $request): JsonResponse
     {
         $request->validate([
-            'name' => 'required|string',
-            'title' => 'nullable|string',
+            'name' => 'nullable|string',             // Optional - auto-generated UUID if not provided
+            'title' => 'required|string',            // Required - display title for the user
             'description' => 'nullable|string',
             'fields' => 'required|array',
             'session_id' => 'nullable|string',
             'initial_data' => 'nullable|array',
             'confirm_before_complete' => 'nullable|boolean',
             'allow_enhancement' => 'nullable|boolean',
+            'allow_skip_optional' => 'nullable|boolean',
             'language' => 'nullable|string',
+            'success_message' => 'nullable|string',
+            'cancel_message' => 'nullable|string',
+            'system_prompt' => 'nullable|string',
+            'action_summary' => 'nullable|string',
+            'action_summary_prompt' => 'nullable|string',
+            'action_summary_prompt_config' => 'nullable|array',
+            'output_schema' => 'nullable|array',
+            'output_prompt' => 'nullable|string',
+            'output_config' => 'nullable|array',
+            'on_complete_action' => 'nullable|string',
+            'metadata' => 'nullable|array',
+            'detect_locale' => 'nullable|boolean',
         ]);
 
         $sessionId = $request->input('session_id', 'dc-' . uniqid());
         
         $config = new DataCollectorConfig(
-            name: $request->input('name'),
-            title: $request->input('title') ?? '',
+            name: $request->input('name'),           // Will auto-generate UUID if null
+            title: $request->input('title'),
             description: $request->input('description') ?? '',
             fields: $request->input('fields'),
+            onCompleteAction: $request->input('on_complete_action'),
             confirmBeforeComplete: $request->boolean('confirm_before_complete', true),
             allowEnhancement: $request->boolean('allow_enhancement', true),
+            allowSkipOptional: $request->boolean('allow_skip_optional', true),
+            successMessage: $request->input('success_message'),
+            cancelMessage: $request->input('cancel_message'),
+            metadata: $request->input('metadata', []),
+            systemPrompt: $request->input('system_prompt'),
+            actionSummary: $request->input('action_summary'),
+            actionSummaryPrompt: $request->input('action_summary_prompt'),
+            actionSummaryPromptConfig: $request->input('action_summary_prompt_config'),
+            outputSchema: $request->input('output_schema'),
+            outputPrompt: $request->input('output_prompt'),
+            outputConfig: $request->input('output_config'),
             locale: $request->input('language'),
+            detectLocale: $request->boolean('detect_locale', false),
         );
 
         $response = $this->dataCollector->startCollection(
@@ -100,13 +137,24 @@ class DataCollectorController extends Controller
             $config,
             $request->input('initial_data', [])
         );
+        $metadata = $response->getMetadata();
 
         return response()->json([
             'success' => true,
             'session_id' => $sessionId,
             'message' => $response->getContent(),
             'actions' => $response->getActions(),
-            'metadata' => $response->getMetadata(),
+            'metadata' => $metadata,
+            // Flatten commonly used fields for easier frontend access
+            'config_name' => $metadata['config_name'] ?? $config->name,
+            'fields' => $metadata['fields'] ?? [],
+            'current_field' => $metadata['current_field'] ?? null,
+            'collected_fields' => $metadata['collected_fields'] ?? [],
+            'remaining_fields' => $metadata['remaining_fields'] ?? [],
+            'progress' => $metadata['progress'] ?? 0,
+            'data' => $metadata['data'] ?? [],
+            'config' => $metadata['config'] ?? null,
+            'field_definitions' => $metadata['field_definitions'] ?? [],
         ]);
     }
 
@@ -134,11 +182,30 @@ class DataCollectorController extends Controller
             $request->input('model', 'gpt-4o')
         );
 
+        $metadata = $response->getMetadata();
+
         return response()->json([
             'success' => $response->isSuccessful(),
             'message' => $response->getContent(),
             'actions' => $response->getActions(),
-            'metadata' => $response->getMetadata(),
+            'metadata' => $metadata,
+            // Flatten commonly used fields for easier frontend access
+            'status' => $metadata['status'] ?? null,
+            'is_complete' => $metadata['is_complete'] ?? false,
+            'is_cancelled' => $metadata['is_cancelled'] ?? false,
+            'requires_confirmation' => $metadata['requires_confirmation'] ?? false,
+            'allows_enhancement' => $metadata['allows_enhancement'] ?? false,
+            'current_field' => $metadata['current_field'] ?? null,
+            'collected_fields' => $metadata['collected_fields'] ?? [],
+            'remaining_fields' => $metadata['remaining_fields'] ?? [],
+            'fields' => $metadata['fields'] ?? [],
+            'progress' => $metadata['progress'] ?? 0,
+            'data' => $metadata['data'] ?? [],
+            'summary' => $metadata['summary'] ?? null,
+            'action_summary' => $metadata['action_summary'] ?? null,
+            'result' => $metadata['result'] ?? null,
+            'generated_output' => $metadata['generated_output'] ?? null,
+            'config' => $metadata['config'] ?? null,
         ]);
     }
 

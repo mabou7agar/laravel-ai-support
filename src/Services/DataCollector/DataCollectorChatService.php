@@ -47,17 +47,40 @@ class DataCollectorChatService
         // Build actions for the response
         $actions = $this->buildActions($state, $config);
 
+        // Build comprehensive metadata including config details
+        $metadata = [
+            'data_collector' => true,
+            'config_name' => $config->name,
+            'status' => $state->status,
+            'fields' => $config->getFieldNames(),
+            'current_field' => $state->currentField,
+            'collected_fields' => [],
+            'remaining_fields' => $config->getFieldNames(),
+            'progress' => 0,
+            'data' => [],
+            'config' => [
+                'title' => $config->title,
+                'description' => $config->description,
+                'confirm_before_complete' => $config->confirmBeforeComplete,
+                'allow_enhancement' => $config->allowEnhancement,
+                'allow_skip_optional' => $config->allowSkipOptional,
+                'success_message' => $config->successMessage,
+                'cancel_message' => $config->cancelMessage,
+                'action_summary' => $config->actionSummary,
+                'action_summary_prompt' => $config->actionSummaryPrompt,
+                'output_schema' => $config->outputSchema,
+                'locale' => $config->locale,
+                'detect_locale' => $config->detectLocale,
+            ],
+            // Include field definitions for frontend
+            'field_definitions' => array_map(fn($f) => $f->toArray(), $config->getFields()),
+        ];
+
         return $this->buildResponse(
             content: $greeting,
             state: $state,
             actions: $actions,
-            metadata: [
-                'data_collector' => true,
-                'config_name' => $config->name,
-                'status' => $state->status,
-                'fields' => $config->getFieldNames(),
-                'progress' => 0,
-            ]
+            metadata: $metadata
         );
     }
 
@@ -102,6 +125,7 @@ class DataCollectorChatService
         // Build metadata
         $metadata = [
             'data_collector' => true,
+            'config_name' => $config?->name,
             'status' => $response->state?->status,
             'is_complete' => $response->isComplete,
             'is_cancelled' => $response->isCancelled,
@@ -110,12 +134,18 @@ class DataCollectorChatService
             'current_field' => $response->currentField,
             'collected_fields' => $response->collectedFields,
             'remaining_fields' => $response->remainingFields,
+            'fields' => $config?->getFieldNames() ?? [],
             'progress' => $response->getProgress(),
             'validation_errors' => $response->validationErrors,
+            'data' => $response->getData(),
         ];
 
         if ($response->summary) {
             $metadata['summary'] = $response->summary;
+        }
+
+        if ($response->actionSummary) {
+            $metadata['action_summary'] = $response->actionSummary;
         }
 
         if ($response->result !== null) {
@@ -124,6 +154,21 @@ class DataCollectorChatService
 
         if ($response->generatedOutput !== null) {
             $metadata['generated_output'] = $response->generatedOutput;
+        }
+
+        // Include config metadata if available
+        if ($config) {
+            $metadata['config'] = [
+                'title' => $config->title,
+                'description' => $config->description,
+                'confirm_before_complete' => $config->confirmBeforeComplete,
+                'allow_enhancement' => $config->allowEnhancement,
+                'allow_skip_optional' => $config->allowSkipOptional,
+                'success_message' => $config->successMessage,
+                'cancel_message' => $config->cancelMessage,
+                'action_summary' => $config->actionSummary,
+                'locale' => $config->locale,
+            ];
         }
 
         // If complete or cancelled, clean up session after a delay

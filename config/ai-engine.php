@@ -52,33 +52,33 @@ return [
     'project_context' => [
         // Enable/disable project context injection
         'enabled' => env('AI_ENGINE_PROJECT_CONTEXT_ENABLED', true),
-        
+
         // Main project description - describe what your application does
         // This helps the AI understand the domain and make better decisions
         'description' => env('AI_ENGINE_PROJECT_DESCRIPTION', ''),
-        
+
         // Industry/domain (e.g., 'healthcare', 'finance', 'e-commerce', 'hr', 'education')
         'industry' => env('AI_ENGINE_PROJECT_INDUSTRY', ''),
-        
+
         // Key entities/concepts in your system
         // Example: ['employees', 'departments', 'payroll', 'leave requests', 'performance reviews']
         'key_entities' => [],
-        
+
         // Business rules or constraints the AI should be aware of
         // Example: ['All employee data is confidential', 'Payroll calculations follow local tax laws']
         'business_rules' => [],
-        
+
         // Terminology/glossary specific to your domain
         // Example: ['PTO' => 'Paid Time Off', 'FTE' => 'Full Time Employee']
         'terminology' => [],
-        
+
         // Target users of the system
         // Example: 'HR managers, department heads, and employees'
         'target_users' => env('AI_ENGINE_PROJECT_TARGET_USERS', ''),
-        
+
         // Data sensitivity level: 'public', 'internal', 'confidential', 'restricted'
         'data_sensitivity' => env('AI_ENGINE_PROJECT_DATA_SENSITIVITY', 'internal'),
-        
+
         // Additional custom context (free-form text)
         'additional_context' => env('AI_ENGINE_PROJECT_ADDITIONAL_CONTEXT', ''),
     ],
@@ -757,12 +757,12 @@ return [
         // OpenAI text-embedding-3-* has 8191 token limit ≈ ~6000 chars (avg 1.3 chars/token)
         // Using 5500 chars as safe default to account for special characters and encoding
         'max_content_size' => env('VECTOR_MAX_CONTENT_SIZE', 5500),
-        
+
         // Multi-chunk indexing: create multiple vector points for large documents
         // When enabled, large content is split into chunks, each with its own embedding
         // This provides better semantic coverage for large documents
         'multi_chunk_enabled' => env('VECTOR_MULTI_CHUNK_ENABLED', true),
-        
+
         // Overlap between chunks (in characters) for context continuity
         'chunk_overlap' => env('VECTOR_CHUNK_OVERLAP', 200),
 
@@ -956,6 +956,10 @@ return [
         // JWT secret for node authentication
         'jwt_secret' => env('AI_ENGINE_JWT_SECRET', env('APP_KEY')),
 
+        // Shared secret for inter-node communication (use same value on all nodes)
+        // Defaults to JWT secret if not specified
+        'shared_secret' => env('AI_ENGINE_SHARED_SECRET', env('AI_ENGINE_JWT_SECRET', env('APP_KEY'))),
+
         // Node capabilities
         'capabilities' => ['search', 'actions', 'rag'],
 
@@ -978,19 +982,19 @@ return [
         'cache' => [
             // Enable caching for federated search
             'enabled' => env('AI_ENGINE_CACHE_ENABLED', true),
-            
+
             // Cache driver: null (use default), 'file', 'redis', 'memcached', 'database', 'array'
             'driver' => env('AI_ENGINE_CACHE_DRIVER'),
-            
+
             // Cache store name (if using a specific store from config/cache.php)
             'store' => env('AI_ENGINE_CACHE_STORE'),
-            
+
             // Cache prefix for all keys
             'prefix' => env('AI_ENGINE_CACHE_PREFIX', 'ai_engine'),
-            
+
             // Use database as fallback/persistent cache (requires ai_node_search_cache table)
             'use_database' => env('AI_ENGINE_CACHE_USE_DATABASE', false),
-            
+
             // Enable cache tags (only works with Redis/Memcached)
             'use_tags' => env('AI_ENGINE_CACHE_USE_TAGS', false),
         ],
@@ -1036,7 +1040,7 @@ return [
     'conversation_history' => [
         // Enable history optimization (sliding window)
         'enabled' => env('AI_CONVERSATION_HISTORY_OPTIMIZATION', true),
-        
+
         // Number of recent messages to keep when history is long
         'recent_messages' => env('AI_CONVERSATION_RECENT_MESSAGES', 10),
     ],
