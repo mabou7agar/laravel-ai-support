@@ -44,6 +44,8 @@
 | **RAG Descriptions** | Describe collection content | `getRAGDescription()` method |
 | **Simple Filters** | Property-based access control | `public static $skipUserFilter = true` |
 | **Force Reindex** | Recreate collections | `php artisan ai-engine:vector-index --force` |
+| **Data Collector** | Conversational forms | [Full Guide](docs/features/data-collector.md) |
+| **Publishing Routes** | Customize API endpoints | `vendor:publish --tag=ai-engine-routes` |
 
 **💡 Key Point:** `useIntelligentRAG: false` = **NO RAG at all** (direct AI response)
 
@@ -167,11 +169,15 @@ php artisan ai-engine:sync-models
 
 ### 💬 Data Collector Chat
 - **Conversational Forms**: Replace traditional forms with AI-guided conversations
-- **Field Validation**: Built-in validation with helpful error messages
-- **AI-Generated Summaries**: Dynamic previews of what will be created
+- **Smart Field Extraction**: 3-layer extraction system (markers → structured text → direct extraction)
+- **Robust Field Tracking**: Accurate progress tracking with all fields (required + optional)
+- **AI-Generated Summaries**: Dynamic previews with modification support
+- **Output Modification**: Modify AI-generated content (lessons, structure) during enhancement
+- **Confirmed Output Matching**: Final JSON matches exactly what user confirmed
 - **Structured Output**: Generate complex JSON data (courses with lessons, etc.)
+- **Field Validation**: Built-in validation with helpful error messages
 - **Multi-Language Support**: Force specific language or auto-detect from user input
-- **Enhancement Mode**: Users can modify fields after initial collection
+- **Enhancement Mode**: Users can modify both input fields and generated output
 - **Interactive Actions**: Quick reply buttons and field options
 - **Blade Component**: Ready-to-use `<x-ai-engine::data-collector />` component
 
@@ -1080,7 +1086,7 @@ POST /api/v1/actions/select-option
 }
 ```
 
-📖 **Full Documentation:** [docs/actions.md](docs/actions.md)
+📖 **Full Documentation:** [docs/features/actions.md](docs/features/actions.md)
 
 ---
 
@@ -1452,39 +1458,39 @@ php artisan ai-engine:test-package
 
 | Guide | Description |
 |-------|-------------|
-| **[Quick Start](docs/quickstart.md)** | Get started in 5 minutes |
-| **[Installation](docs/installation.md)** | Complete installation guide |
-| **[Configuration](docs/configuration.md)** | All configuration options |
-| **[RAG Guide](docs/rag.md)** | Retrieval-Augmented Generation |
-| **[Vector Search](docs/vector-search.md)** | Semantic search setup |
-| **[Conversations](docs/conversations.md)** | Chat with memory |
-| **[Multi-Modal](docs/multimodal.md)** | Images, audio, documents |
+| **[Quick Start](docs/getting-started/quickstart.md)** | Get started in 5 minutes |
+| **[Installation](docs/getting-started/installation.md)** | Complete installation guide |
+| **[Configuration](docs/getting-started/configuration.md)** | All configuration options |
+| **[RAG Guide](docs/features/rag.md)** | Retrieval-Augmented Generation |
+| **[Vector Search](docs/features/vector-search.md)** | Semantic search setup |
+| **[Conversations](docs/features/conversations.md)** | Chat with memory |
+| **[Multi-Modal](docs/features/multimodal.md)** | Images, audio, documents |
 
 ### 🔐 Security & Access Control
 
 | Guide | Description |
 |-------|-------------|
-| **[Multi-Tenant Access](docs/MULTI_TENANT_RAG_ACCESS_CONTROL.md)** | User/Tenant/Admin isolation |
-| **[Simplified Access](docs/SIMPLIFIED_ACCESS_CONTROL.md)** | Quick access control setup |
+| **[Multi-Tenant Access](docs/security/multi-tenant-access-control.md)** | User/Tenant/Admin isolation |
+| **[Simplified Access](docs/security/simplified-access-control.md)** | Quick access control setup |
 | **[Security Fixes](SECURITY_FIXES.md)** | Security best practices |
 
 ### 🌐 Federated RAG
 
 | Guide | Description |
 |-------|-------------|
-| **[Federated RAG Success](docs/FEDERATED-RAG-SUCCESS.md)** | Complete federated setup |
-| **[Master Node Usage](docs/MASTER_NODE_CLIENT_USAGE.md)** | Master node configuration |
+| **[Federated RAG Success](docs/federated-rag/success.md)** | Complete federated setup |
+| **[Master Node Usage](docs/federated-rag/master-node-usage.md)** | Master node configuration |
 | **[Node Registration](docs/archive/NODE-REGISTRATION-GUIDE.md)** | Register child nodes |
 
 ### 🎯 Advanced Features
 
 | Guide | Description |
 |-------|-------------|
-| **[Chunking Strategies](docs/CHUNKING-STRATEGIES.md)** | Smart content splitting |
-| **[Large Media Processing](docs/LARGE-MEDIA-PROCESSING.md)** | Handle large files |
-| **[URL & Media Embeddings](docs/URL-MEDIA-EMBEDDINGS.md)** | Embed URLs and media |
-| **[User Context Injection](docs/USER_CONTEXT_INJECTION.md)** | Inject user context |
-| **[Troubleshooting RAG](docs/TROUBLESHOOTING_NO_RAG_RESULTS.md)** | Fix common issues |
+| **[Chunking Strategies](docs/advanced/chunking-strategies.md)** | Smart content splitting |
+| **[Large Media Processing](docs/advanced/large-media-processing.md)** | Handle large files |
+| **[URL & Media Embeddings](docs/advanced/url-media-embeddings.md)** | Embed URLs and media |
+| **[User Context Injection](docs/security/user-context-injection.md)** | Inject user context |
+| **[Troubleshooting RAG](docs/deployment/troubleshooting.md)** | Fix common issues |
 
 ### 🔧 Integration Guides
 
@@ -1500,7 +1506,7 @@ php artisan ai-engine:test-package
 | Resource | Description |
 |----------|-------------|
 | **[Changelog](CHANGELOG.md)** | Version history |
-| **[API Reference](docs/README.md)** | Full API documentation |
+| **[Documentation Index](docs/INDEX.md)** | Complete documentation index |
 | **[Artisan Commands](#-artisan-commands)** | CLI reference |
 
 ---
@@ -1762,10 +1768,10 @@ Auto-detection for: **Spatie Laravel Multitenancy**, **Stancl Tenancy**, **Tenan
 ### Documentation
 
 For complete documentation, see:
-- **[Multi-Tenant RAG Access Control](docs/MULTI_TENANT_RAG_ACCESS_CONTROL.md)**
-- **[Workspace Isolation](docs/WORKSPACE_ISOLATION.md)** 🆕
-- **[Multi-Database Tenancy](docs/MULTI_DATABASE_TENANCY.md)** 🆕
-- **[Simplified Access Control](docs/SIMPLIFIED_ACCESS_CONTROL.md)**
+- **[Multi-Tenant RAG Access Control](docs/security/multi-tenant-access-control.md)**
+- **[Workspace Isolation](docs/security/workspace-isolation.md)** 🆕
+- **[Multi-Database Tenancy](docs/security/multi-database-tenancy.md)** 🆕
+- **[Simplified Access Control](docs/security/simplified-access-control.md)**
 - **[Security Fixes](SECURITY_FIXES.md)**
 
 ---
@@ -1981,7 +1987,7 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 - **Simple Filters**: Property-based access control with `public static $skipUserFilter = true`
 - **Auto-Generated Descriptions**: Collections without descriptions get defaults with warnings
 - **Node Routing**: Automatically routes searches to the correct nodes
-- **See**: [Full Documentation](docs/INTELLIGENT_FEDERATED_SEARCH.md)
+- **See**: [Full Documentation](docs/federated-rag/intelligent-search.md)
 
 ✨ **Aggregate Query Detection** 📊
 - **Auto-Detection**: Queries like "how many", "count", "total" automatically detected
@@ -2017,13 +2023,17 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 
 ✨ **Data Collector Chat** 💬 (NEW!)
 - **Conversational Forms**: Replace traditional forms with AI-guided conversations
+- **Smart Field Extraction**: 3-layer extraction system (markers → structured text → direct extraction)
+- **Robust Field Tracking**: Accurate progress tracking with all fields (required + optional)
+- **Output Modification**: Modify AI-generated content (lessons, structure) during enhancement
+- **Confirmed Output Matching**: Final JSON matches exactly what user confirmed
 - **Field Validation**: Built-in validation with helpful error messages
 - **AI-Generated Summaries**: Dynamic previews of what will be created
 - **Structured Output**: Generate complex JSON (courses with lessons, products with variants)
 - **Multi-Language**: Force specific language (`locale: 'ar'`) or auto-detect (`detectLocale: true`)
-- **Enhancement Mode**: Users can modify fields after initial collection
+- **Enhancement Mode**: Users can modify both input fields and generated output
 - **Interactive Actions**: Quick reply buttons and field options
-- **See**: [Full Documentation](docs/guides/DATA_COLLECTOR_CHAT_GUIDE.md)
+- **See**: [Full Documentation](docs/features/data-collector.md) | [Publishing Guide](docs/deployment/publishing.md)
 
 ```php
 // Quick example
@@ -2073,6 +2083,8 @@ $templateEngine->createTemplate([
 ## 💬 Data Collector Component
 
 The Data Collector provides a conversational UI for collecting structured data from users with AI-powered file extraction and multilingual support.
+
+**📖 [Full Documentation](docs/features/data-collector.md)** | **📦 [Publishing Guide](docs/deployment/publishing.md)**
 
 ### Blade Component Usage
 
@@ -2142,7 +2154,11 @@ The Data Collector provides a conversational UI for collecting structured data f
 
 - **📎 File Upload**: Upload PDF, TXT, DOC, DOCX files to auto-fill fields with AI extraction
 - **🌐 Multilingual Support**: Full Arabic/RTL support with translated UI elements
-- **Progress Tracking**: Visual progress bar and field counter
+- **📊 Accurate Progress Tracking**: Shows all fields (required + optional) in remaining list
+- **🎯 Smart Field Extraction**: 3-layer fallback system ensures values are always captured
+- **✏️ Output Modification**: Modify AI-generated lessons/content during enhancement phase
+- **✅ Confirmed Output Matching**: Final JSON output matches exactly what user confirmed
+- **🔄 Direct Extraction Fallback**: Extracts values even when AI doesn't use markers
 - **Field Status**: Shows pending, current, completed, and error states
 - **Quick Actions**: Auto-generated buttons for select options
 - **Confirmation Modal**: Review data before submission with "What will happen" preview
@@ -2229,11 +2245,35 @@ DataCollector::registerConfig(new DataCollectorConfig(
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/v1/data-collector/start` | POST | Start a new session |
+| `/api/v1/data-collector/start-custom` | POST | Start with inline config |
 | `/api/v1/data-collector/message` | POST | Send a message |
 | `/api/v1/data-collector/analyze-file` | POST | Upload and analyze file |
 | `/api/v1/data-collector/apply-extracted` | POST | Apply extracted data |
 | `/api/v1/data-collector/status/{sessionId}` | GET | Get session status |
+| `/api/v1/data-collector/data/{sessionId}` | GET | Get collected data |
 | `/api/v1/data-collector/cancel` | POST | Cancel session |
+
+### Publishing Routes
+
+You can publish and customize the API routes:
+
+```bash
+# Publish main API routes (includes Data Collector)
+php artisan vendor:publish --tag=ai-engine-routes
+
+# Publish node API routes
+php artisan vendor:publish --tag=ai-engine-node-routes
+```
+
+**Route Loading Behavior:**
+- Routes load automatically from package by default
+- If published, the published version takes precedence
+- Delete published file to revert to package routes
+- No code changes needed - automatic fallback
+
+**Published Files:**
+- `routes/ai-engine-api.php` - Main API routes
+- `routes/ai-engine-node-api.php` - Node API routes
 
 ✨ **Simplified API** 🎯
 - **Pass User ID Only**: No need to pass user objects
