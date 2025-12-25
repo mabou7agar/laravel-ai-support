@@ -116,6 +116,11 @@ class DataCollectorService
 
     /**
      * Process a user message in the data collection flow
+     * 
+     * @param string $sessionId Session identifier
+     * @param string $message User's message
+     * @param string $engine AI engine to use
+     * @param string $model AI model to use
      */
     public function processMessage(
         string $sessionId,
@@ -133,19 +138,16 @@ class DataCollectorService
             );
         }
 
-        $config = $this->getConfig($state->configName);
-        
-        // Fallback: try to load from embedded config in state
-        if (!$config && $state->embeddedConfig) {
+        // Priority 1: Load from embedded config in state (most reliable)
+        if ($state->embeddedConfig) {
             $config = DataCollectorConfig::fromArray($state->embeddedConfig);
-            // Re-register and cache for future requests
-            $this->registerConfig($config);
-            $this->saveConfig($config);
-            
-            Log::channel('ai-engine')->info('Config restored from embedded state', [
-                'session_id' => $sessionId,
-                'config_name' => $config->name,
-            ]);
+            // Also cache it for performance
+            if (!isset($this->registeredConfigs[$config->name])) {
+                $this->registerConfig($config);
+            }
+        } else {
+            // Fallback: try cache/registry
+            $config = $this->getConfig($state->configName);
         }
         
         if (!$config) {

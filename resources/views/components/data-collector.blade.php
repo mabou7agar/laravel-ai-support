@@ -1212,6 +1212,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: JSON.stringify({
                     session_id: sessionId,
                     message: message,
+                    config_name: config.name || currentState?.config_name || configName,
                     engine: engine,
                     model: model
                 })

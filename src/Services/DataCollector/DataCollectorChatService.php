@@ -108,7 +108,7 @@ class DataCollectorChatService
             );
         }
 
-        // Process the message
+        // Process the message (config is loaded from embedded state)
         $response = $this->dataCollector->processMessage(
             $sessionId,
             $message,

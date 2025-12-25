@@ -171,6 +171,7 @@ class DataCollectorController extends Controller
         $request->validate([
             'session_id' => 'required|string',
             'message' => 'required|string',
+            'config_name' => 'nullable|string',
             'engine' => 'nullable|string',
             'model' => 'nullable|string',
         ]);
@@ -190,6 +191,7 @@ class DataCollectorController extends Controller
             'actions' => $response->getActions(),
             'metadata' => $metadata,
             // Flatten commonly used fields for easier frontend access
+            'config_name' => $metadata['config_name'] ?? null,
             'status' => $metadata['status'] ?? null,
             'is_complete' => $metadata['is_complete'] ?? false,
             'is_cancelled' => $metadata['is_cancelled'] ?? false,
