@@ -825,9 +825,51 @@ The package includes a powerful **Smart Action System** that generates executabl
 | Feature | Description |
 |---------|-------------|
 | **AI Parameter Extraction** | Automatically extracts emails, dates, times from content |
+| **Intent Analysis** | AI analyzes user intent (confirm, reject, modify, etc.) for smarter responses |
 | **Pre-filled Actions** | Actions come ready-to-execute with all required data |
 | **Federated Execution** | Actions automatically route to the correct node |
 | **Smart Executors** | Built-in handlers for email, calendar, tasks, and more |
+
+### Intent Analysis
+
+The system uses AI to analyze user messages and detect intent **before** calling the main AI, enabling:
+
+- **Instant confirmation** - "yes" executes action immediately without AI call
+- **Smart rejection** - "cancel" or "no" cancels pending actions
+- **Modification detection** - "change price to $1999" updates parameters
+- **Question handling** - AI receives context that user needs clarification
+- **Language-agnostic** - Works in any language (English, Arabic, Japanese, etc.)
+
+**Supported Intents:**
+- `confirm` - User agrees to proceed
+- `reject` - User cancels/declines
+- `modify` - User wants to change parameters
+- `provide_data` - User provides additional optional data
+- `question` - User asks for clarification
+- `new_request` - Completely new action
+
+**Configuration:**
+```php
+// config/ai-engine.php
+'actions' => [
+    'intent_analysis' => env('AI_INTENT_ANALYSIS_ENABLED', true), // Enable/disable
+],
+```
+
+**Example Flow:**
+```
+User: "create product MacBook Pro for $2499"
+→ AI detects intent, extracts params, shows confirmation
+
+User: "actually make it $1999"
+→ Intent: modify (confidence: 0.95)
+→ Updates cached params
+→ AI receives enhanced prompt with modification context
+
+User: "I don't mind create it"
+→ Intent: confirm (confidence: 1.0)
+→ Executes directly, no AI call needed ✅
+```
 
 ### Enabling Actions
 
@@ -940,6 +982,144 @@ POST /api/v1/actions/execute
 | `ai.translate` | Translate content | Translated text |
 | `source.view` | View source document | Full document data |
 | `source.find_similar` | Find similar content | Related items |
+| `model.dynamic` | Execute model's AI action | Created/updated model instance |
+
+### Creating Custom Model Actions
+
+Add the `HasAIActions` trait to any model to enable AI-powered creation via chat:
+
+```php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use LaravelAIEngine\Traits\HasAIActions;
+
+class Product extends Model
+{
+    use HasAIActions;
+    
+    protected $fillable = [
+        'name',
+        'sku',
+        'description',
+        'price',
+        'category_id',
+        'stock_quantity',
+        'user_id'
+    ];
+    
+    /**
+     * Define expected format for AI data extraction
+     * 
+     * @return array{required: array, optional: array, triggers?: array}
+     */
+    public static function initializeAI(): array
+    {
+        return [
+            'required' => ['name', 'price'],
+            'optional' => ['sku', 'description', 'category_id', 'stock_quantity'],
+            'triggers' => ['product', 'sell', 'create product', 'add product'],
+        ];
+    }
+    
+    /**
+     * Execute AI action (create, update, delete)
+     * 
+     * @param string $action The action to perform (create, update, delete)
+     * @param array $data The data extracted from conversation
+     * @return mixed Model instance or array with success/error
+     */
+    public static function executeAI(string $action, array $data)
+    {
+        switch ($action) {
+            case 'create':
+                // Add any custom logic before creation
+                if (!isset($data['sku'])) {
+                    $data['sku'] = 'PRD-' . strtoupper(substr(md5($data['name']), 0, 8));
+                }
+                
+                return static::create($data);
+                
+            case 'update':
+                if (!isset($data['id'])) {
+                    return ['success' => false, 'error' => 'ID required for update'];
+                }
+                $model = static::find($data['id']);
+                if (!$model) {
+                    return ['success' => false, 'error' => 'Product not found'];
+                }
+                $model->update($data);
+                return $model;
+                
+            case 'delete':
+                if (!isset($data['id'])) {
+                    return ['success' => false, 'error' => 'ID required for delete'];
+                }
+                $model = static::find($data['id']);
+                if (!$model) {
+                    return ['success' => false, 'error' => 'Product not found'];
+                }
+                $model->delete();
+                return ['success' => true, 'message' => 'Product deleted successfully'];
+                
+            default:
+                return ['success' => false, 'error' => "Unknown action: {$action}"];
+        }
+    }
+}
+```
+
+**Usage in Chat:**
+
+```bash
+# User says in chat:
+"create a product called MacBook Pro for $2499"
+
+# AI automatically:
+# 1. Detects "product" trigger
+# 2. Extracts: name="MacBook Pro", price=2499
+# 3. Shows confirmation with AI-generated suggestions for optional fields
+# 4. User confirms with "yes"
+# 5. Calls Product::executeAI('create', $data)
+# 6. Product created! ✅
+```
+
+**Response Flow:**
+
+```json
+{
+  "response": "I've prepared a product for you:\n\n📝 Suggested Additional Information\n\nSku: MBP-2024-001\nDescription: Premium laptop...\nPrice: 2499.99\n\nWould you like to proceed? Reply 'yes' to confirm.",
+  "actions": [
+    {
+      "id": "create_product_abc123",
+      "type": "button",
+      "label": "🎯 Create Product",
+      "data": {
+        "action": "create_product",
+        "executor": "model.dynamic",
+        "model_class": "App\\Models\\Product",
+        "params": {
+          "name": "MacBook Pro",
+          "price": 2499,
+          "sku": "MBP-2024-001",
+          "description": "Premium laptop..."
+        },
+        "ready_to_execute": true
+      }
+    }
+  ]
+}
+```
+
+**Key Points:**
+
+- `executeAI()` method signature: `executeAI(string $action, array $data)`
+- First parameter is the action type: `'create'`, `'update'`, or `'delete'`
+- Second parameter is the extracted data array
+- Return model instance on success, or array with `['success' => false, 'error' => '...']` on failure
+- The trait provides a default implementation, but you can override for custom logic
 
 ### Calendar Event Example
 

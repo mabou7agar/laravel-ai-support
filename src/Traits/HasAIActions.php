@@ -37,6 +37,11 @@ trait HasAIActions
      */
     public static function executeAI(string $action, array $data)
     {
+        // Resolve AI relationships if the model uses ResolvesAIRelationships trait
+        if (method_exists(static::class, 'resolveAIRelationships')) {
+            $data = static::resolveAIRelationships($data);
+        }
+        
         switch ($action) {
             case 'create':
                 return static::create($data);

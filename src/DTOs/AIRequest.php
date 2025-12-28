@@ -264,6 +264,7 @@ class AIRequest
             $this->model,
             $this->parameters,
             $this->userId,
+            $this->conversationId,
             $this->context,
             $this->files,
             $this->stream,

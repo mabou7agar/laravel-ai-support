@@ -416,6 +416,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\TestChunkingCommand::class,
                 Console\Commands\TestLargeMediaCommand::class,
                 Console\Commands\CreateQdrantIndexesCommand::class,
+                Console\Commands\TestIntentAnalysisCommand::class,
             ]);
 
             // Node Management Commands

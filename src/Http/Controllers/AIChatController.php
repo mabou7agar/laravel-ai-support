@@ -188,7 +188,7 @@ class AIChatController extends Controller
             return response()->json([
                 'success' => true,
                 'response' => $response->getContent(),
-                'actions' => array_map(fn($action) => $action->toArray(), $actions),
+                'actions' => array_map(fn($action) => is_array($action) ? $action : $action->toArray(), $actions),
                 'usage' => $response->getUsage() ?? [],
                 'session_id' => $dto->sessionId,
                 // RAG metadata

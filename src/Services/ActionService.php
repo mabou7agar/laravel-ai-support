@@ -22,13 +22,11 @@ class ActionService
         $actions = [];
         
         // Use SmartActionService for intelligent, pre-filled actions
-        if ($this->smartActionService) {
-            $smartActions = $this->smartActionService->generateSmartActions(
-                $content,
-                $ragMetadata['sources'] ?? [],
-                $ragMetadata
-            );
-            $actions = array_merge($actions, $smartActions);
+        // Note: SmartActionService is already called in ChatService with the user's message
+        // We don't call it again here to avoid extracting from the AI's response
+        // The smart actions are already included in the response metadata
+        if ($this->smartActionService && !empty($ragMetadata['smart_actions'])) {
+            $actions = array_merge($actions, $ragMetadata['smart_actions']);
         }
         
         // RAG-aware actions (if sources are available)

@@ -182,6 +182,8 @@ class SmartActionService
                 }
 
                 // Get triggers from format or generate defaults
+                // Note: Model actions use intent-based matching, not trigger matching
+                // Triggers are kept for backward compatibility and fallback scenarios
                 $triggers = $expectedFormat['triggers'] ?? [];
                 if (empty($triggers)) {
                     $triggers = $this->generateTriggersForModel($modelName);
@@ -195,8 +197,31 @@ class SmartActionService
                     'required_params' => $expectedFormat['required'] ?? [],
                     'optional_params' => $expectedFormat['optional'] ?? [],
                     'model_class' => $modelClass,
-                    'extractor' => function ($content, $sources, $metadata) use ($modelClass, $expectedFormat) {
-                        return $this->extractModelParams($modelClass, $content, $sources, $metadata, $expectedFormat);
+                    'extractor' => function ($content, $sources, $metadata) use ($modelClass, $expectedFormat, $actionId) {
+                        Log::channel('ai-engine')->debug('Extractor called', [
+                            'action_id' => $actionId,
+                            'model' => $modelClass,
+                            'content_length' => strlen($content),
+                            'metadata_keys' => array_keys($metadata)
+                        ]);
+                        
+                        try {
+                            $result = $this->extractModelParams($modelClass, $content, $sources, $metadata, $expectedFormat);
+                            
+                            Log::channel('ai-engine')->debug('Extractor result', [
+                                'action_id' => $actionId,
+                                'result' => $result
+                            ]);
+                            
+                            return $result;
+                        } catch (\Exception $e) {
+                            Log::channel('ai-engine')->error('Extractor failed', [
+                                'action_id' => $actionId,
+                                'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString()
+                            ]);
+                            return [];
+                        }
                     },
                     'executor' => 'model.dynamic',
                 ]);
@@ -392,12 +417,17 @@ class SmartActionService
         $context .= "user: {$content}\n";
 
         // Use AI to extract structured data
-        $prompt = "Extract the following fields from the conversation:\n";
-        $prompt .= "Fields: " . implode(', ', $allFields) . "\n\n";
-        $prompt .= "Conversation:\n{$context}\n\n";
-        $prompt .= "Return ONLY a JSON object with the extracted values. Use null for missing fields.\n";
-        $prompt .= "For relationship fields (ending in _id), extract the NAME not the ID.\n";
-        $prompt .= "Example: {\"name\": \"value\", \"price\": 99.99, \"category\": \"Electronics\"}\n";
+        $prompt = "Extract data from the user's message. Extract ALL values that are mentioned.\n\n";
+        $prompt .= "Message: \"{$content}\"\n\n";
+        $prompt .= "Fields to look for: " . implode(', ', $allFields) . "\n\n";
+        $prompt .= "Rules:\n";
+        $prompt .= "1. Extract the main item/product name (e.g., 'MacBook Pro', 'iPhone 15', etc.)\n";
+        $prompt .= "2. Extract ALL numeric values mentioned (price, quantity, etc.)\n";
+        $prompt .= "3. Extract ALL text values mentioned (category, description, etc.)\n";
+        $prompt .= "4. For fields ending in _id, extract the NAME not the ID\n";
+        $prompt .= "5. Only use null for fields NOT mentioned in the message\n\n";
+        $prompt .= "Return ONLY valid JSON:\n";
+        $prompt .= "{\"name\": \"MacBook Pro\", \"price\": 500, \"category\": \"Electronics\"}";
 
         try {
             $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
@@ -416,30 +446,93 @@ class SmartActionService
                 // Filter out null values
                 $extracted = array_filter($extracted, fn($v) => $v !== null);
                 
+                Log::channel('ai-engine')->debug('AI extraction result', [
+                    'model' => $modelClass,
+                    'extracted' => $extracted,
+                    'all_fields' => $allFields
+                ]);
+                
+                // Enhance with regex fallback for any missing fields that might be extractable
+                $regexExtracted = $this->regexExtractFields($content, $allFields);
+                foreach ($regexExtracted as $field => $value) {
+                    if (empty($extracted[$field]) && !empty($value)) {
+                        $extracted[$field] = $value;
+                        Log::channel('ai-engine')->debug('Enhanced extraction with regex fallback', [
+                            'field' => $field,
+                            'value' => $value
+                        ]);
+                    }
+                }
+                
+                Log::channel('ai-engine')->debug('Final extracted params', [
+                    'model' => $modelClass,
+                    'params' => $extracted
+                ]);
+                
                 // Resolve relationship fields intelligently
                 $extracted = $this->resolveRelationships($modelClass, $extracted, $userId);
                 
                 return $extracted;
             }
         } catch (\Exception $e) {
-            Log::warning('AI extraction failed, using regex fallback: ' . $e->getMessage());
+            Log::channel('ai-engine')->warning('AI extraction failed, using regex fallback', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'model' => $modelClass,
+                'content' => $content
+            ]);
         }
 
         // Fallback to basic regex extraction
-        return $this->regexExtractFields($content, $allFields);
+        $regexResult = $this->regexExtractFields($content, $allFields);
+        
+        Log::channel('ai-engine')->debug('Using regex fallback extraction', [
+            'model' => $modelClass,
+            'extracted' => $regexResult
+        ]);
+        
+        return $regexResult;
     }
 
     /**
      * Resolve relationship fields intelligently
+     * Automatically creates related records if they don't exist
      */
     protected function resolveRelationships(string $modelClass, array $data, $userId = null): array
     {
+        // For remote models, pass relationship data as-is with special marker
+        // The remote node will handle relationship resolution
+        if (!class_exists($modelClass)) {
+            Log::channel('ai-engine')->debug('Preparing relationship data for remote model', [
+                'model' => $modelClass,
+                'data' => $data
+            ]);
+            
+            // Mark fields ending with _id that have string values as relationships to resolve
+            $relationshipsToResolve = [];
+            foreach ($data as $key => $value) {
+                if (str_ends_with($key, '_id') && !is_numeric($value) && is_string($value)) {
+                    $relationshipsToResolve[$key] = $value;
+                }
+            }
+            
+            if (!empty($relationshipsToResolve)) {
+                $data['_resolve_relationships'] = $relationshipsToResolve;
+                Log::channel('ai-engine')->info('Marked relationships for remote resolution', [
+                    'relationships' => $relationshipsToResolve
+                ]);
+            }
+            
+            return $data;
+        }
+        
+        // Local model - resolve relationships locally
         try {
             $model = new $modelClass();
             
             foreach ($data as $key => $value) {
                 // Check if this is a relationship field (ends with _id but value is not numeric)
-                if (str_ends_with($key, '_id') && !is_numeric($value)) {
+                if (str_ends_with($key, '_id') && !is_numeric($value) && is_string($value)) {
                     // Get the relationship name (remove _id suffix)
                     $relationName = substr($key, 0, -3);
                     
@@ -448,7 +541,7 @@ class SmartActionService
                         $relation = $model->$relationName();
                         $relatedClass = get_class($relation->getRelated());
                         
-                        Log::channel('ai-engine')->info('Resolving relationship', [
+                        Log::channel('ai-engine')->info('Resolving relationship locally', [
                             'field' => $key,
                             'relation' => $relationName,
                             'related_class' => $relatedClass,
@@ -591,7 +684,15 @@ class SmartActionService
 
         // Common patterns
         if (in_array('name', $fields)) {
-            if (preg_match('/(?:sell|create|add)\s+([a-zA-Z0-9\s]+?)(?:\s+for|\s+at|\s+\$|$)/i', $content, $matches)) {
+            // Try multiple patterns to extract product/item name
+            if (preg_match('/(?:create|add|new)\s+(?:a\s+)?([a-zA-Z0-9\s]+?)\s+(?:product|item|service)/i', $content, $matches)) {
+                // "create macbook pro product" -> "macbook pro"
+                $extracted['name'] = trim($matches[1]);
+            } elseif (preg_match('/(?:product|item|service)\s+(?:called|named)\s+["\']?([^"\']+)["\']?/i', $content, $matches)) {
+                // "product called MacBook Pro" -> "MacBook Pro"
+                $extracted['name'] = trim($matches[1]);
+            } elseif (preg_match('/(?:sell|create|add)\s+([a-zA-Z0-9\s]+?)(?:\s+for|\s+at|\s+with|\s+\$)/i', $content, $matches)) {
+                // "create MacBook Pro for $500" -> "MacBook Pro"
                 $extracted['name'] = trim($matches[1]);
             }
         }
@@ -608,6 +709,15 @@ class SmartActionService
             }
         }
 
+        // Extract category
+        if (in_array('category', $fields) || in_array('category_id', $fields)) {
+            if (preg_match('/(?:in|at|category|under)\s+(?:the\s+)?([a-zA-Z0-9\s]+?)\s+category/i', $content, $matches)) {
+                $extracted['category'] = trim($matches[1]);
+            } elseif (preg_match('/category\s+(?:is|:)\s+([a-zA-Z0-9\s]+)/i', $content, $matches)) {
+                $extracted['category'] = trim($matches[1]);
+            }
+        }
+
         return $extracted;
     }
 
@@ -619,16 +729,62 @@ class SmartActionService
         array $sources = [],
         array $metadata = []
     ): array {
+        // Always re-register dynamic model actions to ensure they're available
+        // This is necessary because the service is a singleton and action definitions
+        // might not persist between requests or might be registered after service instantiation
+        $this->registerDynamicModelActions();
+        
+        Log::channel('ai-engine')->debug('Action definitions available', [
+            'count' => count($this->actionDefinitions),
+            'actions' => array_keys($this->actionDefinitions)
+        ]);
+        
         $actions = [];
 
+        // Get intent analysis from metadata
+        $intentAnalysis = $metadata['intent_analysis'] ?? null;
+        
         foreach ($this->actionDefinitions as $id => $definition) {
-            // Check if any context triggers match
-            if ($this->matchesTriggers($content, $definition['context_triggers'])) {
+            // Use intent-based matching for dynamic model actions if intent analysis is available
+            $isModelAction = isset($definition['model_class']);
+            $triggersMatch = false;
+            
+            if ($isModelAction && $intentAnalysis) {
+                // For model actions, use intent analysis to detect creation requests
+                $triggersMatch = $this->matchesIntentForModelAction($intentAnalysis, $definition);
+                
+                Log::channel('ai-engine')->debug('Intent-based action match', [
+                    'action_id' => $id,
+                    'intent' => $intentAnalysis['intent'],
+                    'confidence' => $intentAnalysis['confidence'],
+                    'matches' => $triggersMatch
+                ]);
+            } else {
+                // For non-model actions, use traditional trigger matching
+                $triggersMatch = $this->matchesTriggers($content, $definition['context_triggers']);
+                
+                Log::channel('ai-engine')->debug('Trigger-based action match', [
+                    'action_id' => $id,
+                    'triggers' => $definition['context_triggers'],
+                    'content' => substr($content, 0, 100),
+                    'matches' => $triggersMatch
+                ]);
+            }
+            
+            if ($triggersMatch) {
                 // Extract parameters using the extractor
                 $params = [];
                 if (is_callable($definition['extractor'])) {
                     $params = call_user_func($definition['extractor'], $content, $sources, $metadata);
                 }
+
+                Log::channel('ai-engine')->debug('Action trigger matched', [
+                    'action_id' => $id,
+                    'label' => $definition['label'],
+                    'triggers' => $definition['context_triggers'],
+                    'extracted_params' => $params,
+                    'required_params' => $definition['required_params'],
+                ]);
 
                 // Only add action if required params can be extracted
                 if ($this->hasRequiredParams($params, $definition['required_params'])) {
@@ -645,11 +801,55 @@ class SmartActionService
                             'ready_to_execute' => true,
                         ]
                     );
+                    
+                    Log::channel('ai-engine')->info('Action added to response', [
+                        'action_id' => $id,
+                        'label' => $definition['label'],
+                        'params' => $params,
+                    ]);
+                } else {
+                    Log::channel('ai-engine')->debug('Action skipped - missing required params', [
+                        'action_id' => $id,
+                        'label' => $definition['label'],
+                        'params' => $params,
+                        'required' => $definition['required_params'],
+                    ]);
                 }
             }
         }
 
         return $actions;
+    }
+
+    /**
+     * Check if intent analysis matches a model action
+     * Uses AI-detected intent to intelligently match creation requests
+     */
+    protected function matchesIntentForModelAction(array $intentAnalysis, array $actionDefinition): bool
+    {
+        $intent = $intentAnalysis['intent'] ?? '';
+        $confidence = $intentAnalysis['confidence'] ?? 0;
+        $context = strtolower($intentAnalysis['context_enhancement'] ?? '');
+        
+        // Match if intent is 'new_request' with high confidence
+        if ($intent === 'new_request' && $confidence >= 0.8) {
+            // Check if context mentions creation/adding/registration
+            $creationKeywords = [
+                'create', 'creating', 'add', 'adding', 'new', 'make', 'making', 
+                'build', 'building', 'register', 'registering', 'set up', 'setup',
+                'insert', 'inserting', 'save', 'saving', 'store', 'storing',
+                'wants to add', 'wants to create', 'wants to register', 'wants to make',
+                'needs to add', 'needs to create', 'needs to register', 'needs to make'
+            ];
+            
+            foreach ($creationKeywords as $keyword) {
+                if (str_contains($context, $keyword)) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
 
     /**
@@ -663,7 +863,8 @@ class SmartActionService
 
         $contentLower = strtolower($content);
         foreach ($triggers as $trigger) {
-            if (stripos($contentLower, strtolower($trigger)) !== false) {
+            $triggerLower = strtolower($trigger);
+            if (str_contains($contentLower, $triggerLower)) {
                 return true;
             }
         }

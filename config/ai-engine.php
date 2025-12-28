@@ -672,6 +672,12 @@ return [
     'actions' => [
         'enabled' => env('AI_ACTIONS_ENABLED', true),
         'max_actions_per_response' => env('AI_ACTIONS_MAX_PER_RESPONSE', 10),
+        
+        // Intent Analysis - AI-powered message analysis for smarter responses
+        // Analyzes user intent (confirm, reject, modify, provide_data, question, new_request)
+        // and enhances AI prompts with context for more intelligent responses
+        'intent_analysis' => env('AI_INTENT_ANALYSIS_ENABLED', true),
+        
         'validation' => [
             'strict_mode' => env('AI_ACTIONS_STRICT_VALIDATION', true),
             'allowed_domains' => env('AI_ACTIONS_ALLOWED_DOMAINS', ''),
