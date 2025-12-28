@@ -829,24 +829,12 @@ class SmartActionService
     {
         $intent = $intentAnalysis['intent'] ?? '';
         $confidence = $intentAnalysis['confidence'] ?? 0;
-        $context = strtolower($intentAnalysis['context_enhancement'] ?? '');
         
-        // Match if intent is 'new_request' with high confidence
+        // Language-agnostic matching: rely on AI's intent classification
+        // The AI analyzes the message in any language and returns standardized intent
+        // 'new_request' means user wants to create/add something new
         if ($intent === 'new_request' && $confidence >= 0.8) {
-            // Check if context mentions creation/adding/registration
-            $creationKeywords = [
-                'create', 'creating', 'add', 'adding', 'new', 'make', 'making', 
-                'build', 'building', 'register', 'registering', 'set up', 'setup',
-                'insert', 'inserting', 'save', 'saving', 'store', 'storing',
-                'wants to add', 'wants to create', 'wants to register', 'wants to make',
-                'needs to add', 'needs to create', 'needs to register', 'needs to make'
-            ];
-            
-            foreach ($creationKeywords as $keyword) {
-                if (str_contains($context, $keyword)) {
-                    return true;
-                }
-            }
+            return true;
         }
         
         return false;
