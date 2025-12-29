@@ -27,6 +27,8 @@ class AIRequest
     private ?float $temperature;
     private ?int $seed;
     private array $metadata;
+    private array $functions;
+    private ?array $functionCall;
 
     public function __construct(
         string $prompt,
@@ -43,7 +45,9 @@ class AIRequest
         ?int $maxTokens = null,
         ?float $temperature = null,
         ?int $seed = null,
-        array $metadata = []
+        array $metadata = [],
+        array $functions = [],
+        ?array $functionCall = null
     ) {
         $this->prompt = $prompt;
         $this->engine = $engine;
@@ -60,6 +64,8 @@ class AIRequest
         $this->temperature = $temperature;
         $this->seed = $seed;
         $this->metadata = $metadata;
+        $this->functions = $functions;
+        $this->functionCall = $functionCall;
     }
 
     // Getters
@@ -142,6 +148,16 @@ class AIRequest
     public function getMetadata(): array
     {
         return $this->metadata;
+    }
+
+    public function getFunctions(): array
+    {
+        return $this->functions;
+    }
+
+    public function getFunctionCall(): ?array
+    {
+        return $this->functionCall;
     }
 
     /**
@@ -404,6 +420,7 @@ class AIRequest
             $this->model,
             $this->parameters,
             $this->userId,
+            $this->conversationId,
             $this->context,
             $this->files,
             $this->stream,
@@ -412,7 +429,35 @@ class AIRequest
             $this->maxTokens,
             $this->temperature,
             $this->seed,
-            array_merge($this->metadata, $metadata)
+            array_merge($this->metadata, $metadata),
+            $this->functions,
+            $this->functionCall
+        );
+    }
+
+    /**
+     * Set functions for function calling
+     */
+    public function withFunctions(array $functions, ?array $functionCall = null): self
+    {
+        return new self(
+            $this->prompt,
+            $this->engine,
+            $this->model,
+            $this->parameters,
+            $this->userId,
+            $this->conversationId,
+            $this->context,
+            $this->files,
+            $this->stream,
+            $this->systemPrompt,
+            $this->messages,
+            $this->maxTokens,
+            $this->temperature,
+            $this->seed,
+            $this->metadata,
+            $functions,
+            $functionCall
         );
     }
 
@@ -476,6 +521,8 @@ class AIRequest
             'temperature' => $this->temperature,
             'seed' => $this->seed,
             'metadata' => $this->metadata,
+            'functions' => $this->functions,
+            'function_call' => $this->functionCall,
         ];
     }
 

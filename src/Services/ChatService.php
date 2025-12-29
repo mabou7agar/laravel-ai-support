@@ -344,6 +344,19 @@ class ChatService
                             }
                             
                             $mergedParams = array_merge($existingParams, $newData);
+                            
+                            // Apply model's normalization to merged params
+                            $modelClass = $cachedActionData['data']['model_class'] ?? null;
+                            if ($modelClass && method_exists($modelClass, 'normalizeAIData')) {
+                                try {
+                                    $reflection = new \ReflectionMethod($modelClass, 'normalizeAIData');
+                                    $reflection->setAccessible(true);
+                                    $mergedParams = $reflection->invoke(null, $mergedParams);
+                                } catch (\Exception $e) {
+                                    // If normalization fails, continue with original params
+                                }
+                            }
+                            
                             $cachedActionData['data']['params'] = $mergedParams;
                             
                             // Re-check if action is now complete by checking missing fields
@@ -1271,7 +1284,7 @@ class ChatService
     }
 
     /**
-     * Generate data summary for confirmation
+     * Generate data summary for confirmation using model's field definitions
      */
     protected function generateDataSummary(\LaravelAIEngine\DTOs\InteractiveAction $action): string
     {
@@ -1279,42 +1292,202 @@ class ChatService
         $modelClass = $action->data['model_class'] ?? '';
         $modelName = class_basename($modelClass);
         
+        // Apply model's normalization before generating summary
+        if (method_exists($modelClass, 'normalizeAIData')) {
+            try {
+                $reflection = new \ReflectionMethod($modelClass, 'normalizeAIData');
+                $reflection->setAccessible(true);
+                $params = $reflection->invoke(null, $params);
+            } catch (\Exception $e) {
+                // If normalization fails, continue with original params
+            }
+        }
+        
+        // Try to get field definitions from model's initializeAI or getFunctionSchema
+        $fieldDefinitions = $this->getModelFieldDefinitions($modelClass);
+        
         $summary = "**Summary of Information:**\n\n";
         
-        // Format each parameter
+        // Format each parameter using field definitions
         foreach ($params as $key => $value) {
-            if (is_array($value)) {
-                // Handle array fields (like items)
-                if ($key === 'items' && !empty($value)) {
-                    $summary .= "**Items:**\n";
-                    foreach ($value as $index => $item) {
-                        $itemNum = $index + 1;
-                        $itemName = $item['item'] ?? $item['name'] ?? $item['product_name'] ?? 'Item';
-                        $itemPrice = $item['price'] ?? 0;
-                        $itemQty = $item['quantity'] ?? 1;
-                        
-                        $summary .= "{$itemNum}. {$itemName}\n";
-                        $summary .= "   - Price: $" . number_format($itemPrice, 2) . "\n";
-                        $summary .= "   - Quantity: {$itemQty}\n";
-                    }
-                }
+            // Skip internal fields
+            if ($key === '_resolve_relationships') {
                 continue;
             }
             
-            // Format scalar values
-            $label = ucfirst(str_replace('_', ' ', $key));
+            // Skip quantity field if items array exists (quantity should be in items)
+            if ($key === 'quantity' && isset($params['items']) && is_array($params['items'])) {
+                continue;
+            }
             
-            // Format based on field type
-            if (in_array($key, ['price', 'total', 'amount', 'cost'])) {
-                $summary .= "- **{$label}:** $" . number_format($value, 2) . "\n";
+            $fieldDef = $fieldDefinitions[$key] ?? null;
+            
+            if (is_array($value)) {
+                // Handle array fields dynamically
+                $summary .= $this->formatArrayField($key, $value, $fieldDef);
             } else {
-                $summary .= "- **{$label}:** {$value}\n";
+                // Format scalar values using field definition
+                $summary .= $this->formatScalarField($key, $value, $fieldDef);
             }
         }
         
         $summary .= "\n**Please review the information above.**\nReply 'yes' to create, or tell me what you'd like to change.";
         
         return $summary;
+    }
+
+    /**
+     * Get field definitions from model
+     */
+    protected function getModelFieldDefinitions(string $modelClass): array
+    {
+        $definitions = [];
+        
+        try {
+            // Try getFunctionSchema first (most detailed)
+            if (method_exists($modelClass, 'getFunctionSchema')) {
+                $schema = $modelClass::getFunctionSchema();
+                $properties = $schema['parameters']['properties'] ?? [];
+                
+                foreach ($properties as $fieldName => $fieldSchema) {
+                    $definitions[$fieldName] = [
+                        'type' => $fieldSchema['type'] ?? 'string',
+                        'description' => $fieldSchema['description'] ?? null,
+                        'format' => $fieldSchema['format'] ?? null,
+                        'items' => $fieldSchema['items'] ?? null,
+                    ];
+                }
+            }
+            // Fallback to initializeAI
+            elseif (method_exists($modelClass, 'initializeAI')) {
+                $config = (new $modelClass)->initializeAI();
+                $fields = $config['fields'] ?? [];
+                
+                foreach ($fields as $fieldName => $fieldInfo) {
+                    if (is_array($fieldInfo)) {
+                        $definitions[$fieldName] = $fieldInfo;
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // Fallback to empty definitions
+        }
+        
+        return $definitions;
+    }
+
+    /**
+     * Format array field dynamically based on definition
+     */
+    protected function formatArrayField(string $key, array $value, ?array $fieldDef): string
+    {
+        if (empty($value)) {
+            return '';
+        }
+        
+        $label = $fieldDef['description'] ?? ucfirst(str_replace('_', ' ', $key));
+        $output = "**{$label}:**\n";
+        
+        // Get item schema if available
+        $itemSchema = $fieldDef['items']['properties'] ?? null;
+        
+        foreach ($value as $index => $item) {
+            $itemNum = $index + 1;
+            
+            if (is_array($item)) {
+                // Format structured item
+                $output .= "{$itemNum}. " . $this->formatStructuredItem($item, $itemSchema) . "\n";
+            } else {
+                // Simple value
+                $output .= "{$itemNum}. {$item}\n";
+            }
+        }
+        
+        return $output;
+    }
+
+    /**
+     * Format structured item (like invoice line item)
+     */
+    protected function formatStructuredItem(array $item, ?array $itemSchema): string
+    {
+        $lines = [];
+        
+        // Get primary field (name, title, item, etc.)
+        $primaryField = $item['name'] ?? $item['item'] ?? $item['title'] ?? $item['product_name'] ?? 'Item';
+        $lines[] = $primaryField;
+        
+        // Define field order for better display
+        $fieldOrder = ['price', 'amount', 'quantity', 'discount'];
+        $displayedFields = [];
+        
+        // First, display ordered fields
+        foreach ($fieldOrder as $orderedKey) {
+            if (isset($item[$orderedKey]) && !in_array($orderedKey, ['name', 'item', 'title', 'product_name'])) {
+                $fieldType = $itemSchema[$orderedKey]['type'] ?? null;
+                $fieldLabel = $itemSchema[$orderedKey]['description'] ?? ucfirst(str_replace('_', ' ', $orderedKey));
+                
+                // Special handling for amount field - show as Price
+                if ($orderedKey === 'amount') {
+                    $fieldLabel = 'Price';
+                }
+                
+                // Format based on type
+                if ($fieldType === 'number' || in_array($orderedKey, ['price', 'amount', 'cost', 'total'])) {
+                    $lines[] = "   - {$fieldLabel}: $" . number_format($item[$orderedKey], 2);
+                } elseif ($fieldType === 'integer' || in_array($orderedKey, ['quantity', 'qty', 'count'])) {
+                    $lines[] = "   - {$fieldLabel}: {$item[$orderedKey]}";
+                } else {
+                    $lines[] = "   - {$fieldLabel}: {$item[$orderedKey]}";
+                }
+                
+                $displayedFields[] = $orderedKey;
+            }
+        }
+        
+        // Then display remaining fields
+        foreach ($item as $fieldKey => $fieldValue) {
+            if (in_array($fieldKey, ['name', 'item', 'title', 'product_name']) || in_array($fieldKey, $displayedFields)) {
+                continue; // Already displayed
+            }
+            
+            if ($fieldKey === 'description') {
+                continue; // Skip description for brevity
+            }
+            
+            $fieldType = $itemSchema[$fieldKey]['type'] ?? null;
+            $fieldLabel = $itemSchema[$fieldKey]['description'] ?? ucfirst(str_replace('_', ' ', $fieldKey));
+            
+            if ($fieldType === 'number' || in_array($fieldKey, ['price', 'amount', 'cost', 'total'])) {
+                $lines[] = "   - {$fieldLabel}: $" . number_format($fieldValue, 2);
+            } elseif ($fieldType === 'integer' || in_array($fieldKey, ['quantity', 'qty', 'count'])) {
+                $lines[] = "   - {$fieldLabel}: {$fieldValue}";
+            } else {
+                $lines[] = "   - {$fieldLabel}: {$fieldValue}";
+            }
+        }
+        
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Format scalar field based on definition
+     */
+    protected function formatScalarField(string $key, $value, ?array $fieldDef): string
+    {
+        $fieldType = $fieldDef['type'] ?? 'string';
+        $label = $fieldDef['description'] ?? ucfirst(str_replace('_', ' ', $key));
+        
+        // Format based on type
+        if ($fieldType === 'number' || in_array($key, ['price', 'total', 'amount', 'cost'])) {
+            return "- **{$label}:** $" . number_format($value, 2) . "\n";
+        } elseif ($fieldType === 'boolean') {
+            return "- **{$label}:** " . ($value ? 'Yes' : 'No') . "\n";
+        } elseif ($fieldType === 'date' || str_ends_with($key, '_date')) {
+            return "- **{$label}:** " . date('Y-m-d', strtotime($value)) . "\n";
+        } else {
+            return "- **{$label}:** {$value}\n";
+        }
     }
 
     /**
@@ -1793,14 +1966,49 @@ class ChatService
                 ];
             } elseif (is_object($result)) {
                 // Model instance returned
-                $summary = "✅ **{$modelName} Created Successfully!**\n\n";
-                $summary .= "**Details:**\n";
+                $summary = "✅ **{$modelName} Created Successfully**\n\n";
 
                 $attributes = method_exists($result, 'toArray') ? $result->toArray() : (array) $result;
-                foreach ($attributes as $key => $value) {
-                    if (!in_array($key, ['created_at', 'updated_at']) && !is_array($value) && !is_object($value)) {
-                        $summary .= "- " . ucfirst(str_replace('_', ' ', $key)) . ": {$value}\n";
+                
+                // Extract customer info if available
+                if (isset($attributes['customer'])) {
+                    $customer = $attributes['customer'];
+                    $summary .= "**Customer:**\n";
+                    $summary .= "- Name: " . ($customer['name'] ?? 'N/A') . "\n";
+                    $summary .= "- Email: " . ($customer['email'] ?? 'N/A') . "\n\n";
+                }
+                
+                // Format items array specially
+                if (isset($attributes['items']) && is_array($attributes['items'])) {
+                    $summary .= "**Items:**\n";
+                    foreach ($attributes['items'] as $index => $item) {
+                        $itemNum = $index + 1;
+                        $itemName = $item['item'] ?? $item['name'] ?? $item['product_name'] ?? 'Item';
+                        $itemPrice = $item['price'] ?? $item['amount'] ?? 0;
+                        $itemQty = $item['quantity'] ?? 1;
+                        $subtotal = $itemPrice * $itemQty;
+                        
+                        $summary .= "{$itemNum}. {$itemName}\n";
+                        $summary .= "   - Price: $" . number_format($itemPrice, 2) . "\n";
+                        $summary .= "   - Quantity: {$itemQty}\n";
+                        $summary .= "   - Subtotal: $" . number_format($subtotal, 2) . "\n";
                     }
+                    $summary .= "\n";
+                }
+                
+                // Add summary section
+                $summary .= "**Summary:**\n";
+                
+                // Show total
+                if (isset($attributes['total'])) {
+                    $summary .= "- **Total: $" . number_format($attributes['total'], 2) . "**\n";
+                } elseif (isset($attributes['amount'])) {
+                    $summary .= "- **Total: $" . number_format($attributes['amount'], 2) . "**\n";
+                }
+                
+                // Show ID
+                if (isset($attributes['id'])) {
+                    $summary .= "- Invoice ID: #{$attributes['id']}\n";
                 }
 
                 return [

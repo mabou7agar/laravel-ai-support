@@ -389,6 +389,15 @@ abstract class BaseEngineDriver implements EngineDriverInterface
             'messages' => $messages,
         ];
 
+        // Add function calling parameters if present
+        if (!empty($request->getFunctions())) {
+            $payload['functions'] = $request->getFunctions();
+            
+            if ($request->getFunctionCall() !== null) {
+                $payload['function_call'] = $request->getFunctionCall();
+            }
+        }
+
         // GPT-5 family models have different parameter requirements
         if ($this->isGpt5FamilyModel($model)) {
             // GPT-5 uses max_completion_tokens and doesn't support temperature

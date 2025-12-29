@@ -254,53 +254,56 @@ class SmartActionService
      */
     protected function getRemoteModelsInfo(): array
     {
-        $remoteModels = [];
+        // Cache remote models info for 5 minutes to avoid repeated HTTP calls
+        return \Illuminate\Support\Facades\Cache::remember('ai_engine_remote_models', 300, function () {
+            $remoteModels = [];
 
-        try {
-            // Check if AINode model exists
-            if (!class_exists(\LaravelAIEngine\Models\AINode::class)) {
-                return $remoteModels;
-            }
+            try {
+                // Check if AINode model exists
+                if (!class_exists(\LaravelAIEngine\Models\AINode::class)) {
+                    return $remoteModels;
+                }
 
-            $nodes = \LaravelAIEngine\Models\AINode::where('status', 'active')->get();
+                $nodes = \LaravelAIEngine\Models\AINode::where('status', 'active')->get();
 
-            foreach ($nodes as $node) {
-                try {
-                    // Use shared secret from config or node's API key
-                    $authToken = config('ai-engine.nodes.shared_secret') ?? $node->api_key;
+                foreach ($nodes as $node) {
+                    try {
+                        // Use shared secret from config or node's API key
+                        $authToken = config('ai-engine.nodes.shared_secret') ?? $node->api_key;
 
-                    $response = \Illuminate\Support\Facades\Http::withoutVerifying()
-                        ->timeout(5)
-                        ->withToken($authToken)
-                        ->get($node->url . '/api/ai-engine/collections');
+                        $response = \Illuminate\Support\Facades\Http::withoutVerifying()
+                            ->timeout(5)
+                            ->withToken($authToken)
+                            ->get($node->url . '/api/ai-engine/collections');
 
-                    if ($response->successful()) {
-                        $data = $response->json();
-                        $collections = $data['collections'] ?? [];
+                        if ($response->successful()) {
+                            $data = $response->json();
+                            $collections = $data['collections'] ?? [];
 
-                        foreach ($collections as $collection) {
-                            $className = $collection['class'] ?? null;
-                            if ($className) {
-                                $remoteModels[$className] = [
-                                    'methods' => $collection['methods'] ?? [],
-                                    'format' => $collection['format'] ?? null,
-                                    'node' => $node->name,
-                                ];
+                            foreach ($collections as $collection) {
+                                $className = $collection['class'] ?? null;
+                                if ($className) {
+                                    $remoteModels[$className] = [
+                                        'methods' => $collection['methods'] ?? [],
+                                        'format' => $collection['format'] ?? null,
+                                        'node' => $node->name,
+                                    ];
+                                }
                             }
                         }
+                    } catch (\Exception $e) {
+                        Log::debug('Failed to get collections from node', [
+                            'node' => $node->name,
+                            'error' => $e->getMessage()
+                        ]);
                     }
-                } catch (\Exception $e) {
-                    Log::debug('Failed to get collections from node', [
-                        'node' => $node->name,
-                        'error' => $e->getMessage()
-                    ]);
                 }
+            } catch (\Exception $e) {
+                Log::warning('Failed to get remote models info: ' . $e->getMessage());
             }
-        } catch (\Exception $e) {
-            Log::warning('Failed to get remote models info: ' . $e->getMessage());
-        }
 
-        return $remoteModels;
+            return $remoteModels;
+        });
     }
 
     /**
@@ -475,73 +478,123 @@ class SmartActionService
         }
         $context .= "user: {$content}\n";
 
-        // Use AI to extract structured data with context awareness
-        $prompt = "Extract data from the user's message for creating a " . class_basename($modelClass) . ".\n\n";
-        $prompt .= "Message: \"{$content}\"\n\n";
+        // Check if model supports function calling schema
+        $useFunctionCalling = method_exists($modelClass, 'getFunctionSchema');
+        $extracted = null;
         
-        // Include field descriptions from model's initializeAI() if available
-        $fields = $expectedFormat['fields'] ?? [];
-        if (!empty($fields)) {
-            $prompt .= "Available fields with descriptions:\n";
-            foreach ($fields as $fieldName => $fieldInfo) {
-                $description = is_array($fieldInfo) ? ($fieldInfo['description'] ?? $fieldName) : $fieldInfo;
-                $type = is_array($fieldInfo) ? ($fieldInfo['type'] ?? 'string') : 'string';
-                $prompt .= "- {$fieldName} ({$type}): {$description}\n";
+        if ($useFunctionCalling) {
+            // Use function calling for strict type safety
+            $functionSchema = $modelClass::getFunctionSchema();
+            
+            Log::channel('ai-engine')->debug('Using function calling for extraction', [
+                'model' => $modelClass,
+                'function' => $functionSchema['name'] ?? 'unknown'
+            ]);
+
+            try {
+                $aiRequest = (new \LaravelAIEngine\DTOs\AIRequest(
+                    prompt: "Extract data from: {$content}",
+                    engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                    model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
+                    systemPrompt: 'You are a data extraction assistant. Use the provided function to extract structured data.',
+                    maxTokens: 500
+                ))->withFunctions([$functionSchema], ['name' => $functionSchema['name']]);
+
+                $response = $this->aiService->generate($aiRequest);
+                
+                // Extract function call arguments
+                if (isset($response->functionCall) && isset($response->functionCall['arguments'])) {
+                    $extracted = json_decode($response->functionCall['arguments'], true);
+                    
+                    Log::channel('ai-engine')->debug('Function calling extraction result', [
+                        'model' => $modelClass,
+                        'extracted' => $extracted
+                    ]);
+                } else {
+                    // Fallback to content parsing
+                    $aiContent = $response->getContent();
+                    if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $aiContent, $matches)) {
+                        $aiContent = $matches[1];
+                    }
+                    $extracted = json_decode($aiContent, true);
+                }
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Function calling failed, falling back to prompt-based extraction', [
+                    'model' => $modelClass,
+                    'error' => $e->getMessage()
+                ]);
+                $extracted = null;
             }
-            $prompt .= "\n";
-        } else {
-            // Fallback to simple field list if no descriptions available
-            $prompt .= "Fields to extract: " . implode(', ', $allFields) . "\n\n";
         }
         
-        Log::channel('ai-engine')->debug('Extraction prompt fields', [
-            'model' => $modelClass,
-            'all_fields' => $allFields,
-            'has_field_descriptions' => !empty($fields),
-            'content' => $content
-        ]);
+        if ($extracted === null) {
+            // Fallback to prompt-based extraction
+            $prompt = "Extract data from the user's message for creating a " . class_basename($modelClass) . ".\n\n";
+            $prompt .= "Message: \"{$content}\"\n\n";
+            
+            // Include field descriptions from model's initializeAI() if available
+            $fields = $expectedFormat['fields'] ?? [];
+            if (!empty($fields)) {
+                $prompt .= "Available fields with descriptions:\n";
+                foreach ($fields as $fieldName => $fieldInfo) {
+                    $description = is_array($fieldInfo) ? ($fieldInfo['description'] ?? $fieldName) : $fieldInfo;
+                    $type = is_array($fieldInfo) ? ($fieldInfo['type'] ?? 'string') : 'string';
+                    $prompt .= "- {$fieldName} ({$type}): {$description}\n";
+                }
+                $prompt .= "\n";
+            } else {
+                // Fallback to simple field list if no descriptions available
+                $prompt .= "Fields to extract: " . implode(', ', $allFields) . "\n\n";
+            }
+            
+            Log::channel('ai-engine')->debug('Extraction prompt fields', [
+                'model' => $modelClass,
+                'all_fields' => $allFields,
+                'has_field_descriptions' => !empty($fields),
+                'content' => $content
+            ]);
 
-        // Add model-specific extraction hints if available
-        $extractionHints = $expectedFormat['extraction_hints'] ?? [];
+            // Add model-specific extraction hints if available
+            $extractionHints = $expectedFormat['extraction_hints'] ?? [];
 
-        Log::channel('ai-engine')->debug('Extraction hints check', [
-            'model' => $modelClass,
-            'has_hints' => !empty($extractionHints),
-            'hints' => $extractionHints
-        ]);
+            Log::channel('ai-engine')->debug('Extraction hints check', [
+                'model' => $modelClass,
+                'has_hints' => !empty($extractionHints),
+                'hints' => $extractionHints
+            ]);
 
-        if (!empty($extractionHints)) {
-            $prompt .= "Model-Specific Instructions:\n";
-            foreach ($extractionHints as $field => $hints) {
-                if (is_array($hints)) {
-                    $prompt .= "For '{$field}' field:\n";
-                    foreach ($hints as $hint) {
-                        $prompt .= "  - {$hint}\n";
+            if (!empty($extractionHints)) {
+                $prompt .= "Model-Specific Instructions:\n";
+                foreach ($extractionHints as $field => $hints) {
+                    if (is_array($hints)) {
+                        $prompt .= "For '{$field}' field:\n";
+                        foreach ($hints as $hint) {
+                            $prompt .= "  - {$hint}\n";
+                        }
                     }
                 }
+                $prompt .= "\n";
             }
-            $prompt .= "\n";
-        }
 
-        $prompt .= "Instructions:\n";
-        $prompt .= "- Extract ALL field values mentioned in the message\n";
-        $prompt .= "- Use the EXACT field names listed above\n";
-        $prompt .= "- Match field names to their semantic meaning based on the descriptions provided\n";
-        $prompt .= "- For relationship fields (ending in '_id'), extract the identifying value (name, email, etc.)\n";
-        $prompt .= "- Use null only for fields NOT mentioned in the message\n\n";
-        $prompt .= "Return ONLY valid JSON:";
+            $prompt .= "Instructions:\n";
+            $prompt .= "- Extract ALL field values mentioned in the message\n";
+            $prompt .= "- Use the EXACT field names listed above\n";
+            $prompt .= "- Match field names to their semantic meaning based on the descriptions provided\n";
+            $prompt .= "- For relationship fields (ending in '_id'), extract the identifying value (name, email, etc.)\n";
+            $prompt .= "- Use null only for fields NOT mentioned in the message\n\n";
+            $prompt .= "Return ONLY valid JSON:";
 
-        try {
-            $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
-                prompt: $prompt,
-                engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
-                model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
-                systemPrompt: 'You are a data extraction assistant. Extract structured data from conversations.',
-                maxTokens: 500
-            );
+            try {
+                $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
+                    prompt: $prompt,
+                    engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                    model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
+                    systemPrompt: 'You are a data extraction assistant. Extract structured data from conversations.',
+                    maxTokens: 500
+                );
 
-            $response = $this->aiService->generate($aiRequest);
-            $aiContent = $response->getContent();
+                $response = $this->aiService->generate($aiRequest);
+                $aiContent = $response->getContent();
 
             Log::channel('ai-engine')->debug('AI extraction raw response', [
                 'model' => $modelClass,
@@ -554,46 +607,48 @@ class SmartActionService
             }
 
             $extracted = json_decode($aiContent, true);
-
-            if (is_array($extracted)) {
-                // Filter out null values
-                $extracted = array_filter($extracted, fn($v) => $v !== null);
-
-                Log::channel('ai-engine')->debug('AI extraction result', [
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('AI extraction failed, using regex fallback', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
                     'model' => $modelClass,
-                    'extracted' => $extracted,
-                    'all_fields' => $allFields
+                    'content' => $content
                 ]);
-
-                // Enhance with regex fallback for any missing fields that might be extractable
-                $regexExtracted = $this->regexExtractFields($content, $allFields);
-                foreach ($regexExtracted as $field => $value) {
-                    if (empty($extracted[$field]) && !empty($value)) {
-                        $extracted[$field] = $value;
-                        Log::channel('ai-engine')->debug('Enhanced extraction with regex fallback', [
-                            'field' => $field,
-                            'value' => $value
-                        ]);
-                    }
-                }
-
-                Log::channel('ai-engine')->debug('Final extracted params', [
-                    'model' => $modelClass,
-                    'params' => $extracted
-                ]);
-
-                // Resolve relationship fields intelligently
-                $extracted = $this->resolveRelationships($modelClass, $extracted, $userId);
-
-                return $extracted;
             }
-        } catch (\Exception $e) {
-            Log::channel('ai-engine')->warning('AI extraction failed, using regex fallback', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+        }
+
+        // Post-process extracted data (common for both function calling and prompt-based)
+        if (is_array($extracted)) {
+            // Filter out null values
+            $extracted = array_filter($extracted, fn($v) => $v !== null);
+
+            Log::channel('ai-engine')->debug('AI extraction result', [
                 'model' => $modelClass,
-                'content' => $content
+                'extracted' => $extracted,
+                'all_fields' => $allFields
             ]);
+
+            // Enhance with regex fallback for any missing fields
+            $regexExtracted = $this->regexExtractFields($content, $allFields);
+            foreach ($regexExtracted as $field => $value) {
+                if (empty($extracted[$field]) && !empty($value)) {
+                    $extracted[$field] = $value;
+                    Log::channel('ai-engine')->debug('Enhanced extraction with regex fallback', [
+                        'field' => $field,
+                        'value' => $value
+                    ]);
+                }
+            }
+
+            Log::channel('ai-engine')->debug('Final extracted params', [
+                'model' => $modelClass,
+                'params' => $extracted
+            ]);
+
+            // Resolve relationship fields intelligently
+            $extracted = $this->resolveRelationships($modelClass, $extracted, $userId);
+
+            return $extracted;
         }
 
         // Fallback to basic regex extraction

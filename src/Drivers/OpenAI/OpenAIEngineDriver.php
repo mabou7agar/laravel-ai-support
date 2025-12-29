@@ -132,14 +132,25 @@ class OpenAIEngineDriver extends BaseEngineDriver
             ]);
             
             $response = $this->openAIClient->chat()->create($payload);
-            $content = $response->choices[0]->message->content;
+            $message = $response->choices[0]->message;
+            $content = $message->content ?? '';
 
-            return $this->buildSuccessResponse(
+            $aiResponse = $this->buildSuccessResponse(
                 $content,
                 $request,
                 $response->toArray(),
                 'openai'
             );
+
+            // Add function call data if present
+            if (isset($message->functionCall)) {
+                $aiResponse->functionCall = [
+                    'name' => $message->functionCall->name,
+                    'arguments' => $message->functionCall->arguments,
+                ];
+            }
+
+            return $aiResponse;
 
         } catch (\Exception $e) {
             return $this->handleApiError($e, $request, 'text generation');

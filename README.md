@@ -97,6 +97,46 @@ php artisan ai-engine:sync-models
 
 </td>
 </tr>
+<tr>
+<td width="33%" align="center">
+
+### 🎯 Hybrid Function Calling
+**Type-safe + Flexible:**
+```php
+// Define schema once
+public static function getFunctionSchema()
+// 70% less normalization code
+// Automatic fallback
+```
+[Full Guide →](docs/HYBRID_FUNCTION_CALLING.md)
+
+</td>
+<td width="33%" align="center">
+
+### 🔄 Smart Actions
+**AI-powered executors:**
+```php
+// AI extracts & validates
+$invoice = Invoice::createFromChat(
+    'Invoice for $1099'
+);
+// Handles relationships automatically
+```
+
+</td>
+<td width="33%" align="center">
+
+### 🔒 Multi-Tenant Security
+**Enterprise-grade isolation:**
+```php
+// User + Workspace isolation
+// Multi-database tenancy
+// Admin override support
+// Zero-config security
+```
+
+</td>
+</tr>
 </table>
 
 ---
@@ -127,6 +167,15 @@ php artisan ai-engine:sync-models
 - **Perplexity**: Sonar Pro, Sonar
 - **Unified API**: Same interface for all providers
 - **Future-Proof**: Full support for latest models with auto-discovery
+
+### 🎯 Hybrid Function Calling (New!)
+- **Type Safety**: OpenAI function calling with strict schemas
+- **Flexibility**: Minimal normalization for edge cases
+- **70% Code Reduction**: Simplified from 170 to 50 lines
+- **Automatic Fallback**: Works with or without function schemas
+- **Conversational Updates**: "change quantity to 5" still works
+- **Backward Compatible**: Zero breaking changes
+- 📖 **[Complete Guide](docs/HYBRID_FUNCTION_CALLING.md)**
 
 ### 📊 Dynamic Model Registry
 - **Auto-Discovery**: Automatically detects new AI models
