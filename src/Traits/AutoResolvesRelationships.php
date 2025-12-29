@@ -53,72 +53,128 @@ trait AutoResolvesRelationships
                 $searchField = str_replace('_id', '', $field);
             }
             
-            if (isset($data[$searchField]) && is_string($data[$searchField])) {
+            // Handle both string values and nested arrays
+            if (isset($data[$searchField])) {
                 $value = $data[$searchField];
                 $relatedModel = $relationConfig['model'];
                 $createIfMissing = $relationConfig['create_if_missing'] ?? false;
                 
-                Log::channel('ai-engine')->debug('Resolving relationship', [
-                    'field' => $field,
-                    'search_field' => $searchField,
-                    'value' => $value,
-                    'model' => $relatedModel,
-                ]);
-                
-                // Try to find existing record
-                $related = static::findRelatedRecord($relatedModel, $searchBy, $value);
-                
-                // Create if not found and allowed
-                if (!$related && $createIfMissing) {
-                    $related = static::createRelatedRecord($relatedModel, $searchBy, $value, $relationConfig);
+                // Handle nested array (e.g., customer: {name, email, phone, address})
+                if (is_array($value)) {
+                    Log::channel('ai-engine')->debug('Resolving relationship from nested array', [
+                        'field' => $field,
+                        'model' => $relatedModel,
+                        'data_keys' => array_keys($value),
+                    ]);
                     
-                    // If the created record has its own relationships, resolve them too
-                    if ($related && method_exists($relatedModel, 'autoResolveRelationships')) {
-                        try {
-                            // Get the record's data including all fields
-                            $relatedData = $related->toArray();
+                    // Extract search value from nested array (use email or name)
+                    $searchValue = $value['email'] ?? $value['name'] ?? null;
+                    
+                    if ($searchValue) {
+                        // Try to find existing record
+                        $related = static::findRelatedRecord($relatedModel, $searchBy, $searchValue);
+                        
+                        // Create if not found
+                        if (!$related && $createIfMissing) {
+                            // Merge with defaults
+                            $createData = array_merge($relationConfig['defaults'] ?? [], $value);
                             
-                            // Ensure email field is present for nested resolution
-                            if (!isset($relatedData['email']) && filter_var($value, FILTER_VALIDATE_EMAIL)) {
-                                $relatedData['email'] = $value;
+                            // Add common defaults if not present (generic for all models)
+                            if (!isset($createData['workspace'])) {
+                                $createData['workspace'] = function_exists('getActiveWorkSpace') ? getActiveWorkSpace() : 1;
+                            }
+                            if (!isset($createData['created_by'])) {
+                                $createData['created_by'] = auth()->id() ?? 1;
                             }
                             
-                            Log::channel('ai-engine')->debug('Attempting nested relationship resolution', [
+                            // Auto-resolve nested relationships if model supports it
+                            if (method_exists($relatedModel, 'autoResolveRelationships')) {
+                                $createData = $relatedModel::autoResolveRelationships($createData);
+                            }
+                            
+                            $related = $relatedModel::create($createData);
+                            
+                            Log::channel('ai-engine')->info('Created related record from nested array', [
                                 'model' => $relatedModel,
-                                'data_keys' => array_keys($relatedData),
+                                'id' => $related->id,
                             ]);
-                            
-                            $resolvedData = $relatedModel::autoResolveRelationships($relatedData);
-                            
-                            // Update the record with resolved relationships
-                            if ($resolvedData !== $relatedData) {
-                                $related->update($resolvedData);
-                                $related = $related->fresh();
+                        }
+                    }
+                }
+                // Handle string value (original behavior)
+                elseif (is_string($value)) {
+                    Log::channel('ai-engine')->debug('Resolving relationship from string', [
+                        'field' => $field,
+                        'search_field' => $searchField,
+                        'value' => $value,
+                        'model' => $relatedModel,
+                    ]);
+                    
+                    // Try to find existing record
+                    $related = static::findRelatedRecord($relatedModel, $searchBy, $value);
+                    
+                    // Create if not found and allowed
+                    if (!$related && $createIfMissing) {
+                        $related = static::createRelatedRecord($relatedModel, $searchBy, $value, $relationConfig);
+                        
+                        // If the created record has its own relationships, resolve them too
+                        if ($related && method_exists($relatedModel, 'autoResolveRelationships')) {
+                            try {
+                                // Get the record's data including all fields
+                                $relatedData = $related->toArray();
                                 
-                                Log::channel('ai-engine')->info('Resolved nested relationships for created record', [
+                                // Ensure email field is present for nested resolution
+                                if (!isset($relatedData['email']) && filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                                    $relatedData['email'] = $value;
+                                }
+                                
+                                Log::channel('ai-engine')->debug('Attempting nested relationship resolution', [
                                     'model' => $relatedModel,
-                                    'id' => $related->id,
-                                    'resolved_fields' => array_keys(array_diff_assoc($resolvedData, $relatedData)),
+                                    'data_keys' => array_keys($relatedData),
+                                ]);
+                                
+                                $resolvedData = $relatedModel::autoResolveRelationships($relatedData);
+                                
+                                // Update the record with resolved relationships
+                                if ($resolvedData !== $relatedData) {
+                                    $related->update($resolvedData);
+                                    $related = $related->fresh();
+                                    
+                                    Log::channel('ai-engine')->info('Resolved nested relationships for created record', [
+                                        'model' => $relatedModel,
+                                        'id' => $related->id,
+                                        'resolved_fields' => array_keys(array_diff_assoc($resolvedData, $relatedData)),
+                                    ]);
+                                }
+                            } catch (\Exception $e) {
+                                Log::channel('ai-engine')->warning('Failed to resolve nested relationships', [
+                                    'model' => $relatedModel,
+                                    'error' => $e->getMessage(),
+                                    'trace' => $e->getTraceAsString(),
                                 ]);
                             }
-                        } catch (\Exception $e) {
-                            Log::channel('ai-engine')->warning('Failed to resolve nested relationships', [
-                                'model' => $relatedModel,
-                                'error' => $e->getMessage(),
-                                'trace' => $e->getTraceAsString(),
-                            ]);
                         }
                     }
                 }
                 
                 if ($related) {
                     $data[$field] = $related->id;
-                    unset($data[$searchField]);
+                    
+                    // Only unset searchField if it's different from a model field
+                    // For example: 'customer' field should be removed, but 'email' field should be kept
+                    $model = new static();
+                    $fillable = $model->getFillable();
+                    
+                    // Don't remove if searchField is a fillable field on the model
+                    if (!in_array($searchField, $fillable)) {
+                        unset($data[$searchField]);
+                    }
                     
                     Log::channel('ai-engine')->info('Relationship resolved', [
                         'field' => $field,
                         'value' => $value,
                         'resolved_id' => $related->id,
+                        'searchField_preserved' => in_array($searchField, $fillable),
                     ]);
                 } else {
                     Log::channel('ai-engine')->warning('Relationship not resolved', [
