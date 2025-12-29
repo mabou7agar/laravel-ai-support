@@ -788,11 +788,14 @@ class SmartActionService
 
                 // Only add action if required params can be extracted
                 if ($this->hasRequiredParams($params, $definition['required_params'])) {
+                    // Build confirmation description from params
+                    $description = $this->buildConfirmationDescription($definition, $params);
+                    
                     $actions[] = new InteractiveAction(
                         id: $id . '_' . uniqid(),
                         type: ActionTypeEnum::from(ActionTypeEnum::BUTTON),
                         label: $definition['label'],
-                        description: $definition['description'],
+                        description: $description,
                         data: [
                             'action' => $id,
                             'executor' => $definition['executor'],
@@ -861,40 +864,57 @@ class SmartActionService
     }
 
     /**
-     * Check if all required params are present
+     * Check if all required parameters are present
      */
     protected function hasRequiredParams(array $params, array $required): bool
     {
-        // If no required params, always return true
-        if (empty($required)) {
-            return true;
-        }
-        
-        // For product-related models, be more lenient
-        // Allow action if at least one key field is present
-        $keyFields = ['name', 'title', 'subject', 'content'];
-        $hasKeyField = false;
-        
-        foreach ($keyFields as $field) {
-            if (isset($params[$field]) && !empty($params[$field])) {
-                $hasKeyField = true;
-                break;
-            }
-        }
-        
-        // If we have a key field, allow the action even if other required fields are missing
-        // The executeAI method can handle auto-generation or defaults
-        if ($hasKeyField) {
-            return true;
-        }
-        
-        // Otherwise, check all required params strictly
         foreach ($required as $param) {
-            if (!isset($params[$param]) || empty($params[$param])) {
+            if (!isset($params[$param]) || $params[$param] === null || $params[$param] === '') {
                 return false;
             }
         }
         return true;
+    }
+    
+    /**
+     * Build confirmation description from extracted parameters
+     */
+    protected function buildConfirmationDescription(array $definition, array $params): string
+    {
+        $modelName = $definition['model_name'] ?? 'Record';
+        $description = "**Confirm {$modelName} Creation:**\n\n";
+        
+        // Special handling for Invoice
+        if (isset($definition['model_class']) && str_contains($definition['model_class'], 'Invoice')) {
+            if (isset($params['name'])) {
+                $description .= "**Customer:** {$params['name']}\n";
+            }
+            
+            if (isset($params['items']) && is_array($params['items'])) {
+                $description .= "\n**Items:**\n";
+                $total = 0;
+                foreach ($params['items'] as $item) {
+                    $itemName = $item['item'] ?? $item['product_name'] ?? $item['name'] ?? 'Unknown';
+                    $price = $item['price'] ?? 0;
+                    $qty = $item['quantity'] ?? 1;
+                    $subtotal = $price * $qty;
+                    $total += $subtotal;
+                    $description .= "- {$itemName}: \${$price} x {$qty} = \${$subtotal}\n";
+                }
+                $description .= "\n**Total: \${$total}**\n";
+            }
+        } else {
+            // Generic parameter display
+            foreach ($params as $key => $value) {
+                if (is_array($value)) {
+                    $description .= "**" . ucfirst(str_replace('_', ' ', $key)) . ":** " . count($value) . " items\n";
+                } elseif (!is_object($value)) {
+                    $description .= "**" . ucfirst(str_replace('_', ' ', $key)) . ":** {$value}\n";
+                }
+            }
+        }
+        
+        return $description;
     }
 
     /**
