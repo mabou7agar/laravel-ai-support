@@ -212,6 +212,54 @@ class AIConfigBuilder
     }
     
     /**
+     * Add conversational guidance for AI
+     * 
+     * Provides instructions to the AI on how to interact with users
+     * when collecting data for this model. The AI will use these
+     * guidelines to ask for missing information progressively.
+     * 
+     * @param array|string $guidance Array of guidance strings or single string
+     * @return self
+     */
+    public function conversationalGuidance(array|string $guidance): self
+    {
+        if (is_string($guidance)) {
+            $guidance = [$guidance];
+        }
+        
+        // Append to description with clear formatting
+        $guidanceText = "\n\nCONVERSATIONAL GUIDANCE:\n" . implode("\n", $guidance);
+        $this->config['description'] .= $guidanceText;
+        
+        return $this;
+    }
+    
+    /**
+     * Define critical fields that must be satisfied before action execution
+     * 
+     * Critical fields are checked using smart validation that understands:
+     * - Relationship fields (customer, user, etc.)
+     * - Array/collection fields (items, products, etc.)
+     * - Composite data (name + price = valid item)
+     * 
+     * @param array $criticalFields Array of field names or field definitions
+     * @return self
+     * 
+     * @example
+     * ->criticalFields(['customer', 'items'])
+     * ->criticalFields([
+     *     'customer' => ['type' => 'relationship', 'fields' => ['name', 'email']],
+     *     'items' => ['type' => 'array']
+     * ])
+     */
+    public function criticalFields(array $criticalFields): self
+    {
+        $this->config['critical_fields'] = $criticalFields;
+        
+        return $this;
+    }
+    
+    /**
      * Add extraction format hints
      */
     public function extractionHints(array $hints): self

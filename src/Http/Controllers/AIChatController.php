@@ -199,7 +199,26 @@ class AIChatController extends Controller
                 'has_options' => $metadata['has_options'] ?? false,
                 'aggregate_data' => $metadata['aggregate_data'] ?? [],
                 // Smart actions metadata (inline action system)
-                'smart_actions' => $metadata['smart_actions'] ?? [],
+                'smart_actions' => array_map(function($action) {
+                    if ($action instanceof \LaravelAIEngine\DTOs\InteractiveAction) {
+                        return [
+                            'id' => $action->id,
+                            'type' => $action->type->value,
+                            'label' => $action->label,
+                            'description' => $action->description,
+                            'data' => $action->data,
+                            'style' => $action->style,
+                            'disabled' => $action->disabled,
+                            'loading' => $action->loading,
+                            'confirm_message' => $action->confirmMessage,
+                            'success_message' => $action->successMessage,
+                            'error_message' => $action->errorMessage,
+                            'validation' => $action->validation,
+                            'metadata' => $action->metadata,
+                        ];
+                    }
+                    return $action;
+                }, $metadata['smart_actions'] ?? []),
                 'action_executed' => $metadata['action_executed'] ?? null,
             ]);
 

@@ -929,6 +929,33 @@ class Customer extends Model
 }
 ```
 
+**3. Add Conversational Guidance (Optional):**
+
+Make the AI ask for missing information step-by-step:
+
+```php
+public function initializeAI(): array
+{
+    return $this->aiConfig()
+        ->description('Customer invoice with line items')
+        
+        // Guide AI to collect data progressively
+        ->conversationalGuidance([
+            'When user wants to create an invoice, guide them step-by-step:',
+            '1. If customer info is missing, ask: "Who is this invoice for? Please provide customer name and email."',
+            '2. If customer info is incomplete, ask for missing fields (phone and address are optional)',
+            '3. If product/item info is missing, ask: "What products or services should I add?"',
+            '4. For each item, collect: product name, price, quantity, category',
+            '5. Before creating, summarize all details and ask for confirmation',
+            '6. DON\'T require all info at once - collect progressively',
+        ])
+        
+        ->autoRelationship('customer_id', 'Customer', Customer::class)
+        ->arrayField('items', 'Invoice items', [...])
+        ->build();
+}
+```
+
 ### Features
 
 | Feature | Description | Status |

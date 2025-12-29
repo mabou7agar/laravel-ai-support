@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Smart Action Service
- * 
+ *
  * Generates executable actions with AI-powered parameter extraction.
  * Actions are pre-filled with all required data extracted from context.
  */
@@ -145,24 +145,30 @@ class SmartActionService
             foreach ($allModels as $modelClass) {
                 $hasExecuteAI = false;
                 $expectedFormat = null;
+                
+                Log::channel('ai-engine')->debug('Processing model for registration', [
+                    'model' => $modelClass,
+                    'class_exists' => class_exists($modelClass),
+                    'in_remote_info' => isset($remoteModelsInfo[$modelClass])
+                ]);
 
                 // Check if model exists locally
                 if (class_exists($modelClass)) {
                     $reflection = new \ReflectionClass($modelClass);
-                    
-                    // Check for executeAI method locally
-                    if (!$reflection->hasMethod('executeAI')) {
+
+                    // Check for executeAI or initializeAI method locally
+                    if (!$reflection->hasMethod('executeAI') && !$reflection->hasMethod('initializeAI')) {
                         continue;
                     }
-                    
+
                     $hasExecuteAI = true;
                     $expectedFormat = $this->getModelExpectedFormat($modelClass);
-                } 
+                }
                 // Check if model has executeAI on remote node
                 elseif (isset($remoteModelsInfo[$modelClass])) {
                     $modelInfo = $remoteModelsInfo[$modelClass];
-                    
-                    if (in_array('executeAI', $modelInfo['methods'] ?? [])) {
+
+                    if (in_array('executeAI', $modelInfo['methods'] ?? []) || in_array('initializeAI', $modelInfo['methods'] ?? [])) {
                         $hasExecuteAI = true;
                         $expectedFormat = $modelInfo['format'] ?? $this->getDefaultFormat();
                     }
@@ -196,6 +202,7 @@ class SmartActionService
                     'context_triggers' => $triggers,
                     'required_params' => $expectedFormat['required'] ?? [],
                     'optional_params' => $expectedFormat['optional'] ?? [],
+                    'expected_format' => $expectedFormat,
                     'model_class' => $modelClass,
                     'extractor' => function ($content, $sources, $metadata) use ($modelClass, $expectedFormat, $actionId) {
                         Log::channel('ai-engine')->debug('Extractor called', [
@@ -204,15 +211,15 @@ class SmartActionService
                             'content_length' => strlen($content),
                             'metadata_keys' => array_keys($metadata)
                         ]);
-                        
+
                         try {
                             $result = $this->extractModelParams($modelClass, $content, $sources, $metadata, $expectedFormat);
-                            
+
                             Log::channel('ai-engine')->debug('Extractor result', [
                                 'action_id' => $actionId,
                                 'result' => $result
                             ]);
-                            
+
                             return $result;
                         } catch (\Exception $e) {
                             Log::channel('ai-engine')->error('Extractor failed', [
@@ -226,11 +233,15 @@ class SmartActionService
                     'executor' => 'model.dynamic',
                 ]);
 
+                // Store model class for later reference
+                $this->actionDefinitions[$actionId]['model_class'] = $modelClass;
+                $this->actionDefinitions[$actionId]['is_local'] = class_exists($modelClass);
+
                 Log::channel('ai-engine')->info('Registered dynamic model action', [
                     'model' => $modelClass,
                     'action_id' => $actionId,
                     'required_params' => $expectedFormat['required'] ?? [],
-                    'is_remote' => !class_exists($modelClass),
+                    'is_local' => class_exists($modelClass),
                 ]);
             }
         } catch (\Exception $e) {
@@ -257,7 +268,7 @@ class SmartActionService
                 try {
                     // Use shared secret from config or node's API key
                     $authToken = config('ai-engine.nodes.shared_secret') ?? $node->api_key;
-                    
+
                     $response = \Illuminate\Support\Facades\Http::withoutVerifying()
                         ->timeout(5)
                         ->withToken($authToken)
@@ -294,11 +305,12 @@ class SmartActionService
 
     /**
      * Get default format for models without initializeAI
+     * Returns empty format - models should define their own fields
      */
     protected function getDefaultFormat(): array
     {
         return [
-            'required' => ['name'],
+            'required' => [],
             'optional' => [],
         ];
     }
@@ -308,15 +320,71 @@ class SmartActionService
      */
     protected function getModelExpectedFormat(string $modelClass): array
     {
+        Log::channel('ai-engine')->debug('getModelExpectedFormat called', [
+            'model' => $modelClass,
+            'class_exists' => class_exists($modelClass)
+        ]);
+        
         try {
             $reflection = new \ReflectionClass($modelClass);
 
             // Check for initializeAI method
             if ($reflection->hasMethod('initializeAI')) {
                 $method = $reflection->getMethod('initializeAI');
+                $config = null;
+
                 if ($method->isStatic()) {
-                    return $modelClass::initializeAI();
+                    $config = $modelClass::initializeAI();
+                } else {
+                    // Non-static method, instantiate and call
+                    $model = new $modelClass();
+                    $config = $model->initializeAI();
                 }
+
+                // If config has fields, convert to expected format
+                if (isset($config['fields'])) {
+                    $required = [];
+                    $optional = [];
+                    $fieldDefinitions = [];
+
+                    foreach ($config['fields'] as $fieldName => $fieldConfig) {
+                        $fieldDefinitions[$fieldName] = $fieldConfig;
+
+                        if ($fieldConfig['required'] ?? false) {
+                            $required[] = $fieldName;
+                        } else {
+                            $optional[] = $fieldName;
+                        }
+                    }
+
+                    $result = [
+                        'required' => $required,
+                        'optional' => $optional,
+                        'all_fields' => array_keys($config['fields']),
+                        'fields' => $fieldDefinitions,
+                    ];
+                    
+                    Log::channel('ai-engine')->debug('getModelExpectedFormat result', [
+                        'model' => $modelClass,
+                        'all_fields' => $result['all_fields'],
+                        'required' => $result['required'],
+                        'optional' => $result['optional']
+                    ]);
+
+                    // Include critical_fields if defined in model's initializeAI
+                    if (isset($config['critical_fields'])) {
+                        $result['critical_fields'] = $config['critical_fields'];
+                    }
+                    
+                    // Include extraction_hints if defined in model's initializeAI
+                    if (isset($config['extraction_format'])) {
+                        $result['extraction_hints'] = $config['extraction_format'];
+                    }
+                    
+                    return $result;
+                }
+                
+                return $config;
             }
 
             // Fallback to fillable fields
@@ -365,30 +433,7 @@ class SmartActionService
             "add {$lower}",
             "new {$lower}",
         ];
-        
-        // Add common variations for known model types
-        if (str_contains($lower, 'product')) {
-            $triggers = array_merge($triggers, [
-                'product',
-                'sell',
-                'item',
-                'goods',
-                'merchandise',
-            ]);
-        }
-        
-        if (str_contains($lower, 'order')) {
-            $triggers = array_merge($triggers, ['order', 'purchase', 'buy']);
-        }
-        
-        if (str_contains($lower, 'invoice')) {
-            $triggers = array_merge($triggers, ['invoice', 'bill', 'payment']);
-        }
-        
-        if (str_contains($lower, 'customer') || str_contains($lower, 'client')) {
-            $triggers = array_merge($triggers, ['customer', 'client', 'contact']);
-        }
-        
+
         return array_unique($triggers);
     }
 
@@ -397,15 +442,29 @@ class SmartActionService
      */
     protected function extractModelParams(string $modelClass, string $content, array $sources, array $metadata, array $expectedFormat): array
     {
-        $allFields = array_merge(
-            $expectedFormat['required'] ?? [],
-            $expectedFormat['optional'] ?? []
-        );
+        // Build allFields from either old format (required/optional arrays) or new format (fields object)
+        if (isset($expectedFormat['all_fields'])) {
+            $allFields = $expectedFormat['all_fields'];
+        } else {
+            $allFields = array_merge(
+                $expectedFormat['required'] ?? [],
+                $expectedFormat['optional'] ?? []
+            );
+        }
+        
+        Log::channel('ai-engine')->debug('Expected format structure', [
+            'model' => $modelClass,
+            'has_all_fields' => isset($expectedFormat['all_fields']),
+            'has_required' => isset($expectedFormat['required']),
+            'has_optional' => isset($expectedFormat['optional']),
+            'has_fields' => isset($expectedFormat['fields']),
+            'all_fields' => $allFields
+        ]);
 
         // Use AI to extract fields from conversation
         $conversationHistory = $metadata['conversation_history'] ?? [];
         $userId = $metadata['user_id'] ?? null;
-        
+
         // Build context from last 5 messages
         $context = '';
         $recentMessages = array_slice($conversationHistory, -5);
@@ -416,18 +475,61 @@ class SmartActionService
         }
         $context .= "user: {$content}\n";
 
-        // Use AI to extract structured data
-        $prompt = "Extract data from the user's message. Extract ALL values that are mentioned.\n\n";
+        // Use AI to extract structured data with context awareness
+        $prompt = "Extract data from the user's message for creating a " . class_basename($modelClass) . ".\n\n";
         $prompt .= "Message: \"{$content}\"\n\n";
-        $prompt .= "Fields to look for: " . implode(', ', $allFields) . "\n\n";
-        $prompt .= "Rules:\n";
-        $prompt .= "1. Extract the main item/product name (e.g., 'MacBook Pro', 'iPhone 15', etc.)\n";
-        $prompt .= "2. Extract ALL numeric values mentioned (price, quantity, etc.)\n";
-        $prompt .= "3. Extract ALL text values mentioned (category, description, etc.)\n";
-        $prompt .= "4. For fields ending in _id, extract the NAME not the ID\n";
-        $prompt .= "5. Only use null for fields NOT mentioned in the message\n\n";
-        $prompt .= "Return ONLY valid JSON:\n";
-        $prompt .= "{\"name\": \"MacBook Pro\", \"price\": 500, \"category\": \"Electronics\"}";
+        
+        // Include field descriptions from model's initializeAI() if available
+        $fields = $expectedFormat['fields'] ?? [];
+        if (!empty($fields)) {
+            $prompt .= "Available fields with descriptions:\n";
+            foreach ($fields as $fieldName => $fieldInfo) {
+                $description = is_array($fieldInfo) ? ($fieldInfo['description'] ?? $fieldName) : $fieldInfo;
+                $type = is_array($fieldInfo) ? ($fieldInfo['type'] ?? 'string') : 'string';
+                $prompt .= "- {$fieldName} ({$type}): {$description}\n";
+            }
+            $prompt .= "\n";
+        } else {
+            // Fallback to simple field list if no descriptions available
+            $prompt .= "Fields to extract: " . implode(', ', $allFields) . "\n\n";
+        }
+        
+        Log::channel('ai-engine')->debug('Extraction prompt fields', [
+            'model' => $modelClass,
+            'all_fields' => $allFields,
+            'has_field_descriptions' => !empty($fields),
+            'content' => $content
+        ]);
+
+        // Add model-specific extraction hints if available
+        $extractionHints = $expectedFormat['extraction_hints'] ?? [];
+
+        Log::channel('ai-engine')->debug('Extraction hints check', [
+            'model' => $modelClass,
+            'has_hints' => !empty($extractionHints),
+            'hints' => $extractionHints
+        ]);
+
+        if (!empty($extractionHints)) {
+            $prompt .= "Model-Specific Instructions:\n";
+            foreach ($extractionHints as $field => $hints) {
+                if (is_array($hints)) {
+                    $prompt .= "For '{$field}' field:\n";
+                    foreach ($hints as $hint) {
+                        $prompt .= "  - {$hint}\n";
+                    }
+                }
+            }
+            $prompt .= "\n";
+        }
+
+        $prompt .= "Instructions:\n";
+        $prompt .= "- Extract ALL field values mentioned in the message\n";
+        $prompt .= "- Use the EXACT field names listed above\n";
+        $prompt .= "- Match field names to their semantic meaning based on the descriptions provided\n";
+        $prompt .= "- For relationship fields (ending in '_id'), extract the identifying value (name, email, etc.)\n";
+        $prompt .= "- Use null only for fields NOT mentioned in the message\n\n";
+        $prompt .= "Return ONLY valid JSON:";
 
         try {
             $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
@@ -437,21 +539,32 @@ class SmartActionService
                 systemPrompt: 'You are a data extraction assistant. Extract structured data from conversations.',
                 maxTokens: 500
             );
-            
-            $response = $this->aiService->generate($aiRequest);
 
-            $extracted = json_decode($response->getContent(), true);
-            
+            $response = $this->aiService->generate($aiRequest);
+            $aiContent = $response->getContent();
+
+            Log::channel('ai-engine')->debug('AI extraction raw response', [
+                'model' => $modelClass,
+                'content' => $aiContent
+            ]);
+
+            // Extract JSON from markdown code blocks if present
+            if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $aiContent, $matches)) {
+                $aiContent = $matches[1];
+            }
+
+            $extracted = json_decode($aiContent, true);
+
             if (is_array($extracted)) {
                 // Filter out null values
                 $extracted = array_filter($extracted, fn($v) => $v !== null);
-                
+
                 Log::channel('ai-engine')->debug('AI extraction result', [
                     'model' => $modelClass,
                     'extracted' => $extracted,
                     'all_fields' => $allFields
                 ]);
-                
+
                 // Enhance with regex fallback for any missing fields that might be extractable
                 $regexExtracted = $this->regexExtractFields($content, $allFields);
                 foreach ($regexExtracted as $field => $value) {
@@ -463,15 +576,15 @@ class SmartActionService
                         ]);
                     }
                 }
-                
+
                 Log::channel('ai-engine')->debug('Final extracted params', [
                     'model' => $modelClass,
                     'params' => $extracted
                 ]);
-                
+
                 // Resolve relationship fields intelligently
                 $extracted = $this->resolveRelationships($modelClass, $extracted, $userId);
-                
+
                 return $extracted;
             }
         } catch (\Exception $e) {
@@ -485,12 +598,12 @@ class SmartActionService
 
         // Fallback to basic regex extraction
         $regexResult = $this->regexExtractFields($content, $allFields);
-        
+
         Log::channel('ai-engine')->debug('Using regex fallback extraction', [
             'model' => $modelClass,
             'extracted' => $regexResult
         ]);
-        
+
         return $regexResult;
     }
 
@@ -507,7 +620,7 @@ class SmartActionService
                 'model' => $modelClass,
                 'data' => $data
             ]);
-            
+
             // Mark fields ending with _id that have string values as relationships to resolve
             $relationshipsToResolve = [];
             foreach ($data as $key => $value) {
@@ -515,42 +628,42 @@ class SmartActionService
                     $relationshipsToResolve[$key] = $value;
                 }
             }
-            
+
             if (!empty($relationshipsToResolve)) {
                 $data['_resolve_relationships'] = $relationshipsToResolve;
                 Log::channel('ai-engine')->info('Marked relationships for remote resolution', [
                     'relationships' => $relationshipsToResolve
                 ]);
             }
-            
+
             return $data;
         }
-        
+
         // Local model - resolve relationships locally
         try {
             $model = new $modelClass();
-            
+
             foreach ($data as $key => $value) {
                 // Check if this is a relationship field (ends with _id but value is not numeric)
                 if (str_ends_with($key, '_id') && !is_numeric($value) && is_string($value)) {
                     // Get the relationship name (remove _id suffix)
                     $relationName = substr($key, 0, -3);
-                    
+
                     // Check if model has this relationship
                     if (method_exists($model, $relationName)) {
                         $relation = $model->$relationName();
                         $relatedClass = get_class($relation->getRelated());
-                        
+
                         Log::channel('ai-engine')->info('Resolving relationship locally', [
                             'field' => $key,
                             'relation' => $relationName,
                             'related_class' => $relatedClass,
                             'search_value' => $value
                         ]);
-                        
+
                         // Try to find or create the related record
                         $relatedId = $this->findOrCreateRelated($relatedClass, $value, $userId);
-                        
+
                         if ($relatedId) {
                             $data[$key] = $relatedId;
                             unset($data[$relationName]); // Remove the name field if it exists
@@ -561,7 +674,7 @@ class SmartActionService
         } catch (\Exception $e) {
             Log::warning('Relationship resolution failed: ' . $e->getMessage());
         }
-        
+
         return $data;
     }
 
@@ -573,14 +686,14 @@ class SmartActionService
         try {
             // Check if model is vectorizable (has vector search capability)
             $isVectorizable = method_exists($relatedClass, 'vectorSearch');
-            
+
             if ($isVectorizable) {
                 // Use AI semantic search
                 Log::channel('ai-engine')->info('Using vector search for relation', [
                     'class' => $relatedClass,
                     'query' => $searchValue
                 ]);
-                
+
                 $filters = [];
                 if ($userId) {
                     // Respect user scope if model has user_id
@@ -589,9 +702,9 @@ class SmartActionService
                         $filters['user_id'] = $userId;
                     }
                 }
-                
+
                 $results = $relatedClass::vectorSearch($searchValue, $filters, 1);
-                
+
                 if (!empty($results)) {
                     Log::channel('ai-engine')->info('Found via vector search', [
                         'id' => $results[0]->id,
@@ -605,9 +718,9 @@ class SmartActionService
                     'class' => $relatedClass,
                     'query' => $searchValue
                 ]);
-                
+
                 $query = $relatedClass::query();
-                
+
                 // Respect user scope
                 if ($userId) {
                     $model = new $relatedClass();
@@ -615,55 +728,68 @@ class SmartActionService
                         $query->where('user_id', $userId);
                     }
                 }
+
+                // Search in first fillable field (generic approach)
+                $model = new $relatedClass();
+                $fillable = $model->getFillable();
                 
-                // Search in name field (most common)
-                $record = $query->where('name', 'LIKE', "%{$searchValue}%")->first();
-                
-                if ($record) {
-                    Log::channel('ai-engine')->info('Found via SQL search', [
-                        'id' => $record->id
-                    ]);
-                    return $record->id;
-                }
-            }
-            
-            // Not found - try to create if model allows it
-            if (method_exists($relatedClass, 'createFromAI')) {
-                Log::channel('ai-engine')->info('Creating new related record', [
-                    'class' => $relatedClass,
-                    'name' => $searchValue
-                ]);
-                
-                $data = ['name' => $searchValue];
-                if ($userId) {
-                    $model = new $relatedClass();
-                    if (in_array('user_id', $model->getFillable())) {
-                        $data['user_id'] = $userId;
+                if (!empty($fillable)) {
+                    $searchField = $fillable[0]; // Use first fillable field
+                    $record = $query->where($searchField, 'LIKE', "%{$searchValue}%")->first();
+
+                    if ($record) {
+                        Log::channel('ai-engine')->info('Found via SQL search', [
+                            'id' => $record->id,
+                            'search_field' => $searchField
+                        ]);
+                        return $record->id;
                     }
                 }
-                
-                $newRecord = $relatedClass::createFromAI($data);
-                return $newRecord->id ?? $newRecord['id'] ?? null;
             }
-            
-            // Try simple create as last resort
-            $model = new $relatedClass();
-            if (in_array('name', $model->getFillable())) {
-                $data = ['name' => $searchValue];
+
+            // Not found - try to create if model allows it
+            if (method_exists($relatedClass, 'createFromAI')) {
+                $model = new $relatedClass();
+                $fillable = $model->getFillable();
+                $firstField = !empty($fillable) ? $fillable[0] : 'name';
+                
+                Log::channel('ai-engine')->info('Creating new related record', [
+                    'class' => $relatedClass,
+                    'field' => $firstField,
+                    'value' => $searchValue
+                ]);
+
+                $data = [$firstField => $searchValue];
                 if ($userId && in_array('user_id', $model->getFillable())) {
                     $data['user_id'] = $userId;
                 }
+
+                $newRecord = $relatedClass::createFromAI($data);
+                return $newRecord->id ?? $newRecord['id'] ?? null;
+            }
+
+            // Try simple create as last resort
+            $model = new $relatedClass();
+            $fillable = $model->getFillable();
+            
+            if (!empty($fillable)) {
+                $firstField = $fillable[0];
+                $data = [$firstField => $searchValue];
                 
+                if ($userId && in_array('user_id', $model->getFillable())) {
+                    $data['user_id'] = $userId;
+                }
+
                 $newRecord = $relatedClass::create($data);
-                
+
                 Log::channel('ai-engine')->info('Created new related record', [
                     'class' => $relatedClass,
                     'id' => $newRecord->id
                 ]);
-                
+
                 return $newRecord->id;
             }
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Failed to find/create related record', [
                 'class' => $relatedClass,
@@ -671,50 +797,28 @@ class SmartActionService
                 'error' => $e->getMessage()
             ]);
         }
-        
+
         return null;
     }
 
     /**
      * Regex fallback for field extraction
+     * Generic pattern matching - no hardcoded field names
      */
     protected function regexExtractFields(string $content, array $fields): array
     {
         $extracted = [];
 
-        // Common patterns
-        if (in_array('name', $fields)) {
-            // Try multiple patterns to extract product/item name
-            if (preg_match('/(?:create|add|new)\s+(?:a\s+)?([a-zA-Z0-9\s]+?)\s+(?:product|item|service)/i', $content, $matches)) {
-                // "create macbook pro product" -> "macbook pro"
-                $extracted['name'] = trim($matches[1]);
-            } elseif (preg_match('/(?:product|item|service)\s+(?:called|named)\s+["\']?([^"\']+)["\']?/i', $content, $matches)) {
-                // "product called MacBook Pro" -> "MacBook Pro"
-                $extracted['name'] = trim($matches[1]);
-            } elseif (preg_match('/(?:sell|create|add)\s+([a-zA-Z0-9\s]+?)(?:\s+for|\s+at|\s+with|\s+\$)/i', $content, $matches)) {
-                // "create MacBook Pro for $500" -> "MacBook Pro"
-                $extracted['name'] = trim($matches[1]);
+        // Generic numeric extraction for any field
+        foreach ($fields as $field) {
+            // Skip if already extracted
+            if (isset($extracted[$field])) {
+                continue;
             }
-        }
-
-        if (in_array('price', $fields)) {
-            if (preg_match('/\$?([\d,]+\.?\d*)/i', $content, $matches)) {
-                $extracted['price'] = (float) str_replace(',', '', $matches[1]);
-            }
-        }
-
-        if (in_array('description', $fields)) {
-            if (preg_match('/(?:with|has|features?)\s+([^.]+)/i', $content, $matches)) {
-                $extracted['description'] = trim($matches[1]);
-            }
-        }
-
-        // Extract category
-        if (in_array('category', $fields) || in_array('category_id', $fields)) {
-            if (preg_match('/(?:in|at|category|under)\s+(?:the\s+)?([a-zA-Z0-9\s]+?)\s+category/i', $content, $matches)) {
-                $extracted['category'] = trim($matches[1]);
-            } elseif (preg_match('/category\s+(?:is|:)\s+([a-zA-Z0-9\s]+)/i', $content, $matches)) {
-                $extracted['category'] = trim($matches[1]);
+            
+            // Try to extract numbers for fields that might be numeric
+            if (preg_match('/\b' . preg_quote($field, '/') . '\s*[:\s]+\$?([\d,]+\.?\d*)/i', $content, $matches)) {
+                $extracted[$field] = (float) str_replace(',', '', $matches[1]);
             }
         }
 
@@ -733,26 +837,26 @@ class SmartActionService
         // This is necessary because the service is a singleton and action definitions
         // might not persist between requests or might be registered after service instantiation
         $this->registerDynamicModelActions();
-        
+
         Log::channel('ai-engine')->debug('Action definitions available', [
             'count' => count($this->actionDefinitions),
             'actions' => array_keys($this->actionDefinitions)
         ]);
-        
+
         $actions = [];
 
         // Get intent analysis from metadata
         $intentAnalysis = $metadata['intent_analysis'] ?? null;
-        
+
         foreach ($this->actionDefinitions as $id => $definition) {
             // Use intent-based matching for dynamic model actions if intent analysis is available
             $isModelAction = isset($definition['model_class']);
             $triggersMatch = false;
-            
+
             if ($isModelAction && $intentAnalysis) {
                 // For model actions, use intent analysis to detect creation requests
                 $triggersMatch = $this->matchesIntentForModelAction($intentAnalysis, $definition);
-                
+
                 Log::channel('ai-engine')->debug('Intent-based action match', [
                     'action_id' => $id,
                     'intent' => $intentAnalysis['intent'],
@@ -762,7 +866,7 @@ class SmartActionService
             } else {
                 // For non-model actions, use traditional trigger matching
                 $triggersMatch = $this->matchesTriggers($content, $definition['context_triggers']);
-                
+
                 Log::channel('ai-engine')->debug('Trigger-based action match', [
                     'action_id' => $id,
                     'triggers' => $definition['context_triggers'],
@@ -770,7 +874,7 @@ class SmartActionService
                     'matches' => $triggersMatch
                 ]);
             }
-            
+
             if ($triggersMatch) {
                 // Extract parameters using the extractor
                 $params = [];
@@ -786,11 +890,54 @@ class SmartActionService
                     'required_params' => $definition['required_params'],
                 ]);
 
-                // Only add action if required params can be extracted
-                if ($this->hasRequiredParams($params, $definition['required_params'])) {
+                // Check if required params are present
+                $hasRequired = $this->hasRequiredParams($params, $definition['required_params']);
+
+                // For model actions, check conversational guidance and business logic fields
+                $isModelAction = isset($definition['model_class']);
+                $shouldAskForMissing = false;
+                $missingFields = [];
+
+                if ($isModelAction) {
+                    $modelClass = $definition['model_class'];
+
+                    Log::channel('ai-engine')->debug('Checking model action for missing fields', [
+                        'action_id' => $id,
+                        'model' => $modelClass,
+                        'has_expected_format' => isset($definition['expected_format']),
+                        'expected_format_keys' => array_keys($definition['expected_format'] ?? []),
+                        'has_config_critical_fields' => config("ai-engine.smart_actions.model_critical_fields.{$modelClass}") !== null,
+                    ]);
+
+                    // Check for critical fields using the action definition's expected format
+                    $missingFields = $this->getMissingCriticalFieldsFromDefinition($params, $definition, $modelClass);
+
+                    Log::channel('ai-engine')->debug('Missing fields check result', [
+                        'action_id' => $id,
+                        'missing_fields' => $missingFields,
+                        'params' => array_keys($params),
+                    ]);
+
+                    if (!empty($missingFields)) {
+                        $shouldAskForMissing = true;
+
+                        Log::channel('ai-engine')->info('Model missing critical fields', [
+                            'action_id' => $id,
+                            'model' => $modelClass,
+                            'missing_fields' => $missingFields,
+                            'extracted_params' => array_keys($params),
+                        ]);
+                    } elseif (!$hasRequired) {
+                        // For models without critical fields, use standard required check
+                        $missingFields = $this->getMissingRequiredFields($params, $definition, $modelClass);
+                    }
+                }
+
+                // Only add action if required params can be extracted OR if we should ask for missing
+                if ($hasRequired && !$shouldAskForMissing) {
                     // Build confirmation description from params
                     $description = $this->buildConfirmationDescription($definition, $params);
-                    
+
                     $actions[] = new InteractiveAction(
                         id: $id . '_' . uniqid(),
                         type: ActionTypeEnum::from(ActionTypeEnum::BUTTON),
@@ -804,11 +951,36 @@ class SmartActionService
                             'ready_to_execute' => true,
                         ]
                     );
-                    
+
                     Log::channel('ai-engine')->info('Action added to response', [
                         'action_id' => $id,
                         'label' => $definition['label'],
                         'params' => $params,
+                    ]);
+                } elseif ($shouldAskForMissing) {
+                    // Create action with partial params but mark it as needing more info
+                    $description = $this->buildConfirmationDescription($definition, $params);
+                    $description .= "\n\n⚠️ **Missing Information:** " . implode(', ', $missingFields);
+
+                    $actions[] = new InteractiveAction(
+                        id: $id . '_' . uniqid(),
+                        type: ActionTypeEnum::from(ActionTypeEnum::BUTTON),
+                        label: $definition['label'] . ' (Incomplete)',
+                        description: $description,
+                        data: [
+                            'action' => $id,
+                            'executor' => $definition['executor'],
+                            'model_class' => $definition['model_class'] ?? null,
+                            'params' => $params,
+                            'ready_to_execute' => false,
+                            'missing_fields' => $missingFields,
+                        ]
+                    );
+
+                    Log::channel('ai-engine')->info('Action added with missing fields warning', [
+                        'action_id' => $id,
+                        'missing_fields' => $missingFields,
+                        'partial_params' => $params,
                     ]);
                 } else {
                     Log::channel('ai-engine')->debug('Action skipped - missing required params', [
@@ -832,14 +1004,14 @@ class SmartActionService
     {
         $intent = $intentAnalysis['intent'] ?? '';
         $confidence = $intentAnalysis['confidence'] ?? 0;
-        
+
         // Language-agnostic matching: rely on AI's intent classification
         // The AI analyzes the message in any language and returns standardized intent
         // 'new_request' means user wants to create/add something new
         if ($intent === 'new_request' && $confidence >= 0.8) {
             return true;
         }
-        
+
         return false;
     }
 
@@ -875,7 +1047,7 @@ class SmartActionService
         }
         return true;
     }
-    
+
     /**
      * Build confirmation description from extracted parameters
      */
@@ -883,37 +1055,26 @@ class SmartActionService
     {
         $modelName = $definition['model_name'] ?? 'Record';
         $description = "**Confirm {$modelName} Creation:**\n\n";
-        
-        // Special handling for Invoice
-        if (isset($definition['model_class']) && str_contains($definition['model_class'], 'Invoice')) {
-            if (isset($params['name'])) {
-                $description .= "**Customer:** {$params['name']}\n";
-            }
-            
-            if (isset($params['items']) && is_array($params['items'])) {
-                $description .= "\n**Items:**\n";
-                $total = 0;
-                foreach ($params['items'] as $item) {
-                    $itemName = $item['item'] ?? $item['product_name'] ?? $item['name'] ?? 'Unknown';
-                    $price = $item['price'] ?? 0;
-                    $qty = $item['quantity'] ?? 1;
-                    $subtotal = $price * $qty;
-                    $total += $subtotal;
-                    $description .= "- {$itemName}: \${$price} x {$qty} = \${$subtotal}\n";
+
+        // Generic parameter display
+        foreach ($params as $key => $value) {
+            if ($key === 'items' && is_array($value)) {
+                // Special handling for items array to show details
+                $description .= "**Items:**\n";
+                foreach ($value as $index => $item) {
+                    $itemNum = $index + 1;
+                    $itemName = $item['name'] ?? $item['item'] ?? $item['product_name'] ?? 'Item';
+                    $itemPrice = $item['amount'] ?? $item['price'] ?? 0;
+                    $itemQty = $item['quantity'] ?? 1;
+                    $description .= "  {$itemNum}. {$itemName} - \${$itemPrice} × {$itemQty}\n";
                 }
-                $description .= "\n**Total: \${$total}**\n";
-            }
-        } else {
-            // Generic parameter display
-            foreach ($params as $key => $value) {
-                if (is_array($value)) {
-                    $description .= "**" . ucfirst(str_replace('_', ' ', $key)) . ":** " . count($value) . " items\n";
-                } elseif (!is_object($value)) {
-                    $description .= "**" . ucfirst(str_replace('_', ' ', $key)) . ":** {$value}\n";
-                }
+            } elseif (is_array($value) && $key !== '_resolve_relationships') {
+                $description .= "**" . ucfirst(str_replace('_', ' ', $key)) . ":** " . count($value) . " items\n";
+            } elseif (!is_object($value) && $key !== '_resolve_relationships') {
+                $description .= "**" . ucfirst(str_replace('_', ' ', $key)) . ":** {$value}\n";
             }
         }
-        
+
         return $description;
     }
 
@@ -1073,146 +1234,6 @@ class SmartActionService
         return $params;
     }
 
-    /**
-     * Extract product parameters from conversation using AI
-     */
-    protected function extractProductParams(string $content, array $sources, array $metadata): array
-    {
-        $params = [];
-
-        // Extract product name
-        if (preg_match('/(?:product|item|sell)\s+(?:called|named)?\s*["\']?([^"\'\n\.]+)["\']?/i', $content, $matches)) {
-            $params['name'] = trim($matches[1]);
-        } elseif (preg_match('/create\s+(?:a\s+)?product\s+["\']?([^"\'\n\.]+)["\']?/i', $content, $matches)) {
-            $params['name'] = trim($matches[1]);
-        }
-
-        // Extract price
-        if (preg_match('/(?:price|cost|sell\s+for|worth)\s*[:\$]?\s*(\d+(?:\.\d{2})?)/i', $content, $matches)) {
-            $params['price'] = floatval($matches[1]);
-        } elseif (preg_match('/\$(\d+(?:\.\d{2})?)/i', $content, $matches)) {
-            $params['price'] = floatval($matches[1]);
-        }
-
-        // Extract description
-        if (preg_match('/(?:description|about|details?)[:\s]+([^\n]+)/i', $content, $matches)) {
-            $params['description'] = trim($matches[1]);
-        }
-
-        // Extract category
-        if (preg_match('/(?:category|type)[:\s]+([^\n]+)/i', $content, $matches)) {
-            $params['category'] = trim($matches[1]);
-        }
-
-        // Extract SKU
-        if (preg_match('/(?:sku|code)[:\s]+([A-Z0-9\-]+)/i', $content, $matches)) {
-            $params['sku'] = trim($matches[1]);
-        }
-
-        // Extract stock quantity
-        if (preg_match('/(?:stock|quantity|qty)[:\s]+(\d+)/i', $content, $matches)) {
-            $params['stock_quantity'] = intval($matches[1]);
-        }
-
-        // Extract status
-        if (preg_match('/(?:status)[:\s]+(active|inactive|draft)/i', $content, $matches)) {
-            $params['status'] = strtolower($matches[1]);
-        }
-
-        // Use AI to fill missing fields from conversation history
-        if ($this->aiService && isset($metadata['conversation_history'])) {
-            $params = $this->fillProductParamsWithAI($params, $content, $metadata['conversation_history']);
-        }
-
-        return $params;
-    }
-
-    /**
-     * Use AI to fill missing product parameters from conversation history
-     */
-    protected function fillProductParamsWithAI(array $params, string $currentMessage, array $conversationHistory): array
-    {
-        if (!$this->aiService) {
-            return $params;
-        }
-
-        // Build context from conversation history
-        $context = "Conversation history:\n";
-        foreach (array_slice($conversationHistory, -5) as $msg) {
-            $role = $msg['role'] ?? 'user';
-            $content = $msg['content'] ?? '';
-            $context .= "{$role}: {$content}\n";
-        }
-        $context .= "\nCurrent message: {$currentMessage}\n\n";
-
-        // Identify missing required fields
-        $missingFields = [];
-        if (empty($params['name'])) $missingFields[] = 'name';
-        if (empty($params['price'])) $missingFields[] = 'price';
-
-        // Identify missing optional fields that could be filled
-        $optionalFields = [];
-        if (empty($params['description'])) $optionalFields[] = 'description';
-        if (empty($params['category'])) $optionalFields[] = 'category';
-        if (empty($params['sku'])) $optionalFields[] = 'sku';
-        if (!isset($params['stock_quantity'])) $optionalFields[] = 'stock_quantity';
-        if (empty($params['status'])) $optionalFields[] = 'status';
-
-        if (empty($missingFields) && empty($optionalFields)) {
-            return $params;
-        }
-
-        // Create AI prompt to extract missing fields
-        $prompt = $context;
-        $prompt .= "Extract product information from the conversation above. Return ONLY a JSON object with these fields:\n";
-        
-        if (!empty($missingFields)) {
-            $prompt .= "Required fields: " . implode(', ', $missingFields) . "\n";
-        }
-        if (!empty($optionalFields)) {
-            $prompt .= "Optional fields (only if mentioned): " . implode(', ', $optionalFields) . "\n";
-        }
-
-        $prompt .= "\nField descriptions:\n";
-        $prompt .= "- name: Product name or title\n";
-        $prompt .= "- price: Numeric price (e.g., 99.99)\n";
-        $prompt .= "- description: Product description\n";
-        $prompt .= "- category: Product category\n";
-        $prompt .= "- sku: Stock Keeping Unit code\n";
-        $prompt .= "- stock_quantity: Available quantity (integer)\n";
-        $prompt .= "- status: active, inactive, or draft\n\n";
-        $prompt .= "Return ONLY valid JSON, no other text.";
-
-        try {
-            $response = $this->aiService->generate(
-                new \LaravelAIEngine\DTOs\AIRequest(
-                    prompt: $prompt,
-                    engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
-                    model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
-                    parameters: ['max_tokens' => 300, 'temperature' => 0.3]
-                )
-            );
-
-            $aiContent = $response->getContent();
-            
-            // Extract JSON from response
-            if (preg_match('/\{[^}]+\}/', $aiContent, $matches)) {
-                $extracted = json_decode($matches[0], true);
-                if (is_array($extracted)) {
-                    // Merge AI-extracted params with existing params (existing takes precedence)
-                    foreach ($extracted as $key => $value) {
-                        if (!isset($params[$key]) || empty($params[$key])) {
-                            $params[$key] = $value;
-                        }
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            Log::warning('Failed to extract product params with AI: ' . $e->getMessage());
-        }
-
-        return $params;
-    }
 
     /**
      * Parse relative date strings
@@ -1230,6 +1251,455 @@ class SmartActionService
         }
 
         return date('Y-m-d');
+    }
+
+    /**
+     * Check if model has conversational guidance in its AI config
+     */
+    protected function hasConversationalGuidance(string $modelClass): bool
+    {
+        try {
+            if (!class_exists($modelClass)) {
+                return false;
+            }
+
+            $reflection = new \ReflectionClass($modelClass);
+
+            // Check for initializeAI method
+            if (!$reflection->hasMethod('initializeAI')) {
+                return false;
+            }
+
+            $method = $reflection->getMethod('initializeAI');
+            if (!$method->isStatic()) {
+                return false;
+            }
+
+            $config = $modelClass::initializeAI();
+            $description = $config['description'] ?? '';
+
+            // Check if description contains conversational guidance
+            return str_contains($description, 'CONVERSATIONAL GUIDANCE');
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('Failed to check conversational guidance', [
+                'model' => $modelClass,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Get missing critical fields from action definition's expected format
+     * Works for both local and remote models by using the registered action definition
+     */
+    protected function getMissingCriticalFieldsFromDefinition(array $params, array $definition, string $modelClass): array
+    {
+        $missing = [];
+        $expectedFormat = $definition['expected_format'] ?? [];
+
+        // First priority: Check configuration for model-specific critical fields
+        $configCriticalFields = config("ai-engine.smart_actions.model_critical_fields.{$modelClass}");
+        if ($configCriticalFields) {
+            foreach ($configCriticalFields as $fieldName => $fieldConfig) {
+                // Handle simple array format: ['customer', 'items']
+                if (is_numeric($fieldName)) {
+                    $fieldName = $fieldConfig;
+                    $fieldConfig = ['type' => 'string'];
+                }
+
+                // Check if field is satisfied
+                $fieldSatisfied = $this->isFieldSatisfied($fieldName, $fieldConfig, $params);
+
+                if (!$fieldSatisfied) {
+                    // For relationship fields, add specific sub-fields to missing list
+                    if (isset($fieldConfig['fields'])) {
+                        foreach ($fieldConfig['fields'] as $subField) {
+                            $missing[] = $fieldName . '_' . $subField;
+                        }
+                    } else {
+                        $missing[] = $fieldName;
+                    }
+                }
+            }
+
+            return $missing;
+        }
+
+        // Second priority: Check if model defines critical_fields in initializeAI
+        if (isset($expectedFormat['critical_fields'])) {
+            $criticalFields = $expectedFormat['critical_fields'];
+
+            foreach ($criticalFields as $fieldName => $fieldConfig) {
+                // Handle simple array format: ['customer', 'items']
+                if (is_numeric($fieldName)) {
+                    $fieldName = $fieldConfig;
+                    $fieldConfig = ['type' => 'string'];
+                }
+
+                // Check if field is satisfied
+                $fieldSatisfied = $this->isFieldSatisfied($fieldName, $fieldConfig, $params);
+
+                if (!$fieldSatisfied) {
+                    // For relationship fields, add specific sub-fields to missing list
+                    if (isset($fieldConfig['fields'])) {
+                        foreach ($fieldConfig['fields'] as $subField) {
+                            $missing[] = $fieldName . '_' . $subField;
+                        }
+                    } else {
+                        $missing[] = $fieldName;
+                    }
+                }
+            }
+
+            return $missing;
+        }
+
+        // Second priority: Check if expected format has 'fields' key (from initializeAI)
+        if (isset($expectedFormat['fields'])) {
+            foreach ($expectedFormat['fields'] as $fieldName => $fieldConfig) {
+                // Skip optional fields
+                if (!($fieldConfig['required'] ?? false)) {
+                    continue;
+                }
+
+                // Check if field is satisfied
+                $fieldSatisfied = $this->isFieldSatisfied($fieldName, $fieldConfig, $params);
+
+                if (!$fieldSatisfied) {
+                    $missing[] = $fieldName;
+                }
+            }
+        }
+        // Fallback to old format (required/optional arrays)
+        elseif (isset($expectedFormat['required'])) {
+            foreach ($expectedFormat['required'] as $fieldName) {
+                if (empty($params[$fieldName])) {
+                    $missing[] = $fieldName;
+                }
+            }
+        }
+
+        return $missing;
+    }
+
+
+    /**
+     * Get missing critical business fields for models with conversational guidance
+     * This checks for fields that are critical for business logic even if not marked required
+     */
+    protected function getMissingCriticalFields(array $params, string $modelClass): array
+    {
+        $missing = [];
+
+        // Check model's AI config for required fields
+        try {
+            if (class_exists($modelClass)) {
+                $reflection = new \ReflectionClass($modelClass);
+
+                if ($reflection->hasMethod('initializeAI')) {
+                    $method = $reflection->getMethod('initializeAI');
+                    if (!$method->isStatic()) {
+                        $model = new $modelClass();
+                        $config = $model->initializeAI();
+                    } else {
+                        $config = $modelClass::initializeAI();
+                    }
+
+                    $fields = $config['fields'] ?? [];
+
+                    // Check each required field
+                    foreach ($fields as $fieldName => $fieldConfig) {
+                        if (!($fieldConfig['required'] ?? false)) {
+                            continue;
+                        }
+
+                        // Check if field is satisfied
+                        $fieldSatisfied = $this->isFieldSatisfied($fieldName, $fieldConfig, $params);
+
+                        if (!$fieldSatisfied) {
+                            $missing[] = $fieldName;
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('Failed to get model critical fields', [
+                'model' => $modelClass,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return $missing;
+    }
+
+
+    /**
+     * Check if a field is satisfied based on extracted params
+     * Handles complex field types like arrays, relationships, and composite fields
+     * Generic implementation using field configuration
+     */
+    protected function isFieldSatisfied(string $fieldName, array $fieldConfig, array $params): bool
+    {
+        $fieldType = $fieldConfig['type'] ?? 'string';
+
+        // Direct field match
+        if (!empty($params[$fieldName])) {
+            return true;
+        }
+
+        // Check alternative field names if specified in config
+        // Alternative fields must ALL be present (they work together)
+        // The model's initializeAI() should define which fields are equivalent
+        if (isset($fieldConfig['alternative_fields'])) {
+            $altFields = $fieldConfig['alternative_fields'];
+            $hasAllAlternatives = true;
+            
+            foreach ($altFields as $altField) {
+                // Check if this alternative field (or any of its configured aliases) is present
+                if (empty($params[$altField])) {
+                    $hasAllAlternatives = false;
+                    break;
+                }
+            }
+            
+            if ($hasAllAlternatives) {
+                return true;
+            }
+        }
+
+        // For array/collection fields, check various patterns
+        if ($fieldType === 'array') {
+            // 1. Check for numbered pattern: {fieldName}_1_*, {fieldName}_2_*
+            $singularName = rtrim($fieldName, 's'); // items -> item
+            $numberedItems = $this->extractNumberedItems($params, $singularName);
+            
+            if (!empty($numberedItems)) {
+                // Check if we have at least one complete item based on required sub-fields
+                $requiredSubFields = $fieldConfig['fields'] ?? [];
+                if ($this->hasCompleteNumberedItem($numberedItems, $requiredSubFields)) {
+                    return true;
+                }
+            }
+
+            // 2. Check for direct array field (the AI should extract to the correct field name)
+            // No alias checking - the model's field descriptions should guide AI extraction
+            if (!empty($params[$fieldName]) && is_array($params[$fieldName])) {
+                if ($this->hasCompleteArrayItems($params[$fieldName], $fieldConfig)) {
+                    return true;
+                }
+            }
+
+            // 3. Check if we have flat fields that can form a single item
+            if ($this->hasFlatFieldsForArray($params, $fieldConfig)) {
+                return true;
+            }
+        }
+
+        // For relationship fields, check for nested object or flat fields
+        if ($fieldType === 'relationship') {
+            // Check for nested object
+            if (!empty($params[$fieldName]) && is_array($params[$fieldName])) {
+                return true;
+            }
+
+            // Check for flat fields with prefix (e.g., customer_name, customer_email)
+            $prefix = $fieldName . '_';
+            $requiredSubFields = $fieldConfig['fields'] ?? [];
+            
+            if ($this->hasFlatRelationshipFields($params, $prefix, $requiredSubFields)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Extract numbered items from params (e.g., item_1_name, item_2_price)
+     */
+    protected function extractNumberedItems(array $params, string $baseName): array
+    {
+        $numberedItems = [];
+        $pattern = '/^' . preg_quote($baseName, '/') . '_(\d+)_(.+)$/';
+        
+        foreach ($params as $key => $value) {
+            if (preg_match($pattern, $key, $matches)) {
+                $itemNumber = $matches[1];
+                $fieldName = $matches[2];
+                
+                if (!isset($numberedItems[$itemNumber])) {
+                    $numberedItems[$itemNumber] = [];
+                }
+                $numberedItems[$itemNumber][$fieldName] = $value;
+            }
+        }
+        
+        return $numberedItems;
+    }
+
+    /**
+     * Check if numbered items have at least one complete item
+     */
+    protected function hasCompleteNumberedItem(array $numberedItems, array $requiredSubFields): bool
+    {
+        foreach ($numberedItems as $itemData) {
+            // If no required fields specified, just check if item has any data
+            if (empty($requiredSubFields)) {
+                if (!empty($itemData)) {
+                    return true;
+                }
+                continue;
+            }
+
+            // Check if item has all required sub-fields
+            $hasAllRequired = true;
+            foreach ($requiredSubFields as $subField) {
+                if (empty($itemData[$subField])) {
+                    $hasAllRequired = false;
+                    break;
+                }
+            }
+
+            if ($hasAllRequired) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+
+    /**
+     * Check if array has complete items based on field config
+     */
+    protected function hasCompleteArrayItems(array $arrayData, array $fieldConfig): bool
+    {
+        $requiredSubFields = $fieldConfig['fields'] ?? [];
+        
+        foreach ($arrayData as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            // If no required fields specified, any non-empty array item is valid
+            if (empty($requiredSubFields)) {
+                if (!empty($item)) {
+                    return true;
+                }
+                continue;
+            }
+
+            // Check if item has required sub-fields
+            $hasRequired = false;
+            foreach ($requiredSubFields as $subField) {
+                if (!empty($item[$subField])) {
+                    $hasRequired = true;
+                    break;
+                }
+            }
+
+            if ($hasRequired) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if params have flat fields that can form an array item
+     */
+    protected function hasFlatFieldsForArray(array $params, array $fieldConfig): bool
+    {
+        $requiredSubFields = $fieldConfig['fields'] ?? [];
+        
+        if (empty($requiredSubFields)) {
+            return false;
+        }
+
+        // Check if we have at least one required sub-field as a flat field
+        foreach ($requiredSubFields as $subField) {
+            if (!empty($params[$subField])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if params have flat relationship fields with prefix
+     */
+    protected function hasFlatRelationshipFields(array $params, string $prefix, array $requiredSubFields): bool
+    {
+        $foundFields = [];
+        
+        foreach ($params as $key => $value) {
+            if (str_starts_with($key, $prefix) && !empty($value)) {
+                $subField = substr($key, strlen($prefix));
+                $foundFields[] = $subField;
+            }
+        }
+
+        // If no required fields specified, any prefixed field is valid
+        if (empty($requiredSubFields)) {
+            return !empty($foundFields);
+        }
+
+        // Check if we have at least one required sub-field
+        foreach ($requiredSubFields as $required) {
+            if (in_array($required, $foundFields)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get missing required fields for a model action
+     */
+    protected function getMissingRequiredFields(array $params, array $definition, string $modelClass): array
+    {
+        $required = $definition['required_params'] ?? [];
+        $missing = [];
+
+        foreach ($required as $field) {
+            if (empty($params[$field])) {
+                $missing[] = $field;
+            }
+        }
+
+        // Also check model's AI config for required fields
+        try {
+            if (class_exists($modelClass)) {
+                $reflection = new \ReflectionClass($modelClass);
+
+                if ($reflection->hasMethod('initializeAI')) {
+                    $method = $reflection->getMethod('initializeAI');
+                    if ($method->isStatic()) {
+                        $config = $modelClass::initializeAI();
+                        $fields = $config['fields'] ?? [];
+
+                        foreach ($fields as $fieldName => $fieldConfig) {
+                            if (($fieldConfig['required'] ?? false) && empty($params[$fieldName])) {
+                                if (!in_array($fieldName, $missing)) {
+                                    $missing[] = $fieldName;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('Failed to get model required fields', [
+                'model' => $modelClass,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return $missing;
     }
 
     /**

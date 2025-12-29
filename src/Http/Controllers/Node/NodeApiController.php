@@ -184,6 +184,12 @@ class NodeApiController extends Controller
                             $method = $reflection->getMethod('initializeAI');
                             if ($method->isStatic()) {
                                 $format = $className::initializeAI();
+                            } else {
+                                // Call as instance method
+                                if (!isset($instance)) {
+                                    $instance = new $className;
+                                }
+                                $format = $instance->initializeAI();
                             }
                         } catch (\Exception $e) {
                             // Ignore errors
