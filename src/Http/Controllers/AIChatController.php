@@ -46,18 +46,50 @@ class AIChatController extends Controller
      */
     protected function applyAuthMiddleware(): void
     {
+        // Check if authentication is enabled
+        if (!config('ai-engine.chat.auth_enabled', true)) {
+            return;
+        }
+
+        // Get routes to exclude from authentication
+        $except = config('ai-engine.chat.auth_except', ['index', 'rag', 'getEngines']);
+
+        // Check for custom middleware configuration (supports multiple)
+        $customMiddleware = config('ai-engine.chat.auth_middleware');
+        if ($customMiddleware) {
+            // Support comma-separated middleware list
+            $middlewares = array_map('trim', explode(',', $customMiddleware));
+            foreach ($middlewares as $middleware) {
+                $this->middleware($middleware)->except($except);
+            }
+            return;
+        }
+
+        // Check for custom guard configuration (supports multiple)
+        $customGuard = config('ai-engine.chat.auth_guard');
+        if ($customGuard) {
+            // Support comma-separated guard list
+            $guards = array_map('trim', explode(',', $customGuard));
+            
+            // Build middleware string: auth:guard1,guard2,guard3
+            $guardString = implode(',', $guards);
+            $this->middleware("auth:{$guardString}")->except($except);
+            return;
+        }
+
+        // Auto-detect available guards
         $guards = config('auth.guards', []);
 
         // Check if Sanctum is available
         if (isset($guards['sanctum'])) {
-            $this->middleware('auth:sanctum')->except(['index', 'rag', 'getEngines']);
+            $this->middleware('auth:sanctum')->except($except);
             return;
         }
 
         // Check if JWT is available
         if (isset($guards['jwt']) || isset($guards['api'])) {
             $guard = isset($guards['jwt']) ? 'jwt' : 'api';
-            $this->middleware("auth:{$guard}")->except(['index', 'rag', 'getEngines']);
+            $this->middleware("auth:{$guard}")->except($except);
             return;
         }
 

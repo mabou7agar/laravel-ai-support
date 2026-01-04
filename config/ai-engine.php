@@ -1055,4 +1055,38 @@ return [
         // Number of recent messages to keep when history is long
         'recent_messages' => env('AI_CONVERSATION_RECENT_MESSAGES', 10),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Chat Authentication Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure authentication middleware for chat endpoints.
+    | Allows custom guards and middleware configuration.
+    |
+    */
+    'chat' => [
+        // Enable authentication for chat endpoints
+        'auth_enabled' => env('AI_CHAT_AUTH_ENABLED', true),
+
+        // Custom authentication guard (e.g., 'sanctum', 'jwt', 'manager', 'api')
+        // Leave null to auto-detect from available guards
+        // Can be a single guard or comma-separated list for multiple guards
+        // Example: 'manager,user' will try manager first, then user
+        'auth_guard' => env('AI_CHAT_AUTH_GUARD', null),
+
+        // Custom middleware to apply (e.g., 'auth:manager', 'auth:sanctum')
+        // Leave null to auto-detect based on auth_guard
+        // Can be a single middleware or comma-separated list
+        // Example: 'auth:manager,auth:user' will try both guards
+        'auth_middleware' => env('AI_CHAT_AUTH_MIDDLEWARE', null),
+
+        // Routes to exclude from authentication
+        'auth_except' => ['index', 'rag', 'getEngines'],
+
+        // Authorization settings
+        'authorization' => [
+            'enabled' => env('AI_CHAT_AUTHORIZATION_ENABLED', false),
+        ],
+    ],
 ];
