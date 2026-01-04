@@ -28,8 +28,10 @@ class ClearHistoryRequest extends FormRequest
 
     public function toDTO(): ClearHistoryDTO
     {
+        $validated = $this->validated();
+        
         return new ClearHistoryDTO(
-            sessionId: $this->validated('session_id'),
+            sessionId: $validated['session_id'],
             userId: auth()->id()
         );
     }
