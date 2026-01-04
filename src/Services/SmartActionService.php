@@ -147,7 +147,7 @@ class SmartActionService
             foreach ($allModels as $modelClass) {
                 $hasExecuteAI = false;
                 $expectedFormat = null;
-                
+
                 Log::channel('ai-engine')->debug('Processing model for registration', [
                     'model' => $modelClass,
                     'class_exists' => class_exists($modelClass),
@@ -329,7 +329,7 @@ class SmartActionService
             'model' => $modelClass,
             'class_exists' => class_exists($modelClass)
         ]);
-        
+
         try {
             $reflection = new \ReflectionClass($modelClass);
 
@@ -368,7 +368,7 @@ class SmartActionService
                         'all_fields' => array_keys($config['fields']),
                         'fields' => $fieldDefinitions,
                     ];
-                    
+
                     Log::channel('ai-engine')->debug('getModelExpectedFormat result', [
                         'model' => $modelClass,
                         'all_fields' => $result['all_fields'],
@@ -380,15 +380,15 @@ class SmartActionService
                     if (isset($config['critical_fields'])) {
                         $result['critical_fields'] = $config['critical_fields'];
                     }
-                    
+
                     // Include extraction_hints if defined in model's initializeAI
                     if (isset($config['extraction_format'])) {
                         $result['extraction_hints'] = $config['extraction_format'];
                     }
-                    
+
                     return $result;
                 }
-                
+
                 return $config;
             }
 
@@ -456,7 +456,7 @@ class SmartActionService
                 $expectedFormat['optional'] ?? []
             );
         }
-        
+
         Log::channel('ai-engine')->debug('Expected format structure', [
             'model' => $modelClass,
             'has_all_fields' => isset($expectedFormat['all_fields']),
@@ -483,11 +483,11 @@ class SmartActionService
         // Check if model supports function calling schema
         $useFunctionCalling = method_exists($modelClass, 'getFunctionSchema');
         $extracted = null;
-        
+
         if ($useFunctionCalling) {
             // Use function calling for strict type safety
             $functionSchema = $modelClass::getFunctionSchema();
-            
+
             Log::channel('ai-engine')->debug('Using function calling for extraction', [
                 'model' => $modelClass,
                 'function' => $functionSchema['name'] ?? 'unknown'
@@ -503,11 +503,11 @@ class SmartActionService
                 ))->withFunctions([$functionSchema], ['name' => $functionSchema['name']]);
 
                 $response = $this->aiService->generate($aiRequest);
-                
+
                 // Extract function call arguments
                 if (isset($response->functionCall) && isset($response->functionCall['arguments'])) {
                     $extracted = json_decode($response->functionCall['arguments'], true);
-                    
+
                     Log::channel('ai-engine')->debug('Function calling extraction result', [
                         'model' => $modelClass,
                         'extracted' => $extracted
@@ -528,12 +528,12 @@ class SmartActionService
                 $extracted = null;
             }
         }
-        
+
         if ($extracted === null) {
             // Fallback to prompt-based extraction
             $prompt = "Extract data from the user's message for creating a " . class_basename($modelClass) . ".\n\n";
             $prompt .= "Message: \"{$content}\"\n\n";
-            
+
             // Include field descriptions from model's initializeAI() if available
             $fields = $expectedFormat['fields'] ?? [];
             if (!empty($fields)) {
@@ -548,7 +548,7 @@ class SmartActionService
                 // Fallback to simple field list if no descriptions available
                 $prompt .= "Fields to extract: " . implode(', ', $allFields) . "\n\n";
             }
-            
+
             Log::channel('ai-engine')->debug('Extraction prompt fields', [
                 'model' => $modelClass,
                 'all_fields' => $allFields,
@@ -668,7 +668,7 @@ class SmartActionService
      * Resolve relationship fields intelligently
      * Now includes duplicate detection with user interaction
      */
-    protected function resolveRelationships(string $modelClass, array $data, $userId = null): array
+    public function resolveRelationships(string $modelClass, array $data, $userId = null): array
     {
         // For remote models, pass relationship data as-is with special marker
         // The remote node will handle relationship resolution
@@ -730,7 +730,7 @@ class SmartActionService
                         } elseif (is_array($result) && isset($result['existing_records'])) {
                             // Found duplicates - need user to choose
                             $pendingDuplicateChoices[$key] = $result;
-                            
+
                             Log::channel('ai-engine')->info('Duplicate detection requires user choice', [
                                 'field' => $key,
                                 'options_count' => count($result['existing_records'])
@@ -739,11 +739,11 @@ class SmartActionService
                     }
                 }
             }
-            
+
             // If we have pending duplicate choices, mark the data for user interaction
             if (!empty($pendingDuplicateChoices)) {
                 $data['_pending_duplicate_choices'] = $pendingDuplicateChoices;
-                
+
                 Log::channel('ai-engine')->info('Relationships require user duplicate selection', [
                     'fields' => array_keys($pendingDuplicateChoices)
                 ]);
@@ -758,7 +758,7 @@ class SmartActionService
     /**
      * Find or create related record intelligently
      * Now uses DuplicateDetectionService for comprehensive search
-     * 
+     *
      * @return int|array|null Returns int (ID), array (duplicate options), or null
      */
     protected function findOrCreateRelated(string $relatedClass, string $searchValue, $userId = null)
@@ -767,23 +767,23 @@ class SmartActionService
             // Use DuplicateDetectionService for comprehensive search
             $extractedData = $this->buildSearchDataFromValue($relatedClass, $searchValue);
             $searchableFields = $this->getSearchableFieldsForModel($relatedClass);
-            
+
             Log::channel('ai-engine')->info('Searching for existing related record', [
                 'class' => $relatedClass,
                 'search_value' => $searchValue,
                 'searchable_fields' => $searchableFields
             ]);
-            
+
             $existingRecords = $this->duplicateDetectionService->searchExistingRecords(
                 $relatedClass,
                 $extractedData,
                 $searchableFields
             );
-            
+
             // If we found existing records with good similarity, return them for user selection
             if (!empty($existingRecords)) {
                 $topMatch = $existingRecords[0];
-                
+
                 // If similarity is very high (>90%), auto-use it
                 if ($topMatch['similarity'] >= 0.9) {
                     Log::channel('ai-engine')->info('Auto-using high similarity match', [
@@ -792,14 +792,14 @@ class SmartActionService
                     ]);
                     return $topMatch['id'];
                 }
-                
+
                 // If similarity is good (>70%), return options for user to choose
                 if ($topMatch['similarity'] >= 0.7) {
                     Log::channel('ai-engine')->info('Found potential matches, asking user', [
                         'count' => count($existingRecords),
                         'top_similarity' => $topMatch['similarity']
                     ]);
-                    
+
                     // Return array with existing records for user selection
                     return [
                         'existing_records' => $existingRecords,
@@ -814,7 +814,7 @@ class SmartActionService
                 $model = new $relatedClass();
                 $fillable = $model->getFillable();
                 $firstField = !empty($fillable) ? $fillable[0] : 'name';
-                
+
                 Log::channel('ai-engine')->info('Creating new related record', [
                     'class' => $relatedClass,
                     'field' => $firstField,
@@ -833,11 +833,11 @@ class SmartActionService
             // Try simple create as last resort
             $model = new $relatedClass();
             $fillable = $model->getFillable();
-            
+
             if (!empty($fillable)) {
                 $firstField = $fillable[0];
                 $data = [$firstField => $searchValue];
-                
+
                 if ($userId && in_array('user_id', $model->getFillable())) {
                     $data['user_id'] = $userId;
                 }
@@ -862,7 +862,7 @@ class SmartActionService
 
         return null;
     }
-    
+
     /**
      * Build search data from a single value
      */
@@ -870,21 +870,21 @@ class SmartActionService
     {
         $data = [];
         $searchableFields = $this->getSearchableFieldsForModel($modelClass);
-        
+
         // Assign value to the most appropriate field
         if (!empty($searchableFields)) {
             $primaryField = $searchableFields[0];
             $data[$primaryField] = $value;
         }
-        
+
         // If value looks like email, add it to email field too
         if (filter_var($value, FILTER_VALIDATE_EMAIL)) {
             $data['email'] = $value;
         }
-        
+
         return $data;
     }
-    
+
     /**
      * Get searchable fields for a model
      */
@@ -893,25 +893,25 @@ class SmartActionService
         if (!class_exists($modelClass)) {
             return ['name'];
         }
-        
+
         $model = new $modelClass();
         $fillable = $model->getFillable();
-        
+
         // Priority order for searchable fields
         $priorityFields = ['name', 'title', 'email', 'sku', 'code', 'username'];
         $searchableFields = [];
-        
+
         foreach ($priorityFields as $field) {
             if (in_array($field, $fillable)) {
                 $searchableFields[] = $field;
             }
         }
-        
+
         // If no priority fields found, use first fillable field
         if (empty($searchableFields) && !empty($fillable)) {
             $searchableFields[] = $fillable[0];
         }
-        
+
         return $searchableFields;
     }
 
@@ -929,7 +929,7 @@ class SmartActionService
             if (isset($extracted[$field])) {
                 continue;
             }
-            
+
             // Try to extract numbers for fields that might be numeric
             if (preg_match('/\b' . preg_quote($field, '/') . '\s*[:\s]+\$?([\d,]+\.?\d*)/i', $content, $matches)) {
                 $extracted[$field] = (float) str_replace(',', '', $matches[1]);
@@ -1568,7 +1568,7 @@ class SmartActionService
         if (isset($fieldConfig['alternative_fields'])) {
             $altFields = $fieldConfig['alternative_fields'];
             $hasAllAlternatives = true;
-            
+
             foreach ($altFields as $altField) {
                 // Check if this alternative field (or any of its configured aliases) is present
                 if (empty($params[$altField])) {
@@ -1576,7 +1576,7 @@ class SmartActionService
                     break;
                 }
             }
-            
+
             if ($hasAllAlternatives) {
                 return true;
             }
@@ -1587,7 +1587,7 @@ class SmartActionService
             // 1. Check for numbered pattern: {fieldName}_1_*, {fieldName}_2_*
             $singularName = rtrim($fieldName, 's'); // items -> item
             $numberedItems = $this->extractNumberedItems($params, $singularName);
-            
+
             if (!empty($numberedItems)) {
                 // Check if we have at least one complete item based on required sub-fields
                 $requiredSubFields = $fieldConfig['fields'] ?? [];
@@ -1620,7 +1620,7 @@ class SmartActionService
             // Check for flat fields with prefix (e.g., customer_name, customer_email)
             $prefix = $fieldName . '_';
             $requiredSubFields = $fieldConfig['fields'] ?? [];
-            
+
             if ($this->hasFlatRelationshipFields($params, $prefix, $requiredSubFields)) {
                 return true;
             }
@@ -1636,19 +1636,19 @@ class SmartActionService
     {
         $numberedItems = [];
         $pattern = '/^' . preg_quote($baseName, '/') . '_(\d+)_(.+)$/';
-        
+
         foreach ($params as $key => $value) {
             if (preg_match($pattern, $key, $matches)) {
                 $itemNumber = $matches[1];
                 $fieldName = $matches[2];
-                
+
                 if (!isset($numberedItems[$itemNumber])) {
                     $numberedItems[$itemNumber] = [];
                 }
                 $numberedItems[$itemNumber][$fieldName] = $value;
             }
         }
-        
+
         return $numberedItems;
     }
 
@@ -1690,7 +1690,7 @@ class SmartActionService
     protected function hasCompleteArrayItems(array $arrayData, array $fieldConfig): bool
     {
         $requiredSubFields = $fieldConfig['fields'] ?? [];
-        
+
         foreach ($arrayData as $item) {
             if (!is_array($item)) {
                 continue;
@@ -1727,7 +1727,7 @@ class SmartActionService
     protected function hasFlatFieldsForArray(array $params, array $fieldConfig): bool
     {
         $requiredSubFields = $fieldConfig['fields'] ?? [];
-        
+
         if (empty($requiredSubFields)) {
             return false;
         }
@@ -1748,7 +1748,7 @@ class SmartActionService
     protected function hasFlatRelationshipFields(array $params, string $prefix, array $requiredSubFields): bool
     {
         $foundFields = [];
-        
+
         foreach ($params as $key => $value) {
             if (str_starts_with($key, $prefix) && !empty($value)) {
                 $subField = substr($key, strlen($prefix));
