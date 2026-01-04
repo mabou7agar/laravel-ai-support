@@ -33,11 +33,13 @@ class ExecuteActionRequest extends FormRequest
 
     public function toDTO(): ExecuteActionDTO
     {
+        $validated = $this->validated();
+        
         return new ExecuteActionDTO(
-            actionId: $this->validated('action_id'),
-            actionType: $this->validated('action_type'),
-            sessionId: $this->validated('session_id'),
-            payload: $this->validated('payload', []),
+            actionId: $validated['action_id'],
+            actionType: $validated['action_type'],
+            sessionId: $validated['session_id'],
+            payload: $validated['payload'] ?? [],
             userId: auth()->id()
         );
     }

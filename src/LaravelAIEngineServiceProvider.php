@@ -88,6 +88,11 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery();
         });
 
+        // Register Duplicate Detection Service
+        $this->app->singleton(\LaravelAIEngine\Services\DuplicateDetectionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\DuplicateDetectionService();
+        });
+
         // Register Data Collector Services
         $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class, function ($app) {
             return new \LaravelAIEngine\Services\DataCollector\DataCollectorService(
@@ -150,6 +155,7 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
                 \LaravelAIEngine\Console\Commands\TestDataCollectorCommand::class,
                 \LaravelAIEngine\Console\Commands\TestRAGFeaturesCommand::class,
                 \LaravelAIEngine\Console\Commands\TestIntelligentSearchCommand::class,
+                \LaravelAIEngine\Console\Commands\TestDuplicateDetectionCommand::class,
                 
                 // Note: Node commands are registered in AIEngineServiceProvider.php
             ]);

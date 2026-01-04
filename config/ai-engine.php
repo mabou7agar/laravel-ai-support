@@ -678,6 +678,11 @@ return [
         // and enhances AI prompts with context for more intelligent responses
         'intent_analysis' => env('AI_INTENT_ANALYSIS_ENABLED', true),
         
+        // Intent Analysis Model - Use faster/cheaper model for simple intent classification
+        // Options: 'gpt-3.5-turbo' (fastest/cheapest), 'gpt-4o-mini' (more accurate)
+        // Intent analysis is a simple task, gpt-3.5-turbo is recommended for performance
+        'intent_model' => env('AI_INTENT_MODEL', 'gpt-3.5-turbo'),
+        
         'validation' => [
             'strict_mode' => env('AI_ACTIONS_STRICT_VALIDATION', true),
             'allowed_domains' => env('AI_ACTIONS_ALLOWED_DOMAINS', ''),

@@ -54,19 +54,21 @@ class SendMessageRequest extends FormRequest
      */
     public function toDTO(): SendMessageDTO
     {
+        $validated = $this->validated();
+        
         return new SendMessageDTO(
-            message: $this->validated('message'),
-            sessionId: $this->validated('session_id'),
-            engine: $this->validated('engine', 'openai'),
-            model: $this->validated('model', 'gpt-4o'),
-            memory: $this->validated('memory', true),
-            actions: $this->validated('actions', true),
-            streaming: $this->validated('streaming', false),
+            message: $validated['message'],
+            sessionId: $validated['session_id'],
+            engine: $validated['engine'] ?? 'openai',
+            model: $validated['model'] ?? 'gpt-4o',
+            memory: $validated['memory'] ?? true,
+            actions: $validated['actions'] ?? true,
+            streaming: $validated['streaming'] ?? false,
             userId: auth()->user()?->id ?? config('ai-engine.demo_user_id', '1'),
-            intelligentRag: $this->validated('intelligent_rag', false),
-            forceRag: $this->validated('force_rag', false),
-            ragCollections: $this->validated('rag_collections', null),
-            searchInstructions: $this->validated('search_instructions', null)
+            intelligentRag: $validated['intelligent_rag'] ?? false,
+            forceRag: $validated['force_rag'] ?? false,
+            ragCollections: $validated['rag_collections'] ?? null,
+            searchInstructions: $validated['search_instructions'] ?? null
         );
     }
 }

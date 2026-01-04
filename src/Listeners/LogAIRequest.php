@@ -33,7 +33,7 @@ class LogAIRequest
         ];
 
         // Log to Laravel log
-        Log::channel(config('ai-engine.logging.channel', 'default'))
+        Log::channel(config('ai-engine.logging.channel', 'stack'))
             ->info('AI Request Started', $logData);
 
         // Store in cache for analytics (if enabled)
@@ -68,7 +68,7 @@ class LogAIRequest
 
         // Log to Laravel log
         $logLevel = $event->response->success ? 'info' : 'error';
-        Log::channel(config('ai-engine.logging.channel', 'default'))
+        Log::channel(config('ai-engine.logging.channel', 'stack'))
             ->log($logLevel, 'AI Request Completed', $logData);
 
         // Store in cache for analytics (if enabled)

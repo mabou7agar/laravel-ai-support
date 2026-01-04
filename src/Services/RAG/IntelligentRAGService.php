@@ -573,7 +573,9 @@ RULES:
 6. If query mentions ANY specific item/product/topic name → needs_context: true
 
 RESPOND WITH JSON:
-{"needs_context": true, "reasoning": "brief reason", "search_queries": ["term1", "term2", "term3"], "collections": ["FullClassName"], "query_type": "informational", "needs_aggregate": false}
+{"needs_context": true, "reasoning": "brief reason", "search_queries": ["term1", "term2", "term3"], "collections": ["Full\\\\Namespace\\\\ClassName"], "query_type": "informational", "needs_aggregate": false}
+
+CRITICAL: Always use FULL class paths with namespace (e.g., "Workdo\\\\ProductService\\\\Entities\\\\ProductService", NOT just "ProductService")
 
 QUERY TYPES:
 - "aggregate" → Questions about counts, totals, statistics (e.g., "how many emails", "count my documents")
@@ -584,14 +586,15 @@ CRITICAL COLLECTION SELECTION RULES:
 1. MATCH query keywords to collection descriptions - read descriptions carefully
 2. Look for keyword overlap between query and collection description
 3. Collections may exist on different nodes - select based on description match, not node location
-4. If query mentions specific data type (products, services, invoices, orders, emails), find collections whose description mentions that type
+4. If query mentions specific data type, find collections whose description mentions that type
 5. If multiple collections could match, include ALL relevant ones from ALL nodes
 6. BE DECISIVE: If collection description clearly matches query intent, SELECT IT regardless of which node it's on
-7. Default to searching ALL collections if uncertain - better to over-search than miss results
-8. Examples:
-   - Query "show me products" + Collection with description "Products and services catalog" → SELECT IT
-   - Query "gardening services" + Collection with description "Search through Product Service" → SELECT IT (services match)
-   - Query "my emails" + Collection with description "Email messages from mailboxes" → SELECT IT
+7. BE SELECTIVE: Only include collections that are RELEVANT to the query - do NOT include all collections
+8. If uncertain which collection to use, select the 2-3 most likely matches based on description
+9. Examples:
+   - Query mentions "X" + Collection description contains "X" → SELECT IT
+   - Query about data type A + Collection description mentions type A → SELECT IT
+   - Query about data type A → Do NOT select collections for unrelated types B, C, D
 
 CRITICAL SEARCH QUERY RULES:
 1. NEVER use abstract terms like "most important" or "best" alone - they won't match content
@@ -725,7 +728,13 @@ PROMPT;
 
             $collections = $analysis['collections'] ?? null;
             if (empty($collections)) {
-                $collections = $availableCollections;
+                // Don't default to all collections - log warning and use empty array
+                Log::channel('ai-engine')->warning('AI did not select any collections for query', [
+                    'query' => $query,
+                    'available_collections' => count($availableCollections),
+                ]);
+                // Use a reasonable subset if available (first 3 collections as fallback)
+                $collections = array_slice($availableCollections, 0, 3);
             }
 
             $result = [
@@ -741,7 +750,7 @@ PROMPT;
                 'query' => $query,
                 'needs_context' => $result['needs_context'],
                 'collections_count' => count($result['collections']),
-                'collections' => array_map('class_basename', $result['collections']),
+                'collections' => $result['collections'], // Log full class paths, not basenames
                 'search_queries' => $result['search_queries'],
             ]);
             

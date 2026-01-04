@@ -33,10 +33,12 @@ class UploadFileRequest extends FormRequest
 
     public function toDTO(): UploadFileDTO
     {
+        $validated = $this->validated();
+        
         return new UploadFileDTO(
             file: $this->file('file'),
-            sessionId: $this->validated('session_id'),
-            type: $this->validated('type'),
+            sessionId: $validated['session_id'],
+            type: $validated['type'] ?? null,
             userId: auth()->id()
         );
     }

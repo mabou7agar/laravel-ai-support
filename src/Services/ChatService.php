@@ -649,8 +649,21 @@ class ChatService
                 }
 
                 if (!empty($smartActions)) {
-                    // Check if action is incomplete (has missing required fields)
-                    $actionToCache = $smartActions[0];
+                    // Select the most relevant action based on completeness and query match
+                    // Prefer complete actions over incomplete ones
+                    $actionToCache = null;
+                    $completeAction = null;
+                    
+                    foreach ($smartActions as $action) {
+                        $isReady = $action->data['ready_to_execute'] ?? true;
+                        if ($isReady && !$completeAction) {
+                            $completeAction = $action;
+                        }
+                    }
+                    
+                    // Use complete action if available, otherwise use first incomplete action
+                    $actionToCache = $completeAction ?? $smartActions[0];
+                    
                     $isIncomplete = !($actionToCache->data['ready_to_execute'] ?? true);
                     $missingFields = $actionToCache->data['missing_fields'] ?? [];
                     
@@ -998,8 +1011,8 @@ class ChatService
 
         if ($useActions) {
             $prompt .= "\n\nIMPORTANT: You have the ability to CREATE and MANAGE data in this system.";
-            $prompt .= "\n- When users ask to create products, orders, invoices, or other items, you CAN do it!";
-            $prompt .= "\n- NEVER say 'I don't have information about creating...' - you have the capability to create items";
+            $prompt .= "\n- When users ask to create records (any type), you CAN do it!";
+            $prompt .= "\n- NEVER say 'I don't have information about creating...' - you have the capability to create records";
             $prompt .= "\n- When a user wants to create something, acknowledge that you can help and present the creation options";
             $prompt .= "\n- Be confident and positive about your ability to create and manage data";
 
@@ -1265,7 +1278,7 @@ class ChatService
         }
 
         $prompt = "\n\n📝 **Suggested Additional Information**\n\n";
-        $prompt .= "I've prepared some suggestions based on your product:\n\n";
+        $prompt .= "I've prepared some suggestions based on your data:\n\n";
 
         foreach ($missingOptional as $param) {
             $label = ucfirst(str_replace('_', ' ', $param));
@@ -1284,7 +1297,7 @@ class ChatService
     }
 
     /**
-     * Generate data summary for confirmation using model's field definitions
+     * Generate data summary for confirmation using AI-driven formatting
      */
     protected function generateDataSummary(\LaravelAIEngine\DTOs\InteractiveAction $action): string
     {
@@ -1303,19 +1316,61 @@ class ChatService
             }
         }
         
-        // Try to get field definitions from model's initializeAI or getFunctionSchema
+        // Use AI to generate formatted summary from normalized data
+        try {
+            $prompt = "Format the following {$modelName} data into a clear, user-friendly confirmation summary.\n\n";
+            $prompt .= "Data:\n" . json_encode($params, JSON_PRETTY_PRINT) . "\n\n";
+            $prompt .= "Requirements:\n";
+            $prompt .= "- Start with '**Summary of Information:**'\n";
+            $prompt .= "- Intelligently display relevant information based on the data structure:\n";
+            $prompt .= "  * If there's customer/client/user info, show it (name, email, phone)\n";
+            $prompt .= "  * If there are items/products/lines arrays, show them in a numbered list with details\n";
+            $prompt .= "  * For array fields, show nested values INSIDE the array items, not as top-level fields\n";
+            $prompt .= "  * If there are dates (created, issued, due, scheduled), show meaningful ones\n";
+            $prompt .= "  * If there's a total/amount/price, display it\n";
+            $prompt .= "- SKIP internal/technical fields:\n";
+            $prompt .= "  * id, user_id, workspace, created_by, account_id, category_id\n";
+            $prompt .= "  * Any field ending in _id (except meaningful references)\n";
+            $prompt .= "  * Fields like: account_type, module names, display flags\n";
+            $prompt .= "  * _resolve_relationships and other internal metadata\n";
+            $prompt .= "  * Any field with value 0 or null that's not meaningful\n";
+            $prompt .= "- Format currency values with $ symbol\n";
+            $prompt .= "- Use bold for section headers\n";
+            $prompt .= "- Keep it clean, concise, and user-friendly\n";
+            $prompt .= "- Adapt the format to the type of data (works for any model type)\n";
+            $prompt .= "- End with: '**Please review the information above.**\\nReply 'yes' to create, or tell me what you'd like to change.'\n\n";
+            $prompt .= "Generate the formatted summary now:";
+            
+            $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                model: \LaravelAIEngine\Enums\EntityEnum::from(config('ai-engine.actions.intent_model', 'gpt-3.5-turbo')),
+                maxTokens: 500,
+                temperature: 0
+            );
+            
+            $response = $this->aiEngineService->generate($aiRequest);
+            return $response->getContent();
+            
+        } catch (\Exception $e) {
+            // Fallback to simple formatting if AI fails
+            return $this->generateSimpleSummary($params, $modelClass);
+        }
+    }
+    
+    /**
+     * Fallback simple summary generation
+     */
+    protected function generateSimpleSummary(array $params, string $modelClass): string
+    {
         $fieldDefinitions = $this->getModelFieldDefinitions($modelClass);
-        
         $summary = "**Summary of Information:**\n\n";
         
-        // Format each parameter using field definitions
         foreach ($params as $key => $value) {
-            // Skip internal fields
             if ($key === '_resolve_relationships') {
                 continue;
             }
             
-            // Skip quantity field if items array exists (quantity should be in items)
             if ($key === 'quantity' && isset($params['items']) && is_array($params['items'])) {
                 continue;
             }
@@ -1323,10 +1378,8 @@ class ChatService
             $fieldDef = $fieldDefinitions[$key] ?? null;
             
             if (is_array($value)) {
-                // Handle array fields dynamically
                 $summary .= $this->formatArrayField($key, $value, $fieldDef);
             } else {
-                // Format scalar values using field definition
                 $summary .= $this->formatScalarField($key, $value, $fieldDef);
             }
         }
@@ -1395,8 +1448,30 @@ class ChatService
             $itemNum = $index + 1;
             
             if (is_array($item)) {
-                // Format structured item
-                $output .= "{$itemNum}. " . $this->formatStructuredItem($item, $itemSchema) . "\n";
+                // Get primary field (name, title, item, etc.)
+                $primaryField = $item['name'] ?? $item['item'] ?? $item['title'] ?? $item['product_name'] ?? 'Item';
+                $output .= "{$itemNum}. {$primaryField}\n";
+                
+                // Display all other fields dynamically from the item
+                foreach ($item as $fieldKey => $fieldValue) {
+                    // Skip primary fields and description
+                    if (in_array($fieldKey, ['name', 'item', 'title', 'product_name', 'description'])) {
+                        continue;
+                    }
+                    
+                    // Get field info from schema
+                    $fieldType = $itemSchema[$fieldKey]['type'] ?? null;
+                    $fieldLabel = $itemSchema[$fieldKey]['description'] ?? ucfirst(str_replace('_', ' ', $fieldKey));
+                    
+                    // Format based on type
+                    if ($fieldType === 'number' || in_array($fieldKey, ['price', 'amount', 'cost', 'total'])) {
+                        $output .= "   - {$fieldLabel}: $" . number_format($fieldValue, 2) . "\n";
+                    } elseif ($fieldType === 'integer' || in_array($fieldKey, ['quantity', 'qty', 'count'])) {
+                        $output .= "   - {$fieldLabel}: {$fieldValue}\n";
+                    } else {
+                        $output .= "   - {$fieldLabel}: {$fieldValue}\n";
+                    }
+                }
             } else {
                 // Simple value
                 $output .= "{$itemNum}. {$item}\n";
@@ -1404,70 +1479,6 @@ class ChatService
         }
         
         return $output;
-    }
-
-    /**
-     * Format structured item (like invoice line item)
-     */
-    protected function formatStructuredItem(array $item, ?array $itemSchema): string
-    {
-        $lines = [];
-        
-        // Get primary field (name, title, item, etc.)
-        $primaryField = $item['name'] ?? $item['item'] ?? $item['title'] ?? $item['product_name'] ?? 'Item';
-        $lines[] = $primaryField;
-        
-        // Define field order for better display
-        $fieldOrder = ['price', 'amount', 'quantity', 'discount'];
-        $displayedFields = [];
-        
-        // First, display ordered fields
-        foreach ($fieldOrder as $orderedKey) {
-            if (isset($item[$orderedKey]) && !in_array($orderedKey, ['name', 'item', 'title', 'product_name'])) {
-                $fieldType = $itemSchema[$orderedKey]['type'] ?? null;
-                $fieldLabel = $itemSchema[$orderedKey]['description'] ?? ucfirst(str_replace('_', ' ', $orderedKey));
-                
-                // Special handling for amount field - show as Price
-                if ($orderedKey === 'amount') {
-                    $fieldLabel = 'Price';
-                }
-                
-                // Format based on type
-                if ($fieldType === 'number' || in_array($orderedKey, ['price', 'amount', 'cost', 'total'])) {
-                    $lines[] = "   - {$fieldLabel}: $" . number_format($item[$orderedKey], 2);
-                } elseif ($fieldType === 'integer' || in_array($orderedKey, ['quantity', 'qty', 'count'])) {
-                    $lines[] = "   - {$fieldLabel}: {$item[$orderedKey]}";
-                } else {
-                    $lines[] = "   - {$fieldLabel}: {$item[$orderedKey]}";
-                }
-                
-                $displayedFields[] = $orderedKey;
-            }
-        }
-        
-        // Then display remaining fields
-        foreach ($item as $fieldKey => $fieldValue) {
-            if (in_array($fieldKey, ['name', 'item', 'title', 'product_name']) || in_array($fieldKey, $displayedFields)) {
-                continue; // Already displayed
-            }
-            
-            if ($fieldKey === 'description') {
-                continue; // Skip description for brevity
-            }
-            
-            $fieldType = $itemSchema[$fieldKey]['type'] ?? null;
-            $fieldLabel = $itemSchema[$fieldKey]['description'] ?? ucfirst(str_replace('_', ' ', $fieldKey));
-            
-            if ($fieldType === 'number' || in_array($fieldKey, ['price', 'amount', 'cost', 'total'])) {
-                $lines[] = "   - {$fieldLabel}: $" . number_format($fieldValue, 2);
-            } elseif ($fieldType === 'integer' || in_array($fieldKey, ['quantity', 'qty', 'count'])) {
-                $lines[] = "   - {$fieldLabel}: {$fieldValue}";
-            } else {
-                $lines[] = "   - {$fieldLabel}: {$fieldValue}";
-            }
-        }
-        
-        return implode("\n", $lines);
     }
 
     /**
@@ -1650,17 +1661,24 @@ class ChatService
             $prompt .= "1. 'confirm' - User agrees/confirms to proceed (yes, ok, go ahead, I don't mind, sounds good, etc.)\n";
             $prompt .= "2. 'reject' - User declines/cancels (no, cancel, stop, nevermind, etc.)\n";
             $prompt .= "3. 'modify' - User wants to change/update parameters. Examples:\n";
-            $prompt .= "   - 'change price to X'\n";
+            $prompt .= "   - 'change price to X' (extract as: {\"price\": X} OR {\"item_name_price\": X} if item specified)\n";
             $prompt .= "   - 'make it Y instead'\n";
             $prompt .= "   - 'Customer name Mohamed2' (updating customer_name field)\n";
-            $prompt .= "   - 'price should be 500' (updating price field)\n";
+            $prompt .= "   - 'price should be 500' (extract as: {\"price\": 500})\n";
+            $prompt .= "   - 'change mouse quantity to 10' (extract as: {\"mouse_quantity\": 10})\n";
+            $prompt .= "   - 'update laptop price to 1500' (extract as: {\"laptop_price\": 1500})\n";
+            $prompt .= "   - 'change ipad price to 400' (extract as: {\"ipad_price\": 400})\n";
             $prompt .= "   - Any message that provides a field name/value pair to update existing data\n";
             $prompt .= "4. 'provide_data' - User is providing additional data for optional parameters\n";
             $prompt .= "5. 'question' - User is asking a question or needs clarification\n";
             $prompt .= "6. 'new_request' - User is making a completely new request\n\n";
 
-            $prompt .= "IMPORTANT: If user mentions a field name from the pending action followed by a value, classify as 'modify'.\n";
-            $prompt .= "Extract any data mentioned (prices, names, values, etc.) with proper field names.\n\n";
+            $prompt .= "CRITICAL RULES:\n";
+            $prompt .= "- If user says 'change [item] price to X', extract as: {\"[item]_price\": X}\n";
+            $prompt .= "- If user says 'change price to X' without item name, extract as: {\"price\": X}\n";
+            $prompt .= "- For item-specific updates, ALWAYS use pattern: {item_name}_{field_name}\n";
+            $prompt .= "- Extract numeric values without currency symbols (400 not $400)\n";
+            $prompt .= "- Classify as 'modify' when user wants to change ANY existing field value\n\n";
 
             $prompt .= "Respond with ONLY valid JSON in this exact format:\n";
             $prompt .= "{\n";
@@ -1670,10 +1688,13 @@ class ChatService
             $prompt .= '  "context_enhancement": "Brief description of what user wants"'."\n";
             $prompt .= "}";
 
+            // Use faster/cheaper model for simple intent analysis
+            $intentModel = config('ai-engine.actions.intent_model', 'gpt-3.5-turbo');
+            
             $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
                 prompt: $prompt,
                 engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
-                model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
+                model: \LaravelAIEngine\Enums\EntityEnum::from($intentModel),
                 maxTokens: 200,
                 temperature: 0
             );
@@ -1965,50 +1986,48 @@ class ChatService
                     'model' => $modelClass
                 ];
             } elseif (is_object($result)) {
-                // Model instance returned
-                $summary = "✅ **{$modelName} Created Successfully**\n\n";
-
+                // Model instance returned - use AI to format success message
                 $attributes = method_exists($result, 'toArray') ? $result->toArray() : (array) $result;
                 
-                // Extract customer info if available
-                if (isset($attributes['customer'])) {
-                    $customer = $attributes['customer'];
-                    $summary .= "**Customer:**\n";
-                    $summary .= "- Name: " . ($customer['name'] ?? 'N/A') . "\n";
-                    $summary .= "- Email: " . ($customer['email'] ?? 'N/A') . "\n\n";
-                }
-                
-                // Format items array specially
-                if (isset($attributes['items']) && is_array($attributes['items'])) {
-                    $summary .= "**Items:**\n";
-                    foreach ($attributes['items'] as $index => $item) {
-                        $itemNum = $index + 1;
-                        $itemName = $item['item'] ?? $item['name'] ?? $item['product_name'] ?? 'Item';
-                        $itemPrice = $item['price'] ?? $item['amount'] ?? 0;
-                        $itemQty = $item['quantity'] ?? 1;
-                        $subtotal = $itemPrice * $itemQty;
-                        
-                        $summary .= "{$itemNum}. {$itemName}\n";
-                        $summary .= "   - Price: $" . number_format($itemPrice, 2) . "\n";
-                        $summary .= "   - Quantity: {$itemQty}\n";
-                        $summary .= "   - Subtotal: $" . number_format($subtotal, 2) . "\n";
-                    }
-                    $summary .= "\n";
-                }
-                
-                // Add summary section
-                $summary .= "**Summary:**\n";
-                
-                // Show total
-                if (isset($attributes['total'])) {
-                    $summary .= "- **Total: $" . number_format($attributes['total'], 2) . "**\n";
-                } elseif (isset($attributes['amount'])) {
-                    $summary .= "- **Total: $" . number_format($attributes['amount'], 2) . "**\n";
-                }
-                
-                // Show ID
-                if (isset($attributes['id'])) {
-                    $summary .= "- Invoice ID: #{$attributes['id']}\n";
+                // Use AI to generate formatted success message
+                try {
+                    $prompt = "Format a user-friendly success message for the following {$modelName} that was just created.\n\n";
+                    $prompt .= "Data:\n" . json_encode($attributes, JSON_PRETTY_PRINT) . "\n\n";
+                    $prompt .= "Requirements:\n";
+                    $prompt .= "- Start with '✅ **{$modelName} Created Successfully**'\n";
+                    $prompt .= "- Intelligently display relevant information based on the data structure:\n";
+                    $prompt .= "  * If there's customer/client/user info, show it (name, email, phone)\n";
+                    $prompt .= "  * If there are items/products/lines, show them in a numbered list with details\n";
+                    $prompt .= "  * If there are dates (created, issued, due, scheduled), show meaningful ones\n";
+                    $prompt .= "  * If there's a total/amount/price, display it prominently\n";
+                    $prompt .= "  * If there's a reference ID (invoice_id, order_id, ticket_id, etc.), show it\n";
+                    $prompt .= "- SKIP internal/technical fields:\n";
+                    $prompt .= "  * id, user_id, workspace, created_by, account_id, category_id\n";
+                    $prompt .= "  * Any field ending in _id (except meaningful IDs like invoice_id, order_id)\n";
+                    $prompt .= "  * Fields like: account_type, module names, display flags\n";
+                    $prompt .= "  * _resolve_relationships and other internal metadata\n";
+                    $prompt .= "  * Any field with value 0 or null that's not meaningful\n";
+                    $prompt .= "- Format currency values with $ symbol and 2 decimals\n";
+                    $prompt .= "- Use bold for section headers\n";
+                    $prompt .= "- Keep it clean, concise, and user-friendly\n";
+                    $prompt .= "- Adapt the format to the type of data (don't force invoice-specific structure on other models)\n\n";
+                    $prompt .= "Generate the formatted success message now:";
+                    
+                    $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
+                        prompt: $prompt,
+                        engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                        model: \LaravelAIEngine\Enums\EntityEnum::from(config('ai-engine.actions.intent_model', 'gpt-3.5-turbo')),
+                        maxTokens: 500,
+                        temperature: 0
+                    );
+                    
+                    $response = $this->aiEngineService->generate($aiRequest);
+                    $summary = $response->getContent();
+                    
+                } catch (\Exception $e) {
+                    // Fallback to simple message if AI fails
+                    $summary = "✅ **{$modelName} Created Successfully**\n\n";
+                    $summary .= "ID: " . ($attributes['id'] ?? 'N/A') . "\n";
                 }
 
                 return [
@@ -2106,63 +2125,48 @@ class ChatService
                     $modelName = class_basename($modelClass);
 
                     if ($result['success'] ?? false) {
-                        $summary = "✅ **{$modelName} Created Successfully**\n\n";
-                        
                         $data = $result['data'] ?? $params;
                         
-                        // Format customer information if available
-                        if (isset($data['customer']) && is_array($data['customer'])) {
-                            $customer = $data['customer'];
-                            $summary .= "**Customer:**\n";
-                            $summary .= "- Name: " . ($customer['name'] ?? 'N/A') . "\n";
-                            $summary .= "- Email: " . ($customer['email'] ?? 'N/A') . "\n";
-                            $summary .= "\n";
-                        }
-                        
-                        // Format items if available
-                        if (isset($data['items']) && is_array($data['items']) && !empty($data['items'])) {
-                            $summary .= "**Items:**\n";
-                            foreach ($data['items'] as $index => $item) {
-                                $itemNum = $index + 1;
-                                $itemName = $item['product_name'] ?? $item['name'] ?? $item['item'] ?? 'Item';
-                                $itemPrice = $item['price'] ?? 0;
-                                $itemQty = $item['quantity'] ?? 1;
-                                $itemTotal = $item['total'] ?? ($itemPrice * $itemQty);
-                                
-                                $summary .= "{$itemNum}. {$itemName}\n";
-                                $summary .= "   - Price: $" . number_format($itemPrice, 2) . "\n";
-                                $summary .= "   - Quantity: {$itemQty}\n";
-                                
-                                if (isset($item['discount']) && $item['discount'] > 0) {
-                                    $summary .= "   - Discount: $" . number_format($item['discount'], 2) . "\n";
-                                }
-                                
-                                $summary .= "   - Subtotal: $" . number_format($itemTotal, 2) . "\n";
-                            }
-                            $summary .= "\n";
-                        }
-                        
-                        // Format total and other key fields
-                        $summary .= "**Summary:**\n";
-                        
-                        if (isset($data['total'])) {
-                            $summary .= "- **Total: $" . number_format($data['total'], 2) . "**\n";
-                        }
-                        
-                        // Add invoice/order ID if available
-                        if (isset($data['invoice']['invoice_id'])) {
-                            $summary .= "- Invoice ID: #" . $data['invoice']['invoice_id'] . "\n";
-                        } elseif (isset($data['invoice']['id'])) {
-                            $summary .= "- Invoice ID: #" . $data['invoice']['id'] . "\n";
-                        } elseif (isset($data['id'])) {
-                            $summary .= "- ID: #" . $data['id'] . "\n";
-                        }
-                        
-                        // Add other scalar fields (excluding already shown ones)
-                        $excludeKeys = ['success', 'message', 'created_at', 'updated_at', 'customer', 'items', 'total', 'invoice', 'id'];
-                        foreach ($data as $key => $value) {
-                            if (!in_array($key, $excludeKeys) && !is_array($value) && !is_null($value)) {
-                                $summary .= "- " . ucfirst(str_replace('_', ' ', $key)) . ": {$value}\n";
+                        // Use AI to generate formatted success message for remote execution
+                        try {
+                            $prompt = "Format a user-friendly success message for the following {$modelName} that was just created on a remote node.\n\n";
+                            $prompt .= "Data:\n" . json_encode($data, JSON_PRETTY_PRINT) . "\n\n";
+                            $prompt .= "Requirements:\n";
+                            $prompt .= "- Start with '✅ **{$modelName} Created Successfully**'\n";
+                            $prompt .= "- Intelligently display relevant information based on the data structure:\n";
+                            $prompt .= "  * If there's customer/client/user info, show it (name, email, phone)\n";
+                            $prompt .= "  * If there are items/products/lines, show them in a numbered list with details\n";
+                            $prompt .= "  * If there are dates (created, issued, due, scheduled), show meaningful ones\n";
+                            $prompt .= "  * If there's a total/amount/price, display it prominently\n";
+                            $prompt .= "  * If there's a reference ID (invoice_id, order_id, ticket_id, etc.), show it\n";
+                            $prompt .= "- SKIP internal/technical fields:\n";
+                            $prompt .= "  * id, user_id, workspace, created_by, account_id, category_id\n";
+                            $prompt .= "  * Any field ending in _id (except meaningful IDs like invoice_id, order_id)\n";
+                            $prompt .= "  * Fields like: account_type, module names, display flags\n";
+                            $prompt .= "  * _resolve_relationships and other internal metadata\n";
+                            $prompt .= "  * Any field with value 0 or null that's not meaningful\n";
+                            $prompt .= "- Format currency values with $ symbol and 2 decimals\n";
+                            $prompt .= "- Use bold for section headers\n";
+                            $prompt .= "- Keep it clean, concise, and user-friendly\n";
+                            $prompt .= "- Adapt the format to the type of data (don't force specific structure on other models)\n\n";
+                            $prompt .= "Generate the formatted success message now:";
+                            
+                            $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
+                                prompt: $prompt,
+                                engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                                model: \LaravelAIEngine\Enums\EntityEnum::from(config('ai-engine.actions.intent_model', 'gpt-3.5-turbo')),
+                                maxTokens: 500,
+                                temperature: 0
+                            );
+                            
+                            $response = $this->aiEngineService->generate($aiRequest);
+                            $summary = $response->getContent();
+                            
+                        } catch (\Exception $e) {
+                            // Fallback to simple message if AI fails
+                            $summary = "✅ **{$modelName} Created Successfully**\n\n";
+                            if (isset($data['id'])) {
+                                $summary .= "ID: " . $data['id'] . "\n";
                             }
                         }
 

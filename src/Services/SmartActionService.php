@@ -17,9 +17,11 @@ class SmartActionService
     protected array $actionDefinitions = [];
 
     public function __construct(
-        protected ?AIEngineService $aiService = null
+        protected ?AIEngineService $aiService = null,
+        protected ?DuplicateDetectionService $duplicateDetectionService = null
     ) {
         $this->registerDefaultActions();
+        $this->duplicateDetectionService = $duplicateDetectionService ?? app(DuplicateDetectionService::class);
     }
 
     /**
@@ -664,7 +666,7 @@ class SmartActionService
 
     /**
      * Resolve relationship fields intelligently
-     * Automatically creates related records if they don't exist
+     * Now includes duplicate detection with user interaction
      */
     protected function resolveRelationships(string $modelClass, array $data, $userId = null): array
     {
@@ -697,6 +699,7 @@ class SmartActionService
         // Local model - resolve relationships locally
         try {
             $model = new $modelClass();
+            $pendingDuplicateChoices = [];
 
             foreach ($data as $key => $value) {
                 // Check if this is a relationship field (ends with _id but value is not numeric)
@@ -709,22 +712,41 @@ class SmartActionService
                         $relation = $model->$relationName();
                         $relatedClass = get_class($relation->getRelated());
 
-                        Log::channel('ai-engine')->info('Resolving relationship locally', [
+                        Log::channel('ai-engine')->info('Resolving relationship with duplicate detection', [
                             'field' => $key,
                             'relation' => $relationName,
                             'related_class' => $relatedClass,
                             'search_value' => $value
                         ]);
 
-                        // Try to find or create the related record
-                        $relatedId = $this->findOrCreateRelated($relatedClass, $value, $userId);
+                        // Try to find or create the related record (with duplicate detection)
+                        $result = $this->findOrCreateRelated($relatedClass, $value, $userId);
 
-                        if ($relatedId) {
-                            $data[$key] = $relatedId;
-                            unset($data[$relationName]); // Remove the name field if it exists
+                        // Handle different result types
+                        if (is_int($result)) {
+                            // Direct ID returned (high similarity match or created)
+                            $data[$key] = $result;
+                            unset($data[$relationName]);
+                        } elseif (is_array($result) && isset($result['existing_records'])) {
+                            // Found duplicates - need user to choose
+                            $pendingDuplicateChoices[$key] = $result;
+                            
+                            Log::channel('ai-engine')->info('Duplicate detection requires user choice', [
+                                'field' => $key,
+                                'options_count' => count($result['existing_records'])
+                            ]);
                         }
                     }
                 }
+            }
+            
+            // If we have pending duplicate choices, mark the data for user interaction
+            if (!empty($pendingDuplicateChoices)) {
+                $data['_pending_duplicate_choices'] = $pendingDuplicateChoices;
+                
+                Log::channel('ai-engine')->info('Relationships require user duplicate selection', [
+                    'fields' => array_keys($pendingDuplicateChoices)
+                ]);
             }
         } catch (\Exception $e) {
             Log::warning('Relationship resolution failed: ' . $e->getMessage());
@@ -735,70 +757,55 @@ class SmartActionService
 
     /**
      * Find or create related record intelligently
+     * Now uses DuplicateDetectionService for comprehensive search
+     * 
+     * @return int|array|null Returns int (ID), array (duplicate options), or null
      */
-    protected function findOrCreateRelated(string $relatedClass, string $searchValue, $userId = null): ?int
+    protected function findOrCreateRelated(string $relatedClass, string $searchValue, $userId = null)
     {
         try {
-            // Check if model is vectorizable (has vector search capability)
-            $isVectorizable = method_exists($relatedClass, 'vectorSearch');
-
-            if ($isVectorizable) {
-                // Use AI semantic search
-                Log::channel('ai-engine')->info('Using vector search for relation', [
-                    'class' => $relatedClass,
-                    'query' => $searchValue
-                ]);
-
-                $filters = [];
-                if ($userId) {
-                    // Respect user scope if model has user_id
-                    $model = new $relatedClass();
-                    if (in_array('user_id', $model->getFillable())) {
-                        $filters['user_id'] = $userId;
-                    }
-                }
-
-                $results = $relatedClass::vectorSearch($searchValue, $filters, 1);
-
-                if (!empty($results)) {
-                    Log::channel('ai-engine')->info('Found via vector search', [
-                        'id' => $results[0]->id,
-                        'score' => $results[0]->_score ?? null
-                    ]);
-                    return $results[0]->id;
-                }
-            } else {
-                // Fall back to SQL search
-                Log::channel('ai-engine')->info('Using SQL search for relation', [
-                    'class' => $relatedClass,
-                    'query' => $searchValue
-                ]);
-
-                $query = $relatedClass::query();
-
-                // Respect user scope
-                if ($userId) {
-                    $model = new $relatedClass();
-                    if (in_array('user_id', $model->getFillable())) {
-                        $query->where('user_id', $userId);
-                    }
-                }
-
-                // Search in first fillable field (generic approach)
-                $model = new $relatedClass();
-                $fillable = $model->getFillable();
+            // Use DuplicateDetectionService for comprehensive search
+            $extractedData = $this->buildSearchDataFromValue($relatedClass, $searchValue);
+            $searchableFields = $this->getSearchableFieldsForModel($relatedClass);
+            
+            Log::channel('ai-engine')->info('Searching for existing related record', [
+                'class' => $relatedClass,
+                'search_value' => $searchValue,
+                'searchable_fields' => $searchableFields
+            ]);
+            
+            $existingRecords = $this->duplicateDetectionService->searchExistingRecords(
+                $relatedClass,
+                $extractedData,
+                $searchableFields
+            );
+            
+            // If we found existing records with good similarity, return them for user selection
+            if (!empty($existingRecords)) {
+                $topMatch = $existingRecords[0];
                 
-                if (!empty($fillable)) {
-                    $searchField = $fillable[0]; // Use first fillable field
-                    $record = $query->where($searchField, 'LIKE', "%{$searchValue}%")->first();
-
-                    if ($record) {
-                        Log::channel('ai-engine')->info('Found via SQL search', [
-                            'id' => $record->id,
-                            'search_field' => $searchField
-                        ]);
-                        return $record->id;
-                    }
+                // If similarity is very high (>90%), auto-use it
+                if ($topMatch['similarity'] >= 0.9) {
+                    Log::channel('ai-engine')->info('Auto-using high similarity match', [
+                        'id' => $topMatch['id'],
+                        'similarity' => $topMatch['similarity']
+                    ]);
+                    return $topMatch['id'];
+                }
+                
+                // If similarity is good (>70%), return options for user to choose
+                if ($topMatch['similarity'] >= 0.7) {
+                    Log::channel('ai-engine')->info('Found potential matches, asking user', [
+                        'count' => count($existingRecords),
+                        'top_similarity' => $topMatch['similarity']
+                    ]);
+                    
+                    // Return array with existing records for user selection
+                    return [
+                        'existing_records' => $existingRecords,
+                        'search_value' => $searchValue,
+                        'model_class' => $relatedClass
+                    ];
                 }
             }
 
@@ -854,6 +861,58 @@ class SmartActionService
         }
 
         return null;
+    }
+    
+    /**
+     * Build search data from a single value
+     */
+    protected function buildSearchDataFromValue(string $modelClass, string $value): array
+    {
+        $data = [];
+        $searchableFields = $this->getSearchableFieldsForModel($modelClass);
+        
+        // Assign value to the most appropriate field
+        if (!empty($searchableFields)) {
+            $primaryField = $searchableFields[0];
+            $data[$primaryField] = $value;
+        }
+        
+        // If value looks like email, add it to email field too
+        if (filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            $data['email'] = $value;
+        }
+        
+        return $data;
+    }
+    
+    /**
+     * Get searchable fields for a model
+     */
+    protected function getSearchableFieldsForModel(string $modelClass): array
+    {
+        if (!class_exists($modelClass)) {
+            return ['name'];
+        }
+        
+        $model = new $modelClass();
+        $fillable = $model->getFillable();
+        
+        // Priority order for searchable fields
+        $priorityFields = ['name', 'title', 'email', 'sku', 'code', 'username'];
+        $searchableFields = [];
+        
+        foreach ($priorityFields as $field) {
+            if (in_array($field, $fillable)) {
+                $searchableFields[] = $field;
+            }
+        }
+        
+        // If no priority fields found, use first fillable field
+        if (empty($searchableFields) && !empty($fillable)) {
+            $searchableFields[] = $fillable[0];
+        }
+        
+        return $searchableFields;
     }
 
     /**

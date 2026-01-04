@@ -29,9 +29,11 @@ class ExecuteDynamicActionRequest extends FormRequest
 
     public function toDTO(): ExecuteDynamicActionDTO
     {
+        $validated = $this->validated();
+        
         return new ExecuteDynamicActionDTO(
-            actionId: $this->validated('action_id'),
-            parameters: $this->validated('parameters', []),
+            actionId: $validated['action_id'],
+            parameters: $validated['parameters'] ?? [],
             userId: auth()->id()
         );
     }

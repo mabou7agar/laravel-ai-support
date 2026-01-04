@@ -56,6 +56,33 @@ class NodeApiController extends Controller
                 ], 400);
             }
 
+            // Run duplicate detection on relationship fields before executing
+            try {
+                $smartActionService = app(\LaravelAIEngine\Services\SmartActionService::class);
+                $params = $smartActionService->resolveRelationships($modelClass, $params);
+                
+                // Check if user needs to choose from duplicates
+                if (isset($params['_pending_duplicate_choices'])) {
+                    \Illuminate\Support\Facades\Log::channel('ai-engine')->info('Duplicate records found on remote node', [
+                        'model' => $modelClass,
+                        'pending_choices' => $params['_pending_duplicate_choices']
+                    ]);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'pending_duplicate_choices' => $params['_pending_duplicate_choices'],
+                        'message' => 'Duplicate records found. User selection required.',
+                        'requires_user_input' => true
+                    ], 200);
+                }
+            } catch (\Exception $e) {
+                // Log but don't fail - continue with original params
+                \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Duplicate detection failed on remote node', [
+                    'model' => $modelClass,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
             $method = $reflection->getMethod('executeAI');
 
             // Execute the model's AI action
