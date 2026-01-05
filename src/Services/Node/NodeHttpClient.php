@@ -80,7 +80,8 @@ class NodeHttpClient
      */
     public static function makeForAction(\LaravelAIEngine\Models\AINode $node, string $traceId = null): PendingRequest
     {
-        $http = static::makeAuthenticated($node, true);
+        // Use synchronous requests for reliability (async returns promises that need resolution)
+        $http = static::makeAuthenticated($node, false);
         
         if ($traceId) {
             $http = $http->withHeaders(['X-Trace-Id' => $traceId]);

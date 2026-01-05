@@ -12,6 +12,13 @@ class NodeAuthService
      */
     protected function getJwtLibrary(): ?string
     {
+        // Check config first
+        $configuredLibrary = config('ai-engine.nodes.jwt.library');
+        if ($configuredLibrary) {
+            return $configuredLibrary;
+        }
+        
+        // Auto-detect
         if (class_exists('\Firebase\JWT\JWT')) {
             return 'firebase';
         }
@@ -26,8 +33,11 @@ class NodeAuthService
     /**
      * Generate JWT token for node
      */
-    public function generateToken(AINode $node, int $expiresIn = 3600): string
+    public function generateToken(AINode $node, ?int $expiresIn = null): string
     {
+        // Use configured TTL if not specified
+        $expiresIn = $expiresIn ?? config('ai-engine.nodes.jwt.ttl', 3600);
+        
         $library = $this->getJwtLibrary();
         
         if (!$library) {
@@ -38,7 +48,7 @@ class NodeAuthService
         }
         
         $payload = [
-            'iss' => config('app.url'),
+            'iss' => config('ai-engine.nodes.jwt.issuer', config('app.url')),
             'sub' => $node->id,
             'node_slug' => $node->slug,
             'node_name' => $node->name,
@@ -47,6 +57,11 @@ class NodeAuthService
             'capabilities' => $node->capabilities ?? [],
             'type' => $node->type,
         ];
+        
+        // Add audience if configured
+        if ($audience = config('ai-engine.nodes.jwt.audience')) {
+            $payload['aud'] = $audience;
+        }
         
         if ($library === 'firebase') {
             return $this->generateTokenFirebase($payload);
@@ -61,7 +76,8 @@ class NodeAuthService
     protected function generateTokenFirebase(array $payload): string
     {
         $secret = $this->getJwtSecret();
-        return \Firebase\JWT\JWT::encode($payload, $secret, 'HS256');
+        $algorithm = config('ai-engine.nodes.jwt.algorithm', 'HS256');
+        return \Firebase\JWT\JWT::encode($payload, $secret, $algorithm);
     }
     
     /**
@@ -171,14 +187,17 @@ class NodeAuthService
     /**
      * Generate refresh token
      */
-    public function generateRefreshToken(AINode $node, int $expiresInDays = 30): string
+    public function generateRefreshToken(AINode $node, ?int $expiresInSeconds = null): string
     {
+        // Use configured refresh TTL if not specified
+        $expiresInSeconds = $expiresInSeconds ?? config('ai-engine.nodes.jwt.refresh_ttl', 86400);
+        
         $token = bin2hex(random_bytes(32));
         
         // Store hashed token in database
         $node->update([
             'refresh_token' => hash('sha256', $token),
-            'refresh_token_expires_at' => now()->addDays($expiresInDays),
+            'refresh_token_expires_at' => now()->addSeconds($expiresInSeconds),
         ]);
         
         Log::channel('ai-engine')->info('Refresh token generated', [

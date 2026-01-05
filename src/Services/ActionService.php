@@ -7,13 +7,6 @@ use LaravelAIEngine\Enums\ActionTypeEnum;
 
 class ActionService
 {
-    protected ?SmartActionService $smartActionService = null;
-
-    public function __construct(?SmartActionService $smartActionService = null)
-    {
-        $this->smartActionService = $smartActionService;
-    }
-
     /**
      * Generate suggested actions based on AI response
      */
@@ -21,11 +14,8 @@ class ActionService
     {
         $actions = [];
         
-        // Use SmartActionService for intelligent, pre-filled actions
-        // Note: SmartActionService is already called in ChatService with the user's message
-        // We don't call it again here to avoid extracting from the AI's response
-        // The smart actions are already included in the response metadata
-        if ($this->smartActionService && !empty($ragMetadata['smart_actions'])) {
+        // Smart actions are already included in the response metadata from ActionManager
+        if (!empty($ragMetadata['smart_actions'])) {
             $actions = array_merge($actions, $ragMetadata['smart_actions']);
         }
         

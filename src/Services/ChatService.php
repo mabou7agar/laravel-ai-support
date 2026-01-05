@@ -8,6 +8,7 @@ use LaravelAIEngine\Facades\Engine;
 use LaravelAIEngine\Events\AISessionStarted;
 use LaravelAIEngine\Services\RAG\IntelligentRAGService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
+use LaravelAIEngine\Services\Actions\ActionManager;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
@@ -17,10 +18,10 @@ class ChatService
         protected ConversationService $conversationService,
         protected AIEngineService $aiEngineService,
         protected MemoryOptimizationService $memoryOptimization,
-        protected DynamicActionService $dynamicActionService,
         protected ?IntelligentRAGService $intelligentRAG = null,
         protected ?RAGCollectionDiscovery $ragDiscovery = null,
-        protected ?SmartActionService $smartActionService = null
+        protected ?ActionManager $actionManager = null,
+        protected ?PendingActionService $pendingActionService = null
     ) {
         // Lazy load IntelligentRAGService if available
         if ($this->intelligentRAG === null && app()->bound(IntelligentRAGService::class)) {
@@ -32,13 +33,14 @@ class ChatService
             $this->ragDiscovery = app(RAGCollectionDiscovery::class);
         }
 
-        // Lazy load SmartActionService if available
-        if ($this->smartActionService === null) {
-            try {
-                $this->smartActionService = new SmartActionService($this->aiEngineService);
-            } catch (\Exception $e) {
-                Log::warning('Failed to instantiate SmartActionService: ' . $e->getMessage());
-            }
+        // Lazy load ActionManager if available
+        if ($this->actionManager === null && app()->bound(ActionManager::class)) {
+            $this->actionManager = app(ActionManager::class);
+        }
+
+        // Lazy load PendingActionService if available
+        if ($this->pendingActionService === null && app()->bound(PendingActionService::class)) {
+            $this->pendingActionService = app(PendingActionService::class);
         }
     }
 
@@ -161,9 +163,18 @@ class ChatService
         // INTELLIGENT INTENT ANALYSIS: Analyze user message before AI/RAG call
         // This makes intelligent decisions and enhances AI prompts based on context
         $intentAnalysis = null;
-        if ($useActions && $this->smartActionService !== null && config('ai-engine.actions.intent_analysis', true)) {
-            // Check for pending action in cache
-            $cachedActionData = \Illuminate\Support\Facades\Cache::get("pending_action_{$sessionId}");
+        if ($useActions && $this->actionManager !== null && config('ai-engine.actions.intent_analysis', true)) {
+            // Check for pending action in database
+            $pendingAction = $this->pendingActionService?->get($sessionId);
+            $cachedActionData = $pendingAction ? [
+                'id' => $pendingAction->id,
+                'type' => $pendingAction->type->value,
+                'label' => $pendingAction->label,
+                'description' => $pendingAction->description,
+                'data' => $pendingAction->data,
+                'missing_fields' => $pendingAction->data['missing_fields'] ?? [],
+                'is_incomplete' => !empty($pendingAction->data['missing_fields'] ?? []),
+            ] : null;
 
             // Analyze intent with context
             $intentAnalysis = $this->analyzeMessageIntent($processedMessage, $cachedActionData);
@@ -199,7 +210,7 @@ class ChatService
                         );
 
                         $executionResult = $this->executeSmartActionInline($action, $userId);
-                        \Illuminate\Support\Facades\Cache::forget("pending_action_{$sessionId}");
+                        $this->pendingActionService?->markExecuted($sessionId);
 
                         if ($executionResult['success']) {
                             return new AIResponse(
@@ -224,7 +235,7 @@ class ChatService
                 case 'reject':
                     if ($cachedActionData) {
                         Log::channel('ai-engine')->info('Rejection detected, canceling pending action');
-                        \Illuminate\Support\Facades\Cache::forget("pending_action_{$sessionId}");
+                        $this->pendingActionService?->delete($sessionId);
 
                         return new AIResponse(
                             content: "Action canceled. How else can I help you?",
@@ -252,7 +263,8 @@ class ChatService
                             $intentAnalysis['extracted_data']
                         );
 
-                        \Illuminate\Support\Facades\Cache::put("pending_action_{$sessionId}", $cachedActionData, 300);
+                        // Update pending action in database
+                        $this->pendingActionService?->updateParams($sessionId, $intentAnalysis['extracted_data']);
                         
                         Log::channel('ai-engine')->info('Action params updated successfully', [
                             'new_params' => $cachedActionData['data']['params']
@@ -421,7 +433,10 @@ class ChatService
                             );
                         }
 
-                        \Illuminate\Support\Facades\Cache::put("pending_action_{$sessionId}", $cachedActionData, 300);
+                        // Update pending action in database
+                        if ($this->pendingActionService && isset($cachedActionData)) {
+                            $this->pendingActionService->updateParams($sessionId, $cachedActionData['data']['params'] ?? []);
+                        }
                     }
                     break;
             }
@@ -439,7 +454,16 @@ class ChatService
             ]);
         }
 
-        // Use Intelligent RAG if enabled and available
+        // Check if this is an action-based request (skip RAG for actions)
+        // Use intent analysis only - language-agnostic, works with any language
+        $isActionIntent = $intentAnalysis && in_array($intentAnalysis['intent'] ?? '', ['new_request', 'create', 'update', 'delete', 'provide_data', 'confirm', 'reject']);
+        
+        // Also skip RAG if there's a pending action in database (user is in action flow)
+        $hasPendingAction = $this->pendingActionService?->has($sessionId) ?? false;
+        
+        $shouldSkipRAG = $isActionIntent || $hasPendingAction;
+
+        // Use Intelligent RAG if enabled and available (but skip for action intents)
         Log::info('ChatService processMessage', [
             'useIntelligentRAG' => $useIntelligentRAG,
             'intelligentRAG_available' => $this->intelligentRAG !== null,
@@ -447,9 +471,12 @@ class ChatService
             'ragCollections_passed' => $ragCollections,
             'ragCollections_count' => count($ragCollections),
             'intent_enhanced' => $intentAnalysis !== null,
+            'is_action_intent' => $isActionIntent,
+            'has_pending_action' => $hasPendingAction,
+            'should_skip_rag' => $shouldSkipRAG,
         ]);
 
-        if ($useIntelligentRAG && $this->intelligentRAG !== null) {
+        if ($useIntelligentRAG && $this->intelligentRAG !== null && !$shouldSkipRAG) {
             try {
                 // Auto-discover collections ONLY if not provided
                 // If user passes specific collections, respect them strictly
@@ -503,43 +530,54 @@ class ChatService
             $response = $this->aiEngineService->generate($aiRequest);
         }
 
-        // Check for smart actions if enabled (inline action handling)
-        if ($useActions && $this->smartActionService !== null) {
+        // Check for actions if enabled (inline action handling)
+        if ($useActions && $this->actionManager !== null) {
             try {
                 $sources = $response->getMetadata()['sources'] ?? [];
                 $conversationHistory = !empty($messages) ? $messages : [];
 
-                $metadata = [
+                $context = [
                     'conversation_history' => $conversationHistory,
                     'user_id' => $userId,
                     'session_id' => $sessionId,
-                    'intent_analysis' => $intentAnalysis, // Pass intent analysis to action generation
                 ];
 
-                Log::channel('ai-engine')->info('Checking for smart actions', [
+                Log::channel('ai-engine')->info('Generating actions for context', [
                     'message' => $processedMessage,
-                    'has_service' => $this->smartActionService !== null,
+                    'has_manager' => $this->actionManager !== null,
                     'conversation_history_count' => count($conversationHistory),
                     'intent' => $intentAnalysis['intent'] ?? null,
                 ]);
 
-                $smartActions = $this->smartActionService->generateSmartActions(
+                $actions = $this->actionManager->generateActionsForContext(
                     $processedMessage,
-                    $sources,
-                    $metadata
+                    $context,
+                    $intentAnalysis
                 );
 
-                Log::channel('ai-engine')->info('Smart actions generated', [
-                    'count' => count($smartActions),
-                    'actions' => array_map(fn($a) => $a->label, $smartActions),
+                Log::channel('ai-engine')->info('Actions generated', [
+                    'count' => count($actions),
+                    'actions' => array_map(fn($a) => $a->label, $actions),
                 ]);
 
-                // Add smart actions to metadata for ActionService to use
-                $metadata['smart_actions'] = $smartActions;
+                // Store actions in smartActions variable for consistency
+                $smartActions = $actions;
 
-                // If no actions generated, check if there's a completed cached action from provide_data flow
+                // Add actions to metadata
+                $metadata = array_merge($context, ['smart_actions' => $smartActions]);
+
+                // If no actions generated, check if there's a completed pending action from provide_data flow
                 if (empty($smartActions)) {
-                    $cachedActionData = \Illuminate\Support\Facades\Cache::get("pending_action_{$sessionId}");
+                    $pendingAction = $this->pendingActionService?->get($sessionId);
+                    $cachedActionData = $pendingAction ? [
+                        'id' => $pendingAction->id,
+                        'type' => $pendingAction->type->value,
+                        'label' => $pendingAction->label,
+                        'description' => $pendingAction->description,
+                        'data' => $pendingAction->data,
+                        'missing_fields' => $pendingAction->data['missing_fields'] ?? [],
+                        'is_incomplete' => !empty($pendingAction->data['missing_fields'] ?? []),
+                    ] : null;
                     
                     // Check if cached action was just completed (provide_data intent)
                     if ($cachedActionData && 
@@ -594,8 +632,17 @@ class ChatService
                         'session_id' => $sessionId
                     ]);
 
-                    // Try to get pending action from cache
-                    $cachedActionData = \Illuminate\Support\Facades\Cache::get("pending_action_{$sessionId}");
+                    // Try to get pending action from database
+                    $pendingAction = $this->pendingActionService?->get($sessionId);
+                    $cachedActionData = $pendingAction ? [
+                        'id' => $pendingAction->id,
+                        'type' => $pendingAction->type->value,
+                        'label' => $pendingAction->label,
+                        'description' => $pendingAction->description,
+                        'data' => $pendingAction->data,
+                        'missing_fields' => $pendingAction->data['missing_fields'] ?? [],
+                        'is_incomplete' => !empty($pendingAction->data['missing_fields'] ?? []),
+                    ] : null;
 
                     if ($cachedActionData) {
                         // Check if user provided optional parameters or wants to use suggestions
@@ -650,19 +697,29 @@ class ChatService
 
                 if (!empty($smartActions)) {
                     // Select the most relevant action based on completeness and query match
-                    // Prefer complete actions over incomplete ones
+                    // Prefer incomplete actions to complete ones (ask for missing info first)
+                    // Then prefer complete actions that match the user's intent
                     $actionToCache = null;
+                    $incompleteAction = null;
                     $completeAction = null;
                     
                     foreach ($smartActions as $action) {
-                        $isReady = $action->data['ready_to_execute'] ?? true;
+                        $isReady = $action->data['ready_to_execute'] ?? false;
+                        $hasMissing = !empty($action->data['missing_fields'] ?? []);
+                        
+                        // Prioritize incomplete actions (need user input)
+                        if ($hasMissing && !$incompleteAction) {
+                            $incompleteAction = $action;
+                        }
+                        
+                        // Track complete actions as fallback
                         if ($isReady && !$completeAction) {
                             $completeAction = $action;
                         }
                     }
                     
-                    // Use complete action if available, otherwise use first incomplete action
-                    $actionToCache = $completeAction ?? $smartActions[0];
+                    // Use incomplete action first (to gather missing info), then complete, then first
+                    $actionToCache = $incompleteAction ?? $completeAction ?? $smartActions[0];
                     
                     $isIncomplete = !($actionToCache->data['ready_to_execute'] ?? true);
                     $missingFields = $actionToCache->data['missing_fields'] ?? [];
@@ -672,22 +729,10 @@ class ChatService
                         $modelClass = $actionToCache->data['model_class'] ?? '';
                         $modelName = class_basename($modelClass);
                         
-                        // Cache the incomplete action so we can continue the conversation
-                        \Illuminate\Support\Facades\Cache::put(
-                            "pending_action_{$sessionId}",
-                            [
-                                'id' => $actionToCache->id,
-                                'type' => $actionToCache->type->value,
-                                'label' => $actionToCache->label,
-                                'description' => $actionToCache->description,
-                                'data' => $actionToCache->data,
-                                'missing_fields' => $missingFields,
-                                'is_incomplete' => true,
-                            ],
-                            300 // 5 minutes
-                        );
+                        // Store the incomplete action in database so we can continue the conversation
+                        $this->pendingActionService?->store($sessionId, $actionToCache, $userId);
                         
-                        Log::channel('ai-engine')->info('Cached incomplete action for continuation', [
+                        Log::channel('ai-engine')->info('Stored incomplete action for continuation', [
                             'session_id' => $sessionId,
                             'action' => $actionToCache->label,
                             'missing_fields' => $missingFields,
@@ -728,20 +773,8 @@ class ChatService
                         $suggestions = $this->generateOptionalParamSuggestions($currentParams, $missingOptional);
                     }
 
-                    // Store pending action data in cache for confirmation (serialize to array)
-                    \Illuminate\Support\Facades\Cache::put(
-                        "pending_action_{$sessionId}",
-                        [
-                            'id' => $actionToCache->id,
-                            'type' => $actionToCache->type->value,
-                            'label' => $actionToCache->label,
-                            'description' => $actionToCache->description,
-                            'data' => $actionToCache->data,
-                            'optional_params' => $optionalParams,
-                            'suggested_params' => $suggestions,
-                        ],
-                        300 // 5 minutes
-                    );
+                    // Store pending action in database for confirmation
+                    $this->pendingActionService?->store($sessionId, $actionToCache, $userId);
 
                     // Check if any action is ready to execute automatically
                     $autoExecuteAction = $this->checkAutoExecuteAction($smartActions, $processedMessage, $sessionId);
@@ -1018,7 +1051,7 @@ class ChatService
 
             // Add available actions context
             try {
-                $availableActions = $this->dynamicActionService->discoverActions();
+                $availableActions = $this->actionManager ? $this->actionManager->discoverActions() : [];
                 if (!empty($availableActions)) {
                     $prompt .= "\n\nYou have access to the following actions in this system:\n";
                     foreach (array_slice($availableActions, 0, 10) as $action) {
@@ -1235,9 +1268,9 @@ class ChatService
      */
     protected function getOptionalParamsForAction(\LaravelAIEngine\DTOs\InteractiveAction $action): array
     {
-        // Get action definition from SmartActionService to find optional params
+        // Get action definition from ActionManager to find optional params
         $actionId = $action->data['action'] ?? null;
-        if (!$actionId || !$this->smartActionService) {
+        if (!$actionId || !$this->actionManager) {
             return [];
         }
 
@@ -1654,7 +1687,18 @@ class ChatService
             if ($pendingAction) {
                 $prompt .= "Context: There is a pending action waiting for user response.\n";
                 $prompt .= "Pending Action: {$pendingAction['label']}\n";
-                $prompt .= "Required Parameters: " . json_encode($pendingAction['data']['params'] ?? []) . "\n\n";
+                $prompt .= "Current Parameters: " . json_encode($pendingAction['data']['params'] ?? []) . "\n";
+                
+                $missingFields = $pendingAction['missing_fields'] ?? [];
+                if (!empty($missingFields)) {
+                    $prompt .= "Missing Required Fields: " . implode(', ', $missingFields) . "\n";
+                    $prompt .= "IMPORTANT: If the user's message provides a value that could fill any of these missing fields, classify as 'provide_data' and extract the data.\n";
+                    $prompt .= "Examples:\n";
+                    $prompt .= "- If missing 'sale_price' and user says '$1099' or '1099' → extract as: {\"sale_price\": 1099}\n";
+                    $prompt .= "- If missing 'email' and user says 'test@example.com' → extract as: {\"email\": \"test@example.com\"}\n";
+                    $prompt .= "- If missing 'quantity' and user says '50 units' → extract as: {\"quantity\": 50}\n";
+                }
+                $prompt .= "\n";
             }
 
             $prompt .= "Analyze and classify the intent into ONE of these categories:\n";
@@ -1776,14 +1820,14 @@ class ChatService
                     str_contains($content, '$')) {
 
                     // Re-generate the action from this message
-                    if ($this->smartActionService) {
+                    if ($this->actionManager) {
                         try {
-                            $metadata = [
+                            $context = [
                                 'conversation_history' => $conversationHistory,
                                 'user_id' => $message['user_id'] ?? null,
                                 'session_id' => $message['session_id'] ?? null,
                             ];
-                            $actions = $this->smartActionService->generateSmartActions($content, [], $metadata);
+                            $actions = $this->actionManager->generateActionsForContext($content, $context, null);
 
                             if (!empty($actions)) {
                                 Log::channel('ai-engine')->info('Retrieved pending action from history', [
@@ -1902,6 +1946,9 @@ class ChatService
             case 'model.dynamic':
                 return $this->executeDynamicModelAction($modelClass, $params, $userId);
 
+            case 'model.remote':
+                return $this->executeRemoteModelAction($action, $params, $userId);
+
             case 'email.reply':
                 return $this->executeEmailReply($params, $userId);
 
@@ -1910,6 +1957,70 @@ class ChatService
                     'success' => false,
                     'error' => "Unknown executor: {$executor}"
                 ];
+        }
+    }
+
+    /**
+     * Execute remote model action on a remote node
+     */
+    protected function executeRemoteModelAction(\LaravelAIEngine\DTOs\InteractiveAction $action, array $params, $userId): array
+    {
+        try {
+            $remoteActionService = app(\LaravelAIEngine\Services\Node\RemoteActionService::class);
+            
+            $nodeSlug = $action->data['node_slug'] ?? null;
+            $modelClass = $action->data['model_class'] ?? null;
+            
+            if (!$nodeSlug || !$modelClass) {
+                return [
+                    'success' => false,
+                    'error' => 'Missing node or model information'
+                ];
+            }
+            
+            Log::channel('ai-engine')->info('Executing remote model action', [
+                'node_slug' => $nodeSlug,
+                'model_class' => $modelClass,
+                'params' => $params,
+            ]);
+            
+            // Call remote node's action execution endpoint
+            $result = $remoteActionService->executeOn($nodeSlug, 'model.create', [
+                'model_class' => $modelClass,
+                'params' => array_merge($params, ['user_id' => $userId]),
+            ]);
+            
+            if ($result['success'] ?? false) {
+                $modelName = class_basename($modelClass);
+                
+                Log::channel('ai-engine')->info('Remote action executed successfully', [
+                    'model' => $modelName,
+                    'node' => $nodeSlug,
+                ]);
+                
+                return [
+                    'success' => true,
+                    'message' => "✅ {$modelName} created successfully on remote node!",
+                    'data' => $result['data'] ?? null,
+                ];
+            }
+            
+            return [
+                'success' => false,
+                'error' => $result['error'] ?? 'Remote action failed',
+                'data' => $result
+            ];
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Remote action execution failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => 'Remote execution failed: ' . $e->getMessage()
+            ];
         }
     }
 

@@ -255,6 +255,12 @@ class AIEngineServiceProvider extends ServiceProvider
             return;
         }
 
+        // Validate node configuration
+        $this->validateNodeConfiguration();
+
+        // Connection Pool Service
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeConnectionPool::class);
+
         // Auth Service
         $this->app->singleton(\LaravelAIEngine\Services\Node\NodeAuthService::class);
 
@@ -266,6 +272,9 @@ class AIEngineServiceProvider extends ServiceProvider
 
         // Load Balancer
         $this->app->singleton(\LaravelAIEngine\Services\Node\LoadBalancerService::class);
+
+        // Search Result Merger
+        $this->app->singleton(\LaravelAIEngine\Services\Node\SearchResultMerger::class);
 
         // Registry Service
         $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRegistryService::class, function ($app) {
@@ -282,7 +291,8 @@ class AIEngineServiceProvider extends ServiceProvider
                 $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
                 $app->make(\LaravelAIEngine\Services\Node\NodeCacheService::class),
                 $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
-                $app->make(\LaravelAIEngine\Services\Node\LoadBalancerService::class)
+                $app->make(\LaravelAIEngine\Services\Node\LoadBalancerService::class),
+                $app->make(\LaravelAIEngine\Services\Node\SearchResultMerger::class)
             );
         });
 
@@ -310,19 +320,29 @@ class AIEngineServiceProvider extends ServiceProvider
             );
         });
 
-        // Smart Action Service
-        $this->app->singleton(\LaravelAIEngine\Services\SmartActionService::class, function ($app) {
-            return new \LaravelAIEngine\Services\SmartActionService(
+        // Action System (Unified)
+        $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
+        
+        $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class, function ($app) {
+            return new \LaravelAIEngine\Services\Actions\ActionParameterExtractor(
                 $app->bound(\LaravelAIEngine\Services\AIEngineService::class)
                     ? $app->make(\LaravelAIEngine\Services\AIEngineService::class)
                     : null
             );
         });
-
-        // Action Service (with SmartActionService integration)
-        $this->app->singleton(\LaravelAIEngine\Services\ActionService::class, function ($app) {
-            return new \LaravelAIEngine\Services\ActionService(
-                $app->make(\LaravelAIEngine\Services\SmartActionService::class)
+        
+        $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class, function ($app) {
+            return new \LaravelAIEngine\Services\Actions\ActionExecutionPipeline(
+                $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
+                $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class)
+            );
+        });
+        
+        $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\Actions\ActionManager(
+                $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
+                $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class),
+                $app->make(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class)
             );
         });
 
@@ -336,6 +356,87 @@ class AIEngineServiceProvider extends ServiceProvider
         });
     }
 
+    /**
+     * Validate node configuration
+     */
+    protected function validateNodeConfiguration(): void
+    {
+        // Check JWT secret
+        if (!config('ai-engine.nodes.jwt_secret')) {
+            throw new \RuntimeException(
+                'AI_ENGINE_JWT_SECRET is required when nodes are enabled. ' .
+                'Set it in your .env file or disable nodes with AI_ENGINE_NODES_ENABLED=false'
+            );
+        }
+
+        // Warn if master node doesn't have master_url configured
+        if (config('ai-engine.nodes.is_master', true)) {
+            if (!config('ai-engine.nodes.master_url')) {
+                \Log::channel('ai-engine')->warning(
+                    'Master node should have AI_ENGINE_MASTER_URL configured for child nodes to register'
+                );
+            }
+        }
+
+        // Validate connection pool settings
+        if (config('ai-engine.nodes.connection_pool.enabled', true)) {
+            $maxPerNode = config('ai-engine.nodes.connection_pool.max_per_node', 5);
+            if ($maxPerNode < 1 || $maxPerNode > 100) {
+                throw new \RuntimeException(
+                    'AI_ENGINE_CONNECTION_POOL_MAX_PER_NODE must be between 1 and 100'
+                );
+            }
+
+            $ttl = config('ai-engine.nodes.connection_pool.ttl', 300);
+            if ($ttl < 60 || $ttl > 3600) {
+                throw new \RuntimeException(
+                    'AI_ENGINE_CONNECTION_POOL_TTL must be between 60 and 3600 seconds'
+                );
+            }
+        }
+
+        // Validate rate limiting settings
+        if (config('ai-engine.nodes.rate_limit.enabled', true)) {
+            $maxAttempts = config('ai-engine.nodes.rate_limit.max_attempts', 60);
+            if ($maxAttempts < 1 || $maxAttempts > 10000) {
+                throw new \RuntimeException(
+                    'AI_ENGINE_RATE_LIMIT_MAX must be between 1 and 10000'
+                );
+            }
+
+            $decayMinutes = config('ai-engine.nodes.rate_limit.decay_minutes', 1);
+            if ($decayMinutes < 1 || $decayMinutes > 1440) {
+                throw new \RuntimeException(
+                    'AI_ENGINE_RATE_LIMIT_DECAY must be between 1 and 1440 minutes'
+                );
+            }
+        }
+
+        // Validate circuit breaker settings
+        $failureThreshold = config('ai-engine.nodes.circuit_breaker.failure_threshold', 5);
+        if ($failureThreshold < 1 || $failureThreshold > 100) {
+            throw new \RuntimeException(
+                'AI_ENGINE_CB_FAILURE_THRESHOLD must be between 1 and 100'
+            );
+        }
+
+        $successThreshold = config('ai-engine.nodes.circuit_breaker.success_threshold', 2);
+        if ($successThreshold < 1 || $successThreshold > 50) {
+            throw new \RuntimeException(
+                'AI_ENGINE_CB_SUCCESS_THRESHOLD must be between 1 and 50'
+            );
+        }
+
+        // Validate timeout settings
+        $timeout = config('ai-engine.nodes.request_timeout', 30);
+        if ($timeout < 1 || $timeout > 300) {
+            throw new \RuntimeException(
+                'AI_ENGINE_REQUEST_TIMEOUT must be between 1 and 300 seconds'
+            );
+        }
+
+        \Log::channel('ai-engine')->info('Node configuration validated successfully');
+    }
 
     /**
      * Register service aliases

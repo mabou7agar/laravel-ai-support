@@ -17,7 +17,7 @@ use LaravelAIEngine\Http\Requests\ExecuteActionRequest;
 use LaravelAIEngine\Http\Requests\ClearHistoryRequest;
 use LaravelAIEngine\Http\Requests\UploadFileRequest;
 use LaravelAIEngine\Http\Requests\ExecuteDynamicActionRequest;
-use LaravelAIEngine\Services\DynamicActionService;
+use LaravelAIEngine\Services\Actions;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use LaravelAIEngine\Services\RAG\IntelligentRAGService;
 use LaravelAIEngine\Services\MemoryOptimizationService;
@@ -31,7 +31,7 @@ class AIChatController extends Controller
         protected ChatService $chatService,
         protected ConversationService $conversationService,
         protected ActionService $actionService,
-        protected DynamicActionService $dynamicActionService,
+        protected Actions\ActionManager $actionManager,
         protected RAGCollectionDiscovery $ragDiscovery,
         protected VectorAuthorizationService $authService,
         protected MemoryOptimizationService $memoryOptimization,
@@ -632,11 +632,11 @@ class AIChatController extends Controller
             $query = $request->input('query', '');
 
             if ($query) {
-                // Get recommended actions based on query
-                $actions = $this->dynamicActionService->getRecommendedActions($query);
+                // Get recommended actions based on query using trigger search
+                $actions = $this->actionManager->findByTrigger($query);
             } else {
                 // Get all available actions
-                $actions = $this->dynamicActionService->discoverActions();
+                $actions = $this->actionManager->discoverActions();
             }
 
             return response()->json([
@@ -661,24 +661,29 @@ class AIChatController extends Controller
         try {
             $dto = $request->toDTO();
 
-            // Get all actions and find the requested one
-            $actions = $this->dynamicActionService->discoverActions();
-            $action = collect($actions)->firstWhere('id', $dto->actionId);
+            // Get action definition
+            $action = $this->actionManager->getAction($dto->actionId);
 
             if (!$action) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Action not found',
+                    'error' => "Action not found: {$dto->actionId}",
                 ], 404);
             }
 
             // Execute the action
-            $result = $this->dynamicActionService->executeAction(
-                $action,
-                $dto->parameters
+            $result = $this->actionManager->executeById(
+                $dto->actionId,
+                $dto->parameters,
+                $request->user()?->id
             );
 
-            return response()->json($result);
+            return response()->json([
+                'success' => $result->success,
+                'message' => $result->message,
+                'data' => $result->data,
+                'error' => $result->error,
+            ]);
 
         } catch (\Exception $e) {
             return response()->json([

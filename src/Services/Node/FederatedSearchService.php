@@ -15,7 +15,8 @@ class FederatedSearchService
         protected VectorSearchService $localSearch,
         protected NodeCacheService $cache,
         protected CircuitBreakerService $circuitBreaker,
-        protected LoadBalancerService $loadBalancer
+        protected LoadBalancerService $loadBalancer,
+        protected SearchResultMerger $merger
     ) {}
 
     /**
@@ -192,7 +193,7 @@ class FederatedSearchService
             $options['load_balance_strategy'] ?? LoadBalancerService::STRATEGY_RESPONSE_TIME
         );
 
-        // Filter nodes by circuit breaker
+        // Filter nodes by circuit breaker and rate limiting
         $nodesToSearch = [];
         foreach ($selectedNodes as $node) {
             if ($this->circuitBreaker->isOpen($node)) {
@@ -201,6 +202,15 @@ class FederatedSearchService
                 ]);
                 continue;
             }
+            
+            if ($node->isRateLimited()) {
+                Log::channel('ai-engine')->debug('Skipping node - rate limited', [
+                    'node_slug' => $node->slug,
+                    'remaining_attempts' => $node->remainingRateLimitAttempts(),
+                ]);
+                continue;
+            }
+            
             $nodesToSearch[$node->slug] = $node;
         }
 
@@ -298,12 +308,14 @@ class FederatedSearchService
                     'duration_ms' => $responseData['duration_ms'] ?? 0,
                 ];
 
-                // Record success
+                // Record success and hit rate limit
                 $this->circuitBreaker->recordSuccess($node);
+                $node->hitRateLimit();
 
                 Log::channel('ai-engine')->debug('Node search successful', [
                     'node' => $slug,
                     'count' => count($responseData['results'] ?? []),
+                    'remaining_rate_limit' => $node->remainingRateLimitAttempts(),
                     'response_data' => $responseData,
                 ]);
             } else {
@@ -333,96 +345,37 @@ class FederatedSearchService
      */
     protected function mergeResults(array $local, array $remote, int $limit, string $query): array
     {
-        $allResults = [];
-
         \Log::info('mergeResults called', [
             'local_count' => count($local['results'] ?? []),
             'remote_nodes_count' => count($remote),
             'limit' => $limit,
         ]);
 
-        // Add local results
-        foreach ($local['results'] as $result) {
-            $allResults[] = array_merge($result, [
-                'source_node' => 'master',
-                'source_node_name' => 'Master Node',
-            ]);
-        }
+        // Get merge strategy from config
+        $strategy = config('ai-engine.nodes.merge.strategy', SearchResultMerger::STRATEGY_SCORE);
 
-        // Add remote results
-        $remoteResultsCount = 0;
-        foreach ($remote as $nodeResults) {
-            $nodeResultCount = count($nodeResults['results'] ?? []);
-            $remoteResultsCount += $nodeResultCount;
-
-            \Log::info('Adding remote node results', [
-                'node' => $nodeResults['node'] ?? 'unknown',
-                'node_name' => $nodeResults['node_name'] ?? 'unknown',
-                'results_count' => $nodeResultCount,
-            ]);
-
-            foreach ($nodeResults['results'] as $result) {
-                $allResults[] = array_merge($result, [
-                    'source_node' => $nodeResults['node'],
-                    'source_node_name' => $nodeResults['node_name'],
-                ]);
-            }
-        }
-
-        \Log::info('After adding all results', [
-            'total_before_sort' => count($allResults),
-            'local_count' => count($local['results'] ?? []),
-            'remote_count' => $remoteResultsCount,
-        ]);
-
-        // Sort by score (descending)
-        usort($allResults, fn ($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
-
-        // Deduplicate by content hash
-        $beforeDedup = count($allResults);
-        $allResults = $this->deduplicateResults($allResults);
-
-        \Log::info('After deduplication', [
-            'before' => $beforeDedup,
-            'after' => count($allResults),
-        ]);
-
-        // Limit results
-        $allResults = array_slice($allResults, 0, $limit);
+        // Use SearchResultMerger for intelligent merging
+        $mergedResults = $this->merger->merge($local, $remote, $limit, $query, $strategy);
 
         \Log::info('mergeResults final', [
-            'final_count' => count($allResults),
-            'first_result_content_preview' => isset($allResults[0]['content']) ? substr($allResults[0]['content'], 0, 100) : 'no content',
+            'strategy' => $strategy,
+            'final_count' => count($mergedResults),
+            'first_result_content_preview' => isset($mergedResults[0]['content']) ? substr($mergedResults[0]['content'], 0, 100) : 'no content',
         ]);
+
+        // Get merge statistics
+        $stats = $this->merger->getStatistics($mergedResults);
 
         return [
             'query' => $query,
-            'total_results' => count($allResults),
-            'results' => $allResults,
+            'total_results' => count($mergedResults),
+            'results' => $mergedResults,
             'nodes_searched' => count($remote) + 1,
-            'node_breakdown' => $this->getNodeBreakdown($allResults),
+            'node_breakdown' => $stats['by_node'] ?? [],
+            'type_breakdown' => $stats['by_type'] ?? [],
+            'merge_strategy' => $strategy,
+            'avg_score' => $stats['avg_score'] ?? 0,
         ];
-    }
-
-    /**
-     * Deduplicate results by content similarity
-     */
-    protected function deduplicateResults(array $results): array
-    {
-        $unique = [];
-        $hashes = [];
-
-        foreach ($results as $result) {
-            $content = $result['content'] ?? '';
-            $hash = md5($content);
-
-            if (!in_array($hash, $hashes)) {
-                $unique[] = $result;
-                $hashes[] = $hash;
-            }
-        }
-
-        return $unique;
     }
 
     /**

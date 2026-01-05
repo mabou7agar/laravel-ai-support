@@ -964,8 +964,29 @@ return [
         // Master node URL (for child nodes)
         'master_url' => env('AI_ENGINE_MASTER_URL'),
 
-        // JWT secret for node authentication
-        'jwt_secret' => env('AI_ENGINE_JWT_SECRET', env('APP_KEY')),
+        // JWT Configuration
+        'jwt' => [
+            // JWT secret for node authentication
+            'secret' => env('AI_ENGINE_JWT_SECRET', env('APP_KEY')),
+            
+            // JWT library to use: 'firebase' or 'tymon' (auto-detect if null)
+            'library' => env('AI_ENGINE_JWT_LIBRARY', null),
+            
+            // JWT algorithm (HS256, HS384, HS512, RS256, etc.)
+            'algorithm' => env('AI_ENGINE_JWT_ALGORITHM', 'HS256'),
+            
+            // Token TTL in seconds
+            'ttl' => env('AI_ENGINE_JWT_TTL', 3600), // 1 hour
+            
+            // Refresh token TTL in seconds
+            'refresh_ttl' => env('AI_ENGINE_JWT_REFRESH_TTL', 86400), // 24 hours
+            
+            // Issuer (iss claim)
+            'issuer' => env('AI_ENGINE_JWT_ISSUER', env('APP_URL')),
+            
+            // Audience (aud claim) - optional
+            'audience' => env('AI_ENGINE_JWT_AUDIENCE', null),
+        ],
 
         // Shared secret for inter-node communication (use same value on all nodes)
         // Defaults to JWT secret if not specified
@@ -1013,6 +1034,12 @@ return [
         // Max parallel requests
         'max_parallel_requests' => env('AI_ENGINE_MAX_PARALLEL_REQUESTS', 10),
 
+        // Search result merging
+        'merge' => [
+            'strategy' => env('AI_ENGINE_MERGE_STRATEGY', 'score'), // score, round_robin, node_priority, diversity, hybrid
+            'deduplication' => env('AI_ENGINE_MERGE_DEDUPLICATION', true),
+        ],
+
         // Circuit breaker settings
         'circuit_breaker' => [
             'failure_threshold' => env('AI_ENGINE_CB_FAILURE_THRESHOLD', 5),
@@ -1021,11 +1048,19 @@ return [
             'retry_timeout' => env('AI_ENGINE_CB_RETRY_TIMEOUT', 30),
         ],
 
+        // Connection pooling
+        'connection_pool' => [
+            'enabled' => env('AI_ENGINE_CONNECTION_POOL_ENABLED', true),
+            'max_per_node' => env('AI_ENGINE_CONNECTION_POOL_MAX_PER_NODE', 5),
+            'ttl' => env('AI_ENGINE_CONNECTION_POOL_TTL', 300), // 5 minutes
+        ],
+
         // Rate limiting
         'rate_limit' => [
             'enabled' => env('AI_ENGINE_RATE_LIMIT_ENABLED', true),
             'max_attempts' => env('AI_ENGINE_RATE_LIMIT_MAX', 60),
             'decay_minutes' => env('AI_ENGINE_RATE_LIMIT_DECAY', 1),
+            'per_node' => env('AI_ENGINE_RATE_LIMIT_PER_NODE', true), // Per-node rate limiting
         ],
 
         // Logging & Debugging

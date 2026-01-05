@@ -358,4 +358,64 @@ class AINode extends Model
         $keywords = $this->getKeywords();
         return in_array(strtolower($keyword), array_map('strtolower', $keywords));
     }
+    
+    // ==================== Rate Limiting ====================
+    
+    /**
+     * Check if node is rate limited
+     */
+    public function isRateLimited(): bool
+    {
+        if (!config('ai-engine.nodes.rate_limit.enabled', true)) {
+            return false;
+        }
+        
+        if (!config('ai-engine.nodes.rate_limit.per_node', true)) {
+            return false; // Global rate limiting handled elsewhere
+        }
+        
+        $key = "node_rate_limit:{$this->id}";
+        $limit = config('ai-engine.nodes.rate_limit.max_attempts', 60);
+        
+        return \Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, $limit);
+    }
+    
+    /**
+     * Increment rate limit counter
+     */
+    public function hitRateLimit(): void
+    {
+        if (!config('ai-engine.nodes.rate_limit.per_node', true)) {
+            return;
+        }
+        
+        $key = "node_rate_limit:{$this->id}";
+        $decay = config('ai-engine.nodes.rate_limit.decay_minutes', 1);
+        
+        \Illuminate\Support\Facades\RateLimiter::hit($key, $decay * 60);
+    }
+    
+    /**
+     * Get remaining rate limit attempts
+     */
+    public function remainingRateLimitAttempts(): int
+    {
+        if (!config('ai-engine.nodes.rate_limit.per_node', true)) {
+            return PHP_INT_MAX;
+        }
+        
+        $key = "node_rate_limit:{$this->id}";
+        $limit = config('ai-engine.nodes.rate_limit.max_attempts', 60);
+        
+        return \Illuminate\Support\Facades\RateLimiter::remaining($key, $limit);
+    }
+    
+    /**
+     * Clear rate limit for node
+     */
+    public function clearRateLimit(): void
+    {
+        $key = "node_rate_limit:{$this->id}";
+        \Illuminate\Support\Facades\RateLimiter::clear($key);
+    }
 }

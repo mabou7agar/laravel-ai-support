@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\Node\NodeApiController;
+use LaravelAIEngine\Http\Controllers\Node\NodeDashboardController;
 use LaravelAIEngine\Http\Middleware\NodeAuthMiddleware;
 use LaravelAIEngine\Http\Middleware\NodeRateLimitMiddleware;
 
@@ -10,6 +11,11 @@ Route::prefix('api/ai-engine')->group(function () {
     Route::get('health', [NodeApiController::class, 'health']);
     Route::get('collections', [NodeApiController::class, 'collections']);
     Route::post('register', [NodeApiController::class, 'register']);
+    
+    // Dashboard endpoints (public for monitoring)
+    Route::get('dashboard', [NodeDashboardController::class, 'index']);
+    Route::get('dashboard/node/{slug}', [NodeDashboardController::class, 'node']);
+    Route::get('dashboard/metrics', [NodeDashboardController::class, 'metrics']);
     
     // Protected endpoints (require authentication)
     Route::middleware([

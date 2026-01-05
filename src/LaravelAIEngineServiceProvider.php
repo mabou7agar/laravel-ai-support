@@ -113,6 +113,11 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\ModelResolver();
         });
 
+        // Register Pending Action Service (database-backed action persistence)
+        $this->app->singleton(\LaravelAIEngine\Services\PendingActionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\PendingActionService();
+        });
+
         // Register aliases
         $this->app->alias(AIEngineService::class, 'ai-engine');
         $this->app->alias(CreditManager::class, 'ai-engine.credits');
