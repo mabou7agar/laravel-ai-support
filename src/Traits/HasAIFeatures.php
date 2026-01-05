@@ -9,7 +9,7 @@ namespace LaravelAIEngine\Traits;
  * Just add this one trait to get all AI capabilities.
  * 
  * Includes:
- * - HasAIActions: AI action execution
+ * - HasAIActions: AI action execution (initializeAI, executeAI)
  * - HasAIConfigBuilder: Fluent configuration API
  * - AutoResolvesRelationships: Automatic relationship resolution
  * 
@@ -32,6 +32,7 @@ namespace LaravelAIEngine\Traits;
  */
 trait HasAIFeatures
 {
+    use HasAIActions;
     use HasAIConfigBuilder;
     use AutoResolvesRelationships;
     
@@ -41,8 +42,6 @@ trait HasAIFeatures
     public static function bootHasAIFeatures()
     {
         // Boot individual traits if they have boot methods
-        if (method_exists(static::class, 'bootAutoResolvesRelationships')) {
-            static::bootAutoResolvesRelationships();
-        }
+        // Currently no boot methods needed for included traits
     }
 }

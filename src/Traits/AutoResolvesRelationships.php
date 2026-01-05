@@ -534,38 +534,13 @@ trait AutoResolvesRelationships
     }
     
     /**
-     * Override executeAI to automatically resolve relationships
+     * Resolve AI relationships - called by HasAIActions::executeAI
+     * This method is automatically called when using HasAIFeatures trait
+     * 
+     * @internal This is called automatically, don't call it directly
      */
-    public static function executeAI(string $action, array $data)
+    public static function resolveAIRelationships(array $data): array
     {
-        // Auto-resolve relationships before processing
-        $data = static::autoResolveRelationships($data);
-        
-        // Call parent executeAI if it exists
-        if (method_exists(get_parent_class(), 'executeAI')) {
-            return parent::executeAI($action, $data);
-        }
-        
-        // Default implementation
-        switch ($action) {
-            case 'create':
-                return static::create($data);
-            case 'update':
-                if (isset($data['id'])) {
-                    $model = static::findOrFail($data['id']);
-                    $model->update($data);
-                    return $model;
-                }
-                break;
-            case 'delete':
-                if (isset($data['id'])) {
-                    $model = static::findOrFail($data['id']);
-                    $model->delete();
-                    return ['success' => true, 'message' => 'Deleted successfully'];
-                }
-                break;
-        }
-        
-        throw new \Exception("Unsupported action: {$action}");
+        return static::autoResolveRelationships($data);
     }
 }
