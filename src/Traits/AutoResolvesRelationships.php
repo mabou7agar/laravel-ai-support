@@ -36,7 +36,7 @@ trait AutoResolvesRelationships
         // Resolve top-level relationships
         foreach ($relationships as $field => $relationConfig) {
             // Determine which field in the data to use for resolution
-            // Priority: 1) explicit 'field' mapping, 2) 'search_field' if it exists in data, 3) derive from field name
+            // Priority: 1) explicit 'field' mapping, 2) derive from field name, 3) search_field if it exists
             $searchField = null;
             $searchBy = $relationConfig['search_field'] ?? 'name';
             
@@ -44,13 +44,17 @@ trait AutoResolvesRelationships
             if (isset($relationConfig['field'])) {
                 $searchField = $relationConfig['field'];
             }
-            // Check if search_field exists in data (e.g., 'email' for customer_id)
-            elseif (isset($data[$searchBy]) && is_string($data[$searchBy])) {
-                $searchField = $searchBy;
-            }
-            // Default: derive from field name (customer_id -> customer)
+            // Default: derive from field name (customer_id -> customer, category_id -> category)
             else {
-                $searchField = str_replace('_id', '', $field);
+                $derivedField = str_replace('_id', '', $field);
+                // Use derived field if it exists in data, otherwise try search_field
+                if (isset($data[$derivedField])) {
+                    $searchField = $derivedField;
+                } elseif (isset($data[$searchBy]) && is_string($data[$searchBy])) {
+                    $searchField = $searchBy;
+                } else {
+                    $searchField = $derivedField; // Use derived field as fallback
+                }
             }
             
             // Handle both string values and nested arrays
@@ -108,6 +112,8 @@ trait AutoResolvesRelationships
                         'search_field' => $searchField,
                         'value' => $value,
                         'model' => $relatedModel,
+                        'search_by' => $searchBy,
+                        'all_data_keys' => array_keys($data),
                     ]);
                     
                     // Try to find existing record
@@ -357,7 +363,19 @@ trait AutoResolvesRelationships
             }
         }
         
-        // Try vector search first if model is vectorizable
+        // Try exact match first for each search field
+        foreach ($searchFields as $field) {
+            $result = $modelClass::where($field, $value)->first();
+            if ($result) {
+                Log::channel('ai-engine')->debug('Found via exact DB match', [
+                    'model' => $modelClass,
+                    'field' => $field,
+                ]);
+                return $result;
+            }
+        }
+        
+        // Try vector search if model is vectorizable (for fuzzy matching)
         if (method_exists($modelClass, 'vectorSearch')) {
             try {
                 $results = $modelClass::vectorSearch($value, limit: 1);
@@ -374,18 +392,18 @@ trait AutoResolvesRelationships
                     }
                 }
             } catch (\Exception $e) {
-                Log::channel('ai-engine')->debug('Vector search failed, falling back to DB', [
+                Log::channel('ai-engine')->debug('Vector search failed, falling back to partial match', [
                     'model' => $modelClass,
                     'error' => $e->getMessage(),
                 ]);
             }
         }
         
-        // Try each search field in order
+        // Try partial match as last resort
         foreach ($searchFields as $field) {
             $result = $modelClass::where($field, 'LIKE', "%{$value}%")->first();
             if ($result) {
-                Log::channel('ai-engine')->debug('Found via DB search', [
+                Log::channel('ai-engine')->debug('Found via partial DB match', [
                     'model' => $modelClass,
                     'field' => $field,
                 ]);

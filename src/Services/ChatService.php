@@ -188,6 +188,17 @@ class ChatService
 
             // Handle different intents
             switch ($intentAnalysis['intent']) {
+                case 'new_request':
+                case 'create':
+                    // Clear any existing pending action when user makes a new request
+                    if ($cachedActionData) {
+                        Log::channel('ai-engine')->info('New request detected, clearing old pending action', [
+                            'old_action' => $cachedActionData['label'],
+                        ]);
+                        $this->pendingActionService?->delete($sessionId);
+                    }
+                    break;
+                    
                 case 'confirm':
                     if ($cachedActionData) {
                         Log::channel('ai-engine')->info('Confirmation detected with pending action, executing directly');
@@ -1985,29 +1996,67 @@ class ChatService
             ]);
             
             // Call remote node's action execution endpoint
+            // ActionExecutionService expects executor in data for routing
             $result = $remoteActionService->executeOn($nodeSlug, 'model.create', [
+                'executor' => 'model.create',
                 'model_class' => $modelClass,
                 'params' => array_merge($params, ['user_id' => $userId]),
             ]);
             
-            if ($result['success'] ?? false) {
+            // Extract the actual result from the response
+            // RemoteActionService returns: {node, node_name, status_code, data: {success, action_type, result}}
+            $apiResponse = $result['data'] ?? [];
+            $actionResult = $apiResponse['result'] ?? [];
+            
+            if (($actionResult['success'] ?? false) || ($result['status_code'] ?? 0) === 200) {
                 $modelName = class_basename($modelClass);
+                $productData = $actionResult['data'] ?? null;
                 
                 Log::channel('ai-engine')->info('Remote action executed successfully', [
                     'model' => $modelName,
                     'node' => $nodeSlug,
+                    'result' => $actionResult,
                 ]);
+                
+                // Build detailed success message with product summary
+                $message = $actionResult['message'] ?? "✅ {$modelName} created successfully!";
+                
+                if ($productData && is_array($productData)) {
+                    $message .= "\n\n**Created {$modelName} Summary:**\n";
+                    
+                    // Add product details
+                    if (isset($productData['name'])) {
+                        $message .= "- **Name:** {$productData['name']}\n";
+                    }
+                    if (isset($productData['sale_price'])) {
+                        $message .= "- **Price:** \${$productData['sale_price']}\n";
+                    }
+                    if (isset($productData['type'])) {
+                        $message .= "- **Type:** " . ucfirst($productData['type']) . "\n";
+                    }
+                    if (isset($productData['sku']) && !empty($productData['sku'])) {
+                        $message .= "- **SKU:** {$productData['sku']}\n";
+                    }
+                    if (isset($productData['id'])) {
+                        $message .= "- **ID:** {$productData['id']}\n";
+                    }
+                    // Only show category if it exists and is not the same as product name
+                    if (isset($productData['category']['name']) && 
+                        $productData['category']['name'] !== $productData['name']) {
+                        $message .= "- **Category:** {$productData['category']['name']}\n";
+                    }
+                }
                 
                 return [
                     'success' => true,
-                    'message' => "✅ {$modelName} created successfully on remote node!",
-                    'data' => $result['data'] ?? null,
+                    'message' => $message,
+                    'data' => $productData,
                 ];
             }
             
             return [
                 'success' => false,
-                'error' => $result['error'] ?? 'Remote action failed',
+                'error' => $actionResult['error'] ?? $apiResponse['error'] ?? 'Remote action failed',
                 'data' => $result
             ];
             

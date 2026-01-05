@@ -64,6 +64,16 @@ class PendingAction extends Model
             ->latest()
             ->first();
 
+        // If action_id changed, delete old action and create new one
+        if ($existing && $existing->action_id !== $data['action_id']) {
+            \Log::channel('ai-engine')->info('Action changed, replacing old pending action', [
+                'old_action' => $existing->label,
+                'new_action' => $data['label'] ?? 'unknown',
+            ]);
+            $existing->delete();
+            $existing = null;
+        }
+
         if ($existing) {
             $existing->update($data);
             return $existing;

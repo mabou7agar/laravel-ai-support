@@ -227,10 +227,14 @@ class RemoteActionService
     {
         $startTime = microtime(true);
         
+        // Format payload for ActionExecutionController
+        // Controller expects: action_type, data, session_id, user_id
         $response = NodeHttpClient::makeForAction($node)
             ->post($node->getApiUrl('actions'), [
-                'action' => $action,
-                'params' => $params,
+                'action_type' => $action,
+                'data' => $params,
+                'session_id' => $params['session_id'] ?? null,
+                'user_id' => $params['user_id'] ?? null,
             ]);
         
         $duration = (int) ((microtime(true) - $startTime) * 1000);

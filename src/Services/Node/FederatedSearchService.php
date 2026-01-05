@@ -2,6 +2,7 @@
 
 namespace LaravelAIEngine\Services\Node;
 
+use Illuminate\Support\Str;
 use LaravelAIEngine\Models\AINode;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
 use Illuminate\Support\Facades\Http;
@@ -57,7 +58,7 @@ class FederatedSearchService
             // Search remote nodes in parallel
             $remoteResults = $this->searchRemoteNodes($nodes, $query, $limit, $options);
 
-            \Log::debug('🔍 Remote search results', [
+            Log::debug('🔍 Remote search results', [
                 'remote_count' => count($remoteResults),
                 'remote_results' => $remoteResults,
             ]);
@@ -202,7 +203,7 @@ class FederatedSearchService
                 ]);
                 continue;
             }
-            
+
             if ($node->isRateLimited()) {
                 Log::channel('ai-engine')->debug('Skipping node - rate limited', [
                     'node_slug' => $node->slug,
@@ -210,7 +211,7 @@ class FederatedSearchService
                 ]);
                 continue;
             }
-            
+
             $nodesToSearch[$node->slug] = $node;
         }
 
@@ -218,7 +219,7 @@ class FederatedSearchService
             return [];
         }
 
-        $traceId = \Str::random(16);
+        $traceId = Str::random(16);
 
         // Increment active connections for all nodes
         foreach ($nodesToSearch as $node) {
@@ -454,15 +455,15 @@ class FederatedSearchService
     {
         $startTime = microtime(true);
         $aggregateData = [];
-        
+
         try {
             // Get nodes to query (pass null to get all active nodes)
             $nodes = $this->getSearchableNodes(null);
-            
+
             // Get local aggregate data first
             $localAggregate = $this->getLocalAggregateData($collections, $userId);
             $aggregateData = $localAggregate;
-            
+
             // Get remote aggregate data from each node
             foreach ($nodes as $node) {
                 try {
@@ -472,11 +473,11 @@ class FederatedSearchService
                             'collections' => $collections,
                             'user_id' => $userId,
                         ]);
-                    
+
                     if ($response->successful()) {
                         $responseData = $response->json();
                         $remoteData = $responseData['aggregate_data'] ?? [];
-                        
+
                         // Merge remote data with local data
                         foreach ($remoteData as $collection => $stats) {
                             if (!isset($aggregateData[$collection])) {
@@ -491,7 +492,7 @@ class FederatedSearchService
                                 $aggregateData[$collection]['source'] = 'federated';
                             }
                         }
-                        
+
                         Log::channel('ai-engine')->info('Fetched aggregate from remote node', [
                             'node' => $node->name,
                             'collections_count' => count($remoteData),
@@ -504,43 +505,43 @@ class FederatedSearchService
                     ]);
                 }
             }
-            
+
             $duration = (microtime(true) - $startTime) * 1000;
-            
+
             Log::channel('ai-engine')->info('Federated aggregate completed', [
                 'collections_count' => count($aggregateData),
                 'duration_ms' => round($duration, 2),
             ]);
-            
+
             return $aggregateData;
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Federated aggregate failed', [
                 'error' => $e->getMessage(),
             ]);
-            
+
             // Fallback to local only
             return $this->getLocalAggregateData($collections, $userId);
         }
     }
-    
+
     /**
      * Get local aggregate data only
      */
     protected function getLocalAggregateData(array $collections, $userId = null): array
     {
         $aggregateData = [];
-        
+
         foreach ($collections as $collection) {
             if (!class_exists($collection)) {
                 continue;
             }
-            
+
             try {
                 $instance = new $collection();
                 $displayName = class_basename($collection);
                 $description = '';
-                
+
                 // Get display name and description
                 if (method_exists($instance, 'getRAGDisplayName')) {
                     $displayName = $instance->getRAGDisplayName();
@@ -548,16 +549,16 @@ class FederatedSearchService
                 if (method_exists($instance, 'getRAGDescription')) {
                     $description = $instance->getRAGDescription();
                 }
-                
+
                 // Build filters for vector database query
                 $filters = [];
                 if ($userId !== null) {
                     $filters['user_id'] = $userId;
                 }
-                
+
                 // Get count from vector database
                 $vectorCount = $this->localSearch->getIndexedCountWithFilters($collection, $filters);
-                
+
                 $aggregateData[$collection] = [
                     'count' => $vectorCount,
                     'indexed_count' => $vectorCount,
@@ -565,7 +566,7 @@ class FederatedSearchService
                     'description' => $description,
                     'source' => 'local',
                 ];
-                
+
             } catch (\Exception $e) {
                 Log::channel('ai-engine')->warning('Failed to get local aggregate for collection', [
                     'collection' => $collection,
@@ -573,7 +574,7 @@ class FederatedSearchService
                 ]);
             }
         }
-        
+
         return $aggregateData;
     }
 

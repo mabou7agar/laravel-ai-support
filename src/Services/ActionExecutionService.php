@@ -28,6 +28,15 @@ class ActionExecutionService
      */
     protected function registerExecutors(): void
     {
+        // Model executors
+        $this->executors['model.create'] = function (array $params, $userId) {
+            return $this->executeModelCreate($params, $userId);
+        };
+        
+        $this->executors['model.dynamic'] = function (array $params, $userId) {
+            return $this->executeModelCreate($params, $userId);
+        };
+
         // Email executors
         $this->executors['email.reply'] = function (array $params, $userId) {
             return $this->executeEmailReply($params, $userId);
@@ -193,7 +202,8 @@ class ActionExecutionService
                 }
             }
             
-            return $executor($params, $userId, $sessionId);
+            // Pass full data array to executor (includes model_class, executor, etc.)
+            return $executor($data, $userId, $sessionId);
         }
         
         // Legacy handler support
@@ -1187,6 +1197,62 @@ class ActionExecutionService
         }
 
         return ['success' => false, 'error' => 'AI service not available'];
+    }
+
+    /**
+     * Execute model create action
+     * 
+     * @param array $data Full action data including model_class and params
+     * @param mixed $userId User ID
+     * @return array Execution result
+     */
+    protected function executeModelCreate(array $data, $userId): array
+    {
+        // Model class can be at root level or in params
+        $modelClass = $data['model_class'] ?? $data['params']['model_class'] ?? null;
+        $modelParams = $data['params'] ?? $data;
+        
+        // Remove model_class from params if it exists there
+        unset($modelParams['model_class']);
+        
+        if (!$modelClass) {
+            return ['success' => false, 'error' => 'Model class not specified'];
+        }
+        
+        if (!class_exists($modelClass)) {
+            return ['success' => false, 'error' => "Model class not found: {$modelClass}"];
+        }
+        
+        // Check if model has executeAI method
+        if (!method_exists($modelClass, 'executeAI')) {
+            return ['success' => false, 'error' => 'Model does not support AI actions'];
+        }
+        
+        try {
+            Log::info('Executing model create', [
+                'model_class' => $modelClass,
+                'params' => array_keys($modelParams),
+            ]);
+            
+            // Execute the AI action on the model
+            $result = $modelClass::executeAI('create', $modelParams);
+            
+            return [
+                'success' => $result['success'] ?? false,
+                'data' => $result['data'] ?? null,
+                'message' => $result['message'] ?? 'Model created successfully',
+            ];
+        } catch (\Exception $e) {
+            Log::error('Model create execution failed', [
+                'model_class' => $modelClass,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => 'Execution failed: ' . $e->getMessage(),
+            ];
+        }
     }
 
     /**

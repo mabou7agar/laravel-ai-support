@@ -158,7 +158,17 @@ class AINode extends Model
      */
     public function getApiUrl(string $endpoint = ''): string
     {
-        return rtrim($this->url, '/') . '/api/ai-engine/' . ltrim($endpoint, '/');
+        // Map endpoint aliases to actual package routes
+        $endpointMap = [
+            'actions' => '/api/v1/actions/execute',
+            'actions/execute' => '/api/v1/actions/execute',
+            'model-actions' => '/api/v1/modules/discover',
+        ];
+        
+        // Use mapped endpoint if available, otherwise construct URL
+        $path = $endpointMap[$endpoint] ?? '/api/ai-engine/' . ltrim($endpoint, '/');
+        
+        return rtrim($this->url, '/') . $path;
     }
     
     /**
