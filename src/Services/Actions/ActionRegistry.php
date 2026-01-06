@@ -170,6 +170,7 @@ class ActionRegistry
                                         'required_params' => array_merge($format['required'] ?? [], $criticalFields),
                                         'optional_params' => $format['optional'] ?? [],
                                         'parameters' => $format,
+                                        'ai_config' => $format, // Store full AI config for optional field suggestions
                                         'triggers' => $format['triggers'] ?? $this->generateTriggersForModel($modelName),
                                         'is_remote' => true,
                                         'node_url' => $node->url,

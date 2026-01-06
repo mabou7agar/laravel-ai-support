@@ -27,6 +27,7 @@ class PendingActionService
             'executor' => $action->data['executor'] ?? null,
             'model_class' => $action->data['model_class'] ?? null,
             'node_slug' => $action->data['node_slug'] ?? null,
+            'ai_config' => $action->data['ai_config'] ?? null, // Store AI config for remote models
         ];
 
         Log::channel('ai-engine')->info('Storing pending action in database', [
@@ -73,6 +74,7 @@ class PendingActionService
                 'executor' => $pendingAction->executor,
                 'model_class' => $pendingAction->model_class,
                 'node_slug' => $pendingAction->node_slug,
+                'ai_config' => $pendingAction->ai_config ?? null, // Include AI config for remote models
             ]
         );
     }

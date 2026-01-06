@@ -176,15 +176,32 @@ class ChatService
                 'is_incomplete' => !empty($pendingAction->data['missing_fields'] ?? []),
             ] : null;
 
-            // Analyze intent with context
+            // Analyze intent with context (without actions for now - AI engine issue)
             $intentAnalysis = $this->analyzeMessageIntent($processedMessage, $cachedActionData);
 
             Log::channel('ai-engine')->info('Intent analysis completed', [
                 'intent' => $intentAnalysis['intent'],
                 'confidence' => $intentAnalysis['confidence'],
                 'has_pending_action' => $cachedActionData !== null,
-                'context' => $intentAnalysis['context_enhancement']
+                'context' => $intentAnalysis['context_enhancement'],
+                'has_ai_error' => isset($intentAnalysis['ai_error']),
             ]);
+            
+            // If intent analysis failed due to AI error, show error to user
+            if (isset($intentAnalysis['ai_error'])) {
+                return new AIResponse(
+                    content: "⚠️ " . $intentAnalysis['ai_error'],
+                    engine: $engine,
+                    model: $model,
+                    metadata: [
+                        'ai_error' => true,
+                        'error_message' => $intentAnalysis['ai_error'],
+                        'session_id' => $sessionId,
+                    ],
+                    success: true, // Still successful from API perspective
+                    conversationId: $aiRequest->getConversationId()
+                );
+            }
 
             // Handle different intents
             switch ($intentAnalysis['intent']) {
@@ -199,6 +216,75 @@ class ChatService
                     }
                     break;
                     
+                case 'use_suggestions':
+                    // User wants to use AI-generated suggestions for optional fields
+                    if ($cachedActionData) {
+                        Log::channel('ai-engine')->info('User wants to use AI suggestions', [
+                            'action' => $cachedActionData['label'],
+                        ]);
+                        
+                        // Get existing params
+                        $existingParams = $cachedActionData['data']['params'] ?? [];
+                        
+                        // Generate AI suggestions for optional fields
+                        $tempAction = (object)[
+                            'data' => $cachedActionData['data'],
+                        ];
+                        
+                        $optionalParams = $this->getOptionalParamsForAction($tempAction, $existingParams);
+                        $suggestions = [];
+                        
+                        if (!empty($optionalParams)) {
+                            $suggestions = $this->generateOptionalParamSuggestions(
+                                $existingParams,
+                                $optionalParams
+                            );
+                        }
+                        
+                        if (empty($suggestions)) {
+                            Log::channel('ai-engine')->warning('No AI suggestions available to apply');
+                            return new AIResponse(
+                                content: "I don't have any AI suggestions to apply. The action already has all available information.\n\nReply 'yes' to proceed with the current information.",
+                                engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
+                                model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                                metadata: ['no_suggestions' => true],
+                                success: true
+                            );
+                        }
+                        
+                        // Merge suggestions with existing params
+                        $mergedParams = array_merge($existingParams, $suggestions);
+                        
+                        $cachedActionData['data']['params'] = $mergedParams;
+                        $this->pendingActionService?->updateParams($sessionId, $mergedParams);
+                        
+                        Log::channel('ai-engine')->info('Applied AI suggestions to action', [
+                            'suggestions_count' => count($suggestions),
+                            'suggestion_fields' => array_keys($suggestions),
+                        ]);
+                        
+                        // Present updated summary for final confirmation
+                        $modelName = class_basename($cachedActionData['data']['model_class'] ?? '');
+                        $description = "**✅ Applied AI Suggestions to {$modelName}**\n\n";
+                        $description .= "**Complete Information:**\n\n";
+                        
+                        foreach ($mergedParams as $key => $value) {
+                            $formattedKey = ucfirst(str_replace('_', ' ', $key));
+                            $description .= "- **{$formattedKey}:** {$value}\n";
+                        }
+                        
+                        $description .= "\n**Would you like to proceed?** Reply 'yes' to confirm.";
+                        
+                        return new AIResponse(
+                            content: $description,
+                            engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
+                            model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                            metadata: ['suggestions_applied' => true, 'pending_action' => $cachedActionData],
+                            success: true
+                        );
+                    }
+                    break;
+                
                 case 'confirm':
                     if ($cachedActionData) {
                         Log::channel('ai-engine')->info('Confirmation detected with pending action, executing directly');
@@ -281,6 +367,70 @@ class ChatService
                             'new_params' => $cachedActionData['data']['params']
                         ]);
 
+                        // Check if action is now complete and should show AI suggestions
+                        $isNowComplete = empty($cachedActionData['missing_fields'] ?? []);
+                        
+                        if ($isNowComplete) {
+                            // Get optional parameters for AI suggestions
+                            $params = $cachedActionData['data']['params'] ?? [];
+                            $modelClass = $cachedActionData['data']['model_class'] ?? '';
+                            $modelName = class_basename($modelClass);
+                            
+                            $tempAction = (object)['data' => $cachedActionData['data']];
+                            $optionalParams = $this->getOptionalParamsForAction($tempAction);
+                            $missingOptional = array_filter($optionalParams, fn($param) => !isset($params[$param]));
+                            
+                            Log::channel('ai-engine')->info('Checking for optional params after modify', [
+                                'model_class' => $modelClass,
+                                'optional_params' => $optionalParams,
+                                'missing_optional' => $missingOptional,
+                            ]);
+                            
+                            // Generate AI suggestions for missing optional fields
+                            $suggestions = [];
+                            if (!empty($missingOptional) && $this->aiEngineService) {
+                                $suggestions = $this->generateOptionalParamSuggestions($params, $missingOptional);
+                                Log::channel('ai-engine')->info('Generated AI suggestions in modify case', [
+                                    'suggestions' => $suggestions,
+                                ]);
+                            }
+                            
+                            $description = "**Confirm {$modelName} Creation**\n\n";
+                            $description .= "**Summary of Information:**\n\n";
+                            
+                            foreach ($params as $key => $value) {
+                                if (is_array($value)) {
+                                    $description .= "- **" . ucfirst(str_replace('_', ' ', $key)) . ":** " . json_encode($value) . "\n";
+                                } else {
+                                    $description .= "- **" . ucfirst(str_replace('_', ' ', $key)) . ":** {$value}\n";
+                                }
+                            }
+                            
+                            // Add AI suggestions if available
+                            if (!empty($suggestions)) {
+                                $description .= "\n**AI Suggestions for Optional Fields:**\n\n";
+                                foreach ($suggestions as $field => $suggestedValue) {
+                                    $fieldLabel = ucfirst(str_replace('_', ' ', $field));
+                                    $description .= "- **{$fieldLabel}:** {$suggestedValue}\n";
+                                }
+                                $description .= "\n*You can add these by saying 'use suggestions' or add your own values.*\n";
+                            }
+                            
+                            $description .= "\n**Please review the information above.**\n";
+                            $description .= "Reply 'yes' to create, or tell me what you'd like to change.";
+                            
+                            return new AIResponse(
+                                content: $description,
+                                engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
+                                model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                                metadata: [
+                                    'pending_action' => $cachedActionData,
+                                    'ai_suggestions' => $suggestions,
+                                ],
+                                success: true
+                            );
+                        }
+
                         // Generate updated summary and return immediately
                         $actionType = $cachedActionData['type'] ?? 'button';
                         if (is_string($actionType)) {
@@ -314,6 +464,9 @@ class ChatService
                             'is_incomplete' => $cachedActionData['is_incomplete'] ?? false,
                         ]);
 
+                        $stillMissing = []; // Initialize for scope
+                        $wasIncomplete = $cachedActionData['is_incomplete'] ?? false;
+                        
                         // If this is an incomplete action, merge data with existing params
                         if ($cachedActionData['is_incomplete'] ?? false) {
                             $existingParams = $cachedActionData['data']['params'] ?? [];
@@ -434,19 +587,102 @@ class ChatService
                                 'is_now_complete' => empty($stillMissing),
                             ]);
                         } else {
-                            // For complete actions, merge with suggested params
-                            if (!isset($cachedActionData['suggested_params'])) {
-                                $cachedActionData['suggested_params'] = [];
-                            }
-                            $cachedActionData['suggested_params'] = array_merge(
-                                $cachedActionData['suggested_params'],
-                                $intentAnalysis['extracted_data']
-                            );
+                            // For complete actions, merge additional data directly with params
+                            $existingParams = $cachedActionData['data']['params'] ?? [];
+                            $newData = $intentAnalysis['extracted_data'];
+                            $mergedParams = array_merge($existingParams, $newData);
+                            
+                            $cachedActionData['data']['params'] = $mergedParams;
+                            
+                            Log::channel('ai-engine')->info('Merged additional data for complete action', [
+                                'existing_params' => array_keys($existingParams),
+                                'new_data' => array_keys($newData),
+                                'merged_params' => array_keys($mergedParams),
+                            ]);
                         }
 
-                        // Update pending action in database
+                        // Update pending action in database with merged params
                         if ($this->pendingActionService && isset($cachedActionData)) {
                             $this->pendingActionService->updateParams($sessionId, $cachedActionData['data']['params'] ?? []);
+                        }
+                        
+                        Log::channel('ai-engine')->debug('Checking if action is complete for early return', [
+                            'stillMissing' => $stillMissing,
+                            'isEmpty' => empty($stillMissing),
+                            'wasIncomplete' => $wasIncomplete,
+                            'isIncomplete' => $cachedActionData['is_incomplete'] ?? 'not set',
+                        ]);
+                        
+                        // If action was incomplete and is now complete, present it for confirmation with suggestions
+                        if ($wasIncomplete && empty($stillMissing)) {
+                            Log::channel('ai-engine')->info('Presenting completed action for confirmation', [
+                                'action' => $cachedActionData['label'] ?? 'unknown',
+                                'params' => array_keys($cachedActionData['data']['params'] ?? []),
+                            ]);
+                            
+                            $params = $cachedActionData['data']['params'] ?? [];
+                            $modelClass = $cachedActionData['data']['model_class'] ?? '';
+                            $modelName = class_basename($modelClass);
+                            
+                            // Get optional parameters that weren't provided
+                            // Create a temporary action object from cached data for getOptionalParamsForAction
+                            $tempAction = (object)['data' => $cachedActionData['data']];
+                            $optionalParams = $this->getOptionalParamsForAction($tempAction);
+                            $missingOptional = array_filter($optionalParams, fn($param) => !isset($params[$param]));
+                            
+                            Log::channel('ai-engine')->info('Checking for optional params to suggest', [
+                                'model_class' => $modelClass,
+                                'optional_params' => $optionalParams,
+                                'missing_optional' => $missingOptional,
+                                'current_params' => array_keys($params),
+                            ]);
+                            
+                            // Generate AI suggestions for missing optional fields
+                            $suggestions = [];
+                            if (!empty($missingOptional) && $this->aiEngineService) {
+                                $suggestions = $this->generateOptionalParamSuggestions($params, $missingOptional);
+                                Log::channel('ai-engine')->info('Generated AI suggestions', [
+                                    'suggestions' => $suggestions,
+                                ]);
+                            }
+                            
+                            $description = "**Confirm {$modelName} Creation**\n\n";
+                            $description .= "**Summary of Information:**\n\n";
+                            
+                            foreach ($params as $key => $value) {
+                                if (is_array($value)) {
+                                    $description .= "- **" . ucfirst(str_replace('_', ' ', $key)) . ":** " . json_encode($value) . "\n";
+                                } else {
+                                    $description .= "- **" . ucfirst(str_replace('_', ' ', $key)) . ":** {$value}\n";
+                                }
+                            }
+                            
+                            // Add AI suggestions for optional fields if available
+                            if (!empty($suggestions)) {
+                                $description .= "\n**AI Suggestions for Optional Fields:**\n\n";
+                                foreach ($suggestions as $field => $suggestedValue) {
+                                    $fieldLabel = ucfirst(str_replace('_', ' ', $field));
+                                    $description .= "- **{$fieldLabel}:** {$suggestedValue}\n";
+                                }
+                                $description .= "\n*You can add these by saying 'use suggestions' or add your own values.*\n";
+                            }
+                            
+                            $description .= "\n**Please review the information above.**\n";
+                            $description .= "Reply 'yes' to create, or tell me what you'd like to change.\n\n";
+                            $description .= "**Would you like to proceed with this action?** Reply with 'yes' to confirm.";
+                            
+                            return new AIResponse(
+                                content: $description,
+                                engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
+                                model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                                metadata: [
+                                    'action_completed' => true,
+                                    'pending_action' => $cachedActionData,
+                                    'intent_analysis' => $intentAnalysis,
+                                    'ai_suggestions' => $suggestions
+                                ],
+                                success: true
+                            );
                         }
                     }
                     break;
@@ -553,26 +789,44 @@ class ChatService
                     'session_id' => $sessionId,
                 ];
 
-                Log::channel('ai-engine')->info('Generating actions for context', [
-                    'message' => $processedMessage,
-                    'has_manager' => $this->actionManager !== null,
-                    'conversation_history_count' => count($conversationHistory),
-                    'intent' => $intentAnalysis['intent'] ?? null,
-                ]);
+                // Skip action generation if user is providing data for existing incomplete action
+                $skipActionGeneration = false;
+                if (isset($intentAnalysis['intent']) && $intentAnalysis['intent'] === 'provide_data') {
+                    $pendingAction = $this->pendingActionService?->get($sessionId);
+                    if ($pendingAction) {
+                        $skipActionGeneration = true;
+                        Log::channel('ai-engine')->info('Skipping action generation - user providing data for pending action', [
+                            'pending_action' => $pendingAction->label,
+                            'intent' => 'provide_data',
+                        ]);
+                    }
+                }
 
-                $actions = $this->actionManager->generateActionsForContext(
-                    $processedMessage,
-                    $context,
-                    $intentAnalysis
-                );
+                if (!$skipActionGeneration) {
+                    Log::channel('ai-engine')->info('Generating actions for context', [
+                        'message' => $processedMessage,
+                        'has_manager' => $this->actionManager !== null,
+                        'conversation_history_count' => count($conversationHistory),
+                        'intent' => $intentAnalysis['intent'] ?? null,
+                    ]);
 
-                Log::channel('ai-engine')->info('Actions generated', [
-                    'count' => count($actions),
-                    'actions' => array_map(fn($a) => $a->label, $actions),
-                ]);
+                    $actions = $this->actionManager->generateActionsForContext(
+                        $processedMessage,
+                        $context,
+                        $intentAnalysis
+                    );
 
-                // Store actions in smartActions variable for consistency
-                $smartActions = $actions;
+                    Log::channel('ai-engine')->info('Actions generated', [
+                        'count' => count($actions),
+                        'actions' => array_map(fn($a) => $a->label, $actions),
+                    ]);
+
+                    // Store actions in smartActions variable for consistency
+                    $smartActions = $actions;
+                } else {
+                    // No new actions, will use pending action
+                    $smartActions = [];
+                }
 
                 // Add actions to metadata
                 $metadata = array_merge($context, ['smart_actions' => $smartActions]);
@@ -707,30 +961,71 @@ class ChatService
                 }
 
                 if (!empty($smartActions)) {
-                    // Select the most relevant action based on completeness and query match
-                    // Prefer incomplete actions to complete ones (ask for missing info first)
-                    // Then prefer complete actions that match the user's intent
-                    // Find the action to cache/present (prioritize ready actions first)
-                    $readyAction = null;
-                    $incompleteAction = null;
+                    // PRIORITY 1: Check if AI intent analysis suggested a specific action
+                    $suggestedActionId = $intentAnalysis['suggested_action_id'] ?? null;
+                    $aiSuggestedAction = null;
                     
-                    foreach ($smartActions as $action) {
-                        $isReady = $action->data['ready_to_execute'] ?? false;
-                        $hasMissing = !empty($action->data['missing_fields'] ?? []);
-                        
-                        // Prioritize ready actions (can be executed immediately)
-                        if ($isReady && !$readyAction) {
-                            $readyAction = $action;
-                        }
-                        
-                        // Track incomplete actions as fallback
-                        if ($hasMissing && !$incompleteAction) {
-                            $incompleteAction = $action;
+                    if ($suggestedActionId) {
+                        // Find the action that matches AI's suggestion
+                        foreach ($smartActions as $action) {
+                            $actionId = $action->data['action_id'] ?? '';
+                            // Match by action_id (with or without unique suffix)
+                            if ($actionId === $suggestedActionId || str_starts_with($actionId, $suggestedActionId . '_')) {
+                                $aiSuggestedAction = $action;
+                                Log::channel('ai-engine')->info('AI suggested action found', [
+                                    'suggested_id' => $suggestedActionId,
+                                    'matched_action' => $actionId,
+                                    'label' => $action->label,
+                                ]);
+                                break;
+                            }
                         }
                     }
                     
-                    // Use ready action first (best user experience), then incomplete, then first
-                    $actionToCache = $readyAction ?? $incompleteAction ?? $smartActions[0];
+                    // PRIORITY 2: If no AI suggestion, sort by confidence and keyword relevance
+                    if (!$aiSuggestedAction) {
+                        $messageLower = strtolower($processedMessage);
+                        
+                        usort($smartActions, function($a, $b) use ($messageLower) {
+                            $confA = $a->data['confidence'] ?? 0;
+                            $confB = $b->data['confidence'] ?? 0;
+                            
+                            // If confidence is equal, prioritize by keyword match
+                            if (abs($confA - $confB) < 0.01) {
+                                // Extract model name from action
+                                $modelA = class_basename($a->data['model_class'] ?? '');
+                                $modelB = class_basename($b->data['model_class'] ?? '');
+                                
+                                // Check if message contains model keywords
+                                $matchA = str_contains($messageLower, strtolower($modelA)) ? 1 : 0;
+                                $matchB = str_contains($messageLower, strtolower($modelB)) ? 1 : 0;
+                                
+                                // Also check for common variations
+                                if (!$matchA && str_contains($modelA, 'Product')) {
+                                    $matchA = str_contains($messageLower, 'product') ? 1 : 0;
+                                }
+                                if (!$matchB && str_contains($modelB, 'Product')) {
+                                    $matchB = str_contains($messageLower, 'product') ? 1 : 0;
+                                }
+                                
+                                if ($matchA !== $matchB) {
+                                    return $matchB <=> $matchA; // Higher match first
+                                }
+                            }
+                            
+                            return $confB <=> $confA; // Descending order by confidence
+                        });
+                    }
+                    
+                    // Select the action to cache
+                    if ($aiSuggestedAction) {
+                        // Use AI's suggestion (highest priority)
+                        $actionToCache = $aiSuggestedAction;
+                    } else {
+                        // Fallback: Use first action (already sorted by confidence and keyword match)
+                        // The first action is the most relevant based on our sorting logic
+                        $actionToCache = $smartActions[0];
+                    }
                     
                     $isIncomplete = !($actionToCache->data['ready_to_execute'] ?? true);
                     $missingFields = $actionToCache->data['missing_fields'] ?? [];
@@ -988,6 +1283,8 @@ class ChatService
     protected function getSystemPrompt(bool $useActions, $userId = null, ?array $intentAnalysis = null): string
     {
         $prompt = "You are a helpful AI assistant. Provide clear, accurate, and helpful responses to user questions.";
+        $prompt .= "\n\nCRITICAL: When users provide specific names, values, or details in their request, you MUST use EXACTLY what they specified.";
+        $prompt .= "\nNEVER substitute, change, or replace user-provided values with different ones from your training data or examples.";
 
         // Enhance prompt with intent analysis context
         if ($intentAnalysis) {
@@ -1027,13 +1324,16 @@ class ChatService
                     $prompt .= "\nIMPORTANT: User wants to MODIFY existing parameters. Acknowledge the changes and show updated information.";
                     break;
                 case 'provide_data':
-                    $prompt .= "\nIMPORTANT: User is providing ADDITIONAL DATA for optional fields. Acknowledge receipt and ask if they want to proceed.";
+                    $prompt .= "\nIMPORTANT: User is providing ADDITIONAL DATA. Acknowledge receipt, show ALL collected information, and ask if they want to proceed.";
+                    $prompt .= "\nCRITICAL: Do NOT ask for more optional fields. Only show what has been collected and ask for confirmation.";
                     break;
                 case 'question':
                     $prompt .= "\nIMPORTANT: User has a QUESTION. Provide clear explanation and ask if they're ready to proceed after answering.";
                     break;
                 case 'new_request':
                     $prompt .= "\nIMPORTANT: This is a NEW REQUEST. Focus on understanding and extracting parameters for the new action.";
+                    $prompt .= "\nCRITICAL: Do NOT reuse parameters from previous requests in this conversation. Each new request requires its own fresh parameters.";
+                    $prompt .= "\nIf the user hasn't provided REQUIRED fields, ASK for them. Do NOT ask for optional fields like description, quantity, or category.";
                     break;
             }
         }
@@ -1277,16 +1577,184 @@ class ChatService
     /**
      * Get optional parameters for an action
      */
-    protected function getOptionalParamsForAction(\LaravelAIEngine\DTOs\InteractiveAction $action): array
+    protected function getOptionalParamsForAction($action): array
     {
-        // Get action definition from ActionManager to find optional params
-        $actionId = $action->data['action'] ?? null;
-        if (!$actionId || !$this->actionManager) {
+        Log::channel('ai-engine')->debug('getOptionalParamsForAction called', [
+            'has_action' => !is_null($action),
+            'action_type' => gettype($action),
+        ]);
+        
+        if (!$action) {
+            Log::channel('ai-engine')->debug('No action provided, returning empty');
             return [];
         }
-
-        // Optional params should be defined in model's AI config, not hardcoded here
-        return [];
+        
+        $modelClass = $action->data['model_class'] ?? null;
+        
+        Log::channel('ai-engine')->debug('Extracted model class', [
+            'model_class' => $modelClass,
+            'class_exists' => $modelClass ? class_exists($modelClass) : false,
+        ]);
+        
+        if (!$modelClass) {
+            Log::channel('ai-engine')->debug('No model class provided, returning empty');
+            return [];
+        }
+        
+        // For remote models that don't exist in this context, check if AI config is in action data
+        if (!class_exists($modelClass)) {
+            Log::channel('ai-engine')->debug('Model class not found locally (likely remote model)', [
+                'model_class' => $modelClass,
+            ]);
+            
+            // Check if AI config was stored in action data
+            $aiConfig = $action->data['ai_config'] ?? null;
+            if ($aiConfig && !empty($aiConfig['fields'])) {
+                $currentParams = $action->data['params'] ?? [];
+                $optionalFields = [];
+                
+                foreach ($aiConfig['fields'] as $fieldName => $fieldConfig) {
+                    $isRequired = $fieldConfig['required'] ?? false;
+                    $isAlreadyProvided = isset($currentParams[$fieldName]);
+                    $isRelationField = $this->isRelationshipField($fieldName, $fieldConfig);
+                    
+                    // Skip required fields, already provided fields, and relationship ID fields
+                    if (!$isRequired && !$isAlreadyProvided && !$isRelationField) {
+                        $optionalFields[] = $fieldName;
+                    }
+                }
+                
+                Log::channel('ai-engine')->debug('Got optional params from stored AI config', [
+                    'model_class' => $modelClass,
+                    'optional_fields' => $optionalFields,
+                ]);
+                
+                return $optionalFields;
+            }
+            
+            // No AI config available for remote model
+            Log::channel('ai-engine')->debug('No AI config available for remote model, returning empty');
+            return [];
+        }
+        
+        try {
+            // Get the action's required and current parameters
+            $requiredFields = $action->data['missing_fields'] ?? [];
+            $currentParams = $action->data['params'] ?? [];
+            
+            Log::channel('ai-engine')->debug('Action parameters', [
+                'required_fields' => $requiredFields,
+                'current_params' => array_keys($currentParams),
+            ]);
+            
+            // PRIORITY 1: Try to get from model's initializeAI() method
+            $hasMethod = method_exists($modelClass, 'initializeAI');
+            Log::channel('ai-engine')->debug('Checking for initializeAI method', [
+                'model_class' => $modelClass,
+                'has_method' => $hasMethod,
+            ]);
+            
+            if ($hasMethod) {
+                try {
+                    $model = new $modelClass();
+                    $aiConfig = $model->initializeAI();
+                    
+                    Log::channel('ai-engine')->debug('initializeAI() called', [
+                        'model' => $modelClass,
+                        'has_optional' => isset($aiConfig['optional']),
+                        'has_fields' => isset($aiConfig['fields']),
+                        'config_keys' => array_keys($aiConfig),
+                    ]);
+                    
+                    // Check for 'optional' array (legacy format)
+                    if (!empty($aiConfig['optional'])) {
+                        $optionalFields = array_filter($aiConfig['optional'], function($field) use ($currentParams) {
+                            return !isset($currentParams[$field]);
+                        });
+                        
+                        Log::channel('ai-engine')->debug('Got optional params from initializeAI() (legacy format)', [
+                            'model' => $modelClass,
+                            'optional_fields' => $optionalFields,
+                        ]);
+                        
+                        return array_values($optionalFields);
+                    }
+                    
+                    // Check for 'fields' array (fluent builder format)
+                    if (!empty($aiConfig['fields'])) {
+                        $optionalFields = [];
+                        foreach ($aiConfig['fields'] as $fieldName => $fieldConfig) {
+                            // Field is optional if required is false or not set
+                            $isRequired = $fieldConfig['required'] ?? false;
+                            $isAlreadyProvided = isset($currentParams[$fieldName]);
+                            
+                            Log::channel('ai-engine')->debug('Checking field', [
+                                'field' => $fieldName,
+                                'is_required' => $isRequired,
+                                'is_provided' => $isAlreadyProvided,
+                                'will_include' => !$isRequired && !$isAlreadyProvided,
+                            ]);
+                            
+                            if (!$isRequired && !$isAlreadyProvided) {
+                                $optionalFields[] = $fieldName;
+                            }
+                        }
+                        
+                        Log::channel('ai-engine')->debug('Got optional params from initializeAI() (fluent builder)', [
+                            'model' => $modelClass,
+                            'optional_fields' => $optionalFields,
+                            'all_fields' => array_keys($aiConfig['fields']),
+                            'current_params' => array_keys($currentParams),
+                        ]);
+                        
+                        return $optionalFields;
+                    }
+                    
+                    Log::channel('ai-engine')->debug('No optional or fields array found in config', [
+                        'model' => $modelClass,
+                        'config_structure' => json_encode($aiConfig),
+                    ]);
+                } catch (\Exception $e) {
+                    // Continue to fallback
+                    Log::channel('ai-engine')->debug('initializeAI() failed, using fallback', [
+                        'model' => $modelClass,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                }
+            }
+            
+            // FALLBACK: Use model's fillable fields
+            $model = new $modelClass();
+            $fillable = $model->getFillable();
+            
+            if (empty($fillable)) {
+                return [];
+            }
+            
+            // Optional fields = fillable fields that are not required and not already provided
+            $optionalFields = array_filter($fillable, function($field) use ($requiredFields, $currentParams) {
+                return !in_array($field, $requiredFields) && !isset($currentParams[$field]);
+            });
+            
+            // Exclude common system fields that shouldn't be suggested
+            $systemFields = ['id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'workspace_id'];
+            $optionalFields = array_diff($optionalFields, $systemFields);
+            
+            Log::channel('ai-engine')->debug('Got optional params from fillable (fallback)', [
+                'model' => $modelClass,
+                'optional_fields' => array_values($optionalFields),
+            ]);
+            
+            return array_values($optionalFields);
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('Could not get optional params from model', [
+                'model' => $modelClass,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
     }
 
     /**
@@ -1561,21 +2029,34 @@ class ChatService
         try {
             $entityName = $currentParams['name'] ?? 'Record';
 
+            // Build context from existing params
+            $contextInfo = "Product/Service: \"{$entityName}\"\n";
+            if (isset($currentParams['type'])) {
+                $contextInfo .= "Type: {$currentParams['type']}\n";
+            }
+            if (isset($currentParams['category'])) {
+                $contextInfo .= "Category: {$currentParams['category']}\n";
+            }
+            if (isset($currentParams['sale_price'])) {
+                $contextInfo .= "Price: \${$currentParams['sale_price']}\n";
+            }
+
             // Generic prompt that works for any entity type
             $fieldDescriptions = array_map(function($param) {
                 return "- {$param}: Provide a realistic value for this field";
             }, $optionalParams);
 
-            $prompt = "Based on this record: \"{$entityName}\"\n\n";
+            $prompt = "Based on this information:\n{$contextInfo}\n";
             $prompt .= "Generate intelligent, realistic suggestions for these fields:\n";
             $prompt .= implode("\n", $fieldDescriptions) . "\n\n";
+            $prompt .= "IMPORTANT: If a category is already provided above, use EXACTLY the same category value.\n";
             $prompt .= "Return ONLY a valid JSON object with these exact keys.";
 
             $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
                 prompt: $prompt,
                 engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
                 model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
-                systemPrompt: 'You are a data assistant. Generate professional, realistic information. Return valid JSON only.',
+                systemPrompt: 'You are a data assistant. Generate professional, realistic information. Return valid JSON only. Maintain consistency with provided context.',
                 maxTokens: 400
             );
 
@@ -1592,6 +2073,11 @@ class ChatService
             if (is_array($result) && !empty($result)) {
                 // Filter to only include requested params
                 $suggestions = array_intersect_key($result, array_flip($optionalParams));
+
+                // Ensure category consistency - if category exists in currentParams, use it
+                if (isset($currentParams['category']) && isset($suggestions['category'])) {
+                    $suggestions['category'] = $currentParams['category'];
+                }
 
                 Log::channel('ai-engine')->info('Generated AI suggestions', [
                     'entity' => $entityName,
@@ -1648,6 +2134,7 @@ class ChatService
                 $prompt .= "Return ONLY a JSON object with the extracted values. Use null for missing fields.\n";
                 $prompt .= "Format: {\"field_name\": \"value\"}\n";
                 $prompt .= "IMPORTANT: Extract ONLY actual values from the user's message, not placeholder examples.\n";
+                $prompt .= "CRITICAL: Do NOT use values from conversation history or previous messages. Extract ONLY from this specific message.\n";
 
                 $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
                     prompt: $prompt,
@@ -1676,7 +2163,7 @@ class ChatService
      *
      * @return array{intent: string, confidence: float, extracted_data: array, context_enhancement: string}
      */
-    protected function analyzeMessageIntent(string $message, ?array $pendingAction = null): array
+    protected function analyzeMessageIntent(string $message, ?array $pendingAction = null, array $availableActions = []): array
     {
         // Quick check for single-word confirmations (optimization)
         $messageLower = strtolower(trim($message));
@@ -1695,22 +2182,54 @@ class ChatService
         try {
             $prompt = "Analyze the user's message intent and provide structured output.\n\n";
             $prompt .= "User Message: \"{$message}\"\n\n";
+            
+            // Note: AI-based action selection disabled due to empty AI responses
+            // The enhanced semantic matching in ActionManager will handle action selection
 
             if ($pendingAction) {
                 $prompt .= "Context: There is a pending action waiting for user response.\n";
                 $prompt .= "Pending Action: {$pendingAction['label']}\n";
                 $prompt .= "Current Parameters: " . json_encode($pendingAction['data']['params'] ?? []) . "\n";
                 
+                $isComplete = empty($pendingAction['missing_fields'] ?? []);
                 $missingFields = $pendingAction['missing_fields'] ?? [];
+                
                 if (!empty($missingFields)) {
                     $prompt .= "Missing Required Fields: " . implode(', ', $missingFields) . "\n";
-                    $prompt .= "IMPORTANT: If the user's message provides a value that could fill any of these missing fields, classify as 'provide_data' and extract the data.\n";
-                    $prompt .= "Pattern:\n";
-                    $prompt .= "- If missing '[field]' and user provides [value] → extract as: {\"[field]\": [value]}\n";
-                    $prompt .= "- Extract numeric values without currency symbols\n";
+                    $prompt .= "CRITICAL INTENT CLASSIFICATION:\n";
+                    $prompt .= "- If user provides a simple value (number, text) → ALWAYS classify as 'provide_data' or 'modify'\n";
+                    $prompt .= "- DO NOT classify simple values as 'new_request'\n";
+                    $prompt .= "- Only classify as 'new_request' if user explicitly says 'create', 'add', 'new', etc.\n\n";
+                    $prompt .= "CRITICAL EXTRACTION RULES:\n";
+                    $prompt .= "1. If user provides a value, match it to ONE of the missing fields above\n";
+                    $prompt .= "2. Use the EXACT field name from the missing fields list - DO NOT invent or change field names\n";
+                    $prompt .= "3. Extract as: {\"exact_field_name_from_list\": user_provided_value}\n\n";
+                    $prompt .= "Examples (using actual missing fields):\n";
+                    foreach ($missingFields as $field) {
+                        $prompt .= "- If user says '600' and missing field is '{$field}' → classify as 'provide_data', extract: {\"{$field}\": 600}\n";
+                    }
+                    $prompt .= "\nData Formatting:\n";
+                    $prompt .= "- Extract numeric values as numbers (remove currency symbols)\n";
                     $prompt .= "- Extract email addresses in standard format\n";
                     $prompt .= "- Extract quantities as numbers only\n";
-                    $prompt .= "CRITICAL: Use ONLY the actual values from user's message, never use these pattern examples as real data.\n";
+                    $prompt .= "- Extract text values as strings\n\n";
+                    $prompt .= "CRITICAL: NEVER invent field names. ONLY use field names from the missing fields list above.\n";
+                    $prompt .= "CRITICAL: NEVER classify simple values as 'new_request' when there are missing fields.\n";
+                } else {
+                    $prompt .= "Status: Action is COMPLETE and awaiting confirmation.\n";
+                    $prompt .= "CRITICAL DECISION RULES:\n";
+                    $prompt .= "1. If user provides ADDITIONAL/OPTIONAL data for the SAME entity (e.g., 'Category Laptops', 'Color Red'):\n";
+                    $prompt .= "   → Classify as 'provide_data' (user is enhancing the existing action)\n";
+                    $prompt .= "   → Extract the field and value\n";
+                    $prompt .= "2. If user explicitly requests creating a DIFFERENT entity type (e.g., 'Create Invoice', 'Add Customer'):\n";
+                    $prompt .= "   → Classify as 'new_request' (user wants to start something new)\n";
+                    $prompt .= "3. If user provides a simple field value without 'create' or 'add' keywords:\n";
+                    $prompt .= "   → Classify as 'provide_data' (assume it's for the pending action)\n";
+                    $prompt .= "Examples:\n";
+                    $prompt .= "- 'Category Laptops' → provide_data (adding optional field to existing action)\n";
+                    $prompt .= "- 'Description: High performance laptop' → provide_data (adding optional field)\n";
+                    $prompt .= "- 'Create Invoice' → new_request (explicitly requesting different entity)\n";
+                    $prompt .= "- 'Add Customer John' → new_request (explicitly requesting different entity)\n";
                 }
                 $prompt .= "\n";
             }
@@ -1718,16 +2237,17 @@ class ChatService
             $prompt .= "Analyze and classify the intent into ONE of these categories:\n";
             $prompt .= "1. 'confirm' - User agrees/confirms to proceed (yes, ok, go ahead, I don't mind, sounds good, etc.)\n";
             $prompt .= "2. 'reject' - User declines/cancels (no, cancel, stop, nevermind, etc.)\n";
-            $prompt .= "3. 'modify' - User wants to change/update parameters. Pattern:\n";
+            $prompt .= "3. 'use_suggestions' - User wants to use AI-generated suggestions (use suggestions, accept suggestions, apply suggestions, etc.)\n";
+            $prompt .= "4. 'modify' - User wants to change/update parameters. Pattern:\n";
             $prompt .= "   - 'change [field] to [value]' → extract as: {\"[field]\": [value]}\n";
             $prompt .= "   - 'make it [value] instead' → extract field from context\n";
             $prompt .= "   - '[field] should be [value]' → extract as: {\"[field]\": [value]}\n";
             $prompt .= "   - 'update [field] to [value]' → extract as: {\"[field]\": [value]}\n";
             $prompt .= "   - Any message providing a field name/value pair to update existing data\n";
             $prompt .= "   IMPORTANT: Extract ONLY the actual values from user's message, never use placeholder examples\n";
-            $prompt .= "4. 'provide_data' - User is providing additional data for optional parameters\n";
-            $prompt .= "5. 'question' - User is asking a question or needs clarification\n";
-            $prompt .= "6. 'new_request' - User is making a completely new request\n\n";
+            $prompt .= "5. 'provide_data' - User is providing additional data for optional parameters\n";
+            $prompt .= "6. 'question' - User is asking a question or needs clarification\n";
+            $prompt .= "7. 'new_request' - User is making a completely new request\n\n";
             
             // Add document type analysis for long-form content (from config)
             $docTypeConfig = config('ai-engine.project_context.document_type_detection');
@@ -1759,16 +2279,18 @@ class ChatService
             $prompt .= "- For item-specific updates, ALWAYS use pattern: {item_name}_{field_name}\n";
             $prompt .= "- Extract numeric values without currency symbols\n";
             $prompt .= "- Classify as 'modify' when user wants to change ANY existing field value\n";
+            $prompt .= "- Classify as 'new_request' when user wants to create a DIFFERENT item/entity (e.g., 'Create Product B' after 'Create Product A')\n";
             $prompt .= "- When analyzing user input, ignore all example values in this prompt and focus ONLY on what the user actually said\n\n";
 
-            $prompt .= "Respond with ONLY valid JSON in this exact format:\n";
+            $prompt .= "Respond with ONLY valid JSON in this exact format (NO trailing commas):\n";
             $prompt .= "{\n";
             $prompt .= '  "intent": "confirm|reject|modify|provide_data|question|new_request",'."\n";
             $prompt .= '  "confidence": 0.95,'."\n";
             $prompt .= '  "extracted_data": {"field_name": "value"},'."\n";
-            $prompt .= '  "context_enhancement": "Brief description of what user wants",'."\n";
-            $prompt .= '  "suggested_collection": "ModelClassName" (ONLY for document content >500 chars)'."\n";
-            $prompt .= "}";
+            $prompt .= '  "context_enhancement": "Brief description of what user wants"'."\n";
+            $prompt .= "}\n\n";
+            $prompt .= "CRITICAL: Do NOT include trailing commas. Do NOT include optional fields (suggested_action_id, suggested_collection) unless explicitly needed.\n";
+            $prompt .= "The JSON must be valid and parseable.";
 
             // Use faster/cheaper model for simple intent analysis
             $intentModel = config('ai-engine.actions.intent_model', 'gpt-3.5-turbo');
@@ -1777,16 +2299,102 @@ class ChatService
                 prompt: $prompt,
                 engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
                 model: \LaravelAIEngine\Enums\EntityEnum::from($intentModel),
-                maxTokens: 200,
+                maxTokens: 500, // Increased for action list
                 temperature: 0
             );
 
+            Log::channel('ai-engine')->debug('Sending intent analysis request', [
+                'prompt_length' => strlen($prompt),
+                'model' => $intentModel,
+            ]);
+
             $response = $this->aiEngineService->generate($aiRequest);
-            $result = json_decode($response->getContent(), true);
+            
+            // Handle AI engine errors gracefully
+            if (!$response->success) {
+                $errorMessage = $this->getErrorMessage($response->error);
+                
+                Log::channel('ai-engine')->warning('Intent analysis failed due to AI error', [
+                    'error' => $response->error,
+                    'user_message' => $errorMessage,
+                ]);
+                
+                // Return fallback intent with error context
+                return [
+                    'intent' => 'new_request',
+                    'confidence' => 0.5,
+                    'extracted_data' => [],
+                    'context_enhancement' => 'AI service unavailable, using fallback.',
+                    'ai_error' => $errorMessage,
+                ];
+            }
+            
+            $content = $response->getContent();
+            
+            Log::channel('ai-engine')->debug('Received intent analysis response', [
+                'content_length' => strlen($content),
+                'content_preview' => substr($content, 0, 200),
+            ]);
+            
+            // Try to extract JSON from response (handle markdown code blocks)
+            $jsonContent = $content;
+            if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $content, $matches)) {
+                $jsonContent = $matches[1];
+            } elseif (preg_match('/(\{.*\})/s', $content, $matches)) {
+                $jsonContent = $matches[1];
+            }
+            
+            $result = json_decode($jsonContent, true);
 
             if (is_array($result) && isset($result['intent'])) {
+                // Validate extracted data field names against missing fields (prevent hallucination)
+                if (!empty($result['extracted_data']) && $pendingAction && !empty($pendingAction['missing_fields'] ?? [])) {
+                    $missingFields = $pendingAction['missing_fields'];
+                    $extractedFields = array_keys($result['extracted_data']);
+                    $validExtracted = [];
+                    
+                    foreach ($result['extracted_data'] as $fieldName => $value) {
+                        // Check if extracted field name matches any missing field
+                        if (in_array($fieldName, $missingFields)) {
+                            $validExtracted[$fieldName] = $value;
+                        } else {
+                            // AI hallucinated a field name - try to map it to a missing field
+                            Log::channel('ai-engine')->warning('AI extracted invalid field name', [
+                                'extracted_field' => $fieldName,
+                                'missing_fields' => $missingFields,
+                                'value' => $value,
+                            ]);
+                            
+                            // If there's only one missing field, assume the value is for that field
+                            if (count($missingFields) === 1) {
+                                $correctField = $missingFields[0];
+                                $validExtracted[$correctField] = $value;
+                                Log::channel('ai-engine')->info('Corrected hallucinated field name', [
+                                    'from' => $fieldName,
+                                    'to' => $correctField,
+                                    'value' => $value,
+                                ]);
+                            }
+                        }
+                    }
+                    
+                    $result['extracted_data'] = $validExtracted;
+                }
+                
+                Log::channel('ai-engine')->debug('Intent analysis parsed successfully', [
+                    'intent' => $result['intent'],
+                    'has_suggested_action' => isset($result['suggested_action_id']),
+                    'suggested_action_id' => $result['suggested_action_id'] ?? null,
+                    'extracted_data' => $result['extracted_data'] ?? [],
+                ]);
                 return $result;
             }
+
+            // Log parsing failure for debugging
+            Log::channel('ai-engine')->warning('Failed to parse intent JSON', [
+                'raw_content' => substr($content, 0, 500),
+                'json_error' => json_last_error_msg(),
+            ]);
 
             // Fallback if JSON parsing fails
             return [
@@ -2509,6 +3117,52 @@ class ChatService
     }
     
     /**
+     * Get user-friendly error message based on AI error
+     */
+    protected function getErrorMessage(?string $error): string
+    {
+        if (!$error) {
+            return config('ai-engine.error_handling.fallback_message', 'AI service is temporarily unavailable.');
+        }
+
+        $showDetailed = config('ai-engine.error_handling.show_detailed_errors', false);
+        $showQuota = config('ai-engine.error_handling.show_quota_errors', true);
+        $errorMessages = config('ai-engine.error_handling.error_messages', []);
+
+        // Check for specific error types
+        if (str_contains(strtolower($error), 'quota') || str_contains(strtolower($error), 'exceeded')) {
+            return $showQuota 
+                ? ($errorMessages['quota_exceeded'] ?? 'AI service quota exceeded.')
+                : config('ai-engine.error_handling.fallback_message', 'AI service is temporarily unavailable.');
+        }
+
+        if (str_contains(strtolower($error), 'rate limit')) {
+            return $errorMessages['rate_limit'] ?? 'Too many requests. Please try again later.';
+        }
+
+        if (str_contains(strtolower($error), 'api key') || str_contains(strtolower($error), 'authentication')) {
+            return $errorMessages['invalid_api_key'] ?? 'AI service configuration error.';
+        }
+
+        if (str_contains(strtolower($error), 'timeout')) {
+            return $errorMessages['timeout'] ?? 'AI service request timed out.';
+        }
+
+        if (str_contains(strtolower($error), 'model') && str_contains(strtolower($error), 'not found')) {
+            return $errorMessages['model_not_found'] ?? 'The requested AI model is not available.';
+        }
+
+        if (str_contains(strtolower($error), 'network') || str_contains(strtolower($error), 'connection')) {
+            return $errorMessages['network_error'] ?? 'Unable to connect to AI service.';
+        }
+
+        // Return detailed error if enabled, otherwise fallback
+        return $showDetailed 
+            ? $error 
+            : config('ai-engine.error_handling.fallback_message', 'AI service is temporarily unavailable.');
+    }
+
+    /**
      * Apply AI mapper to transform data before execution
      * Checks if model has mapAIData method and calls it
      */
@@ -2552,5 +3206,28 @@ class ChatService
 
         // Return original params if no mapper or mapper failed
         return $params;
+    }
+
+    /**
+     * Check if a field is a relationship ID field that should not be suggested
+     */
+    protected function isRelationshipField(string $fieldName, array $fieldConfig): bool
+    {
+        // Check if field ends with _id (common pattern for foreign keys)
+        if (str_ends_with($fieldName, '_id')) {
+            return true;
+        }
+
+        // Check if field config explicitly marks it as a relationship
+        if (isset($fieldConfig['type']) && $fieldConfig['type'] === 'relationship') {
+            return true;
+        }
+
+        // Check if field config has auto_relationship flag
+        if (isset($fieldConfig['auto_relationship']) && $fieldConfig['auto_relationship'] === true) {
+            return true;
+        }
+
+        return false;
     }
 }

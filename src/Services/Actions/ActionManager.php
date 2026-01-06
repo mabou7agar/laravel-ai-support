@@ -21,6 +21,14 @@ class ActionManager
     ) {}
     
     /**
+     * Get the action registry
+     */
+    public function getRegistry(): ActionRegistry
+    {
+        return $this->registry;
+    }
+    
+    /**
      * Discover all available actions
      */
     public function discoverActions(): array
@@ -53,48 +61,69 @@ class ActionManager
             'intent' => $intentAnalysis['intent'] ?? null,
         ]);
         
-        // Use suggested collection from intent analysis if available
-        $suggestedCollection = $intentAnalysis['suggested_collection'] ?? null;
+        // AI-BASED ACTION SELECTION: Use AI-suggested action if available
+        $suggestedActionId = $intentAnalysis['suggested_action_id'] ?? null;
         
-        if ($suggestedCollection) {
-            Log::channel('ai-engine')->info('Document type suggested by intent analysis', [
-                'suggested_collection' => $suggestedCollection,
+        if ($suggestedActionId && isset($allActions[$suggestedActionId])) {
+            Log::channel('ai-engine')->info('AI selected specific action', [
+                'suggested_action_id' => $suggestedActionId,
+                'action_label' => $allActions[$suggestedActionId]['label'] ?? $suggestedActionId,
             ]);
             
-            // Prioritize actions matching the suggested collection
-            $prioritizedActions = [];
-            $otherActions = [];
+            // Use ONLY the AI-suggested action
+            $allActions = [$suggestedActionId => $allActions[$suggestedActionId]];
+        } else {
+            // Fallback: Use suggested collection from intent analysis if available
+            $suggestedCollection = $intentAnalysis['suggested_collection'] ?? null;
             
-            foreach ($allActions as $id => $definition) {
-                $modelClass = $definition['model_class'] ?? '';
-                
-                // Match by class name (e.g., "Bill" matches "Workdo\Account\Entities\Bill")
-                if (str_contains($modelClass, $suggestedCollection)) {
-                    $prioritizedActions[$id] = $definition;
-                } else {
-                    $otherActions[$id] = $definition;
-                }
-            }
-            
-            // Put suggested actions first
-            if (!empty($prioritizedActions)) {
-                $allActions = array_merge($prioritizedActions, $otherActions);
-                
-                Log::channel('ai-engine')->info('Actions prioritized based on document type', [
-                    'prioritized_count' => count($prioritizedActions),
-                    'total_count' => count($allActions),
+            if ($suggestedCollection) {
+                Log::channel('ai-engine')->info('Document type suggested by intent analysis', [
+                    'suggested_collection' => $suggestedCollection,
                 ]);
+                
+                // Prioritize actions matching the suggested collection
+                $prioritizedActions = [];
+                $otherActions = [];
+                
+                foreach ($allActions as $id => $definition) {
+                    $modelClass = $definition['model_class'] ?? '';
+                    
+                    // Match by class name (e.g., "Bill" matches "Workdo\Account\Entities\Bill")
+                    if (str_contains($modelClass, $suggestedCollection)) {
+                        $prioritizedActions[$id] = $definition;
+                    } else {
+                        $otherActions[$id] = $definition;
+                    }
+                }
+                
+                // Put suggested actions first
+                if (!empty($prioritizedActions)) {
+                    $allActions = array_merge($prioritizedActions, $otherActions);
+                    
+                    Log::channel('ai-engine')->info('Actions prioritized based on document type', [
+                        'prioritized_count' => count($prioritizedActions),
+                        'total_count' => count($allActions),
+                    ]);
+                }
             }
         }
         
         foreach ($allActions as $id => $definition) {
-            // Check if action matches context
-            if (!$this->matchesContext($definition, $message, $context, $intentAnalysis)) {
+            // Skip matching check if AI already selected this action
+            if ($suggestedActionId && $id === $suggestedActionId) {
+                // AI selected this action, skip keyword matching
+            } elseif (!$this->matchesContext($definition, $message, $context, $intentAnalysis)) {
                 continue;
             }
             
+            // Prepare extraction context with intent and pending action info
+            $extractionContext = array_merge($context, [
+                'intent' => $intentAnalysis['intent'] ?? null,
+                'pending_action' => $intentAnalysis['pending_action'] ?? null,
+            ]);
+            
             // Extract parameters
-            $extraction = $this->extractor->extract($message, $definition, $context);
+            $extraction = $this->extractor->extract($message, $definition, $extractionContext);
             
             // Only add action if we have reasonable confidence or all required params
             if ($extraction->isComplete() || $extraction->hasHighConfidence()) {
@@ -269,169 +298,22 @@ class ActionManager
     }
     
     /**
-     * AI-based action matching using intent analysis
+     * AI-based action matching (fallback when AI hasn't selected an action)
+     * Note: This is now rarely used since AI selects actions directly
      */
     protected function aiBasedMatching(array $definition, string $message, array $intentAnalysis): bool
     {
-        // Extract action context
-        $actionLabel = $definition['label'] ?? '';
-        $actionDescription = $definition['description'] ?? '';
-        $modelKeywords = $this->extractModelKeywords($definition);
-        
         // Get intent details
         $intent = $intentAnalysis['intent'] ?? '';
-        $extractedData = $intentAnalysis['extracted_data'] ?? [];
-        $confidence = $intentAnalysis['confidence'] ?? 0;
         
         // Only match creation intents
         if (!in_array($intent, ['new_request', 'create', 'provide_data'])) {
             return false;
         }
         
-        // Use AI to determine semantic relevance
-        $relevanceScore = $this->calculateSemanticRelevance(
-            $message,
-            $actionLabel,
-            $actionDescription,
-            $modelKeywords,
-            $extractedData
-        );
-        
-        Log::channel('ai-engine')->debug('Action matching score', [
-            'action' => $actionLabel,
-            'message' => substr($message, 0, 50),
-            'keywords' => $modelKeywords,
-            'score' => $relevanceScore,
-            'threshold' => 0.3,
-            'matched' => $relevanceScore >= 0.3,
-        ]);
-        
-        // Match if relevance score is high enough (lowered threshold for better recall)
-        return $relevanceScore >= 0.3;
-    }
-    
-    /**
-     * Calculate semantic relevance between message and action
-     */
-    protected function calculateSemanticRelevance(
-        string $message,
-        string $actionLabel,
-        string $actionDescription,
-        array $keywords,
-        array $extractedData
-    ): float {
-        $score = 0.0;
-        $messageLower = strtolower($message);
-        
-        // If no keywords, this action is too generic - return low score
-        if (empty($keywords)) {
-            return 0.1;
-        }
-        
-        // Check if any keywords match (with fuzzy matching)
-        $matchedKeywords = 0;
-        $hasStrongMatch = false;
-        
-        foreach ($keywords as $keyword) {
-            $keywordLower = strtolower($keyword);
-            
-            // Skip very generic keywords
-            if (in_array($keywordLower, ['item', 'data', 'record', 'entry'])) {
-                continue;
-            }
-            
-            // Exact match (strong signal)
-            if (str_contains($messageLower, $keywordLower)) {
-                $matchedKeywords++;
-                $hasStrongMatch = true;
-                continue;
-            }
-            
-            // Singular/plural variations
-            $singular = rtrim($keywordLower, 's');
-            if (strlen($singular) > 3 && str_contains($messageLower, $singular)) {
-                $matchedKeywords++;
-                $hasStrongMatch = true;
-                continue;
-            }
-            
-            // Plural form
-            if (str_contains($messageLower, $keywordLower . 's')) {
-                $matchedKeywords++;
-                $hasStrongMatch = true;
-            }
-        }
-        
-        // No keyword matches = not relevant
-        if ($matchedKeywords == 0) {
-            return 0.0;
-        }
-        
-        // Strong keyword match is required
-        if (!$hasStrongMatch) {
-            return 0.2;
-        }
-        
-        // Calculate base score from keyword matches
-        $keywordScore = min(($matchedKeywords / count($keywords)), 1.0);
-        $score = $keywordScore * 0.8; // Keyword match is 80% of score
-        
-        // Bonus for data extraction (indicates AI understood the intent)
-        if (!empty($extractedData)) {
-            $score += 0.2;
-        }
-        
-        return min($score, 1.0);
-    }
-    
-    /**
-     * Extract keywords from model description and config
-     */
-    protected function extractModelKeywords(array $definition): array
-    {
-        $keywords = [];
-        
-        // Add model name
-        $modelClass = $definition['model_class'] ?? '';
-        if ($modelClass) {
-            $modelName = class_basename($modelClass);
-            $keywords[] = $modelName;
-        }
-        
-        // Use description from action definition (works for both local and remote actions)
-        $description = $definition['description'] ?? '';
-        
-        // If no description in definition, try to get from model's initializeAI
-        if (!$description && $modelClass && class_exists($modelClass)) {
-            try {
-                $reflection = new \ReflectionClass($modelClass);
-                if ($reflection->hasMethod('initializeAI')) {
-                    $method = $reflection->getMethod('initializeAI');
-                    if ($method->isStatic()) {
-                        $config = $modelClass::initializeAI();
-                        $description = $config['description'] ?? '';
-                    }
-                }
-            } catch (\Exception $e) {
-                // Ignore errors
-            }
-        }
-        
-        // Extract keywords from description (only first sentence/line)
-        // e.g., "Products and services catalog" -> ['products', 'services', 'catalog']
-        if ($description) {
-            // Take only the first sentence (before first period or newline)
-            $firstSentence = preg_split('/[\.\n]/', $description)[0];
-            $words = preg_split('/[\s,]+/', strtolower($firstSentence));
-            $meaningfulWords = array_filter($words, function($word) {
-                // Filter out common words and short words
-                $stopWords = ['and', 'or', 'the', 'a', 'an', 'for', 'with', 'use', 'this', 'that', 'from', 'into', 'when', 'what', 'where', 'which', 'who'];
-                return strlen($word) > 3 && !in_array($word, $stopWords);
-            });
-            $keywords = array_merge($keywords, $meaningfulWords);
-        }
-        
-        return array_unique($keywords);
+        // Simple fallback: match if it's a creation intent
+        // The AI should have already selected the best action via suggested_action_id
+        return true;
     }
     
     /**
@@ -504,6 +386,7 @@ class ActionManager
                 'ready_to_execute' => $isReady,
                 'missing_fields' => $extraction->missing,
                 'confidence' => $extraction->confidence,
+                'ai_config' => $definition['ai_config'] ?? null,
             ]
         );
     }
@@ -532,6 +415,7 @@ class ActionManager
                 'ready_to_execute' => false,
                 'missing_fields' => $extraction->missing,
                 'confidence' => $extraction->confidence,
+                'ai_config' => $definition['ai_config'] ?? null,
             ]
         );
     }

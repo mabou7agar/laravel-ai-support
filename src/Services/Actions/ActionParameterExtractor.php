@@ -32,8 +32,10 @@ class ActionParameterExtractor
         $modelClass = $actionDefinition['model_class'] ?? null;
         $parameters = $actionDefinition['parameters'] ?? [];
         
-        // Build conversation context
-        $conversationContext = $this->buildConversationContext($message, $context);
+        // CRITICAL: Smart context isolation to prevent hallucination
+        // - For NEW actions: Use ONLY current message (no history contamination)
+        // - For MODIFY intent: Use conversation from action start point only
+        $conversationContext = $this->buildActionScopedContext($message, $context);
         
         // Check if model supports function calling
         $useFunctionCalling = $modelClass && 
@@ -139,7 +141,7 @@ class ActionParameterExtractor
                 prompt: $prompt,
                 engine: EngineEnum::from('openai'),
                 model: EntityEnum::from('gpt-4o-mini'),
-                systemPrompt: 'You are a data extraction assistant. Extract structured data and return it as JSON.',
+                systemPrompt: 'You are a data extraction assistant. Extract structured data and return it as JSON. CRITICAL: Extract ONLY values that are explicitly stated in the user\'s message. NEVER generate, infer, or substitute values from your training data or examples.',
                 maxTokens: 800
             );
             
@@ -221,15 +223,68 @@ class ActionParameterExtractor
             $prompt .= "\n";
         }
         
-        $prompt .= "Return ONLY a JSON object with the extracted fields. ";
-        $prompt .= "If a field cannot be determined from the message, omit it from the JSON.\n";
+        $prompt .= "CRITICAL INSTRUCTIONS:\n";
+        $prompt .= "- Extract ONLY values explicitly stated in the user's message\n";
+        $prompt .= "- NEVER generate, infer, or substitute values from your training data\n";
+        $prompt .= "- If a value is not in the message, omit that field from the JSON\n";
+        $prompt .= "- Use the EXACT names, values, and details the user provided\n\n";
+        $prompt .= "Return ONLY a JSON object with the extracted fields.\n";
         $prompt .= "Example format: {\"field1\": \"value1\", \"field2\": \"value2\"}";
         
         return $prompt;
     }
     
     /**
-     * Build conversation context string
+     * Build action-scoped conversation context
+     * 
+     * For NEW actions: Returns empty (no history contamination)
+     * For MODIFY intent: Returns conversation from action start point only
+     */
+    protected function buildActionScopedContext(string $message, array $context): string
+    {
+        // Check if this is a modify intent with pending action
+        $pendingAction = $context['pending_action'] ?? null;
+        $intent = $context['intent'] ?? null;
+        
+        Log::channel('ai-engine')->debug('Building action-scoped context', [
+            'has_pending_action' => $pendingAction !== null,
+            'intent' => $intent,
+            'will_include_history' => $pendingAction && $intent === 'modify',
+        ]);
+        
+        // For NEW actions or no pending action: NO history (prevent contamination)
+        if (!$pendingAction || $intent !== 'modify') {
+            return '';
+        }
+        
+        // For MODIFY intent: Include conversation from action start point
+        $conversationHistory = $context['conversation_history'] ?? [];
+        $actionStartIndex = $context['action_start_index'] ?? null;
+        
+        if (empty($conversationHistory) || $actionStartIndex === null) {
+            return '';
+        }
+        
+        // Get messages from action start to current (action-scoped context)
+        $actionScopedMessages = array_slice($conversationHistory, $actionStartIndex);
+        
+        $contextStr = "Action Context (from action start):\n";
+        foreach ($actionScopedMessages as $msg) {
+            $role = $msg['role'] ?? 'user';
+            $content = $msg['content'] ?? '';
+            $contextStr .= "{$role}: {$content}\n";
+        }
+        
+        Log::channel('ai-engine')->debug('Action-scoped context built', [
+            'message_count' => count($actionScopedMessages),
+            'context_length' => strlen($contextStr),
+        ]);
+        
+        return $contextStr;
+    }
+    
+    /**
+     * Build conversation context string (legacy - kept for compatibility)
      */
     protected function buildConversationContext(string $message, array $context): string
     {
@@ -423,7 +478,7 @@ class ActionParameterExtractor
     }
     
     /**
-     * Calculate extraction confidence
+     * Calculate extraction confidence based on how well the action matches the message
      */
     protected function calculateConfidence(array $extracted, array $actionDefinition): float
     {
@@ -431,8 +486,12 @@ class ActionParameterExtractor
         $optional = $actionDefinition['optional_params'] ?? [];
         $totalFields = count($required) + count($optional);
         
+        // If action has no fields defined, it's a poor match (low confidence)
+        // Actions should define their fields to be considered relevant
         if ($totalFields === 0) {
-            return 1.0;
+            // Return very low confidence if nothing was extracted
+            // This prevents actions with no field definitions from winning
+            return empty($extracted) ? 0.1 : 0.5;
         }
         
         $extractedCount = count($extracted);
@@ -443,6 +502,11 @@ class ActionParameterExtractor
             if (!empty($extracted[$field])) {
                 $requiredExtracted++;
             }
+        }
+        
+        // If nothing was extracted, this action is not relevant
+        if ($extractedCount === 0) {
+            return 0.0;
         }
         
         // Required fields have more weight

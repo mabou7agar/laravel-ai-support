@@ -14,6 +14,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Error Handling
+    |--------------------------------------------------------------------------
+    |
+    | Configure how AI engine errors are handled and displayed to users.
+    |
+    */
+    'error_handling' => [
+        // Show detailed error messages to users (useful for debugging)
+        'show_detailed_errors' => env('AI_ENGINE_SHOW_DETAILED_ERRORS', false),
+        
+        // Show API quota/billing errors to users
+        'show_quota_errors' => env('AI_ENGINE_SHOW_QUOTA_ERRORS', true),
+        
+        // Fallback message when AI is unavailable
+        'fallback_message' => env('AI_ENGINE_FALLBACK_MESSAGE', 'AI service is temporarily unavailable. Please try again later.'),
+        
+        // User-friendly error messages for common errors
+        'error_messages' => [
+            'quota_exceeded' => 'AI service quota has been exceeded. Please contact support or try again later.',
+            'rate_limit' => 'Too many requests. Please wait a moment and try again.',
+            'invalid_api_key' => 'AI service configuration error. Please contact support.',
+            'network_error' => 'Unable to connect to AI service. Please check your connection and try again.',
+            'timeout' => 'AI service request timed out. Please try again.',
+            'model_not_found' => 'The requested AI model is not available. Please try a different model.',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | User Context Injection
     |--------------------------------------------------------------------------
     |
