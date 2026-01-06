@@ -2692,12 +2692,18 @@ class ChatService
                 if ($productData && is_array($productData)) {
                     $message .= "\n\n**Created {$modelName} Summary:**\n";
                     
-                    // Add product details
+                    // Add product details in logical order
                     if (isset($productData['name'])) {
                         $message .= "- **Name:** {$productData['name']}\n";
                     }
                     if (isset($productData['sale_price'])) {
-                        $message .= "- **Price:** \${$productData['sale_price']}\n";
+                        $message .= "- **Sale Price:** \${$productData['sale_price']}\n";
+                    }
+                    if (isset($productData['purchase_price']) && !empty($productData['purchase_price'])) {
+                        $message .= "- **Purchase Price:** \${$productData['purchase_price']}\n";
+                    }
+                    if (isset($productData['quantity']) && $productData['quantity'] !== null) {
+                        $message .= "- **Quantity:** {$productData['quantity']}\n";
                     }
                     if (isset($productData['type'])) {
                         $message .= "- **Type:** " . ucfirst($productData['type']) . "\n";
@@ -2705,13 +2711,23 @@ class ChatService
                     if (isset($productData['sku']) && !empty($productData['sku'])) {
                         $message .= "- **SKU:** {$productData['sku']}\n";
                     }
-                    if (isset($productData['id'])) {
-                        $message .= "- **ID:** {$productData['id']}\n";
-                    }
                     // Only show category if it exists and is not the same as product name
                     if (isset($productData['category']['name']) && 
                         $productData['category']['name'] !== $productData['name']) {
                         $message .= "- **Category:** {$productData['category']['name']}\n";
+                    }
+                    if (isset($productData['description']) && !empty($productData['description'])) {
+                        $message .= "- **Description:** " . substr($productData['description'], 0, 100) . (strlen($productData['description']) > 100 ? '...' : '') . "\n";
+                    }
+                    if (isset($productData['warranty_type']) && !empty($productData['warranty_type'])) {
+                        $message .= "- **Warranty:** {$productData['warranty_type']}";
+                        if (isset($productData['warranty_duration']) && !empty($productData['warranty_duration'])) {
+                            $message .= " ({$productData['warranty_duration']} year" . ($productData['warranty_duration'] > 1 ? 's' : '') . ")";
+                        }
+                        $message .= "\n";
+                    }
+                    if (isset($productData['id'])) {
+                        $message .= "- **ID:** {$productData['id']}\n";
                     }
                 }
                 
