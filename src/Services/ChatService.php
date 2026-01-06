@@ -1050,7 +1050,7 @@ class ChatService
         $prompt .= "\n\nIMPORTANT: When you provide numbered lists or options:";
         $prompt .= "\n- If the user responds with JUST a number (like '1', '2', etc.), they are selecting that option from your previous response";
         $prompt .= "\n- Look at your previous message and expand on the selected option";
-        $prompt .= "\n- For example, if you listed '1. Introduction to Laravel' and user says '1', provide detailed information about introducing Laravel";
+        $prompt .= "\n- For example, if you listed '1. [Topic A]' and user says '1', provide detailed information about [Topic A]";
         $prompt .= "\n- NEVER say the question is incomplete when user sends a number - they're making a selection!";
 
         if ($useActions) {
@@ -1334,7 +1334,7 @@ class ChatService
 
         $prompt .= "\nYou can:\n";
         $prompt .= "- Say **'yes'** to use these suggestions\n";
-        $prompt .= "- Provide different values (e.g., 'SKU: MBP-2024, Price: $1999')\n";
+        $prompt .= "- Provide different values (e.g., 'SKU: [code], Price: [amount]')\n";
         $prompt .= "- Say **'skip'** to proceed without optional fields";
 
         return $prompt;
@@ -1367,8 +1367,8 @@ class ChatService
             $prompt .= "Requirements:\n";
             $prompt .= "- Start with '**Summary of Information:**'\n";
             $prompt .= "- Intelligently display relevant information based on the data structure:\n";
-            $prompt .= "  * If there's customer/client/user info, show it (name, email, phone)\n";
-            $prompt .= "  * If there are items/products/lines arrays, show them in a numbered list with details\n";
+            $prompt .= "  * If there's entity info (person/organization), show relevant contact details\n";
+            $prompt .= "  * If there are collection arrays, show them in a numbered list with details\n";
             $prompt .= "  * For array fields, show nested values INSIDE the array items, not as top-level fields\n";
             $prompt .= "  * If there are dates (created, issued, due, scheduled), show meaningful ones\n";
             $prompt .= "  * If there's a total/amount/price, display it\n";
@@ -1646,7 +1646,8 @@ class ChatService
                 $prompt .= "Fields: " . implode(', ', $optionalParams) . "\n\n";
                 $prompt .= "Message: {$message}\n\n";
                 $prompt .= "Return ONLY a JSON object with the extracted values. Use null for missing fields.\n";
-                $prompt .= "Example: {\"sku\": \"WH-001\", \"price\": 149.99}\n";
+                $prompt .= "Format: {\"field_name\": \"value\"}\n";
+                $prompt .= "IMPORTANT: Extract ONLY actual values from the user's message, not placeholder examples.\n";
 
                 $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
                     prompt: $prompt,
@@ -1704,10 +1705,12 @@ class ChatService
                 if (!empty($missingFields)) {
                     $prompt .= "Missing Required Fields: " . implode(', ', $missingFields) . "\n";
                     $prompt .= "IMPORTANT: If the user's message provides a value that could fill any of these missing fields, classify as 'provide_data' and extract the data.\n";
-                    $prompt .= "Examples:\n";
-                    $prompt .= "- If missing 'sale_price' and user says '$1099' or '1099' → extract as: {\"sale_price\": 1099}\n";
-                    $prompt .= "- If missing 'email' and user says 'test@example.com' → extract as: {\"email\": \"test@example.com\"}\n";
-                    $prompt .= "- If missing 'quantity' and user says '50 units' → extract as: {\"quantity\": 50}\n";
+                    $prompt .= "Pattern:\n";
+                    $prompt .= "- If missing '[field]' and user provides [value] → extract as: {\"[field]\": [value]}\n";
+                    $prompt .= "- Extract numeric values without currency symbols\n";
+                    $prompt .= "- Extract email addresses in standard format\n";
+                    $prompt .= "- Extract quantities as numbers only\n";
+                    $prompt .= "CRITICAL: Use ONLY the actual values from user's message, never use these pattern examples as real data.\n";
                 }
                 $prompt .= "\n";
             }
@@ -1754,7 +1757,7 @@ class ChatService
             $prompt .= "- If user says 'change [item] price to X', extract as: {\"[item]_price\": X}\n";
             $prompt .= "- If user says 'change price to X' without item name, extract as: {\"price\": X}\n";
             $prompt .= "- For item-specific updates, ALWAYS use pattern: {item_name}_{field_name}\n";
-            $prompt .= "- Extract numeric values without currency symbols (400 not $400)\n";
+            $prompt .= "- Extract numeric values without currency symbols\n";
             $prompt .= "- Classify as 'modify' when user wants to change ANY existing field value\n";
             $prompt .= "- When analyzing user input, ignore all example values in this prompt and focus ONLY on what the user actually said\n\n";
 
@@ -2180,8 +2183,8 @@ class ChatService
                     $prompt .= "Requirements:\n";
                     $prompt .= "- Start with '✅ **{$modelName} Created Successfully**'\n";
                     $prompt .= "- Intelligently display relevant information based on the data structure:\n";
-                    $prompt .= "  * If there's customer/client/user info, show it (name, email, phone)\n";
-                    $prompt .= "  * If there are items/products/lines, show them in a numbered list with details\n";
+                    $prompt .= "  * If there's entity info (person/organization), show relevant contact details\n";
+                    $prompt .= "  * If there are collection items, show them in a numbered list with details\n";
                     $prompt .= "  * If there are dates (created, issued, due, scheduled), show meaningful ones\n";
                     $prompt .= "  * If there's a total/amount/price, display it prominently\n";
                     $prompt .= "  * If there's a reference ID (invoice_id, order_id, ticket_id, etc.), show it\n";
