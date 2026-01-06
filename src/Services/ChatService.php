@@ -1617,9 +1617,10 @@ class ChatService
                     $isRequired = $fieldConfig['required'] ?? false;
                     $isAlreadyProvided = isset($currentParams[$fieldName]);
                     $isRelationField = $this->isRelationshipField($fieldName, $fieldConfig);
+                    $hasDefaultValue = isset($fieldConfig['default']) || isset($fieldConfig['default_value']);
                     
-                    // Skip required fields, already provided fields, and relationship ID fields
-                    if (!$isRequired && !$isAlreadyProvided && !$isRelationField) {
+                    // Skip required fields, already provided fields, relationship ID fields, and fields with defaults
+                    if (!$isRequired && !$isAlreadyProvided && !$isRelationField && !$hasDefaultValue) {
                         $optionalFields[] = $fieldName;
                     }
                 }
