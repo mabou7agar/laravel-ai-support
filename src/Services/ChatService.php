@@ -1715,15 +1715,13 @@ class ChatService
             $prompt .= "Analyze and classify the intent into ONE of these categories:\n";
             $prompt .= "1. 'confirm' - User agrees/confirms to proceed (yes, ok, go ahead, I don't mind, sounds good, etc.)\n";
             $prompt .= "2. 'reject' - User declines/cancels (no, cancel, stop, nevermind, etc.)\n";
-            $prompt .= "3. 'modify' - User wants to change/update parameters. Examples:\n";
-            $prompt .= "   - 'change price to X' (extract as: {\"price\": X} OR {\"item_name_price\": X} if item specified)\n";
-            $prompt .= "   - 'make it Y instead'\n";
-            $prompt .= "   - 'Customer name Mohamed2' (updating customer_name field)\n";
-            $prompt .= "   - 'price should be 500' (extract as: {\"price\": 500})\n";
-            $prompt .= "   - 'change mouse quantity to 10' (extract as: {\"mouse_quantity\": 10})\n";
-            $prompt .= "   - 'update laptop price to 1500' (extract as: {\"laptop_price\": 1500})\n";
-            $prompt .= "   - 'change ipad price to 400' (extract as: {\"ipad_price\": 400})\n";
-            $prompt .= "   - Any message that provides a field name/value pair to update existing data\n";
+            $prompt .= "3. 'modify' - User wants to change/update parameters. Pattern:\n";
+            $prompt .= "   - 'change [field] to [value]' → extract as: {\"[field]\": [value]}\n";
+            $prompt .= "   - 'make it [value] instead' → extract field from context\n";
+            $prompt .= "   - '[field] should be [value]' → extract as: {\"[field]\": [value]}\n";
+            $prompt .= "   - 'update [field] to [value]' → extract as: {\"[field]\": [value]}\n";
+            $prompt .= "   - Any message providing a field name/value pair to update existing data\n";
+            $prompt .= "   IMPORTANT: Extract ONLY the actual values from user's message, never use placeholder examples\n";
             $prompt .= "4. 'provide_data' - User is providing additional data for optional parameters\n";
             $prompt .= "5. 'question' - User is asking a question or needs clarification\n";
             $prompt .= "6. 'new_request' - User is making a completely new request\n\n";
@@ -1752,11 +1750,13 @@ class ChatService
             }
 
             $prompt .= "CRITICAL RULES:\n";
+            $prompt .= "- NEVER use example values from these instructions - ONLY extract actual values from the user's message\n";
             $prompt .= "- If user says 'change [item] price to X', extract as: {\"[item]_price\": X}\n";
             $prompt .= "- If user says 'change price to X' without item name, extract as: {\"price\": X}\n";
             $prompt .= "- For item-specific updates, ALWAYS use pattern: {item_name}_{field_name}\n";
             $prompt .= "- Extract numeric values without currency symbols (400 not $400)\n";
-            $prompt .= "- Classify as 'modify' when user wants to change ANY existing field value\n\n";
+            $prompt .= "- Classify as 'modify' when user wants to change ANY existing field value\n";
+            $prompt .= "- When analyzing user input, ignore all example values in this prompt and focus ONLY on what the user actually said\n\n";
 
             $prompt .= "Respond with ONLY valid JSON in this exact format:\n";
             $prompt .= "{\n";
