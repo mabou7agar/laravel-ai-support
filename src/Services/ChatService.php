@@ -599,6 +599,9 @@ class ChatService
                                 'new_data' => array_keys($newData),
                                 'merged_params' => array_keys($mergedParams),
                             ]);
+                            
+                            // Mark that we added optional data to show updated confirmation
+                            $addedOptionalData = true;
                         }
 
                         // Update pending action in database with merged params
@@ -611,10 +614,11 @@ class ChatService
                             'isEmpty' => empty($stillMissing),
                             'wasIncomplete' => $wasIncomplete,
                             'isIncomplete' => $cachedActionData['is_incomplete'] ?? 'not set',
+                            'addedOptionalData' => $addedOptionalData ?? false,
                         ]);
                         
-                        // If action was incomplete and is now complete, present it for confirmation with suggestions
-                        if ($wasIncomplete && empty($stillMissing)) {
+                        // Show confirmation if: action was incomplete and is now complete, OR optional data was added
+                        if (($wasIncomplete && empty($stillMissing)) || ($addedOptionalData ?? false)) {
                             Log::channel('ai-engine')->info('Presenting completed action for confirmation', [
                                 'action' => $cachedActionData['label'] ?? 'unknown',
                                 'params' => array_keys($cachedActionData['data']['params'] ?? []),
