@@ -2218,17 +2218,39 @@ class ChatService
                     $prompt .= "CRITICAL: NEVER classify simple values as 'new_request' when there are missing fields.\n";
                 } else {
                     $prompt .= "Status: Action is COMPLETE and awaiting confirmation.\n";
+                    
+                    // Get available optional fields for better extraction
+                    $modelClass = $pendingAction['data']['model_class'] ?? null;
+                    $availableFields = [];
+                    if ($modelClass) {
+                        $tempAction = (object)['data' => $pendingAction['data']];
+                        $availableFields = $this->getOptionalParamsForAction($tempAction);
+                    }
+                    
+                    if (!empty($availableFields)) {
+                        $prompt .= "Available Optional Fields: " . implode(', ', $availableFields) . "\n";
+                        $prompt .= "CRITICAL FIELD MATCHING RULES:\n";
+                        $prompt .= "1. Match user's field name to the EXACT field name from the available fields list\n";
+                        $prompt .= "2. For compound field names (e.g., 'purchase_price' vs 'sale_price'):\n";
+                        $prompt .= "   - If user says 'Purchase price 400' → extract as: {\"purchase_price\": 400}\n";
+                        $prompt .= "   - If user says 'Sale price 600' → extract as: {\"sale_price\": 600}\n";
+                        $prompt .= "   - Match the FULL field name including prefix (purchase_, sale_, etc.)\n";
+                        $prompt .= "3. DO NOT abbreviate or modify field names\n";
+                        $prompt .= "4. DO NOT confuse similar field names (purchase_price ≠ sale_price)\n\n";
+                    }
+                    
                     $prompt .= "CRITICAL DECISION RULES:\n";
-                    $prompt .= "1. If user provides ADDITIONAL/OPTIONAL data for the SAME entity (e.g., 'Category Laptops', 'Color Red'):\n";
-                    $prompt .= "   → Classify as 'provide_data' (user is enhancing the existing action)\n";
-                    $prompt .= "   → Extract the field and value\n";
+                    $prompt .= "1. If user provides ADDITIONAL/OPTIONAL data for the SAME entity (e.g., 'Category Laptops', 'Purchase price 400'):\n";
+                    $prompt .= "   → Classify as 'provide_data' or 'modify' (user is enhancing the existing action)\n";
+                    $prompt .= "   → Extract the field and value using EXACT field names from available fields\n";
                     $prompt .= "2. If user explicitly requests creating a DIFFERENT entity type (e.g., 'Create Invoice', 'Add Customer'):\n";
                     $prompt .= "   → Classify as 'new_request' (user wants to start something new)\n";
                     $prompt .= "3. If user provides a simple field value without 'create' or 'add' keywords:\n";
                     $prompt .= "   → Classify as 'provide_data' (assume it's for the pending action)\n";
                     $prompt .= "Examples:\n";
-                    $prompt .= "- 'Category Laptops' → provide_data (adding optional field to existing action)\n";
-                    $prompt .= "- 'Description: High performance laptop' → provide_data (adding optional field)\n";
+                    $prompt .= "- 'Category Laptops' → provide_data, extract: {\"category\": \"Laptops\"}\n";
+                    $prompt .= "- 'Purchase price 400' → provide_data, extract: {\"purchase_price\": 400}\n";
+                    $prompt .= "- 'Description: High performance laptop' → provide_data, extract: {\"description\": \"High performance laptop\"}\n";
                     $prompt .= "- 'Create Invoice' → new_request (explicitly requesting different entity)\n";
                     $prompt .= "- 'Add Customer John' → new_request (explicitly requesting different entity)\n";
                 }
@@ -2236,7 +2258,11 @@ class ChatService
             }
 
             $prompt .= "Analyze and classify the intent into ONE of these categories:\n";
-            $prompt .= "1. 'confirm' - User agrees/confirms to proceed (yes, ok, go ahead, I don't mind, sounds good, etc.)\n";
+            $prompt .= "1. 'confirm' - User agrees/confirms to proceed WITHOUT providing any field data\n";
+            $prompt .= "   - ONLY simple affirmative words: yes, ok, go ahead, I don't mind, sounds good, confirm, proceed, etc.\n";
+            $prompt .= "   - CRITICAL: If message contains ANY field name or value (e.g., 'Quantity 200'), it is NOT a confirmation\n";
+            $prompt .= "   - Examples of VALID confirmations: 'yes', 'ok', 'go ahead', 'sounds good'\n";
+            $prompt .= "   - Examples of INVALID confirmations: 'Quantity 200', 'Category Laptops', 'SKU ABC123'\n";
             $prompt .= "2. 'reject' - User declines/cancels (no, cancel, stop, nevermind, etc.)\n";
             $prompt .= "3. 'use_suggestions' - User wants to use AI-generated suggestions (use suggestions, accept suggestions, apply suggestions, etc.)\n";
             $prompt .= "4. 'modify' - User wants to change/update parameters. Pattern:\n";
@@ -2247,6 +2273,8 @@ class ChatService
             $prompt .= "   - Any message providing a field name/value pair to update existing data\n";
             $prompt .= "   IMPORTANT: Extract ONLY the actual values from user's message, never use placeholder examples\n";
             $prompt .= "5. 'provide_data' - User is providing additional data for optional parameters\n";
+            $prompt .= "   - Pattern: '[field_name] [value]' (e.g., 'Quantity 200', 'Category Laptops', 'SKU ABC123')\n";
+            $prompt .= "   - CRITICAL: Any message with field name + value is 'provide_data', NOT 'confirm'\n";
             $prompt .= "6. 'question' - User is asking a question or needs clarification\n";
             $prompt .= "7. 'new_request' - User is making a completely new request\n\n";
             
