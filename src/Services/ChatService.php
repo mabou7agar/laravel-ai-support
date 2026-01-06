@@ -710,27 +710,27 @@ class ChatService
                     // Select the most relevant action based on completeness and query match
                     // Prefer incomplete actions to complete ones (ask for missing info first)
                     // Then prefer complete actions that match the user's intent
-                    $actionToCache = null;
+                    // Find the action to cache/present (prioritize ready actions first)
+                    $readyAction = null;
                     $incompleteAction = null;
-                    $completeAction = null;
                     
                     foreach ($smartActions as $action) {
                         $isReady = $action->data['ready_to_execute'] ?? false;
                         $hasMissing = !empty($action->data['missing_fields'] ?? []);
                         
-                        // Prioritize incomplete actions (need user input)
+                        // Prioritize ready actions (can be executed immediately)
+                        if ($isReady && !$readyAction) {
+                            $readyAction = $action;
+                        }
+                        
+                        // Track incomplete actions as fallback
                         if ($hasMissing && !$incompleteAction) {
                             $incompleteAction = $action;
                         }
-                        
-                        // Track complete actions as fallback
-                        if ($isReady && !$completeAction) {
-                            $completeAction = $action;
-                        }
                     }
                     
-                    // Use incomplete action first (to gather missing info), then complete, then first
-                    $actionToCache = $incompleteAction ?? $completeAction ?? $smartActions[0];
+                    // Use ready action first (best user experience), then incomplete, then first
+                    $actionToCache = $readyAction ?? $incompleteAction ?? $smartActions[0];
                     
                     $isIncomplete = !($actionToCache->data['ready_to_execute'] ?? true);
                     $missingFields = $actionToCache->data['missing_fields'] ?? [];
@@ -1727,6 +1727,29 @@ class ChatService
             $prompt .= "4. 'provide_data' - User is providing additional data for optional parameters\n";
             $prompt .= "5. 'question' - User is asking a question or needs clarification\n";
             $prompt .= "6. 'new_request' - User is making a completely new request\n\n";
+            
+            // Add document type analysis for long-form content (from config)
+            $docTypeConfig = config('ai-engine.project_context.document_type_detection');
+            $isLongContent = strlen($message) > ($docTypeConfig['min_length'] ?? 500);
+            
+            if ($isLongContent && !$pendingAction && ($docTypeConfig['enabled'] ?? true)) {
+                $prompt .= "DOCUMENT TYPE ANALYSIS (for messages >" . ($docTypeConfig['min_length'] ?? 500) . " chars):\n";
+                $prompt .= "If the message contains structured document data, analyze the business relationship:\n\n";
+                
+                $rules = $docTypeConfig['rules'] ?? [];
+                if (!empty($rules)) {
+                    $prompt .= "**CRITICAL: Determine document type based on these rules:**\n";
+                    foreach ($rules as $type => $rule) {
+                        $indicators = implode(', ', $rule['indicators'] ?? []);
+                        $prompt .= "- {$rule['description']}\n";
+                        $prompt .= "  Indicators: {$indicators}\n";
+                        $prompt .= "  → Suggest: '{$rule['suggested_collection']}'\n";
+                        $prompt .= "  Reasoning: {$rule['reasoning']}\n\n";
+                    }
+                    
+                    $prompt .= "Add to response: \"suggested_collection\": \"" . implode('" or "', array_column($rules, 'suggested_collection')) . "\"\n\n";
+                }
+            }
 
             $prompt .= "CRITICAL RULES:\n";
             $prompt .= "- If user says 'change [item] price to X', extract as: {\"[item]_price\": X}\n";
@@ -1740,7 +1763,8 @@ class ChatService
             $prompt .= '  "intent": "confirm|reject|modify|provide_data|question|new_request",'."\n";
             $prompt .= '  "confidence": 0.95,'."\n";
             $prompt .= '  "extracted_data": {"field_name": "value"},'."\n";
-            $prompt .= '  "context_enhancement": "Brief description of what user wants"'."\n";
+            $prompt .= '  "context_enhancement": "Brief description of what user wants",'."\n";
+            $prompt .= '  "suggested_collection": "ModelClassName" (ONLY for document content >500 chars)'."\n";
             $prompt .= "}";
 
             // Use faster/cheaper model for simple intent analysis

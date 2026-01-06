@@ -53,6 +53,40 @@ class ActionManager
             'intent' => $intentAnalysis['intent'] ?? null,
         ]);
         
+        // Use suggested collection from intent analysis if available
+        $suggestedCollection = $intentAnalysis['suggested_collection'] ?? null;
+        
+        if ($suggestedCollection) {
+            Log::channel('ai-engine')->info('Document type suggested by intent analysis', [
+                'suggested_collection' => $suggestedCollection,
+            ]);
+            
+            // Prioritize actions matching the suggested collection
+            $prioritizedActions = [];
+            $otherActions = [];
+            
+            foreach ($allActions as $id => $definition) {
+                $modelClass = $definition['model_class'] ?? '';
+                
+                // Match by class name (e.g., "Bill" matches "Workdo\Account\Entities\Bill")
+                if (str_contains($modelClass, $suggestedCollection)) {
+                    $prioritizedActions[$id] = $definition;
+                } else {
+                    $otherActions[$id] = $definition;
+                }
+            }
+            
+            // Put suggested actions first
+            if (!empty($prioritizedActions)) {
+                $allActions = array_merge($prioritizedActions, $otherActions);
+                
+                Log::channel('ai-engine')->info('Actions prioritized based on document type', [
+                    'prioritized_count' => count($prioritizedActions),
+                    'total_count' => count($allActions),
+                ]);
+            }
+        }
+        
         foreach ($allActions as $id => $definition) {
             // Check if action matches context
             if (!$this->matchesContext($definition, $message, $context, $intentAnalysis)) {
@@ -74,6 +108,7 @@ class ActionManager
         Log::channel('ai-engine')->info('Actions generated', [
             'count' => count($actions),
             'action_ids' => array_map(fn($a) => $a->id, $actions),
+            'suggested_collection' => $suggestedCollection,
         ]);
         
         return $actions;

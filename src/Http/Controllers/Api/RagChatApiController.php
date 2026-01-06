@@ -130,7 +130,7 @@ class RagChatApiController extends Controller
                     'sources' => $metadata['sources'] ?? [],
                     'numbered_options' => $metadata['numbered_options'] ?? [],
                     'has_options' => $metadata['has_options'] ?? false,
-                    'actions' => array_map(fn($action) => $action->toArray(), $actions),
+                    'actions' => array_map(fn($action) => is_array($action) ? $action : $action->toArray(), $actions),
                     'usage' => $response->getUsage() ?? [],
                     'session_id' => $sessionId,
                 ]

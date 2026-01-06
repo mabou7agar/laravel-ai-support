@@ -81,6 +81,41 @@ return [
 
         // Additional custom context (free-form text)
         'additional_context' => env('AI_ENGINE_PROJECT_ADDITIONAL_CONTEXT', ''),
+        
+        // Document Type Detection Rules (for messages >500 chars)
+        // Used by intent analysis to suggest appropriate collections based on document content
+        'document_type_detection' => [
+            'enabled' => env('AI_ENGINE_DOCUMENT_TYPE_DETECTION', true),
+            'min_length' => 500, // Minimum message length to trigger document analysis
+            
+            // Detection rules for different document types
+            'rules' => [
+                'bill' => [
+                    'description' => 'Vendor bill/invoice received from suppliers (user is buyer)',
+                    'indicators' => ['Vendor:', 'From:', 'Supplier:'],
+                    'suggested_collection' => 'Bill',
+                    'reasoning' => 'Document shows vendor information - user is receiving from vendor (buyer role)',
+                ],
+                'invoice' => [
+                    'description' => 'Customer invoice sent to clients (user is seller)',
+                    'indicators' => ['Bill To:', 'Customer:', 'Invoice To:'],
+                    'suggested_collection' => 'Invoice',
+                    'reasoning' => 'Document shows customer information - user is sending to customer (seller role)',
+                ],
+                'product' => [
+                    'description' => 'Product information without vendor/customer context',
+                    'indicators' => ['Product:', 'SKU:', 'Price:', 'Quantity:'],
+                    'suggested_collection' => 'ProductService',
+                    'reasoning' => 'Document contains product details only',
+                ],
+                'customer' => [
+                    'description' => 'Customer/contact information',
+                    'indicators' => ['Contact:', 'Email:', 'Phone:', 'Address:'],
+                    'suggested_collection' => 'Customer',
+                    'reasoning' => 'Document contains contact/customer information',
+                ],
+            ],
+        ],
     ],
 
     /*
