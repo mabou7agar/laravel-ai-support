@@ -98,12 +98,21 @@ class DataCollectorService
         // Merge config's initial data with provided initial data (provided takes precedence)
         $mergedInitialData = array_merge($config->initialData, $initialData);
         
+        // Determine the first uncollected field (skip fields with initial data)
+        $firstUncollectedField = null;
+        foreach ($config->getFields() as $fieldName => $field) {
+            if (!isset($mergedInitialData[$fieldName]) || empty($mergedInitialData[$fieldName])) {
+                $firstUncollectedField = $fieldName;
+                break;
+            }
+        }
+        
         $state = new DataCollectorState(
             sessionId: $sessionId,
             configName: $config->name,
             status: DataCollectorState::STATUS_COLLECTING,
             collectedData: $mergedInitialData,
-            currentField: $config->getFirstField()?->name,
+            currentField: $firstUncollectedField,
             embeddedConfig: $config->toArray(),  // Embed config in state for reliable persistence
         );
 
@@ -214,14 +223,59 @@ class DataCollectorService
 
         $responseContent = $aiResponse->getContent();
         
-        // Parse AI response for field extractions
-        $extractedFields = $this->parseFieldExtractions($responseContent, $config);
+        // Use intent analysis to intelligently extract field value
+        $intentAnalysis = $this->analyzeFieldIntent(
+            $message,
+            $state->currentField,
+            $config,
+            $state->getData()
+        );
+        
+        Log::channel('ai-engine')->info('Field intent analysis completed', [
+            'session_id' => $state->sessionId,
+            'intent' => $intentAnalysis['intent'],
+            'confidence' => $intentAnalysis['confidence'],
+            'extracted_value' => $intentAnalysis['extracted_value'] ?? null,
+            'current_field' => $state->currentField,
+        ]);
+        
+        // Handle different intents from analysis
+        $extractedFields = [];
+        
+        if ($intentAnalysis['intent'] === 'provide_value' && !empty($intentAnalysis['extracted_value'])) {
+            // User provided a value - use it
+            $extractedFields[$state->currentField] = $intentAnalysis['extracted_value'];
+            
+            Log::channel('ai-engine')->info('Using value from intent analysis', [
+                'field' => $state->currentField,
+                'value' => $intentAnalysis['extracted_value'],
+                'confidence' => $intentAnalysis['confidence'],
+            ]);
+        } elseif ($intentAnalysis['intent'] === 'question') {
+            // User is asking a question - don't extract, let AI respond
+            Log::channel('ai-engine')->info('User asked a question, no extraction needed');
+        } elseif ($intentAnalysis['intent'] === 'skip') {
+            // User wants to skip - handle skip logic
+            Log::channel('ai-engine')->info('User wants to skip field', [
+                'field' => $state->currentField,
+            ]);
+        } elseif ($intentAnalysis['intent'] === 'unclear') {
+            // Message is unclear - let AI ask for clarification
+            Log::channel('ai-engine')->info('User message unclear, AI will ask for clarification');
+        } else {
+            // Fallback: Parse AI response for field extractions
+            Log::channel('ai-engine')->info('Intent analysis returned no value, falling back to marker parsing', [
+                'intent' => $intentAnalysis['intent'],
+            ]);
+            $extractedFields = $this->parseFieldExtractions($responseContent, $config);
+        }
         
         Log::channel('ai-engine')->info('Field extraction results', [
             'session_id' => $state->sessionId,
             'extracted_count' => count($extractedFields),
             'extracted_fields' => array_keys($extractedFields),
             'current_field' => $state->currentField,
+            'used_intent_analysis' => !empty($intentAnalysis['extracted_value']),
         ]);
         
         // CRITICAL: Only accept extraction for the current field to prevent hallucination
@@ -285,18 +339,25 @@ class DataCollectorService
                     $state->clearValidationErrors();
                     Log::channel('ai-engine')->info('Field value saved successfully', [
                         'field' => $fieldName,
-                        'value' => $value,
+                        'value' => substr($value, 0, 100),
                         'session_id' => $state->sessionId,
+                        'all_collected' => array_keys($state->getData()),
                     ]);
                 } else {
                     $state->setValidationErrors([$fieldName => $errors]);
-                    Log::channel('ai-engine')->warning('Field validation failed', [
+                    Log::channel('ai-engine')->error('Field validation failed - VALUE REJECTED', [
                         'field' => $fieldName,
-                        'value' => $value,
+                        'value' => substr($value, 0, 100),
                         'errors' => $errors,
+                        'validation_rules' => $field->validation,
                         'session_id' => $state->sessionId,
                     ]);
                 }
+            } else {
+                Log::channel('ai-engine')->error('Field not found in config', [
+                    'attempted_field' => $fieldName,
+                    'available_fields' => $config->getFieldNames(),
+                ]);
             }
         }
 
@@ -1336,6 +1397,173 @@ class DataCollectorService
         }
 
         return $extracted;
+    }
+
+    /**
+     * Analyze user message intent for field collection using AI
+     * Similar to ChatService intent analysis but focused on single field extraction
+     */
+    protected function analyzeFieldIntent(
+        string $message,
+        string $currentField,
+        DataCollectorConfig $config,
+        array $collectedData
+    ): array {
+        $field = $config->getField($currentField);
+        
+        if (!$field) {
+            return [
+                'intent' => 'unknown',
+                'confidence' => 0,
+                'extracted_value' => null,
+            ];
+        }
+        
+        try {
+            $prompt = "Analyze the user's message to extract a value for a specific field.\n\n";
+            $prompt .= "User Message: \"{$message}\"\n\n";
+            $prompt .= "FIELD TO EXTRACT:\n";
+            $prompt .= "- Field Name: {$currentField}\n";
+            $prompt .= "- Description: {$field->description}\n";
+            $prompt .= "- Type: {$field->type}\n";
+            $prompt .= "- Required: " . ($field->required ? 'YES' : 'NO') . "\n";
+            
+            if (!empty($field->options)) {
+                $prompt .= "- Valid Options: " . implode(', ', $field->options) . "\n";
+            }
+            
+            if (!empty($field->examples)) {
+                $prompt .= "- Examples: " . implode(', ', $field->examples) . "\n";
+            }
+            
+            if ($field->validation) {
+                $prompt .= "- Validation: {$field->validation}\n";
+            }
+            
+            $prompt .= "\nALREADY COLLECTED FIELDS (DO NOT extract these):\n";
+            foreach ($collectedData as $fieldName => $value) {
+                if (!empty($value)) {
+                    $prompt .= "- {$fieldName}: {$value}\n";
+                }
+            }
+            
+            $prompt .= "\nYOUR TASK:\n";
+            $prompt .= "Analyze the user's message and determine their intent:\n\n";
+            $prompt .= "1. 'provide_value' - User is providing a value for the '{$currentField}' field\n";
+            $prompt .= "   → Extract the EXACT value from their message\n";
+            $prompt .= "   → Clean and format it appropriately for the field type\n";
+            $prompt .= "   → For select fields, match to closest valid option\n";
+            $prompt .= "   → For numeric fields, extract just the number\n";
+            $prompt .= "2. 'question' - User is asking a question or needs clarification\n";
+            $prompt .= "   → Do NOT extract any value\n";
+            $prompt .= "3. 'skip' - User wants to skip this field (e.g., 'skip', 'pass', 'next')\n";
+            $prompt .= "   → Do NOT extract any value\n";
+            $prompt .= "4. 'unclear' - Message is ambiguous or doesn't contain a clear value\n";
+            $prompt .= "   → Do NOT extract any value\n\n";
+            
+            $prompt .= "CRITICAL EXTRACTION RULES:\n";
+            $prompt .= "- ONLY extract a value if the user is clearly providing one for '{$currentField}'\n";
+            $prompt .= "- NEVER extract values for other fields (they're already collected)\n";
+            $prompt .= "- NEVER infer or generate values - only extract what user explicitly said\n";
+            $prompt .= "- If user mentions multiple things, extract ONLY the value for '{$currentField}'\n";
+            $prompt .= "- For select fields, match user's input to the closest valid option\n";
+            $prompt .= "- For numeric fields, extract just the number (remove units, currency, etc.)\n";
+            $prompt .= "- If unclear or ambiguous, set intent to 'unclear' and extracted_value to null\n\n";
+            
+            $prompt .= "EXAMPLES:\n";
+            if ($field->type === 'select' && !empty($field->options)) {
+                $prompt .= "Field: {$currentField} (select from: " . implode(', ', $field->options) . ")\n";
+                $prompt .= "- User: 'beginner' → intent: 'provide_value', value: 'beginner'\n";
+                $prompt .= "- User: 'I'm new to this' → intent: 'provide_value', value: 'beginner'\n";
+                $prompt .= "- User: 'what are the options?' → intent: 'question', value: null\n";
+            } elseif (str_contains($field->validation ?? '', 'numeric')) {
+                $prompt .= "Field: {$currentField} (numeric)\n";
+                $prompt .= "- User: '10 hours' → intent: 'provide_value', value: '10'\n";
+                $prompt .= "- User: 'about ten' → intent: 'provide_value', value: '10'\n";
+                $prompt .= "- User: 'not sure yet' → intent: 'unclear', value: null\n";
+            } else {
+                $prompt .= "Field: {$currentField} (text)\n";
+                $prompt .= "- User: 'Learn Laravel basics' → intent: 'provide_value', value: 'Learn Laravel basics'\n";
+                $prompt .= "- User: 'what should I write?' → intent: 'question', value: null\n";
+            }
+            
+            $prompt .= "\nRespond with ONLY valid JSON in this exact format:\n";
+            $prompt .= "{\n";
+            $prompt .= '  "intent": "provide_value|question|skip|unclear",'."\n";
+            $prompt .= '  "confidence": 0.95,'."\n";
+            $prompt .= '  "extracted_value": "the actual value from user message or null",'."\n";
+            $prompt .= '  "reasoning": "Brief explanation of why you chose this intent"'."\n";
+            $prompt .= "}\n";
+            
+            // Use fast model for intent analysis
+            $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
+                maxTokens: 200,
+                temperature: 0
+            );
+            
+            $response = app(\LaravelAIEngine\Services\AIEngineService::class)->generate($aiRequest);
+            
+            if (!$response->success) {
+                Log::channel('ai-engine')->warning('Field intent analysis failed', [
+                    'error' => $response->error,
+                ]);
+                
+                return [
+                    'intent' => 'provide_value',
+                    'confidence' => 0.5,
+                    'extracted_value' => trim($message),
+                    'reasoning' => 'AI analysis failed, using raw message',
+                ];
+            }
+            
+            $content = $response->getContent();
+            
+            // Extract JSON from response
+            $jsonContent = $content;
+            if (preg_match('/(\{.*\})/s', $content, $matches)) {
+                $jsonContent = $matches[1];
+            }
+            
+            $result = json_decode($jsonContent, true);
+            
+            if (is_array($result) && isset($result['intent'])) {
+                Log::channel('ai-engine')->info('Field intent analysis successful', [
+                    'intent' => $result['intent'],
+                    'confidence' => $result['confidence'] ?? 0,
+                    'has_value' => !empty($result['extracted_value']),
+                    'reasoning' => $result['reasoning'] ?? '',
+                ]);
+                
+                return $result;
+            }
+            
+            Log::channel('ai-engine')->warning('Failed to parse intent analysis JSON', [
+                'content' => substr($content, 0, 200),
+            ]);
+            
+            // Fallback
+            return [
+                'intent' => 'provide_value',
+                'confidence' => 0.5,
+                'extracted_value' => trim($message),
+                'reasoning' => 'JSON parsing failed, using raw message',
+            ];
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Field intent analysis exception', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            return [
+                'intent' => 'provide_value',
+                'confidence' => 0.5,
+                'extracted_value' => trim($message),
+                'reasoning' => 'Exception occurred, using raw message',
+            ];
+        }
     }
 
     /**
