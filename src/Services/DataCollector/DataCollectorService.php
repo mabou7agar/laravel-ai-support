@@ -215,7 +215,12 @@ class DataCollectorService
         $responseContent = $aiResponse->getContent();
         
         // Parse AI response for field extractions
-        $extractedFields = $this->parseFieldExtractions($responseContent);
+        $extractedFields = $this->parseFieldExtractions($responseContent, $config);
+        
+        // CRITICAL: Only accept extraction for the current field to prevent hallucination
+        if ($state->currentField) {
+            $extractedFields = $this->filterToCurrentField($extractedFields, $state->currentField, $state->getData());
+        }
         
         // Track if we used direct extraction
         $usedDirectExtraction = false;
@@ -478,9 +483,11 @@ class DataCollectorService
 
         $responseContent = $aiResponse->getContent();
         
-        // Parse field extractions
-        $extractedFields = $this->parseFieldExtractions($responseContent);
+        // Parse field extractions (enhancement phase allows any field)
+        $extractedFields = $this->parseFieldExtractions($responseContent, $config);
         
+        // During enhancement, validate but don't skip already collected fields
+        // User is explicitly modifying them
         foreach ($extractedFields as $fieldName => $value) {
             $field = $config->getField($fieldName);
             if ($field) {
@@ -488,6 +495,11 @@ class DataCollectorService
                 if (empty($errors)) {
                     $state->setFieldValue($fieldName, $value);
                     $state->clearValidationErrors();
+                    Log::channel('ai-engine')->info('Field updated during enhancement', [
+                        'field' => $fieldName,
+                        'value' => $value,
+                        'session_id' => $state->sessionId,
+                    ]);
                 } else {
                     $state->setValidationErrors([$fieldName => $errors]);
                 }
@@ -1134,7 +1146,7 @@ class DataCollectorService
     /**
      * Parse field extractions from AI response
      */
-    protected function parseFieldExtractions(string $response): array
+    protected function parseFieldExtractions(string $response, DataCollectorConfig $config): array
     {
         $extracted = [];
         
@@ -1153,11 +1165,12 @@ class DataCollectorService
         }
 
         // Only use fallback parser if we found at least one FIELD_COLLECTED marker
-        // This prevents extracting from conversational text
+        // AND only for valid fields in the config
         if (!empty($extracted)) {
-            $fallbackExtracted = $this->parseFieldsFromSummary($response);
+            $fallbackExtracted = $this->parseFieldsFromSummary($response, $config);
             foreach ($fallbackExtracted as $key => $value) {
-                if (!isset($extracted[$key]) || empty($extracted[$key])) {
+                // Only accept if field exists in config and not already extracted
+                if ($config->getField($key) && (!isset($extracted[$key]) || empty($extracted[$key]))) {
                     $extracted[$key] = $value;
                 }
             }
@@ -1170,26 +1183,29 @@ class DataCollectorService
      * Fallback parser for extracting fields from AI summary text
      * Handles formats like "**Course Name**: Laravel Basics" or "- **Duration**: 10 hours"
      */
-    protected function parseFieldsFromSummary(string $response): array
+    protected function parseFieldsFromSummary(string $response, DataCollectorConfig $config): array
     {
         $extracted = [];
         
-        // Common field name mappings (display name => field key)
-        $fieldMappings = [
-            'course name' => 'name',
-            'name' => 'name',
-            'title' => 'name',
-            'description' => 'description',
-            'duration' => 'duration',
-            'level' => 'level',
-            'difficulty' => 'level',
-            'difficulty level' => 'level',
-            'lessons' => 'lessons_count',
-            'number of lessons' => 'lessons_count',
-            'lessons count' => 'lessons_count',
-            'lesson count' => 'lessons_count',
-            'total lessons' => 'lessons_count',
-        ];
+        // Build field mappings dynamically from config to avoid hardcoded assumptions
+        $fieldMappings = [];
+        foreach ($config->getFields() as $fieldName => $field) {
+            $fieldMappings[strtolower($fieldName)] = $fieldName;
+            $fieldMappings[strtolower($field->description)] = $fieldName;
+            
+            // Add common variations only for known fields
+            if ($fieldName === 'name') {
+                $fieldMappings['course name'] = 'name';
+                $fieldMappings['title'] = 'name';
+            } elseif ($fieldName === 'level') {
+                $fieldMappings['difficulty'] = 'level';
+                $fieldMappings['difficulty level'] = 'level';
+            } elseif ($fieldName === 'lessons_count') {
+                $fieldMappings['lessons'] = 'lessons_count';
+                $fieldMappings['number of lessons'] = 'lessons_count';
+                $fieldMappings['lesson count'] = 'lessons_count';
+            }
+        }
 
         // Pattern: **Label**: Value or - **Label:** Value or **Label:** Value
         // Handles both **Label**: and **Label:**
@@ -1243,6 +1259,41 @@ class DataCollectorService
         }
 
         return $extracted;
+    }
+
+    /**
+     * Filter extracted fields to only accept the current field being collected
+     * This prevents hallucination where AI extracts wrong fields
+     */
+    protected function filterToCurrentField(array $extractedFields, string $currentField, array $collectedData): array
+    {
+        $filtered = [];
+        
+        foreach ($extractedFields as $fieldName => $value) {
+            // Skip if field is already collected (prevent re-extraction)
+            if (isset($collectedData[$fieldName]) && !empty($collectedData[$fieldName])) {
+                Log::channel('ai-engine')->warning('Skipping already collected field', [
+                    'field' => $fieldName,
+                    'existing_value' => $collectedData[$fieldName],
+                    'attempted_value' => $value,
+                ]);
+                continue;
+            }
+            
+            // During collection phase, only accept the current field
+            // This prevents AI from jumping ahead or extracting wrong fields
+            if ($fieldName === $currentField) {
+                $filtered[$fieldName] = $value;
+            } else {
+                Log::channel('ai-engine')->warning('Ignoring field extraction - not current field', [
+                    'extracted_field' => $fieldName,
+                    'current_field' => $currentField,
+                    'value' => $value,
+                ]);
+            }
+        }
+        
+        return $filtered;
     }
 
     /**
@@ -1328,49 +1379,60 @@ class DataCollectorService
         // Show collected fields
         $collected = array_filter($state->getData(), fn($v) => $v !== null && $v !== '');
         if (!empty($collected)) {
-            $prompt .= "Already collected:\n";
+            $prompt .= "✓ Already collected (DO NOT ask for these again):\n";
             foreach ($collected as $field => $value) {
-                $prompt .= "- {$field}: {$value}\n";
+                $prompt .= "  - {$field}: {$value}\n";
             }
         }
 
-        // Show remaining fields
-        $missing = $config->getMissingFields($state->getData());
-        if (!empty($missing)) {
-            $prompt .= "\nStill need to collect:\n";
-            foreach ($missing as $name => $field) {
-                $required = $field->required ? '(required)' : '(optional)';
-                $prompt .= "- {$name} {$required}: {$field->description}\n";
-            }
-        }
-
-        // Current field being collected
+        // Current field being collected - EMPHASIZE THIS
         if ($state->currentField) {
             $currentField = $config->getField($state->currentField);
             if ($currentField) {
-                $prompt .= "\nCurrently asking for: {$state->currentField}\n";
-                $prompt .= "Field details: {$currentField->description}\n";
+                $prompt .= "\n" . str_repeat('━', 70) . "\n";
+                $prompt .= "🎯 FOCUS: You are ONLY collecting this ONE field right now:\n";
+                $prompt .= "   Field name: {$state->currentField}\n";
+                $prompt .= "   Description: {$currentField->description}\n";
+                $prompt .= "   Required: " . ($currentField->required ? 'YES' : 'NO') . "\n";
                 if (!empty($currentField->examples)) {
-                    $prompt .= "Examples: " . implode(', ', $currentField->examples) . "\n";
+                    $prompt .= "   Examples: " . implode(', ', $currentField->examples) . "\n";
+                }
+                if ($currentField->validation) {
+                    $prompt .= "   Validation: {$currentField->validation}\n";
+                }
+                $prompt .= "\n⚠️  IMPORTANT: Only ask for '{$state->currentField}' - ignore any other information the user provides.\n";
+                $prompt .= "   If user mentions other fields, acknowledge but don't extract them yet.\n";
+                $prompt .= str_repeat('━', 70) . "\n";
+            }
+        }
+
+        // Show remaining fields (de-emphasized)
+        $missing = $config->getMissingFields($state->getData());
+        if (!empty($missing) && count($missing) > 1) {
+            $prompt .= "\n○ Still need to collect later (not now):\n";
+            foreach ($missing as $name => $field) {
+                if ($name !== $state->currentField) {
+                    $required = $field->required ? '(required)' : '(optional)';
+                    $prompt .= "  - {$name} {$required}\n";
                 }
             }
         }
 
         // Validation errors
         if (!empty($state->validationErrors)) {
-            $prompt .= "\nValidation errors to address:\n";
+            $prompt .= "\n❌ Validation errors to address:\n";
             foreach ($state->validationErrors as $field => $errors) {
-                $prompt .= "- {$field}: " . implode(', ', $errors) . "\n";
+                $prompt .= "  - {$field}: " . implode(', ', $errors) . "\n";
             }
         }
 
         // Strong reminder to use field markers (repeated in every request)
         $prompt .= "\n" . str_repeat('=', 70) . "\n";
         $prompt .= "⚠️  CRITICAL FORMAT REQUIREMENT (MUST FOLLOW):\n";
-        $prompt .= "When you extract ANY field value, you MUST add this marker:\n";
-        $prompt .= "FIELD_COLLECTED:field_name=value\n";
-        $prompt .= "Place ALL markers at the END of your response.\n";
-        $prompt .= "Missing markers = DATA LOSS = FAILURE\n";
+        $prompt .= "When you extract the '{$state->currentField}' field value, you MUST add:\n";
+        $prompt .= "FIELD_COLLECTED:{$state->currentField}=value\n";
+        $prompt .= "Place the marker at the END of your response.\n";
+        $prompt .= "DO NOT extract other fields - only '{$state->currentField}' right now!\n";
         $prompt .= str_repeat('=', 70) . "\n";
 
         return $prompt;
