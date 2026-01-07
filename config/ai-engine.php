@@ -737,6 +737,20 @@ return [
         'enabled' => env('AI_ACTIONS_ENABLED', true),
         'max_actions_per_response' => env('AI_ACTIONS_MAX_PER_RESPONSE', 10),
         
+        // AI-Driven Thresholds and Limits
+        'thresholds' => [
+            // Confidence threshold for auto-executing actions without confirmation
+            'auto_execute_confidence' => env('AI_AUTO_EXECUTE_CONFIDENCE', 0.95),
+            
+            // Conversation history limits
+            'conversation_threshold' => env('AI_CONVERSATION_THRESHOLD', 21),
+            'recent_messages_count' => env('AI_RECENT_MESSAGES_COUNT', 5),
+            
+            // Token limits
+            'max_tokens' => env('AI_MAX_TOKENS', 2000),
+            'max_tokens_rag' => env('AI_MAX_TOKENS_RAG', 4000),
+        ],
+        
         // Intent Analysis - AI-powered message analysis for smarter responses
         // Analyzes user intent (confirm, reject, modify, provide_data, question, new_request)
         // and enhances AI prompts with context for more intelligent responses

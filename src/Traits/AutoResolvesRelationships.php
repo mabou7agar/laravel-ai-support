@@ -317,15 +317,24 @@ trait AutoResolvesRelationships
                 if (method_exists($model, $relationName)) {
                     try {
                         $relation = $model->$relationName();
-                        $relatedModel = get_class($relation->getRelated());
                         
-                        $relationships[$field] = [
-                            'model' => $relatedModel,
-                            'search_field' => 'name',
-                            'create_if_missing' => false,
-                        ];
+                        // Validate that we got a valid relation object
+                        if ($relation && is_object($relation) && method_exists($relation, 'getRelated')) {
+                            $relatedModel = get_class($relation->getRelated());
+                            
+                            $relationships[$field] = [
+                                'model' => $relatedModel,
+                                'search_field' => 'name',
+                                'create_if_missing' => false,
+                            ];
+                        }
                     } catch (\Exception $e) {
                         // Skip if relation can't be resolved
+                        Log::channel('ai-engine')->debug('Skipping relationship auto-detection', [
+                            'field' => $field,
+                            'relation' => $relationName,
+                            'error' => $e->getMessage(),
+                        ]);
                     }
                 }
             }

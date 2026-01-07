@@ -99,7 +99,7 @@ class ChatService
             // instead of sending full message history (more efficient)
             $fullHistory = $this->memoryOptimization->getOptimizedHistory($conversationId, 100);
             $messageCount = count($fullHistory);
-            $conversationThreshold = 21;
+            $conversationThreshold = config('ai-engine.actions.thresholds.conversation_threshold', 21);
 
             // Check if model supports native conversation continuity from database
             $modelRecord = \LaravelAIEngine\Models\AIModel::findByModelId($model);
@@ -118,8 +118,9 @@ class ChatService
 
             if ($supportsNativeConversation && $messageCount > $conversationThreshold) {
                 // For long conversations with supported models, rely on conversationId
-                // Only send recent context (last 5 messages) for immediate context
-                $messages = array_slice($fullHistory, -5);
+                // Only send recent context for immediate context
+                $recentCount = config('ai-engine.actions.thresholds.recent_messages_count', 5);
+                $messages = array_slice($fullHistory, -$recentCount);
 
                 if (config('ai-engine.debug')) {
                     Log::channel('ai-engine')->debug('Using conversationId for long conversation', [
@@ -253,34 +254,57 @@ class ChatService
 
                 case 'confirm':
                     if ($cachedActionData) {
-                        Log::channel('ai-engine')->info('Confirmation detected with pending action, executing directly');
+                        // Check if AI suggests auto-execution
+                        $autoExecute = $intentAnalysis['auto_execute'] ?? false;
+                        $confidenceThreshold = config('ai-engine.actions.thresholds.auto_execute_confidence', 0.95);
+                        $shouldAutoExecute = $autoExecute && ($intentAnalysis['confidence'] ?? 0) > $confidenceThreshold;
+                        
+                        Log::channel('ai-engine')->info('Confirmation detected', [
+                            'auto_execute' => $autoExecute,
+                            'confidence' => $intentAnalysis['confidence'] ?? 0,
+                            'should_auto_execute' => $shouldAutoExecute,
+                        ]);
 
-                        // Merge suggested params
-                        $actionData = $cachedActionData['data'];
-                        if (isset($cachedActionData['suggested_params'])) {
-                            $actionData['params'] = array_merge(
-                                $actionData['params'] ?? [],
-                                $cachedActionData['suggested_params']
-                            );
-                        }
-
+                        // Execute the action
                         $action = new \LaravelAIEngine\DTOs\InteractiveAction(
                             id: $cachedActionData['id'],
                             type: \LaravelAIEngine\Enums\ActionTypeEnum::from($cachedActionData['type']),
                             label: $cachedActionData['label'],
                             description: $cachedActionData['description'] ?? '',
-                            data: $actionData
+                            data: $cachedActionData['data']
                         );
 
                         $executionResult = $this->executeSmartActionInline($action, $userId);
                         $this->pendingActionService?->markExecuted($sessionId);
 
                         if ($executionResult['success']) {
+                            $message = $executionResult['message'];
+                            
+                            // Add next action suggestions if provided by AI
+                            if (!empty($intentAnalysis['next_actions'])) {
+                                $message .= "\n\n**What would you like to do next?**\n";
+                                
+                                foreach ($intentAnalysis['next_actions'] as $nextAction) {
+                                    $priority = $nextAction['priority'] ?? 'medium';
+                                    $emoji = $priority === 'high' ? '⭐' : ($priority === 'medium' ? '💡' : '📌');
+                                    $message .= "{$emoji} {$nextAction['label']}\n";
+                                }
+                                
+                                Log::channel('ai-engine')->info('Added next action suggestions', [
+                                    'suggestions' => $intentAnalysis['next_actions'],
+                                ]);
+                            }
+                            
                             return new AIResponse(
-                                content: $executionResult['message'],
+                                content: $message,
                                 engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
                                 model: \LaravelAIEngine\Enums\EntityEnum::from($model),
-                                metadata: ['action_executed' => true, 'intent_analysis' => $intentAnalysis],
+                                metadata: [
+                                    'action_executed' => true,
+                                    'auto_executed' => $shouldAutoExecute,
+                                    'next_actions' => $intentAnalysis['next_actions'] ?? [],
+                                    'intent_analysis' => $intentAnalysis
+                                ],
                                 success: true
                             );
                         } else {
@@ -320,14 +344,15 @@ class ChatService
                             'action_label' => $cachedActionData['label'] ?? 'unknown'
                         ]);
 
-                        // Update cached action with modifications
-                        $cachedActionData['data']['params'] = array_merge(
+                        // Smart merge using AI-provided modification target
+                        $cachedActionData['data']['params'] = $this->smartMergeParams(
                             $oldParams,
-                            $intentAnalysis['extracted_data']
+                            $intentAnalysis['extracted_data'],
+                            $intentAnalysis['modification_target'] ?? null
                         );
 
                         // Update pending action in database
-                        $this->pendingActionService?->updateParams($sessionId, $intentAnalysis['extracted_data']);
+                        $this->pendingActionService?->updateParams($sessionId, $cachedActionData['data']['params']);
 
                         Log::channel('ai-engine')->info('Action params updated successfully', [
                             'new_params' => $cachedActionData['data']['params']
@@ -364,7 +389,30 @@ class ChatService
                         Log::channel('ai-engine')->info('Additional data provided, updating pending action', [
                             'data' => $intentAnalysis['extracted_data'],
                             'is_incomplete' => $cachedActionData['is_incomplete'] ?? false,
+                            'field_mapping' => $intentAnalysis['field_mapping'] ?? null,
+                            'satisfies_fields' => $intentAnalysis['satisfies_fields'] ?? null,
                         ]);
+
+                        // Check for validation suggestions from AI
+                        if (!empty($intentAnalysis['validation_suggestions'])) {
+                            $warnings = [];
+                            foreach ($intentAnalysis['validation_suggestions'] as $suggestion) {
+                                $warnings[] = "⚠️ {$suggestion['field']}: {$suggestion['issue']} - {$suggestion['suggestion']}";
+                            }
+                            
+                            Log::channel('ai-engine')->warning('Data quality issues detected', [
+                                'suggestions' => $intentAnalysis['validation_suggestions'],
+                            ]);
+                            
+                            // Return validation warnings to user
+                            return new AIResponse(
+                                content: "I noticed some potential issues with the data:\n\n" . implode("\n", $warnings) . "\n\nWould you like to correct these, or proceed anyway?",
+                                engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
+                                model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                                metadata: ['validation_warnings' => $intentAnalysis['validation_suggestions']],
+                                success: true
+                            );
+                        }
 
                         $stillMissing = []; // Initialize outside the if block for scope
 
@@ -373,50 +421,20 @@ class ChatService
                             $existingParams = $cachedActionData['data']['params'] ?? [];
                             $newData = $intentAnalysis['extracted_data'];
 
-                            // Generic smart merge: detect field prefix from missing_fields pattern
-                            // Example: missing_fields = ['customer_name', 'customer_email'] → prefix = 'customer'
-                            $missingFields = $cachedActionData['missing_fields'] ?? [];
-                            $detectedPrefix = null;
-                            $commonFields = ['name', 'email', 'phone', 'address', 'city', 'country', 'zip'];
-
-                            // Detect prefix from missing fields pattern
-                            foreach ($missingFields as $field) {
-                                foreach ($commonFields as $commonField) {
-                                    if (str_ends_with($field, '_' . $commonField)) {
-                                        $detectedPrefix = str_replace('_' . $commonField, '', $field);
-                                        break 2;
-                                    }
-                                }
-                            }
-
-                            // If we detected a prefix, apply it to all common fields in new data
-                            // to avoid conflicts with existing data
-                            if ($detectedPrefix) {
-                                $prefixedData = [];
+                            // Use AI-provided field mapping instead of hardcoded prefix detection
+                            if (!empty($intentAnalysis['field_mapping'])) {
+                                $mappedData = [];
                                 foreach ($newData as $key => $value) {
-                                    // Check if this is a common field that should be prefixed
-                                    // Apply prefix if:
-                                    // 1. It's a common field (name, email, phone, etc.)
-                                    // 2. It doesn't already have a prefix (no underscore)
-                                    // 3. Either the field exists in params OR it's in the missing fields list
-                                    $shouldPrefix = in_array($key, $commonFields) &&
-                                                   !str_contains($key, '_') &&
-                                                   (isset($existingParams[$key]) ||
-                                                    in_array($detectedPrefix . '_' . $key, $missingFields));
-
-                                    if ($shouldPrefix) {
-                                        $prefixedData[$detectedPrefix . '_' . $key] = $value;
-                                    } else {
-                                        $prefixedData[$key] = $value;
-                                    }
+                                    // Use AI's mapping if available, otherwise use original key
+                                    $targetField = $intentAnalysis['field_mapping'][$key] ?? $key;
+                                    $mappedData[$targetField] = $value;
                                 }
-                                $newData = $prefixedData;
+                                $newData = $mappedData;
 
-                                Log::channel('ai-engine')->info('Applied generic field prefixing', [
-                                    'detected_prefix' => $detectedPrefix,
-                                    'missing_fields' => $missingFields,
+                                Log::channel('ai-engine')->info('Applied AI-provided field mapping', [
+                                    'field_mapping' => $intentAnalysis['field_mapping'],
                                     'original_keys' => array_keys($intentAnalysis['extracted_data']),
-                                    'prefixed_keys' => array_keys($prefixedData),
+                                    'mapped_keys' => array_keys($mappedData),
                                 ]);
                             }
 
@@ -436,31 +454,35 @@ class ChatService
 
                             $cachedActionData['data']['params'] = $mergedParams;
 
-                            // Re-check if action is now complete by checking missing fields
+                            // Use AI-provided satisfies_fields if available, otherwise check manually
                             $missingFields = $cachedActionData['missing_fields'] ?? [];
-                            $stillMissing = [];
-
-                            foreach ($missingFields as $field) {
-                                // Check if the field is now satisfied
-                                $fieldParts = explode('_', $field);
-                                $satisfied = false;
-
-                                // Check direct field
-                                if (isset($mergedParams[$field]) && !empty($mergedParams[$field])) {
-                                    $satisfied = true;
-                                }
-                                // Check if it's a sub-field (e.g., customer_name)
-                                elseif (count($fieldParts) > 1) {
-                                    $mainField = $fieldParts[0];
-                                    $subField = implode('_', array_slice($fieldParts, 1));
-                                    if (isset($mergedParams[$subField]) && !empty($mergedParams[$subField])) {
-                                        $satisfied = true;
+                            
+                            if (!empty($intentAnalysis['satisfies_fields'])) {
+                                // AI told us which fields are satisfied
+                                $satisfiedFields = $intentAnalysis['satisfies_fields'];
+                                $stillMissing = array_diff($missingFields, $satisfiedFields);
+                                
+                                Log::channel('ai-engine')->info('Using AI-provided field satisfaction', [
+                                    'missing_fields' => $missingFields,
+                                    'satisfied_fields' => $satisfiedFields,
+                                    'still_missing' => $stillMissing,
+                                ]);
+                            } else {
+                                // Fallback: check manually
+                                $stillMissing = [];
+                                foreach ($missingFields as $field) {
+                                    // Check if the field is now satisfied
+                                    $satisfied = isset($mergedParams[$field]) && !empty($mergedParams[$field]);
+                                    
+                                    if (!$satisfied) {
+                                        $stillMissing[] = $field;
                                     }
                                 }
-
-                                if (!$satisfied) {
-                                    $stillMissing[] = $field;
-                                }
+                                
+                                Log::channel('ai-engine')->info('Manual field satisfaction check', [
+                                    'missing_fields' => $missingFields,
+                                    'still_missing' => $stillMissing,
+                                ]);
                             }
 
                             // Update action status
@@ -520,20 +542,19 @@ class ChatService
                             $modelClass = $cachedActionData['data']['model_class'] ?? '';
                             $modelName = class_basename($modelClass);
 
+                            // Use AI-driven formatModelSummary with intent context
+                            $context = [
+                                'field_labels' => $intentAnalysis['field_labels'] ?? [],
+                                'important_fields' => $intentAnalysis['important_fields'] ?? [],
+                                'priority_fields' => $intentAnalysis['priority_fields'] ?? [],
+                                'field_types' => $intentAnalysis['field_types'] ?? [],
+                            ];
+                            $summary = $this->formatModelSummary($params, $modelName, $context);
+                            
                             $description = "**Confirm {$modelName} Creation**\n\n";
-                            $description .= "**Summary of Information:**\n\n";
-
-                            foreach ($params as $key => $value) {
-                                if (is_array($value)) {
-                                    $description .= "- **" . ucfirst(str_replace('_', ' ', $key)) . ":** " . json_encode($value) . "\n";
-                                } else {
-                                    $description .= "- **" . ucfirst(str_replace('_', ' ', $key)) . ":** {$value}\n";
-                                }
-                            }
-
+                            $description .= $summary;
                             $description .= "\n**Please review the information above.**\n";
-                            $description .= "Reply 'yes' to create, or tell me what you'd like to change.\n\n";
-                            $description .= "**Would you like to proceed with this action?** Reply with 'yes' to confirm.";
+                            $description .= "Reply 'yes' to create, or tell me what you'd like to change.";
 
                             return new AIResponse(
                                 content: $description,
@@ -615,7 +636,7 @@ class ChatService
                     [
                         'engine' => $engine,
                         'model' => $model,
-                        'max_tokens' => 2000,
+                        'max_tokens' => config('ai-engine.actions.thresholds.max_tokens_rag', 4000),
                         'search_instructions' => $searchInstructions,
                     ],
                     $userId // CRITICAL: User ID for access control (fetched internally)
@@ -736,11 +757,13 @@ class ChatService
                         $description .= "**Summary of Information:**\n\n";
 
                         // Show all collected data
+                        $context = ['field_labels' => $intentAnalysis['field_labels'] ?? []];
                         foreach ($params as $key => $value) {
+                            $label = $this->formatFieldLabel($key, $context);
                             if (is_array($value)) {
-                                $description .= "- **" . ucfirst(str_replace('_', ' ', $key)) . ":** " . json_encode($value) . "\n";
+                                $description .= "- **{$label}:** " . json_encode($value) . "\n";
                             } else {
-                                $description .= "- **" . ucfirst(str_replace('_', ' ', $key)) . ":** {$value}\n";
+                                $description .= "- **{$label}:** {$value}\n";
                             }
                         }
 
@@ -1489,8 +1512,10 @@ class ChatService
         if (empty($suggestions) || count(array_filter($suggestions)) === 0) {
             $prompt = "\n\n📝 **Optional Information**\n\n";
             $prompt .= "Would you like to provide any additional details?\n";
+            $context = [];
             foreach ($missingOptional as $param) {
-                $prompt .= "- " . ucfirst(str_replace('_', ' ', $param)) . "\n";
+                $label = $this->formatFieldLabel($param, $context);
+                $prompt .= "- {$label}\n";
             }
             $prompt .= "\nYou can provide these now, or just say **'yes'** to proceed.";
             return $prompt;
@@ -1498,9 +1523,10 @@ class ChatService
 
         $prompt = "\n\n📝 **Suggested Additional Information**\n\n";
         $prompt .= "I've prepared some suggestions based on your data:\n\n";
+        $context = [];
 
         foreach ($missingOptional as $param) {
-            $label = ucfirst(str_replace('_', ' ', $param));
+            $label = $this->formatFieldLabel($param, $context);
             $suggestion = $suggestions[$param] ?? null;
             if ($suggestion !== null) {
                 $prompt .= "**{$label}:** {$suggestion}\n";
@@ -1657,7 +1683,8 @@ class ChatService
             return '';
         }
 
-        $label = $fieldDef['description'] ?? ucfirst(str_replace('_', ' ', $key));
+        $context = [];
+        $label = $fieldDef['description'] ?? $this->formatFieldLabel($key, $context);
         $output = "**{$label}:**\n";
 
         // Get item schema if available
@@ -1680,7 +1707,8 @@ class ChatService
 
                     // Get field info from schema
                     $fieldType = $itemSchema[$fieldKey]['type'] ?? null;
-                    $fieldLabel = $itemSchema[$fieldKey]['description'] ?? ucfirst(str_replace('_', ' ', $fieldKey));
+                    $context = [];
+                    $fieldLabel = $itemSchema[$fieldKey]['description'] ?? $this->formatFieldLabel($fieldKey, $context);
 
                     // Format based on type
                     if ($fieldType === 'number' || in_array($fieldKey, ['price', 'amount', 'cost', 'total'])) {
@@ -1706,7 +1734,8 @@ class ChatService
     protected function formatScalarField(string $key, $value, ?array $fieldDef): string
     {
         $fieldType = $fieldDef['type'] ?? 'string';
-        $label = $fieldDef['description'] ?? ucfirst(str_replace('_', ' ', $key));
+        $context = [];
+        $label = $fieldDef['description'] ?? $this->formatFieldLabel($key, $context);
 
         // Format based on type
         if ($fieldType === 'number' || in_array($key, ['price', 'total', 'amount', 'cost'])) {
@@ -1895,6 +1924,17 @@ class ChatService
                 $prompt .= "  - 'Create Invoice with Product Google Pixel' → create_invoice (Invoice is primary)\n";
                 $prompt .= "  - 'Create Product Google Pixel for Invoice' → create_productservice (Product is primary)\n";
                 $prompt .= "  - 'Add Customer TechStart to Invoice' → create_invoice (Invoice is primary)\n\n";
+            } elseif (!$pendingAction && empty($availableActions)) {
+                $prompt .= "⚠️ NO ACTIONS REGISTERED: The system has no registered actions available.\n";
+                $prompt .= "CRITICAL INTENT CLASSIFICATION RULES:\n";
+                $prompt .= "- If user says 'Create [Entity]', 'Add [Entity]', 'Make [Entity]', 'New [Entity]' → intent: 'new_request'\n";
+                $prompt .= "- Extract all entity data mentioned in the message\n";
+                $prompt .= "- Set suggested_action_id to empty string (no actions available)\n";
+                $prompt .= "- DO NOT classify creation requests as 'confirm' - they are 'new_request'\n\n";
+                $prompt .= "EXAMPLES:\n";
+                $prompt .= "  - 'Create Invoice with Product X Quantity 50 Price 500' → intent: 'new_request', extract all data\n";
+                $prompt .= "  - 'Add Customer John Doe' → intent: 'new_request'\n";
+                $prompt .= "  - 'Make a new Product' → intent: 'new_request'\n\n";
             }
 
             if ($pendingAction) {
@@ -1954,12 +1994,25 @@ class ChatService
 
             $prompt .= "Analyze and classify the intent into ONE of these categories:\n";
             $prompt .= "1. 'confirm' - User agrees/confirms to proceed (yes, ok, go ahead, I don't mind, sounds good, etc.)\n";
+            $prompt .= "   - AUTO EXECUTE: Set auto_execute=true if:\n";
+            $prompt .= "     * User explicitly says 'yes' or 'confirm' with no hesitation\n";
+            $prompt .= "     * All data is validated and complete\n";
+            $prompt .= "     * No ambiguity or potential issues detected\n";
+            $confidenceThreshold = config('ai-engine.actions.thresholds.auto_execute_confidence', 0.95);
+            $prompt .= "     * Confidence > {$confidenceThreshold}\n";
+            $prompt .= "   - NEXT ACTIONS: Suggest logical next steps after action completion:\n";
+            $prompt .= "     * For Invoice: suggest 'send_invoice', 'create_payment', 'add_items'\n";
+            $prompt .= "     * For Customer: suggest 'create_invoice', 'view_history'\n";
+            $prompt .= "     * For Product: suggest 'add_to_invoice', 'update_inventory'\n";
+            $prompt .= "     * Prioritize actions: high (immediate next step), medium (common follow-up), low (optional)\n";
             $prompt .= "2. 'reject' - User declines/cancels (no, cancel, stop, nevermind, etc.)\n";
             $prompt .= "3. 'modify' - User wants to change/update parameters. Pattern:\n";
-            $prompt .= "   - 'change [field] to [value]' → extract as: {\"[field]\": [value]}\n";
+            $prompt .= "   - 'change [field] to [value]' → extract as: {\"[field]\": [value]}, modification_target: \"[path.to.field]\"\n";
             $prompt .= "   - 'make it [value] instead' → extract field from context\n";
             $prompt .= "   - '[field] should be [value]' → extract as: {\"[field]\": [value]}\n";
             $prompt .= "   - 'update [field] to [value]' → extract as: {\"[field]\": [value]}\n";
+            $prompt .= "   - For item modifications: 'change item name to X' → modification_target: \"items[0].item\" or \"items[0].product_name\"\n";
+            $prompt .= "   - For top-level fields: 'change customer to X' → modification_target: \"customer_id\"\n";
             $prompt .= "   - Any message providing a field name/value pair to update existing data\n";
             $prompt .= "   IMPORTANT: Extract ONLY the actual values from user's message, never use placeholder examples\n";
             $prompt .= "4. 'provide_data' - User is providing data for missing/optional parameters. CRITICAL PATTERNS:\n";
@@ -1970,6 +2023,19 @@ class ChatService
             $prompt .= "     * User says 'TechStart Solutions' → intent: 'provide_data', extract: {\"customer_id\": \"TechStart Solutions\"}\n";
             $prompt .= "     * User says 'John Doe' → intent: 'provide_data', extract: {\"customer_id\": \"John Doe\"}\n";
             $prompt .= "   - NEVER classify simple value responses as 'new_request' when there are missing fields\n";
+            $prompt .= "   - FIELD MAPPING: When user provides data, map it to the correct target field:\n";
+            $prompt .= "     * If missing 'customer_id' and user says 'John' → field_mapping: {\"name\": \"customer_id\"}\n";
+            $prompt .= "     * If missing 'customer_name' and user says 'John' → field_mapping: {\"name\": \"customer_name\"}\n";
+            $prompt .= "     * Use missing_fields context to determine correct target field\n";
+            $prompt .= "   - SATISFIES FIELDS: List which missing fields are now satisfied by provided data\n";
+            $prompt .= "     * If missing ['customer_id', 'due_date'] and user provides customer → satisfies_fields: [\"customer_id\"]\n";
+            $prompt .= "   - VALIDATION: Check data quality and suggest corrections if needed\n";
+            $prompt .= "     * Invalid email format → validation_suggestions: [{\"field\": \"email\", \"issue\": \"invalid_format\", \"suggestion\": \"Did you mean user@example.com?\"}]\n";
+            $prompt .= "     * Ambiguous date → validation_suggestions: [{\"field\": \"date\", \"issue\": \"ambiguous\", \"suggestion\": \"Did you mean 2026-01-07 or 2026-07-01?\"}]\n";
+            $prompt .= "   - FIELD ENHANCEMENTS (Optional - provide when helpful):\n";
+            $prompt .= "     * field_labels: Provide user-friendly labels (e.g., {\"customer_id\": \"Customer Name\", \"due_date\": \"Payment Due Date\"})\n";
+            $prompt .= "     * important_fields: Specify which fields to highlight in summary (e.g., [\"customer_id\", \"total_amount\", \"due_date\"])\n";
+            $prompt .= "     * field_types: Specify field types for better formatting (e.g., {\"total_amount\": \"currency\", \"due_date\": \"date\"})\n";
             $prompt .= "5. 'question' - User is asking a question or needs clarification\n";
             $prompt .= "6. 'new_request' - User is making a completely new request (ONLY if no missing fields OR user explicitly says 'create/add')\n\n";
 
@@ -2011,6 +2077,16 @@ class ChatService
             $prompt .= '  "intent": "confirm|reject|modify|provide_data|question|new_request",'."\n";
             $prompt .= '  "confidence": 0.95,'."\n";
             $prompt .= '  "extracted_data": {"field_name": "value"},'."\n";
+            $prompt .= '  "modification_target": "items[0].item" (ONLY for modify intent - specify exact path to field being modified),'."\n";
+            $prompt .= '  "field_mapping": {"extracted_field": "target_field"} (ONLY for provide_data - map extracted fields to correct target fields),'."\n";
+            $prompt .= '  "satisfies_fields": ["field1", "field2"] (ONLY for provide_data - which missing fields are now satisfied),'."\n";
+            $prompt .= '  "validation_suggestions": [{"field": "email", "issue": "invalid_format", "suggestion": "correction"}] (ONLY if data quality issues detected),'."\n";
+            $prompt .= '  "next_actions": [{"id": "action_id", "label": "description", "priority": "high|medium|low"}] (ONLY for confirm - suggest logical next steps),'."\n";
+            $prompt .= '  "auto_execute": true|false (ONLY for confirm - whether to skip confirmation for high-confidence actions),'."\n";
+            $prompt .= '  "field_labels": {"field_name": "User-Friendly Label"} (OPTIONAL - provide better labels for fields),'."\n";
+            $prompt .= '  "important_fields": ["field1", "field2"] (OPTIONAL - which fields are most important to show in summary),'."\n";
+            $prompt .= '  "priority_fields": ["field1", "field2"] (OPTIONAL - which fields should be shown first in summary),'."\n";
+            $prompt .= '  "field_types": {"field_name": "currency|date|email|phone|status"} (OPTIONAL - specify field types for better formatting),'."\n";
             $prompt .= '  "context_enhancement": "Brief description of what user wants",'."\n";
             $prompt .= '  "suggested_action_id": "create_invoice" (use EXACT action ID from available actions list, or empty string if no actions),'."\n";
             $prompt .= '  "suggested_collection": "ModelClassName" (ONLY for document content >500 chars)'."\n";
@@ -2114,6 +2190,12 @@ class ChatService
                     'suggested_action_id' => $result['suggested_action_id'] ?? null,
                     'extracted_data' => $result['extracted_data'] ?? [],
                 ]);
+                
+                // Ensure context_enhancement always exists
+                if (!isset($result['context_enhancement'])) {
+                    $result['context_enhancement'] = 'User intent: ' . ($result['intent'] ?? 'unknown');
+                }
+                
                 return $result;
             }
 
@@ -2478,9 +2560,11 @@ class ChatService
                 $summary .= "**Details:**\n";
 
                 $data = $result['data'] ?? $result;
+                $context = [];
                 foreach ($data as $key => $value) {
                     if (!in_array($key, ['success', 'message', 'created_at', 'updated_at'])) {
-                        $summary .= "- " . ucfirst(str_replace('_', ' ', $key)) . ": {$value}\n";
+                        $label = $this->formatFieldLabel($key, $context);
+                        $summary .= "- {$label}: {$value}\n";
                     }
                 }
 
@@ -2997,21 +3081,124 @@ class ChatService
     }
 
     /**
+     * Format field label with AI enhancement
+     * Centralized method to replace all ucfirst(str_replace()) patterns
+     */
+    protected function formatFieldLabel(string $fieldName, array $context = []): string
+    {
+        // Check if AI provided custom labels in context
+        if (!empty($context['field_labels'][$fieldName])) {
+            return $context['field_labels'][$fieldName];
+        }
+        
+        // Check action definition for description
+        if (!empty($context['action_definition'])) {
+            $fields = $context['action_definition']['parameters']['fields'] ?? [];
+            $fieldConfig = $fields[$fieldName] ?? null;
+            
+            if ($fieldConfig && !empty($fieldConfig['description'])) {
+                return ucfirst($fieldConfig['description']);
+            }
+        }
+        
+        // Fallback to formatted field name
+        return ucfirst(str_replace('_', ' ', $fieldName));
+    }
+    
+    /**
+     * Get important fields for a model using AI determination
+     * Replaces hardcoded important fields list
+     */
+    protected function getImportantFields(array $data, string $modelName, array $context = []): array
+    {
+        // Check if AI provided important fields
+        if (!empty($context['important_fields'])) {
+            return $context['important_fields'];
+        }
+        
+        // Fallback: determine from data structure
+        $importantFields = [];
+        
+        // Always include these if present
+        $alwaysImportant = ['name', 'title', 'email', 'phone', 'status'];
+        foreach ($alwaysImportant as $field) {
+            if (isset($data[$field]) && !empty($data[$field])) {
+                $importantFields[] = $field;
+            }
+        }
+        
+        // Add date fields
+        foreach ($data as $key => $value) {
+            if (str_ends_with($key, '_date') || str_ends_with($key, '_at')) {
+                if (!empty($value) && $value !== '0000-00-00') {
+                    $importantFields[] = $key;
+                }
+            }
+        }
+        
+        return $importantFields;
+    }
+    
+    /**
+     * Detect field type using AI or context
+     * Replaces hardcoded field type detection
+     */
+    protected function detectFieldType(string $fieldName, $value, array $context = []): string
+    {
+        // Check if AI provided field types
+        if (!empty($context['field_types'][$fieldName])) {
+            return $context['field_types'][$fieldName];
+        }
+        
+        // Detect from field name patterns
+        if (in_array($fieldName, ['price', 'amount', 'cost', 'total', 'subtotal', 'tax'])) {
+            return 'currency';
+        }
+        
+        if (str_ends_with($fieldName, '_date') || str_ends_with($fieldName, '_at')) {
+            return 'date';
+        }
+        
+        if (in_array($fieldName, ['email', 'email_address'])) {
+            return 'email';
+        }
+        
+        if (in_array($fieldName, ['phone', 'mobile', 'mobile_no', 'telephone'])) {
+            return 'phone';
+        }
+        
+        if ($fieldName === 'status' && is_numeric($value)) {
+            return 'status';
+        }
+        
+        // Detect from value type
+        if (is_numeric($value)) {
+            return 'number';
+        }
+        
+        if (is_array($value)) {
+            return 'array';
+        }
+        
+        return 'string';
+    }
+
+    /**
      * Format model data into a readable summary
      * Dynamic formatting based on model structure, not hardcoded types
      */
-    protected function formatModelSummary(array $data, string $modelName): string
+    protected function formatModelSummary(array $data, string $modelName, array $context = []): string
     {
         $summary = "**Created {$modelName} Summary:**\n";
         
-        // Priority fields to show first (common identifiers)
-        $priorityFields = ['invoice_id', 'order_id', 'number', 'code', 'reference'];
+        // Use AI-provided priority fields or fallback to common identifiers
+        $priorityFields = $context['priority_fields'] ?? ['invoice_id', 'order_id', 'number', 'code', 'reference'];
         $shownFields = [];
         
         // Show priority fields first
         foreach ($priorityFields as $field) {
             if (isset($data[$field]) && !empty($data[$field])) {
-                $label = ucfirst(str_replace('_', ' ', $field));
+                $label = $this->formatFieldLabel($field, $context);
                 $summary .= "- **{$label}:** {$data[$field]}\n";
                 $shownFields[] = $field;
             }
@@ -3020,7 +3207,7 @@ class ChatService
         // Show relationship data (customer, user, etc.)
         foreach ($data as $key => $value) {
             if (is_array($value) && isset($value['name'])) {
-                $label = ucfirst(str_replace('_', ' ', $key));
+                $label = $this->formatFieldLabel($key, $context);
                 $summary .= "- **{$label}:** {$value['name']}\n";
                 if (isset($value['email'])) {
                     $summary .= "- **{$label} Email:** {$value['email']}\n";
@@ -3029,11 +3216,11 @@ class ChatService
             }
         }
         
-        // Show important scalar fields
-        $importantFields = ['name', 'title', 'email', 'phone', 'mobile_no', 'status', 'type', 'issue_date', 'due_date', 'start_date', 'end_date'];
+        // Get important fields using AI determination
+        $importantFields = $this->getImportantFields($data, $modelName, $context);
         foreach ($importantFields as $field) {
             if (isset($data[$field]) && !in_array($field, $shownFields) && !empty($data[$field]) && $data[$field] !== '0000-00-00') {
-                $label = ucfirst(str_replace('_', ' ', $field));
+                $label = $this->formatFieldLabel($field, $context);
                 $value = $data[$field];
                 
                 // Format status if numeric
@@ -3053,7 +3240,7 @@ class ChatService
                 // Check if it's a list of items
                 $firstItem = reset($value);
                 if (is_array($firstItem) && (isset($firstItem['price']) || isset($firstItem['amount']))) {
-                    $label = ucfirst(str_replace('_', ' ', $key));
+                    $label = $this->formatFieldLabel($key, $context);
                     $summary .= "\n**{$label}:**\n";
                     $total = 0;
                     
@@ -3096,5 +3283,169 @@ class ChatService
         
         $map = $statusMaps[$modelName] ?? $statusMaps['default'];
         return $map[$status] ?? (string)$status;
+    }
+
+    /**
+     * Smart merge parameters using AI-provided modification target
+     * 
+     * Generic merge that uses the AI's understanding of where to apply modifications
+     * instead of hardcoded field patterns.
+     * 
+     * @param array $oldParams Existing parameters
+     * @param array $modifications New values to merge
+     * @param string|null $modificationTarget AI-provided path like "items[0].item" or "customer_id"
+     */
+    protected function smartMergeParams(array $oldParams, array $modifications, ?string $modificationTarget = null): array
+    {
+        // If AI provided a specific target path, use it
+        if ($modificationTarget) {
+            Log::channel('ai-engine')->info('Using AI-provided modification target', [
+                'target' => $modificationTarget,
+                'modifications' => $modifications,
+            ]);
+            
+            return $this->applyModificationAtPath($oldParams, $modifications, $modificationTarget);
+        }
+        
+        // Fallback: Try to intelligently detect where modifications should go
+        // This handles cases where AI didn't provide modification_target
+        return $this->intelligentMerge($oldParams, $modifications);
+    }
+    
+    /**
+     * Apply modifications at a specific path (e.g., "items[0].item")
+     */
+    protected function applyModificationAtPath(array $params, array $modifications, string $path): array
+    {
+        // Parse path like "items[0].item" into parts
+        $parts = $this->parsePath($path);
+        
+        if (empty($parts)) {
+            // Invalid path, fall back to simple merge
+            return array_merge($params, $modifications);
+        }
+        
+        // Navigate to the target location and apply modifications
+        $current = &$params;
+        $lastKey = array_pop($parts);
+        
+        foreach ($parts as $part) {
+            if (preg_match('/^(.+)\[(\d+)\]$/', $part, $matches)) {
+                // Array access like "items[0]"
+                $arrayKey = $matches[1];
+                $index = (int)$matches[2];
+                
+                if (!isset($current[$arrayKey][$index])) {
+                    Log::channel('ai-engine')->warning('Path not found in params', [
+                        'path' => $path,
+                        'missing_at' => $part,
+                    ]);
+                    return array_merge($params, $modifications);
+                }
+                
+                $current = &$current[$arrayKey][$index];
+            } else {
+                // Regular key access
+                if (!isset($current[$part])) {
+                    Log::channel('ai-engine')->warning('Path not found in params', [
+                        'path' => $path,
+                        'missing_at' => $part,
+                    ]);
+                    return array_merge($params, $modifications);
+                }
+                
+                $current = &$current[$part];
+            }
+        }
+        
+        // Apply modifications at the target location
+        foreach ($modifications as $key => $value) {
+            $current[$lastKey] = $value;
+            
+            // Also update alternative field names if applicable
+            if ($lastKey === 'item' && isset($current['product_name'])) {
+                $current['product_name'] = $value;
+            } elseif ($lastKey === 'product_name' && isset($current['item'])) {
+                $current['item'] = $value;
+            }
+        }
+        
+        Log::channel('ai-engine')->info('Applied modification at path', [
+            'path' => $path,
+            'new_value' => $current[$lastKey] ?? null,
+        ]);
+        
+        return $params;
+    }
+    
+    /**
+     * Parse path string into parts
+     * "items[0].item" -> ["items[0]", "item"]
+     */
+    protected function parsePath(string $path): array
+    {
+        // Split by dots, but keep array notation together
+        $parts = [];
+        $current = '';
+        
+        for ($i = 0; $i < strlen($path); $i++) {
+            $char = $path[$i];
+            
+            if ($char === '.') {
+                if ($current !== '') {
+                    $parts[] = $current;
+                    $current = '';
+                }
+            } else {
+                $current .= $char;
+            }
+        }
+        
+        if ($current !== '') {
+            $parts[] = $current;
+        }
+        
+        return $parts;
+    }
+    
+    /**
+     * Intelligent merge when AI doesn't provide modification_target
+     * Tries to detect where modifications should be applied based on data structure
+     */
+    protected function intelligentMerge(array $oldParams, array $modifications): array
+    {
+        // Check if modifications contain item-like fields
+        $itemFields = ['item', 'product_name', 'name', 'description', 'price', 'quantity', 'amount'];
+        $hasItemField = !empty(array_intersect(array_keys($modifications), $itemFields));
+        
+        // Check if params have an items array
+        $arrayFields = ['items', 'products', 'line_items', 'order_items'];
+        foreach ($arrayFields as $field) {
+            if ($hasItemField && isset($oldParams[$field]) && is_array($oldParams[$field]) && !empty($oldParams[$field])) {
+                // Apply modifications to first item in array
+                Log::channel('ai-engine')->info('Intelligent merge: Detected item modification', [
+                    'array_field' => $field,
+                ]);
+                
+                foreach ($modifications as $key => $value) {
+                    if (in_array($key, $itemFields) && isset($oldParams[$field][0])) {
+                        $oldParams[$field][0][$key] = $value;
+                        
+                        // Update alternative names
+                        if ($key === 'item') {
+                            $oldParams[$field][0]['product_name'] = $value;
+                        } elseif ($key === 'product_name') {
+                            $oldParams[$field][0]['item'] = $value;
+                        }
+                        
+                        // Remove from modifications to avoid top-level field
+                        unset($modifications[$key]);
+                    }
+                }
+            }
+        }
+        
+        // Merge remaining modifications at top level
+        return array_merge($oldParams, $modifications);
     }
 }
