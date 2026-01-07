@@ -217,9 +217,26 @@ class DataCollectorService
         // Parse AI response for field extractions
         $extractedFields = $this->parseFieldExtractions($responseContent, $config);
         
+        Log::channel('ai-engine')->info('Field extraction results', [
+            'session_id' => $state->sessionId,
+            'extracted_count' => count($extractedFields),
+            'extracted_fields' => array_keys($extractedFields),
+            'current_field' => $state->currentField,
+        ]);
+        
         // CRITICAL: Only accept extraction for the current field to prevent hallucination
         if ($state->currentField) {
+            $beforeFilter = count($extractedFields);
             $extractedFields = $this->filterToCurrentField($extractedFields, $state->currentField, $state->getData());
+            $afterFilter = count($extractedFields);
+            
+            if ($beforeFilter !== $afterFilter) {
+                Log::channel('ai-engine')->warning('Fields filtered out', [
+                    'before' => $beforeFilter,
+                    'after' => $afterFilter,
+                    'session_id' => $state->sessionId,
+                ]);
+            }
         }
         
         // Track if we used direct extraction
@@ -236,8 +253,26 @@ class DataCollectorService
             ]);
             
             // Direct extraction: assume user's message is the value for current field
+            Log::channel('ai-engine')->warning('Using direct extraction fallback', [
+                'session_id' => $state->sessionId,
+                'current_field' => $state->currentField,
+                'user_message' => substr($message, 0, 100),
+            ]);
+            
             $extractedFields = $this->extractFromUserMessage($message, $state->currentField, $config);
             $usedDirectExtraction = !empty($extractedFields);
+            
+            if ($usedDirectExtraction) {
+                Log::channel('ai-engine')->info('Direct extraction succeeded', [
+                    'field' => $state->currentField,
+                    'value' => $extractedFields[$state->currentField] ?? null,
+                ]);
+            } else {
+                Log::channel('ai-engine')->error('Direct extraction failed - no value extracted', [
+                    'session_id' => $state->sessionId,
+                    'current_field' => $state->currentField,
+                ]);
+            }
         }
         
         foreach ($extractedFields as $fieldName => $value) {
@@ -1153,27 +1188,53 @@ class DataCollectorService
         // Pattern: FIELD_COLLECTED:field_name=value
         preg_match_all('/FIELD_COLLECTED:(\w+)=(.+?)(?=\n|FIELD_COLLECTED:|$)/s', $response, $matches, PREG_SET_ORDER);
         
-        Log::channel('ai-engine')->debug('Parsing field extractions', [
+        Log::channel('ai-engine')->info('Parsing field extractions from AI response', [
             'found_markers' => count($matches),
             'has_marker_text' => str_contains($response, 'FIELD_COLLECTED:'),
+            'response_length' => strlen($response),
+            'response_preview' => substr($response, 0, 200),
         ]);
         
         foreach ($matches as $match) {
             $fieldName = trim($match[1]);
             $value = trim($match[2]);
             $extracted[$fieldName] = $value;
+            
+            Log::channel('ai-engine')->info('Extracted field from marker', [
+                'field' => $fieldName,
+                'value' => substr($value, 0, 100),
+            ]);
         }
 
         // Only use fallback parser if we found at least one FIELD_COLLECTED marker
         // AND only for valid fields in the config
         if (!empty($extracted)) {
+            Log::channel('ai-engine')->info('Running fallback parser (markers found)', [
+                'already_extracted' => array_keys($extracted),
+            ]);
+            
             $fallbackExtracted = $this->parseFieldsFromSummary($response, $config);
+            
+            if (!empty($fallbackExtracted)) {
+                Log::channel('ai-engine')->info('Fallback parser found additional fields', [
+                    'fallback_fields' => array_keys($fallbackExtracted),
+                ]);
+            }
+            
             foreach ($fallbackExtracted as $key => $value) {
                 // Only accept if field exists in config and not already extracted
                 if ($config->getField($key) && (!isset($extracted[$key]) || empty($extracted[$key]))) {
                     $extracted[$key] = $value;
+                    Log::channel('ai-engine')->info('Added field from fallback parser', [
+                        'field' => $key,
+                        'value' => substr($value, 0, 100),
+                    ]);
                 }
             }
+        } else {
+            Log::channel('ai-engine')->warning('Fallback parser skipped - no markers found', [
+                'response_has_bold_text' => str_contains($response, '**'),
+            ]);
         }
 
         return $extracted;
@@ -1211,12 +1272,23 @@ class DataCollectorService
         // Handles both **Label**: and **Label:**
         preg_match_all('/\*\*([^*:]+):?\*\*:?\s*(.+?)(?=\n|$)/i', $response, $matches, PREG_SET_ORDER);
         
+        Log::channel('ai-engine')->debug('Fallback parser scanning response', [
+            'bold_patterns_found' => count($matches),
+            'available_mappings' => array_keys($fieldMappings),
+        ]);
+        
         foreach ($matches as $match) {
             $label = strtolower(trim($match[1]));
             $value = trim($match[2]);
             
             // Map display name to field key
             $fieldKey = $fieldMappings[$label] ?? str_replace(' ', '_', $label);
+            
+            Log::channel('ai-engine')->debug('Fallback parser processing bold text', [
+                'label' => $label,
+                'mapped_to' => $fieldKey,
+                'value_preview' => substr($value, 0, 50),
+            ]);
             
             // Clean up value (remove trailing punctuation, extra text)
             $value = preg_replace('/\s*\(.*?\)\s*$/', '', $value); // Remove parenthetical notes
@@ -1231,6 +1303,11 @@ class DataCollectorService
             
             if (!empty($value)) {
                 $extracted[$fieldKey] = $value;
+                Log::channel('ai-engine')->info('Fallback parser extracted field', [
+                    'field' => $fieldKey,
+                    'from_label' => $label,
+                    'value' => substr($value, 0, 100),
+                ]);
             }
         }
 
@@ -1345,7 +1422,14 @@ class DataCollectorService
             $extracted[$currentField] = $value;
             Log::channel('ai-engine')->info('Direct extraction using full message', [
                 'field' => $currentField,
-                'value' => $value,
+                'value' => substr($value, 0, 100),
+                'message_length' => strlen($value),
+            ]);
+        } else {
+            Log::channel('ai-engine')->warning('Direct extraction rejected message', [
+                'field' => $currentField,
+                'reason' => strlen($value) < 2 ? 'too_short' : 'looks_like_question',
+                'message' => $value,
             ]);
         }
         
