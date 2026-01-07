@@ -95,11 +95,14 @@ class DataCollectorService
         DataCollectorConfig $config,
         array $initialData = []
     ): DataCollectorState {
+        // Merge config's initial data with provided initial data (provided takes precedence)
+        $mergedInitialData = array_merge($config->initialData, $initialData);
+        
         $state = new DataCollectorState(
             sessionId: $sessionId,
             configName: $config->name,
             status: DataCollectorState::STATUS_COLLECTING,
-            collectedData: $initialData,
+            collectedData: $mergedInitialData,
             currentField: $config->getFirstField()?->name,
             embeddedConfig: $config->toArray(),  // Embed config in state for reliable persistence
         );

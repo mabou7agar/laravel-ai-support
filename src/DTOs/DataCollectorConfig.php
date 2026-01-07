@@ -52,6 +52,7 @@ class DataCollectorConfig
         public readonly string $title = '',          // Display title for the user
         public readonly string $description = '',
         public readonly array $fields = [],
+        public readonly array $initialData = [],     // Pre-filled field values
         public readonly ?Closure $onComplete = null,
         public readonly ?string $onCompleteAction = null, // Alternative: action class name
         public readonly bool $confirmBeforeComplete = true,
@@ -496,6 +497,7 @@ class DataCollectorConfig
             title: $config['title'] ?? '',
             description: $config['description'] ?? '',
             fields: $config['fields'] ?? [],
+            initialData: $config['initialData'] ?? $config['initial_data'] ?? [],
             onComplete: $config['onComplete'] ?? null,
             onCompleteAction: $config['onCompleteAction'] ?? null,
             confirmBeforeComplete: $config['confirmBeforeComplete'] ?? true,
@@ -529,6 +531,7 @@ class DataCollectorConfig
             'title' => $this->title,
             'description' => $this->description,
             'fields' => array_map(fn($f) => $f->toArray(), $this->parsedFields),
+            'initialData' => $this->initialData,
             'confirmBeforeComplete' => $this->confirmBeforeComplete,
             'allowEnhancement' => $this->allowEnhancement,
             'allowSkipOptional' => $this->allowSkipOptional,
