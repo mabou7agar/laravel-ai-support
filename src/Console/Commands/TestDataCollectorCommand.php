@@ -15,7 +15,8 @@ class TestDataCollectorCommand extends Command
                             {--engine=openai : AI engine to use}
                             {--model=gpt-4o : AI model to use}
                             {--locale= : Force AI responses in specific language (e.g., ar, fr, es)}
-                            {--detect-locale : Auto-detect language from user input}';
+                            {--detect-locale : Auto-detect language from user input}
+                            {--with-initial-data : Test with pre-filled initial data}';
 
     protected $description = 'Test the Data Collector Chat feature interactively';
 
@@ -34,6 +35,7 @@ class TestDataCollectorCommand extends Command
         $model = $this->option('model');
         $locale = $this->option('locale');
         $detectLocale = $this->option('detect-locale');
+        $withInitialData = $this->option('with-initial-data');
 
         $this->info("Session ID: {$sessionId}");
         $this->info("Engine: {$engine}");
@@ -43,10 +45,13 @@ class TestDataCollectorCommand extends Command
         } elseif ($detectLocale) {
             $this->info("Locale: Auto-detect from user input");
         }
+        if ($withInitialData) {
+            $this->info("Mode: Testing with initial data");
+        }
         $this->newLine();
 
         // Get config based on preset
-        $config = $this->getPresetConfig($preset, $locale, $detectLocale);
+        $config = $this->getPresetConfig($preset, $locale, $detectLocale, $withInitialData);
         
         if (!$config) {
             $this->error('Failed to create configuration');
@@ -55,6 +60,16 @@ class TestDataCollectorCommand extends Command
 
         $this->info("📋 Configuration: {$config->title}");
         $this->info("Fields to collect: " . implode(', ', $config->getFieldNames()));
+        
+        // Show initial data if present
+        if (!empty($config->initialData)) {
+            $this->newLine();
+            $this->info("✨ Pre-filled Initial Data:");
+            foreach ($config->initialData as $field => $value) {
+                $this->line("  <fg=green>✓</> {$field}: {$value}");
+            }
+            $this->line("  <fg=gray>(These fields will be skipped in the conversation)</>");
+        }
         $this->newLine();
 
         // Get the service
@@ -181,19 +196,28 @@ class TestDataCollectorCommand extends Command
         }
     }
 
-    protected function getPresetConfig(string $preset, ?string $locale = null, bool $detectLocale = false): ?DataCollectorConfig
+    protected function getPresetConfig(string $preset, ?string $locale = null, bool $detectLocale = false, bool $withInitialData = false): ?DataCollectorConfig
     {
         return match ($preset) {
-            'course' => $this->getCourseConfig($locale, $detectLocale),
-            'feedback' => $this->getFeedbackConfig($locale, $detectLocale),
-            'support' => $this->getSupportConfig($locale, $detectLocale),
-            'custom' => $this->getCustomConfig($locale, $detectLocale),
-            default => $this->getCourseConfig($locale, $detectLocale),
+            'course' => $this->getCourseConfig($locale, $detectLocale, $withInitialData),
+            'feedback' => $this->getFeedbackConfig($locale, $detectLocale, $withInitialData),
+            'support' => $this->getSupportConfig($locale, $detectLocale, $withInitialData),
+            'custom' => $this->getCustomConfig($locale, $detectLocale, $withInitialData),
+            default => $this->getCourseConfig($locale, $detectLocale, $withInitialData),
         };
     }
 
-    protected function getCourseConfig(?string $locale = null, bool $detectLocale = false): DataCollectorConfig
+    protected function getCourseConfig(?string $locale = null, bool $detectLocale = false, bool $withInitialData = false): DataCollectorConfig
     {
+        // Prepare initial data if testing mode is enabled
+        $initialData = [];
+        if ($withInitialData) {
+            $initialData = [
+                'name' => 'Laravel Fundamentals',
+                'level' => 'beginner',
+            ];
+        }
+        
         return new DataCollectorConfig(
             name: 'course_creator_test',
             title: 'Create a New Course',
@@ -276,13 +300,23 @@ PROMPT,
                 ];
             },
             successMessage: '🎉 Course configuration complete! In a real application, the course would now be created.',
+            initialData: $initialData,
             locale: $locale,
             detectLocale: $detectLocale,
         );
     }
 
-    protected function getFeedbackConfig(?string $locale = null, bool $detectLocale = false): DataCollectorConfig
+    protected function getFeedbackConfig(?string $locale = null, bool $detectLocale = false, bool $withInitialData = false): DataCollectorConfig
     {
+        // Prepare initial data if testing mode is enabled
+        $initialData = [];
+        if ($withInitialData) {
+            $initialData = [
+                'rating' => '5',
+                'recommend' => 'definitely',
+            ];
+        }
+        
         return new DataCollectorConfig(
             name: 'feedback_test',
             title: 'Customer Feedback',
@@ -303,13 +337,23 @@ PROMPT,
             allowEnhancement: true,
             onComplete: fn($data) => ['success' => true, 'feedback' => $data],
             successMessage: '🙏 Thank you for your feedback!',
+            initialData: $initialData,
             locale: $locale,
             detectLocale: $detectLocale,
         );
     }
 
-    protected function getSupportConfig(?string $locale = null, bool $detectLocale = false): DataCollectorConfig
+    protected function getSupportConfig(?string $locale = null, bool $detectLocale = false, bool $withInitialData = false): DataCollectorConfig
     {
+        // Prepare initial data if testing mode is enabled
+        $initialData = [];
+        if ($withInitialData) {
+            $initialData = [
+                'priority' => 'high',
+                'category' => 'technical',
+            ];
+        }
+        
         return new DataCollectorConfig(
             name: 'support_ticket_test',
             title: 'Create Support Ticket',
@@ -358,12 +402,13 @@ PROMPT,
             allowEnhancement: true,
             onComplete: fn($data) => ['success' => true, 'ticket_id' => 'TKT-' . strtoupper(uniqid())],
             successMessage: '🎫 Support ticket created successfully!',
+            initialData: $initialData,
             locale: $locale,
             detectLocale: $detectLocale,
         );
     }
 
-    protected function getCustomConfig(?string $locale = null, bool $detectLocale = false): DataCollectorConfig
+    protected function getCustomConfig(?string $locale = null, bool $detectLocale = false, bool $withInitialData = false): DataCollectorConfig
     {
         $this->info('Creating custom configuration...');
         $this->newLine();
@@ -395,6 +440,14 @@ PROMPT,
             ];
         }
 
+        // Prepare initial data if testing mode is enabled
+        $initialData = [];
+        if ($withInitialData && !empty($fields)) {
+            // Pre-fill the first field as an example
+            $firstField = array_key_first($fields);
+            $initialData[$firstField] = 'Pre-filled value';
+        }
+        
         return new DataCollectorConfig(
             name: $name,
             title: $title,
@@ -403,6 +456,7 @@ PROMPT,
             confirmBeforeComplete: true,
             allowEnhancement: true,
             onComplete: fn($data) => ['success' => true, 'data' => $data],
+            initialData: $initialData,
             locale: $locale,
             detectLocale: $detectLocale,
         );

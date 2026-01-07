@@ -41,23 +41,28 @@ class DataCollectorChatService
         // Start the data collection session
         $state = $this->dataCollector->startSession($sessionId, $config, $initialData);
         
-        // Get the greeting message
-        $greeting = $this->dataCollector->getGreeting($config);
+        // Get the greeting message (pass state to consider initial data)
+        $greeting = $this->dataCollector->getGreeting($config, $state);
         
         // Build actions for the response
         $actions = $this->buildActions($state, $config);
 
         // Build comprehensive metadata including config details
+        $collectedFields = array_keys(array_filter($state->getData(), fn($v) => $v !== null && $v !== ''));
+        $remainingFields = array_keys($config->getUncollectedFields($state->getData()));
+        $totalFields = count($config->getFieldNames());
+        $progress = $totalFields > 0 ? round((count($collectedFields) / $totalFields) * 100) : 0;
+        
         $metadata = [
             'data_collector' => true,
             'config_name' => $config->name,
             'status' => $state->status,
             'fields' => $config->getFieldNames(),
             'current_field' => $state->currentField,
-            'collected_fields' => [],
-            'remaining_fields' => $config->getFieldNames(),
-            'progress' => 0,
-            'data' => [],
+            'collected_fields' => $collectedFields,
+            'remaining_fields' => $remainingFields,
+            'progress' => $progress,
+            'data' => $state->getData(),
             'config' => [
                 'title' => $config->title,
                 'description' => $config->description,

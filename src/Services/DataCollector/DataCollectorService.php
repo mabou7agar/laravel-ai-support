@@ -1508,7 +1508,7 @@ class DataCollectorService
     /**
      * Get the initial greeting message for a data collection session
      */
-    public function getGreeting(DataCollectorConfig $config): string
+    public function getGreeting(DataCollectorConfig $config, ?DataCollectorState $state = null): string
     {
         $locale = $config->locale ?? 'en';
         
@@ -1517,10 +1517,12 @@ class DataCollectorService
             'en' => [
                 'hello' => "Hello! I'll help you collect the required information. Let's get started!",
                 'provide' => "Please provide the",
+                'already_have' => "I already have some information:",
             ],
             'ar' => [
                 'hello' => "مرحباً! سأساعدك في جمع المعلومات المطلوبة. لنبدأ!",
                 'provide' => "يرجى تقديم",
+                'already_have' => "لدي بالفعل بعض المعلومات:",
             ],
         ];
         
@@ -1528,14 +1530,30 @@ class DataCollectorService
         
         $greeting = $phrases['hello'] . "\n\n";
 
-        $firstField = $config->getFirstField();
-        if ($firstField) {
-            $fieldName = $firstField->description ?: $firstField->name;
+        // If we have initial data, mention it
+        if ($state && !empty($state->getData())) {
+            $collectedData = array_filter($state->getData(), fn($v) => $v !== null && $v !== '');
+            if (!empty($collectedData)) {
+                $greeting .= $phrases['already_have'] . "\n";
+                foreach ($collectedData as $field => $value) {
+                    $fieldObj = $config->getField($field);
+                    $fieldLabel = $fieldObj ? $fieldObj->description : $field;
+                    $greeting .= "✓ {$fieldLabel}: {$value}\n";
+                }
+                $greeting .= "\n";
+            }
+        }
+
+        // Get the next uncollected field
+        $nextField = $state ? $this->getNextFieldToCollect($state, $config) : $config->getFirstField();
+        
+        if ($nextField) {
+            $fieldName = $nextField->description ?: $nextField->name;
             $greeting .= $phrases['provide'] . ": " . $fieldName;
             
             // Add validation hints
-            if ($firstField->validation) {
-                $hints = $this->getValidationHints($firstField->validation, $locale);
+            if ($nextField->validation) {
+                $hints = $this->getValidationHints($nextField->validation, $locale);
                 if ($hints) {
                     $greeting .= "\n\n" . $hints;
                 }
