@@ -1237,6 +1237,12 @@ class ActionExecutionService
             // Execute the AI action on the model
             $result = $modelClass::executeAI('create', $modelParams);
             
+            // Handle AIActionResource responses
+            if ($result instanceof \LaravelAIEngine\Contracts\AIActionResponse) {
+                return $result->toArray();
+            }
+            
+            // Handle array responses (backward compatibility)
             return [
                 'success' => $result['success'] ?? false,
                 'data' => $result['data'] ?? null,

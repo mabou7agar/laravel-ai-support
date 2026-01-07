@@ -22,7 +22,6 @@ class PendingAction extends Model
         'executor',
         'model_class',
         'node_slug',
-        'ai_config',
         'executed_at',
         'expires_at',
     ];
@@ -31,7 +30,6 @@ class PendingAction extends Model
         'params' => 'array',
         'missing_fields' => 'array',
         'suggested_params' => 'array',
-        'ai_config' => 'array',
         'is_complete' => 'boolean',
         'is_executed' => 'boolean',
         'executed_at' => 'datetime',
@@ -103,8 +101,8 @@ class PendingAction extends Model
      */
     public function isReady(): bool
     {
-        return $this->is_complete && 
-               !$this->is_executed && 
+        return $this->is_complete &&
+               !$this->is_executed &&
                $this->expires_at > now() &&
                empty($this->missing_fields);
     }

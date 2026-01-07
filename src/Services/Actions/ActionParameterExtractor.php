@@ -162,6 +162,13 @@ class ActionParameterExtractor
                 return [];
             }
             
+            Log::channel('ai-engine')->debug('Raw AI extraction result', [
+                'action' => $actionDefinition['label'] ?? 'unknown',
+                'extracted' => $extracted,
+                'has_items' => isset($extracted['items']),
+                'items_count' => isset($extracted['items']) ? count($extracted['items']) : 0,
+            ]);
+            
             return $extracted;
             
         } catch (\Exception $e) {
@@ -201,6 +208,24 @@ class ActionParameterExtractor
                 $requiredLabel = $required ? ' (REQUIRED)' : ' (optional)';
                 
                 $prompt .= "- {$fieldName} ({$type}){$requiredLabel}: {$description}\n";
+                
+                // Add item structure details for array fields
+                if ($type === 'array' && isset($fieldInfo['item_structure'])) {
+                    $prompt .= "  Structure for each {$fieldName} item:\n";
+                    foreach ($fieldInfo['item_structure'] as $itemField => $itemFieldInfo) {
+                        $itemDesc = is_array($itemFieldInfo) ? ($itemFieldInfo['description'] ?? $itemField) : $itemFieldInfo;
+                        $itemType = is_array($itemFieldInfo) ? ($itemFieldInfo['type'] ?? 'string') : 'string';
+                        $itemRequired = is_array($itemFieldInfo) ? ($itemFieldInfo['required'] ?? false) : false;
+                        $itemReqLabel = $itemRequired ? ' (required)' : ' (optional)';
+                        $prompt .= "    * {$itemField} ({$itemType}){$itemReqLabel}: {$itemDesc}\n";
+                    }
+                    
+                    // Add examples if available
+                    if (isset($fieldInfo['examples']) && !empty($fieldInfo['examples'])) {
+                        $prompt .= "  Example {$fieldName}:\n";
+                        $prompt .= "    " . json_encode($fieldInfo['examples'][0], JSON_UNESCAPED_SLASHES) . "\n";
+                    }
+                }
             }
             $prompt .= "\n";
         } else {
@@ -227,7 +252,10 @@ class ActionParameterExtractor
         $prompt .= "- Extract ONLY values explicitly stated in the user's message\n";
         $prompt .= "- NEVER generate, infer, or substitute values from your training data\n";
         $prompt .= "- If a value is not in the message, omit that field from the JSON\n";
-        $prompt .= "- Use the EXACT names, values, and details the user provided\n\n";
+        $prompt .= "- Use the EXACT names, values, and details the user provided\n";
+        $prompt .= "- For array fields (like 'items'), extract ALL mentioned items into an array\n";
+        $prompt .= "- When user mentions products/items with details (name, price, quantity), create proper array structure\n";
+        $prompt .= "- Example: 'Product Google Pixel quantity 50 price 500' → {\"items\": [{\"item\": \"Google Pixel\", \"quantity\": 50, \"price\": 500}]}\n\n";
         $prompt .= "Return ONLY a JSON object with the extracted fields.\n";
         $prompt .= "Example format: {\"field1\": \"value1\", \"field2\": \"value2\"}";
         

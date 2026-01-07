@@ -36,12 +36,16 @@ trait AutoResolvesRelationships
         // Resolve top-level relationships
         foreach ($relationships as $field => $relationConfig) {
             // Determine which field in the data to use for resolution
-            // Priority: 1) explicit 'field' mapping, 2) derive from field name, 3) search_field if it exists
+            // Priority: 1) _id field itself if it's a string, 2) explicit 'field' mapping, 3) derive from field name
             $searchField = null;
             $searchBy = $relationConfig['search_field'] ?? 'name';
             
+            // Check if the _id field itself contains a string value (e.g., customer_id: "John Doe")
+            if (isset($data[$field]) && is_string($data[$field])) {
+                $searchField = $field;
+            }
             // Check if there's an explicit field mapping
-            if (isset($relationConfig['field'])) {
+            elseif (isset($relationConfig['field'])) {
                 $searchField = $relationConfig['field'];
             }
             // Default: derive from field name (customer_id -> customer, category_id -> category)

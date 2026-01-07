@@ -27,7 +27,6 @@ class PendingActionService
             'executor' => $action->data['executor'] ?? null,
             'model_class' => $action->data['model_class'] ?? null,
             'node_slug' => $action->data['node_slug'] ?? null,
-            'ai_config' => $action->data['ai_config'] ?? null, // Store AI config for remote models
         ];
 
         Log::channel('ai-engine')->info('Storing pending action in database', [
@@ -38,6 +37,9 @@ class PendingActionService
             'executor' => $data['executor'],
             'node_slug' => $data['node_slug'],
             'model_class' => $data['model_class'],
+            'params' => $data['params'],
+            'missing_fields' => $data['missing_fields'],
+            'params_count' => count($data['params']),
         ]);
 
         return PendingAction::createOrUpdate($sessionId, $data);
@@ -74,7 +76,6 @@ class PendingActionService
                 'executor' => $pendingAction->executor,
                 'model_class' => $pendingAction->model_class,
                 'node_slug' => $pendingAction->node_slug,
-                'ai_config' => $pendingAction->ai_config ?? null, // Include AI config for remote models
             ]
         );
     }
@@ -91,17 +92,17 @@ class PendingActionService
         }
 
         $mergedParams = array_merge($pendingAction->params, $newParams);
-        
+
         // Recalculate missing fields based on new params
         $oldMissingFields = $pendingAction->missing_fields ?? [];
         $stillMissing = [];
-        
+
         foreach ($oldMissingFields as $field) {
             if (empty($mergedParams[$field])) {
                 $stillMissing[] = $field;
             }
         }
-        
+
         $pendingAction->update([
             'params' => $mergedParams,
             'missing_fields' => $stillMissing,
