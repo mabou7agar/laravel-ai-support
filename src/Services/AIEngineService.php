@@ -32,6 +32,21 @@ class AIEngineService
     {
         $startTime = microtime(true);
         $requestId = uniqid('ai_req_');
+        
+        // Debug mode: Log prompt before sending
+        $debugMode = config('ai-engine.debug', false) || ($request->metadata['debug'] ?? false);
+        if ($debugMode) {
+            \Log::channel('ai-engine')->info('🔍 AI Request Debug', [
+                'request_id' => $requestId,
+                'engine' => $request->engine->value,
+                'model' => $request->model->value,
+                'prompt_length' => strlen($request->prompt),
+                'prompt' => $request->prompt,
+                'system_prompt' => $request->systemPrompt ?? null,
+                'temperature' => $request->temperature,
+                'max_tokens' => $request->maxTokens,
+            ]);
+        }
 
         try {
             // Check credits before processing
@@ -61,6 +76,18 @@ class AIEngineService
             }
 
             $processingTime = microtime(true) - $startTime;
+            
+            // Debug mode: Log response and timing
+            if ($debugMode) {
+                \Log::channel('ai-engine')->info('✅ AI Response Debug', [
+                    'request_id' => $requestId,
+                    'execution_time' => round($processingTime, 3) . 's',
+                    'response_length' => strlen($response->content),
+                    'response_preview' => substr($response->content, 0, 200),
+                    'success' => $response->success,
+                    'tokens_used' => $response->metadata['usage'] ?? null,
+                ]);
+            }
 
             // Dispatch request completed event
             Event::dispatch(new AIRequestCompleted(

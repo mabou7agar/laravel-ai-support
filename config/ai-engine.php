@@ -7,7 +7,11 @@ return [
     |--------------------------------------------------------------------------
     |
     | Enable debug logging for AI Engine operations. When enabled, detailed
-    | logs will be written to the ai-engine log channel.
+    | logs will be written to the ai-engine log channel including:
+    | - Full prompts sent to AI
+    | - Execution time for each request
+    | - Response previews
+    | - Token usage
     |
     */
     'debug' => env('AI_ENGINE_DEBUG', false),
