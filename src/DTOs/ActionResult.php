@@ -53,6 +53,22 @@ class ActionResult
     }
     
     /**
+     * Create a result that needs user input
+     */
+    public static function needsUserInput(
+        string $message,
+        mixed $data = null,
+        array $metadata = []
+    ): self {
+        return new self(
+            success: false,
+            message: $message,
+            data: $data,
+            metadata: array_merge(['needs_user_input' => true], $metadata)
+        );
+    }
+    
+    /**
      * Create result from array
      */
     public static function fromArray(array $data): self

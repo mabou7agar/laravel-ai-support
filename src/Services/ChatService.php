@@ -177,6 +177,47 @@ class ChatService
                 'is_incomplete' => !empty($pendingAction->data['missing_fields'] ?? []),
             ] : null;
 
+            // Check if there's an active workflow that should continue
+            $activeWorkflowContext = \Illuminate\Support\Facades\Cache::get("agent_context:{$sessionId}");
+            
+            Log::channel('ai-engine')->debug('Checking for active workflow', [
+                'session_id' => $sessionId,
+                'has_cached_context' => $activeWorkflowContext !== null,
+                'current_workflow' => $activeWorkflowContext['current_workflow'] ?? null,
+                'current_step' => $activeWorkflowContext['current_step'] ?? null,
+            ]);
+            
+            if ($activeWorkflowContext && !empty($activeWorkflowContext['current_workflow'])) {
+                Log::channel('ai-engine')->info('Active workflow detected, continuing', [
+                    'session_id' => $sessionId,
+                    'workflow' => $activeWorkflowContext['current_workflow'],
+                    'current_step' => $activeWorkflowContext['current_step'] ?? null,
+                    'conversation_history_count' => count($activeWorkflowContext['conversation_history'] ?? []),
+                ]);
+                
+                // Continue the workflow with the user's message
+                $agentMode = app(\LaravelAIEngine\Services\Agent\AgentMode::class);
+                $context = \LaravelAIEngine\DTOs\UnifiedActionContext::fromCache($sessionId, $userId);
+                
+                // Continue workflow directly through AgentMode
+                $agentResponse = $agentMode->continueWorkflow($processedMessage, $context);
+                
+                // Convert AgentResponse to AIResponse
+                return new AIResponse(
+                    content: $agentResponse->message,
+                    engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
+                    model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                    metadata: [
+                        'workflow_active' => !$agentResponse->isComplete,
+                        'workflow_class' => $activeWorkflowContext['current_workflow'],
+                        'workflow_data' => $agentResponse->data ?? [],
+                        'workflow_completed' => $agentResponse->isComplete,
+                    ],
+                    success: $agentResponse->success,
+                    conversationId: $aiRequest->getConversationId()
+                );
+            }
+            
             // Get available actions for AI to select from
             $availableActions = [];
             if (!$cachedActionData) {
@@ -978,7 +1019,74 @@ class ChatService
                         $suggestions = $this->generateOptionalParamSuggestions($currentParams, $missingOptional);
                     }
 
-                    // Store pending action in database for confirmation
+                    // Check if this is a workflow action - workflows execute immediately
+                    $actionDefinition = $this->getActionDefinition($actionToCache->data['action_id'] ?? null);
+                    $isWorkflow = ($actionDefinition['executor'] ?? null) === 'workflow' || 
+                                  ($actionDefinition['type'] ?? null) === 'workflow_action';
+                    
+                    if ($isWorkflow) {
+                        // Workflows execute immediately and handle their own conversation flow
+                        Log::channel('ai-engine')->info('Executing workflow action immediately', [
+                            'action' => $actionToCache->label,
+                            'workflow_class' => $actionDefinition['workflow_class'] ?? 'unknown',
+                        ]);
+                        
+                        // Create new action with session_id and original message for workflow
+                        $workflowData = $actionToCache->data;
+                        $workflowData['session_id'] = $sessionId;
+                        $workflowData['original_message'] = $processedMessage;
+                        // Add message to params for workflow to access
+                        if (!isset($workflowData['params'])) {
+                            $workflowData['params'] = [];
+                        }
+                        $workflowData['params']['message'] = $processedMessage;
+                        
+                        $workflowAction = new \LaravelAIEngine\DTOs\InteractiveAction(
+                            id: $actionToCache->id,
+                            type: $actionToCache->type,
+                            label: $actionToCache->label,
+                            description: $actionToCache->description,
+                            data: $workflowData
+                        );
+                        
+                        $executionResult = $this->executeSmartActionInline($workflowAction, $userId);
+                        
+                        // Check if workflow needs user input (success can be false but still valid)
+                        $hasMessage = !empty($executionResult['message']);
+                        $hasError = !empty($executionResult['error']);
+                        
+                        if ($hasMessage && !$hasError) {
+                            // Return workflow response (either success or needs input)
+                            return new AIResponse(
+                                content: $executionResult['message'],
+                                engine: $response->getEngine(),
+                                model: $response->getModel(),
+                                metadata: array_merge($metadata, [
+                                    'workflow_active' => true,
+                                    'workflow_class' => $actionDefinition['workflow_class'] ?? null,
+                                    'workflow_data' => $executionResult['data'] ?? [],
+                                ]),
+                                tokensUsed: $response->getTokensUsed(),
+                                creditsUsed: $response->getCreditsUsed(),
+                                latency: $response->getLatency(),
+                                requestId: $response->getRequestId(),
+                                finishReason: 'workflow_active',
+                                success: true,
+                                conversationId: $response->getConversationId()
+                            );
+                        } else {
+                            return new AIResponse(
+                                content: "❌ Failed to start workflow: " . ($executionResult['error'] ?? 'Unknown error'),
+                                engine: $response->getEngine(),
+                                model: $response->getModel(),
+                                error: $executionResult['error'] ?? 'Workflow failed',
+                                success: false,
+                                conversationId: $response->getConversationId()
+                            );
+                        }
+                    }
+
+                    // Store pending action in database for confirmation (non-workflow actions)
                     $this->pendingActionService?->store($sessionId, $actionToCache, $userId);
 
                     // Check if any action is ready to execute automatically
@@ -2403,6 +2511,33 @@ class ChatService
 
             case 'model.remote':
                 return $this->executeRemoteModelAction($action, $params, $userId);
+            
+            case 'workflow':
+                // Execute workflow through ActionExecutionPipeline
+                if ($this->actionManager) {
+                    $pipeline = app(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class);
+                    $actionDefinition = $this->actionManager->getRegistry()->get($action->data['action_id'] ?? $action->id);
+                    
+                    if ($actionDefinition) {
+                        // Get session_id from action data (already set when creating the action)
+                        $sessionId = $action->data['session_id'] ?? uniqid('workflow_');
+                        
+                        // Execute workflow
+                        $result = $pipeline->execute($action, $userId, $sessionId);
+                        
+                        return [
+                            'success' => $result->success,
+                            'message' => $result->message,
+                            'data' => $result->data,
+                            'error' => $result->error,
+                        ];
+                    }
+                }
+                
+                return [
+                    'success' => false,
+                    'error' => 'Workflow execution failed: ActionManager not available'
+                ];
 
             case 'email.reply':
                 return $this->executeEmailReply($params, $userId);

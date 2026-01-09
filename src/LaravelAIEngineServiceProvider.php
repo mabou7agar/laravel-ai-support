@@ -118,6 +118,56 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\PendingActionService();
         });
 
+        // Register Agent Services (Phase 1: Foundation + Auto-Discovery)
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentCollectionAdapter::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\AgentCollectionAdapter(
+                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class),
+                $app->make(\LaravelAIEngine\Services\ModelAnalyzer::class)
+            );
+        });
+        
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\WorkflowDataCollector::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\WorkflowDataCollector(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\ComplexityAnalyzer::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\ComplexityAnalyzer(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\ContextManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\ContextManager();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentMode::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\AgentMode();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentOrchestrator::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\AgentOrchestrator(
+                $app->make(\LaravelAIEngine\Services\Agent\ComplexityAnalyzer::class),
+                $app->make(\LaravelAIEngine\Services\Actions\ActionManager::class),
+                $app->make(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\AgentMode::class),
+                $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class)
+            );
+        });
+
+        // Register Agent Tools (Phase 3: Tool System)
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class, function ($app) {
+            $registry = new \LaravelAIEngine\Services\Agent\Tools\ToolRegistry();
+            $registry->discoverFromConfig();
+            return $registry;
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ValidateFieldTool::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class);
+
         // Register aliases
         $this->app->alias(AIEngineService::class, 'ai-engine');
         $this->app->alias(CreditManager::class, 'ai-engine.credits');
@@ -139,6 +189,10 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__ . '/../config/ai-engine.php' => config_path('ai-engine.php'),
             ], 'ai-engine-config');
+
+            $this->publishes([
+                __DIR__ . '/../config/ai-agent.php' => config_path('ai-agent.php'),
+            ], 'ai-agent-config');
 
             // Publish migrations
             $this->publishes([
@@ -162,6 +216,8 @@ class LaravelAIEngineServiceProvider extends ServiceProvider
                 \LaravelAIEngine\Console\Commands\TestRAGFeaturesCommand::class,
                 \LaravelAIEngine\Console\Commands\TestIntelligentSearchCommand::class,
                 \LaravelAIEngine\Console\Commands\TestDuplicateDetectionCommand::class,
+                \LaravelAIEngine\Console\Commands\TestAgentCommand::class,
+                \LaravelAIEngine\Console\Commands\DiscoverModelsForAgentCommand::class,
                 
                 // Note: Node commands are registered in AIEngineServiceProvider.php
             ]);

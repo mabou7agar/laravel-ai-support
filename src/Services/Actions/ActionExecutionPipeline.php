@@ -110,10 +110,18 @@ class ActionExecutionPipeline
         $executor = $definition['executor'] ?? null;
         $params = $action->data['params'] ?? [];
         
+        Log::channel('ai-engine')->debug('ActionExecutionPipeline executing action', [
+            'executor' => $executor,
+            'executor_type' => gettype($executor),
+            'action_id' => $action->id,
+            'definition_keys' => array_keys($definition),
+        ]);
+        
         // Route to appropriate executor
         return match($executor) {
             'model.dynamic' => $this->executeModelAction($definition, $params, $userId),
             'model.remote' => $this->executeRemoteModelAction($definition, $params, $userId),
+            'workflow' => $this->executeWorkflow($definition, $params, $userId, $sessionId),
             'email.reply' => $this->executeEmailAction($definition, $params, $userId),
             'calendar.create' => $this->executeCalendarAction($definition, $params, $userId),
             'task.create' => $this->executeTaskAction($definition, $params, $userId),
@@ -255,6 +263,111 @@ class ActionExecutionPipeline
             message: '✅ Task created successfully!',
             data: $params
         );
+    }
+    
+    /**
+     * Execute workflow action
+     */
+    protected function executeWorkflow(
+        array $definition,
+        array $params,
+        $userId,
+        ?string $sessionId
+    ): ActionResult {
+        $workflowClass = $definition['workflow_class'] ?? null;
+        
+        if (!$workflowClass || !class_exists($workflowClass)) {
+            return ActionResult::failure('Invalid workflow class');
+        }
+        
+        try {
+            $agentMode = app(\LaravelAIEngine\Services\Agent\AgentMode::class);
+            
+            // Create or get context for this session
+            $context = new \LaravelAIEngine\DTOs\UnifiedActionContext(
+                $sessionId ?? uniqid('workflow_'),
+                $userId
+            );
+            
+            // Get the message from params
+            $message = $params['message'] ?? $params['user_message'] ?? '';
+            
+            // Check if workflow is already active for this session
+            if ($context->currentWorkflow === $workflowClass) {
+                Log::channel('ai-engine')->info('Continuing existing workflow', [
+                    'workflow' => $workflowClass,
+                    'session_id' => $sessionId,
+                    'current_step' => $context->currentStep,
+                ]);
+                
+                $response = $agentMode->continueWorkflow($message, $context);
+            } else {
+                Log::channel('ai-engine')->info('Starting new workflow', [
+                    'workflow' => $workflowClass,
+                    'session_id' => $sessionId,
+                    'message' => substr($message, 0, 100),
+                ]);
+                
+                $response = $agentMode->startWorkflow($workflowClass, $context, $message);
+            }
+            
+            // Convert AgentResponse to ActionResult
+            if ($response->needsUserInput) {
+                return ActionResult::needsUserInput(
+                    message: $response->message,
+                    data: [
+                        'workflow_active' => true,
+                        'current_step' => $context->currentStep,
+                        'workflow_state' => $context->workflowState,
+                    ],
+                    metadata: [
+                        'workflow_class' => $workflowClass,
+                        'session_id' => $sessionId,
+                    ]
+                );
+            }
+            
+            if ($response->isComplete) {
+                return ActionResult::success(
+                    message: $response->message,
+                    data: [
+                        'workflow_completed' => true,
+                        'final_state' => $context->workflowState,
+                    ],
+                    metadata: [
+                        'workflow_class' => $workflowClass,
+                        'session_id' => $sessionId,
+                    ]
+                );
+            }
+            
+            if (!$response->success) {
+                return ActionResult::failure(
+                    error: $response->message,
+                    data: [
+                        'workflow_failed' => true,
+                        'current_step' => $context->currentStep,
+                    ]
+                );
+            }
+            
+            return ActionResult::success(
+                message: $response->message,
+                data: ['workflow_state' => $context->workflowState]
+            );
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Workflow execution failed', [
+                'workflow' => $workflowClass,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return ActionResult::failure(
+                error: 'Workflow execution failed: ' . $e->getMessage(),
+                metadata: ['workflow_class' => $workflowClass]
+            );
+        }
     }
     
     /**
