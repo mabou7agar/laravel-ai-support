@@ -163,7 +163,7 @@ class DataCollectorService
         $config = $this->getConfigForSession($sessionId, $state);
         
         if (!$config) {
-            $locale = $state->embeddedConfig['locale'] ?? 'en';
+            $locale = $state->detectedLocale ?? $state->embeddedConfig['locale'] ?? 'en';
             return new DataCollectorResponse(
                 success: false,
                 message: $locale === 'ar' 
@@ -178,6 +178,18 @@ class DataCollectorService
             return $this->handleCancellation($state, $config);
         }
 
+        // Auto-detect locale from user message if not already set or if detectLocale is enabled
+        if ($config->detectLocale || !isset($state->detectedLocale)) {
+            $detectedLocale = $this->detectLocale($message);
+            if ($detectedLocale !== 'en') {
+                $state->detectedLocale = $detectedLocale;
+                Log::channel('ai-engine')->info('Locale auto-detected', [
+                    'session_id' => $state->sessionId,
+                    'detected_locale' => $detectedLocale,
+                ]);
+            }
+        }
+        
         // Add user message to history
         $state->addMessage('user', $message);
 
@@ -188,7 +200,7 @@ class DataCollectorService
             DataCollectorState::STATUS_ENHANCING => $this->handleEnhancing($state, $config, $message, $engine, $model),
             default => new DataCollectorResponse(
                 success: false,
-                message: ($config->locale ?? 'en') === 'ar'
+                message: ($state->detectedLocale ?? $config->locale ?? 'en') === 'ar'
                     ? 'الجلسة ليست في حالة نشطة.'
                     : 'Session is not in an active state.',
                 state: $state,
@@ -227,6 +239,24 @@ class DataCollectorService
         );
 
         $responseContent = $aiResponse->getContent();
+        
+        // Check if user is selecting a suggestion by number
+        $selectedSuggestion = $this->checkSuggestionSelection($message, $state);
+        if ($selectedSuggestion !== null) {
+            // User selected a suggestion - treat it as providing a value
+            $extractedFields = [$state->currentField => $selectedSuggestion];
+            
+            Log::channel('ai-engine')->info('User selected suggestion by number', [
+                'field' => $state->currentField,
+                'selected_value' => substr($selectedSuggestion, 0, 100),
+            ]);
+            
+            // Clear suggestions after selection
+            unset($state->lastSuggestions);
+            
+            // Skip intent analysis and go straight to validation
+            goto validateAndSave;
+        }
         
         // Use intent analysis to intelligently extract field value
         $intentAnalysis = $this->analyzeFieldIntent(
@@ -278,12 +308,14 @@ class DataCollectorService
             $extractedFields = $this->parseFieldExtractions($responseContent, $config);
         }
         
+        validateAndSave:
+        
         Log::channel('ai-engine')->info('Field extraction results', [
             'session_id' => $state->sessionId,
             'extracted_count' => count($extractedFields),
             'extracted_fields' => array_keys($extractedFields),
             'current_field' => $state->currentField,
-            'used_intent_analysis' => !empty($intentAnalysis['extracted_value']),
+            'used_intent_analysis' => !empty($intentAnalysis['extracted_value'] ?? null),
         ]);
         
         // CRITICAL: Only accept extraction for the current field to prevent hallucination
@@ -359,7 +391,7 @@ class DataCollectorService
                     $state->setValidationErrors([$fieldName => $errors]);
                     
                     // Build user-friendly error message
-                    $locale = $config->locale ?? 'en';
+                    $locale = $state->detectedLocale ?? $config->locale ?? 'en';
                     if ($locale === 'ar') {
                         $validationErrorMessage = "عذراً، القيمة المقدمة غير صالحة:\n";
                         $validationErrorMessage .= "\n**الأخطاء:**\n";
@@ -464,7 +496,7 @@ class DataCollectorService
             
             // If AI mentioned wrong field OR we used direct extraction, override with correct acknowledgment
             if ($mentionedWrongField || $usedDirectExtraction) {
-                $locale = $config->locale ?? 'en';
+                $locale = $state->detectedLocale ?? $config->locale ?? 'en';
                 if ($locale === 'ar') {
                     $cleanResponse = "رائع! لقد سجلت {$field->description}: " . substr($fieldValue, 0, 100);
                 } else {
@@ -499,7 +531,7 @@ class DataCollectorService
                     : $config->generateActionSummary($state->getData());
                 
                 // Build full confirmation message (with locale support)
-                $locale = $config->locale ?? 'en';
+                $locale = $state->detectedLocale ?? $config->locale ?? 'en';
                 $fullMessage = $cleanResponse . "\n\n";
                 $fullMessage .= $summary;
                 $fullMessage .= "\n---\n\n";
@@ -540,6 +572,18 @@ class DataCollectorService
         $nextField = $this->getNextFieldToCollect($state, $config);
         if ($nextField) {
             $state->setCurrentField($nextField->name);
+            
+            // Append next field prompt to the acknowledgment message
+            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
+            $nextFieldPrompt = $nextField->getCollectionPrompt();
+            
+            if ($locale === 'ar') {
+                $cleanResponse .= "\n\n" . $nextFieldPrompt;
+            } else {
+                $cleanResponse .= "\n\n" . $nextFieldPrompt;
+            }
+            
+            $state->setLastAIResponse($cleanResponse);
         }
 
         return new DataCollectorResponse(
@@ -595,7 +639,7 @@ class DataCollectorService
             if ($config->allowEnhancement) {
                 $state->setStatus(DataCollectorState::STATUS_ENHANCING);
                 
-                $locale = $config->locale ?? 'en';
+                $locale = $state->detectedLocale ?? $config->locale ?? 'en';
                 $enhancementMessage = $locale === 'ar'
                     ? "لا مشكلة! ماذا تريد تغييره؟ يمكنك تحديد اسم الحقل والقيمة الجديدة، أو وصف ما تريد تعديله."
                     : "No problem! What would you like to change? You can specify the field name and the new value, or describe what you'd like to modify.";
@@ -612,7 +656,7 @@ class DataCollectorService
                 $state->collectedData = [];
                 $state->setCurrentField($config->getFirstField()?->name);
                 
-                $locale = $config->locale ?? 'en';
+                $locale = $state->detectedLocale ?? $config->locale ?? 'en';
                 $firstFieldPrompt = $config->getFirstField()?->getCollectionPrompt();
                 $restartMessage = $locale === 'ar'
                     ? "لنبدأ من جديد. " . $firstFieldPrompt
@@ -633,7 +677,7 @@ class DataCollectorService
         }
 
         // Ask for clarification
-        $locale = $config->locale ?? 'en';
+        $locale = $state->detectedLocale ?? $config->locale ?? 'en';
         $clarificationMessage = $locale === 'ar'
             ? "يرجى التأكيد إذا كانت المعلومات صحيحة بقول 'نعم' أو 'لا'. إذا كنت ترغب في إجراء تغييرات، قل 'لا' أو حدد ما تريد تعديله."
             : "Please confirm if the information is correct by saying 'yes' or 'no'. If you'd like to make changes, say 'no' or specify what you'd like to modify.";
@@ -738,7 +782,7 @@ class DataCollectorService
                 : $config->generateActionSummary($state->getData());
             
             // Build confirmation message (with locale support)
-            $locale = $config->locale ?? 'en';
+            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
             if ($locale === 'ar') {
                 $fullMessage = "إليك معلوماتك المحدثة:\n\n";
                 $fullMessage .= $summary;
@@ -781,7 +825,7 @@ class DataCollectorService
         $actionSummary = $config->generateActionSummary($state->getData());
 
         // Build enhancement message (with locale support)
-        $locale = $config->locale ?? 'en';
+        $locale = $state->detectedLocale ?? $config->locale ?? 'en';
         if ($locale === 'ar') {
             $enhanceMessage = $cleanResponse . "\n\n" . $summary . "\n\n**ما سيحدث:** " . $actionSummary . "\n\nهل تريد إجراء أي تغييرات أخرى؟ قل 'تم' عند الانتهاء، أو 'نعم' للتأكيد.";
         } else {
@@ -848,7 +892,7 @@ class DataCollectorService
             $modificationContext
         );
         
-        $locale = $config->locale ?? 'en';
+        $locale = $state->detectedLocale ?? $config->locale ?? 'en';
         if ($locale === 'ar') {
             $response = "لقد قمت بتحديث الهيكل بناءً على ملاحظاتك:\n\n";
             $response .= $actionSummary;
@@ -980,7 +1024,7 @@ class DataCollectorService
         $field = $config->getField($state->currentField);
         
         if (!$field) {
-            $locale = $config->locale ?? 'en';
+            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
             return new DataCollectorResponse(
                 success: false,
                 message: $locale === 'ar'
@@ -1028,8 +1072,8 @@ class DataCollectorService
         $contextPrompt .= "\nConsider the context provided and make suggestions that are specific, helpful, and appropriate.";
         $contextPrompt .= "\nFormat each suggestion on a new line with a number (1., 2., 3., etc.).";
         
-        // Detect locale
-        $locale = $config->locale ?? 'en';
+        // Use detected or configured locale
+        $locale = $state->detectedLocale ?? $config->locale ?? 'en';
         if ($locale === 'ar') {
             $contextPrompt .= "\n\nRespond in Arabic.";
         }
@@ -1044,15 +1088,21 @@ class DataCollectorService
             
             $suggestions = $aiResponse->getContent();
             
+            // Store suggestions in state for later selection
+            $state->lastSuggestions = [
+                'field' => $state->currentField,
+                'suggestions' => $suggestions,
+            ];
+            
             // Build user-friendly response
             if ($locale === 'ar') {
-                $responseMessage = "إليك بعض الاقتراحات لـ {$field->description}:\n\n";
+                $responseMessage = "إليك بعض الاقتراحات:\n\n";
                 $responseMessage .= $suggestions;
-                $responseMessage .= "\n\nيمكنك اختيار أحد هذه الاقتراحات أو تقديم قيمتك الخاصة.";
+                $responseMessage .= "\n\nيمكنك اختيار أحد هذه الاقتراحات برقمه (مثل: 1) أو تقديم قيمتك الخاصة.";
             } else {
-                $responseMessage = "Here are some suggestions for {$field->description}:\n\n";
+                $responseMessage = "Here are some suggestions:\n\n";
                 $responseMessage .= $suggestions;
-                $responseMessage .= "\n\nYou can choose one of these suggestions or provide your own value.";
+                $responseMessage .= "\n\nYou can choose one of these suggestions by its number (e.g., 1) or provide your own value.";
             }
             
             $state->setLastAIResponse($responseMessage);
@@ -2051,6 +2101,60 @@ class DataCollectorService
     }
 
     /**
+     * Check if user is selecting a suggestion by number
+     */
+    protected function checkSuggestionSelection(string $message, DataCollectorState $state): ?string
+    {
+        // Check if we have stored suggestions
+        if (empty($state->lastSuggestions) || $state->lastSuggestions['field'] !== $state->currentField) {
+            return null;
+        }
+        
+        $trimmedMessage = trim($message);
+        
+        // Check if message is just a number (1, 2, 3, etc.)
+        if (preg_match('/^(\d+)\.?$/', $trimmedMessage, $matches)) {
+            $selectedNumber = (int)$matches[1];
+            
+            // Parse suggestions to extract the text for the selected number
+            $suggestions = $state->lastSuggestions['suggestions'];
+            $lines = explode("\n", $suggestions);
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                // Match patterns like "1. suggestion text" or "1- suggestion text" or "١. suggestion text" (Arabic)
+                if (preg_match('/^[١٢٣٤٥٦٧٨٩٠]?\.?\s*' . $selectedNumber . '[\.:\-\)]\s*(.+)$/u', $line, $lineMatches)) {
+                    return trim($lineMatches[1]);
+                }
+                if (preg_match('/^' . $selectedNumber . '[\.:\-\)]\s*(.+)$/u', $line, $lineMatches)) {
+                    return trim($lineMatches[1]);
+                }
+            }
+            
+            Log::channel('ai-engine')->warning('User selected suggestion number but could not extract text', [
+                'selected_number' => $selectedNumber,
+                'suggestions_preview' => substr($suggestions, 0, 200),
+            ]);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Detect locale from user message
+     */
+    protected function detectLocale(string $message): string
+    {
+        // Check for Arabic characters
+        if (preg_match('/[\x{0600}-\x{06FF}]/u', $message)) {
+            return 'ar';
+        }
+        
+        // Default to English
+        return 'en';
+    }
+
+    /**
      * Check if message is a cancellation request
      */
     protected function isCancellationRequest(string $message): bool
@@ -2158,7 +2262,7 @@ class DataCollectorService
      */
     public function getGreeting(DataCollectorConfig $config, ?DataCollectorState $state = null): string
     {
-        $locale = $config->locale ?? 'en';
+        $locale = $state?->detectedLocale ?? $config->locale ?? 'en';
         
         // Localized greeting phrases
         $greetings = [
