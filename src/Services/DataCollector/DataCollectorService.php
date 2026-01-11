@@ -329,6 +329,9 @@ class DataCollectorService
             }
         }
         
+        $validationFailed = false;
+        $validationErrorMessage = '';
+        
         foreach ($extractedFields as $fieldName => $value) {
             $field = $config->getField($fieldName);
             if ($field) {
@@ -344,7 +347,33 @@ class DataCollectorService
                         'all_collected' => array_keys($state->getData()),
                     ]);
                 } else {
+                    $validationFailed = true;
                     $state->setValidationErrors([$fieldName => $errors]);
+                    
+                    // Build user-friendly error message
+                    $locale = $config->locale ?? 'en';
+                    if ($locale === 'ar') {
+                        $validationErrorMessage = "عذراً، القيمة المقدمة غير صالحة:\n";
+                        $validationErrorMessage .= "\n**الأخطاء:**\n";
+                        foreach ($errors as $error) {
+                            $validationErrorMessage .= "- {$error}\n";
+                        }
+                        $validationErrorMessage .= "\nيرجى تقديم {$field->description} صالح";
+                        if (!empty($field->examples)) {
+                            $validationErrorMessage .= " (مثال: " . implode(', ', $field->examples) . ")";
+                        }
+                    } else {
+                        $validationErrorMessage = "Sorry, the value you provided is not valid:\n";
+                        $validationErrorMessage .= "\n**Errors:**\n";
+                        foreach ($errors as $error) {
+                            $validationErrorMessage .= "- {$error}\n";
+                        }
+                        $validationErrorMessage .= "\nPlease provide a valid {$field->description}";
+                        if (!empty($field->examples)) {
+                            $validationErrorMessage .= " (e.g., " . implode(', ', $field->examples) . ")";
+                        }
+                    }
+                    
                     Log::channel('ai-engine')->error('Field validation failed - VALUE REJECTED', [
                         'field' => $fieldName,
                         'value' => substr($value, 0, 100),
@@ -371,6 +400,21 @@ class DataCollectorService
             return $this->handleCancellation($state, $config);
         }
 
+        // CRITICAL: If validation failed, override response with error message
+        if ($validationFailed && !empty($validationErrorMessage)) {
+            $state->setLastAIResponse($validationErrorMessage);
+            $state->addMessage('assistant', $validationErrorMessage);
+            
+            return new DataCollectorResponse(
+                success: false,
+                message: $validationErrorMessage,
+                state: $state,
+                aiResponse: $aiResponse,
+                currentField: $state->currentField,
+                validationErrors: $state->validationErrors,
+            );
+        }
+        
         // Clean the response first (remove field extraction markers)
         $cleanResponse = $this->cleanAIResponse($responseContent);
         
