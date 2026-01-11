@@ -2134,7 +2134,7 @@ class DataCollectorService
     }
 
     /**
-     * Check if user is selecting a suggestion by number
+     * Check if user is selecting a suggestion using AI (fully automatic detection)
      */
     protected function checkSuggestionSelection(string $message, DataCollectorState $state): ?string
     {
@@ -2143,30 +2143,53 @@ class DataCollectorService
             return null;
         }
         
-        $trimmedMessage = trim($message);
+        $suggestions = $state->lastSuggestions['suggestions'];
         
-        // Check if message is just a number (1, 2, 3, etc.)
-        if (preg_match('/^(\d+)\.?$/', $trimmedMessage, $matches)) {
-            $selectedNumber = (int)$matches[1];
+        // Let AI determine if user is selecting a suggestion and extract it
+        $detectionPrompt = "The user was previously shown these suggestions:\n\n{$suggestions}\n\n";
+        $detectionPrompt .= "The user just responded with: \"{$message}\"\n\n";
+        $detectionPrompt .= "TASK:\n";
+        $detectionPrompt .= "1. Determine if the user is trying to SELECT one of the suggestions above (e.g., by number, by saying 'first', 'the second one', etc.)\n";
+        $detectionPrompt .= "2. If YES, extract and return ONLY the full text of the selected suggestion\n";
+        $detectionPrompt .= "3. If NO (user is providing their own value instead), return exactly: NO_SELECTION\n\n";
+        $detectionPrompt .= "Return ONLY the suggestion text OR 'NO_SELECTION'. Nothing else.";
+        
+        try {
+            $aiResponse = $this->aiEngine
+                ->engine('openai')
+                ->model('gpt-4o-mini')
+                ->withSystemPrompt("You are a helpful assistant that detects and extracts user selections from suggestion lists.")
+                ->withMaxTokens(500)
+                ->generate($detectionPrompt);
             
-            // Parse suggestions to extract the text for the selected number
-            $suggestions = $state->lastSuggestions['suggestions'];
-            $lines = explode("\n", $suggestions);
+            $result = trim($aiResponse->getContent());
             
-            foreach ($lines as $line) {
-                $line = trim($line);
-                // Match patterns like "1. suggestion text" or "1- suggestion text" or "١. suggestion text" (Arabic)
-                if (preg_match('/^[١٢٣٤٥٦٧٨٩٠]?\.?\s*' . $selectedNumber . '[\.:\-\)]\s*(.+)$/u', $line, $lineMatches)) {
-                    return trim($lineMatches[1]);
-                }
-                if (preg_match('/^' . $selectedNumber . '[\.:\-\)]\s*(.+)$/u', $line, $lineMatches)) {
-                    return trim($lineMatches[1]);
-                }
+            // Check if AI detected a selection
+            if ($result === 'NO_SELECTION' || empty($result)) {
+                Log::channel('ai-engine')->debug('AI detected user is NOT selecting a suggestion', [
+                    'user_input' => $message,
+                ]);
+                return null;
             }
             
-            Log::channel('ai-engine')->warning('User selected suggestion number but could not extract text', [
-                'selected_number' => $selectedNumber,
-                'suggestions_preview' => substr($suggestions, 0, 200),
+            // AI detected and extracted a selection
+            if (strlen($result) > 10) {
+                Log::channel('ai-engine')->info('AI detected and extracted suggestion selection', [
+                    'user_input' => $message,
+                    'extracted_text' => substr($result, 0, 100),
+                ]);
+                return $result;
+            }
+            
+            Log::channel('ai-engine')->warning('AI extraction returned invalid text', [
+                'user_input' => $message,
+                'extracted_text' => $result,
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Failed to detect/extract suggestion using AI', [
+                'user_input' => $message,
+                'error' => $e->getMessage(),
             ]);
         }
         
