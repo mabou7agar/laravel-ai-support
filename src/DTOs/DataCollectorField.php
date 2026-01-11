@@ -126,7 +126,36 @@ class DataCollectorField
     }
 
     /**
-     * Get the AI prompt for collecting this field
+     * Get field metadata for AI to generate prompts naturally
+     * Returns structured information without hardcoded language
+     */
+    public function getFieldInfo(): array
+    {
+        $info = [
+            'name' => $this->name,
+            'description' => $this->description ?: $this->name,
+            'type' => $this->type,
+            'required' => $this->required,
+        ];
+
+        if (!empty($this->examples)) {
+            $info['examples'] = $this->examples;
+        }
+
+        if (!empty($this->options)) {
+            $info['options'] = $this->options;
+        }
+
+        if ($this->validation) {
+            $info['validation'] = $this->validation;
+        }
+
+        return $info;
+    }
+    
+    /**
+     * Get the AI prompt for collecting this field (for backward compatibility)
+     * @deprecated Use getFieldInfo() instead and let AI generate the prompt
      */
     public function getCollectionPrompt(): string
     {
@@ -134,75 +163,21 @@ class DataCollectorField
             return $this->prompt;
         }
 
-        $prompt = "Please provide the {$this->name}";
-        
-        if ($this->description) {
-            $prompt .= ": {$this->description}";
-        }
-
-        if (!empty($this->examples)) {
-            $prompt .= "\n\nExamples: " . implode(', ', $this->examples);
-        }
-
-        if (!empty($this->options)) {
-            $prompt .= "\n\nAvailable options: " . implode(', ', $this->options);
-        }
-
-        if ($this->validation) {
-            $prompt .= $this->getValidationHints();
-        }
-
-        return $prompt;
+        // Return just the description - AI will handle the rest
+        return $this->description ?: $this->name;
     }
 
-    /**
-     * Get human-readable validation hints
-     */
-    protected function getValidationHints(): string
-    {
-        $hints = [];
-        $rules = explode('|', $this->validation);
-
-        foreach ($rules as $rule) {
-            if (str_starts_with($rule, 'min:')) {
-                $min = substr($rule, 4);
-                $hints[] = "minimum {$min} characters";
-            } elseif (str_starts_with($rule, 'max:')) {
-                $max = substr($rule, 4);
-                $hints[] = "maximum {$max} characters";
-            } elseif ($rule === 'email') {
-                $hints[] = "must be a valid email address";
-            } elseif ($rule === 'url') {
-                $hints[] = "must be a valid URL";
-            } elseif ($rule === 'numeric') {
-                $hints[] = "must be a number";
-            } elseif ($rule === 'integer') {
-                $hints[] = "must be a whole number";
-            } elseif (str_starts_with($rule, 'between:')) {
-                $range = substr($rule, 8);
-                $hints[] = "must be between {$range}";
-            } elseif (str_starts_with($rule, 'in:')) {
-                $options = substr($rule, 3);
-                $hints[] = "must be one of: {$options}";
-            }
-        }
-
-        if (!empty($hints)) {
-            return "\n\nRequirements: " . implode(', ', $hints);
-        }
-
-        return '';
-    }
 
     /**
      * Validate a value against this field's rules
+     * Returns structured error data instead of hardcoded messages
      */
     public function validate(mixed $value): array
     {
         $errors = [];
 
         if ($this->required && ($value === null || $value === '')) {
-            $errors[] = "The {$this->name} field is required.";
+            $errors[] = ['rule' => 'required', 'field' => $this->name];
             return $errors;
         }
 
@@ -224,49 +199,50 @@ class DataCollectorField
 
     /**
      * Validate a single rule
+     * Returns structured error data instead of hardcoded messages
      */
-    protected function validateRule(mixed $value, string $rule): ?string
+    protected function validateRule(mixed $value, string $rule): ?array
     {
         if (str_starts_with($rule, 'min:')) {
             $min = (int) substr($rule, 4);
             if (is_string($value) && strlen($value) < $min) {
-                return "The {$this->name} must be at least {$min} characters.";
+                return ['rule' => 'min', 'field' => $this->name, 'min' => $min, 'actual' => strlen($value)];
             }
             if (is_numeric($value) && $value < $min) {
-                return "The {$this->name} must be at least {$min}.";
+                return ['rule' => 'min', 'field' => $this->name, 'min' => $min, 'actual' => $value];
             }
         }
 
         if (str_starts_with($rule, 'max:')) {
             $max = (int) substr($rule, 4);
             if (is_string($value) && strlen($value) > $max) {
-                return "The {$this->name} must not exceed {$max} characters.";
+                return ['rule' => 'max', 'field' => $this->name, 'max' => $max, 'actual' => strlen($value)];
             }
             if (is_numeric($value) && $value > $max) {
-                return "The {$this->name} must not exceed {$max}.";
+                return ['rule' => 'max', 'field' => $this->name, 'max' => $max, 'actual' => $value];
             }
         }
 
         if ($rule === 'email' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
-            return "The {$this->name} must be a valid email address.";
+            return ['rule' => 'email', 'field' => $this->name];
         }
 
         if ($rule === 'url' && !filter_var($value, FILTER_VALIDATE_URL)) {
-            return "The {$this->name} must be a valid URL.";
+            return ['rule' => 'url', 'field' => $this->name];
         }
 
         if ($rule === 'numeric' && !is_numeric($value)) {
-            return "The {$this->name} must be a number.";
+            return ['rule' => 'numeric', 'field' => $this->name];
         }
 
         if ($rule === 'integer' && !filter_var($value, FILTER_VALIDATE_INT)) {
-            return "The {$this->name} must be a whole number.";
+            return ['rule' => 'integer', 'field' => $this->name];
         }
 
         if (str_starts_with($rule, 'in:')) {
             $options = explode(',', substr($rule, 3));
             if (!in_array($value, $options)) {
-                return "The {$this->name} must be one of: " . implode(', ', $options);
+                return ['rule' => 'in', 'field' => $this->name, 'options' => $options];
             }
         }
 

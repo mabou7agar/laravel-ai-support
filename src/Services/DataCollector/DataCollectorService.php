@@ -423,28 +423,35 @@ class DataCollectorService
                     $validationFailed = true;
                     $state->setValidationErrors([$fieldName => $errors]);
                     
-                    // Build user-friendly error message
-                    $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-                    if ($locale === 'ar') {
-                        $validationErrorMessage = "عذراً، القيمة المقدمة غير صالحة:\n";
-                        $validationErrorMessage .= "\n**الأخطاء:**\n";
-                        foreach ($errors as $error) {
-                            $validationErrorMessage .= "- {$error}\n";
-                        }
-                        $validationErrorMessage .= "\nيرجى تقديم {$field->description} صالح";
-                        if (!empty($field->examples)) {
-                            $validationErrorMessage .= " (مثال: " . implode(', ', $field->examples) . ")";
-                        }
-                    } else {
-                        $validationErrorMessage = "Sorry, the value you provided is not valid:\n";
-                        $validationErrorMessage .= "\n**Errors:**\n";
-                        foreach ($errors as $error) {
-                            $validationErrorMessage .= "- {$error}\n";
-                        }
-                        $validationErrorMessage .= "\nPlease provide a valid {$field->description}";
-                        if (!empty($field->examples)) {
-                            $validationErrorMessage .= " (e.g., " . implode(', ', $field->examples) . ")";
-                        }
+                    // Generate validation error message using AI in user's language
+                    $fieldInfo = $field->getFieldInfo();
+                    $errorsJson = json_encode($errors, JSON_UNESCAPED_UNICODE);
+                    
+                    $errorPrompt = "The user provided a value that failed validation.\n\n";
+                    $errorPrompt .= "Field: {$fieldInfo['description']}\n";
+                    $errorPrompt .= "Validation errors: {$errorsJson}\n\n";
+                    $errorPrompt .= "Generate a friendly error message that:\n";
+                    $errorPrompt .= "1. Explains what went wrong based on the validation errors\n";
+                    $errorPrompt .= "2. Asks them to provide a valid value\n";
+                    $errorPrompt .= "3. Mentions examples if available: " . json_encode($fieldInfo['examples'] ?? [], JSON_UNESCAPED_UNICODE) . "\n\n";
+                    $errorPrompt .= "Be polite and helpful. Respond in the user's language.";
+                    
+                    try {
+                        $errorResponse = $this->generateAIResponse(
+                            $config->getSystemPrompt(),
+                            $this->buildContextPrompt($state, $config) . "\n\n" . $errorPrompt,
+                            [],
+                            $engine,
+                            $model
+                        );
+                        
+                        $validationErrorMessage = trim($errorResponse->getContent());
+                    } catch (\Exception $e) {
+                        // Fallback: return empty message, let system handle it
+                        $validationErrorMessage = '';
+                        Log::channel('ai-engine')->error('Failed to generate validation error message', [
+                            'error' => $e->getMessage(),
+                        ]);
                     }
                     
                     Log::channel('ai-engine')->error('Field validation failed - VALUE REJECTED', [
@@ -527,13 +534,22 @@ class DataCollectorService
                 }
             }
             
-            // If AI mentioned wrong field OR we used direct extraction, override with correct acknowledgment
+            // If AI mentioned wrong field OR we used direct extraction, generate correct acknowledgment via AI
             if ($mentionedWrongField || $usedDirectExtraction) {
-                $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-                if ($locale === 'ar') {
-                    $cleanResponse = "رائع! لقد سجلت {$field->description}: " . substr($fieldValue, 0, 100);
-                } else {
-                    $cleanResponse = "Great! I've recorded {$field->description}: " . substr($fieldValue, 0, 100);
+                // Let AI generate acknowledgment in user's language
+                $ackPrompt = "Generate a brief acknowledgment that you've recorded the {$field->description}. Value: " . substr($fieldValue, 0, 100);
+                try {
+                    $ackResponse = $this->generateAIResponse(
+                        $config->getSystemPrompt(),
+                        $this->buildContextPrompt($state, $config) . "\n\n" . $ackPrompt,
+                        [],
+                        $engine,
+                        $model
+                    );
+                    $cleanResponse = trim($ackResponse->getContent());
+                } catch (\Exception $e) {
+                    // Fallback to field description only
+                    $cleanResponse = $field->description . ": " . substr($fieldValue, 0, 100);
                 }
                 
                 Log::channel('ai-engine')->info('Overrode AI response with correct field acknowledgment', [
@@ -578,13 +594,21 @@ class DataCollectorService
                     $fullMessage .= "- قل **'لا'** أو **'تغيير'** لتعديل أي معلومات\n";
                     $fullMessage .= "- قل **'إلغاء'** لإلغاء العملية\n";
                 } else {
-                    $fullMessage .= "## What will happen:\n\n";
-                    $fullMessage .= $actionSummary;
-                    $fullMessage .= "\n\n---\n\n";
-                    $fullMessage .= "**Please confirm:**\n";
-                    $fullMessage .= "- Say **'yes'** or **'confirm'** to proceed\n";
-                    $fullMessage .= "- Say **'no'** or **'change'** to modify any information\n";
-                    $fullMessage .= "- Say **'cancel'** to abort the process\n";
+                    // Let AI generate confirmation prompt naturally
+                    $confirmPrompt = "Generate a confirmation request asking the user to confirm or modify. Include action summary.";
+                    try {
+                        $confirmResponse = $this->generateAIResponse(
+                            $config->getSystemPrompt(),
+                            $this->buildContextPrompt($state, $config) . "\n\nAction: " . $actionSummary . "\n\n" . $confirmPrompt,
+                            [],
+                            $engine,
+                            $model
+                        );
+                        $fullMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . trim($confirmResponse->getContent());
+                    } catch (\Exception $e) {
+                        // Fallback to summary only
+                        $fullMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . $actionSummary;
+                    }
                 }
                 
                 return new DataCollectorResponse(
@@ -606,17 +630,45 @@ class DataCollectorService
         if ($nextField) {
             $state->setCurrentField($nextField->name);
             
-            // Append next field prompt to the acknowledgment message
-            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-            $nextFieldPrompt = $nextField->getCollectionPrompt();
+            // Generate a new AI response that acknowledges the field AND asks for the next one
+            // This ensures everything is in the user's language naturally
+            $fieldInfo = $nextField->getFieldInfo();
+            $fieldInfoJson = json_encode($fieldInfo, JSON_UNESCAPED_UNICODE);
             
-            if ($locale === 'ar') {
-                $cleanResponse .= "\n\n" . $nextFieldPrompt;
-            } else {
-                $cleanResponse .= "\n\n" . $nextFieldPrompt;
+            $continuationPrompt = "The user just provided a value. Now:\n";
+            $continuationPrompt .= "1. Briefly acknowledge what they provided\n";
+            $continuationPrompt .= "2. Ask for the next field using this information:\n{$fieldInfoJson}\n";
+            $continuationPrompt .= "3. Naturally mention examples or requirements if provided\n\n";
+            $continuationPrompt .= "Be conversational and natural in the user's language.";
+            
+            try {
+                $continuationResponse = $this->generateAIResponse(
+                    $config->getSystemPrompt(),
+                    $this->buildContextPrompt($state, $config) . "\n\n" . $continuationPrompt,
+                    [],
+                    $engine,
+                    $model
+                );
+                
+                $cleanResponse = $this->cleanAIResponse($continuationResponse->getContent());
+                $state->setLastAIResponse($cleanResponse);
+                $state->addMessage('assistant', $cleanResponse);
+                
+                return new DataCollectorResponse(
+                    success: true,
+                    message: $cleanResponse,
+                    state: $state,
+                    aiResponse: $continuationResponse,
+                    currentField: $state->currentField,
+                    collectedFields: array_keys(array_filter($state->getData(), fn($v) => $v !== null && $v !== '')),
+                    remainingFields: array_keys($config->getUncollectedFields($state->getData())),
+                );
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->error('Failed to generate continuation response', [
+                    'error' => $e->getMessage(),
+                ]);
+                // Fall back to simple acknowledgment
             }
-            
-            $state->setLastAIResponse($cleanResponse);
         }
 
         return new DataCollectorResponse(
@@ -709,11 +761,21 @@ class DataCollectorService
             return $this->handleEnhancing($state, $config, $message, $engine, $model);
         }
 
-        // Ask for clarification
-        $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-        $clarificationMessage = $locale === 'ar'
-            ? "يرجى التأكيد إذا كانت المعلومات صحيحة بقول 'نعم' أو 'لا'. إذا كنت ترغب في إجراء تغييرات، قل 'لا' أو حدد ما تريد تعديله."
-            : "Please confirm if the information is correct by saying 'yes' or 'no'. If you'd like to make changes, say 'no' or specify what you'd like to modify.";
+        // Generate clarification request via AI
+        $clarificationPrompt = "Ask the user to confirm if the information is correct or if they want to make changes.";
+        try {
+            $clarificationResponse = $this->generateAIResponse(
+                $config->getSystemPrompt(),
+                $this->buildContextPrompt($state, $config) . "\n\n" . $clarificationPrompt,
+                [],
+                $engine,
+                $model
+            );
+            $clarificationMessage = trim($clarificationResponse->getContent());
+        } catch (\Exception $e) {
+            // Fallback to empty - system will handle
+            $clarificationMessage = '';
+        }
         
         return new DataCollectorResponse(
             success: true,
@@ -741,14 +803,10 @@ class DataCollectorService
             return $this->handleOutputModification($state, $config, $message, $engine, $model);
         }
         
-        // Build enhancement prompt for input fields
-        $systemPrompt = "You are helping the user modify their previously collected data.\n\n";
+        // Build enhancement prompt for input fields (generic, no hardcoded language)
+        $systemPrompt = $config->getSystemPrompt() . "\n\n";
         $systemPrompt .= "Current data:\n" . $config->generateSummary($state->getData()) . "\n\n";
         $systemPrompt .= "Available fields: " . implode(', ', $config->getFieldNames()) . "\n\n";
-        $systemPrompt .= "INSTRUCTIONS:\n";
-        $systemPrompt .= "1. Ask for ONE field at a time in a conversational manner\n";
-        $systemPrompt .= "2. ONLY mention the current field you're asking for - NEVER mention other fields\n";
-        $systemPrompt .= "3. When acknowledging user input, ONLY reference the field you just collected\n";
         $systemPrompt .= "4. Validate user input and ask for corrections if needed\n";
         $systemPrompt .= "5. Be helpful and provide examples when the user seems unsure\n";
         $systemPrompt .= "6. After collecting all required fields, provide a summary\n";
