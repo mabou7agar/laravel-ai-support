@@ -163,9 +163,12 @@ class DataCollectorService
         $config = $this->getConfigForSession($sessionId, $state);
         
         if (!$config) {
+            $locale = $state->embeddedConfig['locale'] ?? 'en';
             return new DataCollectorResponse(
                 success: false,
-                message: 'Configuration not found.',
+                message: $locale === 'ar' 
+                    ? 'لم يتم العثور على التكوين.'
+                    : 'Configuration not found.',
                 state: $state,
             );
         }
@@ -185,7 +188,9 @@ class DataCollectorService
             DataCollectorState::STATUS_ENHANCING => $this->handleEnhancing($state, $config, $message, $engine, $model),
             default => new DataCollectorResponse(
                 success: false,
-                message: 'Session is not in an active state.',
+                message: ($config->locale ?? 'en') === 'ar'
+                    ? 'الجلسة ليست في حالة نشطة.'
+                    : 'Session is not in an active state.',
                 state: $state,
             ),
         };
@@ -254,6 +259,9 @@ class DataCollectorService
         } elseif ($intentAnalysis['intent'] === 'question') {
             // User is asking a question - don't extract, let AI respond
             Log::channel('ai-engine')->info('User asked a question, no extraction needed');
+        } elseif ($intentAnalysis['intent'] === 'suggest') {
+            // User wants suggestions - generate AI-powered suggestions
+            return $this->handleSuggestionRequest($state, $config, $engine, $model);
         } elseif ($intentAnalysis['intent'] === 'skip') {
             // User wants to skip - handle skip logic
             Log::channel('ai-engine')->info('User wants to skip field', [
@@ -405,12 +413,15 @@ class DataCollectorService
             $state->setLastAIResponse($validationErrorMessage);
             $state->addMessage('assistant', $validationErrorMessage);
             
+            // Don't count the failed field as collected for progress calculation
             return new DataCollectorResponse(
                 success: false,
                 message: $validationErrorMessage,
                 state: $state,
                 aiResponse: $aiResponse,
                 currentField: $state->currentField,
+                collectedFields: array_keys(array_filter($state->getData(), fn($v) => $v !== null && $v !== '')),
+                remainingFields: array_keys($config->getUncollectedFields($state->getData())),
                 validationErrors: $state->validationErrors,
             );
         }
@@ -584,9 +595,14 @@ class DataCollectorService
             if ($config->allowEnhancement) {
                 $state->setStatus(DataCollectorState::STATUS_ENHANCING);
                 
+                $locale = $config->locale ?? 'en';
+                $enhancementMessage = $locale === 'ar'
+                    ? "لا مشكلة! ماذا تريد تغييره؟ يمكنك تحديد اسم الحقل والقيمة الجديدة، أو وصف ما تريد تعديله."
+                    : "No problem! What would you like to change? You can specify the field name and the new value, or describe what you'd like to modify.";
+                
                 return new DataCollectorResponse(
                     success: true,
-                    message: "No problem! What would you like to change? You can specify the field name and the new value, or describe what you'd like to modify.",
+                    message: $enhancementMessage,
                     state: $state,
                     allowsEnhancement: true,
                 );
@@ -596,9 +612,15 @@ class DataCollectorService
                 $state->collectedData = [];
                 $state->setCurrentField($config->getFirstField()?->name);
                 
+                $locale = $config->locale ?? 'en';
+                $firstFieldPrompt = $config->getFirstField()?->getCollectionPrompt();
+                $restartMessage = $locale === 'ar'
+                    ? "لنبدأ من جديد. " . $firstFieldPrompt
+                    : "Let's start over. " . $firstFieldPrompt;
+                
                 return new DataCollectorResponse(
                     success: true,
-                    message: "Let's start over. " . $config->getFirstField()?->getCollectionPrompt(),
+                    message: $restartMessage,
                     state: $state,
                 );
             }
@@ -611,9 +633,14 @@ class DataCollectorService
         }
 
         // Ask for clarification
+        $locale = $config->locale ?? 'en';
+        $clarificationMessage = $locale === 'ar'
+            ? "يرجى التأكيد إذا كانت المعلومات صحيحة بقول 'نعم' أو 'لا'. إذا كنت ترغب في إجراء تغييرات، قل 'لا' أو حدد ما تريد تعديله."
+            : "Please confirm if the information is correct by saying 'yes' or 'no'. If you'd like to make changes, say 'no' or specify what you'd like to modify.";
+        
         return new DataCollectorResponse(
             success: true,
-            message: "Please confirm if the information is correct by saying 'yes' or 'no'. If you'd like to make changes, say 'no' or specify what you'd like to modify.",
+            message: $clarificationMessage,
             state: $state,
             requiresConfirmation: true,
         );
@@ -939,6 +966,143 @@ class DataCollectorService
             summary: $config->generateSummary($state->getData()),
             generatedOutput: $generatedOutput,
         );
+    }
+
+    /**
+     * Handle user request for suggestions
+     */
+    protected function handleSuggestionRequest(
+        DataCollectorState $state,
+        DataCollectorConfig $config,
+        string $engine,
+        string $model
+    ): DataCollectorResponse {
+        $field = $config->getField($state->currentField);
+        
+        if (!$field) {
+            $locale = $config->locale ?? 'en';
+            return new DataCollectorResponse(
+                success: false,
+                message: $locale === 'ar'
+                    ? 'غير قادر على إنشاء اقتراحات في الوقت الحالي.'
+                    : 'Unable to generate suggestions at this time.',
+                state: $state,
+            );
+        }
+        
+        Log::channel('ai-engine')->info('Generating suggestions for field', [
+            'session_id' => $state->sessionId,
+            'field' => $state->currentField,
+            'field_description' => $field->description,
+        ]);
+        
+        // Build context for suggestion generation
+        $contextData = $state->getData();
+        $contextPrompt = "Generate helpful suggestions for the following field:\n\n";
+        $contextPrompt .= "**Field**: {$state->currentField}\n";
+        $contextPrompt .= "**Description**: {$field->description}\n";
+        
+        if ($field->type === 'select' && !empty($field->options)) {
+            $contextPrompt .= "**Valid Options**: " . implode(', ', $field->options) . "\n";
+        }
+        
+        if (!empty($field->examples)) {
+            $contextPrompt .= "**Examples**: " . implode(', ', $field->examples) . "\n";
+        }
+        
+        if ($field->validation) {
+            $contextPrompt .= "**Requirements**: {$field->validation}\n";
+        }
+        
+        // Add context from already collected fields
+        if (!empty($contextData)) {
+            $contextPrompt .= "\n**Context from collected information**:\n";
+            foreach ($contextData as $fieldName => $value) {
+                if (!empty($value)) {
+                    $contextPrompt .= "- {$fieldName}: {$value}\n";
+                }
+            }
+        }
+        
+        $contextPrompt .= "\n**Task**: Generate 3-5 creative, relevant suggestions for the '{$field->description}' field.";
+        $contextPrompt .= "\nConsider the context provided and make suggestions that are specific, helpful, and appropriate.";
+        $contextPrompt .= "\nFormat each suggestion on a new line with a number (1., 2., 3., etc.).";
+        
+        // Detect locale
+        $locale = $config->locale ?? 'en';
+        if ($locale === 'ar') {
+            $contextPrompt .= "\n\nRespond in Arabic.";
+        }
+        
+        try {
+            $aiResponse = $this->aiEngine
+                ->engine($engine)
+                ->model($model)
+                ->withSystemPrompt("You are a helpful assistant providing creative suggestions for data collection.")
+                ->withMaxTokens(500)
+                ->generate($contextPrompt);
+            
+            $suggestions = $aiResponse->getContent();
+            
+            // Build user-friendly response
+            if ($locale === 'ar') {
+                $responseMessage = "إليك بعض الاقتراحات لـ {$field->description}:\n\n";
+                $responseMessage .= $suggestions;
+                $responseMessage .= "\n\nيمكنك اختيار أحد هذه الاقتراحات أو تقديم قيمتك الخاصة.";
+            } else {
+                $responseMessage = "Here are some suggestions for {$field->description}:\n\n";
+                $responseMessage .= $suggestions;
+                $responseMessage .= "\n\nYou can choose one of these suggestions or provide your own value.";
+            }
+            
+            $state->setLastAIResponse($responseMessage);
+            $state->addMessage('assistant', $responseMessage);
+            
+            Log::channel('ai-engine')->info('Suggestions generated successfully', [
+                'session_id' => $state->sessionId,
+                'field' => $state->currentField,
+            ]);
+            
+            return new DataCollectorResponse(
+                success: true,
+                message: $responseMessage,
+                state: $state,
+                aiResponse: $aiResponse,
+                currentField: $state->currentField,
+            );
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Failed to generate suggestions', [
+                'session_id' => $state->sessionId,
+                'field' => $state->currentField,
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Fallback to examples if available
+            if (!empty($field->examples)) {
+                $fallbackMessage = $locale === 'ar' 
+                    ? "إليك بعض الأمثلة لـ {$field->description}:\n\n" . implode("\n", array_map(fn($ex, $i) => ($i+1) . ". {$ex}", $field->examples, array_keys($field->examples)))
+                    : "Here are some examples for {$field->description}:\n\n" . implode("\n", array_map(fn($ex, $i) => ($i+1) . ". {$ex}", $field->examples, array_keys($field->examples)));
+                
+                return new DataCollectorResponse(
+                    success: true,
+                    message: $fallbackMessage,
+                    state: $state,
+                    currentField: $state->currentField,
+                );
+            }
+            
+            $errorMessage = $locale === 'ar'
+                ? "عذراً، لم أتمكن من إنشاء اقتراحات. يرجى تقديم {$field->description}."
+                : "Sorry, I couldn't generate suggestions. Please provide {$field->description}.";
+            
+            return new DataCollectorResponse(
+                success: false,
+                message: $errorMessage,
+                state: $state,
+                currentField: $state->currentField,
+            );
+        }
     }
 
     /**
@@ -1538,9 +1702,11 @@ class DataCollectorService
             $prompt .= "   → For numeric fields, extract just the number\n";
             $prompt .= "2. 'question' - User is asking a question or needs clarification\n";
             $prompt .= "   → Do NOT extract any value\n";
-            $prompt .= "3. 'skip' - User wants to skip this field (e.g., 'skip', 'pass', 'next')\n";
+            $prompt .= "3. 'suggest' - User wants suggestions or ideas (e.g., 'suggest', 'give me ideas', 'help me')\n";
             $prompt .= "   → Do NOT extract any value\n";
-            $prompt .= "4. 'unclear' - Message is ambiguous or doesn't contain a clear value\n";
+            $prompt .= "4. 'skip' - User wants to skip this field (e.g., 'skip', 'pass', 'next')\n";
+            $prompt .= "   → Do NOT extract any value\n";
+            $prompt .= "5. 'unclear' - Message is ambiguous or doesn't contain a clear value\n";
             $prompt .= "   → Do NOT extract any value\n\n";
             
             $prompt .= "CRITICAL EXTRACTION RULES:\n";
@@ -1571,7 +1737,7 @@ class DataCollectorService
             
             $prompt .= "\nRespond with ONLY valid JSON in this exact format:\n";
             $prompt .= "{\n";
-            $prompt .= '  "intent": "provide_value|question|skip|unclear",'."\n";
+            $prompt .= '  "intent": "provide_value|question|suggest|skip|unclear",'."\n";
             $prompt .= '  "confidence": 0.95,'."\n";
             $prompt .= '  "extracted_value": "the actual value from user message or null",'."\n";
             $prompt .= '  "reasoning": "Brief explanation of why you chose this intent"'."\n";
