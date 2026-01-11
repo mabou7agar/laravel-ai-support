@@ -371,21 +371,56 @@ class DataCollectorService
             return $this->handleCancellation($state, $config);
         }
 
-        // If we used direct extraction, override the AI response to acknowledge the collected value
-        if ($usedDirectExtraction && !empty($extractedFields)) {
+        // Clean the response first (remove field extraction markers)
+        $cleanResponse = $this->cleanAIResponse($responseContent);
+        
+        // CRITICAL FIX: Always validate and correct the AI's acknowledgment
+        // If we extracted a field (either via intent analysis or direct extraction),
+        // ensure the response mentions the CORRECT field name
+        if (!empty($extractedFields)) {
             $fieldName = array_key_first($extractedFields);
             $fieldValue = $extractedFields[$fieldName];
             $field = $config->getField($fieldName);
             
-            $locale = $config->locale ?? 'en';
-            if ($locale === 'ar') {
-                $cleanResponse = "رائع! لقد سجلت {$field->description}: {$fieldValue}";
-            } else {
-                $cleanResponse = "Great! I've recorded {$field->description}: {$fieldValue}";
+            // Check if AI mentioned wrong field names in its response (case-insensitive, generic)
+            $mentionedWrongField = false;
+            $lowerResponse = strtolower($cleanResponse);
+            
+            foreach ($config->getFields() as $otherFieldName => $otherField) {
+                if ($otherFieldName !== $fieldName) {
+                    // Check if AI incorrectly mentioned another field (case-insensitive)
+                    $descriptionLower = strtolower($otherField->description);
+                    $fieldNameLower = strtolower($otherFieldName);
+                    
+                    // Check for field description or name in response
+                    if (str_contains($lowerResponse, $descriptionLower) || 
+                        str_contains($lowerResponse, $fieldNameLower)) {
+                        $mentionedWrongField = true;
+                        Log::channel('ai-engine')->warning('AI mentioned wrong field in response', [
+                            'mentioned_field' => $otherFieldName,
+                            'mentioned_description' => $otherField->description,
+                            'current_field' => $fieldName,
+                            'response' => substr($cleanResponse, 0, 200),
+                        ]);
+                        break;
+                    }
+                }
             }
-        } else {
-            // Clean the response (remove field extraction markers)
-            $cleanResponse = $this->cleanAIResponse($responseContent);
+            
+            // If AI mentioned wrong field OR we used direct extraction, override with correct acknowledgment
+            if ($mentionedWrongField || $usedDirectExtraction) {
+                $locale = $config->locale ?? 'en';
+                if ($locale === 'ar') {
+                    $cleanResponse = "رائع! لقد سجلت {$field->description}: " . substr($fieldValue, 0, 100);
+                } else {
+                    $cleanResponse = "Great! I've recorded {$field->description}: " . substr($fieldValue, 0, 100);
+                }
+                
+                Log::channel('ai-engine')->info('Overrode AI response with correct field acknowledgment', [
+                    'field' => $fieldName,
+                    'reason' => $mentionedWrongField ? 'wrong_field_mentioned' : 'direct_extraction',
+                ]);
+            }
         }
         
         // Update state
@@ -562,11 +597,14 @@ class DataCollectorService
         $systemPrompt = "You are helping the user modify their previously collected data.\n\n";
         $systemPrompt .= "Current data:\n" . $config->generateSummary($state->getData()) . "\n\n";
         $systemPrompt .= "Available fields: " . implode(', ', $config->getFieldNames()) . "\n\n";
-        $systemPrompt .= "Instructions:\n";
-        $systemPrompt .= "1. Understand what the user wants to change\n";
-        $systemPrompt .= "2. Extract the new value for the field\n";
-        $systemPrompt .= "3. Respond with FIELD_COLLECTED:field_name=new_value\n";
-        $systemPrompt .= "4. After the change, show the updated summary and ask for confirmation\n";
+        $systemPrompt .= "INSTRUCTIONS:\n";
+        $systemPrompt .= "1. Ask for ONE field at a time in a conversational manner\n";
+        $systemPrompt .= "2. ONLY mention the current field you're asking for - NEVER mention other fields\n";
+        $systemPrompt .= "3. When acknowledging user input, ONLY reference the field you just collected\n";
+        $systemPrompt .= "4. Validate user input and ask for corrections if needed\n";
+        $systemPrompt .= "5. Be helpful and provide examples when the user seems unsure\n";
+        $systemPrompt .= "6. After collecting all required fields, provide a summary\n";
+        $systemPrompt .= "7. Ask for confirmation before completing\n";
         $systemPrompt .= "5. If user is done with changes, ask them to confirm with 'yes'\n";
 
         $aiResponse = $this->generateAIResponse(
@@ -1706,14 +1744,26 @@ class DataCollectorService
                 $prompt .= "   Field name: {$state->currentField}\n";
                 $prompt .= "   Description: {$currentField->description}\n";
                 $prompt .= "   Required: " . ($currentField->required ? 'YES' : 'NO') . "\n";
+                
                 if (!empty($currentField->examples)) {
                     $prompt .= "   Examples: " . implode(', ', $currentField->examples) . "\n";
                 }
+                
                 if ($currentField->validation) {
                     $prompt .= "   Validation: {$currentField->validation}\n";
                 }
-                $prompt .= "\n⚠️  IMPORTANT: Only ask for '{$state->currentField}' - ignore any other information the user provides.\n";
-                $prompt .= "   If user mentions other fields, acknowledge but don't extract them yet.\n";
+                
+                $prompt .= "\n⚠️  CRITICAL RULES:\n";
+                $prompt .= "   1. ONLY ask for and acknowledge '{$state->currentField}' ({$currentField->description})\n";
+                $prompt .= "   2. NEVER mention other field names or descriptions in your response\n";
+                $prompt .= "   3. When acknowledging, say: 'I've recorded {$currentField->description}: [value]'\n";
+                $prompt .= "   4. DO NOT say you've recorded ANY other field - only '{$state->currentField}'\n";
+                $prompt .= "   5. If user provides info for other fields, ignore it completely for now\n";
+                $prompt .= "   6. Ask for ONE field at a time in a conversational manner\n";
+                $prompt .= "   7. Be helpful and provide examples when the user seems unsure\n";
+                $prompt .= "   8. Validate user input and ask for corrections if needed\n";
+                $prompt .= "   9. After collecting all required fields, provide a summary\n";
+                $prompt .= "   10. Ask for confirmation before completing\n";
                 $prompt .= str_repeat('━', 70) . "\n";
             }
         }
@@ -1744,7 +1794,21 @@ class DataCollectorService
         $prompt .= "When you extract the '{$state->currentField}' field value, you MUST add:\n";
         $prompt .= "FIELD_COLLECTED:{$state->currentField}=value\n";
         $prompt .= "Place the marker at the END of your response.\n";
-        $prompt .= "DO NOT extract other fields - only '{$state->currentField}' right now!\n";
+        $prompt .= "\n⚠️  FIELD NAME VALIDATION (CRITICAL):\n";
+        $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        $prompt .= "CURRENT FIELD: '{$state->currentField}' = {$currentField->description}\n";
+        $prompt .= "\nWHAT YOU MUST SAY:\n";
+        $prompt .= "✓ 'I've recorded {$currentField->description}: [value]'\n";
+        $prompt .= "✓ 'Great! I've noted the {$currentField->description}'\n";
+        $prompt .= "✓ 'Perfect! {$currentField->description} recorded'\n";
+        $prompt .= "\nWHAT YOU MUST NOT SAY:\n";
+        foreach ($config->getFields() as $fname => $fld) {
+            if ($fname !== $state->currentField) {
+                $prompt .= "✗ DO NOT mention '{$fname}' or '{$fld->description}'\n";
+            }
+        }
+        $prompt .= "\nREMEMBER: You are ONLY collecting '{$state->currentField}' right now!\n";
+        $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
         $prompt .= str_repeat('=', 70) . "\n";
 
         return $prompt;
