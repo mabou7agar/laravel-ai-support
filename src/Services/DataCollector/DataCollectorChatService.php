@@ -291,7 +291,7 @@ class DataCollectorChatService
                 $actions[] = new InteractiveAction(
                     id: 'skip_field',
                     type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                    label: '⏭️ Skip this field',
+                    label: '⏭️ Skip',
                     description: null,
                     data: [
                         'action' => 'skip_field',
@@ -307,7 +307,7 @@ class DataCollectorChatService
             $actions[] = new InteractiveAction(
                 id: 'confirm_yes',
                 type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                label: '✅ Yes, confirm',
+                label: '✅ Confirm',
                 description: null,
                 data: [
                     'action' => 'confirm',
@@ -319,7 +319,7 @@ class DataCollectorChatService
                 $actions[] = new InteractiveAction(
                     id: 'confirm_modify',
                     type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                    label: '✏️ Make changes',
+                    label: '✏️ Modify',
                     description: null,
                     data: [
                         'action' => 'modify',
@@ -333,10 +333,13 @@ class DataCollectorChatService
         if ($state->status === DataCollectorState::STATUS_ENHANCING) {
             // Add buttons for each field that can be modified
             foreach ($config->getFields() as $name => $field) {
+                // Use field description for label (already in user's language)
+                $label = $field->description ?: ucwords(str_replace('_', ' ', $name));
+                
                 $actions[] = new InteractiveAction(
                     id: 'edit_' . $name,
                     type: new ActionTypeEnum(ActionTypeEnum::QUICK_REPLY),
-                    label: "Edit " . ucwords(str_replace('_', ' ', $name)),
+                    label: $label,
                     description: null,
                     data: [
                         'action' => 'edit_field',
@@ -345,11 +348,11 @@ class DataCollectorChatService
                     ]
                 );
             }
-
+            
             $actions[] = new InteractiveAction(
                 id: 'done_editing',
                 type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                label: '✅ Done editing',
+                label: '✅ Done',
                 description: null,
                 data: [
                     'action' => 'done_editing',

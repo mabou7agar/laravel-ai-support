@@ -275,9 +275,11 @@ class DataCollectorService
         
         // Check if user is selecting a suggestion by number
         $selectedSuggestion = $this->checkSuggestionSelection($message, $state);
+        $usedSuggestionSelection = false;
         if ($selectedSuggestion !== null) {
             // User selected a suggestion - treat it as providing a value
             $extractedFields = [$state->currentField => $selectedSuggestion];
+            $usedSuggestionSelection = true;
             
             Log::channel('ai-engine')->info('User selected suggestion by number', [
                 'field' => $state->currentField,
@@ -287,7 +289,8 @@ class DataCollectorService
             // Clear suggestions after selection
             unset($state->lastSuggestions);
             
-            // Skip intent analysis and go straight to validation
+            // Skip intent analysis and AI response generation, go straight to validation
+            $responseContent = ''; // No AI response needed
             goto validateAndSave;
         }
         
@@ -535,7 +538,8 @@ class DataCollectorService
             }
             
             // If AI mentioned wrong field OR we used direct extraction, generate correct acknowledgment via AI
-            if ($mentionedWrongField || $usedDirectExtraction) {
+            // Skip this if we used suggestion selection (we'll generate continuation response later)
+            if (!$usedSuggestionSelection && ($mentionedWrongField || $usedDirectExtraction)) {
                 // Let AI generate acknowledgment in user's language
                 $ackPrompt = "Generate a brief acknowledgment that you've recorded the {$field->description}. Value: " . substr($fieldValue, 0, 100);
                 try {
@@ -559,9 +563,11 @@ class DataCollectorService
             }
         }
         
-        // Update state
-        $state->setLastAIResponse($cleanResponse);
-        $state->addMessage('assistant', $cleanResponse);
+        // Update state (skip if we used suggestion selection - we'll update in continuation)
+        if (!$usedSuggestionSelection) {
+            $state->setLastAIResponse($cleanResponse);
+            $state->addMessage('assistant', $cleanResponse);
+        }
 
         // Check if all required fields are collected
         if ($config->isComplete($state->getData())) {
