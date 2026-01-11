@@ -422,24 +422,34 @@ class DataCollectorConfig
 
     /**
      * Generate a summary of collected data
+     * Note: This is a simple data structure. AI will format it naturally in user's language.
      */
     public function generateSummary(array $data): string
     {
-        $summary = "## Summary: {$this->title}\n\n";
+        $summary = '';
 
         foreach ($this->parsedFields as $name => $field) {
-            $value = $data[$name] ?? '(not provided)';
-            $label = ucwords(str_replace('_', ' ', $name));
-            $required = $field->required ? '' : ' (optional)';
+            $value = $data[$name] ?? '';
+            
+            // Skip empty optional fields
+            if (empty($value) && !$field->required) {
+                continue;
+            }
+            
+            // Use field description (already in user's language)
+            $label = $field->description ?: ucwords(str_replace('_', ' ', $name));
             
             if (is_array($value)) {
                 $value = implode(', ', $value);
             }
             
-            $summary .= "**{$label}**{$required}: {$value}\n";
+            // Simple key-value format - AI will present this naturally
+            if (!empty($value)) {
+                $summary .= "{$label}: {$value}\n";
+            }
         }
 
-        return $summary;
+        return trim($summary);
     }
 
     /**

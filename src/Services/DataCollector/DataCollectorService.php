@@ -163,12 +163,9 @@ class DataCollectorService
         $config = $this->getConfigForSession($sessionId, $state);
         
         if (!$config) {
-            $locale = $state->detectedLocale ?? $state->embeddedConfig['locale'] ?? 'en';
             return new DataCollectorResponse(
                 success: false,
-                message: $locale === 'ar' 
-                    ? 'لم يتم العثور على التكوين.'
-                    : 'Configuration not found.',
+                message: 'Configuration not found.',
                 state: $state,
             );
         }
@@ -585,36 +582,19 @@ class DataCollectorService
                     ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model, '', $state)
                     : $config->generateActionSummary($state->getData());
                 
-                // Build full confirmation message (with locale support)
-                $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-                $fullMessage = $cleanResponse . "\n\n";
-                $fullMessage .= $summary;
-                $fullMessage .= "\n---\n\n";
-                
-                if ($locale === 'ar') {
-                    $fullMessage .= "## ما سيحدث:\n\n";
-                    $fullMessage .= $actionSummary;
-                    $fullMessage .= "\n\n---\n\n";
-                    $fullMessage .= "**يرجى التأكيد:**\n";
-                    $fullMessage .= "- قل **'نعم'** أو **'تأكيد'** للمتابعة\n";
-                    $fullMessage .= "- قل **'لا'** أو **'تغيير'** لتعديل أي معلومات\n";
-                    $fullMessage .= "- قل **'إلغاء'** لإلغاء العملية\n";
-                } else {
-                    // Let AI generate confirmation prompt naturally
-                    $confirmPrompt = "Generate a confirmation request asking the user to confirm or modify. Include action summary.";
-                    try {
-                        $confirmResponse = $this->generateAIResponse(
-                            $config->getSystemPrompt(),
-                            $this->buildContextPrompt($state, $config) . "\n\nAction: " . $actionSummary . "\n\n" . $confirmPrompt,
-                            [],
-                            $engine,
-                            $model
-                        );
-                        $fullMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . trim($confirmResponse->getContent());
-                    } catch (\Exception $e) {
-                        // Fallback to summary only
-                        $fullMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . $actionSummary;
-                    }
+                // Generate full confirmation message via AI in user's language
+                $confirmPrompt = "Present the data summary and action summary, then ask the user to confirm or make changes.\n\nData Summary:\n{$summary}\n\nWhat will happen:\n{$actionSummary}";
+                try {
+                    $confirmResponse = $this->generateAIResponse(
+                        $config->getSystemPrompt(),
+                        $this->buildContextPrompt($state, $config) . "\n\n" . $confirmPrompt,
+                        [],
+                        $engine,
+                        $model
+                    );
+                    $fullMessage = $cleanResponse . "\n\n" . trim($confirmResponse->getContent());
+                } catch (\Exception $e) {
+                    $fullMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . $actionSummary . "\n\nPlease confirm to proceed.";
                 }
                 
                 return new DataCollectorResponse(
@@ -731,10 +711,20 @@ class DataCollectorService
             if ($config->allowEnhancement) {
                 $state->setStatus(DataCollectorState::STATUS_ENHANCING);
                 
-                $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-                $enhancementMessage = $locale === 'ar'
-                    ? "لا مشكلة! ماذا تريد تغييره؟ يمكنك تحديد اسم الحقل والقيمة الجديدة، أو وصف ما تريد تعديله."
-                    : "No problem! What would you like to change? You can specify the field name and the new value, or describe what you'd like to modify.";
+                // Generate enhancement prompt via AI in user's language
+                $enhancementPrompt = "The user wants to make changes. Ask them what they'd like to modify.";
+                try {
+                    $enhancementResponse = $this->generateAIResponse(
+                        $config->getSystemPrompt(),
+                        $this->buildContextPrompt($state, $config) . "\n\n" . $enhancementPrompt,
+                        [],
+                        $engine,
+                        $model
+                    );
+                    $enhancementMessage = trim($enhancementResponse->getContent());
+                } catch (\Exception $e) {
+                    $enhancementMessage = "What would you like to change?";
+                }
                 
                 return new DataCollectorResponse(
                     success: true,
@@ -748,11 +738,21 @@ class DataCollectorService
                 $state->collectedData = [];
                 $state->setCurrentField($config->getFirstField()?->name);
                 
-                $locale = $state->detectedLocale ?? $config->locale ?? 'en';
+                // Generate restart message via AI
                 $firstFieldPrompt = $config->getFirstField()?->getCollectionPrompt();
-                $restartMessage = $locale === 'ar'
-                    ? "لنبدأ من جديد. " . $firstFieldPrompt
-                    : "Let's start over. " . $firstFieldPrompt;
+                $restartPrompt = "The user wants to start over. Acknowledge this and ask for the first field.";
+                try {
+                    $restartResponse = $this->generateAIResponse(
+                        $config->getSystemPrompt(),
+                        $this->buildContextPrompt($state, $config) . "\n\n" . $restartPrompt,
+                        [],
+                        $engine,
+                        $model
+                    );
+                    $restartMessage = trim($restartResponse->getContent());
+                } catch (\Exception $e) {
+                    $restartMessage = "Let's start over. " . $firstFieldPrompt;
+                }
                 
                 return new DataCollectorResponse(
                     success: true,
@@ -833,6 +833,33 @@ class DataCollectorService
         // Parse field extractions (enhancement phase allows any field)
         $extractedFields = $this->parseFieldExtractions($responseContent, $config);
         
+        // If no fields extracted, try direct extraction from user message
+        if (empty($extractedFields)) {
+            // Try to detect which field user wants to modify
+            $lowerMessage = strtolower($message);
+            foreach ($config->getFields() as $fieldName => $field) {
+                $fieldNameLower = strtolower($fieldName);
+                $descriptionLower = strtolower($field->description);
+                
+                // Check if user mentioned this field
+                if (str_contains($lowerMessage, $fieldNameLower) || str_contains($lowerMessage, $descriptionLower)) {
+                    // Extract value from message (remove field name mentions)
+                    $value = trim(preg_replace('/\b(name|description|duration|level|price)\b/i', '', $message));
+                    if (!empty($value) && strlen($value) > 2) {
+                        $extractedFields[$fieldName] = $value;
+                        Log::channel('ai-engine')->info('Direct field extraction during enhancement', [
+                            'field' => $fieldName,
+                            'value' => $value,
+                        ]);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        $fieldUpdated = false;
+        $updatedFieldName = null;
+        
         // During enhancement, validate but don't skip already collected fields
         // User is explicitly modifying them
         foreach ($extractedFields as $fieldName => $value) {
@@ -842,6 +869,8 @@ class DataCollectorService
                 if (empty($errors)) {
                     $state->setFieldValue($fieldName, $value);
                     $state->clearValidationErrors();
+                    $fieldUpdated = true;
+                    $updatedFieldName = $fieldName;
                     Log::channel('ai-engine')->info('Field updated during enhancement', [
                         'field' => $fieldName,
                         'value' => $value,
@@ -853,11 +882,35 @@ class DataCollectorService
             }
         }
 
-        // Clean response
-        $cleanResponse = $this->cleanAIResponse($responseContent);
+        // If field was updated, generate acknowledgment
+        if ($fieldUpdated && $updatedFieldName) {
+            $field = $config->getField($updatedFieldName);
+            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
+            
+            // Generate AI acknowledgment in user's language
+            $ackPrompt = "The user just updated the {$field->description}. Generate a brief acknowledgment and ask if they want to make any other changes or if they're done.";
+            try {
+                $ackResponse = $this->generateAIResponse(
+                    $config->getSystemPrompt(),
+                    $this->buildContextPrompt($state, $config) . "\n\n" . $ackPrompt,
+                    [],
+                    $engine,
+                    $model
+                );
+                $cleanResponse = trim($ackResponse->getContent());
+            } catch (\Exception $e) {
+                // Fallback
+                $cleanResponse = "Updated {$field->description}. Any other changes?";
+            }
+        } else {
+            // Clean response
+            $cleanResponse = $this->cleanAIResponse($responseContent);
+        }
         
-        // Check if user is done enhancing
-        if (str_contains(strtolower($message), 'done') || str_contains(strtolower($message), 'finish')) {
+        // Check if user is done enhancing using AI intent detection
+        $isDone = $this->isCompletionIntent($message);
+        
+        if ($isDone) {
             $state->setStatus(DataCollectorState::STATUS_CONFIRMING);
             
             // Generate data summary - use AI if summaryPrompt is configured
@@ -879,28 +932,19 @@ class DataCollectorService
                 ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model, $modificationContext, $state)
                 : $config->generateActionSummary($state->getData());
             
-            // Build confirmation message (with locale support)
-            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-            if ($locale === 'ar') {
-                $fullMessage = "إليك معلوماتك المحدثة:\n\n";
-                $fullMessage .= $summary;
-                $fullMessage .= "\n---\n\n";
-                $fullMessage .= "## ما سيحدث:\n\n";
-                $fullMessage .= $actionSummary;
-                $fullMessage .= "\n\n---\n\n";
-                $fullMessage .= "**يرجى التأكيد:**\n";
-                $fullMessage .= "- قل **'نعم'** أو **'تأكيد'** للمتابعة\n";
-                $fullMessage .= "- قل **'لا'** أو **'تغيير'** لتعديل أي معلومات\n";
-            } else {
-                $fullMessage = "Here's your updated information:\n\n";
-                $fullMessage .= $summary;
-                $fullMessage .= "\n---\n\n";
-                $fullMessage .= "## What will happen:\n\n";
-                $fullMessage .= $actionSummary;
-                $fullMessage .= "\n\n---\n\n";
-                $fullMessage .= "**Please confirm:**\n";
-                $fullMessage .= "- Say **'yes'** or **'confirm'** to proceed\n";
-                $fullMessage .= "- Say **'no'** or **'change'** to modify any information\n";
+            // Generate confirmation message via AI in user's language
+            $confirmPrompt = "Present the collected data summary and action summary, then ask the user to confirm or make changes.\n\nData Summary:\n{$summary}\n\nWhat will happen:\n{$actionSummary}";
+            try {
+                $confirmResponse = $this->generateAIResponse(
+                    $config->getSystemPrompt(),
+                    $this->buildContextPrompt($state, $config) . "\n\n" . $confirmPrompt,
+                    [],
+                    $engine,
+                    $model
+                );
+                $fullMessage = trim($confirmResponse->getContent());
+            } catch (\Exception $e) {
+                $fullMessage = $summary . "\n\n" . $actionSummary . "\n\nPlease confirm to proceed.";
             }
             
             return new DataCollectorResponse(
@@ -922,13 +966,8 @@ class DataCollectorService
         // For enhancement mode, use static summary to avoid repeated AI calls
         $actionSummary = $config->generateActionSummary($state->getData());
 
-        // Build enhancement message (with locale support)
-        $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-        if ($locale === 'ar') {
-            $enhanceMessage = $cleanResponse . "\n\n" . $summary . "\n\n**ما سيحدث:** " . $actionSummary . "\n\nهل تريد إجراء أي تغييرات أخرى؟ قل 'تم' عند الانتهاء، أو 'نعم' للتأكيد.";
-        } else {
-            $enhanceMessage = $cleanResponse . "\n\n" . $summary . "\n\n**What will happen:** " . $actionSummary . "\n\nWould you like to make any other changes? Say 'done' when you're finished, or 'yes' to confirm.";
-        }
+        // Build enhancement message - AI will format naturally
+        $enhanceMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . $actionSummary;
 
         return new DataCollectorResponse(
             success: true,
@@ -991,15 +1030,19 @@ class DataCollectorService
             $state
         );
         
-        $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-        if ($locale === 'ar') {
-            $response = "لقد قمت بتحديث الهيكل بناءً على ملاحظاتك:\n\n";
-            $response .= $actionSummary;
-            $response .= "\n\nهل تريد أي تغييرات أخرى، أم نتابع بهذا؟";
-        } else {
-            $response = "I've updated the structure based on your feedback:\n\n";
-            $response .= $actionSummary;
-            $response .= "\n\nWould you like any other changes, or shall we proceed with this?";
+        // Generate response via AI in user's language
+        $modificationPrompt = "Present the updated action summary and ask if they want more changes or to proceed.\n\nUpdated structure:\n{$actionSummary}";
+        try {
+            $modResponse = $this->generateAIResponse(
+                $config->getSystemPrompt(),
+                $this->buildContextPrompt($state, $config) . "\n\n" . $modificationPrompt,
+                [],
+                $engine,
+                $model
+            );
+            $response = trim($modResponse->getContent());
+        } catch (\Exception $e) {
+            $response = $actionSummary . "\n\nWould you like any other changes?";
         }
         
         return new DataCollectorResponse(
@@ -1123,12 +1166,9 @@ class DataCollectorService
         $field = $config->getField($state->currentField);
         
         if (!$field) {
-            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
             return new DataCollectorResponse(
                 success: false,
-                message: $locale === 'ar'
-                    ? 'غير قادر على إنشاء اقتراحات في الوقت الحالي.'
-                    : 'Unable to generate suggestions at this time.',
+                message: 'Unable to generate suggestions at this time.',
                 state: $state,
             );
         }
@@ -1171,11 +1211,7 @@ class DataCollectorService
         $contextPrompt .= "\nConsider the context provided and make suggestions that are specific, helpful, and appropriate.";
         $contextPrompt .= "\nFormat each suggestion on a new line with a number (1., 2., 3., etc.).";
         
-        // Use detected or configured locale
-        $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-        if ($locale === 'ar') {
-            $contextPrompt .= "\n\nRespond in Arabic.";
-        }
+        // Locale context is already in buildContextPrompt - no need for explicit instruction
         
         try {
             $aiResponse = $this->aiEngine
@@ -1193,16 +1229,8 @@ class DataCollectorService
                 'suggestions' => $suggestions,
             ];
             
-            // Build user-friendly response
-            if ($locale === 'ar') {
-                $responseMessage = "إليك بعض الاقتراحات:\n\n";
-                $responseMessage .= $suggestions;
-                $responseMessage .= "\n\nيمكنك اختيار أحد هذه الاقتراحات برقمه (مثل: 1) أو تقديم قيمتك الخاصة.";
-            } else {
-                $responseMessage = "Here are some suggestions:\n\n";
-                $responseMessage .= $suggestions;
-                $responseMessage .= "\n\nYou can choose one of these suggestions by its number (e.g., 1) or provide your own value.";
-            }
+            // Simple format - AI already generated in user's language
+            $responseMessage = $suggestions;
             
             $state->setLastAIResponse($responseMessage);
             $state->addMessage('assistant', $responseMessage);
@@ -1229,9 +1257,8 @@ class DataCollectorService
             
             // Fallback to examples if available
             if (!empty($field->examples)) {
-                $fallbackMessage = $locale === 'ar' 
-                    ? "إليك بعض الأمثلة لـ {$field->description}:\n\n" . implode("\n", array_map(fn($ex, $i) => ($i+1) . ". {$ex}", $field->examples, array_keys($field->examples)))
-                    : "Here are some examples for {$field->description}:\n\n" . implode("\n", array_map(fn($ex, $i) => ($i+1) . ". {$ex}", $field->examples, array_keys($field->examples)));
+                $examplesList = implode("\n", array_map(fn($ex, $i) => ($i+1) . ". {$ex}", $field->examples, array_keys($field->examples)));
+                $fallbackMessage = "Examples for {$field->description}:\n\n{$examplesList}";
                 
                 return new DataCollectorResponse(
                     success: true,
@@ -1241,9 +1268,7 @@ class DataCollectorService
                 );
             }
             
-            $errorMessage = $locale === 'ar'
-                ? "عذراً، لم أتمكن من إنشاء اقتراحات. يرجى تقديم {$field->description}."
-                : "Sorry, I couldn't generate suggestions. Please provide {$field->description}.";
+            $errorMessage = "Sorry, I couldn't generate suggestions. Please provide {$field->description}.";
             
             return new DataCollectorResponse(
                 success: false,
@@ -1396,22 +1421,31 @@ class DataCollectorService
                 }
             }
 
-            // Add collected data context
-            $dataContext = "Based on the following collected information:\n\n";
+            // Add collected data context using field descriptions (already in user's language)
+            $dataContext = '';
             foreach ($data as $key => $value) {
-                $label = ucwords(str_replace('_', ' ', $key));
+                $field = $config->getField($key);
+                $label = $field ? ($field->description ?: ucwords(str_replace('_', ' ', $key))) : ucwords(str_replace('_', ' ', $key));
                 if (is_array($value)) {
                     $value = implode(', ', $value);
                 }
-                $dataContext .= "- **{$label}**: {$value}\n";
+                if (!empty($value)) {
+                    $dataContext .= "{$label}: {$value}\n";
+                }
             }
-            $dataContext .= "\n---\n\n";
 
-            $fullPrompt = $dataContext . $prompt;
+            $fullPrompt = "Collected data:\n\n{$dataContext}\n\n" . $prompt;
+
+            // Include locale context for natural language generation
+            $localeInstruction = '';
+            if ($config->locale && $config->locale !== 'en') {
+                $localeInstruction = "\n\nIMPORTANT: Generate the summary in the same language as the field labels above. Match the language naturally.";
+            }
 
             $systemPrompt = "You are a helpful assistant generating a summary of collected data. "
                 . "Format your response in a clear, readable way using markdown. "
-                . "Be concise but comprehensive.";
+                . "Be concise but comprehensive."
+                . $localeInstruction;
 
             Log::channel('ai-engine')->info('Generating AI data summary', [
                 'config' => $config->name,
@@ -2546,8 +2580,8 @@ class DataCollectorService
             return '';
         }
         
-        $prefix = $locale === 'ar' ? 'المتطلبات: ' : 'Requirements: ';
-        return $prefix . implode(', ', $hints);
+        // Simple format - AI will present naturally in user's language
+        return implode(', ', $hints);
     }
 
     /**
@@ -2775,5 +2809,34 @@ PROMPT;
         }
 
         return $summary ?: ($language === 'ar' ? 'لا توجد بيانات' : 'No data');
+    }
+
+    /**
+     * Detect if user message indicates they're done with modifications (works in any language)
+     */
+    protected function isCompletionIntent(string $message): bool
+    {
+        $lowerMessage = strtolower(trim($message));
+        
+        // Quick check for common completion words in multiple languages
+        $completionWords = [
+            'done', 'finish', 'finished', 'complete', 'ready', 'ok', 'okay',
+            'تم', 'انتهيت', 'جاهز', 'موافق', 'نعم',  // Arabic
+            '完成', '好的', '可以',  // Chinese
+            '完了', 'はい', 'オーケー',  // Japanese
+            '완료', '좋아요', '네',  // Korean
+            'готово', 'да', 'хорошо',  // Russian
+            'listo', 'terminado', 'sí',  // Spanish
+            'prêt', 'fini', 'oui',  // French
+            'fertig', 'bereit', 'ja',  // German
+        ];
+        
+        foreach ($completionWords as $word) {
+            if ($lowerMessage === strtolower($word) || str_contains($lowerMessage, strtolower($word))) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 }
