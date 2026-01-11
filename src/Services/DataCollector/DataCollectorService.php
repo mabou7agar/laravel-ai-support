@@ -229,6 +229,39 @@ class DataCollectorService
         // Add current state context
         $contextPrompt = $this->buildContextPrompt($state, $config);
         
+        // Add locale instruction to ensure consistent language
+        $locale = $state->detectedLocale ?? $config->locale ?? null;
+        
+        if ($config->locale) {
+            // If locale is explicitly configured, enforce it strictly
+            $languageNames = [
+                'ar' => 'Arabic',
+                'en' => 'English',
+                'zh' => 'Chinese',
+                'ja' => 'Japanese',
+                'ko' => 'Korean',
+                'ru' => 'Russian',
+                'el' => 'Greek',
+                'he' => 'Hebrew',
+                'th' => 'Thai',
+                'hi' => 'Hindi',
+                'es' => 'Spanish',
+                'fr' => 'French',
+                'de' => 'German',
+                'it' => 'Italian',
+                'pt' => 'Portuguese',
+            ];
+            
+            $languageName = $languageNames[$config->locale] ?? $config->locale;
+            $contextPrompt .= "\n\n⚠️ LANGUAGE REQUIREMENT: You MUST respond ENTIRELY in {$languageName}. Do NOT mix languages in your response. All text, questions, acknowledgments, examples, and field descriptions must be in {$languageName} only.\n";
+        } elseif ($locale && $locale !== 'en') {
+            // If language was auto-detected (not English), match the user's language
+            $contextPrompt .= "\n\n⚠️ LANGUAGE REQUIREMENT: The user is communicating in their native language. You MUST respond ENTIRELY in the SAME language as the user. Do NOT mix languages. Maintain consistency with the user's language throughout the conversation.\n";
+        } else {
+            // Auto-detect mode - respond in whatever language the user uses
+            $contextPrompt .= "\n\n⚠️ LANGUAGE REQUIREMENT: Respond in the SAME language as the user's message. If the user switches languages, switch with them. Do NOT mix multiple languages in a single response.\n";
+        }
+        
         // Generate AI response (using context summary instead of full history)
         $aiResponse = $this->generateAIResponse(
             $systemPrompt,
@@ -2142,6 +2175,7 @@ class DataCollectorService
     
     /**
      * Detect locale from user message
+     * Supports multiple languages automatically
      */
     protected function detectLocale(string $message): string
     {
@@ -2150,7 +2184,47 @@ class DataCollectorService
             return 'ar';
         }
         
-        // Default to English
+        // Check for Chinese characters (Simplified/Traditional)
+        if (preg_match('/[\x{4E00}-\x{9FFF}]/u', $message)) {
+            return 'zh';
+        }
+        
+        // Check for Japanese characters (Hiragana, Katakana, Kanji)
+        if (preg_match('/[\x{3040}-\x{309F}\x{30A0}-\x{30FF}\x{4E00}-\x{9FFF}]/u', $message)) {
+            return 'ja';
+        }
+        
+        // Check for Korean characters
+        if (preg_match('/[\x{AC00}-\x{D7AF}]/u', $message)) {
+            return 'ko';
+        }
+        
+        // Check for Cyrillic (Russian, Ukrainian, etc.)
+        if (preg_match('/[\x{0400}-\x{04FF}]/u', $message)) {
+            return 'ru';
+        }
+        
+        // Check for Greek
+        if (preg_match('/[\x{0370}-\x{03FF}]/u', $message)) {
+            return 'el';
+        }
+        
+        // Check for Hebrew
+        if (preg_match('/[\x{0590}-\x{05FF}]/u', $message)) {
+            return 'he';
+        }
+        
+        // Check for Thai
+        if (preg_match('/[\x{0E00}-\x{0E7F}]/u', $message)) {
+            return 'th';
+        }
+        
+        // Check for Devanagari (Hindi, Sanskrit, etc.)
+        if (preg_match('/[\x{0900}-\x{097F}]/u', $message)) {
+            return 'hi';
+        }
+        
+        // Default to English (or could be any Latin-based language)
         return 'en';
     }
 
