@@ -576,7 +576,7 @@ class DataCollectorService
                 
                 // Generate action summary - use AI if actionSummaryPrompt is configured
                 $actionSummary = $config->actionSummaryPrompt
-                    ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model)
+                    ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model, '', $state)
                     : $config->generateActionSummary($state->getData());
                 
                 // Build full confirmation message (with locale support)
@@ -712,7 +712,8 @@ class DataCollectorService
                     $state->getData(),
                     $engine,
                     $model,
-                    $modificationContext
+                    $modificationContext,
+                    $state
                 );
             }
             return $this->handleCompletion($state, $config, $engine, $model);
@@ -869,7 +870,7 @@ class DataCollectorService
             }
             
             $actionSummary = $config->actionSummaryPrompt
-                ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model, $modificationContext)
+                ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model, $modificationContext, $state)
                 : $config->generateActionSummary($state->getData());
             
             // Build confirmation message (with locale support)
@@ -980,7 +981,8 @@ class DataCollectorService
             $state->getData(),
             $engine,
             $model,
-            $modificationContext
+            $modificationContext,
+            $state
         );
         
         $locale = $state->detectedLocale ?? $config->locale ?? 'en';
@@ -1282,7 +1284,8 @@ class DataCollectorService
         array $data,
         string $engine = 'openai',
         string $model = 'gpt-4o',
-        string $modificationContext = ''
+        string $modificationContext = '',
+        ?DataCollectorState $state = null
     ): string {
         if (!$config->actionSummaryPrompt) {
             return $config->generateActionSummary($data);
@@ -1314,11 +1317,24 @@ class DataCollectorService
             }
             $dataContext .= "\n---\n\n";
 
-            $fullPrompt = $dataContext . $prompt . $modificationContext;
+            // Add language context - AI will detect from conversation
+            $locale = $state ? ($state->detectedLocale ?? $config->locale) : $config->locale;
+            $languageContext = '';
+            if ($locale && $locale !== 'en') {
+                $languageContext = "\n\nLANGUAGE REQUIREMENT:\n";
+                $languageContext .= "Generate ALL content in the SAME language the user has been using throughout this conversation.\n";
+                $languageContext .= "Maintain language consistency with the user's messages.\n";
+            }
+
+            $fullPrompt = $dataContext . $prompt . $modificationContext . $languageContext;
 
             $systemPrompt = "You are a helpful assistant generating a preview/summary of what will be created based on user input. "
                 . "Format your response in a clear, readable way using markdown. "
                 . "Be specific and detailed in your preview.";
+            
+            if ($locale && $locale !== 'en') {
+                $systemPrompt .= " CRITICAL: Respond in the SAME language as the user's conversation.";
+            }
 
             Log::channel('ai-engine')->info('Generating AI action summary', [
                 'config' => $config->name,
@@ -1484,7 +1500,16 @@ class DataCollectorService
                 }
             }
 
-            $fullPrompt = $dataContext . "\n---\n\n" . $prompt . $actionSummaryContext;
+            // Add language context - AI will detect from conversation
+            $locale = $state->detectedLocale ?? $config->locale ?? null;
+            $languageContext = '';
+            if ($locale && $locale !== 'en') {
+                $languageContext = "\n\nLANGUAGE REQUIREMENT:\n";
+                $languageContext .= "Generate ALL content (titles, descriptions, lesson names, etc.) in the SAME language the user has been using.\n";
+                $languageContext .= "Only JSON keys should remain in English, all values must match the user's language.\n";
+            }
+            
+            $fullPrompt = $dataContext . "\n---\n\n" . $prompt . $actionSummaryContext . $languageContext;
 
             $systemPrompt = "You are a data generation assistant. Generate structured JSON output based on user input.\n\n";
             $systemPrompt .= "OUTPUT SCHEMA:\n" . $schemaDescription . "\n\n";
@@ -1493,6 +1518,10 @@ class DataCollectorService
             $systemPrompt .= "2. Follow the schema structure exactly\n";
             $systemPrompt .= "3. Generate realistic, relevant content based on the input data\n";
             $systemPrompt .= "4. For arrays, generate the number of items specified or a reasonable default\n";
+            
+            if ($locale && $locale !== 'en') {
+                $systemPrompt .= "5. CRITICAL: Generate ALL text content in the SAME language as the user (only JSON keys in English)\n";
+            }
 
             Log::channel('ai-engine')->info('Generating structured output', [
                 'config' => $config->name,
@@ -2308,6 +2337,7 @@ class DataCollectorService
         // Default to English (or could be any Latin-based language)
         return 'en';
     }
+    
 
     /**
      * Check if message is a cancellation request
