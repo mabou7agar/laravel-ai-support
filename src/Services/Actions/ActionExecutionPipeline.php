@@ -131,6 +131,9 @@ class ActionExecutionPipeline
     
     /**
      * Execute local model action
+     * 
+     * Centralized execution: checks if model has a workflow configured,
+     * if so, uses the workflow. Otherwise falls back to executeAI.
      */
     protected function executeModelAction(array $definition, array $params, $userId): ActionResult
     {
@@ -141,10 +144,27 @@ class ActionExecutionPipeline
         }
         
         try {
+            // Check if model has AI config with workflow
             $reflection = new \ReflectionClass($modelClass);
             
+            if ($reflection->hasMethod('initializeAI')) {
+                $method = $reflection->getMethod('initializeAI');
+                $aiConfig = $method->isStatic() 
+                    ? $modelClass::initializeAI() 
+                    : (new $modelClass())->initializeAI();
+                
+                // If workflow is specified, use it instead of executeAI
+                if (isset($aiConfig['workflow']) && class_exists($aiConfig['workflow'])) {
+                    return $this->executeWorkflow([
+                        'workflow_class' => $aiConfig['workflow'],
+                        'model_class' => $modelClass,
+                    ], $params, $userId, null);
+                }
+            }
+            
+            // No workflow - fall back to executeAI
             if (!$reflection->hasMethod('executeAI')) {
-                return ActionResult::failure("Model does not have executeAI method");
+                return ActionResult::failure("Model does not have executeAI method or workflow");
             }
             
             // Add user_id to params

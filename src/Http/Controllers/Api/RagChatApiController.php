@@ -24,7 +24,8 @@ class RagChatApiController extends Controller
         protected ChatService $chatService,
         protected ConversationService $conversationService,
         protected ActionService $actionService,
-        protected RAGCollectionDiscovery $ragDiscovery
+        protected RAGCollectionDiscovery $ragDiscovery,
+        protected \LaravelAIEngine\Services\FileAnalysisService $fileAnalysis
     ) {}
 
     /**
@@ -580,86 +581,28 @@ class RagChatApiController extends Controller
             $ragCollections = json_decode($request->input('rag_collections', '[]'), true) ?: [];
             $userId = $request->user()?->id ?? config('ai-engine.demo_user_id', '1');
 
-            // Determine if this is an image or document
-            $mimeType = $file->getMimeType();
-            $isImage = str_starts_with($mimeType, 'image/');
-
-            if ($isImage) {
-                // Use vision model for image analysis
-                $response = $this->analyzeImageFile($file, $message, $sessionId, $engine, $userId);
-            } else {
-                // Extract text and use RAG for document analysis
-                $response = $this->analyzeDocumentFile($file, $message, $sessionId, $engine, $model, $useIntelligentRAG, $ragCollections, $userId);
-            }
-
-            // Store the file analysis in conversation history for follow-up questions
-            $fileName = $file->getClientOriginalName();
-            $fileContent = $response['file_content'] ?? '';
-            
-            // Add user message about the file
-            $userMessage = "[Uploaded file: {$fileName}]\n\n{$message}";
-            if (!empty($fileContent)) {
-                $userMessage .= "\n\n--- File Content ---\n" . mb_substr($fileContent, 0, 10000); // Limit to 10k chars
-            }
-            
-            // Get or create conversation and add messages to history
-            try {
-                $conversationId = $this->conversationService->getOrCreateConversation($sessionId, $userId, $engine, $model);
-                $conversationManager = app(\LaravelAIEngine\Services\ConversationManager::class);
-                
-                Log::info('File analysis: Storing in conversation history', [
-                    'session_id' => $sessionId,
-                    'conversation_id' => $conversationId,
-                    'user_id' => $userId,
-                    'file_name' => $fileName,
-                    'user_message_length' => strlen($userMessage),
-                    'response_length' => strlen($response['content']),
-                ]);
-                
-                // Add user message
-                $conversationManager->addUserMessage($conversationId, $userMessage, [
-                    'file_name' => $fileName,
-                    'file_type' => $mimeType,
-                    'is_file_upload' => true,
-                ]);
-                
-                // Add assistant response (create a simple AIResponse for the manager)
-                $aiResponse = new \LaravelAIEngine\DTOs\AIResponse(
-                    content: $response['content'],
-                    engine: new \LaravelAIEngine\Enums\EngineEnum($engine),
-                    model: new \LaravelAIEngine\Enums\EntityEnum($model),
-                    metadata: [
-                        'file_analysis' => true,
-                        'extracted_data' => $response['extracted_data'] ?? null,
-                    ]
-                );
-                $conversationManager->addAssistantMessage($conversationId, $response['content'], $aiResponse);
-                
-                // Clear conversation history cache so follow-up questions see the new messages
-                \Illuminate\Support\Facades\Cache::forget("conversation_history:{$conversationId}");
-                
-                Log::info('File analysis: Successfully stored in conversation history', [
-                    'conversation_id' => $conversationId,
-                ]);
-            } catch (\Exception $e) {
-                // Log the full error for debugging
-                Log::error('Failed to store file analysis in conversation history', [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                    'session_id' => $sessionId,
-                    'user_id' => $userId,
-                ]);
-            }
+            // Analyze file using FileAnalysisService (handles everything)
+            $response = $this->fileAnalysis->analyzeFile(
+                $file,
+                $message,
+                $sessionId,
+                $engine,
+                $model,
+                $useIntelligentRAG,
+                $ragCollections,
+                $userId
+            );
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'response' => $response['content'],
                     'extracted_data' => $response['extracted_data'] ?? null,
-                    'file_type' => $mimeType,
-                    'file_name' => $fileName,
+                    'file_type' => $file->getMimeType(),
+                    'file_name' => $file->getClientOriginalName(),
                     'sources' => $response['sources'] ?? [],
                     'rag_enabled' => $response['rag_enabled'] ?? false,
+                    'suggested_actions' => $response['suggestions'] ?? [],
                 ]
             ]);
 

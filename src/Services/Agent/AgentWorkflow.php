@@ -244,4 +244,169 @@ abstract class AgentWorkflow
             'validation_rules' => $rules,
         ], $context);
     }
+
+    /**
+     * Check if user wants to cancel/abort the workflow
+     * This is called automatically before each step execution
+     */
+    public function checkForCancellation(UnifiedActionContext $context): bool
+    {
+        $lastMessage = end($context->conversationHistory);
+        if (!$lastMessage || $lastMessage['role'] !== 'user') {
+            return false;
+        }
+
+        $content = strtolower(trim($lastMessage['content'] ?? ''));
+        
+        // Check for cancel keywords
+        $cancelKeywords = ['cancel', 'abort', 'stop', 'quit', 'exit', 'nevermind', 'never mind'];
+        
+        foreach ($cancelKeywords as $keyword) {
+            if ($content === $keyword || str_starts_with($content, $keyword . ' ')) {
+                Log::channel('ai-engine')->info('User requested workflow cancellation', [
+                    'workflow' => $this->getName(),
+                    'session_id' => $context->sessionId,
+                    'message' => $content,
+                ]);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * Handle workflow cancellation
+     */
+    public function handleCancellation(UnifiedActionContext $context): ActionResult
+    {
+        Log::channel('ai-engine')->info('Workflow cancelled by user', [
+            'workflow' => $this->getName(),
+            'session_id' => $context->sessionId,
+        ]);
+
+        // Clean up workflow state
+        $this->cleanupAfterCompletion($context);
+
+        return ActionResult::failure(
+            error: 'Workflow cancelled by user',
+            metadata: ['cancelled' => true]
+        );
+    }
+
+    /**
+     * Generic entity resolution helper
+     * 
+     * Resolves entities using GenericEntityResolver and model's aiConfig.
+     * Auto-detects single vs multiple entities and delegates accordingly.
+     * 
+     * @param string $configField Field name in aiConfig (e.g., 'customer_id', 'items')
+     * @param string $dataField Field name in collected data (e.g., 'customer_identifier', 'products')
+     * @param array $aiConfig The model's aiConfig array
+     * @param UnifiedActionContext $context Workflow context
+     * @return ActionResult
+     */
+    protected function resolveEntityFromConfig(
+        string $configField,
+        string $dataField,
+        array $aiConfig,
+        UnifiedActionContext $context
+    ): ActionResult {
+        // Get entity config from aiConfig
+        $entityConfig = $aiConfig['fields'][$configField] ?? null;
+        
+        if (!$entityConfig) {
+            return ActionResult::failure(error: "Field '{$configField}' not configured in aiConfig");
+        }
+        
+        // Get GenericEntityResolver
+        $resolver = app(\LaravelAIEngine\Services\GenericEntityResolver::class);
+        
+        // Check if we're in the middle of creation
+        $creationStep = $context->get("{$configField}_creation_step");
+        
+        if ($creationStep) {
+            // Continue with stored identifier
+            $identifier = $context->get("{$configField}_identifier", '');
+        } else {
+            // First time - get from collected data
+            $data = method_exists($this, 'getCollectedData') 
+                ? $this->getCollectedData($context) 
+                : [];
+            $identifier = $data[$dataField] ?? '';
+        }
+
+        // Auto-detect if single or multiple entities
+        $isMultiple = $this->isMultipleEntities($entityConfig, $identifier);
+        
+        // Use GenericEntityResolver
+        if ($isMultiple) {
+            // Multiple entities (e.g., products)
+            $items = is_array($identifier) ? $identifier : [$identifier];
+            $result = $resolver->resolveEntities($configField, $entityConfig, $items, $context);
+        } else {
+            // Single entity (e.g., customer)
+            $result = $resolver->resolveEntity($configField, $entityConfig, $identifier, $context);
+        }
+        
+        // Store resolved ID(s) in context
+        if ($result->success && isset($result->data[$configField])) {
+            $context->set($configField, $result->data[$configField]);
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Auto-detect if dealing with single or multiple entities
+     */
+    private function isMultipleEntities(array $config, $data): bool
+    {
+        // Check config type
+        if (isset($config['type'])) {
+            return $config['type'] === 'entities';
+        }
+        
+        // Auto-detect from data
+        if (is_array($data)) {
+            // If it's an array with numeric keys, it's multiple
+            if (array_keys($data) === range(0, count($data) - 1)) {
+                return true;
+            }
+            // If it's an associative array with 'name' key, it's single
+            if (isset($data['name'])) {
+                return false;
+            }
+            // If it has multiple items, it's multiple
+            return count($data) > 1;
+        }
+        
+        // String or single value = single entity
+        return false;
+    }
+
+    /**
+     * Clean up workflow state after completion
+     * This is called automatically when workflow reaches 'complete' step
+     */
+    public function cleanupAfterCompletion(UnifiedActionContext $context): void
+    {
+        Log::channel('ai-engine')->info('Cleaning up workflow state after completion', [
+            'workflow' => $this->getName(),
+            'session_id' => $context->sessionId,
+        ]);
+
+        // Clear workflow-specific state
+        $context->workflowState = [];
+        $context->currentWorkflow = null;
+        $context->currentStep = null;
+        
+        // Keep conversation history for context
+        // Keep user ID and session ID for tracking
+        
+        Log::channel('ai-engine')->info('Workflow state cleaned', [
+            'workflow' => $this->getName(),
+            'session_id' => $context->sessionId,
+        ]);
+    }
 }

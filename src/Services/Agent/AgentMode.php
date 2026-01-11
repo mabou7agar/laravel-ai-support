@@ -75,7 +75,12 @@ class AgentMode
         }
 
         try {
-            return app($workflowClass);
+            // Get AI and Tools services for workflow constructor
+            $ai = app(\LaravelAIEngine\Services\AIEngineService::class);
+            $tools = app(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class);
+            
+            // Instantiate workflow with required dependencies
+            return new $workflowClass($ai, $tools);
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Failed to instantiate workflow', [
                 'workflow' => $workflowClass,
@@ -145,6 +150,18 @@ class AgentMode
         AgentWorkflow $workflow,
         UnifiedActionContext $context
     ): AgentResponse {
+        // Check for user cancellation request
+        if (method_exists($workflow, 'checkForCancellation') && $workflow->checkForCancellation($context)) {
+            $cancelResult = $workflow->handleCancellation($context);
+            $context->persist();
+            
+            return AgentResponse::failure(
+                message: "Workflow cancelled. How can I help you?",
+                data: $cancelResult->data,
+                context: $context
+            );
+        }
+        
         // Check if result needs user input
         $needsUserInput = $result->getMetadata('needs_user_input', false);
         
@@ -170,8 +187,16 @@ class AgentMode
 
         // Check if workflow is complete
         if (!$nextStepName || $nextStepName === 'complete') {
-            $context->currentWorkflow = null;
-            $context->currentStep = null;
+            // Call cleanup method on workflow before clearing state
+            if (method_exists($workflow, 'cleanupAfterCompletion')) {
+                $workflow->cleanupAfterCompletion($context);
+            } else {
+                // Fallback cleanup if method doesn't exist
+                $context->workflowState = [];
+                $context->currentWorkflow = null;
+                $context->currentStep = null;
+            }
+            
             $context->persist();
 
             return AgentResponse::success(
@@ -183,8 +208,16 @@ class AgentMode
 
         // Check if workflow encountered error
         if ($nextStepName === 'error' || $nextStepName === 'cancel') {
-            $context->currentWorkflow = null;
-            $context->currentStep = null;
+            // Call cleanup method on workflow before clearing state
+            if (method_exists($workflow, 'cleanupAfterCompletion')) {
+                $workflow->cleanupAfterCompletion($context);
+            } else {
+                // Fallback cleanup if method doesn't exist
+                $context->workflowState = [];
+                $context->currentWorkflow = null;
+                $context->currentStep = null;
+            }
+            
             $context->persist();
 
             return AgentResponse::failure(

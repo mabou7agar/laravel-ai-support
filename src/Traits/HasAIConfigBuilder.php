@@ -218,6 +218,8 @@ class AIConfigBuilder
      * when collecting data for this model. The AI will use these
      * guidelines to ask for missing information progressively.
      * 
+     * If not provided, default guidance is generated based on entity fields.
+     * 
      * @param array|string $guidance Array of guidance strings or single string
      * @return self
      */
@@ -227,11 +229,54 @@ class AIConfigBuilder
             $guidance = [$guidance];
         }
         
-        // Append to description with clear formatting
-        $guidanceText = "\n\nCONVERSATIONAL GUIDANCE:\n" . implode("\n", $guidance);
-        $this->config['description'] .= $guidanceText;
+        // Store guidance separately (will be added to description in build())
+        $this->config['conversational_guidance'] = $guidance;
         
         return $this;
+    }
+    
+    /**
+     * Generate default conversational guidance based on entity fields
+     */
+    protected function generateDefaultGuidance(): array
+    {
+        $guidance = [];
+        $modelName = $this->config['model_name'] ?? 'Record';
+        
+        // Find entity fields
+        $entityFields = [];
+        foreach ($this->config['fields'] as $fieldName => $fieldConfig) {
+            if (in_array($fieldConfig['type'] ?? '', ['entity', 'entities'])) {
+                $entityFields[$fieldName] = $fieldConfig;
+            }
+        }
+        
+        if (!empty($entityFields)) {
+            $guidance[] = "{$modelName} creation uses automatic entity resolution:";
+            $guidance[] = "";
+            
+            foreach ($entityFields as $fieldName => $fieldConfig) {
+                $entityName = class_basename($fieldConfig['model'] ?? 'Entity');
+                $isMultiple = ($fieldConfig['type'] ?? '') === 'entities';
+                
+                if ($isMultiple) {
+                    $guidance[] = "• {$entityName}s: Searches by " . implode(', ', $fieldConfig['search_fields'] ?? ['name']);
+                } else {
+                    $guidance[] = "• {$entityName}: Searches by " . implode(', ', $fieldConfig['search_fields'] ?? ['name']);
+                }
+                
+                if ($fieldConfig['interactive'] ?? true) {
+                    $guidance[] = "  → If not found, asks user to create interactively";
+                } else {
+                    $guidance[] = "  → If not found, creates automatically";
+                }
+            }
+            
+            $guidance[] = "";
+            $guidance[] = "User can type 'cancel' at any time to abort.";
+        }
+        
+        return $guidance;
     }
     
     /**
@@ -280,6 +325,89 @@ class AIConfigBuilder
     }
     
     /**
+     * Add an entity field (relationship with auto-resolution)
+     * 
+     * Defines a field that references another model with automatic
+     * find-or-create capability driven by GenericEntityResolver.
+     * 
+     * @param string $name Field name (e.g., 'customer_id')
+     * @param array $config Entity configuration
+     * @return self
+     * 
+     * @example
+     * ->entityField('customer_id', [
+     *     'model' => Customer::class,
+     *     'search_fields' => ['name', 'email', 'contact'],
+     *     'interactive' => true,
+     *     
+     *     // Custom filters (replaces workspace)
+     *     'filters' => fn($query) => $query->where('workspace_id', getActiveWorkSpace()),
+     *     // Or: 'filters' => ['workspace_id' => 1],
+     *     // Or: 'filters' => fn($query) => $query->where('status', 'active')->where('tenant_id', auth()->user()->tenant_id),
+     *     
+     *     // Custom resolver (optional)
+     *     'resolver' => CustomCustomerResolver::class,
+     *     
+     *     'defaults' => ['status' => 'active'],
+     * ])
+     */
+    public function entityField(string $name, array $config): self
+    {
+        $this->config['fields'][$name] = array_merge([
+            'type' => 'entity',
+            'required' => $config['required'] ?? false,
+            'description' => $config['description'] ?? class_basename($config['model'] ?? '') . ' reference',
+            'resolver' => $config['resolver'] ?? 'GenericEntityResolver',
+        ], $config);
+        
+        return $this;
+    }
+    
+    /**
+     * Add an entities field (multiple relationships with auto-resolution)
+     * 
+     * Defines a field that references multiple instances of another model
+     * with automatic find-or-create capability.
+     * 
+     * @param string $name Field name (e.g., 'products', 'items')
+     * @param array $config Entity configuration
+     * @return self
+     * 
+     * @example
+     * ->entitiesField('products', [
+     *     'model' => Product::class,
+     *     'search_fields' => ['name', 'sku'],
+     *     'interactive' => true,
+     *     
+     *     // Custom filters
+     *     'filters' => fn($query) => $query->where('workspace_id', getActiveWorkSpace()),
+     *     
+     *     // Custom resolver (optional)
+     *     'resolver' => CustomProductResolver::class,
+     * ])
+     */
+    public function entitiesField(string $name, array $config): self
+    {
+        $this->config['fields'][$name] = array_merge([
+            'type' => 'entities',
+            'required' => $config['required'] ?? false,
+            'description' => $config['description'] ?? 'Multiple ' . class_basename($config['model'] ?? '') . ' references',
+            'resolver' => $config['resolver'] ?? 'GenericEntityResolver',
+        ], $config);
+        
+        return $this;
+    }
+    
+    /**
+     * Specify workflow class to use for this model
+     */
+    public function workflow(string $workflowClass): self
+    {
+        $this->config['workflow'] = $workflowClass;
+        return $this;
+    }
+    
+    /**
      * Infer type from field name
      */
     protected function inferType(string $name): string
@@ -297,10 +425,18 @@ class AIConfigBuilder
     }
     
     /**
-     * Build the configuration array
+     * Build and return the configuration
      */
     public function build(): array
     {
+        // Add conversational guidance to description
+        $guidance = $this->config['conversational_guidance'] ?? $this->generateDefaultGuidance();
+        
+        if (!empty($guidance)) {
+            $guidanceText = "\n\nCONVERSATIONAL GUIDANCE:\n" . implode("\n", $guidance);
+            $this->config['description'] .= $guidanceText;
+        }
+        
         return $this->config;
     }
 }

@@ -61,12 +61,12 @@ class ActionRegistry
      */
     public function discoverFromModels(): self
     {
-        $cacheKey = 'action_registry:model_actions';
+        $cacheKey = 'action_registry:model_classes';
 
-        $modelActions = Cache::remember($cacheKey, 3600, function () {
-            $actions = [];
+        // Cache only the list of model classes (not their configs with closures)
+        $modelClasses = Cache::remember($cacheKey, 3600, function () {
+            $classes = [];
 
-            // Get all RAG collections
             try {
                 $ragDiscovery = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
                 $collections = $ragDiscovery->discover();
@@ -79,38 +79,49 @@ class ActionRegistry
                     $reflection = new \ReflectionClass($modelClass);
 
                     // Check for HasAIActions trait or executeAI method
-                    if (!$reflection->hasMethod('executeAI') && !$reflection->hasMethod('initializeAI')) {
-                        continue;
+                    if ($reflection->hasMethod('executeAI') || $reflection->hasMethod('initializeAI')) {
+                        $classes[] = $modelClass;
                     }
-
-                    $modelName = class_basename($modelClass);
-                    $actionId = 'create_' . strtolower($modelName);
-
-                    // Get expected format
-                    $expectedFormat = $this->getModelExpectedFormat($modelClass);
-
-                    $actions[$actionId] = [
-                        'label' => "🎯 Create {$modelName}",
-                        'description' => "Create a new {$modelName} from conversation",
-                        'executor' => 'model.dynamic',
-                        'model_class' => $modelClass,
-                        'required_params' => $expectedFormat['required'] ?? [],
-                        'optional_params' => $expectedFormat['optional'] ?? [],
-                        'parameters' => $expectedFormat,
-                        'triggers' => $this->generateTriggersForModel($modelName),
-                        'type' => 'model_action',
-                    ];
                 }
             } catch (\Exception $e) {
-                Log::channel('ai-engine')->warning('Failed to discover model actions', [
+                Log::channel('ai-engine')->warning('Failed to discover model classes', [
                     'error' => $e->getMessage(),
                 ]);
             }
 
-            return $actions;
+            return $classes;
         });
 
-        return $this->registerBatch($modelActions);
+        // Build actions from cached model classes (configs generated fresh each time)
+        $actions = [];
+        foreach ($modelClasses as $modelClass) {
+            try {
+                $modelName = class_basename($modelClass);
+                $actionId = 'create_' . strtolower($modelName);
+
+                // Get expected format fresh (may contain closures)
+                $expectedFormat = $this->getModelExpectedFormat($modelClass);
+
+                $actions[$actionId] = [
+                    'label' => "🎯 Create {$modelName}",
+                    'description' => "Create a new {$modelName} from conversation",
+                    'executor' => 'model.dynamic',
+                    'model_class' => $modelClass,
+                    'required_params' => $expectedFormat['required'] ?? [],
+                    'optional_params' => $expectedFormat['optional'] ?? [],
+                    'parameters' => $expectedFormat,
+                    'triggers' => $this->generateTriggersForModel($modelName),
+                    'type' => 'model_action',
+                ];
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Failed to build action for model', [
+                    'model' => $modelClass,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $this->registerBatch($actions);
     }
 
     /**
