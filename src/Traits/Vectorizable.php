@@ -808,6 +808,8 @@ trait Vectorizable
                 $columnDescriptions[] = "... and " . (count($textColumns) - $maxColumns) . " more columns";
             }
 
+            $columnsList = implode("\n", $columnDescriptions);
+            
             $prompt = <<<PROMPT
 You are analyzing a database table to determine which fields should be included in vector search indexing.
 
@@ -815,7 +817,7 @@ Model: {$modelClass}
 Table: {$tableName}
 
 Available text columns:
-{implode("\n", $columnDescriptions)}
+{$columnsList}
 
 Task: Select which columns should be vectorized for semantic search. Consider:
 1. Fields containing meaningful text content (descriptions, messages, titles, names, etc.)

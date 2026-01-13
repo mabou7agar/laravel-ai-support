@@ -26,6 +26,7 @@ class AIResponse
     private ?string $error;
     private bool $success;
     private ?string $conversationId;
+    private ?array $functionCall;
 
     public function __construct(
         string $content,
@@ -43,11 +44,13 @@ class AIResponse
         array $actions = [],
         ?string $error = null,
         bool $success = true,
-        ?string $conversationId = null
+        ?string $conversationId = null,
+        ?array $functionCall = null
     ) {
         $this->content = $content;
         $this->engine = $engine;
         $this->model = $model;
+        $this->functionCall = $functionCall;
         $this->metadata = $metadata;
         $this->tokensUsed = $tokensUsed;
         $this->creditsUsed = $creditsUsed;
@@ -602,6 +605,11 @@ class AIResponse
     public function getConversationId(): ?string
     {
         return $this->conversationId;
+    }
+
+    public function getFunctionCall(): ?array
+    {
+        return $this->functionCall;
     }
 
     /**

@@ -18,147 +18,166 @@ class CreditManager
     ) {}
 
     /**
-     * Calculate required credits for a request
+     * Calculate required MyCredits for a request (with engine conversion)
      */
     public function calculateCredits(AIRequest $request): float
     {
         $inputCount = $this->getInputCount($request);
         $creditIndex = $request->model->creditIndex();
+        $engineRate = $this->getEngineRate($request->engine);
 
-        return $inputCount * $creditIndex;
+        // Calculate engine credits then convert to MyCredits
+        $engineCredits = $inputCount * $creditIndex;
+        return $engineCredits * $engineRate;
     }
 
     /**
-     * Check if user has sufficient credits
+     * Get engine conversion rate (MyCredits to Engine Credits)
+     */
+    private function getEngineRate(EngineEnum $engine): float
+    {
+        $rates = config('ai-engine.credits.engine_rates', []);
+        return $rates[$engine->value] ?? 1.0;
+    }
+
+    /**
+     * Check if user has sufficient MyCredits
      */
     public function hasCredits(string $userId, AIRequest $request): bool
     {
+        $user = $this->getUserModel($userId);
+        
+        // Check unlimited first
+        if ($user->has_unlimited_credits) {
+            return true;
+        }
+        
         $requiredCredits = $this->calculateCredits($request);
-        $userCredits = $this->getUserCredits($userId, $request->engine, $request->model);
-
-        return $userCredits['is_unlimited'] || $userCredits['balance'] >= $requiredCredits;
+        return $user->my_credits >= $requiredCredits;
     }
 
     /**
-     * Deduct credits from user
+     * Deduct MyCredits from user
      */
     public function deductCredits(string $userId, AIRequest $request, float $actualCreditsUsed = null): bool
     {
+        $user = $this->getUserModel($userId);
+        
+        // Don't deduct if unlimited
+        if ($user->has_unlimited_credits) {
+            return true;
+        }
+        
         $creditsToDeduct = $actualCreditsUsed ?? $this->calculateCredits($request);
         
-        if (!$this->hasCredits($userId, $request)) {
+        if ($user->my_credits < $creditsToDeduct) {
             throw new InsufficientCreditsException(
-                "Insufficient credits. Required: {$creditsToDeduct}, Available: " . 
-                $this->getUserCredits($userId, $request->engine, $request->model)['balance']
+                "Insufficient MyCredits. Required: {$creditsToDeduct}, Available: {$user->my_credits}"
             );
         }
 
-        return $this->updateUserCredits($userId, $request->engine, $request->model, -$creditsToDeduct);
+        $user->my_credits -= $creditsToDeduct;
+        return $user->save();
     }
 
     /**
-     * Add credits to user
+     * Add MyCredits to user
      */
-    public function addCredits(string $userId, EngineEnum $engine, EntityEnum $model, float $credits): bool
-    {
-        return $this->updateUserCredits($userId, $engine, $model, $credits);
-    }
-
-    /**
-     * Set user credits
-     */
-    public function setCredits(string $userId, EngineEnum $engine, EntityEnum $model, float $credits): bool
+    public function addCredits(string $userId, float $credits): bool
     {
         $user = $this->getUserModel($userId);
-        $entityCredits = $user->entity_credits ?? $this->getDefaultCredits();
-        
-        // Handle JSON string conversion
-        if (is_string($entityCredits)) {
-            $entityCredits = json_decode($entityCredits, true) ?? $this->getDefaultCredits();
-        }
+        $user->my_credits += $credits;
+        return $user->save();
+    }
 
-        $entityCredits[$engine->value][$model->value] = [
-            'balance' => $credits,
-            'is_unlimited' => false,
-        ];
-
-        return $user->update(['entity_credits' => json_encode($entityCredits)]);
+    /**
+     * Set user MyCredits balance
+     */
+    public function setCredits(string $userId, float $credits): bool
+    {
+        $user = $this->getUserModel($userId);
+        $user->my_credits = $credits;
+        return $user->save();
     }
 
     /**
      * Set unlimited credits for user
      */
-    public function setUnlimitedCredits(string $userId, EngineEnum $engine, EntityEnum $model): bool
+    public function setUnlimitedCredits(string $userId, bool $unlimited = true): bool
     {
         $user = $this->getUserModel($userId);
-        $entityCredits = $user->entity_credits ?? $this->getDefaultCredits();
-        
-        // Handle JSON string conversion
-        if (is_string($entityCredits)) {
-            $entityCredits = json_decode($entityCredits, true) ?? $this->getDefaultCredits();
-        }
-
-        $entityCredits[$engine->value][$model->value] = [
-            'balance' => 0,
-            'is_unlimited' => true,
-        ];
-
-        return $user->update(['entity_credits' => json_encode($entityCredits)]);
+        $user->has_unlimited_credits = $unlimited;
+        return $user->save();
     }
 
     /**
-     * Get user credits for specific engine and model
+     * Get user MyCredits balance
      */
-    public function getUserCredits(string $userId, EngineEnum $engine, EntityEnum $model): array
+    public function getUserCredits(string $userId): array
     {
         $user = $this->getUserModel($userId);
-        $entityCredits = $user->entity_credits ?? $this->getDefaultCredits();
         
-        // Handle JSON string conversion
-        if (is_string($entityCredits)) {
-            $entityCredits = json_decode($entityCredits, true) ?? $this->getDefaultCredits();
-        }
-
-        return $entityCredits[$engine->value][$model->value] ?? [
-            'balance' => config('ai-engine.credits.default_balance', 100.0),
-            'is_unlimited' => false,
+        return [
+            'balance' => $user->my_credits ?? 0,
+            'is_unlimited' => $user->has_unlimited_credits ?? false,
+            'currency' => config('ai-engine.credits.currency', 'MyCredits'),
         ];
     }
 
     /**
-     * Get all user credits
+     * Get user credits converted for specific engine
+     */
+    public function getUserCreditsForEngine(string $userId, EngineEnum $engine): array
+    {
+        $user = $this->getUserModel($userId);
+        $rate = $this->getEngineRate($engine);
+        
+        return [
+            'my_credits' => $user->my_credits ?? 0,
+            'engine_credits' => ($user->my_credits ?? 0) / $rate,
+            'is_unlimited' => $user->has_unlimited_credits ?? false,
+            'conversion_rate' => $rate,
+            'engine' => $engine->value,
+        ];
+    }
+
+    /**
+     * Get user credits for all engines
      */
     public function getAllUserCredits(string $userId): array
     {
         $user = $this->getUserModel($userId);
-        $credits = $user->entity_credits ?? $this->getDefaultCredits();
+        $myCredits = $user->my_credits ?? 0;
+        $rates = config('ai-engine.credits.engine_rates', []);
         
-        // Handle JSON string conversion
-        if (is_string($credits)) {
-            $credits = json_decode($credits, true) ?? $this->getDefaultCredits();
+        $credits = [
+            'my_credits' => $myCredits,
+            'is_unlimited' => $user->has_unlimited_credits ?? false,
+            'engines' => [],
+        ];
+        
+        foreach ($rates as $engine => $rate) {
+            $credits['engines'][$engine] = [
+                'engine_credits' => $myCredits / $rate,
+                'conversion_rate' => $rate,
+            ];
         }
         
-        return is_array($credits) ? $credits : $this->getDefaultCredits();
+        return $credits;
     }
 
     /**
-     * Get total credits across all engines/models
+     * Get total MyCredits balance
      */
     public function getTotalCredits(string $userId): float
     {
-        $allCredits = $this->getAllUserCredits($userId);
-        $total = 0.0;
-
-        foreach ($allCredits as $engineCredits) {
-            foreach ($engineCredits as $modelCredits) {
-                if ($modelCredits['is_unlimited']) {
-                    return PHP_FLOAT_MAX; // Unlimited
-                }
-                $total += $modelCredits['balance'];
-            }
+        $user = $this->getUserModel($userId);
+        
+        if ($user->has_unlimited_credits) {
+            return PHP_FLOAT_MAX;
         }
-
-        return $total;
+        
+        return $user->my_credits ?? 0;
     }
 
     /**
@@ -193,7 +212,9 @@ class CreditManager
     public function resetCredits(string $userId): bool
     {
         $user = $this->getUserModel($userId);
-        return $user->update(['entity_credits' => $this->getDefaultCredits()]);
+        $user->my_credits = config('ai-engine.credits.default_balance', 100.0);
+        $user->has_unlimited_credits = false;
+        return $user->save();
     }
 
     /**
@@ -227,38 +248,6 @@ class CreditManager
         return mb_strlen(strip_tags($text));
     }
 
-    /**
-     * Update user credits
-     */
-    private function updateUserCredits(string $userId, EngineEnum $engine, EntityEnum $model, float $creditChange): bool
-    {
-        $user = $this->getUserModel($userId);
-        $entityCredits = $user->entity_credits ?? $this->getDefaultCredits();
-        
-        // Handle JSON string conversion
-        if (is_string($entityCredits)) {
-            $entityCredits = json_decode($entityCredits, true) ?? $this->getDefaultCredits();
-        }
-
-        $currentCredits = $entityCredits[$engine->value][$model->value] ?? [
-            'balance' => config('ai-engine.credits.default_balance', 100.0),
-            'is_unlimited' => false,
-        ];
-
-        // Don't modify unlimited credits
-        if ($currentCredits['is_unlimited']) {
-            return true;
-        }
-
-        $newBalance = max(0, $currentCredits['balance'] + $creditChange);
-
-        $entityCredits[$engine->value][$model->value] = [
-            'balance' => $newBalance,
-            'is_unlimited' => false,
-        ];
-
-        return $user->update(['entity_credits' => json_encode($entityCredits)]);
-    }
 
     /**
      * Get user model
@@ -269,23 +258,4 @@ class CreditManager
         return $userModel::findOrFail($userId);
     }
 
-    /**
-     * Get default credits structure
-     */
-    private function getDefaultCredits(): array
-    {
-        $defaultBalance = config('ai-engine.credits.default_balance', 100.0);
-        $credits = [];
-
-        foreach (EngineEnum::cases() as $engine) {
-            foreach ($engine->getDefaultModels() as $model) {
-                $credits[$engine->value][$model->value] = [
-                    'balance' => $defaultBalance,
-                    'is_unlimited' => false,
-                ];
-            }
-        }
-
-        return $credits;
-    }
 }

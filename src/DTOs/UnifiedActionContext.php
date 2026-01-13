@@ -3,9 +3,12 @@
 namespace LaravelAIEngine\DTOs;
 
 use Illuminate\Support\Facades\Cache;
+use LaravelAIEngine\Enums\EntityState;
 
 class UnifiedActionContext
 {
+    public array $workflowStack = [];
+    
     public function __construct(
         public string $sessionId,
         public $userId,
@@ -83,6 +86,67 @@ class UnifiedActionContext
     {
         $this->workflowState[$key] = $value;
     }
+    
+    /**
+     * Set entity state with enum-based categorization
+     * 
+     * @param string $entity Entity name (e.g., 'customer', 'products')
+     * @param EntityState $state State of the entity
+     * @param mixed $value Data associated with this state
+     */
+    public function setEntityState(string $entity, EntityState $state, $value): void
+    {
+        $key = $state->getKey($entity);
+        $this->workflowState[$key] = $value;
+        
+        // Track entity state metadata
+        $this->workflowState["_entity_states"][$entity] = [
+            'state' => $state->value,
+            'updated_at' => now()->toIso8601String(),
+        ];
+    }
+    
+    /**
+     * Get entity state value
+     * 
+     * @param string $entity Entity name
+     * @param EntityState $state State to retrieve
+     * @param mixed $default Default value if not found
+     */
+    public function getEntityState(string $entity, EntityState $state, $default = null)
+    {
+        $key = $state->getKey($entity);
+        return $this->workflowState[$key] ?? $default;
+    }
+    
+    /**
+     * Check if entity has a specific state
+     * 
+     * @param string $entity Entity name
+     * @param EntityState $state State to check
+     */
+    public function hasEntityState(string $entity, EntityState $state): bool
+    {
+        $key = $state->getKey($entity);
+        return isset($this->workflowState[$key]);
+    }
+    
+    /**
+     * Get current state of an entity
+     * 
+     * @param string $entity Entity name
+     * @return EntityState|null Current state or null if not tracked
+     */
+    public function getCurrentEntityState(string $entity): ?EntityState
+    {
+        $stateValue = $this->workflowState["_entity_states"][$entity]['state'] ?? null;
+        
+        if (!$stateValue) {
+            return null;
+        }
+        
+        return EntityState::from($stateValue);
+    }
 
     public function get(string $key, $default = null)
     {
@@ -97,6 +161,61 @@ class UnifiedActionContext
     public function forget(string $key): void
     {
         unset($this->workflowState[$key]);
+    }
+
+    /**
+     * Push current workflow onto stack and start new workflow
+     */
+    public function pushWorkflow(string $workflowClass, ?string $step = null, array $state = []): void
+    {
+        $this->workflowStack[] = [
+            'workflow' => $this->currentWorkflow,
+            'step' => $this->currentStep,
+            'state' => $this->workflowState,
+        ];
+        
+        $this->currentWorkflow = $workflowClass;
+        $this->currentStep = $step;
+        // Merge the new state with existing state (don't replace)
+        $this->workflowState = array_merge($this->workflowState, $state);
+    }
+    
+    /**
+     * Pop workflow from stack and restore parent workflow
+     */
+    public function popWorkflow(): ?array
+    {
+        if (empty($this->workflowStack)) {
+            return null;
+        }
+        
+        $parent = array_pop($this->workflowStack);
+        
+        $this->currentWorkflow = $parent['workflow'];
+        $this->currentStep = $parent['step'];
+        $this->workflowState = $parent['state'];
+        
+        return $parent;
+    }
+    
+    /**
+     * Check if we're in a subworkflow
+     */
+    public function isInSubworkflow(): bool
+    {
+        return !empty($this->workflowStack);
+    }
+    
+    /**
+     * Get parent workflow info without popping
+     */
+    public function getParentWorkflow(): ?array
+    {
+        if (empty($this->workflowStack)) {
+            return null;
+        }
+        
+        return end($this->workflowStack);
     }
 
     public function toArray(): array
@@ -115,12 +234,13 @@ class UnifiedActionContext
             'current_workflow' => $this->currentWorkflow,
             'current_step' => $this->currentStep,
             'workflow_state' => $this->workflowState,
+            'workflow_stack' => $this->workflowStack,
         ];
     }
 
     public static function fromArray(array $data): self
     {
-        return new self(
+        $context = new self(
             sessionId: $data['session_id'],
             userId: $data['user_id'],
             conversationHistory: $data['conversation_history'] ?? [],
@@ -135,6 +255,10 @@ class UnifiedActionContext
             currentStep: $data['current_step'] ?? null,
             workflowState: $data['workflow_state'] ?? []
         );
+        
+        $context->workflowStack = $data['workflow_stack'] ?? [];
+        
+        return $context;
     }
 
     public function persist(): void

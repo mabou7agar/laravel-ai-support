@@ -135,20 +135,30 @@ class OpenAIEngineDriver extends BaseEngineDriver
             $message = $response->choices[0]->message;
             $content = $message->content ?? '';
 
-            $aiResponse = $this->buildSuccessResponse(
-                $content,
-                $request,
-                $response->toArray(),
-                'openai'
-            );
-
-            // Add function call data if present
+            // Extract function call data if present
+            $functionCall = null;
             if (isset($message->functionCall)) {
-                $aiResponse->functionCall = [
+                $functionCall = [
                     'name' => $message->functionCall->name,
                     'arguments' => $message->functionCall->arguments,
                 ];
             }
+
+            // Create AIResponse with proper parameters
+            $aiResponse = new AIResponse(
+                content: $content,
+                engine: new EngineEnum(EngineEnum::OPENAI),
+                model: $request->model,
+                metadata: $response->toArray(),
+                tokensUsed: $response->usage->totalTokens ?? null,
+                usage: [
+                    'prompt_tokens' => $response->usage->promptTokens ?? 0,
+                    'completion_tokens' => $response->usage->completionTokens ?? 0,
+                    'total_tokens' => $response->usage->totalTokens ?? 0,
+                ],
+                finishReason: $response->choices[0]->finishReason ?? null,
+                functionCall: $functionCall
+            );
 
             return $aiResponse;
 

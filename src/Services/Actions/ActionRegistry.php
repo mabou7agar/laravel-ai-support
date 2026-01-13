@@ -101,18 +101,51 @@ class ActionRegistry
 
                 // Get expected format fresh (may contain closures)
                 $expectedFormat = $this->getModelExpectedFormat($modelClass);
+                
+                // Check if model has a workflow configured
+                $workflowClass = null;
+                $reflection = new \ReflectionClass($modelClass);
+                if ($reflection->hasMethod('initializeAI')) {
+                    $method = $reflection->getMethod('initializeAI');
+                    $aiConfig = $method->isStatic() 
+                        ? $modelClass::initializeAI() 
+                        : (new $modelClass())->initializeAI();
+                    
+                    $workflowClass = $aiConfig['workflow'] ?? null;
+                }
 
-                $actions[$actionId] = [
-                    'label' => "🎯 Create {$modelName}",
-                    'description' => "Create a new {$modelName} from conversation",
-                    'executor' => 'model.dynamic',
-                    'model_class' => $modelClass,
-                    'required_params' => $expectedFormat['required'] ?? [],
-                    'optional_params' => $expectedFormat['optional'] ?? [],
-                    'parameters' => $expectedFormat,
-                    'triggers' => $this->generateTriggersForModel($modelName),
-                    'type' => 'model_action',
-                ];
+                // If workflow is configured, register as workflow action
+                if ($workflowClass && class_exists($workflowClass)) {
+                    $actions[$actionId] = [
+                        'label' => "🧾 Create {$modelName} (Guided Workflow)",
+                        'description' => "Create a new {$modelName} with intelligent guided conversation",
+                        'executor' => 'workflow',
+                        'workflow_class' => $workflowClass,
+                        'model_class' => $modelClass,
+                        'required_params' => [],
+                        'optional_params' => [],
+                        'parameters' => $expectedFormat,
+                        'triggers' => $this->generateTriggersForModel($modelName),
+                        'type' => 'workflow_action',
+                        'auto_execute' => true,
+                        'skip_confirmation' => true,
+                    ];
+                } else {
+                    // No workflow - register as model.dynamic action
+                    $actions[$actionId] = [
+                        'label' => "🎯 Create {$modelName}",
+                        'description' => "Create a new {$modelName} from conversation",
+                        'executor' => 'model.dynamic',
+                        'model_class' => $modelClass,
+                        'required_params' => $expectedFormat['required'] ?? [],
+                        'optional_params' => $expectedFormat['optional'] ?? [],
+                        'parameters' => $expectedFormat,
+                        'triggers' => $this->generateTriggersForModel($modelName),
+                        'type' => 'model_action',
+                        'auto_execute' => true,
+                        'skip_confirmation' => true,
+                    ];
+                }
             } catch (\Exception $e) {
                 Log::channel('ai-engine')->warning('Failed to build action for model', [
                     'model' => $modelClass,

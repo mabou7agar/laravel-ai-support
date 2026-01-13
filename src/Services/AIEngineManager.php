@@ -525,7 +525,8 @@ class AIEngineManager
         ?int $maxTokens = null,
         ?float $temperature = null,
         ?string $systemPrompt = null,
-        array $parameters = []
+        array $parameters = [],
+        ?string $userId = null
     ): AIRequest {
         $engineEnum = EngineEnum::fromSlug($engine ?? config('ai-engine.default_engine', 'openai'));
         $modelEnum = EntityEnum::fromSlug($model ?? config('ai-engine.default_model', 'gpt-4o'));
@@ -545,7 +546,8 @@ class AIEngineManager
             prompt: $prompt,
             engine: $engineEnum,
             model: $modelEnum,
-            parameters: $params
+            parameters: $params,
+            userId: $userId
         );
     }
 }

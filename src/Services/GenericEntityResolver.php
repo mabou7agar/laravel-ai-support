@@ -38,6 +38,12 @@ class GenericEntityResolver
         $identifier,
         UnifiedActionContext $context
     ): ActionResult {
+        Log::channel('ai-engine')->info('GenericEntityResolver::resolveEntity called', [
+            'field' => $fieldName,
+            'identifier' => $identifier,
+            'has_creation_step' => !empty($context->get("{$fieldName}_creation_step")),
+        ]);
+        
         // Check if custom resolver is specified
         if (isset($config['resolver']) && $config['resolver'] !== 'GenericEntityResolver') {
             return $this->delegateToCustomResolver($config['resolver'], $fieldName, $config, $identifier, $context, false);
@@ -46,6 +52,7 @@ class GenericEntityResolver
         $modelClass = $config['model'] ?? null;
         $searchFields = $config['search_fields'] ?? ['name'];
         $interactive = $config['interactive'] ?? true;
+        $confirmBeforeCreate = $config['confirm_before_create'] ?? false;
         $filters = $config['filters'] ?? null;
         $checkDuplicates = $config['check_duplicates'] ?? false;
         $askOnDuplicate = $config['ask_on_duplicate'] ?? false;
@@ -159,7 +166,8 @@ class GenericEntityResolver
         }
         
         // No entity found and no duplicates - create if configured
-        if ($interactive) {
+        // If confirmBeforeCreate is true, always ask for confirmation
+        if ($confirmBeforeCreate || $interactive) {
             return $this->startInteractiveCreation($fieldName, $config, $identifier, $context);
         } else {
             return $this->createEntityAuto($fieldName, $config, $identifier, $context);
@@ -497,6 +505,146 @@ class GenericEntityResolver
         UnifiedActionContext $context
     ): ActionResult {
         $step = $context->get("{$fieldName}_creation_step");
+        
+        // If user is being asked to create, check their response
+        if ($step === 'ask_create') {
+            // Get the last message from conversation history
+            $conversationHistory = $context->conversationHistory ?? [];
+            $lastMessage = '';
+            if (!empty($conversationHistory)) {
+                $lastUserMessage = array_filter($conversationHistory, fn($msg) => ($msg['role'] ?? '') === 'user');
+                if (!empty($lastUserMessage)) {
+                    $lastMsg = end($lastUserMessage);
+                    $lastMessage = $lastMsg['content'] ?? '';
+                }
+            }
+            
+            $response = strtolower(trim($lastMessage));
+            $identifier = $context->get("{$fieldName}_identifier", '');
+            
+            Log::channel('ai-engine')->info('Checking user confirmation response', [
+                'step' => $step,
+                'response' => $response,
+                'field' => $fieldName,
+                'identifier' => $identifier,
+                'has_conversation_history' => !empty($conversationHistory),
+            ]);
+            
+            if (str_contains($response, 'yes') || str_contains($response, 'confirm') || str_contains($response, 'ok')) {
+                // User confirmed - proceed with entity creation
+                
+                Log::channel('ai-engine')->info('User confirmed entity creation', [
+                    'field' => $fieldName,
+                    'identifier' => $identifier,
+                ]);
+                
+                // Validate identifier before creating
+                if (empty($identifier)) {
+                    Log::channel('ai-engine')->error('Cannot create entity - identifier is empty', [
+                        'field' => $fieldName,
+                    ]);
+                    
+                    // Clear creation step
+                    $context->forget("{$fieldName}_creation_step");
+                    $context->forget("{$fieldName}_identifier");
+                    
+                    return ActionResult::failure(
+                        error: "Cannot create entity - identifier is missing"
+                    );
+                }
+                
+                // Clear creation step AFTER getting the identifier
+                $context->forget("{$fieldName}_creation_step");
+                $context->forget("{$fieldName}_identifier");
+                
+                // Check if we have a subflow - if so, start it with pre-collected data
+                if (!empty($config['subflow']) && class_exists($config['subflow'])) {
+                    Log::channel('ai-engine')->info('Starting subflow with pre-collected data', [
+                        'subflow' => $config['subflow'],
+                        'identifier' => $identifier,
+                    ]);
+                    
+                    try {
+                        // Determine the field name for the identifier
+                        // Use entity name + '_name' pattern as default
+                        $entityName = class_basename($config['model']);
+                        $dataFieldName = strtolower($entityName) . '_name';
+                        
+                        // Set the identifier in collected data for the subflow
+                        $collectedData = $context->get('collected_data', []);
+                        $collectedData[$dataFieldName] = $identifier;
+                        $context->set('collected_data', $collectedData);
+                        
+                        Log::channel('ai-engine')->info('Calling subflow to create entity', [
+                            'subflow' => $config['subflow'],
+                            'field' => $dataFieldName,
+                            'identifier' => $identifier,
+                        ]);
+                        
+                        // Get the subflow class and call its creation method directly
+                        $subflowClass = $config['subflow'];
+                        
+                        // Use reflection to call the creation method
+                        $reflection = new \ReflectionClass($subflowClass);
+                        $methods = $reflection->getMethods(\ReflectionMethod::IS_PUBLIC);
+                        
+                        // Find a method that looks like it creates the entity
+                        $creationMethod = null;
+                        foreach ($methods as $method) {
+                            $methodName = $method->getName();
+                            if (str_contains(strtolower($methodName), 'create') && 
+                                !str_contains(strtolower($methodName), 'workflow')) {
+                                $creationMethod = $methodName;
+                                break;
+                            }
+                        }
+                        
+                        if ($creationMethod) {
+                            // Instantiate and call the creation method
+                            $workflow = $reflection->newInstanceWithoutConstructor();
+                            $result = $workflow->$creationMethod($context);
+                            
+                            // If successful, extract the entity ID
+                            if ($result->success) {
+                                $entityId = $result->data['category_id'] ?? $result->data[$fieldName] ?? null;
+                                if ($entityId) {
+                                    Log::channel('ai-engine')->info('Subflow created entity successfully', [
+                                        'entity_id' => $entityId,
+                                    ]);
+                                    
+                                    return ActionResult::success(
+                                        message: class_basename($config['model']) . " created",
+                                        data: [$fieldName => $entityId, 'entity' => $result->data['entity'] ?? null]
+                                    );
+                                }
+                            }
+                            
+                            return $result;
+                        }
+                    } catch (\Exception $e) {
+                        Log::channel('ai-engine')->error('Subflow execution failed', [
+                            'subflow' => $config['subflow'],
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString(),
+                        ]);
+                        
+                        // Fall through to auto creation
+                    }
+                }
+                
+                // No subflow - use auto creation
+                return $this->createEntityAuto($fieldName, $config, $identifier, $context);
+            } elseif (str_contains($response, 'no') || str_contains($response, 'cancel')) {
+                // User declined
+                $context->forget("{$fieldName}_creation_step");
+                $context->forget("{$fieldName}_identifier");
+                
+                return ActionResult::failure(
+                    error: "Entity creation cancelled by user"
+                );
+            }
+        }
+        
         $createFields = $config['create_fields'] ?? [];
         $modelClass = $config['model'];
         
@@ -521,23 +669,158 @@ class GenericEntityResolver
         $defaults = $config['defaults'] ?? [];
         
         try {
-            $data = array_merge([
-                'name' => $identifier,
-                'workspace' => getActiveWorkSpace() ?: 1,
-                'created_by' => auth()->id() ?? 1,
-            ], $defaults);
+            // Get model instance to inspect fillable fields
+            $model = new $modelClass();
+            $fillable = $model->getFillable();
+            
+            // Build data array dynamically based on model's fillable fields
+            $data = [];
+            
+            // Add identifier - check common field names
+            $identifierField = $config['identifier_field'] ?? null;
+            if (!$identifierField) {
+                // Auto-detect identifier field from fillable
+                $possibleNames = ['name', 'title', 'label', 'identifier'];
+                foreach ($possibleNames as $possibleName) {
+                    if (in_array($possibleName, $fillable)) {
+                        $identifierField = $possibleName;
+                        break;
+                    }
+                }
+            }
+            
+            if ($identifierField && in_array($identifierField, $fillable)) {
+                $data[$identifierField] = $identifier;
+            }
+            
+            // Add workspace field if model has one
+            $workspaceFields = ['workspace_id', 'workspace'];
+            foreach ($workspaceFields as $workspaceField) {
+                if (in_array($workspaceField, $fillable)) {
+                    $data[$workspaceField] = getActiveWorkSpace() ?: 1;
+                    break;
+                }
+            }
+            
+            // Add creator field if model has one
+            $creatorFields = ['created_by', 'creator_id', 'user_id'];
+            foreach ($creatorFields as $creatorField) {
+                if (in_array($creatorField, $fillable)) {
+                    $data[$creatorField] = creatorId();
+                    break;
+                }
+            }
+            
+            // Merge with defaults (defaults can override auto-detected values)
+            $data = array_merge($data, $defaults);
+            
+            Log::channel('ai-engine')->info('Creating entity automatically', [
+                'model' => $modelClass,
+                'data' => $data,
+                'fillable' => $fillable,
+            ]);
             
             $entity = $modelClass::create($data);
+            
+            Log::channel('ai-engine')->info('Entity created successfully', [
+                'model' => $modelClass,
+                'id' => $entity->id,
+            ]);
             
             return ActionResult::success(
                 message: class_basename($modelClass) . " created",
                 data: [$fieldName => $entity->id, 'entity' => $entity]
             );
         } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Entity creation failed', [
+                'model' => $modelClass,
+                'error' => $e->getMessage(),
+            ]);
+            
             return ActionResult::failure(
                 error: "Failed to create " . class_basename($modelClass) . ": " . $e->getMessage()
             );
         }
+    }
+    
+    /**
+     * Get friendly entity name for display using AI
+     */
+    private function getFriendlyEntityName(string $fieldName, array $config): string
+    {
+        // Check cache first to avoid repeated AI calls
+        $cacheKey = "friendly_entity_name_{$fieldName}";
+        $cached = cache()->get($cacheKey);
+        if ($cached) {
+            return $cached;
+        }
+        
+        // Use AI to generate a user-friendly plural name
+        try {
+            $aiService = app(\LaravelAIEngine\Services\AIEngineService::class);
+            
+            $prompt = "Convert the following database field name to a user-friendly plural form for display in error messages.\n\n";
+            $prompt .= "Field name: {$fieldName}\n\n";
+            $prompt .= "Rules:\n";
+            $prompt .= "- Remove technical suffixes like '_id', '_ids'\n";
+            $prompt .= "- Convert underscores to spaces\n";
+            $prompt .= "- Use proper plural form (handle irregular plurals correctly)\n";
+            $prompt .= "- Keep it lowercase\n";
+            $prompt .= "- Return ONLY the friendly name, nothing else\n\n";
+            $prompt .= "Examples:\n";
+            $prompt .= "- 'customer_id' -> 'customers'\n";
+            $prompt .= "- 'product_items' -> 'product items'\n";
+            $prompt .= "- 'category' -> 'categories'\n";
+            $prompt .= "- 'invoice_lines' -> 'invoice lines'\n\n";
+            $prompt .= "Friendly name:";
+            
+            $request = \LaravelAIEngine\DTOs\AIRequest::make(
+                prompt: $prompt,
+                engine: new \LaravelAIEngine\Enums\EngineEnum(\LaravelAIEngine\Enums\EngineEnum::OPENAI),
+                model: new \LaravelAIEngine\Enums\EntityEnum(\LaravelAIEngine\Enums\EntityEnum::GPT_4O_MINI),
+                parameters: [
+                    'max_tokens' => 20,
+                    'temperature' => 0.3, // Low temperature for consistent results
+                ]
+            );
+            
+            $response = $aiService->generateText($request);
+            
+            $friendlyName = trim(strtolower($response->content));
+            
+            // Cache for 24 hours
+            cache()->put($cacheKey, $friendlyName, 86400);
+            
+            return $friendlyName;
+            
+        } catch (\Exception $e) {
+            // Fallback to simple conversion if AI fails
+            \Illuminate\Support\Facades\Log::warning('AI entity name conversion failed, using fallback', [
+                'field_name' => $fieldName,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return $this->getFriendlyEntityNameFallback($fieldName);
+        }
+    }
+    
+    /**
+     * Fallback method for entity name conversion (when AI is unavailable)
+     */
+    private function getFriendlyEntityNameFallback(string $fieldName): string
+    {
+        // Remove common suffixes like '_id', '_ids'
+        $friendly = preg_replace('/_ids?$/', '', $fieldName);
+        
+        // Convert underscores to spaces
+        $friendly = str_replace('_', ' ', $friendly);
+        
+        // Simple plural: just add 's' if not already plural
+        if (!str_ends_with($friendly, 's')) {
+            $friendly .= 's';
+        }
+        
+        return $friendly;
     }
     
     /**
@@ -549,11 +832,12 @@ class GenericEntityResolver
         array $missing,
         UnifiedActionContext $context
     ): ActionResult {
-        $entityName = class_basename($config['model']);
+        // Use display_name from config, or convert field name to friendly name
+        $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
         $context->set("{$fieldName}_creation_step", 'ask_create');
         $context->set("{$fieldName}_creation_index", 0);
         
-        $message = "The following {$entityName}s don't exist:\n\n";
+        $message = "The following {$entityName} don't exist:\n\n";
         foreach ($missing as $item) {
             $message .= "• {$item['name']}";
             if (isset($item['quantity'])) {

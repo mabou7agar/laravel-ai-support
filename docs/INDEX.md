@@ -21,6 +21,9 @@ Start here if you're new to Laravel AI Engine:
 - **[Conversations](features/conversations.md)** - Conversation management and memory
 - **[Actions System](features/actions.md)** - Smart actions and executors
 - **[Data Collector](features/data-collector.md)** - Conversational forms with AI
+- **[Workflow System](features/workflows.md)** - Multi-step conversational workflows
+- **[Subworkflows](features/subworkflows.md)** - Nested workflow delegation
+- **[ChatService Integration](features/chat-workflow-integration.md)** - Workflow + Chat integration
 
 ### Vector Search & Embeddings
 - **[Vector Search](features/vector-search.md)** - Semantic search and embeddings
@@ -98,7 +101,7 @@ Historical documentation and implementation notes:
 | Category | Documents |
 |----------|-----------|
 | **Getting Started** | [Installation](getting-started/installation.md) • [Quick Start](getting-started/quickstart.md) • [Configuration](getting-started/configuration.md) |
-| **Core Features** | [RAG](features/rag.md) • [Actions](features/actions.md) • [Data Collector](features/data-collector.md) • [Vector Search](features/vector-search.md) |
+| **Core Features** | [RAG](features/rag.md) • [Actions](features/actions.md) • [Workflows](features/workflows.md) • [Data Collector](features/data-collector.md) • [Vector Search](features/vector-search.md) |
 | **Federated RAG** | [Quick Start](federated-rag/quick-start.md) • [Intelligent Search](federated-rag/intelligent-search.md) • [Collection Selection](federated-rag/collection-selection.md) |
 | **Security** | [Multi-Tenant](security/multi-tenant-access-control.md) • [Access Control](security/simplified-access-control.md) • [Workspace Isolation](security/workspace-isolation.md) |
 | **Advanced** | [Custom Filters](advanced/custom-search-filters.md) • [Chunking](advanced/chunking-strategies.md) • [Media Processing](advanced/large-media-processing.md) |

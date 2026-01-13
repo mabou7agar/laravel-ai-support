@@ -23,6 +23,12 @@ abstract class AgentWorkflow
         $this->ai = $ai;
         $this->tools = $tools;
         $this->steps = $this->defineSteps();
+        
+        Log::channel('ai-engine')->info('Workflow initialized', [
+            'class' => get_class($this),
+            'steps_count' => count($this->steps),
+            'steps' => array_map(fn($s) => $s->getName(), $this->steps),
+        ]);
     }
 
     abstract public function defineSteps(): array;
@@ -218,7 +224,7 @@ abstract class AgentWorkflow
         ], $context);
     }
 
-    protected function searchOptions(string $fieldName, ?string $query = null, ?string $modelClass = null, UnifiedActionContext $context): ActionResult
+    protected function searchOptions(string $fieldName, UnifiedActionContext $context, ?string $query = null, ?string $modelClass = null): ActionResult
     {
         return $this->useTool('search_options', [
             'field_name' => $fieldName,
@@ -227,7 +233,7 @@ abstract class AgentWorkflow
         ], $context);
     }
 
-    protected function suggestValue(string $fieldName, string $fieldType = 'string', array $additionalContext = [], UnifiedActionContext $context): ActionResult
+    protected function suggestValue(string $fieldName, UnifiedActionContext $context, string $fieldType = 'string', array $additionalContext = []): ActionResult
     {
         return $this->useTool('suggest_value', [
             'field_name' => $fieldName,
@@ -236,7 +242,7 @@ abstract class AgentWorkflow
         ], $context);
     }
 
-    protected function explainField(string $fieldName, string $description = '', string $rules = '', UnifiedActionContext $context): ActionResult
+    protected function explainField(string $fieldName, UnifiedActionContext $context, string $description = '', string $rules = ''): ActionResult
     {
         return $this->useTool('explain_field', [
             'field_name' => $fieldName,

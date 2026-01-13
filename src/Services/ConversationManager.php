@@ -100,11 +100,13 @@ class ConversationManager
             'finish_reason' => $response->finishReason,
         ]);
 
-        // Update usage statistics
+        // Update usage statistics with credits
         $usage = $response->getUsage();
+        $creditsUsed = $response->getCreditsUsed(); // Get credits from response
+        
         $message->updateUsageStats(
             $usage['total_tokens'] ?? null,
-            null // credits_used - not available in usage array
+            $creditsUsed
         );
 
         // Auto-generate title if this is the first assistant message

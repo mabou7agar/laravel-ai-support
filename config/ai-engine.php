@@ -476,7 +476,16 @@ return [
         'enabled' => env('AI_CREDITS_ENABLED', true),
         'default_balance' => env('AI_DEFAULT_CREDITS', 100.0),
         'low_balance_threshold' => env('AI_LOW_BALANCE_THRESHOLD', 10.0),
-        'currency' => env('AI_CREDITS_CURRENCY', 'credits'),
+        'currency' => env('AI_CREDITS_CURRENCY', 'MyCredits'),
+        
+        // Engine conversion rates: MyCredits to Engine Credits
+        // Example: 'openai' => 2.0 means 100 MyCredits = 50 OpenAI credits
+        'engine_rates' => [
+            'openai' => env('AI_OPENAI_RATE', 2.0),      // 2:1 ratio
+            'anthropic' => env('AI_ANTHROPIC_RATE', 3.0), // 3:1 ratio
+            'gemini' => env('AI_GEMINI_RATE', 1.0),       // 1:1 ratio
+            'openrouter' => env('AI_OPENROUTER_RATE', 2.5), // 2.5:1 ratio
+        ],
     ],
 
     /*

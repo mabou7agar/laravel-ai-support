@@ -98,7 +98,21 @@ class AgentMode
         }
 
         // Get the step from workflow
-        return $workflow->getStep($context->currentStep);
+        $step = $workflow->getStep($context->currentStep);
+        
+        // If step doesn't exist in this workflow, we might be in a subworkflow
+        // that was just started - get the first step instead
+        if (!$step && $context->isInSubworkflow()) {
+            Log::channel('ai-engine')->info('Step not found in current workflow, starting from first step', [
+                'workflow' => get_class($workflow),
+                'requested_step' => $context->currentStep,
+            ]);
+            
+            $context->currentStep = null;
+            return $workflow->getFirstStep();
+        }
+        
+        return $step;
     }
 
     protected function executeStep(
@@ -106,9 +120,11 @@ class AgentMode
         UnifiedActionContext $context,
         string $message
     ): ActionResult {
-        Log::channel('ai-engine')->info('Executing workflow step', [
+        Log::channel('ai-engine')->info('🔵 EXECUTING STEP', [
             'step' => $step->getName(),
+            'description' => $step->getDescription(),
             'requires_input' => $step->doesRequireUserInput(),
+            'message' => $message,
         ]);
 
         try {
@@ -120,9 +136,11 @@ class AgentMode
             // Execute the step
             $result = $step->run($context);
 
-            Log::channel('ai-engine')->info('Step execution completed', [
+            Log::channel('ai-engine')->info('✅ STEP COMPLETED', [
                 'step' => $step->getName(),
                 'success' => $result->success,
+                'needs_user_input' => $result->needsUserInput ?? false,
+                'message_preview' => substr($result->message ?? '', 0, 100),
             ]);
 
             return $result;
@@ -178,6 +196,19 @@ class AgentMode
                 data: $result->data,
                 context: $context
             );
+        }
+        
+        // Check if a subworkflow was pushed onto the stack during step execution
+        if ($context->isInSubworkflow()) {
+            // A subworkflow was started - the context now points to the subworkflow
+            // We need to execute the first step of the subworkflow
+            Log::channel('ai-engine')->info('Subworkflow detected, switching context', [
+                'parent_workflow' => $context->getParentWorkflow()['workflow'] ?? 'unknown',
+                'subworkflow' => $context->currentWorkflow,
+            ]);
+            
+            // The subworkflow has been started, continue execution with new workflow
+            return $this->execute('', $context);
         }
         
         // Determine next step based on result

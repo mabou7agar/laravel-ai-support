@@ -33,6 +33,12 @@ class AIEngineService
         $startTime = microtime(true);
         $requestId = uniqid('ai_req_');
         
+        // Auto-detect authenticated user if userId not provided
+        // IMPORTANT: withUserId returns a NEW immutable request, so we must reassign
+        if (!$request->userId && auth()->check()) {
+            $request = $request->withUserId((string)auth()->id());
+        }
+        
         // Debug mode: Log prompt before sending
         $debugMode = config('ai-engine.debug', false) || ($request->metadata['debug'] ?? false);
         if ($debugMode) {
@@ -45,6 +51,7 @@ class AIEngineService
                 'system_prompt' => $request->systemPrompt ?? null,
                 'temperature' => $request->temperature,
                 'max_tokens' => $request->maxTokens,
+                'user_id' => $request->userId,
             ]);
         }
 
@@ -70,9 +77,17 @@ class AIEngineService
             // Generate the response
             $response = $driver->generate($request);
 
-            // Deduct credits if successful
+            // Calculate and deduct credits if successful
+            $creditsUsed = 0;
             if ($response->success && $request->userId) {
-                $this->creditManager->deductCredits($request->userId, $request);
+                $creditsUsed = $this->creditManager->calculateCredits($request);
+                $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
+                
+                // Add credits to response for tracking
+                $response = $response->withUsage(
+                    tokensUsed: $response->tokensUsed,
+                    creditsUsed: $creditsUsed
+                );
             }
 
             $processingTime = microtime(true) - $startTime;
@@ -100,6 +115,10 @@ class AIEngineService
 
             return $response;
 
+        } catch (InsufficientCreditsException $e) {
+            // Re-throw InsufficientCreditsException so caller can handle it
+            throw $e;
+            
         } catch (\Exception $e) {
             $processingTime = microtime(true) - $startTime;
 
@@ -183,6 +202,11 @@ class AIEngineService
      */
     public function stream(AIRequest $request): \Generator
     {
+        // Auto-detect authenticated user if userId not provided
+        if (!$request->userId && auth()->check()) {
+            $request = $request->withUserId((string)auth()->id());
+        }
+        
         // Check credits before processing
         if ($request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
             throw new InsufficientCreditsException('Insufficient credits for this request');

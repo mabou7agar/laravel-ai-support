@@ -410,6 +410,32 @@ class AIRequest
     }
 
     /**
+     * Set user ID
+     */
+    public function withUserId(string $userId): self
+    {
+        return new self(
+            $this->prompt,
+            $this->engine,
+            $this->model,
+            $this->parameters,
+            $userId,
+            $this->conversationId,
+            $this->context,
+            $this->files,
+            $this->stream,
+            $this->systemPrompt,
+            $this->messages,
+            $this->maxTokens,
+            $this->temperature,
+            $this->seed,
+            $this->metadata,
+            $this->functions,
+            $this->functionCall
+        );
+    }
+
+    /**
      * Add metadata
      */
     public function withMetadata(array $metadata): self

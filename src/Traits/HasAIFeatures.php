@@ -37,6 +37,15 @@ trait HasAIFeatures
     use AutoResolvesRelationships;
     
     /**
+     * Get AI configuration statically (for WorkflowConfigBuilder)
+     */
+    public static function getAIConfig(): array
+    {
+        $instance = new static();
+        return $instance->initializeAI();
+    }
+    
+    /**
      * Boot the trait
      */
     public static function bootHasAIFeatures()

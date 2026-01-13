@@ -331,34 +331,45 @@ class AIConfigBuilder
      * find-or-create capability driven by GenericEntityResolver.
      * 
      * @param string $name Field name (e.g., 'customer_id')
-     * @param array $config Entity configuration
+     * @param array|\LaravelAIEngine\DTOs\EntityFieldConfig $config Entity configuration
      * @return self
      * 
      * @example
+     * // Using array (legacy)
      * ->entityField('customer_id', [
      *     'model' => Customer::class,
      *     'search_fields' => ['name', 'email', 'contact'],
-     *     'interactive' => true,
-     *     
-     *     // Custom filters (replaces workspace)
-     *     'filters' => fn($query) => $query->where('workspace_id', getActiveWorkSpace()),
-     *     // Or: 'filters' => ['workspace_id' => 1],
-     *     // Or: 'filters' => fn($query) => $query->where('status', 'active')->where('tenant_id', auth()->user()->tenant_id),
-     *     
-     *     // Custom resolver (optional)
-     *     'resolver' => CustomCustomerResolver::class,
-     *     
-     *     'defaults' => ['status' => 'active'],
+     *     'filters' => fn($query) => $query->where('workspace', getActiveWorkSpace()),
+     *     'subflow' => CreateCustomerWorkflow::class,
      * ])
+     * 
+     * // Using DTO (recommended)
+     * ->entityField('customer_id', EntityFieldConfig::make(Customer::class)
+     *     ->searchFields(['name', 'email', 'contact'])
+     *     ->filters(fn($query) => $query->where('workspace', getActiveWorkSpace()))
+     *     ->subflow(CreateCustomerWorkflow::class)
+     *     ->checkDuplicates()
+     * )
      */
-    public function entityField(string $name, array $config): self
+    public function entityField(string $name, array|\LaravelAIEngine\DTOs\EntityFieldConfig $config): self
     {
+        // Convert DTO to array if needed
+        if ($config instanceof \LaravelAIEngine\DTOs\EntityFieldConfig) {
+            $config = $config->toArray();
+        }
+        
         $this->config['fields'][$name] = array_merge([
             'type' => 'entity',
             'required' => $config['required'] ?? false,
             'description' => $config['description'] ?? class_basename($config['model'] ?? '') . ' reference',
             'resolver' => $config['resolver'] ?? 'GenericEntityResolver',
         ], $config);
+        
+        // Store as entities config for workflow integration
+        if (!isset($this->config['entities'])) {
+            $this->config['entities'] = [];
+        }
+        $this->config['entities'][$name] = $config;
         
         return $this;
     }
@@ -370,30 +381,48 @@ class AIConfigBuilder
      * with automatic find-or-create capability.
      * 
      * @param string $name Field name (e.g., 'products', 'items')
-     * @param array $config Entity configuration
+     * @param array|\LaravelAIEngine\DTOs\EntityFieldConfig $config Entity configuration
      * @return self
      * 
      * @example
+     * // Using array (legacy)
      * ->entitiesField('products', [
      *     'model' => Product::class,
      *     'search_fields' => ['name', 'sku'],
-     *     'interactive' => true,
-     *     
-     *     // Custom filters
      *     'filters' => fn($query) => $query->where('workspace_id', getActiveWorkSpace()),
-     *     
-     *     // Custom resolver (optional)
-     *     'resolver' => CustomProductResolver::class,
+     *     'subflow' => CreateProductWorkflow::class,
      * ])
+     * 
+     * // Using DTO (recommended)
+     * ->entitiesField('items', EntityFieldConfig::make(Product::class)
+     *     ->searchFields(['name', 'sku'])
+     *     ->filters(fn($query) => $query->where('workspace_id', getActiveWorkSpace()))
+     *     ->subflow(CreateProductWorkflow::class)
+     *     ->multiple()
+     * )
      */
-    public function entitiesField(string $name, array $config): self
+    public function entitiesField(string $name, array|\LaravelAIEngine\DTOs\EntityFieldConfig $config): self
     {
+        // Convert DTO to array if needed
+        if ($config instanceof \LaravelAIEngine\DTOs\EntityFieldConfig) {
+            $config = $config->toArray();
+        }
+        
+        // Ensure multiple flag is set
+        $config['multiple'] = true;
+        
         $this->config['fields'][$name] = array_merge([
             'type' => 'entities',
             'required' => $config['required'] ?? false,
             'description' => $config['description'] ?? 'Multiple ' . class_basename($config['model'] ?? '') . ' references',
             'resolver' => $config['resolver'] ?? 'GenericEntityResolver',
         ], $config);
+        
+        // Store as entities config for workflow integration
+        if (!isset($this->config['entities'])) {
+            $this->config['entities'] = [];
+        }
+        $this->config['entities'][$name] = $config;
         
         return $this;
     }
