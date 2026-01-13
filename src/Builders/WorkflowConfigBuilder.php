@@ -1,0 +1,339 @@
+<?php
+
+namespace LaravelAIEngine\Builders;
+
+class WorkflowConfigBuilder
+{
+    protected array $config = [
+        'goal' => '',
+        'fields' => [],
+        'entities' => [],
+        'conversational_guidance' => [],
+        'final_action' => null,
+    ];
+
+    /**
+     * Set the workflow goal/description
+     */
+    public function goal(string $goal): self
+    {
+        $this->config['goal'] = $goal;
+        return $this;
+    }
+
+    /**
+     * Add a field to collect
+     * 
+     * @param string $name Field name
+     * @param string|array $config Field configuration (string for simple, array for detailed)
+     */
+    public function field(string $name, string|array $config): self
+    {
+        if (is_string($config)) {
+            // Parse simple format: "Description | required | type:email"
+            $this->config['fields'][$name] = $this->parseSimpleField($config);
+        } else {
+            $this->config['fields'][$name] = $config;
+        }
+        
+        return $this;
+    }
+
+    /**
+     * Add multiple fields at once
+     */
+    public function fields(array $fields): self
+    {
+        foreach ($fields as $name => $config) {
+            $this->field($name, $config);
+        }
+        
+        return $this;
+    }
+
+    /**
+     * Add an entity to resolve
+     * 
+     * @param string $name Entity name (e.g., 'customer', 'products')
+     * @param string $modelClass Model class to resolve
+     * @param array $options Additional options
+     */
+    public function entity(string $name, string $modelClass, array $options = []): self
+    {
+        $this->config['entities'][$name] = array_merge([
+            'model' => $modelClass,
+        ], $options);
+        
+        return $this;
+    }
+
+    /**
+     * Add entity with identifier field
+     */
+    public function entityWithIdentifier(
+        string $name,
+        string $identifierField,
+        string $modelClass,
+        array $options = []
+    ): self {
+        return $this->entity($name, $modelClass, array_merge([
+            'identifier_field' => $identifierField,
+        ], $options));
+    }
+
+    /**
+     * Add entity with subworkflow for creation
+     */
+    public function entityWithSubflow(
+        string $name,
+        string $identifierField,
+        string $modelClass,
+        string $subflowClass,
+        array $options = []
+    ): self {
+        return $this->entity($name, $modelClass, array_merge([
+            'identifier_field' => $identifierField,
+            'create_if_missing' => true,
+            'subflow' => $subflowClass,
+        ], $options));
+    }
+
+    /**
+     * Add multiple entities (like products)
+     */
+    public function multipleEntities(
+        string $name,
+        string $identifierField,
+        string $modelClass,
+        array $options = []
+    ): self {
+        return $this->entity($name, $modelClass, array_merge([
+            'identifier_field' => $identifierField,
+            'multiple' => true,
+        ], $options));
+    }
+
+    /**
+     * Add conversational guidance
+     */
+    public function guidance(array|string $guidance): self
+    {
+        if (is_string($guidance)) {
+            $this->config['conversational_guidance'][] = $guidance;
+        } else {
+            $this->config['conversational_guidance'] = array_merge(
+                $this->config['conversational_guidance'],
+                $guidance
+            );
+        }
+        
+        return $this;
+    }
+
+    /**
+     * Set the final action to execute
+     */
+    public function finalAction(callable|string $action): self
+    {
+        $this->config['final_action'] = $action;
+        return $this;
+    }
+    
+    /**
+     * Enable confirmation before completing the workflow
+     */
+    public function confirmBeforeComplete(bool $confirm = true): self
+    {
+        $this->config['confirm_before_complete'] = $confirm;
+        return $this;
+    }
+
+    /**
+     * Import entity configuration from a model's AI config
+     * 
+     * @param string $modelClass Model class with AI configuration
+     * @param array $fieldMapping Map model fields to workflow entity names
+     */
+    public function fromModel(string $modelClass, array $fieldMapping = []): self
+    {
+        // Get model's AI configuration
+        if (!method_exists($modelClass, 'getAIConfig')) {
+            throw new \Exception("Model {$modelClass} does not have AI configuration");
+        }
+        
+        $aiConfig = $modelClass::getAIConfig();
+        
+        // Import description as goal if not set
+        if (empty($this->config['goal']) && !empty($aiConfig['description'])) {
+            $this->config['goal'] = $aiConfig['description'];
+        }
+        
+        // Import regular fields
+        if (!empty($aiConfig['fields'])) {
+            foreach ($aiConfig['fields'] as $fieldName => $fieldConfig) {
+                // Don't overwrite existing fields
+                if (!isset($this->config['fields'][$fieldName])) {
+                    $this->config['fields'][$fieldName] = $fieldConfig;
+                }
+            }
+        }
+        
+        // Import entity fields from model
+        if (!empty($aiConfig['entities'])) {
+            foreach ($aiConfig['entities'] as $fieldName => $entityConfig) {
+                // Determine entity name (use mapping or derive from field name)
+                $entityName = $fieldMapping[$fieldName] ?? $this->deriveEntityName($fieldName);
+                
+                // Auto-generate field definition for data collection
+                $isMultiple = !empty($entityConfig['multiple']) || str_ends_with($fieldName, 's') || str_contains($fieldName, 'items');
+                
+                $this->config['fields'][$fieldName] = [
+                    'type' => 'entity', // Mark as entity type so AI extraction skips it
+                    'required' => true,
+                    'description' => ucfirst($entityName) . ' identifier',
+                    'prompt' => $isMultiple 
+                        ? "What {$entityName} would you like to add?" 
+                        : "What is the {$entityName} name, email, or identifier?",
+                ];
+                
+                // Convert AI config entity to workflow entity
+                $workflowEntity = [
+                    'model' => $entityConfig['model'],
+                ];
+                
+                // Add identifier field (use the field name from model)
+                $workflowEntity['identifier_field'] = $fieldName;
+                
+                // Import search fields if available
+                if (!empty($entityConfig['search_fields'])) {
+                    $workflowEntity['search_fields'] = $entityConfig['search_fields'];
+                }
+                
+                // Import filters if available
+                if (!empty($entityConfig['filters'])) {
+                    $workflowEntity['filters'] = $entityConfig['filters'];
+                }
+                
+                // Import subflow if available
+                if (!empty($entityConfig['subflow'])) {
+                    $workflowEntity['subflow'] = $entityConfig['subflow'];
+                    $workflowEntity['create_if_missing'] = true;
+                }
+                
+                // Import identifier provider if available
+                if (!empty($entityConfig['identifier_provider'])) {
+                    $workflowEntity['identifier_provider'] = $entityConfig['identifier_provider'];
+                }
+                
+                // Import confirm_before_create if available
+                if (!empty($entityConfig['confirm_before_create'])) {
+                    $workflowEntity['confirm_before_create'] = $entityConfig['confirm_before_create'];
+                }
+                
+                // Check if it's a multiple entity (array)
+                if ($isMultiple) {
+                    $workflowEntity['multiple'] = true;
+                }
+                
+                // Add to workflow entities
+                $this->config['entities'][$entityName] = $workflowEntity;
+            }
+        }
+        
+        return $this;
+    }
+
+    /**
+     * Derive entity name from field name
+     * Examples: customer_id -> customer, items -> products
+     */
+    protected function deriveEntityName(string $fieldName): string
+    {
+        // Remove common suffixes
+        $name = preg_replace('/_id$/', '', $fieldName);
+        
+        // Handle plural to singular for common cases
+        if ($name === 'items') {
+            return 'products';
+        }
+        
+        return $name;
+    }
+
+    /**
+     * Detect if this workflow is being used as a subflow
+     * If the model has entities that reference this workflow as a subflow, skip entity imports
+     */
+    protected function detectSubflowContext(string $modelClass, array $aiConfig): bool
+    {
+        // Get the current workflow class from debug backtrace
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 10);
+        $workflowClass = null;
+        
+        foreach ($trace as $frame) {
+            if (isset($frame['class']) && str_contains($frame['class'], 'Workflow')) {
+                $workflowClass = $frame['class'];
+                break;
+            }
+        }
+        
+        if (!$workflowClass) {
+            return false;
+        }
+        
+        // Check if any entity in the model config has this workflow as a subflow
+        if (!empty($aiConfig['entities'])) {
+            foreach ($aiConfig['entities'] as $entityConfig) {
+                if (isset($entityConfig['subflow']) && $entityConfig['subflow'] === $workflowClass) {
+                    // This workflow is being used as a subflow for this model
+                    // Skip entity imports to prevent circular dependency
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Build and return the configuration array
+     */
+    public function build(): array
+    {
+        return $this->config;
+    }
+
+    /**
+     * Parse simple field format: "Description | required | type:email"
+     */
+    protected function parseSimpleField(string $config): array
+    {
+        $parts = array_map('trim', explode('|', $config));
+        
+        $field = [
+            'description' => $parts[0] ?? '',
+            'required' => false,
+            'type' => 'string',
+        ];
+        
+        foreach (array_slice($parts, 1) as $part) {
+            if ($part === 'required') {
+                $field['required'] = true;
+            } elseif (str_starts_with($part, 'type:')) {
+                $field['type'] = substr($part, 5);
+            } elseif (str_starts_with($part, 'prompt:')) {
+                $field['prompt'] = substr($part, 7);
+            }
+        }
+        
+        return $field;
+    }
+
+    /**
+     * Create a new builder instance
+     */
+    public static function make(): self
+    {
+        return new self();
+    }
+}

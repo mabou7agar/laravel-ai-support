@@ -1,0 +1,3083 @@
+<div align="center">
+
+# 🚀 Laravel AI Engine
+
+### Enterprise-Grade Multi-AI Integration with Federated RAG
+
+[![Latest Version](https://img.shields.io/packagist/v/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
+[![Total Downloads](https://img.shields.io/packagist/dt/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
+[![License](https://img.shields.io/packagist/l/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
+[![PHP Version](https://img.shields.io/packagist/php-v/m-tech-stack/laravel-ai-engine.svg?style=flat-square)](https://packagist.org/packages/m-tech-stack/laravel-ai-engine)
+[![Laravel](https://img.shields.io/badge/Laravel-8%20%7C%209%20%7C%2010%20%7C%2011%20%7C%2012-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
+
+**The most advanced Laravel AI package with Federated RAG, Smart Action System, Intelligent Context Retrieval, Dynamic Model Registry, and Enterprise-Grade Multi-Tenant Security.**
+
+**🎯 100% Future-Proof** - Automatically supports GPT-5, GPT-6, Claude 4, and all future AI models!
+
+**🆕 New in v2.x:** Smart Action System, Workspace Isolation, Multi-Database Tenancy, and AI-powered executors for email, calendar, tasks, and more!
+
+[Quick Start](#-quick-start) • [Features](#-key-features) • [Smart Actions](#-interactive-actions) • [Multi-Tenant Security](#-multi-tenant-access-control) • [Multi-DB Tenancy](#-multi-database-tenancy) • [Documentation](#-documentation)
+
+---
+
+## 📋 Quick Reference
+
+| Feature | Description | Code Example |
+|---------|-------------|--------------|
+| **Simple Chat** | Direct AI response (no RAG) | `useIntelligentRAG: false` |
+| **RAG Search** | Search your knowledge base | `useIntelligentRAG: true, ragCollections: [Email::class]` |
+| **Aggregate Queries** | Count, statistics, summaries | `"how many emails do I have"` → Auto-detected |
+| **Numbered Options** | Clickable response options | `numbered_options` in response |
+| **Smart Actions** | AI-powered executable actions | `POST /api/v1/actions/execute` |
+| **Action Execution** | Execute with AI param filling | `executor: 'email.reply'` → AI drafts reply |
+| **Federated Actions** | Actions route to correct node | Collection-based auto-routing |
+| **Conversation Memory** | Remember chat history | `useMemory: true` |
+| **User Isolation** | Secure multi-tenant RAG | `userId: $request->user()->id` |
+| **Workspace Isolation** | Data scoped to workspace | `$user->workspace_id = 5` |
+| **Multi-DB Tenancy** | Separate collections per tenant | `AI_ENGINE_MULTI_DB_TENANCY=true` |
+| **Admin Access** | Access all data in RAG | `$user->is_admin = true` or `hasRole('admin')` |
+| **Multi-Engine** | Switch AI providers | `engine: 'openai'` / `'anthropic'` / `'google'` |
+| **GPT-5 Support** | Full GPT-5 family support | `model: 'gpt-5-mini'` / `'gpt-5.1'` |
+| **Streaming** | Real-time responses | `streamMessage(callback: fn($chunk))` |
+| **Federated RAG** | Distributed search | `AI_ENGINE_NODES_ENABLED=true` |
+| **Intelligent Search** | AI selects collections | `availableCollections: []` = auto-discovery |
+| **RAG Descriptions** | Describe collection content | `getRAGDescription()` method |
+| **Simple Filters** | Property-based access control | `public static $skipUserFilter = true` |
+| **Force Reindex** | Recreate collections | `php artisan ai-engine:vector-index --force` |
+| **Data Collector** | Conversational forms | [Full Guide](docs/features/data-collector.md) |
+| **Workflow System** | Multi-step conversational workflows | `AgentMode::startWorkflow()` |
+| **Subworkflows** | Nested workflow delegation | Parent/child workflow stack |
+| **Publishing Routes** | Customize API endpoints | `vendor:publish --tag=ai-engine-routes` |
+
+**💡 Key Point:** `useIntelligentRAG: false` = **NO RAG at all** (direct AI response)
+
+**🆕 New:** Intelligent Federated Search - AI automatically discovers and selects the right collections across all nodes!
+
+</div>
+
+---
+
+## 🎯 What Makes This Package Unique?
+
+<table>
+<tr>
+<td width="33%" align="center">
+
+### 🌐 Federated RAG
+**Distribute knowledge across nodes:**
+```php
+// Master searches child nodes automatically
+$response = $rag->processMessage(
+    'Show me Laravel tutorials',
+    collections: ['App\Models\Post']
+);
+// Searches local + remote nodes!
+```
+
+</td>
+<td width="33%" align="center">
+
+### 🤖 Intelligent RAG
+**AI decides when to search:**
+```php
+// AI auto-analyzes and searches
+$response = $chat->processMessage(
+    'What emails do I have?',
+    useIntelligentRAG: true
+);
+```
+
+</td>
+<td width="33%" align="center">
+
+### 🚀 Future-Proof
+**GPT-5 ready today:**
+```bash
+php artisan ai-engine:sync-models
+```
+**Done!** No code changes needed.
+
+</td>
+</tr>
+<tr>
+<td width="33%" align="center">
+
+### 🎯 Hybrid Function Calling
+**Type-safe + Flexible:**
+```php
+// Define schema once
+public static function getFunctionSchema()
+// 70% less normalization code
+// Automatic fallback
+```
+[Full Guide →](docs/HYBRID_FUNCTION_CALLING.md)
+
+</td>
+<td width="33%" align="center">
+
+### 🔄 Smart Actions
+**AI-powered executors:**
+```php
+// AI extracts & validates
+$invoice = Invoice::createFromChat(
+    'Invoice for $1099'
+);
+// Handles relationships automatically
+```
+
+</td>
+<td width="33%" align="center">
+
+### 🔒 Multi-Tenant Security
+**Enterprise-grade isolation:**
+```php
+// User + Workspace isolation
+// Multi-database tenancy
+// Admin override support
+// Zero-config security
+```
+
+</td>
+</tr>
+</table>
+
+---
+
+## ✨ Key Features
+
+### 🌐 Federated RAG (Distributed Knowledge Base)
+- **Multi-Node Architecture**: Distribute collections across multiple servers
+- **Automatic Discovery**: Master node auto-discovers collections from child nodes
+- **Transparent Search**: Search local + remote collections seamlessly
+- **Smart Routing**: AI-powered query routing to relevant nodes
+- **Health Monitoring**: Automatic health checks and circuit breakers
+- **JWT Authentication**: Secure node-to-node communication
+
+### 🧠 Intelligent RAG (AI-Powered Context Retrieval)
+- **Smart Query Analysis**: AI decides if context is needed
+- **Semantic Search**: Vector-based similarity search
+- **Multi-Collection**: Search across multiple models simultaneously
+- **Source Citations**: Automatic source attribution
+- **Flexible Prompts**: Works with ANY embedded content (emails, docs, posts, etc.)
+- **Threshold Optimization**: Balanced precision/recall (0.3 default)
+
+### 🤖 Multi-AI Engine Support
+- **OpenAI**: GPT-5.1, GPT-5, GPT-5-mini, GPT-4o, O1, O3
+- **Anthropic**: Claude 4.5 Sonnet, Claude 4 Opus, Claude 3.5 Sonnet
+- **Google**: Gemini 3 Pro, Gemini 2.5 Pro/Flash, Gemini 2.0
+- **DeepSeek**: DeepSeek V3, DeepSeek Chat
+- **Perplexity**: Sonar Pro, Sonar
+- **Unified API**: Same interface for all providers
+- **Future-Proof**: Full support for latest models with auto-discovery
+
+### 🎯 Hybrid Function Calling (New!)
+- **Type Safety**: OpenAI function calling with strict schemas
+- **Flexibility**: Minimal normalization for edge cases
+- **70% Code Reduction**: Simplified from 170 to 50 lines
+- **Automatic Fallback**: Works with or without function schemas
+- **Conversational Updates**: "change quantity to 5" still works
+- **Backward Compatible**: Zero breaking changes
+- 📖 **[Complete Guide](docs/HYBRID_FUNCTION_CALLING.md)**
+
+### 📊 Dynamic Model Registry
+- **Auto-Discovery**: Automatically detects new AI models
+- **Database-Driven**: All models stored with metadata
+- **Cost Tracking**: Pricing, capabilities, context windows
+- **Smart Recommendations**: AI suggests best model for task
+- **Version Control**: Track model versions and deprecations
+
+### 💾 Advanced Memory Management
+- **Conversation History**: Multi-turn conversations
+- **Context Windows**: Automatic token management
+- **Memory Optimization**: Smart truncation and summarization
+- **Session Management**: User-specific conversation tracking
+
+### 🎬 Real-Time Streaming
+- **SSE Support**: Server-Sent Events for live responses
+- **Chunk Processing**: Process responses as they arrive
+- **Progress Tracking**: Real-time generation progress
+- **Error Handling**: Graceful stream error recovery
+
+### 🔍 Vector Search & Embeddings
+- **Multiple Providers**: OpenAI, Voyage AI, Cohere
+- **Auto-Indexing**: Automatic vector generation
+- **Hybrid Search**: Combine vector + keyword search
+- **Media Support**: Images, PDFs, documents
+- **Smart Chunking**: Large content automatically chunked (never skipped)
+- **Auto Payload Indexes**: Automatically detects and creates indexes from model relationships
+- **Schema-Based Types**: Detects field types (integer, UUID, string) from database schema
+- **Force Recreate**: `--force` flag to delete and recreate collections with fresh schema
+- **Index Verification**: Auto-checks and creates missing payload indexes during indexing
+- **Multi-Tenant Collections**: Configurable collection prefix with `vec_` default
+- **Project Context Injection**: Configure domain-specific context for better AI understanding
+
+### 🎯 Smart Features
+- **Dynamic Actions**: AI-suggested next actions
+- **File Analysis**: Upload and analyze files
+- **URL Processing**: Fetch and analyze web content
+- **Multi-Modal**: Text, images, documents
+- **Batch Processing**: Process multiple requests efficiently
+
+### 🧾 AI-Powered Invoice System
+- **81% Code Reduction**: Optimized from 440+ lines to 95 lines
+- **Automatic Relationship Resolution**: Customer, products, categories auto-created/found
+- **Nested Array Support**: Handles both string and nested object formats
+- **Chat Integration**: Natural language invoice creation via chat
+- **Email Preservation**: Maintains all customer fields during resolution
+- **Product Name Resolution**: Fetches actual product names from database
+- **Workspace-Scoped IDs**: Auto-increments customer_id per workspace
+- **Generic Solution**: No hardcoded logic, fully configurable
+- **Field Mapping**: Converts chat format (flat fields) to database structure
+- **Complete Automation**: Zero manual intervention required
+
+### 💬 Data Collector Chat
+- **Conversational Forms**: Replace traditional forms with AI-guided conversations
+- **Smart Field Extraction**: 3-layer extraction system (markers → structured text → direct extraction)
+- **Robust Field Tracking**: Accurate progress tracking with all fields (required + optional)
+- **AI-Generated Summaries**: Dynamic previews with modification support
+- **Output Modification**: Modify AI-generated content (lessons, structure) during enhancement
+- **Confirmed Output Matching**: Final JSON matches exactly what user confirmed
+- **Structured Output**: Generate complex JSON data (courses with lessons, etc.)
+- **Field Validation**: Built-in validation with helpful error messages
+- **Multi-Language Support**: Force specific language or auto-detect from user input
+- **Enhancement Mode**: Users can modify both input fields and generated output
+- **Interactive Actions**: Quick reply buttons and field options
+- **Blade Component**: Ready-to-use `<x-ai-engine::data-collector />` component
+
+### 🔄 Workflow System
+- **Multi-Step Workflows**: Create complex conversational flows with multiple steps
+- **Declarative Workflows**: Auto-generate steps from field definitions using `AutomatesSteps` trait
+- **Manual Workflows**: Full control with explicit step definitions and custom logic
+- **Subworkflow Support**: Delegate tasks to child workflows with automatic context management
+- **Workflow Stack**: Parent/child workflow relationships with push/pop operations
+- **Context Persistence**: Workflow state saved to cache and restored across messages
+- **ChatService Integration**: Workflows automatically detected and continued through chat
+- **Session Isolation**: Each session has independent workflow context
+- **Entity Resolution**: Automatic customer, product, and relationship resolution
+- **Conversational Guidance**: AI-guided step-by-step data collection
+
+### 📝 Template Engine
+- **Pre-built Templates**: Summarize, translate, code review, sentiment analysis, and more
+- **Custom Templates**: Create and store your own prompt templates
+- **Variable Substitution**: `{{variable}}` placeholders in prompts
+- **Template Categories**: Writing, coding, translation, analysis, email, data
+- **Execute with AI**: Run templates directly with any AI engine/model
+
+---
+
+## 🌐 Federated RAG (Distributed Knowledge Base)
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Master Node                           │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Federated RAG Service                            │  │
+│  │  • Auto-discovers collections from all nodes     │  │
+│  │  • Searches local + remote collections           │  │
+│  │  • Merges and ranks results                      │  │
+│  └──────────────────────────────────────────────────┘  │
+│         │                    │                    │      │
+│         ▼                    ▼                    ▼      │
+└─────────┼────────────────────┼────────────────────┼─────┘
+          │                    │                    │
+    ┌─────▼─────┐        ┌────▼─────┐        ┌────▼─────┐
+    │  Child 1  │        │ Child 2  │        │ Child 3  │
+    │           │        │          │        │          │
+    │ Posts     │        │ Emails   │        │ Docs     │
+    │ Users     │        │ Messages │        │ Files    │
+    └───────────┘        └──────────┘        └──────────┘
+```
+
+### Setup Federated RAG
+
+**1. Configure Master Node:**
+```bash
+# .env
+AI_ENGINE_IS_MASTER=true
+AI_ENGINE_NODES_ENABLED=true
+AI_ENGINE_JWT_SECRET=your-shared-secret
+```
+
+**2. Configure Child Nodes:**
+```bash
+# .env
+AI_ENGINE_IS_MASTER=false
+AI_ENGINE_JWT_SECRET=your-shared-secret  # Same as master!
+```
+
+**3. Register Child Nodes:**
+```bash
+php artisan ai-engine:node-register \
+    --name="Content Node" \
+    --url="https://content.example.com" \
+    --type=child
+```
+
+**4. Discover Collections:**
+```bash
+php artisan ai-engine:discover-collections
+```
+
+**5. Use Federated RAG:**
+```php
+$rag = app(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class);
+$response = $rag->processMessage(
+    message: 'Show me Laravel tutorials',
+    sessionId: 'user-123',
+    availableCollections: ['App\Models\Post'] // Can exist on any node!
+);
+```
+
+### Features
+
+✅ **Auto-Discovery**: Master finds collections on all nodes  
+✅ **Transparent Search**: No code changes for federated vs local  
+✅ **Health Monitoring**: Automatic node health checks  
+✅ **Circuit Breakers**: Fault tolerance for failed nodes  
+✅ **Load Balancing**: Distribute search across nodes  
+✅ **Secure**: JWT authentication between nodes  
+✅ **Caching**: Smart result caching for performance  
+
+---
+
+## 🔧 Vector Indexing
+
+### Index Your Models
+
+```bash
+# Index a specific model
+php artisan ai-engine:vector-index "App\Models\Document"
+
+# Force recreate collection with fresh schema and indexes
+php artisan ai-engine:vector-index "App\Models\Document" --force
+
+# Index with specific batch size
+php artisan ai-engine:vector-index "App\Models\Document" --batch=50
+```
+
+### What Happens During Indexing
+
+1. **Collection Check**: Verifies if collection exists
+2. **Index Verification**: Checks for missing payload indexes (user_id, tenant_id, etc.)
+3. **Auto-Create Indexes**: Creates any missing indexes automatically
+4. **Content Chunking**: Large content is chunked (never skipped)
+5. **Embedding Generation**: Creates vector embeddings via OpenAI
+6. **Upsert to Qdrant**: Stores vectors with metadata
+
+### Example Output
+
+```
+Indexing App\Models\EmailCache...
+📋 Indexing Fields (From $fillable):
+   • subject
+   • from_address
+   • body_text
+   
+✓ Collection 'vec_email_cache' already exists
+🔍 Checking payload indexes...
+   ✓ All required payload indexes exist
+      • user_id
+      • tenant_id
+      • model_id
+
+🔑 Payload indexes for 'vec_email_cache':
+   • user_id
+   • tenant_id
+   • model_id
+   • workspace_id
+   • visibility
+
+Found 150 models to index
+ 150/150 [============================] 100%
+
+✓ Indexed 150 models successfully
+```
+
+---
+
+## 🎯 Project Context Configuration
+
+Provide domain-specific context to improve AI understanding:
+
+```php
+// config/ai-engine.php
+'project_context' => [
+    'description' => 'Email management system for enterprise customers',
+    'industry' => 'SaaS / Enterprise Software',
+    'key_entities' => [
+        'EmailCache' => 'Cached email messages with full content',
+        'Mailbox' => 'User email accounts and configurations',
+        'User' => 'System users with workspace assignments',
+    ],
+    'business_rules' => [
+        'Users can only access emails from their assigned mailboxes',
+        'Admins can access all emails in their workspace',
+    ],
+    'terminology' => [
+        'workspace' => 'Isolated tenant environment',
+        'mailbox' => 'Connected email account',
+    ],
+    'target_users' => 'Business professionals managing email communications',
+    'data_sensitivity' => 'Contains confidential business communications',
+],
+```
+
+This context is automatically injected into AI prompts for better domain understanding.
+
+---
+
+## 📦 Installation
+
+```bash
+composer require m-tech-stack/laravel-ai-engine
+```
+
+### Requirements
+
+| Requirement | Version |
+|-------------|---------|
+| **PHP** | 8.1+ |
+| **Laravel** | 8.x, 9.x, 10.x, 11.x, 12.x |
+
+> **Note:** Laravel 8 requires PHP 8.1+ due to the use of `readonly` properties.
+
+### Publish Configuration
+
+```bash
+php artisan vendor:publish --tag=ai-engine-config
+php artisan vendor:publish --tag=ai-engine-migrations
+```
+
+### Run Migrations
+
+```bash
+php artisan migrate
+```
+
+### Configure API Keys
+
+```bash
+# .env
+OPENAI_API_KEY=your-openai-key
+ANTHROPIC_API_KEY=your-anthropic-key
+GOOGLE_API_KEY=your-google-key
+```
+
+### Laravel 8 Users: Blade Components
+
+Laravel 8 doesn't support automatic anonymous component registration. To use the package's Blade components, publish them manually:
+
+```bash
+# Publish components to resources/views/components/ai-engine/
+php artisan vendor:publish --tag=ai-engine-components
+```
+
+Then use them in your Blade templates:
+
+```blade
+{{-- Laravel 9+ (automatic) --}}
+<x-ai-engine::chat />
+
+{{-- Laravel 8 (after publishing) --}}
+@include('components.ai-engine.chat')
+{{-- Or create an alias in AppServiceProvider --}}
+```
+
+**Optional:** Register components in `AppServiceProvider` for Laravel 8:
+
+```php
+// app/Providers/AppServiceProvider.php
+public function boot()
+{
+    // Register AI Engine components for Laravel 8
+    Blade::anonymousComponentNamespace('components.ai-engine', 'ai-engine');
+}
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Simple Chat (Without RAG)
+
+Send messages directly to AI without any knowledge base search:
+
+```php
+use LaravelAIEngine\Services\ChatService;
+
+$chat = app(ChatService::class);
+
+// Basic chat - Direct AI response, no RAG
+$response = $chat->processMessage(
+    message: 'Hello! How are you?',
+    sessionId: 'user-123',
+    useIntelligentRAG: false  // ✅ No RAG - Direct AI response
+);
+
+echo $response->content;
+```
+
+**💡 Important:** `useIntelligentRAG: false` means **NO RAG at all**, not "RAG without intelligence". The AI responds directly without searching any knowledge base.
+
+**Use Cases:**
+- ✅ General conversations
+- ✅ Creative writing & brainstorming
+- ✅ Code generation
+- ✅ Math & logic problems
+- ✅ Translation
+- ✅ Q&A without specific context
+
+### 1b. Chat with Memory (No RAG)
+
+Enable conversation history while keeping RAG disabled:
+
+```php
+$response = $chat->processMessage(
+    message: 'What did we discuss earlier?',
+    sessionId: 'user-123',
+    useMemory: true,           // ✅ Remember conversation
+    useIntelligentRAG: false   // ✅ No knowledge base search
+);
+```
+
+**Result:** AI remembers previous messages in the session but doesn't search your data.
+
+### 2. Chat with Intelligent RAG
+
+Enable RAG to search your knowledge base intelligently:
+
+```php
+use LaravelAIEngine\Services\ChatService;
+
+$chat = app(ChatService::class);
+
+$response = $chat->processMessage(
+    message: 'What emails do I have from yesterday?',
+    sessionId: 'user-123',
+    useIntelligentRAG: true,              // ✅ Enable RAG
+    ragCollections: [Email::class],       // ✅ What to search
+    userId: $request->user()->id          // ✅ User isolation
+);
+
+// AI automatically:
+// 1. Analyzes if query needs context
+// 2. Searches your emails in vector database
+// 3. Generates response with citations
+```
+
+**How Intelligent RAG Works:**
+
+```
+User Query: "What emails do I have from yesterday?"
+     ↓
+AI Analysis: "This needs email context"
+     ↓
+Vector Search: Searches user's emails
+     ↓
+Context Retrieved: 3 relevant emails found
+     ↓
+AI Response: "You have 3 emails from yesterday:
+              1. Meeting reminder [Source 0]
+              2. Invoice [Source 1]
+              3. Project update [Source 2]"
+```
+
+### 2b. RAG vs No RAG - When to Use What?
+
+| Scenario | Use RAG? | Example |
+|----------|----------|---------|
+| **Search your data** | ✅ Yes | "Show me emails from John" |
+| **Ask about your content** | ✅ Yes | "What documents mention Laravel?" |
+| **General questions** | ❌ No | "What is Laravel?" |
+| **Code generation** | ❌ No | "Generate a User controller" |
+| **Creative writing** | ❌ No | "Write a poem about coding" |
+| **Math/Logic** | ❌ No | "Calculate 15% of 200" |
+| **Translation** | ❌ No | "Translate 'hello' to Spanish" |
+| **Conversation** | ❌ No | "Tell me a joke" |
+
+**Simple Rule:**
+- **Need to search YOUR data?** → `useIntelligentRAG: true`
+- **General AI capabilities?** → `useIntelligentRAG: false`
+
+### 3. Federated Search
+
+```php
+// Master node automatically searches child nodes
+$response = $rag->processMessage(
+    message: 'Show me all Laravel tutorials',
+    sessionId: 'user-123',
+    availableCollections: [
+        'App\Models\Post',      // May be on child node 1
+        'App\Models\Document',  // May be on child node 2
+        'App\Models\Tutorial'   // May be on master
+    ]
+);
+
+// Searches all nodes, merges results, cites sources!
+```
+
+### 4. Understanding ChatService Parameters
+
+```php
+$response = $chat->processMessage(
+    message: 'Your message',           // Required: User's input
+    sessionId: 'user-123',             // Required: Unique session ID
+    engine: 'openai',                  // Optional: AI provider (default: openai)
+    model: 'gpt-4o',                   // Optional: Specific model (default: gpt-4o-mini)
+    useMemory: true,                   // Optional: Remember conversation (default: true)
+    useActions: true,                  // Optional: Enable AI actions (default: true)
+    useIntelligentRAG: false,          // Optional: Enable RAG search (default: false)
+    ragCollections: [Email::class],    // Optional: Models to search (when RAG enabled)
+    userId: $request->user()->id       // Optional: For user isolation in RAG
+);
+```
+
+**Parameter Details:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `message` | string | **Required** | User's input/question |
+| `sessionId` | string | **Required** | Unique session identifier |
+| `engine` | string | `'openai'` | AI provider: `openai`, `anthropic`, `google`, `deepseek` |
+| `model` | string | `'gpt-4o-mini'` | Specific model to use |
+| `useMemory` | bool | `true` | Remember conversation history |
+| `useActions` | bool | `true` | Enable AI-suggested actions |
+| `useIntelligentRAG` | bool | `false` | **Enable/Disable RAG** (not "intelligent" mode) |
+| `ragCollections` | array | `[]` | Model classes to search (e.g., `[Email::class]`) |
+| `userId` | string\|int | `null` | User ID for data isolation in RAG |
+
+**Common Combinations:**
+
+```php
+// 1. Simple chat (no memory, no RAG)
+$chat->processMessage(
+    message: 'Hello',
+    sessionId: 'temp-' . time(),
+    useMemory: false,
+    useIntelligentRAG: false
+);
+
+// 2. Conversation with memory (no RAG)
+$chat->processMessage(
+    message: 'Remember my name is John',
+    sessionId: 'user-123',
+    useMemory: true,
+    useIntelligentRAG: false
+);
+
+// 3. RAG search with user isolation
+$chat->processMessage(
+    message: 'Show my emails',
+    sessionId: 'user-123',
+    useIntelligentRAG: true,
+    ragCollections: [Email::class],
+    userId: $request->user()->id
+);
+
+// 4. Different AI engine
+$chat->processMessage(
+    message: 'Write an essay',
+    sessionId: 'user-123',
+    engine: 'anthropic',
+    model: 'claude-3-5-sonnet-20241022',
+    useIntelligentRAG: false
+);
+```
+
+### 5. Model Registry
+
+```bash
+# Sync all providers (OpenAI, Anthropic, Google, OpenRouter)
+php artisan ai-engine:sync-models
+
+# Sync specific provider
+php artisan ai-engine:sync-models --provider=openai
+php artisan ai-engine:sync-models --provider=anthropic
+php artisan ai-engine:sync-models --provider=google
+php artisan ai-engine:sync-models --provider=deepseek
+
+# List all models
+php artisan ai-engine:list-models
+
+# Add custom model
+php artisan ai-engine:add-model gpt-5 --interactive
+```
+
+**Supported Models (December 2025):**
+- **OpenAI**: GPT-5.1, GPT-5, GPT-5-mini, GPT-5-nano, GPT-4o, O1, O3
+- **Anthropic**: Claude 4.5 Sonnet, Claude 4 Opus, Claude 4 Sonnet, Claude 3.5
+- **Google**: Gemini 3 Pro, Gemini 2.5 Pro/Flash, Gemini 2.0
+- **DeepSeek**: DeepSeek V3, DeepSeek R1, DeepSeek Chat/Coder
+
+### 5. Vector Indexing
+
+```bash
+# Index all vectorizable models
+php artisan ai-engine:vector-index
+
+# Index specific model
+php artisan ai-engine:vector-index "App\Models\Post"
+
+# Force recreate collection (deletes old, creates new with fresh schema)
+php artisan ai-engine:vector-index --force
+
+# Check status
+php artisan ai-engine:vector-status
+
+# Search
+php artisan ai-engine:vector-search "Laravel routing" --model="App\Models\Post"
+```
+
+**New in v2.x: Smart Payload Indexes**
+
+The `--force` flag now:
+1. **Deletes existing collection** - Removes old collection with wrong dimensions/indexes
+2. **Creates new collection** - With correct embedding dimensions
+3. **Auto-detects relationships** - Creates indexes for all `belongsTo` foreign keys
+4. **Schema-based types** - Detects field types (integer, UUID, string) from database
+
+```php
+// Example: EmailCache model with belongsTo relations
+class EmailCache extends Model
+{
+    public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function mailbox(): BelongsTo { return $this->belongsTo(Mailbox::class); }
+}
+
+// Automatically creates payload indexes for:
+// - user_id (integer - from schema)
+// - mailbox_id (keyword - UUID detected from schema)
+// - Plus config fields: tenant_id, workspace_id, status, etc.
+```
+
+---
+
+## 📖 Usage Examples
+
+### Simple Chat (No RAG)
+
+```php
+use LaravelAIEngine\Services\ChatService;
+
+$chat = app(ChatService::class);
+
+// 1. Basic conversation
+$response = $chat->processMessage(
+    message: 'Write a haiku about Laravel',
+    sessionId: 'user-123',
+    useIntelligentRAG: false
+);
+
+// 2. Code generation
+$response = $chat->processMessage(
+    message: 'Generate a Laravel controller for User CRUD',
+    sessionId: 'user-456',
+    useIntelligentRAG: false,
+    engine: 'openai',
+    model: 'gpt-4o'
+);
+
+// 3. Different AI engines
+$openai = $chat->processMessage(
+    message: 'Explain Laravel routing',
+    sessionId: 'session-1',
+    engine: 'openai',
+    useIntelligentRAG: false
+);
+
+$claude = $chat->processMessage(
+    message: 'Explain Laravel routing',
+    sessionId: 'session-2',
+    engine: 'anthropic',
+    model: 'claude-3-5-sonnet-20241022',
+    useIntelligentRAG: false
+);
+```
+
+### Smart Email Assistant (With RAG)
+
+```php
+$response = $rag->processMessage(
+    message: 'Do I have any unread emails from yesterday?',
+    sessionId: 'user-123',
+    availableCollections: ['App\Models\Email'],
+    userId: $request->user()->id  // ✅ User isolation
+);
+
+// Response:
+// "Yes, you have 3 unread emails from yesterday:
+// 1. Meeting Reminder from John [Source 0]
+// 2. Invoice from Accounting [Source 1]  
+// 3. Project Update from Sarah [Source 2]"
+```
+
+### Document Search
+
+```php
+$response = $rag->processMessage(
+    message: 'Find documents about Laravel routing',
+    sessionId: 'user-123',
+    availableCollections: ['App\Models\Document', 'App\Models\Post']
+);
+
+// Searches across multiple collections and nodes!
+```
+
+### Multi-Engine Chat
+
+```php
+// Use different engines
+$openai = $chat->processMessage('Hello', 'session-1', engine: 'openai');
+$claude = $chat->processMessage('Hello', 'session-2', engine: 'anthropic');
+$gemini = $chat->processMessage('Hello', 'session-3', engine: 'google');
+```
+
+### Streaming Responses
+
+```php
+$chat->streamMessage(
+    message: 'Write a long story',
+    sessionId: 'user-123',
+    callback: function($chunk) {
+        echo $chunk;
+        flush();
+    }
+);
+```
+
+---
+
+## 🧾 AI-Powered Invoice Creation
+
+Create invoices automatically from natural language via chat or API with complete relationship resolution.
+
+### Quick Example
+
+```php
+use App\Models\Invoice;
+
+// Via chat: "Create invoice for John Smith, email john@example.com, 
+// phone +1-555-0123, address 123 Main St. Items: Consulting $5000, 
+// Training $3000, Support $2000"
+
+// Or via API:
+$data = [
+    'customer' => [
+        'name' => 'John Smith',
+        'email' => 'john@example.com',
+        'contact' => '+1-555-0123',
+        'billing_address' => '123 Main St',
+    ],
+    'items' => [
+        ['item' => 'Consulting Services', 'price' => 5000, 'category' => 'Services', 'quantity' => 1],
+        ['item' => 'Training Program', 'price' => 3000, 'category' => 'Education', 'quantity' => 1],
+        ['item' => 'Support Package', 'price' => 2000, 'category' => 'Support', 'quantity' => 1],
+    ]
+];
+
+$result = Invoice::executeAI('create', $data);
+// ✅ Customer auto-created with user account
+// ✅ Products auto-created/found
+// ✅ Categories auto-resolved
+// ✅ Invoice items created
+// ✅ All relationships linked
+```
+
+### Architecture
+
+```
+Chat Input (flat fields)
+  ↓
+normalizeAIData (format conversion)
+  ↓
+AutoResolvesRelationships (all relationships)
+  ↓
+executeAI (invoice-specific logic)
+  ↓
+Complete Invoice with Items
+```
+
+### Setup Your Model
+
+**1. Add AI Configuration:**
+
+```php
+use LaravelAIEngine\Traits\HasAIFeatures;
+
+class Invoice extends Model
+{
+    use HasAIFeatures;
+    
+    public function initializeAI(): array
+    {
+        return $this->aiConfig()
+            ->description('Customer invoice with line items')
+            
+            // Customer relationship - auto-resolves from email
+            ->autoRelationship('customer_id', 'Customer name or email', Customer::class)
+            
+            // Invoice items with nested product/category resolution
+            ->arrayField('items', 'Invoice line items', [
+                'item' => [
+                    'type' => 'string',
+                    'description' => 'Product name',
+                    'required' => true,
+                ],
+                'product_id' => [
+                    'type' => 'relationship',
+                    'description' => 'Product (auto-resolved from item field)',
+                    'relationship' => [
+                        'model' => Product::class,
+                        'search_field' => 'name',
+                        'field' => 'item',
+                        'create_if_missing' => true,
+                    ],
+                ],
+                'category_id' => [
+                    'type' => 'relationship',
+                    'description' => 'Category (auto-resolved from category name)',
+                    'relationship' => [
+                        'model' => Category::class,
+                        'search_field' => 'name',
+                        'create_if_missing' => true,
+                    ],
+                ],
+                'price' => 'Unit price',
+                'quantity' => 'Quantity (default: 1)',
+            ])
+            
+            ->build();
+    }
+}
+```
+
+**2. Add Customer Model AI Config:**
+
+```php
+class Customer extends Model
+{
+    use HasAIFeatures;
+    
+    protected static function boot()
+    {
+        parent::boot();
+        
+        // Auto-increment customer_id within workspace scope
+        static::creating(function ($customer) {
+            if (empty($customer->customer_id)) {
+                $workspace = $customer->workspace ?? getActiveWorkSpace() ?? 1;
+                $maxCustomerId = static::where('workspace', $workspace)->max('customer_id') ?? 0;
+                $customer->customer_id = $maxCustomerId + 1;
+            }
+        });
+    }
+    
+    public function initializeAI(): array
+    {
+        return $this->aiConfig()
+            ->field('name', 'Customer full name', required: true)
+            ->field('email', 'Customer email address', type: 'email', required: true)
+            ->field('contact', 'Phone number', type: 'phone')
+            
+            // user_id: The customer's user account - auto-resolved from email
+            ->autoRelationship('user_id', 'Customer user account', User::class, 
+                searchField: 'email',
+                defaults: ['type' => 'customer']
+            )
+            
+            ->build();
+    }
+}
+```
+
+**3. Add Conversational Guidance (Optional):**
+
+Make the AI ask for missing information step-by-step:
+
+```php
+public function initializeAI(): array
+{
+    return $this->aiConfig()
+        ->description('Customer invoice with line items')
+        
+        // Guide AI to collect data progressively
+        ->conversationalGuidance([
+            'When user wants to create an invoice, guide them step-by-step:',
+            '1. If customer info is missing, ask: "Who is this invoice for? Please provide customer name and email."',
+            '2. If customer info is incomplete, ask for missing fields (phone and address are optional)',
+            '3. If product/item info is missing, ask: "What products or services should I add?"',
+            '4. For each item, collect: product name, price, quantity, category',
+            '5. Before creating, summarize all details and ask for confirmation',
+            '6. DON\'T require all info at once - collect progressively',
+        ])
+        
+        ->autoRelationship('customer_id', 'Customer', Customer::class)
+        ->arrayField('items', 'Invoice items', [...])
+        ->build();
+}
+```
+
+### Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Automatic Relationships** | Customer, products, categories auto-created/found | ✅ |
+| **Nested Arrays** | Supports both `customer: "email"` and `customer: {name, email, ...}` | ✅ |
+| **Email Preservation** | Maintains all customer fields during resolution | ✅ |
+| **Product Names** | Fetches actual product names from database | ✅ |
+| **Workspace-Scoped** | customer_id auto-increments per workspace | ✅ |
+| **Chat Integration** | Natural language invoice creation | ✅ |
+| **Field Mapping** | Converts chat format to database structure | ✅ |
+| **Generic Solution** | No hardcoded logic, fully configurable | ✅ |
+
+### Chat Integration
+
+```bash
+curl -X POST 'https://your-app.test/ai-demo/chat/send' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "Create invoice for Sarah Mitchell, email sarah@techstartup.com, phone +1-555-2222, address 222 Startup Lane. Items: Cloud Infrastructure $12000, DevOps Services $8000, Security Audit $5000",
+    "session_id": "user-123",
+    "actions": true
+  }'
+```
+
+**Result:**
+- ✅ Customer created with all fields
+- ✅ User account auto-created (type: customer)
+- ✅ Products auto-created with correct names
+- ✅ Categories auto-resolved
+- ✅ Invoice items linked
+- ✅ Total: $25,000
+
+### Code Optimization
+
+**Before (440+ lines):**
+- Complex pattern matching
+- Manual relationship checking
+- Redundant normalization
+- Hard-coded customer logic
+
+**After (95 lines - 81% reduction):**
+- Automatic relationship resolution
+- Generic trait-based system
+- Minimal normalization
+- Model-specific logic via events
+
+---
+
+## 🔄 Workflow System
+
+Create complex multi-step conversational workflows with automatic state management and subworkflow support.
+
+### Quick Example
+
+```php
+use LaravelAIEngine\Services\Agent\AgentMode;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+use App\AI\Workflows\CreateInvoiceWorkflow;
+
+$agentMode = app(AgentMode::class);
+$context = new UnifiedActionContext('session-123', auth()->id());
+
+// Start workflow
+$response = $agentMode->startWorkflow(
+    CreateInvoiceWorkflow::class,
+    $context,
+    'Create invoice for John with 2 laptops'
+);
+
+// Continue workflow with user responses
+$response = $agentMode->continueWorkflow('john@example.com', $context);
+$response = $agentMode->continueWorkflow('yes', $context);
+
+// Workflow automatically:
+// ✅ Collects customer information
+// ✅ Resolves products
+// ✅ Creates invoice
+// ✅ Persists state between messages
+```
+
+### Workflow Types
+
+**1. Declarative Workflows (Auto-Generated Steps)**
+
+```php
+use LaravelAIEngine\Services\Agent\AgentWorkflow;
+use LaravelAIEngine\Services\Agent\Traits\AutomatesSteps;
+
+class CreateInvoiceWorkflow extends AgentWorkflow
+{
+    use AutomatesSteps;
+    
+    protected function config(): array
+    {
+        return [
+            'goal' => 'Create an invoice with customer and products',
+            'fields' => [
+                'customer_name' => [
+                    'type' => 'string',
+                    'description' => 'Customer name',
+                    'required' => true,
+                ],
+                'customer_email' => [
+                    'type' => 'email',
+                    'description' => 'Customer email',
+                    'required' => true,
+                ],
+                'products' => [
+                    'type' => 'array',
+                    'description' => 'Products to invoice',
+                    'required' => true,
+                ],
+            ],
+            'entities' => [
+                'customer' => [
+                    'model' => Customer::class,
+                    'search_field' => 'email',
+                    'create_if_missing' => true,
+                    'subflow' => CreateCustomerWorkflow::class,
+                ],
+                'products' => [
+                    'model' => Product::class,
+                    'search_field' => 'name',
+                    'create_if_missing' => true,
+                    'multiple' => true,
+                ],
+            ],
+            'final_action' => 'createInvoice',
+        ];
+    }
+    
+    protected function createInvoice(UnifiedActionContext $context): ActionResult
+    {
+        $invoice = Invoice::create([
+            'customer_id' => $context->get('customer_id'),
+            'items' => $context->get('valid_products'),
+        ]);
+        
+        return ActionResult::success(
+            message: "Invoice #{$invoice->invoice_id} created!",
+            data: ['invoice_id' => $invoice->id]
+        );
+    }
+}
+```
+
+**2. Manual Workflows (Explicit Steps)**
+
+```php
+class CreateCustomerWorkflow extends AgentWorkflow
+{
+    protected function defineSteps(): array
+    {
+        return [
+            WorkflowStep::make('collect_name')
+                ->execute(fn($ctx) => $this->collectName($ctx))
+                ->requiresUserInput()
+                ->onSuccess('collect_email')
+                ->onFailure('error'),
+                
+            WorkflowStep::make('collect_email')
+                ->execute(fn($ctx) => $this->collectEmail($ctx))
+                ->requiresUserInput()
+                ->onSuccess('create_customer')
+                ->onFailure('error'),
+                
+            WorkflowStep::make('create_customer')
+                ->execute(fn($ctx) => $this->createCustomer($ctx))
+                ->onSuccess('complete')
+                ->onFailure('error'),
+        ];
+    }
+}
+```
+
+### Subworkflow Support
+
+Delegate complex tasks to child workflows:
+
+```php
+// Parent workflow delegates customer creation to subworkflow
+protected function config(): array
+{
+    return [
+        'entities' => [
+            'customer' => [
+                'model' => Customer::class,
+                'create_if_missing' => true,
+                'subflow' => CreateCustomerWorkflow::class, // ✅ Subworkflow
+            ],
+        ],
+    ];
+}
+
+// Workflow stack manages parent/child relationships:
+// 1. Parent: CreateInvoiceWorkflow (needs customer)
+// 2. Push to stack, start child: CreateCustomerWorkflow
+// 3. Child collects: name, email, phone, address
+// 4. Child creates customer
+// 5. Pop from stack, return to parent with customer_id
+// 6. Parent continues with invoice creation
+```
+
+### ChatService Integration
+
+Workflows automatically integrate with ChatService:
+
+```php
+use LaravelAIEngine\Services\ChatService;
+
+$chat = app(ChatService::class);
+
+// User: "Create invoice for Sarah with 2 Pumps"
+$response = $chat->processMessage(
+    message: 'Create invoice for Sarah with 2 Pumps',
+    sessionId: 'user-123',
+    userId: auth()->id(),
+    useMemory: true,
+    useActions: true
+);
+
+// ChatService automatically:
+// ✅ Detects workflow intent
+// ✅ Starts CreateInvoiceWorkflow
+// ✅ Saves context to cache
+// ✅ Returns workflow response
+
+// User: "yes"
+$response = $chat->processMessage(
+    message: 'yes',
+    sessionId: 'user-123',
+    userId: auth()->id()
+);
+
+// ChatService automatically:
+// ✅ Loads workflow context from cache
+// ✅ Continues workflow
+// ✅ Creates invoice
+// ✅ Clears context on completion
+```
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Auto-Generated Steps** | `AutomatesSteps` trait creates steps from field config |
+| **Entity Resolution** | Automatic search and creation of related entities |
+| **Subworkflows** | Nested workflows with automatic context management |
+| **Context Persistence** | State saved to cache between messages |
+| **Session Isolation** | Each session has independent workflow context |
+| **Workflow Stack** | Parent/child relationships with push/pop operations |
+| **ChatService Integration** | Automatic detection and continuation |
+| **Multi-Turn Conversations** | Collect data progressively across messages |
+| **Conversational Guidance** | AI-guided step-by-step flow |
+| **Error Handling** | Graceful failure with context cleanup |
+
+### Real-World Example: Invoice Creation
+
+```
+User: "Create invoice for John Smith with 3 laptops"
+  ↓
+Bot: "Customer 'John Smith' doesn't exist. Would you like to create it?"
+  ↓
+User: "yes"
+  ↓
+[Subworkflow: CreateCustomerWorkflow starts]
+  ↓
+Bot: "What is the customer's email?"
+  ↓
+User: "john@example.com"
+  ↓
+Bot: "What is the customer's phone? (Optional - type 'skip')"
+  ↓
+User: "skip"
+  ↓
+[Subworkflow completes, returns customer_id]
+  ↓
+Bot: "Product 'laptops' doesn't exist. Would you like to create it?"
+  ↓
+User: "yes"
+  ↓
+Bot: "Please provide pricing: Format: 'sale price X, purchase price Y'"
+  ↓
+User: "sale price 999, purchase price 500"
+  ↓
+[Product created]
+  ↓
+Bot: "✅ Invoice #INVO001234 created successfully!"
+```
+
+### Documentation
+
+📖 **[Workflow System Guide](docs/features/workflows.md)**  
+📖 **[Subworkflow Implementation](docs/features/subworkflows.md)**  
+📖 **[ChatService Integration](docs/features/chat-workflow-integration.md)**
+
+---
+
+## 📊 Aggregate Queries (Counts & Statistics)
+
+The AI automatically detects aggregate queries like "how many", "count", "total" and retrieves statistics from your database:
+
+```php
+// User asks: "How many emails do I have?"
+$response = $chat->processMessage(
+    message: 'How many emails do I have?',
+    sessionId: 'user-123',
+    useIntelligentRAG: true,
+    ragCollections: [Email::class],
+    userId: $request->user()->id
+);
+
+// AI Response: "You have 14 emails in your inbox."
+```
+
+### Supported Aggregate Patterns
+
+| Query Pattern | Example | What Happens |
+|--------------|---------|--------------|
+| `how many` | "How many users are there?" | Counts records |
+| `count` | "Count my documents" | Counts records |
+| `total` | "Total emails this week" | Counts with filters |
+| `summary` | "Give me a summary of my data" | Statistics overview |
+| `statistics` | "Show me statistics" | Full stats breakdown |
+
+### Response with Statistics
+
+```json
+{
+  "response": "Here's a summary of your data:\n- 14 emails\n- 5 documents\n- 3 tasks",
+  "aggregate_data": {
+    "Email": { "database_count": 14, "recent_count": 3 },
+    "Document": { "database_count": 5 },
+    "Task": { "database_count": 3 }
+  }
+}
+```
+
+---
+
+## 🎯 Interactive Actions
+
+The package includes a powerful **Smart Action System** that generates executable, AI-powered actions with automatic parameter extraction.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **AI Parameter Extraction** | Automatically extracts emails, dates, times from content |
+| **Intent Analysis** | AI analyzes user intent (confirm, reject, modify, etc.) for smarter responses |
+| **Pre-filled Actions** | Actions come ready-to-execute with all required data |
+| **Federated Execution** | Actions automatically route to the correct node |
+| **Smart Executors** | Built-in handlers for email, calendar, tasks, and more |
+
+### Intent Analysis
+
+The system uses AI to analyze user messages and detect intent **before** calling the main AI, enabling:
+
+- **Instant confirmation** - "yes" executes action immediately without AI call
+- **Smart rejection** - "cancel" or "no" cancels pending actions
+- **Modification detection** - "change price to $1999" updates parameters
+- **Question handling** - AI receives context that user needs clarification
+- **Language-agnostic** - Works in any language (English, Arabic, Japanese, etc.)
+
+**Supported Intents:**
+- `confirm` - User agrees to proceed
+- `reject` - User cancels/declines
+- `modify` - User wants to change parameters
+- `provide_data` - User provides additional optional data
+- `question` - User asks for clarification
+- `new_request` - Completely new action
+
+**Configuration:**
+```php
+// config/ai-engine.php
+'actions' => [
+    'intent_analysis' => env('AI_INTENT_ANALYSIS_ENABLED', true), // Enable/disable
+],
+```
+
+**Example Flow:**
+```
+User: "create product MacBook Pro for $2499"
+→ AI detects intent, extracts params, shows confirmation
+
+User: "actually make it $1999"
+→ Intent: modify (confidence: 0.95)
+→ Updates cached params
+→ AI receives enhanced prompt with modification context
+
+User: "I don't mind create it"
+→ Intent: confirm (confidence: 1.0)
+→ Executes directly, no AI call needed ✅
+```
+
+### Enabling Actions
+
+```bash
+curl -X POST 'https://your-app.test/ai/chat' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "show me my emails",
+    "session_id": "user-123",
+    "intelligent_rag": true,
+    "actions": true
+  }'
+```
+
+### Response with Smart Actions
+
+```json
+{
+  "response": "You have 5 emails...",
+  "actions": [
+    {
+      "id": "reply_email_abc123",
+      "type": "button",
+      "label": "✉️ Reply to Email",
+      "data": {
+        "action": "reply_email",
+        "executor": "email.reply",
+        "params": {
+          "to_email": "sender@example.com",
+          "subject": "Re: Meeting Tomorrow",
+          "original_content": "Hi, can we meet..."
+        },
+        "ready": true
+      }
+    },
+    {
+      "id": "create_event_def456",
+      "type": "button",
+      "label": "📅 Create Calendar Event",
+      "data": {
+        "action": "create_event",
+        "executor": "calendar.create",
+        "params": {
+          "title": "Meeting",
+          "date": "2025-12-05",
+          "time": "15:00"
+        },
+        "ready": true
+      }
+    }
+  ],
+  "numbered_options": [
+    {
+      "id": "opt_1_abc123",
+      "number": 1,
+      "text": "Undelivered Mail Returned to Sender",
+      "source_index": 0,
+      "clickable": true
+    }
+  ],
+  "has_options": true
+}
+```
+
+### Action Execution API
+
+Execute actions via dedicated endpoints:
+
+```bash
+# Execute any action
+POST /api/v1/actions/execute
+{
+  "action_type": "reply_email",
+  "data": {
+    "executor": "email.reply",
+    "params": {
+      "to_email": "user@example.com",
+      "subject": "Re: Meeting",
+      "original_content": "Original email content..."
+    },
+    "ready": true
+  }
+}
+
+# Response with AI-generated draft
+{
+  "success": true,
+  "result": {
+    "type": "email_reply",
+    "action": "compose_email",
+    "data": {
+      "to": "user@example.com",
+      "subject": "Re: Meeting",
+      "body": "Thank you for your message. I'm available...",
+      "ready_to_send": true
+    }
+  }
+}
+```
+
+### Smart Executors
+
+| Executor | Description | Output |
+|----------|-------------|--------|
+| `email.reply` | AI-generated email reply | Draft body, recipient, subject |
+| `email.forward` | Forward email | Forwarded content with note |
+| `calendar.create` | Create calendar event | ICS data + Google Calendar URL |
+| `task.create` | Create task/todo | Task with due date, priority |
+| `ai.summarize` | Summarize content | Concise summary |
+| `ai.translate` | Translate content | Translated text |
+| `source.view` | View source document | Full document data |
+| `source.find_similar` | Find similar content | Related items |
+| `model.dynamic` | Execute model's AI action | Created/updated model instance |
+
+### Creating Custom Model Actions
+
+Add the `HasAIActions` trait to any model to enable AI-powered creation via chat:
+
+```php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use LaravelAIEngine\Traits\HasAIActions;
+
+class Product extends Model
+{
+    use HasAIActions;
+    
+    protected $fillable = [
+        'name',
+        'sku',
+        'description',
+        'price',
+        'category_id',
+        'stock_quantity',
+        'user_id'
+    ];
+    
+    /**
+     * Define expected format for AI data extraction
+     * 
+     * @return array{required: array, optional: array, triggers?: array}
+     */
+    public static function initializeAI(): array
+    {
+        return [
+            'required' => ['name', 'price'],
+            'optional' => ['sku', 'description', 'category_id', 'stock_quantity'],
+            'triggers' => ['product', 'sell', 'create product', 'add product'],
+        ];
+    }
+    
+    /**
+     * Execute AI action (create, update, delete)
+     * 
+     * @param string $action The action to perform (create, update, delete)
+     * @param array $data The data extracted from conversation
+     * @return mixed Model instance or array with success/error
+     */
+    public static function executeAI(string $action, array $data)
+    {
+        switch ($action) {
+            case 'create':
+                // Add any custom logic before creation
+                if (!isset($data['sku'])) {
+                    $data['sku'] = 'PRD-' . strtoupper(substr(md5($data['name']), 0, 8));
+                }
+                
+                return static::create($data);
+                
+            case 'update':
+                if (!isset($data['id'])) {
+                    return ['success' => false, 'error' => 'ID required for update'];
+                }
+                $model = static::find($data['id']);
+                if (!$model) {
+                    return ['success' => false, 'error' => 'Product not found'];
+                }
+                $model->update($data);
+                return $model;
+                
+            case 'delete':
+                if (!isset($data['id'])) {
+                    return ['success' => false, 'error' => 'ID required for delete'];
+                }
+                $model = static::find($data['id']);
+                if (!$model) {
+                    return ['success' => false, 'error' => 'Product not found'];
+                }
+                $model->delete();
+                return ['success' => true, 'message' => 'Product deleted successfully'];
+                
+            default:
+                return ['success' => false, 'error' => "Unknown action: {$action}"];
+        }
+    }
+}
+```
+
+**Usage in Chat:**
+
+```bash
+# User says in chat:
+"create a product called MacBook Pro for $2499"
+
+# AI automatically:
+# 1. Detects "product" trigger
+# 2. Extracts: name="MacBook Pro", price=2499
+# 3. Shows confirmation with AI-generated suggestions for optional fields
+# 4. User confirms with "yes"
+# 5. Calls Product::executeAI('create', $data)
+# 6. Product created! ✅
+```
+
+**Response Flow:**
+
+```json
+{
+  "response": "I've prepared a product for you:\n\n📝 Suggested Additional Information\n\nSku: MBP-2024-001\nDescription: Premium laptop...\nPrice: 2499.99\n\nWould you like to proceed? Reply 'yes' to confirm.",
+  "actions": [
+    {
+      "id": "create_product_abc123",
+      "type": "button",
+      "label": "🎯 Create Product",
+      "data": {
+        "action": "create_product",
+        "executor": "model.dynamic",
+        "model_class": "App\\Models\\Product",
+        "params": {
+          "name": "MacBook Pro",
+          "price": 2499,
+          "sku": "MBP-2024-001",
+          "description": "Premium laptop..."
+        },
+        "ready_to_execute": true
+      }
+    }
+  ]
+}
+```
+
+**Key Points:**
+
+- `executeAI()` method signature: `executeAI(string $action, array $data)`
+- First parameter is the action type: `'create'`, `'update'`, or `'delete'`
+- Second parameter is the extracted data array
+- Return model instance on success, or array with `['success' => false, 'error' => '...']` on failure
+- The trait provides a default implementation, but you can override for custom logic
+
+### Calendar Event Example
+
+```bash
+POST /api/v1/actions/execute
+{
+  "action_type": "create_event",
+  "data": {
+    "executor": "calendar.create",
+    "params": {
+      "title": "Project Discussion",
+      "date": "2025-12-05",
+      "time": "15:00",
+      "duration": 60,
+      "location": "Conference Room A"
+    }
+  }
+}
+
+# Response
+{
+  "success": true,
+  "result": {
+    "type": "calendar_event",
+    "data": {
+      "title": "Project Discussion",
+      "date": "2025-12-05",
+      "time": "15:00",
+      "ics_data": "BEGIN:VCALENDAR...",
+      "google_calendar_url": "https://calendar.google.com/..."
+    }
+  }
+}
+```
+
+### Federated Action Execution
+
+Actions automatically route to the correct node based on collection ownership:
+
+```bash
+# Execute on specific remote node
+POST /api/v1/actions/execute-remote
+{
+  "node": "emails-node",
+  "action_type": "view_source",
+  "data": {
+    "params": { "model_class": "App\\Models\\Email", "model_id": 123 }
+  }
+}
+
+# Execute on all nodes
+POST /api/v1/actions/execute-all
+{
+  "action_type": "sync_data",
+  "data": { ... },
+  "parallel": true
+}
+
+# Get actions from all nodes
+GET /api/v1/actions/available?include_remote=true
+```
+
+### Collection-Based Routing
+
+When a node registers its collections, actions automatically route:
+
+```php
+// Node registration with collections
+$registry->register([
+    'name' => 'Emails Node',
+    'slug' => 'emails-node',
+    'url' => 'https://emails.example.com',
+    'collections' => ['App\\Models\\Email', 'App\\Models\\EmailAttachment'],
+]);
+
+// Action automatically routes to emails-node
+POST /api/v1/actions/execute
+{
+  "action_type": "view_source",
+  "data": {
+    "params": { "model_class": "App\\Models\\Email", "model_id": 123 }
+  }
+}
+// → Automatically executed on emails-node!
+```
+
+### Frontend Integration
+
+```javascript
+async function executeAction(action) {
+    const response = await fetch('/api/v1/actions/execute', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            action_type: action.data.action,
+            data: action.data
+        })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+        switch (result.result.type) {
+            case 'email_reply':
+                openEmailComposer(result.result.data);
+                break;
+            case 'calendar_event':
+                // Open Google Calendar or download ICS
+                window.open(result.result.data.google_calendar_url);
+                break;
+            case 'summary':
+                showSummary(result.result.data.summary);
+                break;
+        }
+    }
+}
+```
+
+### Numbered Options
+
+When AI returns a numbered list, options are automatically extracted:
+
+```javascript
+response.numbered_options.forEach(option => {
+    console.log(`${option.number}. ${option.text}`);
+    // Each option has:
+    // - id: Unique identifier (opt_1_abc123)
+    // - number: Display number (1, 2, 3...)
+    // - text: Title/subject
+    // - source_index: Links to sources array
+    // - clickable: true
+});
+
+// Select an option
+POST /api/v1/actions/select-option
+{
+  "option_number": 1,
+  "session_id": "user-123",
+  "source_index": 0,
+  "sources": [{ "model_id": 382, "model_class": "App\\Models\\Email" }]
+}
+```
+
+📖 **Full Documentation:** [docs/features/actions.md](docs/features/actions.md)
+
+---
+
+## 🎓 Complete Controller Examples
+
+### 1. Simple Chat Controller (No RAG)
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use LaravelAIEngine\Services\ChatService;
+
+class SimpleChatController extends Controller
+{
+    public function __construct(
+        private ChatService $chatService
+    ) {}
+
+    /**
+     * Send a message without RAG
+     */
+    public function sendMessage(Request $request)
+    {
+        $request->validate([
+            'message' => 'required|string',
+            'session_id' => 'required|string',
+        ]);
+
+        $response = $this->chatService->processMessage(
+            message: $request->input('message'),
+            sessionId: $request->input('session_id'),
+            engine: 'openai',
+            model: 'gpt-4o',
+            useMemory: true,           // ✅ Remember conversation
+            useIntelligentRAG: false   // ✅ No knowledge base
+        );
+
+        return response()->json([
+            'success' => true,
+            'response' => $response->content,
+            'metadata' => $response->getMetadata(),
+        ]);
+    }
+
+    /**
+     * Generate code without RAG
+     */
+    public function generateCode(Request $request)
+    {
+        $request->validate([
+            'prompt' => 'required|string',
+        ]);
+
+        $response = $this->chatService->processMessage(
+            message: $request->input('prompt'),
+            sessionId: 'code-gen-' . $request->user()->id,
+            engine: 'openai',
+            model: 'gpt-4o',
+            useMemory: false,          // ✅ No memory needed
+            useIntelligentRAG: false   // ✅ No RAG
+        );
+
+        return response()->json([
+            'code' => $response->content,
+        ]);
+    }
+}
+```
+
+### 2. RAG Chat Controller (With User Isolation)
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use LaravelAIEngine\Services\ChatService;
+use App\Models\Email;
+use App\Models\Document;
+
+class RagChatController extends Controller
+{
+    public function __construct(
+        private ChatService $chatService
+    ) {}
+
+    /**
+     * Chat with RAG and user isolation
+     */
+    public function chat(Request $request)
+    {
+        $request->validate([
+            'message' => 'required|string',
+            'session_id' => 'required|string',
+        ]);
+
+        // Get authenticated user ID
+        $userId = $request->user()->id;
+
+        $response = $this->chatService->processMessage(
+            message: $request->input('message'),
+            sessionId: $request->input('session_id'),
+            engine: 'openai',
+            model: 'gpt-4o',
+            useMemory: true,
+            useIntelligentRAG: true,
+            ragCollections: [Email::class, Document::class],
+            userId: $userId  // ✅ User sees only their data
+        );
+
+        return response()->json([
+            'success' => true,
+            'response' => $response->content,
+            'sources' => $response->getMetadata()['sources'] ?? [],
+        ]);
+    }
+
+    /**
+     * Search emails with RAG
+     */
+    public function searchEmails(Request $request)
+    {
+        $request->validate([
+            'query' => 'required|string',
+        ]);
+
+        $response = $this->chatService->processMessage(
+            message: $request->input('query'),
+            sessionId: 'email-search-' . $request->user()->id,
+            useIntelligentRAG: true,
+            ragCollections: [Email::class],
+            userId: $request->user()->id
+        );
+
+        return response()->json([
+            'results' => $response->content,
+            'sources' => $response->getMetadata()['sources'] ?? [],
+        ]);
+    }
+}
+```
+
+### 3. Multi-Engine Chat Controller
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use LaravelAIEngine\Services\ChatService;
+
+class MultiEngineChatController extends Controller
+{
+    public function __construct(
+        private ChatService $chatService
+    ) {}
+
+    /**
+     * Chat with different AI engines
+     */
+    public function chat(Request $request)
+    {
+        $request->validate([
+            'message' => 'required|string',
+            'engine' => 'required|in:openai,anthropic,google,deepseek',
+        ]);
+
+        $models = [
+            'openai' => 'gpt-4o',
+            'anthropic' => 'claude-3-5-sonnet-20241022',
+            'google' => 'gemini-1.5-pro',
+            'deepseek' => 'deepseek-chat',
+        ];
+
+        $engine = $request->input('engine');
+        $model = $models[$engine];
+
+        $response = $this->chatService->processMessage(
+            message: $request->input('message'),
+            sessionId: $request->input('session_id'),
+            engine: $engine,
+            model: $model,
+            useIntelligentRAG: false
+        );
+
+        return response()->json([
+            'engine' => $engine,
+            'model' => $model,
+            'response' => $response->content,
+        ]);
+    }
+}
+```
+
+### 4. Streaming Chat Controller
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use LaravelAIEngine\Services\ChatService;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+
+class StreamingChatController extends Controller
+{
+    public function __construct(
+        private ChatService $chatService
+    ) {}
+
+    /**
+     * Stream AI response in real-time
+     */
+    public function stream(Request $request)
+    {
+        $request->validate([
+            'message' => 'required|string',
+        ]);
+
+        return new StreamedResponse(function () use ($request) {
+            $this->chatService->streamMessage(
+                message: $request->input('message'),
+                sessionId: 'stream-' . $request->user()->id,
+                callback: function ($chunk) {
+                    echo "data: " . json_encode(['chunk' => $chunk]) . "\n\n";
+                    flush();
+                }
+            );
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+}
+```
+
+### 5. Admin Controller (Access All Data)
+
+```php
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use Illuminate\Http\Request;
+use LaravelAIEngine\Services\ChatService;
+use App\Models\Email;
+
+class AdminChatController extends Controller
+{
+    public function __construct(
+        private ChatService $chatService
+    ) {
+        // Ensure only admins can access
+        $this->middleware('role:super-admin');
+    }
+
+    /**
+     * Admin searches all users' data
+     */
+    public function searchAllEmails(Request $request)
+    {
+        $request->validate([
+            'query' => 'required|string',
+        ]);
+
+        // Admin user ID - system automatically grants full access
+        $response = $this->chatService->processMessage(
+            message: $request->input('query'),
+            sessionId: 'admin-search',
+            useIntelligentRAG: true,
+            ragCollections: [Email::class],
+            userId: $request->user()->id  // ✅ Admin sees ALL data
+        );
+
+        return response()->json([
+            'results' => $response->content,
+            'sources' => $response->getMetadata()['sources'] ?? [],
+            'note' => 'Admin access - showing all users data',
+        ]);
+    }
+}
+```
+
+---
+
+## 🎯 Artisan Commands
+
+### Node Management
+```bash
+# Register a node
+php artisan ai-engine:node-register
+
+# List nodes
+php artisan ai-engine:node-list
+
+# Ping nodes
+php artisan ai-engine:node-ping
+
+# Monitor nodes
+php artisan ai-engine:monitor-nodes
+
+# Node statistics
+php artisan ai-engine:node-stats
+
+# Discover collections
+php artisan ai-engine:discover-collections
+```
+
+### Model Registry
+```bash
+# Sync models from providers
+php artisan ai-engine:sync-models
+
+# List all models
+php artisan ai-engine:list-models
+
+# Add custom model
+php artisan ai-engine:add-model
+
+# Analyze model for RAG
+php artisan ai-engine:analyze-model
+```
+
+### Vector Operations
+```bash
+# Index models
+php artisan ai-engine:vector-index
+
+# Check status
+php artisan ai-engine:vector-status
+
+# Search vectors
+php artisan ai-engine:vector-search
+
+# Clean vectors
+php artisan ai-engine:vector-clean
+
+# Analytics
+php artisan ai-engine:vector-analytics
+```
+
+### Testing
+```bash
+# Test RAG system
+php artisan ai-engine:test-rag
+
+# Test nodes
+php artisan ai-engine:test-nodes
+
+# Test engines
+php artisan ai-engine:test-engines
+
+# Full test suite
+php artisan ai-engine:test-package
+```
+
+---
+
+## 📚 Documentation
+
+### 📖 Core Documentation
+
+| Guide | Description |
+|-------|-------------|
+| **[Quick Start](docs/getting-started/quickstart.md)** | Get started in 5 minutes |
+| **[Installation](docs/getting-started/installation.md)** | Complete installation guide |
+| **[Configuration](docs/getting-started/configuration.md)** | All configuration options |
+| **[RAG Guide](docs/features/rag.md)** | Retrieval-Augmented Generation |
+| **[Vector Search](docs/features/vector-search.md)** | Semantic search setup |
+| **[Conversations](docs/features/conversations.md)** | Chat with memory |
+| **[Multi-Modal](docs/features/multimodal.md)** | Images, audio, documents |
+
+### 🔐 Security & Access Control
+
+| Guide | Description |
+|-------|-------------|
+| **[Multi-Tenant Access](docs/security/multi-tenant-access-control.md)** | User/Tenant/Admin isolation |
+| **[Simplified Access](docs/security/simplified-access-control.md)** | Quick access control setup |
+| **[Security Fixes](SECURITY_FIXES.md)** | Security best practices |
+
+### 🌐 Federated RAG
+
+| Guide | Description |
+|-------|-------------|
+| **[Federated RAG Success](docs/federated-rag/success.md)** | Complete federated setup |
+| **[Master Node Usage](docs/federated-rag/master-node-usage.md)** | Master node configuration |
+| **[Node Registration](docs/archive/NODE-REGISTRATION-GUIDE.md)** | Register child nodes |
+
+### 🎯 Advanced Features
+
+| Guide | Description |
+|-------|-------------|
+| **[Chunking Strategies](docs/advanced/chunking-strategies.md)** | Smart content splitting |
+| **[Large Media Processing](docs/advanced/large-media-processing.md)** | Handle large files |
+| **[URL & Media Embeddings](docs/advanced/url-media-embeddings.md)** | Embed URLs and media |
+| **[User Context Injection](docs/security/user-context-injection.md)** | Inject user context |
+| **[Troubleshooting RAG](docs/deployment/troubleshooting.md)** | Fix common issues |
+
+### 🔧 Integration Guides
+
+| Guide | Description |
+|-------|-------------|
+| **[Ollama Integration](OLLAMA-INTEGRATION.md)** | Local LLM with Ollama |
+| **[Ollama Quickstart](OLLAMA-QUICKSTART.md)** | Quick Ollama setup |
+| **[Performance Optimization](PERFORMANCE_OPTIMIZATION.md)** | Speed & efficiency |
+| **[Postman Collection](postman/README.md)** | API testing with Postman |
+
+### 📋 Reference
+
+| Resource | Description |
+|----------|-------------|
+| **[Changelog](CHANGELOG.md)** | Version history |
+| **[Documentation Index](docs/INDEX.md)** | Complete documentation index |
+| **[Artisan Commands](#-artisan-commands)** | CLI reference |
+
+---
+
+## 🔐 Multi-Tenant Access Control
+
+### Secure RAG with User Isolation
+
+The package includes enterprise-grade **multi-tenant access control** for RAG searches, ensuring users can only access their authorized data.
+
+### Access Levels
+
+```
+┌─────────────────────────────────────────┐
+│  LEVEL 1: ADMIN/SUPER USER              │
+│  ✓ Access ALL data                      │
+│  ✓ No filtering applied                 │
+│  ✓ For: super-admin, admin, support     │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│  LEVEL 2: TENANT-SCOPED USER            │
+│  ✓ Access data within organization      │
+│  ✓ Filtered by: tenant_id               │
+│  ✓ For: team members, employees         │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│  LEVEL 2.5: WORKSPACE-SCOPED USER  🆕   │
+│  ✓ Access data within workspace         │
+│  ✓ Filtered by: workspace_id            │
+│  ✓ For: workspace members               │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│  LEVEL 3: REGULAR USER                  │
+│  ✓ Access only own data                 │
+│  ✓ Filtered by: user_id                 │
+│  ✓ For: individual users                │
+└─────────────────────────────────────────┘
+```
+
+### Usage
+
+**1. Regular User (Sees Only Own Data):**
+
+```php
+use LaravelAIEngine\Services\ChatService;
+
+class ChatController extends Controller
+{
+    public function chat(Request $request, ChatService $chatService)
+    {
+        $response = $chatService->processMessage(
+            message: $request->input('message'),
+            sessionId: $request->input('session_id'),
+            ragCollections: [Email::class, Document::class],
+            userId: $request->user()->id  // ✅ User sees only their data
+        );
+
+        return response()->json($response);
+    }
+}
+```
+
+**2. Admin User (Sees All Data):**
+
+```php
+// User model
+class User extends Authenticatable
+{
+    protected $fillable = ['name', 'email', 'is_admin'];
+    
+    public function hasRole($roles) {
+        return $this->roles()->whereIn('name', (array) $roles)->exists();
+    }
+}
+
+// Admin user
+$admin = User::find(1);
+$admin->is_admin = true;  // ✅ Admin flag
+
+// Or using Spatie Laravel Permission
+$admin->assignRole('super-admin');
+
+// Admin sees ALL data automatically
+$response = $chatService->processMessage(
+    message: 'Show me all emails',
+    sessionId: 'admin-session',
+    ragCollections: [Email::class],
+    userId: $admin->id  // ✅ No filtering applied
+);
+```
+
+**3. Tenant-Scoped User (Sees Team Data):**
+
+```php
+// User model with tenant
+class User extends Authenticatable
+{
+    protected $fillable = ['name', 'email', 'tenant_id'];
+}
+
+// Tenant user
+$manager = User::find(2);
+$manager->tenant_id = 'ABC Corp';  // ✅ Organization ID
+
+// Manager sees all data in their organization
+$response = $chatService->processMessage(
+    message: 'Show me team emails',
+    sessionId: 'manager-session',
+    ragCollections: [Email::class],
+    userId: $manager->id  // ✅ Filtered by tenant_id
+);
+```
+
+**4. Workspace-Scoped User (Sees Workspace Data):** 🆕
+
+```php
+// User model with workspace
+class User extends Authenticatable
+{
+    protected $fillable = ['name', 'email', 'workspace_id'];
+}
+
+// Workspace member
+$member = User::find(3);
+$member->workspace_id = 5;  // ✅ Workspace ID
+
+// Member sees all data in their workspace
+$response = $chatService->processMessage(
+    message: 'Show me workspace documents',
+    sessionId: 'workspace-session',
+    ragCollections: [Document::class],
+    userId: $member->id  // ✅ Filtered by workspace_id
+);
+```
+
+### Configuration
+
+```bash
+# .env
+AI_ENGINE_ENABLE_TENANT_SCOPE=true
+AI_ENGINE_ENABLE_WORKSPACE_SCOPE=true
+AI_ENGINE_CACHE_USER_LOOKUPS=true
+AI_ENGINE_LOG_ACCESS_LEVEL=true
+
+# Multi-Database Tenancy (optional)
+AI_ENGINE_MULTI_DB_TENANCY=false
+AI_ENGINE_MULTI_DB_COLLECTION_STRATEGY=prefix
+```
+
+```php
+// config/vector-access-control.php
+return [
+    'admin_roles' => ['super-admin', 'admin', 'support'],
+    'tenant_fields' => ['tenant_id', 'organization_id', 'company_id'],
+    'workspace_fields' => ['workspace_id', 'current_workspace_id'],
+    'enable_tenant_scope' => true,
+    'enable_workspace_scope' => true,
+    'cache_user_lookups' => true,
+];
+```
+
+### Model Setup
+
+Add tenant, workspace, and user fields to your vectorizable models:
+
+```php
+use LaravelAIEngine\Traits\Vectorizable;
+
+class Email extends Model
+{
+    use Vectorizable;
+
+    protected $fillable = [
+        'user_id',        // ✅ Owner
+        'tenant_id',      // ✅ Organization
+        'workspace_id',   // ✅ Workspace (optional)
+        'subject',
+        'body',
+    ];
+
+    protected $vectorizable = ['subject', 'body'];
+    
+    // Optional: Custom display name for actions
+    public function getRagDisplayName(): string
+    {
+        return 'Email';  // Shows "View Full Email" instead of "View Full EmailCache"
+    }
+}
+```
+
+### Security Features
+
+✅ **Automatic User Fetching** - System fetches users internally  
+✅ **Caching** - User lookups cached for 5 minutes  
+✅ **Role-Based Access** - Admin/Tenant/Workspace/User levels  
+✅ **Data Isolation** - Users can't access others' data  
+✅ **Workspace Support** - Isolate data by workspace  
+✅ **Audit Logging** - All access levels logged  
+✅ **GDPR Compliant** - Proper data access controls  
+
+---
+
+## 🏢 Multi-Database Tenancy
+
+For applications where each tenant has their own database, the package supports **complete data isolation** at the vector database level using tenant-specific collections.
+
+### Architecture Comparison
+
+```
+Single-DB Tenancy:                    Multi-DB Tenancy:
+┌─────────────────────┐              ┌─────────────────────┐
+│  vec_emails         │              │  acme_vec_emails    │
+│  ├─ tenant_id: 1    │              │  └─ (all Acme data) │
+│  ├─ tenant_id: 2    │              ├─────────────────────┤
+│  └─ tenant_id: 3    │              │  globex_vec_emails  │
+└─────────────────────┘              │  └─ (all Globex)    │
+     (filter by ID)                  └─────────────────────┘
+                                          (separate collections)
+```
+
+### Configuration
+
+```bash
+# .env
+AI_ENGINE_MULTI_DB_TENANCY=true
+AI_ENGINE_MULTI_DB_COLLECTION_STRATEGY=prefix  # prefix, suffix, or separate
+AI_ENGINE_TENANT_RESOLVER=session              # session, config, database, or custom
+```
+
+### Collection Naming Strategies
+
+| Strategy | Example |
+|----------|---------|
+| `prefix` | `acme_vec_emails` |
+| `suffix` | `vec_emails_acme` |
+| `separate` | `acme/vec_emails` |
+
+### Custom Tenant Resolver
+
+```php
+use LaravelAIEngine\Contracts\TenantResolverInterface;
+
+class MyTenantResolver implements TenantResolverInterface
+{
+    public function getCurrentTenantId(): ?string { return tenant()?->id; }
+    public function getCurrentTenantSlug(): ?string { return tenant()?->slug; }
+    public function getTenantConnection(): ?string { return tenant()?->database; }
+    public function hasTenant(): bool { return tenant() !== null; }
+}
+```
+
+### Supported Packages
+
+Auto-detection for: **Spatie Laravel Multitenancy**, **Stancl Tenancy**, **Tenancy for Laravel (Hyn)**
+
+### Documentation
+
+For complete documentation, see:
+- **[Multi-Tenant RAG Access Control](docs/security/multi-tenant-access-control.md)**
+- **[Workspace Isolation](docs/security/workspace-isolation.md)** 🆕
+- **[Multi-Database Tenancy](docs/security/multi-database-tenancy.md)** 🆕
+- **[Simplified Access Control](docs/security/simplified-access-control.md)**
+- **[Security Fixes](SECURITY_FIXES.md)**
+
+---
+
+## 🔧 Configuration
+
+### Key Configuration Options
+
+```php
+// config/ai-engine.php
+
+return [
+    // Federated RAG
+    'nodes' => [
+        'enabled' => env('AI_ENGINE_NODES_ENABLED', false),
+        'is_master' => env('AI_ENGINE_IS_MASTER', false),
+        'jwt_secret' => env('AI_ENGINE_JWT_SECRET'),
+    ],
+    
+    // Intelligent RAG
+    'intelligent_rag' => [
+        'enabled' => true,
+        'min_relevance_score' => 0.3,  // Balanced threshold
+        'max_context_items' => 5,
+        'auto_discover' => true,
+    ],
+    
+    // Vector Search
+    'vector' => [
+        'provider' => 'openai',  // openai, voyage, cohere
+        'dimensions' => 1536,
+        'threshold' => 0.3,
+    ],
+];
+```
+
+---
+
+## ⚡ Performance Tuning
+
+### Model Selection for RAG
+
+Choose the right models for optimal performance:
+
+```bash
+# .env
+INTELLIGENT_RAG_ANALYSIS_MODEL=gpt-4o-mini    # Fast query classification
+INTELLIGENT_RAG_RESPONSE_MODEL=gpt-5-mini     # Quality responses
+```
+
+| Task | Recommended Model | Why |
+|------|------------------|-----|
+| **Query Analysis** | `gpt-4o-mini` | Fast, cheap, sufficient for classification |
+| **Response Generation** | `gpt-5-mini` | Good quality, balanced cost |
+| **Complex Reasoning** | `gpt-5.1` | Best quality, higher cost |
+| **High Throughput** | `gpt-4o-mini` | Fastest, lowest cost |
+
+### Context Optimization
+
+```bash
+# .env
+VECTOR_RAG_MAX_ITEM_LENGTH=2000    # Truncate long content (chars)
+VECTOR_RAG_MAX_CONTEXT=5           # Max context items
+```
+
+### Vector Index Performance
+
+```bash
+# Force recreate collections with fresh schema
+php artisan ai-engine:vector-index --force
+
+# This ensures:
+# - Correct embedding dimensions
+# - Proper payload indexes for filtering
+# - Schema-based field types
+```
+
+### GPT-5 vs GPT-4 Performance
+
+| Model | Analysis Time | Response Time | Best For |
+|-------|--------------|---------------|----------|
+| gpt-4o-mini | ~1-2s | ~2s | Fast, cheap tasks |
+| gpt-4o | ~2s | ~3s | Balanced quality |
+| gpt-5-nano | ~5-6s | ~5s | Simple reasoning |
+| gpt-5-mini | ~5-6s | ~5s | Quality responses |
+| gpt-5.1 | ~8-10s | ~8s | Complex reasoning |
+
+**Note:** GPT-5 models have reasoning overhead even for simple tasks. Use `gpt-4o-mini` for analysis.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+---
+
+## 📄 License
+
+This package is open-sourced software licensed under the [MIT license](LICENSE).
+
+---
+
+## 📡 API Endpoints Reference
+
+### Chat Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/ai/chat` | Main chat endpoint with RAG |
+| `POST` | `/api/v1/rag/chat` | RAG chat API |
+| `GET` | `/api/v1/rag/conversations` | List user conversations |
+
+### Action Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/actions/execute` | Execute any action (local or remote) |
+| `POST` | `/api/v1/actions/execute-remote` | Execute on specific remote node |
+| `POST` | `/api/v1/actions/execute-all` | Execute on all nodes |
+| `POST` | `/api/v1/actions/select-option` | Select a numbered option |
+| `GET` | `/api/v1/actions/available` | Get available actions |
+
+### Node/Federation Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/nodes/health` | Node health check |
+| `GET` | `/api/v1/nodes/collections` | List node collections |
+| `POST` | `/api/v1/nodes/search` | Federated search |
+
+---
+
+## 🎉 What's New
+
+### Latest Features (December 2025)
+
+✨ **Smart Content Chunking** 📄 (NEW!)
+- **Never Skip**: Large content is automatically chunked, never skipped
+- **Intelligent Splitting**: 50% beginning + 30% end + 20% middle sample
+- **Configurable Limits**: `VECTOR_MAX_CONTENT_SIZE=30000` (30KB default)
+- **Word Boundaries**: Chunks break at natural word boundaries
+
+✨ **Project Context Injection** 🎯 (NEW!)
+- **Domain Understanding**: Configure project description, industry, entities
+- **Business Rules**: Define rules the AI should follow
+- **Terminology**: Custom vocabulary for your domain
+- **Auto-Injection**: Context automatically added to AI prompts
+
+✨ **Enhanced Vector Indexing** 🔧 (NEW!)
+- **Index Verification**: Auto-checks for missing payload indexes
+- **Auto-Create**: Missing indexes created automatically during indexing
+- **Collection Prefix**: Always uses `vec_` prefix for consistency
+- **Multi-Tenant Ready**: Custom collection names via `getVectorCollectionName()`
+
+✨ **Circular Dependency Fix** 🔄 (NEW!)
+- **Lazy Loading**: Services use lazy loading to avoid circular deps
+- **Proper DI**: Constructor injection with explicit service registration
+- **No Memory Issues**: Fixed memory exhaustion during app boot
+
+✨ **Performance Optimizations** ⚡ (NEW!)
+- **Configurable Models**: Separate models for analysis vs response generation
+- **Context Truncation**: Limits context item length to prevent huge prompts (2000 chars default)
+- **Smart Query Analysis**: Uses exact phrases for title-like queries instead of expanding
+- **Optimized Defaults**: `gpt-4o-mini` for analysis, `gpt-5-mini` for responses
+
+```php
+// config/ai-engine.php
+'intelligent_rag' => [
+    'analysis_model' => 'gpt-4o-mini',   // Fast, cheap - for query classification
+    'response_model' => 'gpt-5-mini',    // Quality - for final response
+    'max_context_item_length' => 2000,   // Truncate long content
+]
+```
+
+**Performance Results:**
+| Config | Analysis | Response | Total Time |
+|--------|----------|----------|------------|
+| Both gpt-4o-mini | ~2s | ~2s | ~3-4s |
+| gpt-4o-mini + gpt-5-mini | ~2s | ~3s | ~5-6s |
+| Both GPT-5 | ~6s | ~6s | ~12s |
+
+✨ **Smart Payload Indexes** 🔍 (NEW!)
+- **Auto-detect belongsTo**: Automatically creates indexes for foreign key fields
+- **Schema-based types**: Detects integer, UUID, string from database
+- **Force recreate**: `--force` deletes and recreates collections with fresh schema
+- **Config + Relations**: Merges config fields with detected relationship fields
+
+✨ **Latest AI Models Support** 🤖 (NEW!)
+- **OpenAI GPT-5**: gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano + O3 reasoning models
+- **Anthropic Claude 4**: claude-4.5-sonnet, claude-4-opus, claude-4-sonnet
+- **Google Gemini 3**: gemini-3-pro-preview, gemini-3-pro-image + Gemini 2.5/2.0
+- **Reasoning parameters**: `max_completion_tokens`, `reasoning_effort` handled automatically
+- **Auto-detection**: Correct parameters per model family
+
+✨ **Smart Action System** 🎯 (NEW!)
+- **AI Parameter Extraction**: Automatically extracts emails, dates, times from content
+- **Pre-filled Actions**: Actions come ready-to-execute with all required data
+- **Smart Executors**: Built-in handlers for email, calendar, tasks, summarize, translate
+- **Federated Execution**: Actions automatically route to the correct node
+- **Collection-Based Routing**: Actions route based on which node owns the collection
+
+✨ **Action Execution API** 🚀 (NEW!)
+- **Execute Endpoint**: `POST /api/v1/actions/execute`
+- **Remote Execution**: `POST /api/v1/actions/execute-remote`
+- **Multi-Node Execution**: `POST /api/v1/actions/execute-all`
+- **AI-Generated Drafts**: Email replies, calendar events, task creation
+
+✨ **Intelligent Federated Search** 🌐 (NEW!)
+- **Auto-Discovery**: Automatically discovers collections from all connected nodes
+- **AI Selection**: AI analyzes queries and selects relevant collections to search
+- **RAG Descriptions**: Collections describe their content for better AI understanding
+- **Simple Filters**: Property-based access control with `public static $skipUserFilter = true`
+- **Auto-Generated Descriptions**: Collections without descriptions get defaults with warnings
+- **Node Routing**: Automatically routes searches to the correct nodes
+- **See**: [Full Documentation](docs/federated-rag/intelligent-search.md)
+
+✨ **Aggregate Query Detection** 📊
+- **Auto-Detection**: Queries like "how many", "count", "total" automatically detected
+- **Database Statistics**: Real counts from your database, not just vector search
+- **Smart Fallback**: Uses database counts when vector counts are unavailable
+- **Multi-Collection**: Statistics across all your indexed models
+
+✨ **Interactive Actions System** 🎯
+- **Context-Aware Actions**: AI suggests relevant actions based on response
+- **Numbered Options**: Clickable options extracted from AI responses
+- **Unique IDs**: Each option has unique identifier for reliable selection
+- **Source Linking**: Options link back to source documents
+- **Custom Actions**: Define your own actions in config
+
+✨ **Enhanced Query Analysis** 🧠
+- **Semantic Search Terms**: AI generates better search terms for vague queries
+- **Collection Validation**: Only searches collections that exist locally
+- **Fallback Strategies**: Multiple fallback levels for better results
+- **Conversation Context**: Uses chat history to understand follow-up queries
+
+✨ **Multi-Tenant Access Control** 🔐
+- **Role-Based Access**: Admin/Tenant/Workspace/User levels
+- **Workspace Scoping**: Isolate data by workspace within tenants
+- **Automatic User Fetching**: System fetches users internally with caching
+- **Data Isolation**: Users can only access authorized data
+- **GDPR Compliant**: Enterprise-grade security
+
+✨ **Multi-Database Tenancy** 🏢 (NEW!)
+- **Separate Collections**: Each tenant gets isolated vector collections
+- **Collection Strategies**: prefix, suffix, or separate naming
+- **Auto-Detection**: Works with Spatie, Stancl, Hyn tenancy packages
+- **Custom Resolvers**: Implement your own tenant resolution logic
+
+✨ **Data Collector Chat** 💬 (NEW!)
+- **Conversational Forms**: Replace traditional forms with AI-guided conversations
+- **Smart Field Extraction**: 3-layer extraction system (markers → structured text → direct extraction)
+- **Robust Field Tracking**: Accurate progress tracking with all fields (required + optional)
+- **Output Modification**: Modify AI-generated content (lessons, structure) during enhancement
+- **Confirmed Output Matching**: Final JSON matches exactly what user confirmed
+- **Field Validation**: Built-in validation with helpful error messages
+- **AI-Generated Summaries**: Dynamic previews of what will be created
+- **Structured Output**: Generate complex JSON (courses with lessons, products with variants)
+- **Multi-Language**: Force specific language (`locale: 'ar'`) or auto-detect (`detectLocale: true`)
+- **Enhancement Mode**: Users can modify both input fields and generated output
+- **Interactive Actions**: Quick reply buttons and field options
+- **See**: [Full Documentation](docs/features/data-collector.md) | [Publishing Guide](docs/deployment/publishing.md)
+
+```php
+// Quick example
+$config = new DataCollectorConfig(
+    name: 'course_creator',
+    title: 'Create a New Course',
+    fields: [
+        'name' => 'Course name | required | min:3',
+        'level' => ['type' => 'select', 'options' => ['beginner', 'intermediate', 'advanced']],
+    ],
+    outputSchema: [
+        'course' => ['name' => 'string', 'level' => 'string'],
+        'lessons' => ['type' => 'array', 'count' => 10, 'items' => ['name' => 'string', 'description' => 'string']],
+    ],
+    locale: 'ar', // Force Arabic responses
+    onComplete: fn($data) => Course::create($data['_generated_output']['course']),
+);
+
+$response = DataCollector::startCollection('session-123', $config);
+$response = DataCollector::processMessage('session-123', 'Laravel Fundamentals');
+```
+
+✨ **Workflow System** 🔄 (NEW!)
+- **Multi-Step Workflows**: Create complex conversational flows with automatic state management
+- **Declarative Workflows**: Auto-generate steps from field definitions using `AutomatesSteps` trait
+- **Manual Workflows**: Full control with explicit step definitions and custom logic
+- **Subworkflow Support**: Delegate tasks to child workflows with automatic context management
+- **Workflow Stack**: Parent/child workflow relationships with push/pop operations
+- **Context Persistence**: Workflow state saved to cache and restored across messages
+- **ChatService Integration**: Workflows automatically detected and continued through chat
+- **Session Isolation**: Each session has independent workflow context
+- **Entity Resolution**: Automatic customer, product, and relationship resolution
+- **Multi-Turn Conversations**: Collect data progressively across messages
+- **Production Ready**: 3/3 integration tests passing (100% success rate)
+
+```php
+// Declarative workflow example
+class CreateInvoiceWorkflow extends AgentWorkflow
+{
+    use AutomatesSteps;
+    
+    protected function config(): array
+    {
+        return [
+            'goal' => 'Create an invoice',
+            'fields' => ['customer_name', 'customer_email', 'products'],
+            'entities' => [
+                'customer' => [
+                    'model' => Customer::class,
+                    'create_if_missing' => true,
+                    'subflow' => CreateCustomerWorkflow::class,
+                ],
+            ],
+            'final_action' => 'createInvoice',
+        ];
+    }
+}
+
+// ChatService automatically handles workflows
+$response = $chat->processMessage(
+    message: 'Create invoice for John with 2 laptops',
+    sessionId: 'user-123',
+    userId: auth()->id()
+);
+// ✅ Workflow started, context saved
+// ✅ Continues across multiple messages
+// ✅ Creates invoice when complete
+```
+
+✨ **Template Engine** 📝 (NEW!)
+- **Pre-built Templates**: 12+ templates for summarize, translate, code review, sentiment analysis
+- **Custom Templates**: Create and store your own prompt templates with variables
+- **Categories**: Writing, coding, translation, analysis, email, data
+- **Execute with AI**: Run templates directly with any engine/model
+
+```php
+// Execute a template
+$templateEngine = app(TemplateEngine::class);
+$response = $templateEngine->execute('summarize', [
+    'content' => $longText,
+    'length' => 'brief',
+]);
+
+// Create custom template
+$templateEngine->createTemplate([
+    'name' => 'My Template',
+    'user_prompt' => 'Analyze: {{content}}',
+    'variables' => [['name' => 'content', 'required' => true]],
+]);
+```
+
+---
+
+## 💬 Data Collector Component
+
+The Data Collector provides a conversational UI for collecting structured data from users with AI-powered file extraction and multilingual support.
+
+**📖 [Full Documentation](docs/features/data-collector.md)** | **📦 [Publishing Guide](docs/deployment/publishing.md)**
+
+### Blade Component Usage
+
+```blade
+{{-- Basic usage --}}
+<x-ai-engine::data-collector 
+    :config-name="'course_creator'"
+    :title="'Create a New Course'"
+    :description="'I will help you create a course step by step.'"
+/>
+
+{{-- With inline config and Arabic support --}}
+<x-ai-engine::data-collector 
+    :session-id="'user-' . auth()->id() . '-' . time()"
+    :title="'إنشاء دورة جديدة'"
+    :description="'سأساعدك في إنشاء دورة خطوة بخطوة.'"
+    :language="'ar'"
+    :config="[
+        'name' => 'course_creator',
+        'locale' => 'ar',
+        'fields' => [
+            'name' => [
+                'description' => 'اسم الدورة',
+                'validation' => 'required|min:3|max:255',
+            ],
+            'description' => [
+                'description' => 'وصف الدورة',
+                'validation' => 'required|min:50',
+            ],
+            'level' => [
+                'type' => 'select',
+                'description' => 'مستوى الصعوبة',
+                'options' => ['beginner', 'intermediate', 'advanced'],
+            ],
+            'duration' => [
+                'description' => 'المدة بالساعات',
+                'validation' => 'required|numeric|min:1',
+            ],
+        ],
+        'confirmBeforeComplete' => true,
+    ]"
+    :show-progress="true"
+    :theme="'light'"
+/>
+```
+
+### Component Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `sessionId` | string | auto | Unique session identifier |
+| `configName` | string | '' | Registered config name |
+| `title` | string | 'Data Collection' | Header title |
+| `description` | string | '' | Header description |
+| `language` | string | 'en' | Language: `en` or `ar` for RTL support |
+| `theme` | string | 'light' | Theme: `light` or `dark` |
+| `height` | string | '500px' | Container height |
+| `apiEndpoint` | string | '/api/v1/data-collector' | API endpoint |
+| `engine` | string | 'openai' | AI engine |
+| `model` | string | 'gpt-4o' | AI model |
+| `showProgress` | bool | true | Show progress bar |
+| `showFieldList` | bool | true | Show collapsible field list |
+| `autoStart` | bool | true | Auto-start session |
+| `config` | array | [] | Inline field configuration |
+
+### Features
+
+- **📎 File Upload**: Upload PDF, TXT, DOC, DOCX files to auto-fill fields with AI extraction
+- **🌐 Multilingual Support**: Full Arabic/RTL support with translated UI elements
+- **📊 Accurate Progress Tracking**: Shows all fields (required + optional) in remaining list
+- **🎯 Smart Field Extraction**: 3-layer fallback system ensures values are always captured
+- **✏️ Output Modification**: Modify AI-generated lessons/content during enhancement phase
+- **✅ Confirmed Output Matching**: Final JSON output matches exactly what user confirmed
+- **🔄 Direct Extraction Fallback**: Extracts values even when AI doesn't use markers
+- **Field Status**: Shows pending, current, completed, and error states
+- **Quick Actions**: Auto-generated buttons for select options
+- **Confirmation Modal**: Review data before submission with "What will happen" preview
+- **Success Modal**: Completion feedback
+- **Dark Mode**: Full dark theme support
+- **Responsive**: Mobile-friendly design
+- **Keyboard Support**: Enter to send, Shift+Enter for new line
+
+### File Upload Feature
+
+Users can upload documents (PDF, TXT, DOC, DOCX) and the AI will automatically extract relevant data:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  📎 Upload File                                          │
+│                                                          │
+│  User uploads: course_outline.pdf                        │
+│                    ↓                                     │
+│  AI extracts:                                            │
+│  • Name: "Laravel Fundamentals"                          │
+│  • Description: "Complete course covering..."            │
+│  • Level: "intermediate"                                 │
+│  • Duration: 12                                          │
+│                    ↓                                     │
+│  [✓ Use Data] [✎ Modify] [✕ Discard]                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+The AI respects field validation rules when extracting:
+- **Numeric fields**: Returns numbers only (not "12 hours", just "12")
+- **Select fields**: Returns valid options only
+- **Required fields**: Attempts to extract all required data
+
+### Arabic/RTL Support
+
+The component fully supports Arabic with:
+- RTL text direction
+- Translated UI elements (buttons, progress, field labels)
+- Arabic AI responses and prompts
+
+| English | Arabic |
+|---------|--------|
+| 100% complete | 100% مكتمل |
+| 4 of 4 fields | 4 من 4 حقول |
+| Confirm | تأكيد |
+| Modify | تعديل |
+| Cancel | إلغاء |
+| Use Data | استخدام البيانات |
+
+### Backend Configuration
+
+Register your data collector config in a service provider:
+
+```php
+use LaravelAIEngine\DTOs\DataCollectorConfig;
+use LaravelAIEngine\Facades\DataCollector;
+
+DataCollector::registerConfig(new DataCollectorConfig(
+    name: 'course_creator',
+    title: 'Create a New Course',
+    locale: 'en', // or 'ar' for Arabic
+    fields: [
+        'name' => 'Course name | required | min:3 | max:255',
+        'description' => [
+            'type' => 'text',
+            'description' => 'Course description',
+            'validation' => 'required|min:50',
+        ],
+        'level' => [
+            'type' => 'select',
+            'options' => ['beginner', 'intermediate', 'advanced'],
+            'required' => true,
+        ],
+        'duration' => 'Duration in hours | required | numeric | min:1',
+    ],
+    onComplete: fn($data) => Course::create($data),
+    confirmBeforeComplete: true,
+    allowEnhancement: true,
+));
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/data-collector/start` | POST | Start a new session |
+| `/api/v1/data-collector/start-custom` | POST | Start with inline config |
+| `/api/v1/data-collector/message` | POST | Send a message |
+| `/api/v1/data-collector/analyze-file` | POST | Upload and analyze file |
+| `/api/v1/data-collector/apply-extracted` | POST | Apply extracted data |
+| `/api/v1/data-collector/status/{sessionId}` | GET | Get session status |
+| `/api/v1/data-collector/data/{sessionId}` | GET | Get collected data |
+| `/api/v1/data-collector/cancel` | POST | Cancel session |
+
+### Publishing Routes
+
+You can publish and customize the API routes:
+
+```bash
+# Publish main API routes (includes Data Collector)
+php artisan vendor:publish --tag=ai-engine-routes
+
+# Publish node API routes
+php artisan vendor:publish --tag=ai-engine-node-routes
+```
+
+**Route Loading Behavior:**
+- Routes load automatically from package by default
+- If published, the published version takes precedence
+- Delete published file to revert to package routes
+- No code changes needed - automatic fallback
+
+**Published Files:**
+- `routes/ai-engine-api.php` - Main API routes
+- `routes/ai-engine-node-api.php` - Node API routes
+
+✨ **Simplified API** 🎯
+- **Pass User ID Only**: No need to pass user objects
+- **Automatic Caching**: User lookups cached for 5 minutes
+- **50% Faster**: Improved performance with caching
+- **Backward Compatible**: Old code still works
+
+✨ **Federated RAG System** 🌐
+- Distribute collections across multiple nodes
+- Auto-discovery of remote collections
+- Transparent federated search
+- Health monitoring and circuit breakers
+
+✨ **Dynamic Model Registry** 🤖
+- **Auto-Discovery**: Automatically detects new AI models from providers
+- **Zero Code Changes**: GPT-5, Claude 4 work immediately when released
+- **Cost Tracking**: Pricing and capabilities for every model
+- **CLI Management**: `ai-engine:sync-models`, `ai-engine:list-models`
+
+---
+
+## 💡 Support
+
+- **Issues**: [GitHub Issues](https://github.com/mabou7agar/laravel-ai-support/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/mabou7agar/laravel-ai-support/discussions)
+- **Email**: support@m-tech-stack.com
+
+---
+
+<div align="center">
+
+**Built with ❤️ by [M-Tech Stack](https://github.com/mabou7agar)**
+
+⭐ Star us on GitHub if you find this package useful!
+
+</div>
