@@ -33,6 +33,9 @@ class SendMessageRequest extends FormRequest
             'rag_collections' => 'sometimes|array',
             'rag_collections.*' => 'string',
             'search_instructions' => 'sometimes|string|max:500',
+            'async' => 'sometimes|boolean',
+            'auto_select_model' => 'sometimes|boolean',
+            'task_type' => 'sometimes|string|in:vision,coding,reasoning,fast,cheap,quality,default',
         ];
     }
 

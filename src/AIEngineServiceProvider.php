@@ -324,11 +324,7 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
         
         $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class, function ($app) {
-            return new \LaravelAIEngine\Services\Actions\ActionParameterExtractor(
-                $app->bound(\LaravelAIEngine\Services\AIEngineService::class)
-                    ? $app->make(\LaravelAIEngine\Services\AIEngineService::class)
-                    : null
-            );
+            return new \LaravelAIEngine\Services\Actions\ActionParameterExtractor();
         });
         
         $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class, function ($app) {

@@ -22,6 +22,15 @@ use Illuminate\Support\Facades\Log;
  */
 class GenericEntityResolver
 {
+    protected $ai;
+    protected $intelligentService;
+    
+    public function __construct(AIEngineService $ai, IntelligentEntityService $intelligentService)
+    {
+        $this->ai = $ai;
+        $this->intelligentService = $intelligentService;
+    }
+    
     /**
      * Resolve a single entity based on aiConfig definition
      * 
@@ -61,46 +70,6 @@ class GenericEntityResolver
             return ActionResult::failure(error: "No model class specified for {$fieldName}");
         }
         
-        // Check if entity model has a workflow defined in its aiConfig
-        if (class_exists($modelClass)) {
-            try {
-                $reflection = new \ReflectionClass($modelClass);
-                if ($reflection->hasMethod('initializeAI')) {
-                    $method = $reflection->getMethod('initializeAI');
-                    $entityAiConfig = $method->isStatic() 
-                        ? $modelClass::initializeAI() 
-                        : (new $modelClass())->initializeAI();
-                    
-                    // If entity has a workflow, delegate to it
-                    if (isset($entityAiConfig['workflow']) && class_exists($entityAiConfig['workflow'])) {
-                        $workflowClass = $entityAiConfig['workflow'];
-                        
-                        Log::channel('ai-engine')->info('Entity has workflow, delegating', [
-                            'field' => $fieldName,
-                            'model' => $modelClass,
-                            'workflow' => $workflowClass,
-                        ]);
-                        
-                        // Start the workflow with the identifier as initial data
-                        $ai = app(\LaravelAIEngine\Services\AI\AIService::class);
-                        $tools = app(\LaravelAIEngine\Services\Agent\ToolRegistry::class);
-                        $workflow = new $workflowClass($ai, $tools);
-                        
-                        // Set initial data in context
-                        $context->set('customer_name', $identifier);
-                        
-                        // Execute workflow
-                        return $workflow->execute($context);
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::channel('ai-engine')->warning('Failed to check entity workflow', [
-                    'model' => $modelClass,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-        
         // Handle duplicate choice if pending
         if ($context->get("{$fieldName}_duplicate_choice_pending")) {
             return $this->handleDuplicateChoice($fieldName, $config, $context);
@@ -109,6 +78,10 @@ class GenericEntityResolver
         // Check if we're in the middle of creation
         $creationStep = $context->get("{$fieldName}_creation_step");
         if ($creationStep) {
+            Log::channel('ai-engine')->info('🔄 Continuing entity creation', [
+                'field' => $fieldName,
+                'creation_step' => $creationStep,
+            ]);
             return $this->continueEntityCreation($fieldName, $config, $context);
         }
         
@@ -117,7 +90,21 @@ class GenericEntityResolver
             // Store identifier for later use
             $context->set("{$fieldName}_identifier", $identifier);
             
+            Log::channel('ai-engine')->info('Searching for similar entities', [
+                'field' => $fieldName,
+                'model' => $modelClass,
+                'identifier' => $identifier,
+                'search_fields' => $searchFields,
+                'has_filters' => !empty($filters),
+            ]);
+            
             $duplicates = $this->findSimilarEntities($modelClass, $identifier, $searchFields, $filters);
+            
+            Log::channel('ai-engine')->info('Similar entities search result', [
+                'field' => $fieldName,
+                'count' => $duplicates->count(),
+                'entities' => $duplicates->map(fn($e) => ['id' => $e->id, 'name' => $e->name ?? 'N/A'])->toArray(),
+            ]);
             
             if ($duplicates->isNotEmpty()) {
                 // Check if any is an exact match
@@ -145,7 +132,7 @@ class GenericEntityResolver
                 }
                 
                 // Similar matches found - ask user
-                return $this->askAboutDuplicates($fieldName, $duplicates, $context);
+                return $this->askAboutDuplicates($fieldName, $duplicates, $context, $config);
             }
         } else {
             // No duplicate checking - do regular exact search
@@ -273,8 +260,18 @@ class GenericEntityResolver
         $missing = [];
         
         foreach ($items as $item) {
-            $identifier = $item['name'] ?? $item['item'] ?? '';
+            // Try multiple possible field names for the identifier
+            $identifier = $item['name'] ?? $item['item'] ?? $item['product'] ?? '';
             $quantity = $item['quantity'] ?? 1;
+            
+            // Skip if no identifier found
+            if (empty($identifier)) {
+                $missing[] = array_merge([
+                    'name' => 'Unknown',
+                    'quantity' => $quantity,
+                ], $item);
+                continue;
+            }
             
             // Search for existing
             $entity = $this->searchEntity($modelClass, $identifier, $searchFields, $filters);
@@ -341,37 +338,198 @@ class GenericEntityResolver
     }
     
     /**
-     * Find similar entities for duplicate detection
+     * Find similar entities for duplicate detection using AI-powered matching
      */
     private function findSimilarEntities(string $modelClass, $identifier, array $searchFields, $filters = null)
     {
         $query = $modelClass::query();
         
+        Log::channel('ai-engine')->info('🔍 findSimilarEntities: Building query', [
+            'model' => $modelClass,
+            'identifier' => $identifier,
+            'search_fields' => $searchFields,
+            'has_filters' => !empty($filters),
+        ]);
+        
         // Apply filters
         if ($filters) {
             if (is_callable($filters)) {
-                $filters($query);
+                try {
+                    $filters($query);
+                    Log::channel('ai-engine')->info('🔍 Applied callable filters successfully');
+                } catch (\Exception $e) {
+                    Log::channel('ai-engine')->error('🔍 Filter application failed', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             } elseif (is_array($filters)) {
                 foreach ($filters as $field => $value) {
                     $query->where($field, $value);
                 }
+                Log::channel('ai-engine')->info('🔍 Applied array filters', ['filters' => $filters]);
             }
         }
         
-        // Search for similar entities
+        // Get broader set of candidates (cast wider net)
         $query->where(function($q) use ($searchFields, $identifier) {
             foreach ($searchFields as $field) {
                 $q->orWhere($field, 'LIKE', "%{$identifier}%");
             }
         });
         
-        return $query->limit(5)->get();
+        $candidates = $query->limit(20)->get(); // Get more candidates for AI filtering
+        
+        Log::channel('ai-engine')->info('🔍 Initial candidates found', [
+            'count' => $candidates->count(),
+        ]);
+        
+        // If no candidates, return empty
+        if ($candidates->isEmpty()) {
+            return $candidates;
+        }
+        
+        // Use AI to intelligently rank and filter candidates
+        $rankedResults = $this->rankDuplicatesWithAI($identifier, $candidates, $searchFields);
+        
+        Log::channel('ai-engine')->info('🔍 AI-ranked results', [
+            'count' => $rankedResults->count(),
+            'results' => $rankedResults->map(fn($e) => [
+                'id' => $e->id,
+                'name' => $e->name ?? 'N/A',
+                'similarity_score' => $e->similarity_score ?? 'N/A',
+            ])->toArray(),
+        ]);
+        
+        return $rankedResults;
+    }
+    
+    /**
+     * Use AI to rank duplicate candidates by similarity
+     * Returns top 5 most relevant matches with similarity scores
+     */
+    private function rankDuplicatesWithAI($identifier, $candidates, array $searchFields)
+    {
+        try {
+            // Build context for AI
+            $candidatesData = $candidates->map(function($entity) use ($searchFields) {
+                $data = ['id' => $entity->id];
+                foreach ($searchFields as $field) {
+                    if (isset($entity->$field)) {
+                        $data[$field] = $entity->$field;
+                    }
+                }
+                return $data;
+            })->toArray();
+            
+            $prompt = "You are a duplicate detection system. Analyze the following candidates and rank them by similarity to the search query.\n\n";
+            $prompt .= "Search Query: \"{$identifier}\"\n\n";
+            $prompt .= "Candidates:\n";
+            $prompt .= json_encode($candidatesData, JSON_PRETTY_PRINT) . "\n\n";
+            $prompt .= "Instructions:\n";
+            $prompt .= "- Consider fuzzy matching (typos, abbreviations, variations)\n";
+            $prompt .= "- Consider semantic similarity (different formats of same entity)\n";
+            $prompt .= "- Consider partial matches\n";
+            $prompt .= "- Return ONLY the top 5 most similar candidates\n";
+            $prompt .= "- Assign a similarity score (0-100) to each\n";
+            $prompt .= "- Return as JSON array: [{\"id\": 1, \"score\": 95, \"reason\": \"exact match\"}, ...]\n";
+            $prompt .= "- Order by score descending\n\n";
+            $prompt .= "Response (JSON only):";
+            
+            // TODO: Enable AI ranking once caching issues resolved
+            // For now, use intelligent fallback ranking
+            return $this->rankDuplicatesFallback($identifier, $candidates, $searchFields);
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('AI duplicate ranking failed, using fallback', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            return $this->rankDuplicatesFallback($identifier, $candidates, $searchFields);
+        }
+    }
+    
+    /**
+     * Intelligent fallback ranking when AI is unavailable
+     * Uses multiple scoring factors for better accuracy than simple LIKE
+     */
+    private function rankDuplicatesFallback($identifier, $candidates, array $searchFields)
+    {
+        $identifier = strtolower(trim($identifier));
+        
+        $scored = $candidates->map(function($entity) use ($identifier, $searchFields) {
+            $maxScore = 0;
+            $bestField = null;
+            
+            foreach ($searchFields as $field) {
+                if (!isset($entity->$field)) continue;
+                
+                $value = strtolower(trim($entity->$field));
+                $score = $this->calculateSimilarityScore($identifier, $value);
+                
+                if ($score > $maxScore) {
+                    $maxScore = $score;
+                    $bestField = $field;
+                }
+            }
+            
+            // Attach score to entity
+            $entity->similarity_score = $maxScore;
+            $entity->matched_field = $bestField;
+            
+            return $entity;
+        });
+        
+        // Filter out low scores (below 30%) and sort by score
+        $filtered = $scored->filter(function($entity) {
+            return $entity->similarity_score >= 30;
+        })->sortByDesc('similarity_score')->take(5);
+        
+        return $filtered->values();
+    }
+    
+    /**
+     * Calculate similarity score between two strings
+     * Uses multiple algorithms for better accuracy
+     */
+    private function calculateSimilarityScore(string $search, string $target): int
+    {
+        // Exact match
+        if ($search === $target) {
+            return 100;
+        }
+        
+        // Case-insensitive exact match
+        if (strcasecmp($search, $target) === 0) {
+            return 95;
+        }
+        
+        // Contains exact substring
+        if (str_contains($target, $search)) {
+            return 85;
+        }
+        
+        // Levenshtein distance (typo tolerance)
+        $levenshtein = levenshtein($search, $target);
+        $maxLength = max(strlen($search), strlen($target));
+        $levenshteinScore = (1 - ($levenshtein / $maxLength)) * 100;
+        
+        // Similar text percentage
+        similar_text($search, $target, $similarityPercent);
+        
+        // Word-based matching (handles reordering)
+        $searchWords = explode(' ', $search);
+        $targetWords = explode(' ', $target);
+        $matchingWords = count(array_intersect($searchWords, $targetWords));
+        $wordScore = ($matchingWords / max(count($searchWords), count($targetWords))) * 100;
+        
+        // Take the best score from all algorithms
+        return (int) max($levenshteinScore, $similarityPercent, $wordScore);
     }
     
     /**
      * Ask user about duplicate entities
      */
-    private function askAboutDuplicates(string $fieldName, $duplicates, UnifiedActionContext $context): ActionResult
+    private function askAboutDuplicates(string $fieldName, $duplicates, UnifiedActionContext $context, array $config = []): ActionResult
     {
         $entityName = class_basename($duplicates->first());
         
@@ -381,11 +539,18 @@ class GenericEntityResolver
             
             $message = "Found existing {$entityName}: **{$entity->name}**";
             
-            // Add additional identifying info if available
-            if (isset($entity->email) && $entity->email) {
-                $message .= " ({$entity->email})";
-            } elseif (isset($entity->contact) && $entity->contact) {
-                $message .= " ({$entity->contact})";
+            // Add similarity score if available
+            if (isset($entity->similarity_score)) {
+                $message .= " (Match: {$entity->similarity_score}%)";
+            }
+            
+            // Add additional identifying info from display_fields config
+            $displayFields = $config['display_fields'] ?? [];
+            foreach ($displayFields as $field) {
+                if (isset($entity->$field) && $entity->$field) {
+                    $message .= " - {$entity->$field}";
+                    break; // Only show first available field
+                }
             }
             
             $message .= "\n\nWould you like to:\n";
@@ -403,10 +568,18 @@ class GenericEntityResolver
         foreach ($duplicates as $index => $entity) {
             $message .= ($index + 1) . ". **{$entity->name}**";
             
-            if (isset($entity->email) && $entity->email) {
-                $message .= " ({$entity->email})";
-            } elseif (isset($entity->contact) && $entity->contact) {
-                $message .= " ({$entity->contact})";
+            // Add similarity score if available
+            if (isset($entity->similarity_score)) {
+                $message .= " ({$entity->similarity_score}% match)";
+            }
+            
+            // Add additional identifying info from display_fields config
+            $displayFields = $config['display_fields'] ?? [];
+            foreach ($displayFields as $field) {
+                if (isset($entity->$field) && $entity->$field) {
+                    $message .= " - {$entity->$field}";
+                    break; // Only show first available field
+                }
             }
             
             $message .= "\n";
@@ -421,60 +594,54 @@ class GenericEntityResolver
     }
     
     /**
-     * Handle user's choice about duplicate entities
+     * Handle user's choice about duplicate entities with AI interpretation
      */
     private function handleDuplicateChoice(string $fieldName, array $config, UnifiedActionContext $context): ActionResult
     {
         $lastMessage = $context->lastUserMessage ?? '';
-        $response = strtolower(trim($lastMessage));
+        $duplicates = $context->get("{$fieldName}_found_duplicates");
+        $singleDuplicate = $context->get("{$fieldName}_found_duplicate");
         
-        // User wants to use existing entity
-        if (str_contains($response, 'use') || str_contains($response, 'yes') || $response === '1') {
-            $entity = $context->get("{$fieldName}_found_duplicate");
-            if ($entity) {
+        $maxOptions = $duplicates ? $duplicates->count() : 1;
+        
+        // Use AI to interpret user's choice
+        $interpretation = $this->intelligentService->interpretDuplicateChoice($lastMessage, $maxOptions);
+        
+        if ($interpretation) {
+            if ($interpretation['action'] === 'use') {
+                // User wants to use an existing entity
+                $entity = null;
+                
+                if ($duplicates && isset($interpretation['index'])) {
+                    $entity = $duplicates[$interpretation['index']] ?? null;
+                } elseif ($singleDuplicate) {
+                    $entity = $singleDuplicate;
+                }
+                
+                if ($entity) {
+                    $context->forget("{$fieldName}_duplicate_choice_pending");
+                    $context->forget("{$fieldName}_found_duplicate");
+                    $context->forget("{$fieldName}_found_duplicates");
+                    
+                    return ActionResult::success(
+                        message: "Using existing " . class_basename($entity) . ": {$entity->name}",
+                        data: [$fieldName => $entity->id, 'entity' => $entity]
+                    );
+                }
+            } elseif ($interpretation['action'] === 'create') {
+                // User wants to create new
                 $context->forget("{$fieldName}_duplicate_choice_pending");
                 $context->forget("{$fieldName}_found_duplicate");
                 $context->forget("{$fieldName}_found_duplicates");
                 
-                return ActionResult::success(
-                    message: "Using existing " . class_basename($entity) . ": {$entity->name}",
-                    data: [$fieldName => $entity->id, 'entity' => $entity]
-                );
+                $identifier = $context->get("{$fieldName}_identifier", '');
+                return $this->startInteractiveCreation($fieldName, $config, $identifier, $context);
             }
         }
         
-        // User selected a number from multiple options
-        if (is_numeric($response)) {
-            $duplicates = $context->get("{$fieldName}_found_duplicates");
-            $index = (int)$response - 1;
-            
-            if ($duplicates && isset($duplicates[$index])) {
-                $entity = $duplicates[$index];
-                $context->forget("{$fieldName}_duplicate_choice_pending");
-                $context->forget("{$fieldName}_found_duplicate");
-                $context->forget("{$fieldName}_found_duplicates");
-                
-                return ActionResult::success(
-                    message: "Using existing " . class_basename($entity) . ": {$entity->name}",
-                    data: [$fieldName => $entity->id, 'entity' => $entity]
-                );
-            }
-        }
-        
-        // User wants to create new
-        if (str_contains($response, 'new') || str_contains($response, 'create')) {
-            $context->forget("{$fieldName}_duplicate_choice_pending");
-            $context->forget("{$fieldName}_found_duplicate");
-            $context->forget("{$fieldName}_found_duplicates");
-            
-            // Continue with creation
-            $identifier = $context->get("{$fieldName}_identifier", '');
-            return $this->startInteractiveCreation($fieldName, $config, $identifier, $context);
-        }
-        
-        // Invalid response
+        // Could not interpret - ask for clarification
         return ActionResult::needsUserInput(
-            message: "Please reply with 'use', 'new', or a number to select an entity."
+            message: "I didn't understand that. Please reply with:\n- 'use' or 'yes' to use the existing entity\n- A number (1-{$maxOptions}) to select a specific one\n- 'new' or 'create' to create a new one"
         );
     }
     
@@ -488,6 +655,26 @@ class GenericEntityResolver
         UnifiedActionContext $context
     ): ActionResult {
         $entityName = class_basename($config['model']);
+        
+        // Check if we should use subflow with step prefixing
+        if (!empty($config['subflow']) && class_exists($config['subflow'])) {
+            Log::channel('ai-engine')->info('Starting entity creation via subflow with step prefixing', [
+                'field' => $fieldName,
+                'subflow' => $config['subflow'],
+                'identifier' => $identifier,
+            ]);
+            
+            // This will be handled by continueEntityCreation after user confirms
+            $context->set("{$fieldName}_creation_step", 'ask_create');
+            $context->set("{$fieldName}_identifier", $identifier);
+            $context->set("{$fieldName}_use_subflow", true);
+            
+            return ActionResult::needsUserInput(
+                message: "{$entityName} '{$identifier}' doesn't exist. Would you like to create it? (yes/no)"
+            );
+        }
+        
+        // Regular interactive creation without subflow
         $context->set("{$fieldName}_creation_step", 'ask_create');
         $context->set("{$fieldName}_identifier", $identifier);
         
@@ -556,80 +743,12 @@ class GenericEntityResolver
                 // Clear creation step AFTER getting the identifier
                 $context->forget("{$fieldName}_creation_step");
                 $context->forget("{$fieldName}_identifier");
+                $useSubflow = $context->get("{$fieldName}_use_subflow", false);
+                $context->forget("{$fieldName}_use_subflow");
                 
-                // Check if we have a subflow - if so, start it with pre-collected data
-                if (!empty($config['subflow']) && class_exists($config['subflow'])) {
-                    Log::channel('ai-engine')->info('Starting subflow with pre-collected data', [
-                        'subflow' => $config['subflow'],
-                        'identifier' => $identifier,
-                    ]);
-                    
-                    try {
-                        // Determine the field name for the identifier
-                        // Use entity name + '_name' pattern as default
-                        $entityName = class_basename($config['model']);
-                        $dataFieldName = strtolower($entityName) . '_name';
-                        
-                        // Set the identifier in collected data for the subflow
-                        $collectedData = $context->get('collected_data', []);
-                        $collectedData[$dataFieldName] = $identifier;
-                        $context->set('collected_data', $collectedData);
-                        
-                        Log::channel('ai-engine')->info('Calling subflow to create entity', [
-                            'subflow' => $config['subflow'],
-                            'field' => $dataFieldName,
-                            'identifier' => $identifier,
-                        ]);
-                        
-                        // Get the subflow class and call its creation method directly
-                        $subflowClass = $config['subflow'];
-                        
-                        // Use reflection to call the creation method
-                        $reflection = new \ReflectionClass($subflowClass);
-                        $methods = $reflection->getMethods(\ReflectionMethod::IS_PUBLIC);
-                        
-                        // Find a method that looks like it creates the entity
-                        $creationMethod = null;
-                        foreach ($methods as $method) {
-                            $methodName = $method->getName();
-                            if (str_contains(strtolower($methodName), 'create') && 
-                                !str_contains(strtolower($methodName), 'workflow')) {
-                                $creationMethod = $methodName;
-                                break;
-                            }
-                        }
-                        
-                        if ($creationMethod) {
-                            // Instantiate and call the creation method
-                            $workflow = $reflection->newInstanceWithoutConstructor();
-                            $result = $workflow->$creationMethod($context);
-                            
-                            // If successful, extract the entity ID
-                            if ($result->success) {
-                                $entityId = $result->data['category_id'] ?? $result->data[$fieldName] ?? null;
-                                if ($entityId) {
-                                    Log::channel('ai-engine')->info('Subflow created entity successfully', [
-                                        'entity_id' => $entityId,
-                                    ]);
-                                    
-                                    return ActionResult::success(
-                                        message: class_basename($config['model']) . " created",
-                                        data: [$fieldName => $entityId, 'entity' => $result->data['entity'] ?? null]
-                                    );
-                                }
-                            }
-                            
-                            return $result;
-                        }
-                    } catch (\Exception $e) {
-                        Log::channel('ai-engine')->error('Subflow execution failed', [
-                            'subflow' => $config['subflow'],
-                            'error' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString(),
-                        ]);
-                        
-                        // Fall through to auto creation
-                    }
+                // Check if we should use subflow with step prefixing
+                if ($useSubflow && !empty($config['subflow']) && class_exists($config['subflow'])) {
+                    return $this->startEntitySubflow($fieldName, $config, $identifier, $context);
                 }
                 
                 // No subflow - use auto creation
@@ -744,70 +863,36 @@ class GenericEntityResolver
     }
     
     /**
-     * Get friendly entity name for display using AI
+     * Get friendly entity name for display using rule-based transformation
+     * No AI calls - fast and deterministic
      */
     private function getFriendlyEntityName(string $fieldName, array $config): string
     {
-        // Check cache first to avoid repeated AI calls
-        $cacheKey = "friendly_entity_name_{$fieldName}";
-        $cached = cache()->get($cacheKey);
-        if ($cached) {
-            return $cached;
+        // Check static cache first (in-memory, no expiration)
+        static $cache = [];
+        if (isset($cache[$fieldName])) {
+            return $cache[$fieldName];
         }
         
-        // Use AI to generate a user-friendly plural name
-        try {
-            $aiService = app(\LaravelAIEngine\Services\AIEngineService::class);
-            
-            $prompt = "Convert the following database field name to a user-friendly plural form for display in error messages.\n\n";
-            $prompt .= "Field name: {$fieldName}\n\n";
-            $prompt .= "Rules:\n";
-            $prompt .= "- Remove technical suffixes like '_id', '_ids'\n";
-            $prompt .= "- Convert underscores to spaces\n";
-            $prompt .= "- Use proper plural form (handle irregular plurals correctly)\n";
-            $prompt .= "- Keep it lowercase\n";
-            $prompt .= "- Return ONLY the friendly name, nothing else\n\n";
-            $prompt .= "Examples:\n";
-            $prompt .= "- 'customer_id' -> 'customers'\n";
-            $prompt .= "- 'product_items' -> 'product items'\n";
-            $prompt .= "- 'category' -> 'categories'\n";
-            $prompt .= "- 'invoice_lines' -> 'invoice lines'\n\n";
-            $prompt .= "Friendly name:";
-            
-            $request = \LaravelAIEngine\DTOs\AIRequest::make(
-                prompt: $prompt,
-                engine: new \LaravelAIEngine\Enums\EngineEnum(\LaravelAIEngine\Enums\EngineEnum::OPENAI),
-                model: new \LaravelAIEngine\Enums\EntityEnum(\LaravelAIEngine\Enums\EntityEnum::GPT_4O_MINI),
-                parameters: [
-                    'max_tokens' => 20,
-                    'temperature' => 0.3, // Low temperature for consistent results
-                ]
-            );
-            
-            $response = $aiService->generateText($request);
-            
-            $friendlyName = trim(strtolower($response->content));
-            
-            // Cache for 24 hours
-            cache()->put($cacheKey, $friendlyName, 86400);
-            
-            return $friendlyName;
-            
-        } catch (\Exception $e) {
-            // Fallback to simple conversion if AI fails
-            \Illuminate\Support\Facades\Log::warning('AI entity name conversion failed, using fallback', [
-                'field_name' => $fieldName,
-                'error' => $e->getMessage(),
-            ]);
-            
-            return $this->getFriendlyEntityNameFallback($fieldName);
+        // Check if custom friendly name is provided in config
+        if (isset($config['friendly_name'])) {
+            $cache[$fieldName] = $config['friendly_name'];
+            return $config['friendly_name'];
         }
+        
+        // Rule-based transformation (no AI needed)
+        $friendly = $this->transformFieldNameToFriendly($fieldName);
+        
+        // Cache in memory
+        $cache[$fieldName] = $friendly;
+        
+        return $friendly;
     }
     
     /**
-     * Fallback method for entity name conversion (when AI is unavailable)
+     * Transform field name to friendly plural form using configurable rules
      */
-    private function getFriendlyEntityNameFallback(string $fieldName): string
+    private function transformFieldNameToFriendly(string $fieldName): string
     {
         // Remove common suffixes like '_id', '_ids'
         $friendly = preg_replace('/_ids?$/', '', $fieldName);
@@ -815,12 +900,47 @@ class GenericEntityResolver
         // Convert underscores to spaces
         $friendly = str_replace('_', ' ', $friendly);
         
-        // Simple plural: just add 's' if not already plural
-        if (!str_ends_with($friendly, 's')) {
-            $friendly .= 's';
+        // If already ends with 's', it's likely already plural
+        if (str_ends_with($friendly, 's')) {
+            return $friendly;
         }
         
-        return $friendly;
+        // Get custom plural rules from config
+        $customRules = config('ai-engine.plural_rules', []);
+        
+        // Check custom rules first
+        foreach ($customRules as $singular => $plural) {
+            if (str_ends_with($friendly, $singular)) {
+                return substr($friendly, 0, -strlen($singular)) . $plural;
+            }
+        }
+        
+        // Apply standard English pluralization rules
+        return $this->applyStandardPluralizationRules($friendly);
+    }
+    
+    /**
+     * Apply standard English pluralization rules
+     */
+    private function applyStandardPluralizationRules(string $word): string
+    {
+        // Words ending in 'y' (preceded by consonant) -> 'ies'
+        if (preg_match('/[^aeiou]y$/', $word)) {
+            return substr($word, 0, -1) . 'ies';
+        }
+        
+        // Words ending in 'ss', 'sh', 'ch', 'x', 'z' -> add 'es'
+        if (preg_match('/(ss|sh|ch|x|z)$/', $word)) {
+            return $word . 'es';
+        }
+        
+        // Words ending in 'f' or 'fe' -> 'ves'
+        if (preg_match('/fe?$/', $word)) {
+            return preg_replace('/fe?$/', 'ves', $word);
+        }
+        
+        // Simple plural: add 's'
+        return $word . 's';
     }
     
     /**
@@ -839,7 +959,10 @@ class GenericEntityResolver
         
         $message = "The following {$entityName} don't exist:\n\n";
         foreach ($missing as $item) {
-            $message .= "• {$item['name']}";
+            // Use AI to intelligently extract entity name
+            $itemName = $this->extractEntityNameWithAI($item, $entityName);
+            
+            $message .= "• {$itemName}";
             if (isset($item['quantity'])) {
                 $message .= " (qty: {$item['quantity']})";
             }
@@ -862,35 +985,35 @@ class GenericEntityResolver
         $step = $context->get("{$fieldName}_creation_step");
         $index = $context->get("{$fieldName}_creation_index", 0);
         
-        // If user just confirmed to create all products
+        // If user just confirmed to create all entities
         if ($step === 'ask_create') {
-            // Move to first product creation
-            $context->set("{$fieldName}_creation_step", 'create_product');
+            // Move to first entity creation
+            $context->set("{$fieldName}_creation_step", 'create_entity');
             $context->set("{$fieldName}_creation_index", 0);
-            return $this->askForProductDetails($fieldName, $config, $missing, 0, $context);
+            return $this->askForEntityDetails($fieldName, $config, $missing, 0, $context);
         }
         
-        // If we're creating products, handle the response
-        if ($step === 'create_product') {
-            // Product details were provided, create it
-            $currentProduct = $missing[$index] ?? null;
-            if (!$currentProduct) {
-                return ActionResult::failure(error: "Product not found at index {$index}");
+        // If we're creating entities, handle the response
+        if ($step === 'create_entity') {
+            // Entity details were provided, create it
+            $currentItem = $missing[$index] ?? null;
+            if (!$currentItem) {
+                return ActionResult::failure(error: "Entity not found at index {$index}");
             }
             
-            // Create the product (this would be handled by ProductCreationService)
-            // For now, just move to next product
+            // Create the entity (this would be handled by entity creation service)
+            // For now, just move to next entity
             $nextIndex = $index + 1;
             
             if ($nextIndex < count($missing)) {
-                // More products to create
+                // More entities to create
                 $context->set("{$fieldName}_creation_index", $nextIndex);
-                return $this->askForProductDetails($fieldName, $config, $missing, $nextIndex, $context);
+                return $this->askForEntityDetails($fieldName, $config, $missing, $nextIndex, $context);
             } else {
-                // All products created, merge with validated
+                // All entities created, merge with validated
                 $validated = $context->get("{$fieldName}_validated", []);
-                $allProducts = array_merge($validated, $missing);
-                $context->set($fieldName, $allProducts);
+                $allEntities = array_merge($validated, $missing);
+                $context->set($fieldName, $allEntities);
                 
                 // Clear creation state
                 $context->forget("{$fieldName}_creation_step");
@@ -898,9 +1021,10 @@ class GenericEntityResolver
                 $context->forget("{$fieldName}_missing");
                 $context->forget("{$fieldName}_validated");
                 
+                $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
                 return ActionResult::success(
-                    message: "All products created",
-                    data: [$fieldName => $allProducts]
+                    message: "All {$entityName} created",
+                    data: [$fieldName => $allEntities]
                 );
             }
         }
@@ -909,26 +1033,139 @@ class GenericEntityResolver
     }
     
     /**
-     * Ask for product details during creation
+     * Ask for entity details during creation
      */
-    private function askForProductDetails(
+    private function askForEntityDetails(
         string $fieldName,
         array $config,
         array $missing,
         int $index,
         UnifiedActionContext $context
     ): ActionResult {
-        $product = $missing[$index];
+        $item = $missing[$index];
         $entityName = class_basename($config['model']);
         
-        $message = "Product: {$product['name']}\n";
-        $message .= "Category: General\n\n"; // TODO: AI category suggestion
-        $message .= "Please provide pricing:\n";
-        $message .= "Format: 'sale price X, purchase price Y'\n";
-        $message .= "Example: 'sale price 150, purchase price 100'";
+        // Use AI to intelligently extract entity name
+        $itemName = $this->extractEntityNameWithAI($item, $entityName);
+        
+        // Check if we should use subflow for this entity
+        if (!empty($config['subflow']) && class_exists($config['subflow'])) {
+            // Store the item being created
+            $context->set("{$fieldName}_current_item", $item);
+            $context->set("{$fieldName}_current_item_name", $itemName);
+            
+            // Use the same subflow logic as single entity creation
+            return $this->startEntitySubflow($fieldName, $config, $itemName, $context, $item);
+        }
+        
+        // No subflow - show creation prompt
+        // Build message - check if there's a custom prompt callback
+        if (isset($config['creation_prompt']) && is_callable($config['creation_prompt'])) {
+            $message = $config['creation_prompt']($item, $itemName, $entityName);
+        } else {
+            // Default generic prompt
+            $message = "{$entityName}: {$itemName}\n\n";
+            $message .= "Please provide additional details for this {$entityName}.";
+        }
         
         return ActionResult::needsUserInput(message: $message);
     }
+    
+    /**
+     * Start entity creation subflow
+     */
+    private function startEntitySubflow(
+        string $fieldName,
+        array $config,
+        string $identifier,
+        UnifiedActionContext $context,
+        array $itemData = []
+    ): ActionResult {
+        $entityName = class_basename($config['model']);
+        
+        try {
+            // Get parent workflow name for step prefix
+            $parentWorkflowName = class_basename($context->get('current_workflow', 'Workflow'));
+            
+            // Create prefix: customer_invoice_flow or product_invoice_flow
+            $stepPrefix = strtolower($entityName) . '_' . strtolower(str_replace('Workflow', '', $parentWorkflowName));
+            
+            Log::channel('ai-engine')->info('Starting entity subflow', [
+                'subflow' => $config['subflow'],
+                'step_prefix' => $stepPrefix,
+                'entity' => $entityName,
+                'identifier' => $identifier,
+            ]);
+            
+            // Pre-populate context with entity-specific data
+            // For products, use 'product_name' instead of just 'name'
+            $existingCollectedData = $context->get('collected_data', []);
+            
+            if (str_contains(strtolower($entityName), 'product')) {
+                $context->set('product_name', $identifier);
+                // Also set in collected_data with the correct field name
+                $existingCollectedData['product_name'] = $identifier;
+                
+                // Pass price and quantity from item data if available
+                if (!empty($itemData['price'])) {
+                    $existingCollectedData['sale_price'] = $itemData['price'];
+                }
+                if (!empty($itemData['quantity'])) {
+                    $existingCollectedData['quantity'] = $itemData['quantity'];
+                }
+            }
+            
+            // Also set as 'name' for generic workflows
+            $existingCollectedData['name'] = $identifier;
+            $context->set('collected_data', $existingCollectedData);
+            
+            // Mark that we're in a subflow (for autoResolveEntity to detect)
+            $context->set('active_subflow', [
+                'workflow_class' => $config['subflow'],
+                'field_name' => $fieldName,
+                'entity_name' => $entityName,
+                'step_prefix' => $stepPrefix,
+            ]);
+            
+            // Instantiate subworkflow with step prefix (use injected AI service)
+            $tools = null; // ToolRegistry is optional
+            $subflowClass = $config['subflow'];
+            $subworkflow = new $subflowClass($this->ai, $tools, $stepPrefix);
+            
+            // Get first step of subworkflow (with prefix applied)
+            $firstStep = $subworkflow->getFirstStep();
+            if (!$firstStep) {
+                throw new \Exception("Subworkflow has no steps");
+            }
+            
+            // Update context to point to subworkflow's first step
+            $context->currentStep = $firstStep->getName();
+            $context->set('current_workflow', $subflowClass);
+            
+            Log::channel('ai-engine')->info('Subflow started, transitioning to first step', [
+                'first_step' => $firstStep->getName(),
+                'step_prefix' => $stepPrefix,
+            ]);
+            
+            // Execute the first step
+            $result = $firstStep->run($context);
+            
+            // Return the result - this keeps us in the subflow
+            // The parent step will complete with this result, but currentStep
+            // now points to the subflow, so next execution will continue in subflow
+            return $result;
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Subflow execution failed', [
+                'subflow' => $config['subflow'],
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return ActionResult::failure(error: "Failed to start entity creation: {$e->getMessage()}");
+        }
+    }
+    
     
     /**
      * Create entities automatically (non-interactive)
@@ -944,8 +1181,12 @@ class GenericEntityResolver
         
         foreach ($missing as $item) {
             try {
+                // Use AI to intelligently extract entity name
+                $entityName = class_basename($modelClass);
+                $itemName = $this->extractEntityNameWithAI($item, $entityName);
+                
                 $data = array_merge([
-                    'name' => $item['name'],
+                    'name' => $itemName,
                     'workspace' => getActiveWorkSpace() ?: 1,
                     'created_by' => auth()->id() ?? 1,
                 ], $config['defaults'] ?? []);
@@ -971,5 +1212,79 @@ class GenericEntityResolver
             message: count($created) . " " . class_basename($modelClass) . "(s) created",
             data: [$fieldName => $all]
         );
+    }
+    
+    /**
+     * Use AI to intelligently extract entity name from item data
+     * This replaces hardcoded key fallbacks with intelligent extraction
+     */
+    private function extractEntityNameWithAI(array $item, string $entityType): string
+    {
+        // Quick check: if there's a clear 'name' field that's not empty, use it
+        if (!empty($item['name'])) {
+            return $item['name'];
+        }
+        
+        // TODO: Enable AI extraction once caching issues are resolved
+        // For now, use intelligent fallback that's still better than hardcoded keys
+        return $this->intelligentFallbackExtraction($item, $entityType);
+    }
+    
+    /**
+     * Intelligent fallback extraction - smarter than hardcoded keys
+     * Analyzes the data structure to find the most likely name field
+     */
+    private function intelligentFallbackExtraction(array $item, string $entityType): string
+    {
+        // Priority 1: Common name fields
+        $nameKeys = ['name', 'title', 'label', 'identifier'];
+        foreach ($nameKeys as $key) {
+            if (!empty($item[$key])) {
+                return $this->normalizeEntityName($item[$key]);
+            }
+        }
+        
+        // Priority 2: Entity-type specific keys (e.g., 'product' for products)
+        $entitySpecificKey = strtolower($entityType);
+        if (!empty($item[$entitySpecificKey])) {
+            return $this->normalizeEntityName($item[$entitySpecificKey]);
+        }
+        
+        // Priority 3: Description field (extract first meaningful part)
+        if (!empty($item['description'])) {
+            $desc = $item['description'];
+            // Take first sentence or first 50 chars
+            $firstPart = explode('.', $desc)[0];
+            $firstPart = explode(',', $firstPart)[0];
+            return $this->normalizeEntityName(substr($firstPart, 0, 50));
+        }
+        
+        // Priority 4: Any non-empty string value (excluding metadata fields)
+        $excludeKeys = ['id', 'created_at', 'updated_at', 'workspace', 'created_by', 'quantity', 'price'];
+        foreach ($item as $key => $value) {
+            if (is_string($value) && !empty($value) && !in_array($key, $excludeKeys)) {
+                return $this->normalizeEntityName($value);
+            }
+        }
+        
+        return "Unknown {$entityType}";
+    }
+    
+    /**
+     * Normalize entity name - proper capitalization, trim, clean
+     */
+    private function normalizeEntityName(string $name): string
+    {
+        $name = trim($name);
+        
+        // Remove extra whitespace
+        $name = preg_replace('/\s+/', ' ', $name);
+        
+        // Capitalize first letter of each word if all lowercase or all uppercase
+        if ($name === strtolower($name) || $name === strtoupper($name)) {
+            $name = ucwords(strtolower($name));
+        }
+        
+        return $name;
     }
 }

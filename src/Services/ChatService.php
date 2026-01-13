@@ -23,25 +23,52 @@ class ChatService
         protected ?ActionManager $actionManager = null,
         protected ?PendingActionService $pendingActionService = null
     ) {
-        // Lazy load IntelligentRAGService if available
+        // Services will be lazy-loaded when needed, not in constructor
+        // This prevents circular dependency issues during service container resolution
+    }
+
+    /**
+     * Lazy load IntelligentRAGService
+     */
+    protected function getIntelligentRAG(): ?IntelligentRAGService
+    {
         if ($this->intelligentRAG === null && app()->bound(IntelligentRAGService::class)) {
             $this->intelligentRAG = app(IntelligentRAGService::class);
         }
+        return $this->intelligentRAG;
+    }
 
-        // Lazy load RAGCollectionDiscovery if available
+    /**
+     * Lazy load RAGCollectionDiscovery
+     */
+    protected function getRagDiscovery(): ?RAGCollectionDiscovery
+    {
         if ($this->ragDiscovery === null && app()->bound(RAGCollectionDiscovery::class)) {
             $this->ragDiscovery = app(RAGCollectionDiscovery::class);
         }
+        return $this->ragDiscovery;
+    }
 
-        // Lazy load ActionManager if available
+    /**
+     * Lazy load ActionManager
+     */
+    protected function getActionManager(): ?ActionManager
+    {
         if ($this->actionManager === null && app()->bound(ActionManager::class)) {
             $this->actionManager = app(ActionManager::class);
         }
+        return $this->actionManager;
+    }
 
-        // Lazy load PendingActionService if available
+    /**
+     * Lazy load PendingActionService
+     */
+    protected function getPendingActionService(): ?PendingActionService
+    {
         if ($this->pendingActionService === null && app()->bound(PendingActionService::class)) {
             $this->pendingActionService = app(PendingActionService::class);
         }
+        return $this->pendingActionService;
     }
 
     /**
@@ -163,10 +190,13 @@ class ChatService
 
         // INTELLIGENT INTENT ANALYSIS: Analyze user message before AI/RAG call
         // This makes intelligent decisions and enhances AI prompts based on context
+        // IMPORTANT: Skip intent analysis if we're already in a workflow to prevent infinite loops
         $intentAnalysis = null;
-        if ($useActions && $this->actionManager !== null && config('ai-engine.actions.intent_analysis', true)) {
+        $inWorkflow = !empty($context['workflow_stack'] ?? []) || !empty($context['current_workflow'] ?? null);
+        
+        if ($useActions && $this->getActionManager() !== null && config('ai-engine.actions.intent_analysis', true) && !$inWorkflow) {
             // Check for pending action in database
-            $pendingAction = $this->pendingActionService?->get($sessionId);
+            $pendingAction = $this->getPendingActionService()?->get($sessionId);
             $cachedActionData = $pendingAction ? [
                 'id' => $pendingAction->id,
                 'type' => $pendingAction->type->value,
@@ -222,7 +252,7 @@ class ChatService
             $availableActions = [];
             if (!$cachedActionData) {
                 // Only provide actions list when there's no pending action
-                $availableActions = $this->actionManager->discoverActions();
+                $availableActions = $this->getActionManager()->discoverActions();
                 
                 Log::channel('ai-engine')->debug('Available actions for intent analysis', [
                     'count' => count($availableActions),
@@ -316,7 +346,7 @@ class ChatService
                         );
 
                         $executionResult = $this->executeSmartActionInline($action, $userId);
-                        $this->pendingActionService?->markExecuted($sessionId);
+                        $this->getPendingActionService()?->markExecuted($sessionId);
 
                         if ($executionResult['success']) {
                             $message = $executionResult['message'];
@@ -393,7 +423,7 @@ class ChatService
                         );
 
                         // Update pending action in database
-                        $this->pendingActionService?->updateParams($sessionId, $cachedActionData['data']['params']);
+                        $this->getPendingActionService()?->updateParams($sessionId, $cachedActionData['data']['params']);
 
                         Log::channel('ai-engine')->info('Action params updated successfully', [
                             'new_params' => $cachedActionData['data']['params']
@@ -562,8 +592,8 @@ class ChatService
                         }
 
                         // Update pending action in database
-                        if ($this->pendingActionService && isset($cachedActionData)) {
-                            $this->pendingActionService->updateParams($sessionId, $cachedActionData['data']['params'] ?? []);
+                        if ($this->getPendingActionService() && isset($cachedActionData)) {
+                            $this->getPendingActionService()->updateParams($sessionId, $cachedActionData['data']['params'] ?? []);
                         }
 
                         Log::channel('ai-engine')->debug('Checking if action is complete for early return', [
@@ -628,32 +658,33 @@ class ChatService
 
         // Check if this is an action-based request (skip RAG for actions)
         // Use intent analysis only - language-agnostic, works with any language
+        // IMPORTANT: 'retrieval' intent should NOT skip RAG - it needs RAG to find data
         $isActionIntent = $intentAnalysis && in_array($intentAnalysis['intent'] ?? '', ['new_request', 'create', 'update', 'delete', 'provide_data', 'confirm', 'reject']);
 
         // Also skip RAG if there's a pending action in database (user is in action flow)
-        $hasPendingAction = $this->pendingActionService?->has($sessionId) ?? false;
+        $hasPendingAction = $this->getPendingActionService()?->has($sessionId) ?? false;
 
         $shouldSkipRAG = $isActionIntent || $hasPendingAction;
 
         // Use Intelligent RAG if enabled and available (but skip for action intents)
         Log::info('ChatService processMessage', [
             'useIntelligentRAG' => $useIntelligentRAG,
-            'intelligentRAG_available' => $this->intelligentRAG !== null,
+            'intelligentRAG_available' => $this->getIntelligentRAG() !== null,
             'message' => substr($message, 0, 50),
-            'ragCollections_passed' => $ragCollections,
             'ragCollections_count' => count($ragCollections),
+            'ragCollections_names' => array_map(fn($c) => class_basename($c), array_slice($ragCollections, 0, 5)),
             'intent_enhanced' => $intentAnalysis !== null,
             'is_action_intent' => $isActionIntent,
             'has_pending_action' => $hasPendingAction,
             'should_skip_rag' => $shouldSkipRAG,
         ]);
 
-        if ($useIntelligentRAG && $this->intelligentRAG !== null && !$shouldSkipRAG) {
+        if ($useIntelligentRAG && $this->getIntelligentRAG() !== null && !$shouldSkipRAG) {
             try {
                 // Auto-discover collections ONLY if not provided
                 // If user passes specific collections, respect them strictly
-                if (empty($ragCollections) && $this->ragDiscovery !== null) {
-                    $ragCollections = $this->ragDiscovery->discover();
+                if (empty($ragCollections) && $this->getRagDiscovery() !== null) {
+                    $ragCollections = $this->getRagDiscovery()->discover();
 
                     Log::channel('ai-engine')->info('Auto-discovered RAG collections (none passed)', [
                         'collections' => $ragCollections,
@@ -669,7 +700,7 @@ class ChatService
                 $conversationHistory = !empty($messages) ? $messages : [];
 
                 // SECURITY: Pass userId for multi-tenant access control
-                $response = $this->intelligentRAG->processMessage(
+                $response = $this->getIntelligentRAG()->processMessage(
                     $message,
                     $sessionId,
                     $ragCollections,
@@ -703,7 +734,7 @@ class ChatService
         }
 
         // Check for actions if enabled (inline action handling)
-        if ($useActions && $this->actionManager !== null) {
+        if ($useActions && $this->getActionManager() !== null) {
             try {
                 $sources = $response->getMetadata()['sources'] ?? [];
                 $conversationHistory = !empty($messages) ? $messages : [];
@@ -728,7 +759,7 @@ class ChatService
                         // Update pending action with extracted data
                         $extractedData = $intentAnalysis['extracted_data'] ?? [];
                         if (!empty($extractedData)) {
-                            $this->pendingActionService?->updateParams($sessionId, $extractedData);
+                            $this->getPendingActionService()?->updateParams($sessionId, $extractedData);
                             Log::channel('ai-engine')->info('Updated pending action with provided data', [
                                 'session_id' => $sessionId,
                                 'extracted_data' => $extractedData,
@@ -738,18 +769,30 @@ class ChatService
                 }
 
                 if (!$skipActionGeneration) {
-                    Log::channel('ai-engine')->info('Generating actions for context', [
-                        'message' => $processedMessage,
-                        'has_manager' => $this->actionManager !== null,
-                        'conversation_history_count' => count($conversationHistory),
-                        'intent' => $intentAnalysis['intent'] ?? null,
-                    ]);
+                    // Skip action generation for retrieval intents - they should use RAG data, not workflows
+                    $isRetrievalIntent = $intentAnalysis && ($intentAnalysis['intent'] ?? '') === 'retrieval';
+                    
+                    if ($isRetrievalIntent) {
+                        Log::channel('ai-engine')->info('Skipping action generation for retrieval intent', [
+                            'message' => $processedMessage,
+                            'intent' => $intentAnalysis['intent'],
+                            'reason' => 'Retrieval queries should use RAG data, not trigger workflows',
+                        ]);
+                        $actions = [];
+                    } else {
+                        Log::channel('ai-engine')->info('Generating actions for context', [
+                            'message' => $processedMessage,
+                            'has_manager' => $this->getActionManager() !== null,
+                            'conversation_history_count' => count($conversationHistory),
+                            'intent' => $intentAnalysis['intent'] ?? null,
+                        ]);
 
-                    $actions = $this->actionManager->generateActionsForContext(
-                        $processedMessage,
-                        $context,
-                        $intentAnalysis
-                    );
+                        $actions = $this->getActionManager()->generateActionsForContext(
+                            $processedMessage,
+                            $context,
+                            $intentAnalysis
+                        );
+                    }
 
                     Log::channel('ai-engine')->info('Actions generated', [
                         'count' => count($actions),
@@ -966,8 +1009,14 @@ class ChatService
                     $isIncomplete = !($actionToCache->data['ready_to_execute'] ?? true);
                     $missingFields = $actionToCache->data['missing_fields'] ?? [];
 
-                    // If action is incomplete, override response to ask for missing information
-                    if ($isIncomplete && !empty($missingFields)) {
+                    // Check if this is a workflow action - workflows handle their own conversation flow
+                    $actionDefinition = $this->getActionDefinition($actionToCache->data['action_id'] ?? null);
+                    $isWorkflow = ($actionDefinition['executor'] ?? null) === 'workflow' || 
+                                  ($actionDefinition['type'] ?? null) === 'workflow_action';
+
+                    // If action is incomplete and NOT a workflow, override response to ask for missing information
+                    // Workflows handle their own prompts, so skip this for workflow actions
+                    if ($isIncomplete && !empty($missingFields) && !$isWorkflow) {
                         $modelClass = $actionToCache->data['model_class'] ?? '';
                         $modelName = class_basename($modelClass);
 
@@ -982,9 +1031,6 @@ class ChatService
 
                         // Build a helpful message asking for missing information
                         $askForInfo = "I'll help you create a {$modelName}. To proceed, I need the following information:\n\n";
-                        
-                        // Get action definition to retrieve field descriptions
-                        $actionDefinition = $this->getActionDefinition($actionToCache->data['action_id'] ?? null);
                         
                         foreach ($missingFields as $field) {
                             $fieldLabel = $this->getUserFriendlyFieldLabel($field, $actionDefinition);
@@ -2009,17 +2055,20 @@ class ChatService
             $prompt = "Analyze the user's message intent and provide structured output.\n\n";
             $prompt .= "User Message: \"{$message}\"\n\n";
             
-            // CRITICAL: Include available actions for AI to select from
+            // CRITICAL: Include available actions for AI to select from (limit to top 10 to reduce prompt size)
             if (!$pendingAction && !empty($availableActions)) {
-                $prompt .= "AVAILABLE ACTIONS (AI must select ONE):\n";
-                foreach ($availableActions as $actionId => $action) {
-                    $prompt .= "- ID: {$actionId}\n";
-                    $prompt .= "  Label: {$action['label']}\n";
-                    $prompt .= "  Description: " . ($action['description'] ?? 'N/A') . "\n";
-                    $prompt .= "  Model: " . ($action['model_class'] ?? 'N/A') . "\n";
-                    $prompt .= "  Triggers: " . implode(', ', $action['triggers'] ?? []) . "\n\n";
+                // Filter actions by relevance to message (simple keyword matching)
+                $relevantActions = $this->filterRelevantActions($message, $availableActions, 10);
+                
+                $prompt .= "AVAILABLE ACTIONS (select ONE):\n";
+                foreach ($relevantActions as $actionId => $action) {
+                    $prompt .= "- {$actionId}: {$action['label']}";
+                    if (!empty($action['triggers'])) {
+                        $prompt .= " (triggers: " . implode(', ', array_slice($action['triggers'], 0, 3)) . ")";
+                    }
+                    $prompt .= "\n";
                 }
-                $prompt .= "CRITICAL: You MUST select the most appropriate action by setting 'suggested_action_id' to the exact ID from the list above.\n";
+                $prompt .= "\nSelect the most appropriate action ID.\n";
                 $prompt .= "CRITICAL: PRIMARY ENTITY DETECTION RULES (in order of priority):\n";
                 $prompt .= "  1. EXPLICIT ACTION: If message says 'Create [Entity]', that entity is PRIMARY\n";
                 $prompt .= "     Example: 'Create Invoice with Product X' → PRIMARY = Invoice (create_invoice)\n";
@@ -2144,8 +2193,27 @@ class ChatService
             $prompt .= "     * field_labels: Provide user-friendly labels (e.g., {\"customer_id\": \"Customer Name\", \"due_date\": \"Payment Due Date\"})\n";
             $prompt .= "     * important_fields: Specify which fields to highlight in summary (e.g., [\"customer_id\", \"total_amount\", \"due_date\"])\n";
             $prompt .= "     * field_types: Specify field types for better formatting (e.g., {\"total_amount\": \"currency\", \"due_date\": \"date\"})\n";
-            $prompt .= "5. 'question' - User is asking a question or needs clarification\n";
-            $prompt .= "6. 'new_request' - User is making a completely new request (ONLY if no missing fields OR user explicitly says 'create/add')\n\n";
+            $prompt .= "5. 'question' - User is asking a question or needs clarification (general questions, how-to, explanations)\n";
+            $prompt .= "6. 'retrieval' - User wants to VIEW/SHOW/GET/FIND existing data (NOT create new). CRITICAL PATTERNS:\n";
+            $prompt .= "   - 'show me [entity]' → retrieval (e.g., 'show me last invoice', 'show invoices')\n";
+            $prompt .= "   - 'get [entity]' → retrieval (e.g., 'get latest customer', 'get all products')\n";
+            $prompt .= "   - 'find [entity]' → retrieval (e.g., 'find invoice #123', 'find customer John')\n";
+            $prompt .= "   - 'list [entities]' → retrieval (e.g., 'list all invoices', 'list customers')\n";
+            $prompt .= "   - 'what is [entity]' → retrieval (e.g., 'what is invoice total', 'what is customer email')\n";
+            $prompt .= "   - 'display [entity]' → retrieval (e.g., 'display invoice details')\n";
+            $prompt .= "   - ANY query asking to VIEW existing data, not CREATE new data\n";
+            $prompt .= "   - Extract search criteria: entity type, filters (last, latest, specific ID, name, etc.)\n";
+            $prompt .= "   - DO NOT suggest creation actions for retrieval queries\n";
+            $prompt .= "7. 'new_request' - User wants to CREATE/ADD/MAKE new data (ONLY if no missing fields OR user explicitly says 'create/add/make/new')\n";
+            $prompt .= "   - 'create [entity]' → new_request (e.g., 'create invoice', 'create customer')\n";
+            $prompt .= "   - 'add [entity]' → new_request (e.g., 'add product', 'add new customer')\n";
+            $prompt .= "   - 'make [entity]' → new_request (e.g., 'make invoice')\n";
+            $prompt .= "   - 'new [entity]' → new_request (e.g., 'new customer')\n\n";
+            $prompt .= "CRITICAL DISTINCTION:\n";
+            $prompt .= "- 'show me last invoice' → intent: 'retrieval' (viewing existing data)\n";
+            $prompt .= "- 'create invoice' → intent: 'new_request' (creating new data)\n";
+            $prompt .= "- 'get customer details' → intent: 'retrieval' (viewing existing data)\n";
+            $prompt .= "- 'add customer' → intent: 'new_request' (creating new data)\n\n";
 
             // Add document type analysis for long-form content (from config)
             $docTypeConfig = config('ai-engine.project_context.document_type_detection');
@@ -2390,7 +2458,7 @@ class ChatService
                                 'user_id' => $message['user_id'] ?? null,
                                 'session_id' => $message['session_id'] ?? null,
                             ];
-                            $actions = $this->actionManager->generateActionsForContext($content, $context, null);
+                            $actions = $this->getActionManager()->generateActionsForContext($content, $context, null);
 
                             if (!empty($actions)) {
                                 Log::channel('ai-engine')->info('Retrieved pending action from history', [
@@ -3582,5 +3650,61 @@ class ChatService
         
         // Merge remaining modifications at top level
         return array_merge($oldParams, $modifications);
+    }
+    
+    /**
+     * Filter actions by relevance to message (simple keyword matching)
+     * Reduces prompt size by only including relevant actions
+     */
+    protected function filterRelevantActions(string $message, array $actions, int $limit = 10): array
+    {
+        $messageLower = strtolower($message);
+        $scored = [];
+        
+        // Extract primary entity from message (entity immediately after create/add/make/new)
+        $primaryEntity = null;
+        if (preg_match('/\b(create|add|make|new)\s+(\w+)/i', $message, $matches)) {
+            $primaryEntity = strtolower($matches[2]);
+        }
+        
+        foreach ($actions as $actionId => $action) {
+            $score = 0;
+            
+            // HIGHEST PRIORITY: Exact match of primary entity in action ID
+            if ($primaryEntity && str_contains($actionId, $primaryEntity)) {
+                $score += 100; // Very high score for exact entity match
+            }
+            
+            // Score based on trigger keywords
+            foreach ($action['triggers'] ?? [] as $trigger) {
+                if (stripos($messageLower, strtolower($trigger)) !== false) {
+                    $score += 10;
+                }
+            }
+            
+            // Score based on label
+            if (stripos($messageLower, strtolower($action['label'])) !== false) {
+                $score += 5;
+            }
+            
+            // Score based on action ID keywords (lower priority)
+            $actionWords = preg_split('/[_\s]+/', $actionId);
+            foreach ($actionWords as $word) {
+                if (strlen($word) > 3 && stripos($messageLower, strtolower($word)) !== false) {
+                    $score += 3;
+                }
+            }
+            
+            $scored[$actionId] = ['action' => $action, 'score' => $score];
+        }
+        
+        // Sort by score descending
+        uasort($scored, fn($a, $b) => $b['score'] <=> $a['score']);
+        
+        // Take top N actions
+        $filtered = array_slice($scored, 0, $limit, true);
+        
+        // Return just the actions
+        return array_map(fn($item) => $item['action'], $filtered);
     }
 }

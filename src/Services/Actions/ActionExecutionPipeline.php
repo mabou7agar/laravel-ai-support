@@ -303,11 +303,9 @@ class ActionExecutionPipeline
         try {
             $agentMode = app(\LaravelAIEngine\Services\Agent\AgentMode::class);
             
-            // Create or get context for this session
-            $context = new \LaravelAIEngine\DTOs\UnifiedActionContext(
-                $sessionId ?? uniqid('workflow_'),
-                $userId
-            );
+            // Load existing context from cache or create new one
+            $sessionId = $sessionId ?? uniqid('workflow_');
+            $context = \LaravelAIEngine\DTOs\UnifiedActionContext::fromCache($sessionId, $userId);
             
             // Get the message from params
             $message = $params['message'] ?? $params['user_message'] ?? '';

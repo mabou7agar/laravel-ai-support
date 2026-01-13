@@ -1217,6 +1217,32 @@ PROMPT;
                         $allResults->push($obj);
                     }
                 }
+                
+                // If federated search returned no results, try database fallback for each collection
+                if (empty($federatedResults['results']) || count($federatedResults['results']) === 0) {
+                    \Log::warning('🔄 FEDERATED SEARCH EMPTY - TRYING DATABASE FALLBACK', [
+                        'query' => $searchQuery,
+                        'collections_count' => count($collections),
+                    ]);
+                    
+                    foreach ($collections as $collection) {
+                        try {
+                            $dbResults = $this->fallbackDatabaseSearch($collection, $searchQuery, $maxResults, $userId);
+                            if ($dbResults->isNotEmpty()) {
+                                Log::channel('ai-engine')->info('Database fallback successful in federated path', [
+                                    'collection' => $collection,
+                                    'results_count' => $dbResults->count(),
+                                ]);
+                                $allResults = $allResults->merge($dbResults);
+                            }
+                        } catch (\Exception $dbError) {
+                            Log::channel('ai-engine')->warning('Database fallback failed in federated path', [
+                                'collection' => $collection,
+                                'error' => $dbError->getMessage(),
+                            ]);
+                        }
+                    }
+                }
 
                 Log::channel('ai-engine')->info('Federated search completed', [
                     'query' => $searchQuery,
@@ -1303,15 +1329,64 @@ PROMPT;
                         ]);
                     }
 
+                    // If vector search returned no results, try database fallback
+                    if ($results->isEmpty() || $results->count() === 0) {
+                        \Log::warning('🔄 DATABASE FALLBACK TRIGGERED', [
+                            'collection' => $collection,
+                            'query' => $searchQuery,
+                            'results_type' => gettype($results),
+                            'results_count' => $results->count(),
+                        ]);
+                        
+                        Log::channel('ai-engine')->info('Vector search returned no results, trying database fallback', [
+                            'collection' => $collection,
+                            'query' => $searchQuery,
+                            'results_type' => gettype($results),
+                            'results_count' => $results->count(),
+                        ]);
+                        
+                        try {
+                            $dbResults = $this->fallbackDatabaseSearch($collection, $searchQuery, $maxResults, $userId);
+                            if ($dbResults->isNotEmpty()) {
+                                Log::channel('ai-engine')->info('Database fallback successful', [
+                                    'collection' => $collection,
+                                    'results_count' => $dbResults->count(),
+                                ]);
+                                $results = $dbResults;
+                            }
+                        } catch (\Exception $dbError) {
+                            Log::channel('ai-engine')->warning('Database fallback failed', [
+                                'collection' => $collection,
+                                'error' => $dbError->getMessage(),
+                            ]);
+                        }
+                    }
+
                     $allResults = $allResults->merge($results);
                 } catch (\Exception $e) {
-                    Log::channel('ai-engine')->warning('Vector search failed', [
+                    Log::channel('ai-engine')->warning('Vector search failed, trying database fallback', [
                         'collection' => $collection,
                         'query' => $searchQuery,
                         'user_id' => $userId,
                         'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString(),
                     ]);
+                    
+                    // Fallback to local database query
+                    try {
+                        $dbResults = $this->fallbackDatabaseSearch($collection, $searchQuery, $maxResults, $userId);
+                        if ($dbResults->isNotEmpty()) {
+                            Log::channel('ai-engine')->info('Database fallback successful', [
+                                'collection' => $collection,
+                                'results_count' => $dbResults->count(),
+                            ]);
+                            $allResults = $allResults->merge($dbResults);
+                        }
+                    } catch (\Exception $dbError) {
+                        Log::channel('ai-engine')->error('Database fallback also failed', [
+                            'collection' => $collection,
+                            'error' => $dbError->getMessage(),
+                        ]);
+                    }
                 }
             }
         }
@@ -2591,6 +2666,166 @@ PROMPT;
             ]);
             return false;
         }
+    }
+
+    /**
+     * Fallback to local database search when vector search fails
+     * 
+     * @param string $collection Model class name
+     * @param string $query Search query
+     * @param int $maxResults Maximum results to return
+     * @param mixed $userId User ID for access control
+     * @return \Illuminate\Support\Collection
+     */
+    protected function fallbackDatabaseSearch(string $collection, string $query, int $maxResults = 5, $userId = null): \Illuminate\Support\Collection
+    {
+        \Log::info('🔍 fallbackDatabaseSearch START', [
+            'collection' => $collection,
+            'query' => $query,
+            'maxResults' => $maxResults,
+            'userId' => $userId,
+        ]);
+        
+        if (!class_exists($collection)) {
+            \Log::warning('fallbackDatabaseSearch: class does not exist', ['collection' => $collection]);
+            return collect([]);
+        }
+
+        try {
+            $model = new $collection();
+            \Log::info('fallbackDatabaseSearch: model instantiated', ['table' => $model->getTable()]);
+            $queryBuilder = $collection::query();
+
+            // Apply workspace/tenant filters if model has workspace column
+            $hasWorkspaceFilter = false;
+            if (\Illuminate\Support\Facades\Schema::hasColumn($model->getTable(), 'workspace')) {
+                // Use workspace 1 by default (avoid calling getActiveWorkSpace which can hang)
+                $workspace = 1;
+                $queryBuilder->where('workspace', $workspace);
+                $hasWorkspaceFilter = true;
+                \Log::info('fallbackDatabaseSearch: applied workspace filter', ['workspace' => $workspace]);
+            }
+
+            // Apply user_id filter if model has the column
+            // Note: For workspace-scoped models, don't filter by user_id
+            // This allows all users in the workspace to access the data
+            if ($userId && \Illuminate\Support\Facades\Schema::hasColumn($model->getTable(), 'user_id') && !$hasWorkspaceFilter) {
+                $queryBuilder->where('user_id', $userId);
+            }
+
+            // Search in searchable fields if query is meaningful
+            $searchableFields = $this->getSearchableFields($model);
+            
+            // Only apply text search if we have searchable fields and a meaningful query
+            // For queries like "show me last invoice", we just want the latest records
+            $isListQuery = preg_match('/\b(last|latest|recent|show|get|find)\b/i', $query);
+            
+            if (!empty($searchableFields) && !$isListQuery && strlen($query) > 2) {
+                $queryBuilder->where(function($q) use ($searchableFields, $query) {
+                    foreach ($searchableFields as $field) {
+                        $q->orWhere($field, 'LIKE', "%{$query}%");
+                    }
+                });
+            }
+
+            // Get results ordered by most recent
+            $results = $queryBuilder
+                ->orderBy('created_at', 'desc')
+                ->limit($maxResults)
+                ->get();
+
+            // Transform to match vector search result format (must return objects, not arrays)
+            return $results->map(function($item) {
+                // Try to get searchable array if method exists, otherwise use toArray
+                $content = method_exists($item, 'toSearchableArray') 
+                    ? json_encode($item->toSearchableArray()) 
+                    : json_encode($item->toArray());
+                
+                // Return as object to match vector search format
+                return (object) [
+                    'id' => $item->id,
+                    'model_type' => get_class($item),
+                    'model_id' => $item->id,
+                    'content' => $content,
+                    'vector_score' => 0.5, // Default score for database results
+                    'metadata' => $item->toArray(),
+                ];
+            });
+
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Database fallback search failed', [
+                'collection' => $collection,
+                'error' => $e->getMessage(),
+            ]);
+            return collect([]);
+        }
+    }
+
+    /**
+     * Get searchable fields from model's AI config
+     * 
+     * @param \Illuminate\Database\Eloquent\Model $model
+     * @return array
+     */
+    protected function getSearchableFields($model): array
+    {
+        // Try to get from AI config first
+        if (method_exists($model, 'initializeAI')) {
+            try {
+                $aiConfig = $model->initializeAI();
+                
+                // Extract searchable fields from entity field configs
+                $searchableFields = [];
+                
+                // Check for entity fields with searchFields defined
+                if (isset($aiConfig['entities'])) {
+                    foreach ($aiConfig['entities'] as $entityConfig) {
+                        if (isset($entityConfig['searchFields']) && is_array($entityConfig['searchFields'])) {
+                            $searchableFields = array_merge($searchableFields, $entityConfig['searchFields']);
+                        }
+                    }
+                }
+                
+                // Also check regular fields
+                if (isset($aiConfig['fields'])) {
+                    foreach ($aiConfig['fields'] as $fieldName => $fieldConfig) {
+                        // Add fields that are likely searchable (strings, text)
+                        if (is_array($fieldConfig) && isset($fieldConfig['type'])) {
+                            if (in_array($fieldConfig['type'], ['string', 'text'])) {
+                                $searchableFields[] = $fieldName;
+                            }
+                        }
+                    }
+                }
+                
+                if (!empty($searchableFields)) {
+                    return array_unique($searchableFields);
+                }
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->debug('Could not extract searchable fields from AI config', [
+                    'model' => get_class($model),
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+        
+        // Fallback: Check if model has explicit getSearchableFields method
+        if (method_exists($model, 'getSearchableFields')) {
+            return $model->getSearchableFields();
+        }
+
+        // Last resort: Check for common searchable fields
+        $commonFields = ['name', 'title', 'description', 'email', 'content', 'body', 'invoice_id', 'status'];
+        $table = $model->getTable();
+        $existingFields = [];
+
+        foreach ($commonFields as $field) {
+            if (\Illuminate\Support\Facades\Schema::hasColumn($table, $field)) {
+                $existingFields[] = $field;
+            }
+        }
+
+        return $existingFields;
     }
 
 }

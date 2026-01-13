@@ -24,6 +24,7 @@ use LaravelAIEngine\Services\MemoryOptimizationService;
 use LaravelAIEngine\DTOs\InteractiveAction;
 use LaravelAIEngine\Enums\ActionTypeEnum;
 use LaravelAIEngine\Services\Vector\VectorAuthorizationService;
+use LaravelAIEngine\Services\AIModelRegistry;
 
 class AIChatController extends Controller
 {
@@ -35,6 +36,7 @@ class AIChatController extends Controller
         protected RAGCollectionDiscovery $ragDiscovery,
         protected VectorAuthorizationService $authService,
         protected MemoryOptimizationService $memoryOptimization,
+        protected AIModelRegistry $modelRegistry,
         protected ?IntelligentRAGService $intelligentRAG = null
     ) {
         // Apply auth middleware only if Sanctum or JWT is available
@@ -120,14 +122,37 @@ class AIChatController extends Controller
      */
     public function sendMessage(SendMessageRequest $request): JsonResponse
     {
+        \Log::debug('AIChatController: sendMessage called', ['session_id' => $request->input('session_id')]);
+        
         try {
             $dto = $request->toDTO();
+            \Log::debug('AIChatController: DTO created', ['user_id' => $dto->userId]);
 
             $engine = $dto->engine;
             $model = $dto->model;
             $useMemory = $dto->memory;
             $useActions = $dto->actions;
             $useStreaming = $dto->streaming;
+
+            // Auto-select model if requested
+            $autoSelectModel = $request->input('auto_select_model', false);
+            $taskType = $request->input('task_type', 'default');
+            
+            if ($autoSelectModel || (!$request->has('model') && config('ai-engine.auto_select_model', false))) {
+                $recommendedModel = $this->modelRegistry->getRecommendedModel($taskType);
+                
+                if ($recommendedModel) {
+                    $engine = $recommendedModel->provider;
+                    $model = $recommendedModel->model_id;
+                    
+                    Log::info('AIChatController: Auto-selected model', [
+                        'task' => $taskType,
+                        'provider' => $engine,
+                        'model' => $model,
+                        'is_offline' => $recommendedModel->provider === 'ollama',
+                    ]);
+                }
+            }
 
             // Check if API key is configured
             $apiKey = config("ai-engine.engines.{$engine}.api_key");
@@ -144,6 +169,13 @@ class AIChatController extends Controller
                 ], 200); // Return 200 so the UI can display the demo message
             }
 
+            // Get intelligent RAG setting first
+            $useIntelligentRAG = $request->input('intelligent_rag',
+                $request->input('use_intelligent_rag',
+                    config('ai-engine.intelligent_rag.enabled', true)
+                )
+            );
+
             // Get RAG collections from config or request
             $ragCollections = $request->input('rag_collections');
             
@@ -154,25 +186,51 @@ class AIChatController extends Controller
             ]);
 
             // If not provided, auto-discover from RAGgable/Vectorizable models
-            if (empty($ragCollections)) {
+            // Only discover if intelligent RAG is enabled to avoid unnecessary overhead
+            if (empty($ragCollections) && $useIntelligentRAG) {
                 $ragCollections = $this->ragDiscovery->discover();
                 Log::info('AIChatController: Auto-discovered collections', [
-                    'count' => count($ragCollections),
+                    'count' => is_countable($ragCollections) ? count($ragCollections) : 0,
                 ]);
             } else {
-                Log::info('AIChatController: Using user-passed collections', [
-                    'count' => count($ragCollections),
-                    'collections' => $ragCollections,
+                Log::info('AIChatController: Using user-passed collections or RAG disabled', [
+                    'count' => is_countable($ragCollections) ? count($ragCollections) : 0,
+                    'rag_enabled' => $useIntelligentRAG,
                 ]);
             }
 
-            $useIntelligentRAG = $request->input('intelligent_rag',
-                $request->input('use_intelligent_rag',
-                    config('ai-engine.intelligent_rag.enabled', true)
-                )
-            );
+            // Check if async mode is requested (optional feature)
+            $useAsync = $request->input('async', false);
+            
+            // Dispatch to queue if async mode is enabled
+            if ($useAsync && $useActions) {
+                $jobId = uniqid('workflow_');
+                
+                dispatch(new \LaravelAIEngine\Jobs\ProcessWorkflowJob(
+                    jobId: $jobId,
+                    message: $dto->message,
+                    sessionId: $dto->sessionId,
+                    userId: $dto->userId,
+                    engine: $engine,
+                    model: $model,
+                    useMemory: $useMemory,
+                    useActions: $useActions,
+                    useIntelligentRAG: $useIntelligentRAG,
+                    ragCollections: $ragCollections
+                ));
+                
+                return response()->json([
+                    'success' => true,
+                    'async' => true,
+                    'job_id' => $jobId,
+                    'status' => 'processing',
+                    'message' => 'Your request is being processed...',
+                    'stream_url' => route('ai-engine.workflow.stream', $jobId),
+                    'status_url' => route('ai-engine.workflow.status', $jobId),
+                ]);
+            }
 
-            // Process message using ChatService
+            // Process message synchronously (default behavior)
             $response = $this->chatService->processMessage(
                 message: $dto->message,
                 sessionId: $dto->sessionId,
@@ -908,5 +966,97 @@ class AIChatController extends Controller
     protected function canAccessRAGCollection(string $userId, string $collectionName): bool
     {
         return $this->authService->canAccessCollection($userId, $collectionName);
+    }
+
+    /**
+     * Stream workflow status updates via Server-Sent Events (SSE)
+     * 
+     * This endpoint provides real-time updates for async workflow processing.
+     * The frontend can connect to this stream after dispatching a workflow job.
+     */
+    public function streamWorkflow(string $jobId): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        return response()->stream(function() use ($jobId) {
+            // Set headers for SSE
+            header('Content-Type: text/event-stream');
+            header('Cache-Control: no-cache');
+            header('Connection: keep-alive');
+            header('X-Accel-Buffering: no'); // Disable nginx buffering
+            
+            $lastStatus = null;
+            $maxAttempts = 120; // 2 minutes max (1 second intervals)
+            $attempts = 0;
+            
+            // Send initial connection message
+            echo "data: " . json_encode([
+                'status' => 'connected',
+                'message' => 'Stream connected',
+            ]) . "\n\n";
+            ob_flush();
+            flush();
+            
+            while ($attempts < $maxAttempts) {
+                $status = Cache::get("workflow:{$jobId}");
+                
+                if ($status && json_encode($status) !== json_encode($lastStatus)) {
+                    // Send update to client
+                    echo "data: " . json_encode($status) . "\n\n";
+                    
+                    ob_flush();
+                    flush();
+                    
+                    $lastStatus = $status;
+                    
+                    // Stop if completed or failed
+                    if (in_array($status['status'] ?? '', ['completed', 'failed'])) {
+                        break;
+                    }
+                }
+                
+                sleep(1);
+                $attempts++;
+                
+                // Send heartbeat every 10 seconds to keep connection alive
+                if ($attempts % 10 === 0) {
+                    echo ": heartbeat\n\n";
+                    ob_flush();
+                    flush();
+                }
+            }
+            
+            // Timeout
+            if ($attempts >= $maxAttempts) {
+                echo "data: " . json_encode([
+                    'status' => 'timeout',
+                    'message' => 'Request timed out after 2 minutes'
+                ]) . "\n\n";
+                ob_flush();
+                flush();
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    /**
+     * Get workflow status (for polling approach)
+     */
+    public function getWorkflowStatus(string $jobId): JsonResponse
+    {
+        $status = Cache::get("workflow:{$jobId}");
+        
+        if (!$status) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Workflow not found or expired'
+            ], 404);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'data' => $status,
+        ]);
     }
 }

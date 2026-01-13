@@ -5,6 +5,7 @@ use LaravelAIEngine\Http\Controllers\AIChatController;
 use LaravelAIEngine\Http\Controllers\Api\RagChatApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\ActionExecutionController;
+use LaravelAIEngine\Http\Controllers\Api\ModelRecommendationController;
 use LaravelAIEngine\Http\Controllers\DataCollectorController;
 
 /*
@@ -181,5 +182,37 @@ Route::prefix('ai-demo')
             // Get user conversations
             Route::get('/conversations', [AIChatController::class, 'getUserConversations'])
                 ->name('chat.conversations');
+        });
+        
+        // Async Workflow Routes (SSE Support)
+        Route::prefix('workflow')->group(function () {
+            
+            // Stream workflow status via SSE
+            Route::get('/stream/{jobId}', [AIChatController::class, 'streamWorkflow'])
+                ->name('workflow.stream');
+            
+            // Get workflow status (polling alternative)
+            Route::get('/status/{jobId}', [AIChatController::class, 'getWorkflowStatus'])
+                ->name('workflow.status');
+        });
+        
+        // Model Recommendation Routes
+        Route::prefix('models')->group(function () {
+            
+            // Get recommended model for task
+            Route::get('/recommend', [ModelRecommendationController::class, 'recommend'])
+                ->name('models.recommend');
+            
+            // Get all recommendations
+            Route::get('/recommendations', [ModelRecommendationController::class, 'all'])
+                ->name('models.recommendations');
+            
+            // Get cheapest model
+            Route::get('/cheapest', [ModelRecommendationController::class, 'cheapest'])
+                ->name('models.cheapest');
+            
+            // Check online/offline status
+            Route::get('/status', [ModelRecommendationController::class, 'status'])
+                ->name('models.status');
         });
     });

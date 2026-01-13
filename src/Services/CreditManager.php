@@ -48,12 +48,13 @@ class CreditManager
         $user = $this->getUserModel($userId);
         
         // Check unlimited first
-        if ($user->has_unlimited_credits) {
+        if (isset($user->has_unlimited_credits) && $user->has_unlimited_credits) {
             return true;
         }
         
         $requiredCredits = $this->calculateCredits($request);
-        return $user->my_credits >= $requiredCredits;
+        
+        return ($user->my_credits ?? 0) >= $requiredCredits;
     }
 
     /**

@@ -28,7 +28,48 @@ class AgentMode
             'session_id' => $context->sessionId,
             'workflow' => $context->currentWorkflow,
             'current_step' => $context->currentStep,
+            'message' => substr($message, 0, 50),
         ]);
+
+        // CRITICAL DEBUG: Check if workflow is set
+        if (!$context->currentWorkflow) {
+            Log::channel('ai-engine')->error('❌ No workflow set in context');
+            return AgentResponse::failure(
+                message: 'Workflow not initialized',
+                context: $context
+            );
+        }
+
+        // Check for infinite loop protection - only count when same step is executed repeatedly
+        $currentStepKey = $context->currentWorkflow . '::' . ($context->currentStep ?? 'start');
+        $stepExecutionCount = $context->get('step_execution_count', []);
+        $executionCount = $stepExecutionCount[$currentStepKey] ?? 0;
+        $maxStepExecutions = config('ai-engine.workflow.max_step_executions', 20); // Increased for subworkflows
+        
+        if ($executionCount >= $maxStepExecutions) {
+            Log::channel('ai-engine')->error('⚠️ Step execution limit exceeded - possible infinite loop', [
+                'workflow' => $context->currentWorkflow,
+                'step' => $context->currentStep,
+                'executions' => $executionCount,
+                'max' => $maxStepExecutions,
+                'all_counts' => $stepExecutionCount,
+            ]);
+            
+            return AgentResponse::failure(
+                message: 'Workflow appears to be stuck. Please try again or contact support.',
+                context: $context
+            );
+        }
+        
+        Log::channel('ai-engine')->debug('Step execution count', [
+            'step' => $context->currentStep,
+            'count' => $executionCount + 1,
+            'max' => $maxStepExecutions,
+        ]);
+        
+        // Increment step execution counter
+        $stepExecutionCount[$currentStepKey] = $executionCount + 1;
+        $context->set('step_execution_count', $stepExecutionCount);
 
         // Get workflow instance
         $workflow = $this->getWorkflow($context->currentWorkflow);
@@ -44,17 +85,32 @@ class AgentMode
         $currentStep = $this->getCurrentStep($workflow, $context);
         
         if (!$currentStep) {
+            Log::channel('ai-engine')->error('❌ No valid step found', [
+                'workflow' => get_class($workflow),
+                'requested_step' => $context->currentStep,
+                'available_steps' => count($workflow->getSteps()),
+            ]);
+            
             return AgentResponse::failure(
                 message: 'No valid step to execute',
                 context: $context
             );
         }
 
+        Log::channel('ai-engine')->debug('✓ Step found, executing', [
+            'step' => $currentStep->getName(),
+            'workflow' => get_class($workflow),
+        ]);
+
         // Execute step
+        $stepNameBeforeExecution = $context->currentStep;
         $result = $this->executeStep($currentStep, $context, $message);
 
-        // Update context
-        $context->currentStep = $currentStep->getName();
+        // Update context - but preserve step changes made during execution (e.g., subworkflow transitions)
+        // Only update if the step hasn't been changed by the execution
+        if ($context->currentStep === $stepNameBeforeExecution) {
+            $context->currentStep = $currentStep->getName();
+        }
         
         Log::channel('ai-engine')->debug('Persisting context after step execution', [
             'session_id' => $context->sessionId,
@@ -75,12 +131,9 @@ class AgentMode
         }
 
         try {
-            // Get AI and Tools services for workflow constructor
-            $ai = app(\LaravelAIEngine\Services\AIEngineService::class);
-            $tools = app(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class);
-            
-            // Instantiate workflow with required dependencies
-            return new $workflowClass($ai, $tools);
+            // Use service container to resolve workflow with all dependencies
+            // This allows workflows to have additional constructor parameters beyond $ai and $tools
+            return app()->make($workflowClass);
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Failed to instantiate workflow', [
                 'workflow' => $workflowClass,
@@ -100,16 +153,56 @@ class AgentMode
         // Get the step from workflow
         $step = $workflow->getStep($context->currentStep);
         
-        // If step doesn't exist in this workflow, we might be in a subworkflow
-        // that was just started - get the first step instead
-        if (!$step && $context->isInSubworkflow()) {
-            Log::channel('ai-engine')->info('Step not found in current workflow, starting from first step', [
-                'workflow' => get_class($workflow),
-                'requested_step' => $context->currentStep,
-            ]);
+        // If step not found, check if we're in a subworkflow with prefixed steps
+        if (!$step) {
+            $activeSubflow = $context->get('active_subflow');
             
-            $context->currentStep = null;
-            return $workflow->getFirstStep();
+            if ($activeSubflow && !empty($activeSubflow['step_prefix'])) {
+                // Current step might be a prefixed subworkflow step
+                // Need to get the subworkflow instance with the prefix
+                $subflowClass = $activeSubflow['workflow_class'];
+                $stepPrefix = $activeSubflow['step_prefix'];
+                
+                Log::channel('ai-engine')->info('Step not found in parent, checking subworkflow', [
+                    'parent_workflow' => get_class($workflow),
+                    'subflow_class' => $subflowClass,
+                    'step_prefix' => $stepPrefix,
+                    'current_step' => $context->currentStep,
+                ]);
+                
+                // Instantiate subworkflow with prefix
+                try {
+                    $ai = app(\LaravelAIEngine\Services\AIEngineService::class);
+                    $tools = null; // ToolRegistry is optional
+                    $subworkflow = new $subflowClass($ai, $tools, $stepPrefix);
+                    
+                    // Try to get the step from subworkflow
+                    $step = $subworkflow->getStep($context->currentStep);
+                    
+                    if ($step) {
+                        Log::channel('ai-engine')->info('Found step in subworkflow', [
+                            'step' => $context->currentStep,
+                        ]);
+                        return $step;
+                    }
+                } catch (\Exception $e) {
+                    Log::channel('ai-engine')->error('Failed to instantiate subworkflow', [
+                        'subflow' => $subflowClass,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            
+            // Fallback: try starting from first step
+            if ($context->isInSubworkflow()) {
+                Log::channel('ai-engine')->info('Step not found, starting from first step', [
+                    'workflow' => get_class($workflow),
+                    'requested_step' => $context->currentStep,
+                ]);
+                
+                $context->currentStep = null;
+                return $workflow->getFirstStep();
+            }
         }
         
         return $step;
@@ -128,6 +221,9 @@ class AgentMode
         ]);
 
         try {
+            // Store the current step before execution to detect subflow transitions
+            $stepBeforeExecution = $context->currentStep;
+            
             // Add user message to context if provided
             if (!empty($message)) {
                 $context->addUserMessage($message);
@@ -135,21 +231,40 @@ class AgentMode
 
             // Execute the step
             $result = $step->run($context);
+            
+            // Check if currentStep changed during execution (indicates subflow started)
+            $stepAfterExecution = $context->currentStep;
+            if ($stepBeforeExecution !== $stepAfterExecution) {
+                Log::channel('ai-engine')->info('🔀 Step transition detected during execution', [
+                    'executed_step' => $step->getName(),
+                    'step_before' => $stepBeforeExecution,
+                    'step_after' => $stepAfterExecution,
+                    'subflow_started' => true,
+                ]);
+                
+                // Mark that a subflow was started during this step
+                $result->metadata['subflow_started'] = true;
+                $result->metadata['new_step'] = $stepAfterExecution;
+            }
 
             Log::channel('ai-engine')->info('✅ STEP COMPLETED', [
                 'step' => $step->getName(),
                 'success' => $result->success,
-                'needs_user_input' => $result->needsUserInput ?? false,
+                'needs_user_input' => $result->getMetadata('needs_user_input', false),
+                'has_metadata' => !empty($result->metadata),
+                'metadata_keys' => array_keys($result->metadata),
                 'message_preview' => substr($result->message ?? '', 0, 100),
             ]);
 
             return $result;
 
         } catch (\Exception $e) {
-            Log::channel('ai-engine')->error('Step execution failed', [
+            Log::channel('ai-engine')->error('❌ Step execution failed with exception', [
                 'step' => $step->getName(),
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => substr($e->getTraceAsString(), 0, 500),
             ]);
 
             return ActionResult::failure(
@@ -184,18 +299,36 @@ class AgentMode
         $needsUserInput = $result->getMetadata('needs_user_input', false);
         
         // If needs user input, return immediately without moving to next step
+        // Keep the current step so it executes again when user responds
         if ($needsUserInput) {
-            Log::channel('ai-engine')->info('Workflow needs user input', [
+            Log::channel('ai-engine')->info('Workflow needs user input, staying on current step', [
                 'step' => $step->getName(),
-                'message' => $result->message,
-                'data' => $result->data,
+                'message' => substr($result->message ?? '', 0, 100),
+                'current_step' => $context->currentStep,
             ]);
             
+            // Don't change the current step - stay on it for next execution
             return AgentResponse::needsUserInput(
                 message: $result->message,
                 data: $result->data,
                 context: $context
             );
+        }
+        
+        // Check if a subworkflow was started during step execution
+        if ($result->getMetadata('subflow_started', false)) {
+            // A subflow was started - currentStep was changed during execution
+            // Continue execution with the new step (subflow's first step)
+            $newStep = $result->getMetadata('new_step');
+            
+            Log::channel('ai-engine')->info('🔀 Subflow started during step execution, continuing with new step', [
+                'parent_step' => $step->getName(),
+                'new_step' => $newStep,
+                'current_step' => $context->currentStep,
+            ]);
+            
+            // Continue execution with the new step
+            return $this->execute('', $context);
         }
         
         // Check if a subworkflow was pushed onto the stack during step execution
@@ -215,6 +348,43 @@ class AgentMode
         $nextStepName = $result->success
             ? $step->getOnSuccess() 
             : $step->getOnFailure();
+
+        // Check if we just completed a subworkflow
+        $activeSubflow = $context->get('active_subflow');
+        if ($activeSubflow && ($nextStepName === 'complete' || !$nextStepName)) {
+            $stepPrefix = $activeSubflow['step_prefix'] ?? '';
+            $currentStepName = $step->getName();
+            
+            // If current step has the prefix, we just completed the subworkflow
+            if ($stepPrefix && str_starts_with($currentStepName, $stepPrefix)) {
+                Log::channel('ai-engine')->info('🎯 Subworkflow completed, returning to parent', [
+                    'subflow_step' => $currentStepName,
+                    'step_prefix' => $stepPrefix,
+                    'parent_field' => $activeSubflow['field_name'],
+                ]);
+                
+                // Store the created entity ID from result data
+                $fieldName = $activeSubflow['field_name'];
+                if (!empty($result->data['customer_id'])) {
+                    $context->set($fieldName . '_id', $result->data['customer_id']);
+                    Log::channel('ai-engine')->info('Stored entity ID from subworkflow', [
+                        'field' => $fieldName,
+                        'entity_id' => $result->data['customer_id'],
+                    ]);
+                }
+                
+                // Clear subworkflow state
+                $context->forget('active_subflow');
+                
+                // Return to parent workflow's resolve step
+                // The parent's resolve_customer step will detect completion and extract the entity
+                $context->currentStep = 'resolve_' . $fieldName;
+                $context->persist();
+                
+                // Continue execution to resolve the entity in parent workflow
+                return $this->execute('', $context);
+            }
+        }
 
         // Check if workflow is complete
         if (!$nextStepName || $nextStepName === 'complete') {
@@ -258,13 +428,50 @@ class AgentMode
             );
         }
 
-        // Get next step
+        // Get next step - check if it's in a subworkflow first
         $nextStep = $workflow->getStep($nextStepName);
         
+        // If not found in parent workflow, check if we're in a subworkflow
         if (!$nextStep) {
-            Log::channel('ai-engine')->error('Next step not found', [
+            $activeSubflow = $context->get('active_subflow');
+            
+            if ($activeSubflow && !empty($activeSubflow['step_prefix'])) {
+                $subflowClass = $activeSubflow['workflow_class'];
+                $stepPrefix = $activeSubflow['step_prefix'];
+                
+                Log::channel('ai-engine')->info('Next step not found in parent, checking subworkflow', [
+                    'next_step' => $nextStepName,
+                    'subflow_class' => $subflowClass,
+                    'step_prefix' => $stepPrefix,
+                ]);
+                
+                // Instantiate subworkflow with prefix
+                try {
+                    $ai = app(\LaravelAIEngine\Services\AIEngineService::class);
+                    $tools = null;
+                    $subworkflow = new $subflowClass($ai, $tools, $stepPrefix);
+                    
+                    $nextStep = $subworkflow->getStep($nextStepName);
+                    
+                    if ($nextStep) {
+                        Log::channel('ai-engine')->info('Found next step in subworkflow', [
+                            'next_step' => $nextStepName,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::channel('ai-engine')->error('Failed to instantiate subworkflow for next step', [
+                        'subflow' => $subflowClass,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+        
+        if (!$nextStep) {
+            Log::channel('ai-engine')->error('Next step not found in any workflow', [
                 'next_step' => $nextStepName,
                 'workflow' => get_class($workflow),
+                'has_active_subflow' => !empty($activeSubflow),
             ]);
 
             return AgentResponse::failure(

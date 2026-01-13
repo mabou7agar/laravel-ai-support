@@ -105,6 +105,14 @@ class ActionRegistry
                 // Check if model has a workflow configured
                 $workflowClass = null;
                 $reflection = new \ReflectionClass($modelClass);
+                
+                \Log::info('ActionRegistry: Checking workflow for model', [
+                    'model' => $modelClass,
+                    'has_initializeAI' => $reflection->hasMethod('initializeAI'),
+                    'has_getAIConfig' => $reflection->hasMethod('getAIConfig'),
+                ]);
+                
+                // Check for initializeAI method
                 if ($reflection->hasMethod('initializeAI')) {
                     $method = $reflection->getMethod('initializeAI');
                     $aiConfig = $method->isStatic() 
@@ -112,9 +120,35 @@ class ActionRegistry
                         : (new $modelClass())->initializeAI();
                     
                     $workflowClass = $aiConfig['workflow'] ?? null;
+                    
+                    \Log::info('ActionRegistry: initializeAI result', [
+                        'model' => $modelClass,
+                        'workflow' => $workflowClass,
+                        'has_fields' => isset($aiConfig['fields']),
+                    ]);
+                } elseif ($reflection->hasMethod('getAIConfig')) {
+                    $method = $reflection->getMethod('getAIConfig');
+                    $aiConfig = $method->isStatic() 
+                        ? $modelClass::getAIConfig() 
+                        : (new $modelClass())->getAIConfig();
+                    
+                    $workflowClass = $aiConfig['workflow'] ?? null;
+                    
+                    \Log::info('ActionRegistry: getAIConfig result', [
+                        'model' => $modelClass,
+                        'workflow' => $workflowClass,
+                        'has_fields' => isset($aiConfig['fields']),
+                        'fields' => array_keys($aiConfig['fields'] ?? []),
+                    ]);
                 }
 
                 // If workflow is configured, register as workflow action
+                \Log::info('ActionRegistry: Workflow check result', [
+                    'model' => $modelClass,
+                    'workflow_class' => $workflowClass,
+                    'workflow_exists' => $workflowClass && class_exists($workflowClass),
+                ]);
+                
                 if ($workflowClass && class_exists($workflowClass)) {
                     $actions[$actionId] = [
                         'label' => "🧾 Create {$modelName} (Guided Workflow)",
@@ -129,6 +163,7 @@ class ActionRegistry
                         'type' => 'workflow_action',
                         'auto_execute' => true,
                         'skip_confirmation' => true,
+                        'ready_to_execute' => true, // Workflows handle their own data collection
                     ];
                 } else {
                     // No workflow - register as model.dynamic action
@@ -429,37 +464,44 @@ class ActionRegistry
     {
         try {
             $reflection = new \ReflectionClass($modelClass);
+            $config = null;
 
+            // Check for initializeAI method
             if ($reflection->hasMethod('initializeAI')) {
                 $method = $reflection->getMethod('initializeAI');
+                $config = $method->isStatic() 
+                    ? $modelClass::initializeAI() 
+                    : (new $modelClass())->initializeAI();
+            }
+            // Check for getAIConfig method
+            elseif ($reflection->hasMethod('getAIConfig')) {
+                $method = $reflection->getMethod('getAIConfig');
+                $config = $method->isStatic() 
+                    ? $modelClass::getAIConfig() 
+                    : (new $modelClass())->getAIConfig();
+            }
 
-                if ($method->isStatic()) {
-                    $config = $modelClass::initializeAI();
-                } else {
-                    $model = new $modelClass();
-                    $config = $model->initializeAI();
-                }
+            // If we have config, convert fields format to required/optional
+            if ($config && isset($config['fields'])) {
+                $required = [];
+                $optional = [];
 
-                // Convert fields format to required/optional
-                if (isset($config['fields'])) {
-                    $required = [];
-                    $optional = [];
-
-                    foreach ($config['fields'] as $fieldName => $fieldConfig) {
-                        if ($fieldConfig['required'] ?? false) {
-                            $required[] = $fieldName;
-                        } else {
-                            $optional[] = $fieldName;
-                        }
+                foreach ($config['fields'] as $fieldName => $fieldConfig) {
+                    if ($fieldConfig['required'] ?? false) {
+                        $required[] = $fieldName;
+                    } else {
+                        $optional[] = $fieldName;
                     }
-
-                    return [
-                        'required' => $required,
-                        'optional' => $optional,
-                        'fields' => $config['fields'],
-                    ];
                 }
 
+                return [
+                    'required' => $required,
+                    'optional' => $optional,
+                    'fields' => $config['fields'],
+                ];
+            }
+
+            if ($config) {
                 return $config;
             }
 

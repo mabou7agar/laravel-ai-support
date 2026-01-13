@@ -49,16 +49,31 @@ class AIModelRegistry
 
     /**
      * Get recommended model for a task
+     * 
+     * Supports offline fallback to Ollama when no internet connection is available.
+     * 
+     * @param string $task Task type: vision, coding, reasoning, fast, cheap, quality
+     * @param string|null $provider Specific provider (openai, anthropic, ollama, etc.)
+     * @param bool $offlineMode Force offline mode (use Ollama)
+     * @return AIModel|null
      */
-    public function getRecommendedModel(string $task, ?string $provider = null): ?AIModel
+    public function getRecommendedModel(string $task, ?string $provider = null, bool $offlineMode = false): ?AIModel
     {
+        // If offline mode or no internet, prefer Ollama
+        if ($offlineMode || !$this->hasInternetConnection()) {
+            $ollamaModel = $this->getRecommendedOllamaModel($task);
+            if ($ollamaModel) {
+                return $ollamaModel;
+            }
+        }
+
         $query = AIModel::active();
 
         if ($provider) {
             $query->where('provider', $provider);
         }
 
-        return match ($task) {
+        $model = match ($task) {
             'vision' => $query->vision()->orderBy('pricing->input')->first(),
             'coding' => $query->whereJsonContains('capabilities', 'coding')->first(),
             'reasoning' => $query->whereJsonContains('capabilities', 'reasoning')->first(),
@@ -67,6 +82,52 @@ class AIModelRegistry
             'quality' => $query->orderByDesc('context_window->input')->first(),
             default => $query->chat()->orderBy('pricing->input')->first(),
         };
+
+        // Fallback to Ollama if no online model available
+        if (!$model) {
+            return $this->getRecommendedOllamaModel($task);
+        }
+
+        return $model;
+    }
+
+    /**
+     * Get recommended Ollama model for offline use
+     */
+    protected function getRecommendedOllamaModel(string $task): ?AIModel
+    {
+        $query = AIModel::active()->where('provider', 'ollama');
+
+        return match ($task) {
+            'vision' => $query->vision()->first(),
+            'coding' => $query->whereJsonContains('capabilities', 'coding')->first(),
+            'reasoning' => $query->orderByDesc('context_window->input')->first(),
+            'fast' => $query->orderBy('model_id')->first(), // Smaller models are faster
+            'cheap' => $query->first(), // Ollama is free
+            'quality' => $query->orderByDesc('context_window->input')->first(),
+            default => $query->first(),
+        };
+    }
+
+    /**
+     * Check if internet connection is available
+     */
+    protected function hasInternetConnection(): bool
+    {
+        try {
+            // Quick check to OpenAI (most common provider)
+            $apiKey = config('ai-engine.engines.openai.api_key');
+            if (!$apiKey) {
+                return false; // No API key = likely offline scenario
+            }
+
+            // Try a lightweight HEAD request with 2 second timeout
+            $response = Http::timeout(2)->head('https://api.openai.com');
+            return $response->successful();
+        } catch (\Exception $e) {
+            // Connection failed = offline
+            return false;
+        }
     }
 
     /**

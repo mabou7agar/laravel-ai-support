@@ -705,6 +705,38 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Plural Rules Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Define custom plural rules ONLY for words that don't follow standard
+    | English pluralization rules or need special handling in your domain.
+    |
+    | Standard rules are automatically applied:
+    | - Words ending in 'y' (consonant + y) → 'ies' (city → cities)
+    | - Words ending in 'ss', 'sh', 'ch', 'x', 'z' → add 'es' (box → boxes)
+    | - Words ending in 'f' or 'fe' → 'ves' (knife → knives)
+    | - Most other words → add 's' (product → products)
+    |
+    | Only add rules here if:
+    | 1. The word has an irregular plural (person → people)
+    | 2. You need domain-specific pluralization
+    | 3. The standard rules don't work for your use case
+    |
+    | Format: 'singular' => 'plural'
+    |
+    | Examples:
+    | 'person' => 'people',
+    | 'analysis' => 'analyses',
+    | 'datum' => 'data',
+    |
+    */
+    'plural_rules' => [
+        // Add your custom plural rules here
+        // Leave empty to use standard English pluralization rules
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Analytics and Monitoring Configuration
     |--------------------------------------------------------------------------
     |
@@ -837,6 +869,9 @@ return [
 
         // Batch processing
         'batch_size' => env('VECTOR_BATCH_SIZE', 100),
+        
+        // Maximum models to hydrate from search results (prevents memory exhaustion)
+        'max_hydrate_results' => env('VECTOR_MAX_HYDRATE_RESULTS', 50),
 
         // Auto-indexing
         'auto_index' => env('VECTOR_AUTO_INDEX', true),
@@ -1180,7 +1215,45 @@ return [
 
         // Number of recent messages to keep when history is long
         'recent_messages' => env('AI_CONVERSATION_RECENT_MESSAGES', 10),
+        
+        // Maximum message length to store (truncate longer messages)
+        'max_message_length' => env('AI_CONVERSATION_MAX_MESSAGE_LENGTH', 1000),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Workflow Performance Optimization
+    |--------------------------------------------------------------------------
+    |
+    | Configure performance settings for AI workflows to prevent timeouts
+    | and memory exhaustion.
+    |
+    */
+    'workflow' => [
+        'max_execution_time' => env('AI_WORKFLOW_MAX_EXECUTION_TIME', 120),
+        'max_ai_calls' => env('AI_WORKFLOW_MAX_AI_CALLS', 10),
+        'max_step_executions' => env('AI_WORKFLOW_MAX_STEP_EXECUTIONS', 20), // Increased for testing
+        'cache_enabled' => env('AI_WORKFLOW_CACHE_ENABLED', true),
+        'cache_ttl' => env('AI_WORKFLOW_CACHE_TTL', 300), // 5 minutes
+        
+        // Intent Analysis
+        'intent' => [
+            'max_actions' => env('AI_WORKFLOW_INTENT_MAX_ACTIONS', 10),
+            'filter_relevance' => env('AI_WORKFLOW_INTENT_FILTER_RELEVANCE', true),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Auto Model Selection
+    |--------------------------------------------------------------------------
+    |
+    | Enable automatic model selection based on task requirements.
+    | When enabled, the system will automatically choose the best model
+    | for the task with offline fallback to Ollama.
+    |
+    */
+    'auto_select_model' => env('AI_AUTO_SELECT_MODEL', false),
 
     /*
     |--------------------------------------------------------------------------

@@ -48,9 +48,19 @@ class AIConfigBuilder
         $this->config = [
             'model_name' => class_basename($model),
             'description' => '',
+            'goal' => '',
             'actions' => ['create', 'update', 'delete'],
             'fields' => [],
         ];
+    }
+    
+    /**
+     * Set model goal (primary objective)
+     */
+    public function goal(string $goal): self
+    {
+        $this->config['goal'] = $goal;
+        return $this;
     }
     
     /**
@@ -80,7 +90,9 @@ class AIConfigBuilder
         string $type = 'string',
         bool $required = false,
         mixed $default = null,
-        array $options = []
+        array $options = [],
+        ?string $prompt = null,
+        ?string $validation = null
     ): self {
         $fieldConfig = [
             'type' => $type,
@@ -94,6 +106,14 @@ class AIConfigBuilder
         
         if (!empty($options)) {
             $fieldConfig['options'] = $options;
+        }
+        
+        if ($prompt !== null) {
+            $fieldConfig['prompt'] = $prompt;
+        }
+        
+        if ($validation !== null) {
+            $fieldConfig['validation'] = $validation;
         }
         
         $this->config['fields'][$name] = $fieldConfig;

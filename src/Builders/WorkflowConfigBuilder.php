@@ -163,7 +163,12 @@ class WorkflowConfigBuilder
         
         $aiConfig = $modelClass::getAIConfig();
         
-        // Import description as goal if not set
+        // Import goal from model if available
+        if (empty($this->config['goal']) && !empty($aiConfig['goal'])) {
+            $this->config['goal'] = $aiConfig['goal'];
+        }
+        
+        // Fallback: Import description as goal if goal not set
         if (empty($this->config['goal']) && !empty($aiConfig['description'])) {
             $this->config['goal'] = $aiConfig['description'];
         }
@@ -228,6 +233,16 @@ class WorkflowConfigBuilder
                 // Import confirm_before_create if available
                 if (!empty($entityConfig['confirm_before_create'])) {
                     $workflowEntity['confirm_before_create'] = $entityConfig['confirm_before_create'];
+                }
+                
+                // Import check_duplicates if available
+                if (isset($entityConfig['check_duplicates'])) {
+                    $workflowEntity['check_duplicates'] = $entityConfig['check_duplicates'];
+                }
+                
+                // Import ask_on_duplicate if available
+                if (isset($entityConfig['ask_on_duplicate'])) {
+                    $workflowEntity['ask_on_duplicate'] = $entityConfig['ask_on_duplicate'];
                 }
                 
                 // Check if it's a multiple entity (array)

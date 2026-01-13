@@ -17,18 +17,60 @@ abstract class AgentWorkflow
     protected array $steps = [];
     protected AIEngineService $ai;
     protected ?ToolRegistry $tools = null;
+    protected ?string $stepPrefix = null;
 
-    public function __construct(AIEngineService $ai, ?ToolRegistry $tools = null)
+    public function __construct(AIEngineService $ai, ?ToolRegistry $tools = null, ?string $stepPrefix = null)
     {
         $this->ai = $ai;
         $this->tools = $tools;
+        $this->stepPrefix = $stepPrefix;
         $this->steps = $this->defineSteps();
         
-        Log::channel('ai-engine')->info('Workflow initialized', [
-            'class' => get_class($this),
-            'steps_count' => count($this->steps),
-            'steps' => array_map(fn($s) => $s->getName(), $this->steps),
-        ]);
+        // Apply step prefix if this is a subworkflow
+        if ($this->stepPrefix) {
+            $this->steps = $this->applyStepPrefix($this->steps, $this->stepPrefix);
+        }
+        
+        // Removed logging to prevent memory exhaustion from serializing steps array
+    }
+    
+    /**
+     * Apply prefix to all step names for subworkflow isolation
+     */
+    protected function applyStepPrefix(array $steps, string $prefix): array
+    {
+        return array_map(function($step) use ($prefix) {
+            // Clone the step and update its name and transitions
+            $originalName = $step->getName();
+            $prefixedName = $prefix . '_' . $originalName;
+            
+            // Create new step with prefixed name
+            $newStep = WorkflowStep::make($prefixedName)
+                ->description($step->getDescription())
+                ->execute($step->getExecutor());
+            
+            // Copy requiresInput flag if the method exists
+            if ($step->doesRequireUserInput()) {
+                $newStep->requiresUserInput();
+            }
+            
+            // Prefix success/failure transitions
+            $onSuccess = $step->getOnSuccess();
+            if ($onSuccess && $onSuccess !== 'complete' && $onSuccess !== 'error') {
+                $newStep->onSuccess($prefix . '_' . $onSuccess);
+            } else {
+                $newStep->onSuccess($onSuccess);
+            }
+            
+            $onFailure = $step->getOnFailure();
+            if ($onFailure && $onFailure !== 'complete' && $onFailure !== 'error') {
+                $newStep->onFailure($prefix . '_' . $onFailure);
+            } else {
+                $newStep->onFailure($onFailure);
+            }
+            
+            return $newStep;
+        }, $steps);
     }
 
     abstract public function defineSteps(): array;

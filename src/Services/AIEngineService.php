@@ -56,8 +56,10 @@ class AIEngineService
         }
 
         try {
-            // Check credits before processing
-            if ($request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
+            // Check credits before processing (if enabled)
+            $creditsEnabled = config('ai-engine.credits.enabled', false);
+            
+            if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
                 throw new InsufficientCreditsException('Insufficient credits for this request');
             }
 
@@ -77,9 +79,9 @@ class AIEngineService
             // Generate the response
             $response = $driver->generate($request);
 
-            // Calculate and deduct credits if successful
+            // Calculate and deduct credits if successful (if enabled)
             $creditsUsed = 0;
-            if ($response->success && $request->userId) {
+            if ($creditsEnabled && $response->success && $request->userId) {
                 $creditsUsed = $this->creditManager->calculateCredits($request);
                 $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
                 
@@ -207,8 +209,9 @@ class AIEngineService
             $request = $request->withUserId((string)auth()->id());
         }
         
-        // Check credits before processing
-        if ($request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
+        // Check credits before processing (if enabled)
+        $creditsEnabled = config('ai-engine.credits.enabled', false);
+        if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
             throw new InsufficientCreditsException('Insufficient credits for this request');
         }
 
@@ -221,8 +224,8 @@ class AIEngineService
         // Stream the response
         yield from $driver->stream($request);
 
-        // Deduct credits after streaming
-        if ($request->userId) {
+        // Deduct credits after streaming (if enabled)
+        if ($creditsEnabled && $request->userId) {
             $this->creditManager->deductCredits($request->userId, $request);
         }
     }

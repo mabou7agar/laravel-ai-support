@@ -18,6 +18,12 @@ class EntityFieldConfig
         public array $validation = [],
         public ?\Closure $identifierProvider = null,
         public bool $confirmBeforeCreate = false,
+        public array $displayFields = [],
+        public ?\Closure $creationPrompt = null,
+        public ?string $friendlyName = null,
+        public ?\Closure $nameExtractor = null,
+        public ?\Closure $categoryInferrer = null,
+        public ?\Closure $fieldInferrer = null,
     ) {}
 
     /**
@@ -130,6 +136,70 @@ class EntityFieldConfig
     }
 
     /**
+     * Set display fields - fields to show when displaying entity info
+     * Example: ['email', 'contact'] will show email or contact when displaying duplicates
+     */
+    public function displayFields(array $fields): self
+    {
+        $this->displayFields = $fields;
+        return $this;
+    }
+
+    /**
+     * Set creation prompt callback - generates custom prompt for entity creation
+     * Callback receives: ($item, $itemName, $entityName)
+     * Example: fn($item, $name, $entity) => "Product: {$name}\nCategory: Electronics"
+     */
+    public function creationPrompt(\Closure $callback): self
+    {
+        $this->creationPrompt = $callback;
+        return $this;
+    }
+
+    /**
+     * Set custom friendly name (overrides automatic plural conversion)
+     * Example: ->friendlyName('customers')
+     */
+    public function friendlyName(string $name): self
+    {
+        $this->friendlyName = $name;
+        return $this;
+    }
+
+    /**
+     * Set custom name extractor callback
+     * Callback receives: ($item) and returns extracted name
+     * Example: fn($item) => $item['title'] ?? $item['label']
+     */
+    public function nameExtractor(\Closure $callback): self
+    {
+        $this->nameExtractor = $callback;
+        return $this;
+    }
+
+    /**
+     * Set custom category inferrer callback
+     * Callback receives: ($name) and returns inferred category
+     * Example: fn($name) => str_contains($name, 'laptop') ? 'Electronics' : 'General'
+     */
+    public function categoryInferrer(\Closure $callback): self
+    {
+        $this->categoryInferrer = $callback;
+        return $this;
+    }
+
+    /**
+     * Set custom field inferrer callback
+     * Callback receives: ($existingData, $allFields, $entityType, $context) and returns inferred fields
+     * Example: fn($data, $fields) => ['quantity' => 1, 'status' => 'active']
+     */
+    public function fieldInferrer(\Closure $callback): self
+    {
+        $this->fieldInferrer = $callback;
+        return $this;
+    }
+
+    /**
      * Convert to array format for AI config
      */
     public function toArray(): array
@@ -148,6 +218,12 @@ class EntityFieldConfig
             'validation' => $this->validation ?: null,
             'identifier_provider' => $this->identifierProvider,
             'confirm_before_create' => $this->confirmBeforeCreate ?: null,
+            'display_fields' => $this->displayFields ?: null,
+            'creation_prompt' => $this->creationPrompt,
+            'friendly_name' => $this->friendlyName,
+            'name_extractor' => $this->nameExtractor,
+            'category_inferrer' => $this->categoryInferrer,
+            'field_inferrer' => $this->fieldInferrer,
         ], fn($value) => $value !== null);
     }
 

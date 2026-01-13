@@ -6,6 +6,7 @@ use LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class QdrantDriver implements VectorDriverInterface
 {
@@ -480,6 +481,16 @@ class QdrantDriver implements VectorDriverInterface
         float $threshold = 0.0,
         array $filters = []
     ): array {
+        // Check if collection is cached as missing to avoid repeated failed attempts
+        if (Cache::has("qdrant_collection_missing_{$collection}")) {
+            return [];
+        }
+        
+        // Check if collection has known errors (e.g., missing indexes)
+        if (Cache::has("qdrant_collection_error_{$collection}")) {
+            return [];
+        }
+        
         try {
             $body = [
                 'vector' => $vector,
@@ -510,6 +521,29 @@ class QdrantDriver implements VectorDriverInterface
                 ];
             }, $data['result'] ?? []);
         } catch (GuzzleException $e) {
+            // Check if collection doesn't exist (404 error)
+            if ($e->getCode() === 404 || str_contains($e->getMessage(), "doesn't exist")) {
+                // Cache that this collection doesn't exist to prevent repeated attempts
+                Cache::put("qdrant_collection_missing_{$collection}", true, 3600); // Cache for 1 hour
+                
+                Log::warning('Qdrant collection does not exist', [
+                    'collection' => $collection,
+                ]);
+                return [];
+            }
+            
+            // Check if it's a 400 error (bad request - usually missing index)
+            if ($e->getCode() === 400 || str_contains($e->getMessage(), "400 Bad Request")) {
+                // Cache this collection as having issues to prevent repeated attempts
+                Cache::put("qdrant_collection_error_{$collection}", true, 300); // Cache for 5 minutes
+                
+                Log::warning('Qdrant search failed - missing index or bad request', [
+                    'collection' => $collection,
+                    'error' => substr($e->getMessage(), 0, 200),
+                ]);
+                return [];
+            }
+            
             Log::error('Qdrant search failed', [
                 'collection' => $collection,
                 'error' => $e->getMessage(),

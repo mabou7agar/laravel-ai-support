@@ -478,8 +478,20 @@ class VectorSearchService
         // Deduplicate IDs (multiple chunks from same model may appear)
         $uniqueIds = array_unique($ids);
         
+        // Apply limit to prevent memory exhaustion
+        $maxResults = config('ai-engine.vector.max_hydrate_results', 50);
+        $limitedIds = array_slice($uniqueIds, 0, $maxResults);
+        
+        if (count($uniqueIds) > $maxResults) {
+            \Log::warning('Hydrate results limited to prevent memory exhaustion', [
+                'model' => $modelClass,
+                'total_ids' => count($uniqueIds),
+                'limited_to' => $maxResults,
+            ]);
+        }
+        
         // Fetch models from database
-        $models = $modelClass::whereIn('id', $uniqueIds)->get()->keyBy('id');
+        $models = $modelClass::whereIn('id', $limitedIds)->get()->keyBy('id');
 
         // Attach scores and return in order, deduplicating by model_id
         // Keep the highest scoring chunk for each model

@@ -62,16 +62,18 @@ class WorkflowDataCollector
         // Get existing collected data
         $collectedData = $context->get('collected_data', []);
         
-        \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('WorkflowDataCollector: Starting data collection', [
+        \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Starting data collection', [
             'has_collected_data' => !empty($collectedData),
-            'collected_data' => $collectedData,
+            'collected_data_keys' => array_keys($collectedData),
             'conversation_history_count' => count($context->conversationHistory ?? []),
-            'conversation_history' => $context->conversationHistory ?? [],
-            'workflow_state_keys' => array_keys($context->workflowState ?? []),
+            'has_conversation_history' => !empty($context->conversationHistory),
         ]);
         
         // Extract from conversation history
         if (!empty($context->conversationHistory)) {
+            // Get what field we're currently asking for (if any)
+            $askingFor = $context->get('asking_for');
+            
             // If we have existing collected data, only extract from latest message
             // Otherwise, extract from all messages to capture initial request
             if (!empty($collectedData)) {
@@ -83,13 +85,15 @@ class WorkflowDataCollector
                     'user_message' => $userMessage,
                     'has_message' => !empty($userMessage),
                     'existing_data_keys' => array_keys($collectedData),
+                    'asking_for' => $askingFor,
                 ]);
                 
                 if (!empty($userMessage)) {
                     $newData = $this->extractDataFromMessage(
                         $userMessage,
                         $fieldDefinitions,
-                        $collectedData
+                        $collectedData,
+                        $askingFor
                     );
                     // Merge new data with existing data (preserving existing values)
                     $collectedData = $this->mergeData($collectedData, $newData);
@@ -105,7 +109,8 @@ class WorkflowDataCollector
                         $newData = $this->extractDataFromMessage(
                             $msg['content'],
                             $fieldDefinitions,
-                            $collectedData
+                            $collectedData,
+                            $askingFor
                         );
                         $collectedData = $this->mergeData($collectedData, $newData);
                     }
@@ -125,6 +130,9 @@ class WorkflowDataCollector
             $fieldDef = $fieldDefinitions[$firstMissing];
             
             $prompt = $fieldDef['prompt'] ?? "Please provide {$firstMissing}";
+            
+            // Store what we're asking for in context so next extraction knows
+            $context->set('asking_for', $firstMissing);
             
             return ActionResult::needsUserInput(
                 message: $prompt,
@@ -149,7 +157,8 @@ class WorkflowDataCollector
     protected function extractDataFromMessage(
         string $message,
         array $fieldDefinitions,
-        array $existingData
+        array $existingData,
+        ?string $askingFor = null
     ): array {
         // Build prompt for AI
         $prompt = "Extract structured data from the user's message.\n\n";
@@ -157,6 +166,13 @@ class WorkflowDataCollector
         
         if (!empty($existingData)) {
             $prompt .= "Already collected: " . json_encode($existingData) . "\n\n";
+        }
+        
+        if ($askingFor && isset($fieldDefinitions[$askingFor])) {
+            $fieldDef = $fieldDefinitions[$askingFor];
+            $description = $fieldDef['description'] ?? $askingFor;
+            $prompt .= "CONTEXT: We just asked the user for '{$askingFor}' ({$description}).\n";
+            $prompt .= "The user's response is likely providing this field.\n\n";
         }
         
         $prompt .= "Fields to extract:\n";
@@ -167,16 +183,15 @@ class WorkflowDataCollector
         }
         
         $prompt .= "\nRules:\n";
-        $prompt .= "- Only extract fields that are clearly mentioned in the message\n";
-        $prompt .= "- Return empty object {} if no fields can be extracted\n";
+        $prompt .= "- Extract fields based on the context and what was asked\n";
+        $prompt .= "- If we just asked for a specific field and user provides a value, extract it as that field\n";
+        $prompt .= "- Return empty object {} only if the message is clearly not providing data (like 'yes', 'no', 'cancel')\n";
         $prompt .= "- For numeric fields, extract only numbers\n";
         $prompt .= "- For arrays, extract as array of objects\n";
-        $prompt .= "- If user says 'remove', 'delete', or 'take out' an item, add '_remove' suffix to mark for removal\n";
-        $prompt .= "- If user modifies quantity of existing item, extract with new quantity\n";
-        $prompt .= "- Don't guess or infer data not explicitly stated\n\n";
+        $prompt .= "- Use common sense: if asked for 'name' and user says 'John', extract as name\n\n";
         
         $prompt .= "Return ONLY valid JSON with extracted fields. Example:\n";
-        $prompt .= '{"customer_name": "John Smith", "products": [{"name": "iPhone", "quantity": 5}], "products_remove": ["MacBook"]}';
+        $prompt .= '{"name": "John Smith", "email": "john@example.com"}';
         
         try {
             $response = $this->ai->generate(new AIRequest(
@@ -187,17 +202,32 @@ class WorkflowDataCollector
                 temperature: 0
             ));
             
+            \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: AI extraction response', [
+                'message' => substr($message, 0, 100),
+                'response' => substr($response->content, 0, 500),
+            ]);
+            
             $extracted = json_decode($response->content, true);
             
             if (json_last_error() !== JSON_ERROR_NONE) {
+                \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: JSON decode failed', [
+                    'error' => json_last_error_msg(),
+                    'response' => substr($response->content, 0, 200),
+                ]);
                 return [];
             }
+            
+            \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Extracted data', [
+                'extracted_keys' => array_keys($extracted ?? []),
+                'extracted' => $extracted,
+            ]);
             
             return $extracted ?? [];
             
         } catch (\Exception $e) {
-            \Log::channel('ai-engine')->error('Data extraction failed', [
+            \Illuminate\Support\Facades\Log::error('WorkflowDataCollector: Data extraction failed', [
                 'error' => $e->getMessage(),
+                'message' => substr($message, 0, 100),
             ]);
             return [];
         }

@@ -27,12 +27,16 @@ class UnifiedActionContext
 
     public function addUserMessage(string $message): void
     {
+        // Limit message length to prevent memory bloat
+        $truncatedMessage = strlen($message) > 1000 ? substr($message, 0, 1000) . '...' : $message;
+        
         $this->conversationHistory[] = [
             'role' => 'user',
-            'content' => $message,
+            'content' => $truncatedMessage,
             'timestamp' => now()->toIso8601String(),
         ];
         
+        // Keep only last 10 messages to prevent memory issues
         if (count($this->conversationHistory) > 10) {
             $this->conversationHistory = array_slice($this->conversationHistory, -10);
         }
@@ -40,12 +44,16 @@ class UnifiedActionContext
 
     public function addAssistantMessage(string $message): void
     {
+        // Limit message length to prevent memory bloat
+        $truncatedMessage = strlen($message) > 1000 ? substr($message, 0, 1000) . '...' : $message;
+        
         $this->conversationHistory[] = [
             'role' => 'assistant',
-            'content' => $message,
+            'content' => $truncatedMessage,
             'timestamp' => now()->toIso8601String(),
         ];
         
+        // Keep only last 10 messages to prevent memory issues
         if (count($this->conversationHistory) > 10) {
             $this->conversationHistory = array_slice($this->conversationHistory, -10);
         }

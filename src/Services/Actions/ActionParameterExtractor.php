@@ -15,9 +15,20 @@ use Illuminate\Support\Facades\Log;
  */
 class ActionParameterExtractor
 {
-    public function __construct(
-        protected ?AIEngineService $aiService = null
-    ) {}
+    protected ?AIEngineService $aiService = null;
+    
+    public function __construct() {}
+    
+    /**
+     * Lazy load AIEngineService to prevent circular dependency
+     */
+    protected function getAIService(): AIEngineService
+    {
+        if ($this->aiService === null) {
+            $this->aiService = app(AIEngineService::class);
+        }
+        return $this->aiService;
+    }
     
     /**
      * Extract parameters for an action
@@ -85,7 +96,7 @@ class ActionParameterExtractor
         string $message,
         string $context
     ): ?array {
-        if (!$this->aiService) {
+        if (!$this->getAIService()) {
             return null;
         }
         
@@ -100,7 +111,7 @@ class ActionParameterExtractor
                 maxTokens: 500
             ))->withFunctions([$functionSchema], ['name' => $functionSchema['name']]);
             
-            $response = $this->aiService->generate($aiRequest);
+            $response = $this->getAIService()->generate($aiRequest);
             
             if (isset($response->functionCall) && isset($response->functionCall['arguments'])) {
                 return json_decode($response->functionCall['arguments'], true);
@@ -145,7 +156,7 @@ class ActionParameterExtractor
                 maxTokens: 800
             );
             
-            $response = $this->aiService->generate($aiRequest);
+            $response = $this->getAIService()->generate($aiRequest);
             $content = $response->getContent();
             
             // Extract JSON from response
