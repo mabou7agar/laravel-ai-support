@@ -20,7 +20,9 @@
         'name' => $inlineConfig['name'] ?? $configName,
         'fields' => $inlineConfig['fields'] ?? [],
     ] : null;
+
 @endphp
+
 
 <div 
     id="data-collector-{{ $sessionId }}" 
@@ -123,12 +125,12 @@
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                 </svg>
             </button>
-            <textarea 
-                id="input-{{ $sessionId }}"
-                class="dc-input"
-                placeholder="Type your response..."
-                rows="1"
-                maxlength="2000"
+            <textarea
+                    id="input-{{ $sessionId }}"
+                    class="dc-input"
+                    placeholder="{{ $language === 'ar' ? 'اكتب ردك...' : 'Type your response...' }}"
+                    rows="1"
+                    maxlength="2000"
             ></textarea>
             <button 
                 id="send-{{ $sessionId }}"
@@ -142,7 +144,9 @@
             </button>
         </div>
         <div class="dc-input-footer">
-            <span class="dc-status" id="status-{{ $sessionId }}">Ready</span>
+            <span class="dc-status" id="status-{{ $sessionId }}">
+    {{ $language === 'ar' ? 'جاهز' : 'Ready' }}
+</span>
             <span class="dc-char-count"><span id="char-count-{{ $sessionId }}">0</span>/2000</span>
         </div>
     </div>
@@ -152,21 +156,27 @@
         <div class="dc-modal-backdrop"></div>
         <div class="dc-modal-content">
             <div class="dc-modal-header">
-                <h4>Confirm Your Information</h4>
+                <h4>
+                    {{ $language === 'ar' ? 'تأكيد معلوماتك' : 'Confirm Your Information' }}
+                </h4>
             </div>
+
             <div class="dc-modal-body" id="confirm-body-{{ $sessionId }}">
-                <!-- Summary will be inserted here -->
+
             </div>
+
             <div class="dc-modal-footer">
                 <button class="dc-btn dc-btn-secondary" id="confirm-modify-{{ $sessionId }}">
-                    Modify
+                    {{ $language === 'ar' ? 'تعديل' : 'Modify' }}
                 </button>
+
                 <button class="dc-btn dc-btn-primary" id="confirm-submit-{{ $sessionId }}">
-                    Confirm & Submit
+                    {{ $language === 'ar' ? 'تأكيد وإرسال' : 'Confirm & Submit' }}
                 </button>
             </div>
         </div>
     </div>
+
 
     <!-- Success Modal -->
     <div class="dc-modal" id="success-modal-{{ $sessionId }}" style="display: none;">
@@ -1159,7 +1169,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (titleEl) titleEl.textContent = 'Error';
             }
             
-            updateStatus('Ready');
+            updateStatus('{{ $language === 'ar' ? 'جاهز' : 'Ready' }}');
         } catch (error) {
             hideTyping();
             addMessage('assistant', 'Failed to connect. Please try again.');
@@ -1190,14 +1200,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     async function sendMessage(overrideMessage = null) {
-        const message = overrideMessage || input.value.trim();
+        const message = overrideMessage instanceof String ? overrideMessage : input.value.trim();
         if (!message) return;
         
         // Add user message
         addMessage('user', message);
         input.value = '';
         handleInputChange();
-        
+
         showTyping();
         hideQuickActions();
         updateStatus('Processing...');
@@ -1796,6 +1806,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function formatMessage(content) {
         // Convert markdown-like formatting
+
         return content
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
             .replace(/\n/g, '<br>');
