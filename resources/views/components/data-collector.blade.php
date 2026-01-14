@@ -1200,7 +1200,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     async function sendMessage(overrideMessage = null) {
-        const message = overrideMessage instanceof String ? overrideMessage : input.value.trim();
+
+        const message = typeof overrideMessage === 'string' ? overrideMessage : input.value.trim();
         if (!message) return;
         
         // Add user message
