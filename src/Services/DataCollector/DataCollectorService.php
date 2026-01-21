@@ -2475,12 +2475,21 @@ class DataCollectorService
     public function loadConfig(string $name): ?DataCollectorConfig
     {
         $key = $this->cachePrefix . 'config_' . $name;
+        
+        Log::channel('ai-engine')->debug('Attempting to load config from cache', [
+            'key' => $key,
+            'name' => $name,
+            'cache_prefix' => $this->cachePrefix,
+        ]);
+        
         $data = Cache::get($key);
         
         if (!$data) {
             Log::channel('ai-engine')->debug('Config not found in cache', [
                 'key' => $key,
                 'name' => $name,
+                'data_type' => gettype($data),
+                'data_value' => $data,
             ]);
             return null;
         }
@@ -2488,6 +2497,7 @@ class DataCollectorService
         Log::channel('ai-engine')->debug('Config loaded from cache', [
             'key' => $key,
             'name' => $name,
+            'data_keys' => array_keys($data),
         ]);
         
         return DataCollectorConfig::fromArray($data);
