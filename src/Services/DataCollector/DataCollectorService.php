@@ -2429,17 +2429,44 @@ class DataCollectorService
     {
         $key = $this->cachePrefix . 'config_' . $config->name;
         
-        Cache::put(
-            $key,
-            $config->toArray(),
-            $this->cacheTtl
-        );
-        
-        Log::channel('ai-engine')->debug('Config saved to cache', [
-            'key' => $key,
-            'name' => $config->name,
-            'title' => $config->title,
-        ]);
+        try {
+            $configArray = $config->toArray();
+            
+            // Test serialization before caching to catch errors early
+            $serialized = json_encode($configArray);
+            if ($serialized === false) {
+                throw new \RuntimeException('Failed to JSON encode config: ' . json_last_error_msg());
+            }
+            
+            Cache::put(
+                $key,
+                $configArray,
+                $this->cacheTtl
+            );
+            
+            // Verify it was actually saved by immediately reading it back
+            $verification = Cache::get($key);
+            if (!$verification) {
+                Log::channel('ai-engine')->warning('Config saved but verification failed', [
+                    'key' => $key,
+                    'name' => $config->name,
+                ]);
+            }
+            
+            Log::channel('ai-engine')->debug('Config saved to cache', [
+                'key' => $key,
+                'name' => $config->name,
+                'title' => $config->title,
+                'verified' => $verification !== null,
+            ]);
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Failed to save config to cache', [
+                'key' => $key,
+                'name' => $config->name,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
     }
 
     /**
