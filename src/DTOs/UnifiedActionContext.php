@@ -294,9 +294,39 @@ class UnifiedActionContext
             'metadata' => $this->metadata,
             'current_workflow' => $this->currentWorkflow,
             'current_step' => $this->currentStep,
-            'workflow_state' => $this->workflowState,
-            'workflow_stack' => $this->workflowStack,
+            'workflow_state' => $this->stripClosures($this->workflowState),
+            'workflow_stack' => $this->stripClosures($this->workflowStack),
         ];
+    }
+
+    /**
+     * Recursively remove Closures from data to prevent serialization errors
+     */
+    protected function stripClosures($data)
+    {
+        if ($data instanceof \Closure) {
+            return null;
+        }
+
+        if (is_array($data)) {
+            $result = [];
+            foreach ($data as $key => $value) {
+                $stripped = $this->stripClosures($value);
+                // Only include non-null values (skip Closures)
+                if ($stripped !== null || !($value instanceof \Closure)) {
+                    $result[$key] = $stripped;
+                }
+            }
+            return $result;
+        }
+
+        if (is_object($data)) {
+            // For objects, convert to array first
+            $array = (array) $data;
+            return $this->stripClosures($array);
+        }
+
+        return $data;
     }
 
     public static function fromArray(array $data): self

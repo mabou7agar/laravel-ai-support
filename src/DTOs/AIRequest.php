@@ -32,8 +32,8 @@ class AIRequest
 
     public function __construct(
         string $prompt,
-        EngineEnum $engine,
-        EntityEnum $model,
+        ?EngineEnum $engine = null,
+        ?EntityEnum $model = null,
         array $parameters = [],
         ?string $userId = null,
         ?string $conversationId = null,
@@ -50,6 +50,18 @@ class AIRequest
         ?array $functionCall = null
     ) {
         $this->prompt = $prompt;
+        
+        // Auto-select engine and model from config if not provided
+        if ($engine === null) {
+            $defaultEngine = config('ai-engine.default_engine', 'openai');
+            $engine = EngineEnum::from($defaultEngine);
+        }
+        
+        if ($model === null) {
+            $defaultModel = config('ai-engine.default_model', 'gpt-4o-mini');
+            $model = EntityEnum::from($defaultModel);
+        }
+        
         $this->engine = $engine;
         $this->model = $model;
         $this->parameters = $parameters;

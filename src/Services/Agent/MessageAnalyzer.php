@@ -26,13 +26,13 @@ class MessageAnalyzer
             return $this->analyzeInWorkflowContext($message, $context);
         }
 
-        // PRIORITY 2: Check if simple question
-        if ($this->isSimpleQuestion($message)) {
+        // PRIORITY 2: Check if simple question or personal question
+        if ($this->isSimpleQuestion($message) || $this->isPersonalQuestion($message)) {
             return [
                 'type' => 'simple_answer',
                 'action' => 'answer_directly',
                 'confidence' => 0.9,
-                'reasoning' => 'Simple question that can be answered directly'
+                'reasoning' => 'Simple or personal question - use conversational handler with user context'
             ];
         }
 
@@ -252,10 +252,27 @@ class MessageAnalyzer
     }
 
     /**
+     * Check if message is a personal question about the user
+     */
+    protected function isPersonalQuestion(string $message): bool
+    {
+        // Questions about the user should use user context, not RAG
+        $personalIndicators = ['/\bmy\b/i', '/\bme\b/i', '/\bi\s+am\b/i'];
+        foreach ($personalIndicators as $indicator) {
+            if (preg_match($indicator, $message)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Check if message requires knowledge base
      */
     protected function requiresKnowledgeBase(string $message): bool
     {
+        // Personal questions already handled above, no need to check again
+
         // Questions that likely need RAG
         $ragPatterns = [
             '/how (do|does|can|to)/i',

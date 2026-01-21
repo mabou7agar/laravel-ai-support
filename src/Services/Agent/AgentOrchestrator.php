@@ -54,6 +54,10 @@ class AgentOrchestrator
         foreach ($this->handlers as $handler) {
             if ($handler->canHandle($analysis['action'])) {
                 $response = $handler->handle($message, $context, $options);
+                
+                // Add assistant's response to conversation history for persistence
+                $context->addAssistantMessage($response->message);
+                
                 $this->contextManager->save($context);
                 return $response;
             }
@@ -64,8 +68,11 @@ class AgentOrchestrator
             'action' => $analysis['action'],
         ]);
         
+        $fallbackMessage = "I'm not sure how to handle that. Can you try rephrasing?";
+        $context->addAssistantMessage($fallbackMessage);
+        
         return AgentResponse::conversational(
-            message: "I'm not sure how to handle that. Can you try rephrasing?",
+            message: $fallbackMessage,
             context: $context
         );
     }
