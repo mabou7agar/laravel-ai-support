@@ -478,6 +478,20 @@ return [
         'low_balance_threshold' => env('AI_LOW_BALANCE_THRESHOLD', 10.0),
         'currency' => env('AI_CREDITS_CURRENCY', 'MyCredits'),
         
+        // Credit Owner Model Configuration
+        // Set this to your Tenant, Workspace, Organization, or User model
+        // Examples:
+        //   - 'App\\Models\\User' (default - user-based credits)
+        //   - 'App\\Models\\Tenant' (tenant-based credits)
+        //   - 'App\\Models\\Workspace' (workspace-based credits)
+        //   - 'App\\Models\\Organization' (organization-based credits)
+        'owner_model' => env('AI_CREDITS_OWNER_MODEL', 'App\\Models\\User'),
+        
+        // ID Column Name
+        // The column name used to identify the credit owner
+        // Examples: 'id', 'tenant_id', 'workspace_id', 'organization_id'
+        'owner_id_column' => env('AI_CREDITS_OWNER_ID_COLUMN', 'id'),
+        
         // Engine conversion rates: MyCredits to Engine Credits
         // Example: 'openai' => 2.0 means 100 MyCredits = 50 OpenAI credits
         'engine_rates' => [

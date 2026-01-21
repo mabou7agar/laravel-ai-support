@@ -251,12 +251,20 @@ class CreditManager
 
 
     /**
-     * Get user model
+     * Get credit owner model (User, Tenant, Workspace, etc.)
+     * 
+     * @param string $ownerId The ID of the credit owner (user_id, tenant_id, workspace_id, etc.)
+     * @return Model
      */
-    private function getUserModel(string $userId): Model
+    private function getUserModel(string $ownerId): Model
     {
-        $userModel = config('ai-engine.user_model', 'App\\Models\\User');
-        return $userModel::findOrFail($userId);
+        // Get the model class from config (can be User, Tenant, Workspace, etc.)
+        $ownerModel = config('ai-engine.credits.owner_model', config('ai-engine.user_model', 'App\\Models\\User'));
+        
+        // Get the ID column name from config (e.g., 'id', 'tenant_id', 'workspace_id')
+        $ownerIdColumn = config('ai-engine.credits.owner_id_column', 'id');
+        
+        return $ownerModel::where($ownerIdColumn, $ownerId)->firstOrFail();
     }
 
 }
