@@ -2397,21 +2397,53 @@ class DataCollectorService
     }
 
     /**
-     * Get session state
+     * Get session state from database/cache
      */
     public function getState(string $sessionId): ?DataCollectorState
     {
         $key = $this->cachePrefix . $sessionId;
+        
+        // Try cache first for speed
         $serialized = Cache::get($key);
         
+        // If not in cache, try database
         if (!$serialized) {
+            $dbState = \Illuminate\Support\Facades\DB::table('data_collector_states')
+                ->where('session_id', $sessionId)
+                ->where(function($query) {
+                    $query->whereNull('expires_at')
+                          ->orWhere('expires_at', '>', now());
+                })
+                ->first();
+            
+            if ($dbState && isset($dbState->state_data)) {
+                $serialized = $dbState->state_data;
+                
+                // Warm up cache for next time
+                Cache::put($key, $serialized, $this->cacheTtl);
+                
+                Log::channel('ai-engine')->debug('State loaded from database', [
+                    'session_id' => $sessionId,
+                    'cached_for_next_time' => true,
+                ]);
+            }
+        } else {
+            Log::channel('ai-engine')->debug('State loaded from cache', [
+                'session_id' => $sessionId,
+            ]);
+        }
+        
+        if (!$serialized) {
+            Log::channel('ai-engine')->debug('State not found in cache or database', [
+                'session_id' => $sessionId,
+            ]);
             return null;
         }
 
         // Decode JSON string
         $data = json_decode($serialized, true);
         if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
-            Log::channel('ai-engine')->error('Failed to decode state JSON from cache', [
+            Log::channel('ai-engine')->error('Failed to decode state JSON', [
                 'session_id' => $sessionId,
                 'error' => json_last_error_msg(),
             ]);
@@ -2422,7 +2454,7 @@ class DataCollectorService
     }
 
     /**
-     * Save session state
+     * Save session state to database and cache
      */
     protected function saveState(DataCollectorState $state): void
     {
@@ -2431,19 +2463,34 @@ class DataCollectorService
         try {
             $stateArray = $state->toArray();
             
-            // Serialize to JSON to avoid PHP serialization issues with Redis
+            // Serialize to JSON
             $serialized = json_encode($stateArray, JSON_UNESCAPED_UNICODE);
             if ($serialized === false) {
                 throw new \RuntimeException('Failed to JSON encode state: ' . json_last_error_msg());
             }
             
-            Cache::put(
-                $key,
-                $serialized,
-                $this->cacheTtl
+            // Save to database for persistence (primary storage)
+            \Illuminate\Support\Facades\DB::table('data_collector_states')->updateOrInsert(
+                ['session_id' => $state->sessionId],
+                [
+                    'session_id' => $state->sessionId,
+                    'state_data' => $serialized,
+                    'status' => $state->status,
+                    'expires_at' => now()->addSeconds($this->cacheTtl),
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ]
             );
+            
+            // Also save to cache for fast access
+            Cache::put($key, $serialized, $this->cacheTtl);
+            
+            Log::channel('ai-engine')->debug('State saved to database and cache', [
+                'session_id' => $state->sessionId,
+                'status' => $state->status,
+            ]);
         } catch (\Exception $e) {
-            Log::channel('ai-engine')->error('Failed to save state to cache', [
+            Log::channel('ai-engine')->error('Failed to save state', [
                 'session_id' => $state->sessionId,
                 'error' => $e->getMessage(),
             ]);
@@ -2550,19 +2597,37 @@ class DataCollectorService
     }
 
     /**
-     * Delete session state
+     * Delete session state from database and cache
      */
     public function deleteState(string $sessionId): void
     {
+        // Delete from database
+        \Illuminate\Support\Facades\DB::table('data_collector_states')
+            ->where('session_id', $sessionId)
+            ->delete();
+        
+        // Delete from cache
         Cache::forget($this->cachePrefix . $sessionId);
     }
 
     /**
-     * Check if a session exists
+     * Check if a session exists in cache or database
      */
     public function hasSession(string $sessionId): bool
     {
-        return Cache::has($this->cachePrefix . $sessionId);
+        // Check cache first
+        if (Cache::has($this->cachePrefix . $sessionId)) {
+            return true;
+        }
+        
+        // Check database
+        return \Illuminate\Support\Facades\DB::table('data_collector_states')
+            ->where('session_id', $sessionId)
+            ->where(function($query) {
+                $query->whereNull('expires_at')
+                      ->orWhere('expires_at', '>', now());
+            })
+            ->exists();
     }
 
     /**
