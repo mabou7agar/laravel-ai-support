@@ -2401,9 +2401,20 @@ class DataCollectorService
      */
     public function getState(string $sessionId): ?DataCollectorState
     {
-        $data = Cache::get($this->cachePrefix . $sessionId);
+        $key = $this->cachePrefix . $sessionId;
+        $serialized = Cache::get($key);
         
-        if (!$data) {
+        if (!$serialized) {
+            return null;
+        }
+
+        // Decode JSON string
+        $data = json_decode($serialized, true);
+        if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+            Log::channel('ai-engine')->error('Failed to decode state JSON from cache', [
+                'session_id' => $sessionId,
+                'error' => json_last_error_msg(),
+            ]);
             return null;
         }
 
@@ -2415,11 +2426,29 @@ class DataCollectorService
      */
     protected function saveState(DataCollectorState $state): void
     {
-        Cache::put(
-            $this->cachePrefix . $state->sessionId,
-            $state->toArray(),
-            $this->cacheTtl
-        );
+        $key = $this->cachePrefix . $state->sessionId;
+        
+        try {
+            $stateArray = $state->toArray();
+            
+            // Serialize to JSON to avoid PHP serialization issues with Redis
+            $serialized = json_encode($stateArray, JSON_UNESCAPED_UNICODE);
+            if ($serialized === false) {
+                throw new \RuntimeException('Failed to JSON encode state: ' . json_last_error_msg());
+            }
+            
+            Cache::put(
+                $key,
+                $serialized,
+                $this->cacheTtl
+            );
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Failed to save state to cache', [
+                'session_id' => $state->sessionId,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
     }
 
     /**
@@ -2432,15 +2461,16 @@ class DataCollectorService
         try {
             $configArray = $config->toArray();
             
-            // Test serialization before caching to catch errors early
-            $serialized = json_encode($configArray);
+            // Serialize to JSON to avoid PHP serialization issues with Redis
+            $serialized = json_encode($configArray, JSON_UNESCAPED_UNICODE);
             if ($serialized === false) {
                 throw new \RuntimeException('Failed to JSON encode config: ' . json_last_error_msg());
             }
             
+            // Store as JSON string instead of letting Laravel serialize
             Cache::put(
                 $key,
-                $configArray,
+                $serialized,
                 $this->cacheTtl
             );
             
@@ -2458,6 +2488,7 @@ class DataCollectorService
                 'name' => $config->name,
                 'title' => $config->title,
                 'verified' => $verification !== null,
+                'serialized_length' => strlen($serialized),
             ]);
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Failed to save config to cache', [
@@ -2482,14 +2513,25 @@ class DataCollectorService
             'cache_prefix' => $this->cachePrefix,
         ]);
         
-        $data = Cache::get($key);
+        $serialized = Cache::get($key);
         
-        if (!$data) {
+        if (!$serialized) {
             Log::channel('ai-engine')->debug('Config not found in cache', [
                 'key' => $key,
                 'name' => $name,
-                'data_type' => gettype($data),
-                'data_value' => $data,
+                'data_type' => gettype($serialized),
+                'data_value' => $serialized,
+            ]);
+            return null;
+        }
+
+        // Decode JSON string
+        $data = json_decode($serialized, true);
+        if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+            Log::channel('ai-engine')->error('Failed to decode config JSON from cache', [
+                'key' => $key,
+                'name' => $name,
+                'error' => json_last_error_msg(),
             ]);
             return null;
         }
@@ -2498,6 +2540,7 @@ class DataCollectorService
             'key' => $key,
             'name' => $name,
             'data_keys' => array_keys($data),
+            'serialized_length' => strlen($serialized),
         ]);
         
         return DataCollectorConfig::fromArray($data);
