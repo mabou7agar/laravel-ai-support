@@ -22,7 +22,9 @@ class WorkflowDataCollector
 {
     public function __construct(
         protected AIEngineService $ai
-    ) {}
+    ) {
+        // Services instantiated on-demand to avoid circular dependencies
+    }
     
     /**
      * Define fields to collect
@@ -49,110 +51,93 @@ class WorkflowDataCollector
     }
     
     /**
-     * Collect data progressively from user messages
-     * 
-     * @param UnifiedActionContext $context
-     * @param array $fieldDefinitions
-     * @return ActionResult
+     * Collect data from user messages
      */
-    public function collectData(
-        UnifiedActionContext $context,
-        array $fieldDefinitions
-    ): ActionResult {
-        // Get existing collected data
-        $collectedData = $context->get('collected_data', []);
-        
-        \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Starting data collection', [
-            'has_collected_data' => !empty($collectedData),
-            'collected_data_keys' => array_keys($collectedData),
-            'conversation_history_count' => count($context->conversationHistory ?? []),
-            'has_conversation_history' => !empty($context->conversationHistory),
-        ]);
-        
-        // Extract from conversation history
-        if (!empty($context->conversationHistory)) {
-            // Get what field we're currently asking for (if any)
-            $askingFor = $context->get('asking_for');
+    public function collectData(UnifiedActionContext $context, array $fieldDefinitions, $workflow = null): ActionResult
+    {
+        try {
+            $collectedData = $context->get('collected_data', []);
             
-            // If we have existing collected data, only extract from latest message
-            // Otherwise, extract from all messages to capture initial request
-            if (!empty($collectedData)) {
-                // Extract from latest message only (we already have some data)
-                $lastMessage = end($context->conversationHistory);
-                $userMessage = $lastMessage['content'] ?? '';
+            // Try to extract data from conversation history
+            if (!empty($context->conversationHistory)) {
+                $askingFor = $context->get('asking_for');
                 
-                \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('WorkflowDataCollector: Extracting from latest message', [
-                    'user_message' => $userMessage,
-                    'has_message' => !empty($userMessage),
-                    'existing_data_keys' => array_keys($collectedData),
-                    'asking_for' => $askingFor,
-                ]);
-                
-                if (!empty($userMessage)) {
-                    $newData = $this->extractDataFromMessage(
-                        $userMessage,
-                        $fieldDefinitions,
-                        $collectedData,
-                        $askingFor
-                    );
-                    // Merge new data with existing data (preserving existing values)
-                    $collectedData = $this->mergeData($collectedData, $newData);
+                // Get the latest user message
+                $lastMessage = null;
+                foreach (array_reverse($context->conversationHistory) as $msg) {
+                    if (($msg['role'] ?? '') === 'user') {
+                        $lastMessage = $msg['content'] ?? '';
+                        break;
+                    }
                 }
-            } else {
-                // First collection - extract from all messages to capture initial request
-                \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('WorkflowDataCollector: First collection, extracting from all messages', [
-                    'message_count' => count($context->conversationHistory),
-                ]);
                 
-                foreach ($context->conversationHistory as $msg) {
-                    if ($msg['role'] === 'user') {
+                if (!empty($lastMessage)) {
+                    try {
                         $newData = $this->extractDataFromMessage(
-                            $msg['content'],
+                            $lastMessage,
                             $fieldDefinitions,
                             $collectedData,
                             $askingFor
                         );
-                        $collectedData = $this->mergeData($collectedData, $newData);
+                        
+                        if (!empty($newData)) {
+                            $collectedData = array_merge($collectedData, $newData);
+                            $context->set('collected_data', $collectedData);
+                        }
+                    } catch (\Exception $e) {
+                        // Continue on extraction error
                     }
                 }
             }
-        }
-        
-        // Save collected data
-        $context->set('collected_data', $collectedData);
-        
-        // Check what's still missing
-        $missing = $this->getMissingFields($collectedData, $fieldDefinitions);
-        
-        if (!empty($missing)) {
-            // Ask for the first missing field
-            $firstMissing = $missing[0];
-            $fieldDef = $fieldDefinitions[$firstMissing];
             
-            $prompt = $fieldDef['prompt'] ?? "Please provide {$firstMissing}";
+            // Determine what's still missing
+            $missing = $this->getMissingFields($collectedData, $fieldDefinitions);
             
-            // Store what we're asking for in context so next extraction knows
-            $context->set('asking_for', $firstMissing);
+            if (!empty($missing)) {
+                $firstMissing = $missing[0];
+                $fieldDef = $fieldDefinitions[$firstMissing];
+                $prompt = $fieldDef['prompt'] ?? $fieldDef['description'] ?? "Please provide {$firstMissing}";
+                
+                // If this is an entity field, check if a suggestion was pre-generated
+                if (($fieldDef['type'] ?? '') === 'entity') {
+                    $suggestion = $context->get("_suggestion_{$firstMissing}");
+                    
+                    if ($suggestion) {
+                        // Append suggestion to the prompt
+                        $prompt .= " I suggest: {$suggestion}";
+                        
+                        \Illuminate\Support\Facades\Log::info('Using pre-generated suggestion for field', [
+                            'field' => $firstMissing,
+                            'suggestion' => $suggestion,
+                        ]);
+                    }
+                }
+                
+                $context->set('asking_for', $firstMissing);
+                
+                return ActionResult::needsUserInput(
+                    message: $prompt,
+                    data: [
+                        'collected' => $collectedData,
+                        'missing' => $missing,
+                        'asking_for' => $firstMissing,
+                    ]
+                );
+            }
             
-            return ActionResult::needsUserInput(
-                message: $prompt,
-                data: [
-                    'collected' => $collectedData,
-                    'missing' => $missing,
-                    'asking_for' => $firstMissing,
-                ]
+            return ActionResult::success(
+                message: 'All data collected',
+                data: $collectedData
+            );
+        } catch (\Exception $e) {
+            return ActionResult::failure(
+                error: "Data collection failed: {$e->getMessage()}"
             );
         }
-        
-        // All data collected
-        return ActionResult::success(
-            message: 'All data collected',
-            data: $collectedData
-        );
     }
     
     /**
-     * Extract data from user message using AI
+     * Extract data from user message using AI with intelligent prompting
      */
     protected function extractDataFromMessage(
         string $message,
@@ -160,38 +145,63 @@ class WorkflowDataCollector
         array $existingData,
         ?string $askingFor = null
     ): array {
-        // Build prompt for AI
-        $prompt = "Extract structured data from the user's message.\n\n";
-        $prompt .= "User said: \"{$message}\"\n\n";
-        
-        if (!empty($existingData)) {
-            $prompt .= "Already collected: " . json_encode($existingData) . "\n\n";
-        }
-        
-        if ($askingFor && isset($fieldDefinitions[$askingFor])) {
+        // If we're asking for a specific field, extract only that field
+        if (!empty($askingFor) && isset($fieldDefinitions[$askingFor])) {
             $fieldDef = $fieldDefinitions[$askingFor];
-            $description = $fieldDef['description'] ?? $askingFor;
-            $prompt .= "CONTEXT: We just asked the user for '{$askingFor}' ({$description}).\n";
-            $prompt .= "The user's response is likely providing this field.\n\n";
-        }
-        
-        $prompt .= "Fields to extract:\n";
-        foreach ($fieldDefinitions as $fieldName => $fieldDef) {
             $type = $fieldDef['type'] ?? 'string';
-            $description = $fieldDef['description'] ?? $fieldName;
-            $prompt .= "- {$fieldName} ({$type}): {$description}\n";
+            $description = $fieldDef['description'] ?? $askingFor;
+            
+            // OPTIMIZATION: For short, simple messages, use direct extraction
+            $trimmedMessage = trim($message);
+            $isSimpleMessage = strlen($trimmedMessage) < 100 && 
+                              !str_contains($trimmedMessage, ' is ') && 
+                              !str_contains($trimmedMessage, ':');
+            
+            if ($isSimpleMessage) {
+                // Numeric types: extract first number
+                if (in_array($type, ['integer', 'float', 'number'])) {
+                    if (preg_match('/\d+(\.\d+)?/', $trimmedMessage, $matches)) {
+                        return [$askingFor => $type === 'integer' ? (int)$matches[0] : (float)$matches[0]];
+                    }
+                    return [];
+                }
+                
+                // String types: use entire message
+                return [$askingFor => $trimmedMessage];
+            }
+            
+            // Build AI extraction prompt for specific field
+            $prompt = "Extract the value for '{$askingFor}' from the user's message.\n\n";
+            $prompt .= "User message: {$message}\n\n";
+            $prompt .= "Field: {$askingFor} ({$type}): {$description}\n\n";
+            $prompt .= "Rules:\n";
+            $prompt .= "- Extract ONLY the value for '{$askingFor}'\n";
+            $prompt .= "- Preserve the COMPLETE value exactly as provided\n";
+            $prompt .= "- For string fields, keep the full text\n";
+            $prompt .= "- For numeric fields, extract only the number\n";
+            $prompt .= "- Return empty {} if the message doesn't contain this field\n\n";
+            $prompt .= "Return ONLY valid JSON. Example: {\"$askingFor\": \"value\"}";
+        } else {
+            // Extract all fields
+            $prompt = "Extract structured data from the user's message.\n\n";
+            $prompt .= "User message: {$message}\n\n";
+            $prompt .= "FIELDS TO EXTRACT:\n";
+            
+            $extractableFields = $this->filterExtractableFields($fieldDefinitions);
+            
+            foreach ($extractableFields as $fieldName => $fieldDef) {
+                $type = $fieldDef['type'] ?? 'string';
+                $description = $fieldDef['description'] ?? $fieldName;
+                $prompt .= "- {$fieldName} ({$type}): {$description}\n";
+            }
+            
+            $prompt .= "\nRules:\n";
+            $prompt .= "- Extract values EXACTLY as typed - preserve complete strings\n";
+            $prompt .= "- For string fields: copy the ENTIRE string exactly\n";
+            $prompt .= "- For numeric fields: extract only the number\n";
+            $prompt .= "- Return empty {} if no data to extract\n\n";
+            $prompt .= "Return ONLY valid JSON.";
         }
-        
-        $prompt .= "\nRules:\n";
-        $prompt .= "- Extract fields based on the context and what was asked\n";
-        $prompt .= "- If we just asked for a specific field and user provides a value, extract it as that field\n";
-        $prompt .= "- Return empty object {} only if the message is clearly not providing data (like 'yes', 'no', 'cancel')\n";
-        $prompt .= "- For numeric fields, extract only numbers\n";
-        $prompt .= "- For arrays, extract as array of objects\n";
-        $prompt .= "- Use common sense: if asked for 'name' and user says 'John', extract as name\n\n";
-        
-        $prompt .= "Return ONLY valid JSON with extracted fields. Example:\n";
-        $prompt .= '{"name": "John Smith", "email": "john@example.com"}';
         
         try {
             $response = $this->ai->generate(new AIRequest(
@@ -202,130 +212,24 @@ class WorkflowDataCollector
                 temperature: 0
             ));
             
-            \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: AI extraction response', [
-                'message' => substr($message, 0, 100),
-                'response' => substr($response->content, 0, 500),
-            ]);
-            
             $extracted = json_decode($response->content, true);
             
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: JSON decode failed', [
-                    'error' => json_last_error_msg(),
-                    'response' => substr($response->content, 0, 200),
-                ]);
-                return [];
-            }
-            
-            \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Extracted data', [
-                'extracted_keys' => array_keys($extracted ?? []),
-                'extracted' => $extracted,
-            ]);
-            
-            return $extracted ?? [];
+            return (json_last_error() === JSON_ERROR_NONE) ? ($extracted ?? []) : [];
             
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('WorkflowDataCollector: Data extraction failed', [
-                'error' => $e->getMessage(),
-                'message' => substr($message, 0, 100),
-            ]);
             return [];
         }
     }
     
     /**
-     * Merge new data with existing data
+     * Merge new data with existing data using simple array_merge
      */
     protected function mergeData(array $existing, array $new): array
     {
-        foreach ($new as $key => $value) {
-            // Handle removal requests (e.g., products_remove)
-            if (str_ends_with($key, '_remove')) {
-                $baseKey = str_replace('_remove', '', $key);
-                if (isset($existing[$baseKey]) && is_array($existing[$baseKey])) {
-                    // Remove items from array
-                    $existing[$baseKey] = $this->removeItems($existing[$baseKey], $value);
-                }
-                continue;
-            }
-            
-            if (is_array($value) && isset($existing[$key]) && is_array($existing[$key])) {
-                // For arrays of objects (like products), merge intelligently
-                if ($this->isArrayOfObjects($value)) {
-                    $existing[$key] = $this->mergeArrayOfObjects($existing[$key], $value);
-                } else {
-                    // Simple array merge
-                    $existing[$key] = array_merge($existing[$key], $value);
-                }
-            } else {
-                // Overwrite with new value
-                $existing[$key] = $value;
-            }
-        }
-        
-        return $existing;
+        // Simple merge: new values override existing
+        return array_merge($existing, $new);
     }
     
-    /**
-     * Check if array contains objects (associative arrays)
-     */
-    protected function isArrayOfObjects(array $array): bool
-    {
-        if (empty($array)) {
-            return false;
-        }
-        
-        $first = reset($array);
-        return is_array($first) && array_keys($first) !== range(0, count($first) - 1);
-    }
-    
-    /**
-     * Merge array of objects intelligently (update existing, add new)
-     */
-    protected function mergeArrayOfObjects(array $existing, array $new): array
-    {
-        foreach ($new as $newItem) {
-            $found = false;
-            
-            // Try to find matching item by name
-            foreach ($existing as &$existingItem) {
-                if (isset($newItem['name']) && isset($existingItem['name'])) {
-                    if (strtolower($newItem['name']) === strtolower($existingItem['name'])) {
-                        // Update existing item
-                        $existingItem = array_merge($existingItem, $newItem);
-                        $found = true;
-                        break;
-                    }
-                }
-            }
-            
-            // If not found, add as new item
-            if (!$found) {
-                $existing[] = $newItem;
-            }
-        }
-        
-        return $existing;
-    }
-    
-    /**
-     * Remove items from array based on removal list
-     */
-    protected function removeItems(array $items, array $toRemove): array
-    {
-        return array_values(array_filter($items, function($item) use ($toRemove) {
-            if (is_array($item) && isset($item['name'])) {
-                // Check if item name matches any removal request
-                foreach ($toRemove as $removeItem) {
-                    $removeName = is_array($removeItem) ? ($removeItem['name'] ?? $removeItem) : $removeItem;
-                    if (stripos($item['name'], $removeName) !== false) {
-                        return false; // Remove this item
-                    }
-                }
-            }
-            return true; // Keep this item
-        }));
-    }
     
     /**
      * Get list of missing required fields
@@ -343,67 +247,6 @@ class WorkflowDataCollector
         }
         
         return $missing;
-    }
-    
-    /**
-     * Validate collected data against field definitions
-     */
-    public function validateData(array $data, array $fieldDefinitions): array
-    {
-        $errors = [];
-        
-        foreach ($fieldDefinitions as $fieldName => $fieldDef) {
-            $value = $data[$fieldName] ?? null;
-            $required = $fieldDef['required'] ?? false;
-            $type = $fieldDef['type'] ?? 'string';
-            
-            // Check required
-            if ($required && empty($value)) {
-                $errors[$fieldName] = "{$fieldName} is required";
-                continue;
-            }
-            
-            if ($value === null) {
-                continue;
-            }
-            
-            // Check type
-            switch ($type) {
-                case 'integer':
-                case 'int':
-                    if (!is_numeric($value)) {
-                        $errors[$fieldName] = "{$fieldName} must be a number";
-                    }
-                    break;
-                    
-                case 'array':
-                    if (!is_array($value)) {
-                        $errors[$fieldName] = "{$fieldName} must be an array";
-                    }
-                    break;
-                    
-                case 'string':
-                    if (!is_string($value) && !is_numeric($value)) {
-                        $errors[$fieldName] = "{$fieldName} must be a string";
-                    }
-                    break;
-            }
-            
-            // Check min/max
-            if (isset($fieldDef['min']) && is_numeric($value)) {
-                if ($value < $fieldDef['min']) {
-                    $errors[$fieldName] = "{$fieldName} must be at least {$fieldDef['min']}";
-                }
-            }
-            
-            if (isset($fieldDef['max']) && is_numeric($value)) {
-                if ($value > $fieldDef['max']) {
-                    $errors[$fieldName] = "{$fieldName} must be at most {$fieldDef['max']}";
-                }
-            }
-        }
-        
-        return $errors;
     }
     
     /**
@@ -426,20 +269,57 @@ class WorkflowDataCollector
     }
     
     /**
-     * Check if all required fields are collected
-     */
-    public function isComplete(UnifiedActionContext $context, array $fieldDefinitions): bool
-    {
-        $collectedData = $context->get('collected_data', []);
-        $missing = $this->getMissingFields($collectedData, $fieldDefinitions);
-        return empty($missing);
-    }
-    
-    /**
      * Clear collected data
      */
     public function clear(UnifiedActionContext $context): void
     {
-        $context->set('collected_data', []);
+        $context->forget('collected_data');
+        $context->forget('asking_for');
+    }
+    
+    /**
+     * Filter out entity fields that should not be auto-extracted
+     * 
+     * Entity fields with subflows or identifierProviders should be resolved
+     * through their dedicated resolution steps, not auto-suggested during data collection.
+     * This prevents the AI from auto-populating categories, customers, etc. before
+     * the user is asked for them.
+     * 
+     * @param array $fieldDefinitions
+     * @return array Filtered field definitions safe for AI extraction
+     */
+    protected function filterExtractableFields(array $fieldDefinitions): array
+    {
+        $extractableFields = [];
+        
+        foreach ($fieldDefinitions as $fieldName => $fieldDef) {
+            // Skip if not an array (simple string definitions are always extractable)
+            if (!is_array($fieldDef)) {
+                $extractableFields[$fieldName] = $fieldDef;
+                continue;
+            }
+            
+            // Check if this is an entity field with special resolution
+            $hasSubflow = !empty($fieldDef['subflow']);
+            $hasIdentifierProvider = !empty($fieldDef['identifierProvider']) || !empty($fieldDef['identifier_provider']);
+            $isEntityType = ($fieldDef['type'] ?? '') === 'entity';
+            
+            // Skip entity fields that have subflows or identifierProviders
+            // These should be resolved through dedicated steps, not auto-extracted
+            if ($isEntityType && ($hasSubflow || $hasIdentifierProvider)) {
+                \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('Filtering entity field from extraction', [
+                    'field' => $fieldName,
+                    'has_subflow' => $hasSubflow,
+                    'has_identifier_provider' => $hasIdentifierProvider,
+                    'reason' => 'Entity field with special resolution should not be auto-extracted',
+                ]);
+                continue;
+            }
+            
+            // Include this field in extraction
+            $extractableFields[$fieldName] = $fieldDef;
+        }
+        
+        return $extractableFields;
     }
 }

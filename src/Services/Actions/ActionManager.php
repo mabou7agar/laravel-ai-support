@@ -6,6 +6,7 @@ use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\InteractiveAction;
 use LaravelAIEngine\Enums\ActionTypeEnum;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Unified Action Manager
@@ -17,8 +18,10 @@ class ActionManager
     public function __construct(
         protected ActionRegistry $registry,
         protected ActionParameterExtractor $extractor,
-        protected ActionExecutionPipeline $pipeline
-    ) {}
+        protected ActionExecutionPipeline $pipeline,
+        protected ?\LaravelAIEngine\Services\Agent\AgentCollectionAdapter $adapter = null
+    ) {
+    }
 
     /**
      * Get the action registry
@@ -33,7 +36,86 @@ class ActionManager
      */
     public function discoverActions(): array
     {
+        // Hydrate registry if empty
+        if (empty($this->registry->all())) {
+            $this->hydrateRegistry();
+        }
+
         return $this->registry->all();
+    }
+
+    /**
+     * Hydrate registry with discovered action models
+     */
+    protected function hydrateRegistry(): void
+    {
+        // Try to load from cache first
+        $cachedActions = Cache::get('ai_action_registry_actions');
+
+        if ($cachedActions && is_array($cachedActions)) {
+            foreach ($cachedActions as $definition) {
+                $this->registry->register($definition);
+            }
+            Log::channel('ai-engine')->debug('Hydrated ActionRegistry from cache', [
+                'count' => count($cachedActions)
+            ]);
+            return;
+        }
+
+        if (!$this->adapter && app()->bound(\LaravelAIEngine\Services\Agent\AgentCollectionAdapter::class)) {
+            $this->adapter = app(\LaravelAIEngine\Services\Agent\AgentCollectionAdapter::class);
+        }
+
+        if ($this->adapter) {
+            $models = $this->adapter->discoverForAgent(true); // use cache
+            $definitions = [];
+
+            foreach ($models as $model) {
+                $name = $model['name'];
+                $snakeName = \Illuminate\Support\Str::snake($name);
+
+                // Map strategy to executor
+                $executor = match ($model['strategy'] ?? 'quick_action') {
+                    'agent_mode' => 'workflow',
+                    'guided_flow' => 'interactive',
+                    default => 'model_action'
+                };
+
+                $definition = [
+                    'id' => "create_{$snakeName}",
+                    'type' => 'model_action',
+                    'label' => "Create {$name}",
+                    'description' => $model['description'] ?? "Create a new {$name}",
+                    'model_class' => $model['class'],
+                    'executor' => $executor,
+                    'triggers' => array_merge($model['keywords'] ?? [], ["create {$name}", "add {$name}", "new {$name}"]),
+                    'enabled' => true,
+                    // Store full analysis for agent usage
+                    'complexity' => $model['complexity'] ?? 'SIMPLE',
+                    'relationships' => $model['relationships'] ?? [],
+                ];
+                
+                // Add workflow_class if executor is workflow
+                if ($executor === 'workflow' && !empty($model['workflow_class'])) {
+                    $definition['workflow_class'] = $model['workflow_class'];
+                }
+
+                $definitions[] = $definition;
+                $this->registry->register($definition);
+
+                Log::channel('ai-engine')->debug('Registered discovered action', [
+                    'id' => $definition['id'],
+                    'label' => $definition['label'],
+                    'executor' => $executor
+                ]);
+            }
+
+            // Cache the definitions for 24 hours
+            Cache::put('ai_action_registry_actions', $definitions, 86400);
+            Log::channel('ai-engine')->info('Cached ActionRegistry definitions', [
+                'count' => count($definitions)
+            ]);
+        }
     }
 
     /**
@@ -159,7 +241,7 @@ class ActionManager
                     'has_high_confidence' => $extraction->hasHighConfidence(),
                     'params_count' => count($extraction->params),
                 ]);
-                
+
                 if ($extraction->isComplete() || $extraction->hasHighConfidence()) {
                     $action = $this->buildInteractiveAction($definition, $extraction);
                     $actions[] = $action;
@@ -290,24 +372,24 @@ class ActionManager
     protected function extractModelKeywords(array $definition): array
     {
         $keywords = [];
-        
+
         // Add model class name
         if (isset($definition['model_class'])) {
             $className = class_basename($definition['model_class']);
             $keywords[] = $className;
         }
-        
+
         // Add triggers
         if (isset($definition['triggers']) && is_array($definition['triggers'])) {
             $keywords = array_merge($keywords, $definition['triggers']);
         }
-        
+
         // Add label words
         if (isset($definition['label'])) {
             $labelWords = preg_split('/[\s\-_]+/', $definition['label']);
             $keywords = array_merge($keywords, array_filter($labelWords, fn($w) => strlen($w) > 3));
         }
-        
+
         return array_unique($keywords);
     }
 
@@ -402,7 +484,7 @@ class ActionManager
 
         $actionType = $definition['type'] ?? null;
 
-        return match($intent) {
+        return match ($intent) {
             'new_request', 'create' => in_array($actionType, ['model_action', 'remote_model_action']),
             'confirm' => true, // All actions can be confirmed
             'provide_data' => true, // All actions can receive data

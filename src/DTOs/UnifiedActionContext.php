@@ -186,8 +186,52 @@ class UnifiedActionContext
         $this->currentStep = $step;
         // Merge the new state with existing state (don't replace)
         $this->workflowState = array_merge($this->workflowState, $state);
+        
+        $this->saveToCache();
     }
     
+    /**
+     * Create an isolated subcontext for subworkflow execution
+     * This prevents parent workflow data from polluting subworkflow
+     */
+    public function createSubContext(array $initialData = []): self
+    {
+        $subContext = new self(
+            sessionId: $this->sessionId,
+            userId: $this->userId,
+            conversationHistory: $this->conversationHistory, // Share conversation
+            currentStrategy: $this->currentStrategy,
+            intentAnalysis: $this->intentAnalysis,
+        );
+        
+        // Initialize with only the data needed for subworkflow
+        $subContext->workflowState = $initialData;
+        
+        // Mark as subworkflow
+        $subContext->metadata['is_subworkflow'] = true;
+        $subContext->metadata['parent_workflow'] = $this->currentWorkflow;
+        
+        return $subContext;
+    }
+    
+    /**
+     * Merge subworkflow result back into parent context
+     * Only merges the final result, not intermediate data
+     */
+    public function mergeSubworkflowResult(array $result): void
+    {
+        // Only merge specific result data, not all workflow state
+        if (isset($result['entity_id'])) {
+            $this->workflowState['created_entity_id'] = $result['entity_id'];
+        }
+        
+        if (isset($result['entity'])) {
+            $this->workflowState['created_entity'] = $result['entity'];
+        }
+        
+        // Don't merge collected_data or other intermediate state
+    }
+
     /**
      * Pop workflow from stack and restore parent workflow
      */
@@ -204,6 +248,15 @@ class UnifiedActionContext
         $this->workflowState = $parent['state'];
         
         return $parent;
+    }
+    
+    /**
+     * Save context to cache
+     */
+    public function saveToCache(): void
+    {
+        $cacheKey = "agent_context:{$this->sessionId}";
+        Cache::put($cacheKey, $this->toArray(), now()->addHours(24));
     }
     
     /**

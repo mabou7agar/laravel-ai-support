@@ -23,10 +23,12 @@ class ContextManager
                 'user_id' => $userId,
             ]);
         } else {
-            Log::channel('ai-engine')->debug('Agent context loaded', [
+            Log::channel('ai-engine')->info('Agent context loaded from cache', [
                 'session_id' => $sessionId,
                 'current_strategy' => $context->currentStrategy,
                 'current_workflow' => $context->currentWorkflow,
+                'current_step' => $context->currentStep,
+                'workflow_state_keys' => array_keys($context->workflowState),
             ]);
         }
         
@@ -37,9 +39,11 @@ class ContextManager
     {
         $context->persist();
         
-        Log::channel('ai-engine')->debug('Agent context saved', [
+        Log::channel('ai-engine')->info('Agent context saved to cache', [
             'session_id' => $context->sessionId,
             'strategy' => $context->currentStrategy,
+            'current_workflow' => $context->currentWorkflow,
+            'current_step' => $context->currentStep,
         ]);
     }
 

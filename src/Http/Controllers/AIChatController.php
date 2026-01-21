@@ -19,12 +19,11 @@ use LaravelAIEngine\Http\Requests\UploadFileRequest;
 use LaravelAIEngine\Http\Requests\ExecuteDynamicActionRequest;
 use LaravelAIEngine\Services\Actions;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
-use LaravelAIEngine\Services\RAG\IntelligentRAGService;
 use LaravelAIEngine\Services\MemoryOptimizationService;
+use LaravelAIEngine\Services\ModelSelectionService;
 use LaravelAIEngine\DTOs\InteractiveAction;
 use LaravelAIEngine\Enums\ActionTypeEnum;
 use LaravelAIEngine\Services\Vector\VectorAuthorizationService;
-use LaravelAIEngine\Services\AIModelRegistry;
 
 class AIChatController extends Controller
 {
@@ -36,8 +35,7 @@ class AIChatController extends Controller
         protected RAGCollectionDiscovery $ragDiscovery,
         protected VectorAuthorizationService $authService,
         protected MemoryOptimizationService $memoryOptimization,
-        protected AIModelRegistry $modelRegistry,
-        protected ?IntelligentRAGService $intelligentRAG = null
+        protected ModelSelectionService $modelSelector
     ) {
         // Apply auth middleware only if Sanctum or JWT is available
         $this->applyAuthMiddleware();
@@ -128,31 +126,20 @@ class AIChatController extends Controller
             $dto = $request->toDTO();
             \Log::debug('AIChatController: DTO created', ['user_id' => $dto->userId]);
 
-            $engine = $dto->engine;
-            $model = $dto->model;
             $useMemory = $dto->memory;
             $useActions = $dto->actions;
             $useStreaming = $dto->streaming;
 
-            // Auto-select model if requested
-            $autoSelectModel = $request->input('auto_select_model', false);
-            $taskType = $request->input('task_type', 'default');
+            // Auto-select model using ModelSelectionService
+            $modelSelection = $this->modelSelector->selectModel(
+                defaultEngine: $dto->engine,
+                defaultModel: $dto->model,
+                taskType: $request->input('task_type', 'default'),
+                autoSelect: $request->input('auto_select_model', false)
+            );
             
-            if ($autoSelectModel || (!$request->has('model') && config('ai-engine.auto_select_model', false))) {
-                $recommendedModel = $this->modelRegistry->getRecommendedModel($taskType);
-                
-                if ($recommendedModel) {
-                    $engine = $recommendedModel->provider;
-                    $model = $recommendedModel->model_id;
-                    
-                    Log::info('AIChatController: Auto-selected model', [
-                        'task' => $taskType,
-                        'provider' => $engine,
-                        'model' => $model,
-                        'is_offline' => $recommendedModel->provider === 'ollama',
-                    ]);
-                }
-            }
+            $engine = $modelSelection['engine'];
+            $model = $modelSelection['model'];
 
             // Check if API key is configured
             $apiKey = config("ai-engine.engines.{$engine}.api_key");
@@ -169,68 +156,8 @@ class AIChatController extends Controller
                 ], 200); // Return 200 so the UI can display the demo message
             }
 
-            // Get intelligent RAG setting first
-            $useIntelligentRAG = $request->input('intelligent_rag',
-                $request->input('use_intelligent_rag',
-                    config('ai-engine.intelligent_rag.enabled', true)
-                )
-            );
-
-            // Get RAG collections from config or request
-            $ragCollections = $request->input('rag_collections');
-            
-            Log::info('AIChatController: rag_collections input', [
-                'raw_input' => $request->input('rag_collections'),
-                'is_empty' => empty($ragCollections),
-                'type' => gettype($ragCollections),
-            ]);
-
-            // If not provided, auto-discover from RAGgable/Vectorizable models
-            // Only discover if intelligent RAG is enabled to avoid unnecessary overhead
-            if (empty($ragCollections) && $useIntelligentRAG) {
-                $ragCollections = $this->ragDiscovery->discover();
-                Log::info('AIChatController: Auto-discovered collections', [
-                    'count' => is_countable($ragCollections) ? count($ragCollections) : 0,
-                ]);
-            } else {
-                Log::info('AIChatController: Using user-passed collections or RAG disabled', [
-                    'count' => is_countable($ragCollections) ? count($ragCollections) : 0,
-                    'rag_enabled' => $useIntelligentRAG,
-                ]);
-            }
-
-            // Check if async mode is requested (optional feature)
-            $useAsync = $request->input('async', false);
-            
-            // Dispatch to queue if async mode is enabled
-            if ($useAsync && $useActions) {
-                $jobId = uniqid('workflow_');
-                
-                dispatch(new \LaravelAIEngine\Jobs\ProcessWorkflowJob(
-                    jobId: $jobId,
-                    message: $dto->message,
-                    sessionId: $dto->sessionId,
-                    userId: $dto->userId,
-                    engine: $engine,
-                    model: $model,
-                    useMemory: $useMemory,
-                    useActions: $useActions,
-                    useIntelligentRAG: $useIntelligentRAG,
-                    ragCollections: $ragCollections
-                ));
-                
-                return response()->json([
-                    'success' => true,
-                    'async' => true,
-                    'job_id' => $jobId,
-                    'status' => 'processing',
-                    'message' => 'Your request is being processed...',
-                    'stream_url' => route('ai-engine.workflow.stream', $jobId),
-                    'status_url' => route('ai-engine.workflow.status', $jobId),
-                ]);
-            }
-
-            // Process message synchronously (default behavior)
+            // Process message through ChatService (thin wrapper around AgentOrchestrator)
+            // AgentOrchestrator handles all routing, RAG decisions, and workflow detection
             $response = $this->chatService->processMessage(
                 message: $dto->message,
                 sessionId: $dto->sessionId,
@@ -238,8 +165,6 @@ class AIChatController extends Controller
                 model: $model,
                 useMemory: $useMemory,
                 useActions: $useActions,
-                useIntelligentRAG: $useIntelligentRAG,
-                ragCollections: $ragCollections,
                 userId: $dto->userId
             );
 
@@ -281,35 +206,13 @@ class AIChatController extends Controller
                 'actions' => array_map(fn($action) => is_array($action) ? $action : $action->toArray(), $actions),
                 'usage' => $response->getUsage() ?? [],
                 'session_id' => $dto->sessionId,
-                // RAG metadata
+                // Metadata from AgentOrchestrator (includes RAG, workflow, actions, etc.)
+                'metadata' => $metadata,
+                // Legacy fields for backward compatibility
                 'rag_enabled' => $metadata['rag_enabled'] ?? false,
-                'context_count' => $metadata['context_count'] ?? 0,
                 'sources' => $metadata['sources'] ?? [],
-                'numbered_options' => $metadata['numbered_options'] ?? [],
-                'has_options' => $metadata['has_options'] ?? false,
-                'aggregate_data' => $metadata['aggregate_data'] ?? [],
-                // Smart actions metadata (inline action system)
-                'smart_actions' => array_map(function($action) {
-                    if ($action instanceof \LaravelAIEngine\DTOs\InteractiveAction) {
-                        return [
-                            'id' => $action->id,
-                            'type' => $action->type->value,
-                            'label' => $action->label,
-                            'description' => $action->description,
-                            'data' => $action->data,
-                            'style' => $action->style,
-                            'disabled' => $action->disabled,
-                            'loading' => $action->loading,
-                            'confirm_message' => $action->confirmMessage,
-                            'success_message' => $action->successMessage,
-                            'error_message' => $action->errorMessage,
-                            'validation' => $action->validation,
-                            'metadata' => $action->metadata,
-                        ];
-                    }
-                    return $action;
-                }, $metadata['smart_actions'] ?? []),
-                'action_executed' => $metadata['action_executed'] ?? null,
+                'workflow_active' => $metadata['workflow_active'] ?? false,
+                'workflow_completed' => $metadata['workflow_completed'] ?? false,
             ]);
 
         } catch (\Exception $e) {
@@ -492,6 +395,8 @@ class AIChatController extends Controller
 
     /**
      * Handle streaming request
+     * Note: Streaming is handled directly by Engine for now
+     * TODO: Integrate streaming with AgentOrchestrator in future
      */
     protected function handleStreamingRequest(AIRequest $aiRequest, array $validated): JsonResponse
     {
@@ -502,8 +407,6 @@ class AIChatController extends Controller
             $engine = $validated['engine'] ?? 'openai';
             $model = $validated['model'] ?? 'gpt-4o-mini';
             $useMemory = $validated['memory'] ?? true;
-            $useIntelligentRAG = $validated['use_intelligent_rag'] ?? true;
-            $ragCollections = $validated['rag_collections'] ?? [];
 
             // Get or create conversation
             $conversationId = null;
@@ -522,37 +425,10 @@ class AIChatController extends Controller
                 $messages = $this->memoryOptimization->getOptimizedHistory($conversationId, 20);
             }
 
-            // Handle RAG context if enabled
-            $enhancedPrompt = $message;
-            $ragMetadata = [];
-            
-            if ($useIntelligentRAG && $this->intelligentRAG) {
-                try {
-                    // Get RAG context
-                    $ragResult = $this->intelligentRAG->enhancePromptWithContext(
-                        $message,
-                        $sessionId,
-                        $ragCollections,
-                        ['user_id' => $userId]
-                    );
-                    
-                    $enhancedPrompt = $ragResult['enhanced_prompt'] ?? $message;
-                    $ragMetadata = [
-                        'sources' => $ragResult['sources'] ?? [],
-                        'context_count' => $ragResult['context_count'] ?? 0,
-                        'rag_enabled' => true,
-                    ];
-                } catch (\Exception $e) {
-                    Log::warning('RAG enhancement failed during streaming', [
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
-
             // Start streaming response
             Engine::streamResponse(
                 sessionId: $sessionId,
-                generator: function() use ($engine, $model, $enhancedPrompt, $messages, $conversationId, $sessionId, $userId, $ragMetadata) {
+                generator: function() use ($engine, $model, $message, $messages, $conversationId, $sessionId, $userId) {
                     $fullResponse = '';
                     
                     // Use EngineBuilder for proper streaming
@@ -567,7 +443,7 @@ class AIChatController extends Controller
                     }
                     
                     // Stream the response
-                    foreach ($builder->generateStream($enhancedPrompt) as $chunk) {
+                    foreach ($builder->generateStream($message) as $chunk) {
                         $fullResponse .= $chunk;
                         yield $chunk;
                     }
@@ -580,19 +456,19 @@ class AIChatController extends Controller
                             // Save user message
                             $conversationManager->addUserMessage(
                                 $conversationId,
-                                $enhancedPrompt,
+                                $message,
                                 ['user_id' => $userId]
                             );
                             
-                            // Save assistant message with RAG metadata
+                            // Save assistant message
                             $conversation = $conversationManager->getConversation($conversationId);
                             if ($conversation) {
-                                $conversation->addMessage('assistant', $fullResponse, array_merge([
+                                $conversation->addMessage('assistant', $fullResponse, [
                                     'engine' => $engine,
                                     'model' => $model,
                                     'user_id' => $userId,
                                     'streaming' => true,
-                                ], $ragMetadata));
+                                ]);
                             }
                         } catch (\Exception $e) {
                             Log::error('Failed to save streaming conversation', [
@@ -608,7 +484,6 @@ class AIChatController extends Controller
                 'streaming' => true,
                 'session_id' => $sessionId,
                 'message' => 'Streaming started',
-                'rag_metadata' => $ragMetadata,
             ]);
 
         } catch (\Exception $e) {

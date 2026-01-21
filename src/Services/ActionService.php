@@ -19,6 +19,12 @@ class ActionService
             $actions = array_merge($actions, $ragMetadata['smart_actions']);
         }
         
+        // If workflow is active, only return workflow actions (no default UI actions)
+        $isWorkflowActive = $ragMetadata['workflow_active'] ?? false;
+        if ($isWorkflowActive) {
+            return $actions;
+        }
+        
         // RAG-aware actions (if sources are available)
         if (!empty($ragMetadata['sources'])) {
             $actions = array_merge($actions, $this->generateRAGActions($ragMetadata['sources']));

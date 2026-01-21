@@ -33,6 +33,11 @@ class AIEngineServiceProvider extends ServiceProvider
             'ai-engine'
         );
 
+        $this->mergeConfigFrom(
+            __DIR__.'/../config/ai-agent.php',
+            'ai-agent'
+        );
+
         // Register AI Engine log channel
         $this->registerLogChannel();
 
@@ -120,6 +125,130 @@ class AIEngineServiceProvider extends ServiceProvider
 
         $this->app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, function ($app) {
             return new \LaravelAIEngine\Services\Memory\MemoryManager();
+        });
+
+        // Register services from legacy provider that are still needed
+        $this->app->singleton(\LaravelAIEngine\Services\AIEngineService::class, function ($app) {
+            return new \LaravelAIEngine\Services\AIEngineService($app->make(CreditManager::class));
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\BrandVoiceManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\BrandVoiceManager();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\WebhookManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\WebhookManager();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\TemplateManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\TemplateManager();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\ContentModerationService::class, function ($app) {
+            return new \LaravelAIEngine\Services\ContentModerationService();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\JobStatusTracker::class, function ($app) {
+            return new \LaravelAIEngine\Services\JobStatusTracker();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\QueuedAIProcessor::class, function ($app) {
+            return new \LaravelAIEngine\Services\QueuedAIProcessor($app->make(\LaravelAIEngine\Services\JobStatusTracker::class));
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\IntelligentRAGService(
+                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+                $app->make(AIEngineManager::class),
+                $app->make(\LaravelAIEngine\Services\ConversationService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\AIModelRegistry::class, function ($app) {
+            return new \LaravelAIEngine\Services\AIModelRegistry();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\DuplicateDetectionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\DuplicateDetectionService();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class, function ($app) {
+            return new \LaravelAIEngine\Services\DataCollector\DataCollectorService(
+                $app->make(AIEngineManager::class),
+                $app->make(\LaravelAIEngine\Services\ConversationService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorChatService::class, function ($app) {
+            return new \LaravelAIEngine\Services\DataCollector\DataCollectorChatService(
+                $app->make(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class),
+                $app->make(\LaravelAIEngine\Services\ChatService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\ModelResolver::class, function ($app) {
+            return new \LaravelAIEngine\Services\ModelResolver();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\PendingActionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\PendingActionService();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentCollectionAdapter::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\AgentCollectionAdapter(
+                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class),
+                $app->make(\LaravelAIEngine\Services\ModelAnalyzer::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentMode::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\AgentMode();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class, function ($app) {
+            $registry = new \LaravelAIEngine\Services\Agent\Tools\ToolRegistry();
+            $registry->discoverFromConfig();
+            return $registry;
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ValidateFieldTool::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class);
+
+        // Register Agent Services (Intelligent Routing)
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\MessageAnalyzer::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\MessageAnalyzer(
+                $app->make(\LaravelAIEngine\Services\IntentAnalysisService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\ContextManager::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\ContextManager();
+        });
+
+        // Register AgentOrchestrator (handlers instantiated per-request)
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentOrchestrator::class, function ($app) {
+            $orchestrator = new \LaravelAIEngine\Services\Agent\AgentOrchestrator(
+                $app->make(\LaravelAIEngine\Services\Agent\MessageAnalyzer::class),
+                $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class)
+            );
+            
+            // Register handlers (instantiated fresh each time orchestrator is created)
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ContinueWorkflowHandler::class));
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AnswerQuestionHandler::class));
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\SubWorkflowHandler::class));
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\CancelWorkflowHandler::class));
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\DirectAnswerHandler::class));
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\KnowledgeSearchHandler::class));
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\StartWorkflowHandler::class));
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ConversationalHandler::class));
+            
+            return $orchestrator;
         });
     }
 

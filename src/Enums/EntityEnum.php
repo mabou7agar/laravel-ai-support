@@ -165,19 +165,19 @@ class EntityEnum
     public const OLLAMA_LLAMA3_70B = 'llama3:70b';
     public const OLLAMA_LLAMA3_1 = 'llama3.1';
     public const OLLAMA_LLAMA3_2 = 'llama3.2';
-    
+
     // Mistral Models
     public const OLLAMA_MISTRAL = 'mistral';
     public const OLLAMA_MISTRAL_7B = 'mistral:7b';
     public const OLLAMA_MIXTRAL = 'mixtral';
     public const OLLAMA_MIXTRAL_8X7B = 'mixtral:8x7b';
-    
+
     // Code Models
     public const OLLAMA_CODELLAMA = 'codellama';
     public const OLLAMA_CODELLAMA_7B = 'codellama:7b';
     public const OLLAMA_CODELLAMA_13B = 'codellama:13b';
     public const OLLAMA_CODELLAMA_34B = 'codellama:34b';
-    
+
     // Other Popular Ollama Models
     public const OLLAMA_PHI = 'phi';
     public const OLLAMA_PHI_2 = 'phi:2.7b';
@@ -209,13 +209,13 @@ class EntityEnum
     public function __construct(string $value)
     {
         $this->value = $value;
-        
+
         // Try to load dynamic model info if not a predefined constant
         if (!$this->isPredefinedModel()) {
             $this->dynamicModel = $this->getResolver()->resolve($value);
         }
     }
-    
+
     /**
      * Get or create the resolver instance
      */
@@ -226,7 +226,7 @@ class EntityEnum
         }
         return static::$resolver;
     }
-    
+
     /**
      * Check if this is a predefined model constant
      */
@@ -236,7 +236,7 @@ class EntityEnum
         $constants = $reflection->getConstants();
         return in_array($this->value, $constants, true);
     }
-    
+
     /**
      * Check if this model is loaded dynamically from database
      */
@@ -244,7 +244,7 @@ class EntityEnum
     {
         return $this->dynamicModel !== null;
     }
-    
+
     /**
      * Get dynamic model property or fallback to switch statement
      */
@@ -262,7 +262,7 @@ class EntityEnum
     protected function detectEngineFromModelName(): EngineEnum
     {
         $model = $this->value;
-        
+
         // First, check database for model
         try {
             $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($model);
@@ -272,7 +272,7 @@ class EntityEnum
         } catch (\Exception $e) {
             // Database not available or table doesn't exist, continue with config check
         }
-        
+
         // OpenRouter models have format: provider/model-name (e.g., meta-llama/llama-3.1-8b-instruct:free)
         if (str_contains($model, '/')) {
             // Check if model exists in OpenRouter config
@@ -281,7 +281,7 @@ class EntityEnum
                 return new EngineEnum(EngineEnum::OPENROUTER);
             }
         }
-        
+
         // Check all engine configs to find the model
         $engines = config('ai-engine.engines', []);
         foreach ($engines as $engineName => $engineConfig) {
@@ -290,12 +290,12 @@ class EntityEnum
                 return new EngineEnum($engineName);
             }
         }
-        
+
         // Default to OpenRouter for provider/model format
         if (str_contains($model, '/')) {
             return new EngineEnum(EngineEnum::OPENROUTER);
         }
-        
+
         // Fallback to OpenAI
         return new EngineEnum(EngineEnum::OPENAI);
     }
@@ -309,7 +309,7 @@ class EntityEnum
         if ($this->isDynamic() && isset($this->dynamicModel['engine'])) {
             return new EngineEnum($this->dynamicModel['engine']);
         }
-        
+
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
@@ -382,7 +382,7 @@ class EntityEnum
         if ($this->isDynamic() && isset($this->dynamicModel['driver_class'])) {
             return $this->dynamicModel['driver_class'];
         }
-        
+
         switch ($this->value) {
             case self::GPT_4O:
                 return GPT4ODriver::class;
@@ -501,14 +501,14 @@ class EntityEnum
                 return $this->detectDriverFromEngine();
         }
     }
-    
+
     /**
      * Detect driver class from engine for unknown models
      */
     protected function detectDriverFromEngine(): string
     {
         $engine = $this->detectEngineFromModelName();
-        
+
         // Map engines to their default drivers
         return match ($engine->value) {
             EngineEnum::OPENAI => GPT4ODriver::class,
@@ -530,7 +530,7 @@ class EntityEnum
         if ($this->isDynamic() && isset($this->dynamicModel['name'])) {
             return $this->dynamicModel['name'];
         }
-        
+
         switch ($this->value) {
             case self::GPT_4O:
                 return 'GPT-4o';
@@ -661,7 +661,7 @@ class EntityEnum
         if ($this->isDynamic() && isset($this->dynamicModel['credit_index'])) {
             return $this->dynamicModel['credit_index'];
         }
-        
+
         switch ($this->value) {
             case self::GPT_4O:
                 return 2.0;
@@ -830,7 +830,7 @@ class EntityEnum
                 return $this->getCreditIndexFromConfig();
         }
     }
-    
+
     /**
      * Get credit index from config or database for unknown models
      */
@@ -845,7 +845,7 @@ class EntityEnum
         } catch (\Exception $e) {
             // Database not available, continue with config check
         }
-        
+
         $engines = config('ai-engine.engines', []);
         foreach ($engines as $engineConfig) {
             $models = $engineConfig['models'] ?? [];
@@ -873,7 +873,7 @@ class EntityEnum
         if ($this->isDynamic() && isset($this->dynamicModel['content_type'])) {
             return $this->dynamicModel['content_type'];
         }
-        
+
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
@@ -936,7 +936,7 @@ class EntityEnum
         if ($this->isDynamic() && isset($this->dynamicModel['max_tokens'])) {
             return $this->dynamicModel['max_tokens'];
         }
-        
+
         switch ($this->value) {
             case self::GPT_4O:
                 return 128000;
@@ -967,7 +967,7 @@ class EntityEnum
                 return $this->getMaxTokensFromDatabase();
         }
     }
-    
+
     /**
      * Get max tokens from database for unknown models
      */
@@ -993,7 +993,7 @@ class EntityEnum
         if ($this->isDynamic() && isset($this->dynamicModel['supports_vision'])) {
             return $this->dynamicModel['supports_vision'];
         }
-        
+
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_5:
@@ -1010,7 +1010,7 @@ class EntityEnum
                 return $this->getSupportsVisionFromDatabase();
         }
     }
-    
+
     /**
      * Get vision support from database for unknown models
      */
@@ -1036,7 +1036,7 @@ class EntityEnum
         if ($this->isDynamic() && isset($this->dynamicModel['supports_streaming'])) {
             return $this->dynamicModel['supports_streaming'];
         }
-        
+
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_4O_MINI:
@@ -1052,7 +1052,7 @@ class EntityEnum
                 return $this->getSupportsStreamingFromDatabase();
         }
     }
-    
+
     /**
      * Get streaming support from database for unknown models
      */
@@ -1115,6 +1115,18 @@ class EntityEnum
     public static function fromSlug(string $slug): self
     {
         return self::from($slug);
+    }
+
+    /**
+     * Try to create engine from value, return null on failure
+     */
+    public static function tryFrom(string $value): ?self
+    {
+        try {
+            return new self($value);
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**

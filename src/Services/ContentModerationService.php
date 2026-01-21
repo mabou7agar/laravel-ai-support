@@ -5,23 +5,73 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Contracts\ModerationRuleInterface;
+use LaravelAIEngine\Services\Moderation\Rules\RegexModerationRule;
 
 class ContentModerationService
 {
-    private array $moderationRules;
-    private array $bannedWords;
-    private array $sensitiveTopics;
+    private array $rules = [];
 
     public function __construct()
     {
-        $this->moderationRules = $this->loadModerationRules();
-        $this->bannedWords = $this->loadBannedWords();
-        $this->sensitiveTopics = $this->loadSensitiveTopics();
+        $this->loadRules();
     }
+
+    /**
+     * Load moderation rules from config/cache
+     */
+    protected function loadRules(): void
+    {
+        // 1. Load Banned Words
+        if (config('ai-engine-moderation.features.banned_words_check', true)) {
+            $this->rules[] = new RegexModerationRule(
+                'banned_words',
+                config('ai-engine-moderation.banned_words', []),
+                config('ai-engine-moderation.scores.banned_word', 0.3),
+                'banned_words'
+            );
+        }
+
+        // 2. Load Sensitive Topics
+        if (config('ai-engine-moderation.features.sensitive_topic_check', true)) {
+            $this->rules[] = new RegexModerationRule(
+                'sensitive_topics',
+                config('ai-engine-moderation.sensitive_topics', []),
+                config('ai-engine-moderation.scores.sensitive_topic', 0.2),
+                'sensitive_topic'
+            );
+        }
+
+        // 3. Load Harmful Content Patterns
+        if (config('ai-engine-moderation.features.harmful_content_check', true)) {
+            $patterns = config('ai-engine-moderation.patterns.harmful', []);
+            $this->rules[] = new RegexModerationRule(
+                'harmful_content',
+                $patterns,
+                config('ai-engine-moderation.scores.harmful_content', 0.4),
+                'harmful_content'
+            );
+        }
+
+        // 4. Load Bias Patterns
+        if (config('ai-engine-moderation.features.bias_check', true)) {
+            $patterns = config('ai-engine-moderation.patterns.bias', []);
+            $this->rules[] = new RegexModerationRule(
+                'potential_bias',
+                $patterns,
+                config('ai-engine-moderation.scores.bias', 0.2),
+                'potential_bias'
+            );
+        }
+
+        // Load custom cached rules here if needed, implementing ModerationRuleInterface
+    }
+
 
     /**
      * Moderate content before AI generation
@@ -36,28 +86,32 @@ class ContentModerationService
             'filtered_content' => $content,
         ];
 
-        // Check banned words
-        $bannedWordCheck = $this->checkBannedWords($content);
-        if (!$bannedWordCheck['approved']) {
-            $results['approved'] = false;
-            $results['flags'][] = 'banned_words';
-            $results['score'] += 0.3;
+        // Apply all loaded rules
+        foreach ($this->rules as $rule) {
+            $ruleResult = $rule->check($content);
+            if (!$ruleResult['approved']) {
+                $results['flags'] = array_merge($results['flags'], $ruleResult['flags']);
+                $results['score'] += $ruleResult['score'];
+
+                // If it's a high severity flag (like harmful content), mark as not approved
+                if (in_array('harmful_content', $ruleResult['flags']) || in_array('banned_words', $ruleResult['flags'])) {
+                    $results['approved'] = false;
+                }
+            }
         }
 
-        // Check sensitive topics
-        $sensitiveTopicCheck = $this->checkSensitiveTopics($content);
-        if (!$sensitiveTopicCheck['approved']) {
-            $results['flags'][] = 'sensitive_topic';
-            $results['score'] += 0.2;
+        // AI-powered content analysis (if enabled)
+        if (config('ai-engine-moderation.features.ai_moderation', true)) {
+            $aiModerationCheck = $this->aiContentModeration($content);
+            if (!$aiModerationCheck['approved']) {
+                $results['approved'] = false;
+                $results['flags'] = array_merge($results['flags'], $aiModerationCheck['flags']);
+                $results['score'] += $aiModerationCheck['score'];
+            }
         }
 
-        // AI-powered content analysis
-        $aiModerationCheck = $this->aiContentModeration($content);
-        if (!$aiModerationCheck['approved']) {
-            $results['approved'] = false;
-            $results['flags'] = array_merge($results['flags'], $aiModerationCheck['flags']);
-            $results['score'] += $aiModerationCheck['score'];
-        }
+        // Cap score at 1.0
+        $results['score'] = min($results['score'], 1.0);
 
         // Apply content filters if needed
         if ($options['apply_filters'] ?? true) {
@@ -65,7 +119,7 @@ class ContentModerationService
         }
 
         // Generate suggestions for improvement
-        if (!$results['approved']) {
+        if (!$results['approved'] || !empty($results['flags'])) {
             $results['suggestions'] = $this->generateImprovementSuggestions($content, $results['flags']);
         }
 
@@ -77,53 +131,9 @@ class ContentModerationService
      */
     public function moderateOutput(string $content, array $options = []): array
     {
-        $results = [
-            'approved' => true,
-            'score' => 0.0,
-            'flags' => [],
-            'suggestions' => [],
-            'filtered_content' => $content,
-        ];
-
-        // Check for harmful content
-        $harmfulContentCheck = $this->checkHarmfulContent($content);
-        if (!$harmfulContentCheck['approved']) {
-            $results['approved'] = false;
-            $results['flags'][] = 'harmful_content';
-            $results['score'] += 0.4;
-        }
-
-        // Check for bias
-        $biasCheck = $this->checkBias($content);
-        if (!$biasCheck['approved']) {
-            $results['flags'][] = 'potential_bias';
-            $results['score'] += 0.2;
-        }
-
-        // Check for factual accuracy (if enabled)
-        if ($options['fact_check'] ?? false) {
-            $factCheck = $this->checkFactualAccuracy($content);
-            if (!$factCheck['approved']) {
-                $results['flags'][] = 'factual_concerns';
-                $results['score'] += 0.3;
-            }
-        }
-
-        // Check for plagiarism (if enabled)
-        if ($options['plagiarism_check'] ?? false) {
-            $plagiarismCheck = $this->checkPlagiarism($content);
-            if (!$plagiarismCheck['approved']) {
-                $results['flags'][] = 'potential_plagiarism';
-                $results['score'] += 0.5;
-            }
-        }
-
-        // Apply safety filters
-        if ($options['apply_safety_filters'] ?? true) {
-            $results['filtered_content'] = $this->applySafetyFilters($content, $results['flags']);
-        }
-
-        return $results;
+        // For now using the same rules, but logic could be separated
+        // Often output moderation focuses more on safety/harm execution
+        return $this->moderateInput($content, $options);
     }
 
     /**
@@ -132,8 +142,9 @@ class ContentModerationService
     public function openAIModeration(string $content): array
     {
         try {
+            // Keep existing simulated logic or replace with actual API call if key is present
             $aiEngine = app('ai-engine');
-            
+
             // Use OpenAI's moderation endpoint
             $request = new AIRequest(
                 prompt: $content,
@@ -142,43 +153,12 @@ class ContentModerationService
                 parameters: ['moderation' => true]
             );
 
-            // This would call OpenAI's moderation API
-            // For now, simulate the response
-            $moderationResult = [
-                'flagged' => false,
-                'categories' => [
-                    'hate' => false,
-                    'hate/threatening' => false,
-                    'harassment' => false,
-                    'harassment/threatening' => false,
-                    'self-harm' => false,
-                    'self-harm/intent' => false,
-                    'self-harm/instructions' => false,
-                    'sexual' => false,
-                    'sexual/minors' => false,
-                    'violence' => false,
-                    'violence/graphic' => false,
-                ],
-                'category_scores' => [
-                    'hate' => 0.001,
-                    'hate/threatening' => 0.001,
-                    'harassment' => 0.001,
-                    'harassment/threatening' => 0.001,
-                    'self-harm' => 0.001,
-                    'self-harm/intent' => 0.001,
-                    'self-harm/instructions' => 0.001,
-                    'sexual' => 0.001,
-                    'sexual/minors' => 0.001,
-                    'violence' => 0.001,
-                    'violence/graphic' => 0.001,
-                ],
-            ];
-
+            // This serves as a placeholder for the actual API integration
             return [
-                'approved' => !$moderationResult['flagged'],
-                'flags' => array_keys(array_filter($moderationResult['categories'])),
-                'scores' => $moderationResult['category_scores'],
-                'details' => $moderationResult,
+                'approved' => true,
+                'flags' => [],
+                'scores' => [],
+                'details' => [],
             ];
 
         } catch (\Exception $e) {
@@ -189,115 +169,6 @@ class ContentModerationService
         }
     }
 
-    /**
-     * Create custom moderation rule
-     */
-    public function createModerationRule(array $ruleData): array
-    {
-        $rule = [
-            'id' => uniqid('rule_'),
-            'name' => $ruleData['name'],
-            'description' => $ruleData['description'] ?? '',
-            'type' => $ruleData['type'], // 'keyword', 'pattern', 'ai_check'
-            'severity' => $ruleData['severity'] ?? 'medium', // 'low', 'medium', 'high'
-            'action' => $ruleData['action'] ?? 'flag', // 'flag', 'block', 'filter'
-            'pattern' => $ruleData['pattern'] ?? '',
-            'keywords' => $ruleData['keywords'] ?? [],
-            'enabled' => $ruleData['enabled'] ?? true,
-            'created_at' => now()->toISOString(),
-        ];
-
-        $this->storeModerationRule($rule);
-        return $rule;
-    }
-
-    /**
-     * Get content safety score
-     */
-    public function getSafetyScore(string $content): float
-    {
-        $checks = [
-            $this->checkBannedWords($content),
-            $this->checkSensitiveTopics($content),
-            $this->checkHarmfulContent($content),
-            $this->checkBias($content),
-        ];
-
-        $totalScore = 0.0;
-        $maxScore = count($checks);
-
-        foreach ($checks as $check) {
-            if ($check['approved']) {
-                $totalScore += 1.0;
-            } else {
-                $totalScore += (1.0 - ($check['score'] ?? 0.5));
-            }
-        }
-
-        return $totalScore / $maxScore;
-    }
-
-    /**
-     * Generate content safety report
-     */
-    public function generateSafetyReport(string $content): array
-    {
-        $inputModeration = $this->moderateInput($content);
-        $safetyScore = $this->getSafetyScore($content);
-        $openAIModeration = $this->openAIModeration($content);
-
-        return [
-            'content_length' => strlen($content),
-            'safety_score' => $safetyScore,
-            'overall_approved' => $inputModeration['approved'] && $openAIModeration['approved'],
-            'input_moderation' => $inputModeration,
-            'openai_moderation' => $openAIModeration,
-            'recommendations' => $this->generateSafetyRecommendations($inputModeration, $openAIModeration),
-            'generated_at' => now()->toISOString(),
-        ];
-    }
-
-    /**
-     * Check banned words
-     */
-    private function checkBannedWords(string $content): array
-    {
-        $contentLower = strtolower($content);
-        $foundWords = [];
-
-        foreach ($this->bannedWords as $word) {
-            if (str_contains($contentLower, strtolower($word))) {
-                $foundWords[] = $word;
-            }
-        }
-
-        return [
-            'approved' => empty($foundWords),
-            'found_words' => $foundWords,
-            'score' => count($foundWords) > 0 ? min(count($foundWords) * 0.1, 1.0) : 0.0,
-        ];
-    }
-
-    /**
-     * Check sensitive topics
-     */
-    private function checkSensitiveTopics(string $content): array
-    {
-        $contentLower = strtolower($content);
-        $foundTopics = [];
-
-        foreach ($this->sensitiveTopics as $topic) {
-            if (str_contains($contentLower, strtolower($topic))) {
-                $foundTopics[] = $topic;
-            }
-        }
-
-        return [
-            'approved' => empty($foundTopics),
-            'found_topics' => $foundTopics,
-            'score' => count($foundTopics) > 0 ? min(count($foundTopics) * 0.15, 1.0) : 0.0,
-        ];
-    }
 
     /**
      * AI-powered content moderation
@@ -306,19 +177,19 @@ class ContentModerationService
     {
         try {
             $aiEngine = app('ai-engine');
-            
+
             $moderationPrompt = "Analyze this content for safety concerns, inappropriate material, or policy violations. Rate from 0-10 (0=safe, 10=unsafe) and explain any concerns:\n\n{$content}";
-            
+
             $request = new AIRequest(
                 prompt: $moderationPrompt,
                 engine: EngineEnum::OPENAI,
-                model: EntityEnum::GPT_4O_MINI,
+                model: \LaravelAIEngine\Enums\EntityEnum::GPT_4_0_MINI,
                 systemPrompt: "You are a content moderation expert. Analyze content objectively for safety, appropriateness, and policy compliance.",
                 temperature: 0.1
             );
 
             $response = $aiEngine->generateText($request);
-            
+
             if ($response->isSuccess()) {
                 $score = $this->extractModerationScore($response->content);
                 return [
@@ -337,107 +208,24 @@ class ContentModerationService
     }
 
     /**
-     * Check for harmful content
-     */
-    private function checkHarmfulContent(string $content): array
-    {
-        $harmfulPatterns = [
-            '/\b(kill|murder|suicide|bomb|weapon)\b/i',
-            '/\b(hate|racist|discrimination)\b/i',
-            '/\b(illegal|fraud|scam)\b/i',
-        ];
-
-        $foundPatterns = [];
-        foreach ($harmfulPatterns as $pattern) {
-            if (preg_match($pattern, $content)) {
-                $foundPatterns[] = $pattern;
-            }
-        }
-
-        return [
-            'approved' => empty($foundPatterns),
-            'patterns_found' => count($foundPatterns),
-            'score' => count($foundPatterns) > 0 ? 0.8 : 0.0,
-        ];
-    }
-
-    /**
-     * Check for bias
-     */
-    private function checkBias(string $content): array
-    {
-        $biasPatterns = [
-            '/\b(all (men|women|people) are\b)/i',
-            '/\b(always|never) (men|women|people)\b/i',
-            '/\b(typical|stereotypical)\b/i',
-        ];
-
-        $foundBias = [];
-        foreach ($biasPatterns as $pattern) {
-            if (preg_match($pattern, $content)) {
-                $foundBias[] = $pattern;
-            }
-        }
-
-        return [
-            'approved' => empty($foundBias),
-            'bias_indicators' => count($foundBias),
-            'score' => count($foundBias) > 0 ? 0.3 : 0.0,
-        ];
-    }
-
-    /**
-     * Check factual accuracy (placeholder)
-     */
-    private function checkFactualAccuracy(string $content): array
-    {
-        // This would integrate with fact-checking APIs
-        return [
-            'approved' => true,
-            'confidence' => 0.8,
-            'score' => 0.0,
-        ];
-    }
-
-    /**
-     * Check for plagiarism (placeholder)
-     */
-    private function checkPlagiarism(string $content): array
-    {
-        // This would integrate with plagiarism detection APIs
-        return [
-            'approved' => true,
-            'similarity_score' => 0.1,
-            'score' => 0.0,
-        ];
-    }
-
-    /**
      * Apply content filters
      */
     private function applyContentFilters(string $content, array $flags): string
     {
         $filteredContent = $content;
 
+        // Naive masking for banned words, relying on config
         if (in_array('banned_words', $flags)) {
-            foreach ($this->bannedWords as $word) {
-                $filteredContent = str_ireplace($word, str_repeat('*', strlen($word)), $filteredContent);
+            $bannedWords = config('ai-engine-moderation.banned_words', []);
+            foreach ($bannedWords as $word) {
+                // Determine if word is in content case-insensitively
+                if (stripos($content, $word) !== false) {
+                    $filteredContent = str_ireplace($word, str_repeat('*', strlen($word)), $filteredContent);
+                }
             }
         }
 
         return $filteredContent;
-    }
-
-    /**
-     * Apply safety filters
-     */
-    private function applySafetyFilters(string $content, array $flags): string
-    {
-        if (in_array('harmful_content', $flags)) {
-            return "[Content filtered for safety reasons]";
-        }
-
-        return $content;
     }
 
     /**
@@ -459,29 +247,11 @@ class ContentModerationService
             $suggestions[] = 'Review content for potential bias or stereotypes';
         }
 
+        if (in_array('harmful_content', $flags)) {
+            $suggestions[] = 'Content flagged as potentially harmful';
+        }
+
         return $suggestions;
-    }
-
-    /**
-     * Generate safety recommendations
-     */
-    private function generateSafetyRecommendations(array $inputModeration, array $openAIModeration): array
-    {
-        $recommendations = [];
-
-        if (!$inputModeration['approved']) {
-            $recommendations[] = 'Review and modify input content before processing';
-        }
-
-        if (!$openAIModeration['approved']) {
-            $recommendations[] = 'Content flagged by AI safety systems - manual review recommended';
-        }
-
-        if (empty($recommendations)) {
-            $recommendations[] = 'Content appears safe for processing';
-        }
-
-        return $recommendations;
     }
 
     /**
@@ -492,7 +262,7 @@ class ContentModerationService
         if (preg_match('/(\d+(?:\.\d+)?)\s*\/\s*10/', $response, $matches)) {
             return floatval($matches[1]);
         }
-        
+
         if (preg_match('/score[:\s]*(\d+(?:\.\d+)?)/i', $response, $matches)) {
             return floatval($matches[1]);
         }
@@ -520,44 +290,5 @@ class ContentModerationService
         }
 
         return $flags;
-    }
-
-    /**
-     * Store moderation rule
-     */
-    private function storeModerationRule(array $rule): void
-    {
-        $rules = Cache::get('moderation_rules', []);
-        $rules[$rule['id']] = $rule;
-        Cache::put('moderation_rules', $rules, now()->addDays(30));
-    }
-
-    /**
-     * Load moderation rules
-     */
-    private function loadModerationRules(): array
-    {
-        return Cache::get('moderation_rules', []);
-    }
-
-    /**
-     * Load banned words list
-     */
-    private function loadBannedWords(): array
-    {
-        return [
-            // Basic inappropriate words - in production, load from comprehensive database
-            'spam', 'scam', 'fraud', 'illegal', 'hack', 'crack'
-        ];
-    }
-
-    /**
-     * Load sensitive topics list
-     */
-    private function loadSensitiveTopics(): array
-    {
-        return [
-            'politics', 'religion', 'violence', 'drugs', 'weapons'
-        ];
     }
 }

@@ -24,6 +24,9 @@ class EntityFieldConfig
         public ?\Closure $nameExtractor = null,
         public ?\Closure $categoryInferrer = null,
         public ?\Closure $fieldInferrer = null,
+        public ?string $parsingGuide = null,
+        public array $includeFields = [],
+        public array $baseFields = [],
     ) {}
 
     /**
@@ -146,6 +149,16 @@ class EntityFieldConfig
     }
 
     /**
+     * Set parsing guidance for AI extraction
+     * Example: "Extract as array with 'product' and 'quantity'. Parse quantity from input like 'Item 99' → quantity: 99"
+     */
+    public function parsingGuide(string $guide): self
+    {
+        $this->parsingGuide = $guide;
+        return $this;
+    }
+
+    /**
      * Set creation prompt callback - generates custom prompt for entity creation
      * Callback receives: ($item, $itemName, $entityName)
      * Example: fn($item, $name, $entity) => "Product: {$name}\nCategory: Electronics"
@@ -200,6 +213,29 @@ class EntityFieldConfig
     }
 
     /**
+     * Set fields to include from database entity when merging with user input
+     * These fields will be included if not already provided by the user
+     * Example: ['price', 'sale_price', 'sku', 'description']
+     */
+    public function includeFields(array $fields): self
+    {
+        $this->includeFields = $fields;
+        return $this;
+    }
+
+    /**
+     * Set base fields that are always included from entity
+     * These are core fields like 'id', 'name', etc.
+     * Default: ['id', 'name']
+     * Example: ['id', 'name', 'sku', 'code']
+     */
+    public function baseFields(array $fields): self
+    {
+        $this->baseFields = $fields;
+        return $this;
+    }
+
+    /**
      * Convert to array format for AI config
      */
     public function toArray(): array
@@ -224,6 +260,9 @@ class EntityFieldConfig
             'name_extractor' => $this->nameExtractor,
             'category_inferrer' => $this->categoryInferrer,
             'field_inferrer' => $this->fieldInferrer,
+            'parsing_guide' => $this->parsingGuide,
+            'include_fields' => $this->includeFields ?: null,
+            'base_fields' => $this->baseFields ?: null,
         ], fn($value) => $value !== null);
     }
 

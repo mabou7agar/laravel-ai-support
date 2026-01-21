@@ -84,14 +84,14 @@ class IntelligentRAGService
             if (empty($conversationHistory)) {
                 $conversationHistory = $this->loadConversationHistory($sessionId);
             }
-            
+
             // Optimize history: sliding window (keep only recent messages)
             if ($this->historyConfig['enabled'] ?? true) {
                 $maxMessages = $this->historyConfig['recent_messages'] ?? 10;
-                
+
                 if (count($conversationHistory) > $maxMessages) {
                     $conversationHistory = array_slice($conversationHistory, -$maxMessages);
-                    
+
                     Log::channel('ai-engine')->debug('Conversation history optimized (sliding window)', [
                         'total_messages' => count($conversationHistory),
                         'kept_recent' => $maxMessages,
@@ -101,11 +101,33 @@ class IntelligentRAGService
 
             // Check if intelligent mode is enabled (default: true)
             $useIntelligent = $options['intelligent'] ?? true;
+            $intentAnalysis = $options['intent_analysis'] ?? null;
 
             // Step 1: Analyze if query needs context retrieval
-            $analysis = $useIntelligent
-                ? $this->analyzeQuery($message, $conversationHistory, $availableCollections)
-                : ['needs_context' => true, 'search_queries' => [$message], 'collections' => $availableCollections];
+            if ($intentAnalysis && isset($intentAnalysis['intent'])) {
+                // Heuristic mapping from Intent Analysis to RAG Analysis
+                $isRetrieval = in_array($intentAnalysis['intent'], ['retrieval', 'question']);
+                $searchQueries = [$message];
+
+                // If it's a retrieval intent, we might have specific entity data we can use
+                // but simpler for now to just pass it through as needs_context=true
+                $analysis = [
+                    'needs_context' => $isRetrieval || $intentAnalysis['intent'] === 'question',
+                    'reasoning' => $intentAnalysis['context_enhancement'] ?? 'Intent analysis indicates retrieval/question',
+                    'search_queries' => $searchQueries,
+                    'collections' => $availableCollections, // Trust default or refine later
+                    'query_type' => $intentAnalysis['intent'] === 'question' ? 'conversational' : 'informational',
+                ];
+
+                Log::channel('ai-engine')->debug('Skipped RAG analysis (used Intent Analysis)', [
+                    'intent' => $intentAnalysis['intent'],
+                    'analysis' => $analysis
+                ]);
+            } else {
+                $analysis = $useIntelligent
+                    ? $this->analyzeQuery($message, $conversationHistory, $availableCollections)
+                    : ['needs_context' => true, 'search_queries' => [$message], 'collections' => $availableCollections];
+            }
 
             if (config('ai-engine.debug')) {
                 Log::channel('ai-engine')->debug('RAG Query Analysis', [
@@ -162,7 +184,7 @@ class IntelligentRAGService
                     // When federated search is enabled, skip class_exists check
                     // Child nodes will validate if they have the class
                     $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
-                    
+
                     if ($useFederatedSearch) {
                         // For federated search, only check if collection is in user's passed list
                         $validCollections = array_filter($suggestedCollections, function ($collection) use ($availableCollections) {
@@ -181,7 +203,7 @@ class IntelligentRAGService
                 } else {
                     // Auto-discovery mode: trust AI's selection from discovered collections
                     $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
-                    
+
                     if ($useFederatedSearch) {
                         // For federated search, accept all suggested collections
                         $collectionsToSearch = $suggestedCollections;
@@ -191,7 +213,7 @@ class IntelligentRAGService
                             return class_exists($collection);
                         });
                     }
-                    
+
                     // If AI didn't suggest any, use all discovered collections
                     if (empty($collectionsToSearch)) {
                         $collectionsToSearch = $availableCollections;
@@ -317,7 +339,7 @@ class IntelligentRAGService
             $actions = $this->extractActions($content);
             if (!empty($actions)) {
                 $metadata['actions'] = $actions;
-                
+
                 // Remove ACTION lines from content so they don't show to user
                 $cleanContent = preg_replace('/ACTION:[A-Z_]+\|[^\n]+\n?/i', '', $content);
                 $response = new AIResponse(
@@ -331,7 +353,7 @@ class IntelligentRAGService
                     requestId: $response->getRequestId(),
                     conversationId: $response->getConversationId()
                 );
-                
+
                 Log::channel('ai-engine')->info('Actions detected in response', [
                     'session_id' => $sessionId,
                     'actions' => $actions,
@@ -443,14 +465,18 @@ class IntelligentRAGService
             // Stream response
             $fullResponse = '';
             $responseModel = $options['model'] ?? $this->config['response_model'] ?? config('ai-engine.default_model', 'gpt-4o');
-            $this->aiEngine
+
+            $generator = $this->aiEngine
                 ->engine($options['engine'] ?? config('ai-engine.default'))
                 ->model($responseModel)
-                ->stream(function ($chunk) use (&$fullResponse, $callback) {
-                    $fullResponse .= $chunk;
+                ->generateStream($enhancedPrompt);
+
+            foreach ($generator as $chunk) {
+                $fullResponse .= $chunk;
+                if ($callback && is_callable($callback)) {
                     $callback($chunk);
-                })
-                ->generate($enhancedPrompt);
+                }
+            }
 
             // Return metadata with sources
             return [
@@ -482,31 +508,53 @@ class IntelligentRAGService
      */
     protected function analyzeQuery(string $query, array $conversationHistory = [], array $availableCollections = []): array
     {
+        // 1. HEURISTICS: Quick check for simple messages to skip AI analysis
+        if ($this->shouldSkipAnalysis($query)) {
+            Log::channel('ai-engine')->debug('Skipping RAG analysis due to heuristics', ['query' => $query]);
+            return [
+                'needs_context' => false,
+                'reasoning' => 'Skipped via heuristics (greeting/short message)',
+                'search_queries' => [$query],
+                'collections' => $availableCollections,
+                'query_type' => 'conversational',
+                'needs_aggregate' => false,
+            ];
+        }
+
+        // 2. CACHING: Check if we analyzed this exact query recently
+        $cacheKey = 'rag_analysis_' . md5($query . implode(',', array_keys($availableCollections)));
+        $cachedAnalysis = cache()->get($cacheKey);
+
+        if ($cachedAnalysis) {
+            Log::channel('ai-engine')->debug('Using cached RAG analysis', ['query' => $query]);
+            return $cachedAnalysis;
+        }
+
         // Build available collections info with descriptions
         $collectionsInfo = '';
-        
+
         // Check if federated search is enabled and we should discover remote collections
         $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
         $discoveredCollections = [];
-        
+
         if ($useFederatedSearch && empty($availableCollections)) {
             // Discover collections from all nodes with their RAG descriptions
             try {
                 $discoveryService = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
                 $collections = $discoveryService->discoverWithDescriptions(useCache: true);
-                
+
                 if (!empty($collections)) {
                     $collectionsInfo = "\n\nAvailable knowledge sources across all nodes (READ DESCRIPTIONS CAREFULLY):\n";
-                    
+
                     foreach ($collections as $collection) {
                         $name = $collection['display_name'];
                         $description = $collection['description'];
                         $nodeCount = count($collection['nodes']);
                         $nodeNames = array_map(fn($n) => $n['node_name'], $collection['nodes']);
-                        
+
                         // Store discovered collection class for actual searching
                         $discoveredCollections[] = $collection['class'];
-                        
+
                         if (!empty($description)) {
                             $collectionsInfo .= "- **{$name}**: {$description}\n";
                             $collectionsInfo .= "  → Use class: {$collection['class']}\n";
@@ -517,7 +565,7 @@ class IntelligentRAGService
                             $collectionsInfo .= "  → Available on {$nodeCount} node(s): " . implode(', ', $nodeNames) . "\n";
                         }
                     }
-                    
+
                     // Use discovered collections as availableCollections for searching
                     $availableCollections = $discoveredCollections;
                 }
@@ -527,7 +575,7 @@ class IntelligentRAGService
                 ]);
             }
         }
-        
+
         // If no federated discovery or availableCollections provided, use local collections
         if (empty($collectionsInfo) && !empty($availableCollections)) {
             $collectionsInfo = "\n\nAvailable knowledge sources (READ DESCRIPTIONS CAREFULLY):\n";
@@ -539,11 +587,11 @@ class IntelligentRAGService
                 if (class_exists($collection)) {
                     try {
                         $instance = new $collection();
-                        
+
                         if (method_exists($instance, 'getRAGDescription')) {
                             $description = $instance->getRAGDescription();
                         }
-                        
+
                         if (method_exists($instance, 'getRAGDisplayName')) {
                             $name = $instance->getRAGDisplayName();
                         }
@@ -572,7 +620,16 @@ RULES:
 5. CRITICAL: Queries like "tell me about X", "more info on X", "details about X" → ALWAYS needs_context: true, search for X
 6. If query mentions ANY specific item/product/topic name → needs_context: true
 
-RESPOND WITH JSON:
+TIME & DATE AWARENESS:
+1. If query mentions relative time ("last week", "yesterday", "recent"), add specific time-based terms to search_queries
+   - "emails from last week" → ["emails", "created:2024-03", "sort:recent"] (use current year/month)
+2. Always prefer RECENT and RELEVANT content
+
+SYNONYM EXPANSION:
+1. If query uses vague terms ("issues", "problems"), add specific synonyms ("bugs", "errors", "failures") to search_queries
+2. If query is technical ("server is down"), add related technical terms ("500 error", "uptime", "crash")
+
+RESPOND WITH JSON ONLY:
 {"needs_context": true, "reasoning": "brief reason", "search_queries": ["term1", "term2", "term3"], "collections": ["Full\\\\Namespace\\\\ClassName"], "query_type": "informational", "needs_aggregate": false}
 
 CRITICAL: Always use FULL class paths with namespace (e.g., "Workdo\\\\ProductService\\\\Entities\\\\ProductService", NOT just "ProductService")
@@ -664,25 +721,31 @@ CRITICAL INSTRUCTIONS:
 2. If query looks like an EMAIL SUBJECT or DOCUMENT TITLE (e.g., "Undelivered Mail Returned to Sender", "Re: Check App", "Password Reset"):
    → Use ONLY that EXACT phrase as search_queries: ["Undelivered Mail Returned to Sender"]
    → Do NOT expand or rephrase it - the user wants that specific item
-3. For vague queries like "which is important/best/urgent" → Use MULTIPLE concrete terms:
+3. ENTITY & ID EXTRACTION:
+   - If query contains specific IDs (e.g., "Invoice #INV-2024-001"), use the ID as a search term.
+   - If query mentions full names ("John Doe"), use the full name as a search term.
+4. SPELLING CORRECTION:
+   - If a term looks misspelled (e.g., "Laraval"), include both the original AND the corrected term in search_queries.
+   - Example: "Laraval routing" → ["Laraval routing", "Laravel routing"]
+5. For vague queries like "which is important/best/urgent" → Use MULTIPLE concrete terms:
    ["urgent", "deadline", "priority", "action required", "reminder", "meeting", "follow up"]
-4. NEVER return just ["most important"] or ["best"] - these won't match anything
-5. For follow-ups about specific items from history:
+6. NEVER return just ["most important"] or ["best"] - these won't match anything
+7. For follow-ups about specific items from history:
    - If query matches an email subject, document title, or item name from previous response → Use EXACT query
    - Keep the same collection as the previous search
-6. Only use collections from the available list - use FULL class name (e.g., "App\\\\Models\\\\Post")
-7. Default: needs_context: true
-8. PERFORMANCE: Prefer 1-2 search queries over many. More queries = slower response
-9. BE DECISIVE: If collection description clearly matches query intent, SELECT IT - don't be overly conservative
+8. Only use collections from the available list - use FULL class name (e.g., "App\\\\Models\\\\Post")
+9. Default: needs_context: true
+10. PERFORMANCE: Prefer 1-2 search queries over many. More queries = slower response
+11. BE DECISIVE: If collection description clearly matches query intent, SELECT IT - don't be overly conservative
 
 Respond with JSON only. Example for follow-up about specific email:
 {"needs_context": true, "reasoning": "user asking about specific email from previous list", "search_queries": ["Re: Check App"], "collections": ["Bites\\\\Modules\\\\MailBox\\\\Models\\\\EmailCache"], "query_type": "informational", "needs_aggregate": false}
 PROMPT;
 
         try {
-            // Get analysis model from config (null = use default from openai config)
-            $analysisModel = $this->config['analysis_model'] 
-                ?? config('ai-engine.vector.rag.analysis_model');
+            // Get analysis model from config, prioritize fast model (gpt-4o-mini)
+            $analysisModel = $this->config['analysis_model']
+                ?? config('ai-engine.vector.rag.analysis_model', 'gpt-4o-mini');
 
             Log::channel('ai-engine')->debug('Query analysis starting', [
                 'model' => $analysisModel ?? 'default',
@@ -745,7 +808,10 @@ PROMPT;
                 'query_type' => $analysis['query_type'] ?? 'conversational',
                 'needs_aggregate' => $analysis['needs_aggregate'] ?? false,
             ];
-            
+
+            // CACHING: Store result for 1 hour
+            cache()->put($cacheKey, $result, now()->addHour());
+
             Log::channel('ai-engine')->info('Query analysis result', [
                 'query' => $query,
                 'needs_context' => $result['needs_context'],
@@ -753,7 +819,7 @@ PROMPT;
                 'collections' => $result['collections'], // Log full class paths, not basenames
                 'search_queries' => $result['search_queries'],
             ]);
-            
+
             return $result;
 
         } catch (\Exception $e) {
@@ -772,6 +838,30 @@ PROMPT;
                 'needs_aggregate' => false,
             ];
         }
+    }
+
+    /**
+     * Check if query should skip analysis based on heuristics
+     */
+    protected function shouldSkipAnalysis(string $query): bool
+    {
+        $queryLower = strtolower(trim($query));
+
+        // Skip short greetings
+        if (in_array($queryLower, ['hi', 'hello', 'hey', 'greetings', 'yo'])) {
+            return true;
+        }
+
+        // Skip clear commands (that are likely handled by IntentAnalysisService anyway, but filtering here saves an LLM call)
+        // If it starts with precise action commands, we don't need RAG context analysis usually
+        if (preg_match('/^(create|delete|remove|clear)\s+/i', $queryLower)) {
+            // Note: We might still want context for 'create', but usually 'new_request' intent handles it without RAG
+            // Exception: 'create based on X' might need RAG.
+            // Conservative heuristic: only skip single-word greetings for now to be safe.
+            return false;
+        }
+
+        return false;
     }
 
     /**
@@ -947,14 +1037,14 @@ PROMPT;
             if (($msg['role'] ?? '') !== 'user') {
                 continue;
             }
-            
+
             $content = trim($msg['content'] ?? '');
-            
+
             // Skip short/empty messages
             if (strlen($content) < 5) {
                 continue;
             }
-            
+
             if (!in_array($content, $topics)) {
                 $topics[] = $content;
             }
@@ -971,13 +1061,13 @@ PROMPT;
     protected function extractActions(string $content): array
     {
         $actions = [];
-        
+
         // Match ACTION:TYPE|param=value|param=value
         if (preg_match_all('/ACTION:([A-Z_]+)\|([^\n]+)/i', $content, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $type = strtoupper($match[1]);
                 $paramsString = $match[2];
-                
+
                 // Parse parameters
                 $params = [];
                 $paramPairs = explode('|', $paramsString);
@@ -987,7 +1077,7 @@ PROMPT;
                         $params[trim($key)] = trim($value);
                     }
                 }
-                
+
                 $actions[] = [
                     'type' => $type,
                     'params' => $params,
@@ -995,7 +1085,7 @@ PROMPT;
                 ];
             }
         }
-        
+
         return $actions;
     }
 
@@ -1014,9 +1104,10 @@ ANALYSIS RULES:
 1. **Context Continuity**: If the conversation is about a specific topic, prefer nodes related to that topic
    - Example: If discussing "Laravel books", prioritize e-commerce node
 
-2. **Intent Evolution**: Detect when user's intent changes
-   - "Tell me about Laravel" → "Show me books" = Same topic, different intent
-   - "Tell me about Laravel" → "What's the weather?" = Topic change
+2. **Intent Evolution & Topic Drift**: Detect when user's intent changes
+   - "Tell me about Laravel" → "Show me books" = Same topic (Laravel), different intent -> **Stay on same node(s)**
+   - "Tell me about Laravel" → "What's the weather?" = Topic change -> **RESET context, select new node**
+   - If the new query is completely unrelated to the previous one, ignore the previous node selection.
 
 3. **Node Matching**: Match query intent to node capabilities
    - Product queries → E-commerce node
@@ -1095,7 +1186,7 @@ PROMPT;
         }
 
         // For local search only, validate collections exist locally
-        $validCollections = array_filter($collections, function($collection) {
+        $validCollections = array_filter($collections, function ($collection) {
             if (!class_exists($collection)) {
                 Log::channel('ai-engine')->debug('Collection class does not exist locally', [
                     'collection' => $collection,
@@ -1107,7 +1198,7 @@ PROMPT;
             // Check if class uses Vectorizable trait
             $uses = class_uses_recursive($collection);
             $hasVectorizable = in_array(\LaravelAIEngine\Traits\Vectorizable::class, $uses) ||
-                              in_array(\LaravelAIEngine\Traits\VectorizableWithMedia::class, $uses);
+                in_array(\LaravelAIEngine\Traits\VectorizableWithMedia::class, $uses);
 
             if (!$hasVectorizable) {
                 Log::channel('ai-engine')->debug('Collection class does not use Vectorizable trait', [
@@ -1157,7 +1248,7 @@ PROMPT;
             try {
                 // Use federated search across all nodes or specific nodes if provided
                 $nodeIds = $options['node_ids'] ?? null;
-                
+
                 $federatedResults = $this->federatedSearch->search(
                     query: $searchQuery,
                     nodeIds: $nodeIds, // Use specific nodes if provided, otherwise auto-select
@@ -1217,14 +1308,14 @@ PROMPT;
                         $allResults->push($obj);
                     }
                 }
-                
+
                 // If federated search returned no results, try database fallback for each collection
                 if (empty($federatedResults['results']) || count($federatedResults['results']) === 0) {
                     \Log::warning('🔄 FEDERATED SEARCH EMPTY - TRYING DATABASE FALLBACK', [
                         'query' => $searchQuery,
                         'collections_count' => count($collections),
                     ]);
-                    
+
                     foreach ($collections as $collection) {
                         try {
                             $dbResults = $this->fallbackDatabaseSearch($collection, $searchQuery, $maxResults, $userId);
@@ -1267,13 +1358,13 @@ PROMPT;
             ->unique('id')
             ->sortByDesc('vector_score')
             ->take($maxResults);
-            
+
         Log::channel('ai-engine')->info('retrieveFromFederatedSearch final results', [
             'allResults_before_dedup' => $allResults->count(),
             'finalResults_after_dedup' => $finalResults->count(),
             'first_result_id' => $finalResults->isNotEmpty() ? ($finalResults->first()->id ?? 'no id') : 'empty',
         ]);
-        
+
         return $finalResults;
     }
 
@@ -1330,6 +1421,8 @@ PROMPT;
                     }
 
                     // If vector search returned no results, try database fallback
+                    // Note: Relevance is already checked by AgentOrchestrator routing
+                    // Only queries routed to KnowledgeSearchHandler will reach here
                     if ($results->isEmpty() || $results->count() === 0) {
                         \Log::warning('🔄 DATABASE FALLBACK TRIGGERED', [
                             'collection' => $collection,
@@ -1337,14 +1430,14 @@ PROMPT;
                             'results_type' => gettype($results),
                             'results_count' => $results->count(),
                         ]);
-                        
+
                         Log::channel('ai-engine')->info('Vector search returned no results, trying database fallback', [
                             'collection' => $collection,
                             'query' => $searchQuery,
                             'results_type' => gettype($results),
                             'results_count' => $results->count(),
                         ]);
-                        
+
                         try {
                             $dbResults = $this->fallbackDatabaseSearch($collection, $searchQuery, $maxResults, $userId);
                             if ($dbResults->isNotEmpty()) {
@@ -1370,7 +1463,7 @@ PROMPT;
                         'user_id' => $userId,
                         'error' => $e->getMessage(),
                     ]);
-                    
+
                     // Fallback to local database query
                     try {
                         $dbResults = $this->fallbackDatabaseSearch($collection, $searchQuery, $maxResults, $userId);
@@ -1455,9 +1548,9 @@ PROMPT;
         if (!empty($availableCollections)) {
             $modelInstructions = $this->collectModelSearchInstructions($availableCollections);
         }
-        
+
         $apiInstructions = $options['search_instructions'] ?? null;
-        
+
         // Merge model-level and API-level instructions
         $combinedInstructions = [];
         if (!empty($modelInstructions)) {
@@ -1466,7 +1559,7 @@ PROMPT;
         if (!empty($apiInstructions)) {
             $combinedInstructions[] = $apiInstructions;
         }
-        
+
         if (!empty($combinedInstructions)) {
             $prompt .= "SPECIAL INSTRUCTIONS FOR THIS SEARCH:\n";
             $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -1488,7 +1581,7 @@ PROMPT;
             $prompt .= "- CRITICAL: If user responds with JUST a number (e.g., '1'), they want the FULL email content\n";
             $prompt .= "- Look at your previous response, find item #N, extract its subject/title, and show the COMPLETE details from the context above\n";
             $prompt .= "- Don't ask what they want - directly show the full email content with all fields (from, to, subject, body, date)\n\n";
-            
+
             $prompt .= "EMAIL REPLY WORKFLOW:\n";
             $prompt .= "- When user asks to 'reply' or 'suggest a reply' to an email, draft a professional response\n";
             $prompt .= "- Include: To, Subject (Re: original), and full message body\n";
@@ -1615,7 +1708,7 @@ PROMPT;
 
         // Add recipient information
         if (isset($item->to_addresses) && is_array($item->to_addresses)) {
-            $toList = array_map(function($addr) {
+            $toList = array_map(function ($addr) {
                 if (isset($addr['name']) && $addr['name']) {
                     return "{$addr['name']} <{$addr['email']}>";
                 }
@@ -1659,11 +1752,11 @@ PROMPT;
     protected function extractContent($model): string
     {
         // Max characters per context item to prevent huge prompts
-        $maxLength = $this->config['max_context_item_length'] 
+        $maxLength = $this->config['max_context_item_length']
             ?? config('ai-engine.vector.rag.max_context_item_length', 2000);
-        
+
         $content = '';
-        
+
         if (method_exists($model, 'getVectorContent')) {
             $content = $model->getVectorContent();
         } else {
@@ -1678,12 +1771,12 @@ PROMPT;
 
             $content = implode(' ', $parts);
         }
-        
+
         // Truncate if too long to prevent slow API calls
         if (strlen($content) > $maxLength) {
             $content = substr($content, 0, $maxLength) . '... [truncated]';
         }
-        
+
         return $content;
     }
 
@@ -1784,7 +1877,7 @@ PROMPT;
         // Detect numbered options in the response
         $responseContent = $response->getContent();
         $numberedOptions = $this->extractNumberedOptions($responseContent);
-        
+
         // Strip the OPTIONS_JSON block from content (user shouldn't see it)
         $cleanContent = preg_replace('/\s*<!--OPTIONS_JSON.*?OPTIONS_JSON-->\s*/s', '', $responseContent);
 
@@ -1817,14 +1910,14 @@ PROMPT;
         if (preg_match('/<!--OPTIONS_JSON\s*(.*?)\s*OPTIONS_JSON-->/s', $content, $match)) {
             $json = trim($match[1]);
             $parsed = json_decode($json, true);
-            
+
             if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
                 $options = [];
                 foreach ($parsed as $item) {
                     $number = $item['number'] ?? count($options) + 1;
                     $title = $item['title'] ?? '';
                     $description = $item['description'] ?? '';
-                    
+
                     $options[] = [
                         'id' => 'opt_' . $number . '_' . substr(md5($title), 0, 8),
                         'number' => $number,
@@ -1885,6 +1978,7 @@ PROMPT;
     protected function loadConversationHistory(string $sessionId): array
     {
         try {
+            $conversationResult = null;
             // Get conversation - might return ID or model
             $conversationResult = $this->conversationService->getOrCreateConversation(
                 $sessionId,
@@ -1937,14 +2031,14 @@ PROMPT;
     protected function getDefaultSystemPrompt(): string
     {
         $projectContext = $this->buildProjectContextSection();
-        
+
         $basePrompt = "You are an intelligent knowledge base assistant with access to a curated knowledge base powered by vector search.";
-        
+
         // Inject project context if available
         if (!empty($projectContext)) {
             $basePrompt .= "\n\n" . $projectContext;
         }
-        
+
         $restOfPrompt = <<<'PROMPT'
 
 🎯 YOUR ROLE:
@@ -1969,6 +2063,7 @@ PROMPT;
 - You CAN reference previous discussions if relevant
 - You CANNOT provide general knowledge or training data
 - If the question needs KB content that doesn't exist: "I don't have information about [topic] in the knowledge base."
+- **NO HALLUCINATION**: Do not invent emails, documents, or data that are not in the context.
 - If you can answer from conversation history, do so naturally
 - Example: "what can I eat" with no KB context → "I don't have information about that in the knowledge base"
 - Example: "what did we discuss earlier?" with no KB context → Use conversation history to answer
@@ -2005,16 +2100,17 @@ AI: (References previous message in conversation to understand "that")
 
 📧 EMAIL DRAFTING RULES:
 When helping draft emails or replies:
-1. ALWAYS replace placeholders with actual information from context:
+1. **Tone**: Use a professional, approachable, and clear tone. Avoid overly formal or robotic language.
+2. ALWAYS replace placeholders with actual information from context:
    - [Recipient's Name] → Use sender's name from the email being replied to
    - [Your Name] → Use user's name (Mohamed in this case)
    - [Company Name] → Use actual company name from context
    - [Date/Time] → Use actual dates from context
-2. Extract information from:
+3. Extract information from:
    - Email metadata (from_name, from_address, to_addresses)
    - Conversation history
    - Knowledge base context
-3. If information is missing, use a sensible default or ask the user
+4. If information is missing, use a sensible default or ask the user
 
 EXAMPLE:
 Email from: "John Smith <john@example.com>"
@@ -2055,56 +2151,56 @@ PROMPT;
 
         return $basePrompt . $restOfPrompt;
     }
-    
+
     /**
      * Build project context section for system prompt
-     * 
+     *
      * This injects application-specific context to help the AI understand
      * the domain and make better decisions.
      */
     protected function buildProjectContextSection(): string
     {
         $config = config('ai-engine.project_context', []);
-        
+
         // Check if project context is enabled
         if (!($config['enabled'] ?? true)) {
             return '';
         }
-        
+
         $sections = [];
-        
+
         // Main description
         $description = $config['description'] ?? '';
         if (!empty($description)) {
             $sections[] = "📋 APPLICATION CONTEXT:\n{$description}";
         }
-        
+
         // Industry/domain
         $industry = $config['industry'] ?? '';
         if (!empty($industry)) {
             $sections[] = "🏢 Industry/Domain: {$industry}";
         }
-        
+
         // Target users
         $targetUsers = $config['target_users'] ?? '';
         if (!empty($targetUsers)) {
             $sections[] = "👥 Target Users: {$targetUsers}";
         }
-        
+
         // Key entities
         $keyEntities = $config['key_entities'] ?? [];
         if (!empty($keyEntities)) {
             $entitiesList = implode(', ', $keyEntities);
             $sections[] = "📊 Key Entities: {$entitiesList}";
         }
-        
+
         // Business rules
         $businessRules = $config['business_rules'] ?? [];
         if (!empty($businessRules)) {
             $rulesList = array_map(fn($rule) => "  • {$rule}", $businessRules);
             $sections[] = "📜 Business Rules:\n" . implode("\n", $rulesList);
         }
-        
+
         // Terminology
         $terminology = $config['terminology'] ?? [];
         if (!empty($terminology)) {
@@ -2114,11 +2210,11 @@ PROMPT;
             }
             $sections[] = "📖 Domain Terminology:\n" . implode("\n", $termsList);
         }
-        
+
         // Data sensitivity
         $dataSensitivity = $config['data_sensitivity'] ?? 'internal';
         if (!empty($dataSensitivity) && $dataSensitivity !== 'public') {
-            $sensitivityNote = match($dataSensitivity) {
+            $sensitivityNote = match ($dataSensitivity) {
                 'confidential' => '⚠️ Data Sensitivity: CONFIDENTIAL - Handle all data with strict confidentiality',
                 'restricted' => '🔒 Data Sensitivity: RESTRICTED - Highly sensitive data, maximum security required',
                 'internal' => '🔐 Data Sensitivity: INTERNAL - Data is for internal use only',
@@ -2128,21 +2224,21 @@ PROMPT;
                 $sections[] = $sensitivityNote;
             }
         }
-        
+
         // Additional context
         $additionalContext = $config['additional_context'] ?? '';
         if (!empty($additionalContext)) {
             $sections[] = "ℹ️ Additional Context:\n{$additionalContext}";
         }
-        
+
         if (empty($sections)) {
             return '';
         }
-        
-        return "🏗️ PROJECT CONTEXT\n" . 
-               "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" .
-               implode("\n\n", $sections) . 
-               "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+
+        return "🏗️ PROJECT CONTEXT\n" .
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" .
+            implode("\n\n", $sections) .
+            "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
     }
 
     /**
@@ -2326,7 +2422,7 @@ PROMPT;
     {
         // Use federated search for aggregate if enabled
         $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
-        
+
         if ($useFederatedSearch) {
             Log::channel('ai-engine')->info('Using federated aggregate data', [
                 'collections_count' => count($collections),
@@ -2334,7 +2430,7 @@ PROMPT;
             ]);
             return $this->federatedSearch->getAggregateData($collections, $userId);
         }
-        
+
         // Otherwise use local only
         $aggregateData = [];
 
@@ -2670,14 +2766,19 @@ PROMPT;
 
     /**
      * Fallback to local database search when vector search fails
-     * 
+     *
      * @param string $collection Model class name
      * @param string $query Search query
      * @param int $maxResults Maximum results to return
      * @param mixed $userId User ID for access control
      * @return \Illuminate\Support\Collection
      */
-    protected function fallbackDatabaseSearch(string $collection, string $query, int $maxResults = 5, $userId = null): \Illuminate\Support\Collection
+    /**
+     * Cache for schema column checks to prevent memory leaks
+     */
+    protected static array $schemaCache = [];
+
+    protected function fallbackDatabaseSearch(string $collection, string $query, int $maxResults = 5, $userId = null, ?array $messageAnalysis = null): \Illuminate\Support\Collection
     {
         \Log::info('🔍 fallbackDatabaseSearch START', [
             'collection' => $collection,
@@ -2685,7 +2786,7 @@ PROMPT;
             'maxResults' => $maxResults,
             'userId' => $userId,
         ]);
-        
+
         if (!class_exists($collection)) {
             \Log::warning('fallbackDatabaseSearch: class does not exist', ['collection' => $collection]);
             return collect([]);
@@ -2693,35 +2794,65 @@ PROMPT;
 
         try {
             $model = new $collection();
-            \Log::info('fallbackDatabaseSearch: model instantiated', ['table' => $model->getTable()]);
+            $table = $model->getTable();
+            \Log::info('fallbackDatabaseSearch: model instantiated', ['table' => $table]);
             $queryBuilder = $collection::query();
 
-            // Apply workspace/tenant filters if model has workspace column
-            $hasWorkspaceFilter = false;
-            if (\Illuminate\Support\Facades\Schema::hasColumn($model->getTable(), 'workspace')) {
-                // Use workspace 1 by default (avoid calling getActiveWorkSpace which can hang)
-                $workspace = 1;
-                $queryBuilder->where('workspace', $workspace);
-                $hasWorkspaceFilter = true;
-                \Log::info('fallbackDatabaseSearch: applied workspace filter', ['workspace' => $workspace]);
+            // Try to get filters from AI config first
+            $filtersApplied = false;
+            if (method_exists($model, 'initializeAI')) {
+                try {
+                    $aiConfig = $model->initializeAI();
+
+                    // Check if model has filters defined in AI config
+                    if (isset($aiConfig['filters']) && is_callable($aiConfig['filters'])) {
+                        $queryBuilder = call_user_func($aiConfig['filters'], $queryBuilder);
+                        $filtersApplied = true;
+                        \Log::info('fallbackDatabaseSearch: applied AI config filters', ['model' => $collection]);
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning('fallbackDatabaseSearch: failed to apply AI config filters', [
+                        'model' => $collection,
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
 
-            // Apply user_id filter if model has the column
-            // Note: For workspace-scoped models, don't filter by user_id
-            // This allows all users in the workspace to access the data
-            if ($userId && \Illuminate\Support\Facades\Schema::hasColumn($model->getTable(), 'user_id') && !$hasWorkspaceFilter) {
-                $queryBuilder->where('user_id', $userId);
+            // Fallback to default filters if AI config filters not applied
+            if (!$filtersApplied) {
+                // Apply user_id filter if model has the column
+                $userIdCacheKey = $table . '.user_id';
+
+                if (!isset(self::$schemaCache[$userIdCacheKey])) {
+                    self::$schemaCache[$userIdCacheKey] = \Illuminate\Support\Facades\Schema::hasColumn($table, 'user_id');
+                }
+
+                if ($userId && self::$schemaCache[$userIdCacheKey]) {
+                    $queryBuilder->where('user_id', $userId);
+                }
             }
 
             // Search in searchable fields if query is meaningful
             $searchableFields = $this->getSearchableFields($model);
+
+            // Use pre-analyzed message intent if provided, otherwise analyze
+            $shouldApplyTextSearch = true;
             
-            // Only apply text search if we have searchable fields and a meaningful query
-            // For queries like "show me last invoice", we just want the latest records
-            $isListQuery = preg_match('/\b(last|latest|recent|show|get|find)\b/i', $query);
-            
-            if (!empty($searchableFields) && !$isListQuery && strlen($query) > 2) {
-                $queryBuilder->where(function($q) use ($searchableFields, $query) {
+            if ($messageAnalysis !== null) {
+                // Use pre-analyzed intent (already analyzed by AgentOrchestrator/ChatService)
+                if (in_array($messageAnalysis['type'] ?? '', ['simple_answer', 'conversational']) && 
+                    ($messageAnalysis['confidence'] ?? 0) > 0.7) {
+                    $shouldApplyTextSearch = false;
+                    \Log::info('fallbackDatabaseSearch: using pre-analyzed intent', [
+                        'query' => $query,
+                        'type' => $messageAnalysis['type'],
+                        'confidence' => $messageAnalysis['confidence']
+                    ]);
+                }
+            }
+
+            if (!empty($searchableFields) && $shouldApplyTextSearch && strlen($query) > 2) {
+                $queryBuilder->where(function ($q) use ($searchableFields, $query) {
                     foreach ($searchableFields as $field) {
                         $q->orWhere($field, 'LIKE', "%{$query}%");
                     }
@@ -2735,12 +2866,12 @@ PROMPT;
                 ->get();
 
             // Transform to match vector search result format (must return objects, not arrays)
-            return $results->map(function($item) {
+            return $results->map(function ($item) {
                 // Try to get searchable array if method exists, otherwise use toArray
-                $content = method_exists($item, 'toSearchableArray') 
-                    ? json_encode($item->toSearchableArray()) 
+                $content = method_exists($item, 'toSearchableArray')
+                    ? json_encode($item->toSearchableArray())
                     : json_encode($item->toArray());
-                
+
                 // Return as object to match vector search format
                 return (object) [
                     'id' => $item->id,
@@ -2763,7 +2894,7 @@ PROMPT;
 
     /**
      * Get searchable fields from model's AI config
-     * 
+     *
      * @param \Illuminate\Database\Eloquent\Model $model
      * @return array
      */
@@ -2773,10 +2904,10 @@ PROMPT;
         if (method_exists($model, 'initializeAI')) {
             try {
                 $aiConfig = $model->initializeAI();
-                
+
                 // Extract searchable fields from entity field configs
                 $searchableFields = [];
-                
+
                 // Check for entity fields with searchFields defined
                 if (isset($aiConfig['entities'])) {
                     foreach ($aiConfig['entities'] as $entityConfig) {
@@ -2785,7 +2916,7 @@ PROMPT;
                         }
                     }
                 }
-                
+
                 // Also check regular fields
                 if (isset($aiConfig['fields'])) {
                     foreach ($aiConfig['fields'] as $fieldName => $fieldConfig) {
@@ -2797,7 +2928,7 @@ PROMPT;
                         }
                     }
                 }
-                
+
                 if (!empty($searchableFields)) {
                     return array_unique($searchableFields);
                 }
@@ -2808,7 +2939,7 @@ PROMPT;
                 ]);
             }
         }
-        
+
         // Fallback: Check if model has explicit getSearchableFields method
         if (method_exists($model, 'getSearchableFields')) {
             return $model->getSearchableFields();

@@ -45,6 +45,7 @@ trait AutomatesSteps
         $nextStepAfterCollection = $firstEntityName ? "resolve_{$firstEntityName}" : 'execute_final_action';
 
         // 1. Data collection step
+        // Note: Prefix is automatically applied by AgentWorkflow::applyStepPrefix() for subflows
         $steps[] = WorkflowStep::make('collect_data')
             ->description('Collect required information')
             ->execute(fn($ctx) => $this->autoCollectData($ctx, $config))
@@ -58,11 +59,19 @@ trait AutomatesSteps
             $steps = array_merge($steps, $entitySteps);
         }
 
+        // 2.5. Collect missing fields for array items (e.g., prices for products)
+        $nextStepAfterArrayCollection = $confirmBeforeComplete ? 'confirm_action' : 'execute_final_action';
+        $steps[] = WorkflowStep::make('collect_array_item_fields')
+            ->description('Collect missing fields for array items')
+            ->execute(fn($ctx) => $this->collectMissingArrayItemFields($ctx, $config))
+            ->onSuccess($nextStepAfterArrayCollection)
+            ->onFailure('collect_array_item_fields');
+
         // 3. Confirmation step (if enabled)
         if ($confirmBeforeComplete) {
             $steps[] = WorkflowStep::make('confirm_action')
                 ->description('Confirm before completing')
-                ->execute(fn($ctx) => $this->confirmBeforeComplete($ctx, $config))
+                ->execute(fn($ctx) => $this->confirmBeforeCompleteWithSubflowCheck($ctx, $config))
                 ->onSuccess('execute_final_action')
                 ->onFailure('confirm_action');
         }
@@ -89,44 +98,49 @@ trait AutomatesSteps
             return ActionResult::success(message: 'No data to collect');
         }
 
-        // Note: Entity fields are also collected here to get user input for entity identifiers
-        // The actual entity resolution (searching database, creating if missing) happens in separate entity resolution steps
-        // This ensures entity field prompts are shown to users before trying to resolve entities
+        // Pre-generate suggestions for entity fields with identifierProvider
+        // Store only the suggestion strings (not Closures) to avoid serialization errors
+        if (!empty($config['entities'])) {
+            foreach ($config['entities'] as $entityName => $entityConfig) {
+                $identifierField = $entityConfig['identifier_field'] ?? $entityName;
+                
+                // If this entity has an identifierProvider, call it now and store the result
+                if (!empty($entityConfig['identifier_provider']) && 
+                    $entityConfig['identifier_provider'] instanceof \Closure) {
+                    
+                    try {
+                        $suggestion = $entityConfig['identifier_provider']($context);
+                        if ($suggestion) {
+                            // Store the suggestion string (not the Closure) in context
+                            $context->set("_suggestion_{$identifierField}", $suggestion);
+                            
+                            \Illuminate\Support\Facades\Log::info('Pre-generated suggestion for entity field', [
+                                'field' => $identifierField,
+                                'suggestion' => $suggestion,
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        \Illuminate\Support\Facades\Log::warning('Failed to pre-generate suggestion', [
+                            'field' => $identifierField,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+        }
 
         // Use WorkflowDataCollector service directly for automatic data collection
-        \Illuminate\Support\Facades\Log::info('AutomatesSteps: Using WorkflowDataCollector for automatic data collection', [
-            'workflow' => class_basename($this),
-        ]);
-        
-        $dataCollector = app(\LaravelAIEngine\Services\Agent\WorkflowDataCollector::class);
+        $aiService = app(\LaravelAIEngine\Services\AIEngineService::class);
+        $dataCollector = new \LaravelAIEngine\Services\Agent\WorkflowDataCollector($aiService);
         $result = $dataCollector->collectData($context, $fields);
-
-        \Illuminate\Support\Facades\Log::info('AutomatesSteps: Data collection returned', [
-            'workflow' => class_basename($this),
-            'success' => $result->success,
-            'has_message' => !empty($result->message),
-            'needs_user_input' => $result->getMetadata('needs_user_input', false),
-            'message' => substr($result->message ?? '', 0, 100),
-        ]);
 
         // If data collection is complete (success), we should proceed to next step
         if ($result->success && !$result->getMetadata('needs_user_input', false)) {
-            \Illuminate\Support\Facades\Log::info('AutomatesSteps: Data collection complete, moving to next step', [
-                'workflow' => class_basename($this),
-                'collected_data' => $result->data,
-            ]);
-            
-            // Data collection complete - proceed to next step
             return ActionResult::success(
                 message: 'Data collection complete',
                 data: $result->data
             );
         }
-
-        \Illuminate\Support\Facades\Log::info('AutomatesSteps: Data collection not complete, staying on collect_data', [
-            'workflow' => class_basename($this),
-            'reason' => $result->success ? 'needs_user_input' : 'failed',
-        ]);
 
         return $result;
 
@@ -205,6 +219,24 @@ trait AutomatesSteps
     }
 
     /**
+     * Check if running as subflow and skip confirmation if configured
+     */
+    protected function confirmBeforeCompleteWithSubflowCheck(UnifiedActionContext $context, array $config): ActionResult
+    {
+        // Check if we should skip confirmation when running as subflow
+        $skipInSubflow = $config['skip_confirmation_in_subflow'] ?? false;
+        $activeSubflow = $context->get('active_subflow');
+        
+        if ($skipInSubflow && $activeSubflow) {
+            // Skip confirmation and proceed directly to final action
+            return ActionResult::success(message: 'Skipping confirmation in subflow context');
+        }
+        
+        // Otherwise, show normal confirmation
+        return $this->confirmBeforeComplete($context, $config);
+    }
+
+    /**
      * Show confirmation before completing the workflow
      * Can be overridden by workflows for custom confirmation messages
      */
@@ -217,11 +249,13 @@ trait AutomatesSteps
         if ($firstTimeShowing) {
             $context->forget('user_confirmed_action');
             $context->set('confirmation_message_shown', true);
+            $context->set('awaiting_confirmation', true); // Flag for language-agnostic intent detection
         } else {
             // On subsequent entries, check if user has confirmed
             if ($context->get('user_confirmed_action')) {
                 $context->forget('user_confirmed_action');
                 $context->forget('confirmation_message_shown');
+                $context->forget('awaiting_confirmation');
                 return ActionResult::success(message: 'Confirmed');
             }
         }
@@ -323,6 +357,17 @@ trait AutomatesSteps
     }
 
     /**
+     * Format confirmation data before AI enhancement
+     * Override this in your workflow for custom formatting logic
+     */
+    protected function formatConfirmationData(array $data, array $config): array
+    {
+        // Default: return data as-is
+        // Workflows can override this to transform data before confirmation
+        return $data;
+    }
+
+    /**
      * Enhance confirmation message using AI to make it user-friendly
      */
     protected function enhanceConfirmationMessage(array $data, array $config): string
@@ -331,13 +376,26 @@ trait AutomatesSteps
             return "**Please confirm the following details:**\n\nNo data collected yet.";
         }
 
-        // Use fallback for now - AI enhancement can be slow
-        // TODO: Optimize AI enhancement or make it async
-        return $this->fallbackConfirmationMessage($data);
+        // Allow workflow to format/transform data before confirmation
+        $formattedData = $this->formatConfirmationData($data, $config);
+
+        // Get confirmation format rules from config or use default
+        $confirmationFormat = $config['confirmation_format'] ?? null;
         
-        /* AI Enhancement disabled for performance
-        $prompt = "Convert the following data into a user-friendly confirmation message. Format it nicely with clear labels and readable values. For arrays of items, list them with bullet points. Keep it concise and professional.\n\n";
-        $prompt .= "Data:\n" . json_encode($data, JSON_PRETTY_PRINT) . "\n\n";
+        $prompt = "Convert the following data into a user-friendly confirmation message. Format it nicely with clear labels and readable values.\n\n";
+        
+        if ($confirmationFormat) {
+            // Use workflow-specific format rules
+            $prompt .= "FORMATTING RULES:\n{$confirmationFormat}\n\n";
+        } else {
+            // Use generic default rules
+            $prompt .= "FORMATTING RULES:\n";
+            $prompt .= "- Use bullet points for lists\n";
+            $prompt .= "- Keep it concise and professional\n";
+            $prompt .= "- Format prices with $ symbol\n\n";
+        }
+        
+        $prompt .= "Data:\n" . json_encode($formattedData, JSON_PRETTY_PRINT) . "\n\n";
         $prompt .= "Return ONLY the formatted confirmation message text, starting with '**Please confirm the following details:**'";
 
         try {
@@ -351,15 +409,14 @@ trait AutomatesSteps
                 userId:     null
             );
 
-            return $response->content ?? $this->fallbackConfirmationMessage($data);
+            return $response->content ?? $this->fallbackConfirmationMessage($formattedData);
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('AutomatesSteps: AI enhancement failed, using fallback', [
                 'error' => $e->getMessage(),
             ]);
-            return $this->fallbackConfirmationMessage($data);
+            return $this->fallbackConfirmationMessage($formattedData);
         }
-        */
     }
 
     /**
@@ -395,6 +452,8 @@ trait AutomatesSteps
             if (is_array($value)) {
                 // Handle array values (like products list)
                 $message .= "**{$label}:**\n";
+                $grandTotal = 0;
+                
                 foreach ($value as $item) {
                     if (is_array($item)) {
                         // Extract readable product info
@@ -402,18 +461,27 @@ trait AutomatesSteps
                         $qty = $item['quantity'] ?? 1;
                         $price = $item['price'] ?? $item['price_each'] ?? null;
                         
-                        $itemStr = "{$productName}";
-                        if ($qty > 1) {
-                            $itemStr .= " × {$qty}";
-                        }
-                        if ($price) {
-                            $itemStr .= " @ \${$price}";
+                        if ($price !== null) {
+                            // Calculate line total
+                            $lineTotal = $qty * $price;
+                            $grandTotal += $lineTotal;
+                            
+                            // Format: Product × Qty @ $UnitPrice = $LineTotal
+                            $itemStr = "{$productName} × {$qty} @ \${$price} = \${$lineTotal}";
+                        } else {
+                            // No price available
+                            $itemStr = "{$productName} × {$qty}";
                         }
                         
                         $message .= "  • {$itemStr}\n";
                     } else {
                         $message .= "  • {$item}\n";
                     }
+                }
+                
+                // Show grand total if we have prices
+                if ($grandTotal > 0) {
+                    $message .= "\n**Total:** \${$grandTotal}\n";
                 }
             } else {
                 // Handle simple values
@@ -710,68 +778,177 @@ trait AutomatesSteps
         string $entityName,
         array $entityConfig
     ): ActionResult {
-        // Check if there's an active subworkflow (using step prefixing)
-        // This happens AFTER the subworkflow has been started by GenericEntityResolver
+        // CRITICAL FIX: First check if entity already exists in context
+        // This prevents infinite loops when subflow completes but we're still on resolve step
+        // Check both entity_id and entity_name_id formats
+        $entityId = $context->get($entityName . '_id') ?? $context->get($entityName);
+        
+        // For category, also check if it's stored in collected_data
+        if (!$entityId) {
+            $collectedData = $context->get('collected_data', []);
+            $entityId = $collectedData[$entityName . '_id'] ?? null;
+        }
+        
+        // IMPORTANT: For multiple entities (like products), a single numeric ID means one product was created
+        // but there might be more to create. Don't treat it as "all resolved" - let GenericEntityResolver handle it.
+        $isMultiple = $entityConfig['multiple'] ?? false;
+        
+        // If we have a numeric ID and it's a SINGLE entity (not multiple), entity is resolved
+        if ($entityId && is_numeric($entityId) && !$isMultiple) {
+            Log::channel('ai-engine')->info('Entity already resolved in context', [
+                'entity' => $entityName,
+                'entity_id' => $entityId,
+            ]);
+            
+            // Only clear active_subflow if it's for this specific entity
+            // Don't clear if we're in a parent subflow (nested subflows)
+            $activeSubflow = $context->get('active_subflow');
+            if ($activeSubflow && ($activeSubflow['field_name'] ?? null) === $entityName) {
+                $context->forget('active_subflow');
+                Log::channel('ai-engine')->info('Cleared active_subflow for resolved entity', [
+                    'entity' => $entityName,
+                ]);
+            }
+            
+            return ActionResult::success(
+                message: ucfirst($entityName) . " resolved",
+                data: [$entityName . '_id' => $entityId, $entityName => $entityId]
+            );
+        }
+        
+        // If we have a string identifier, check if entity was just created in database
+        if ($entityId && !is_numeric($entityId)) {
+            $modelClass = $entityConfig['model'] ?? null;
+            if ($modelClass) {
+                try {
+                    $searchFields = $entityConfig['search_fields'] ?? ['name'];
+                    $query = $modelClass::query();
+                    
+                    // Apply filters if configured
+                    if (!empty($entityConfig['filters']) && is_callable($entityConfig['filters'])) {
+                        $query = $entityConfig['filters']($query);
+                    }
+                    
+                    // Search for exact match
+                    $query->where(function($q) use ($searchFields, $entityId) {
+                        foreach ($searchFields as $field) {
+                            $q->orWhere($field, $entityId);
+                        }
+                    });
+                    
+                    $entity = $query->first();
+                    
+                    if ($entity && $entity->id) {
+                        Log::channel('ai-engine')->info('Found entity in database, storing numeric ID', [
+                            'entity' => $entityName,
+                            'entity_id' => $entity->id,
+                            'identifier' => $entityId,
+                        ]);
+                        
+                        // Store the numeric ID
+                        $context->set($entityName . '_id', $entity->id);
+                        $collectedData = $context->get('collected_data', []);
+                        $collectedData[$entityName . '_id'] = $entity->id;
+                        $context->set('collected_data', $collectedData);
+                        
+                        // Clear any active subworkflow state
+                        $context->forget('active_subflow');
+                        
+                        return ActionResult::success(
+                            message: ucfirst($entityName) . " resolved",
+                            data: [$entityName . '_id' => $entity->id, $entityName => $entity->id]
+                        );
+                    }
+                } catch (\Exception $e) {
+                    Log::channel('ai-engine')->error('Failed to search for entity', [
+                        'entity' => $entityName,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+        
+        // Check if there's an active subworkflow for single entity (not multiple)
+        // For multiple entities, GenericEntityResolver handles subflow completion
+        $isMultiple = $entityConfig['multiple'] ?? false;
         $activeSubflow = $context->get('active_subflow');
-        if ($activeSubflow && $activeSubflow['field_name'] === $entityName) {
+        if ($activeSubflow && $activeSubflow['field_name'] === $entityName && !$isMultiple) {
             $stepPrefix = $activeSubflow['step_prefix'] ?? '';
             $currentStep = $context->currentStep ?? '';
+            
+            // Check if we're back on the parent resolve step (indicates subflow completed)
+            $parentResolveStep = "resolve_{$entityName}";
+            $isOnParentResolveStep = str_ends_with($currentStep, $parentResolveStep);
             
             Log::channel('ai-engine')->info('Active subworkflow detected', [
                 'entity' => $entityName,
                 'step_prefix' => $stepPrefix,
                 'current_step' => $currentStep,
-                'has_prefix' => $stepPrefix ? str_starts_with($currentStep, $stepPrefix) : false,
+                'parent_resolve_step' => $parentResolveStep,
+                'is_on_parent_resolve' => $isOnParentResolveStep,
             ]);
             
-            // If current step doesn't have the prefix, subworkflow completed
-            if ($stepPrefix && $currentStep && !str_starts_with($currentStep, $stepPrefix)) {
+            // If we're back on the parent resolve step, subflow completed
+            if ($isOnParentResolveStep) {
                 Log::channel('ai-engine')->info('Subworkflow completed, extracting entity', [
                     'entity' => $entityName,
                     'current_step' => $currentStep,
                 ]);
                 
-                // Extract entity ID from context
-                $entityId = $context->get($entityName . '_id') ?? 
-                           $context->get('customer_id') ?? 
-                           $context->get('entity_id');
-                
-                if ($entityId) {
-                    // Clear subworkflow state
-                    $context->forget('active_subflow');
-                    
-                    Log::channel('ai-engine')->info('Entity extracted from subworkflow', [
-                        'entity' => $entityName,
-                        'entity_id' => $entityId,
-                    ]);
-                    
-                    return ActionResult::success(
-                        message: ucfirst($entityName) . " created successfully",
-                        data: [$entityName . '_id' => $entityId, $entityName => $entityId]
-                    );
-                }
-                
-                // No entity ID found, subworkflow failed
-                Log::channel('ai-engine')->warning('Subworkflow completed but no entity ID found', [
-                    'entity' => $entityName,
-                    'context_keys' => array_keys($context->workflowState),
-                ]);
+                // Clear subworkflow state
                 $context->forget('active_subflow');
                 
-                // Don't fail - let GenericEntityResolver try again
-                // Fall through to normal resolution
-            } elseif ($stepPrefix && $currentStep && str_starts_with($currentStep, $stepPrefix)) {
-                // Still in subworkflow - this shouldn't happen as we're in resolve step
-                Log::channel('ai-engine')->warning('In resolve step but subworkflow still active', [
-                    'entity' => $entityName,
-                    'current_step' => $currentStep,
-                ]);
+                // Try to find the created entity by searching for it
+                $modelClass = $entityConfig['model'] ?? null;
+                $collectedData = $context->get('collected_data', []);
+                $identifier = $collectedData[$entityName . '_id'] ?? $context->get($entityName . '_identifier');
                 
-                // Return needs input to continue subworkflow
-                return ActionResult::needsUserInput(
-                    message: "Continuing {$entityName} creation...",
-                    metadata: ['subflow_active' => true]
-                );
+                if ($modelClass && $identifier && !is_numeric($identifier)) {
+                    try {
+                        // Search for the entity that was just created
+                        $searchFields = $entityConfig['search_fields'] ?? ['name'];
+                        $query = $modelClass::query();
+                        
+                        // Apply filters if configured
+                        if (!empty($entityConfig['filters']) && is_callable($entityConfig['filters'])) {
+                            $query = $entityConfig['filters']($query);
+                        }
+                        
+                        // Search for exact match
+                        $query->where(function($q) use ($searchFields, $identifier) {
+                            foreach ($searchFields as $field) {
+                                $q->orWhere($field, $identifier);
+                            }
+                        });
+                        
+                        $entity = $query->first();
+                        
+                        if ($entity && $entity->id) {
+                            Log::channel('ai-engine')->info('Found created entity, storing ID', [
+                                'entity' => $entityName,
+                                'entity_id' => $entity->id,
+                                'identifier' => $identifier,
+                            ]);
+                            
+                            // Store the numeric ID
+                            $context->set($entityName . '_id', $entity->id);
+                            $collectedData[$entityName . '_id'] = $entity->id;
+                            $context->set('collected_data', $collectedData);
+                            
+                            return ActionResult::success(
+                                message: ucfirst($entityName) . " created successfully",
+                                data: [$entityName . '_id' => $entity->id, $entityName => $entity->id]
+                            );
+                        }
+                    } catch (\Exception $e) {
+                        Log::channel('ai-engine')->error('Failed to find created entity', [
+                            'entity' => $entityName,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+                
+                // Fall through to normal resolution - entity_id check above will catch it next time
             }
         }
         
@@ -794,6 +971,23 @@ trait AutomatesSteps
 
         // Get identifier from collected data
         $collectedData = $context->get('collected_data', []);
+        
+        // IMPORTANT: For multiple entities, restore parent collected_data if needed
+        // This ensures the items array is available after a subflow completes
+        if ($isMultiple && !isset($collectedData[$identifierField])) {
+            $parentCollectedData = $context->get('parent_collected_data');
+            if ($parentCollectedData && isset($parentCollectedData[$identifierField])) {
+                $context->set('collected_data', $parentCollectedData);
+                $collectedData = $parentCollectedData;
+                
+                Log::channel('ai-engine')->info('AutomatesSteps: Restored parent collected_data', [
+                    'entity' => $entityName,
+                    'identifier_field' => $identifierField,
+                    'has_identifier' => isset($collectedData[$identifierField]),
+                ]);
+            }
+        }
+        
         $identifier = $collectedData[$identifierField] ?? null;
 
         Log::channel('ai-engine')->info('AutomatesSteps: Looking for identifier in collected_data', [
@@ -864,11 +1058,18 @@ trait AutomatesSteps
                 // The workflow expects 'category_id' not just 'category'
                 if ($entityId) {
                     $context->set($entityName . '_id', $entityId);
+                    
+                    // IMPORTANT: Also update collected_data so the final action can access it
+                    // This ensures createProduct() can read the numeric category_id
+                    $collectedData = $context->get('collected_data', []);
+                    $collectedData[$entityName . '_id'] = $entityId;
+                    $context->set('collected_data', $collectedData);
 
                     Log::channel('ai-engine')->info('Entity resolved and stored in context', [
                         'entity' => $entityName,
                         'entity_id' => $entityId,
                         'context_key' => $entityName . '_id',
+                        'updated_collected_data' => true,
                     ]);
                 }
             } else {
@@ -1015,21 +1216,26 @@ trait AutomatesSteps
                 \Illuminate\Support\Facades\Log::info("Continuing subworkflow", [
                     'subflow' => class_basename($context->currentWorkflow ?? ''),
                     'entity' => $entityName,
+                    'is_isolated' => $context->metadata['is_subworkflow'] ?? false,
                 ]);
 
                 $response = $agentMode->continueWorkflow($lastMessage, $context);
 
                 // Check if subflow completed
                 if ($response->isComplete && $response->success) {
-                    // Subflow completed - pop back to parent
+                    // Subflow completed - merge result back to parent
                     $parent = $context->popWorkflow();
 
                     \Illuminate\Support\Facades\Log::info("Subworkflow completed, returning to parent", [
                         'parent' => $parent['workflow'] ?? 'none',
                         'entity' => $entityName,
+                        'result_keys' => array_keys($response->data ?? []),
                     ]);
 
-                    // Extract created entity ID from subflow response
+                    // Merge only the result, not intermediate state
+                    $context->mergeSubworkflowResult($response->data ?? []);
+
+                    // Also set entity-specific fields for backward compatibility
                     if ($entityName === 'customer' && isset($response->data['customer_id'])) {
                         $context->set('customer_id', $response->data['customer_id']);
                     }
@@ -1054,36 +1260,53 @@ trait AutomatesSteps
                 return ActionResult::failure(error: "Subflow failed to create {$entityName}");
             }
 
-            // First time - start new subflow
+            // First time - start new subflow with ISOLATED CONTEXT
             $collectedData = $context->get('collected_data', []);
             $identifierField = $entityName . '_identifier';
             $identifier = $collectedData[$identifierField] ?? $collectedData['customer_identifier'] ?? '';
 
-            // Prepare state for subworkflow
-            $subflowState = [];
-            if ($entityName === 'customer' && !empty($identifier)) {
-                $subflowState['customer_name'] = $identifier;
-            }
-            $subflowState['subflow_entity'] = $entityName;
-
-            // Push parent workflow onto stack
-            // Note: pushWorkflow sets currentWorkflow and currentStep
-            $context->pushWorkflow($subflowClass, null, $subflowState);
-
-            // Clear the current step so startWorkflow begins from the first step
-            $context->currentStep = null;
-
-            \Illuminate\Support\Facades\Log::info("Starting subworkflow", [
-                'parent' => class_basename($context->getParentWorkflow()['workflow'] ?? 'none'),
-                'subflow' => class_basename($subflowClass),
-                'entity' => $entityName,
+            // Create isolated subcontext
+            $subContext = $context->createSubContext([
+                'entity_identifier' => $identifier,
+                'entity_name' => $entityName,
             ]);
 
-            // Start the subworkflow - this will execute its first step
-            $response = $agentMode->startWorkflow($subflowClass, $context, '');
+            // Set the subworkflow class
+            $subContext->currentWorkflow = $subflowClass;
+            $subContext->currentStep = null;
+
+            // Copy the workflow stack from parent (for isInSubworkflow check)
+            $subContext->workflowStack = $context->workflowStack;
+            $subContext->workflowStack[] = [
+                'workflow' => $context->currentWorkflow,
+                'step' => $context->currentStep,
+                'state' => $context->workflowState,
+            ];
+
+            \Illuminate\Support\Facades\Log::info("Starting subworkflow with isolated context", [
+                'parent' => class_basename($context->currentWorkflow ?? 'none'),
+                'subflow' => class_basename($subflowClass),
+                'entity' => $entityName,
+                'isolated' => true,
+                'initial_data' => array_keys($subContext->workflowState),
+            ]);
+
+            // Start the subworkflow with isolated context
+            $response = $agentMode->startWorkflow($subflowClass, $subContext, '');
+
+            // Replace parent's context with the subcontext (which has isolated state)
+            // This ensures subsequent calls use the isolated context
+            $context->conversationHistory = $subContext->conversationHistory;
+            $context->currentWorkflow = $subContext->currentWorkflow;
+            $context->currentStep = $subContext->currentStep;
+            $context->workflowState = $subContext->workflowState;
+            $context->workflowStack = $subContext->workflowStack;
+            $context->metadata = $subContext->metadata;
+
+            // Save the updated context
+            $context->saveToCache();
 
             // The subworkflow has started and will need user input
-            // Return this so the parent workflow knows to wait
             if ($response->needsUserInput) {
                 return ActionResult::needsUserInput(
                     message: $response->message,
@@ -1095,6 +1318,7 @@ trait AutomatesSteps
             // If subworkflow completed immediately (unlikely)
             if ($response->isComplete && $response->success) {
                 $context->popWorkflow();
+                $context->mergeSubworkflowResult($response->data ?? []);
 
                 if ($entityName === 'customer' && isset($response->data['customer_id'])) {
                     $context->set('customer_id', $response->data['customer_id']);
@@ -1139,6 +1363,140 @@ trait AutomatesSteps
         return ActionResult::failure(
             error: "Entity creation not implemented. Use subflow or override createEntity()"
         );
+    }
+
+    /**
+     * Collect missing fields for items in arrays (e.g., prices for products)
+     */
+    protected function collectMissingArrayItemFields(UnifiedActionContext $context, array $config): ActionResult
+    {
+        // Check if we're waiting for a response to update an array item
+        $waitingForArrayField = $context->get('current_array_field');
+        
+        if ($waitingForArrayField) {
+            // User has responded - extract the value from their message
+            $conversationHistory = $context->conversationHistory ?? [];
+            $lastUserMessage = array_filter($conversationHistory, fn($msg) => ($msg['role'] ?? '') === 'user');
+            
+            if (!empty($lastUserMessage)) {
+                $lastMsg = end($lastUserMessage);
+                $userResponse = trim($lastMsg['content'] ?? '');
+                
+                // Extract numeric value from response
+                $value = $this->extractNumericValue($userResponse);
+                
+                if ($value !== null) {
+                    // Update the array item with the provided value
+                    $entityName = $context->get('current_array_entity');
+                    $itemIndex = $context->get('current_array_item_index');
+                    $fieldName = $context->get('current_array_field');
+                    
+                    $entityConfig = $config['entities'][$entityName] ?? [];
+                    $identifierField = $entityConfig['identifier_field'] ?? $entityName;
+                    $arrayData = $context->get($identifierField, []);
+                    
+                    if (isset($arrayData[$itemIndex])) {
+                        $arrayData[$itemIndex][$fieldName] = $value;
+                        $context->set($identifierField, $arrayData);
+                        
+                        \Illuminate\Support\Facades\Log::info('AutomatesSteps: Updated array item field', [
+                            'entity' => $entityName,
+                            'item_index' => $itemIndex,
+                            'field' => $fieldName,
+                            'value' => $value,
+                        ]);
+                        
+                        // Move to next item
+                        $context->set('current_array_item_index', $itemIndex + 1);
+                        $context->forget('current_array_field');
+                    }
+                }
+            }
+        }
+        
+        $entities = $config['entities'] ?? [];
+        
+        // Check each entity that has array data
+        foreach ($entities as $entityName => $entityConfig) {
+            $entityIdKey = $entityName . '_id';
+            $entityIds = $context->get($entityIdKey);
+            
+            // Skip if not an array of IDs (single entity)
+            if (!is_array($entityIds)) {
+                continue;
+            }
+            
+            // Get the actual array data (e.g., products array)
+            $identifierField = $entityConfig['identifier_field'] ?? $entityName;
+            $arrayData = $context->get($identifierField, []);
+            
+            if (empty($arrayData) || !is_array($arrayData)) {
+                continue;
+            }
+            
+            // Define required fields for array items (e.g., price for products)
+            $requiredItemFields = $entityConfig['required_item_fields'] ?? ['price'];
+            
+            // Check each item for missing required fields
+            $currentItemIndex = $context->get('current_array_item_index', 0);
+            
+            for ($i = $currentItemIndex; $i < count($arrayData); $i++) {
+                $item = $arrayData[$i];
+                
+                // Check if this item is missing any required fields
+                foreach ($requiredItemFields as $fieldName) {
+                    if (!isset($item[$fieldName]) || $item[$fieldName] === null || $item[$fieldName] === '') {
+                        // Missing field found - ask for it
+                        $itemName = $item['name'] ?? $item['product'] ?? $item['item'] ?? "item " . ($i + 1);
+                        $quantity = $item['quantity'] ?? 1;
+                        
+                        // Store current position
+                        $context->set('current_array_item_index', $i);
+                        $context->set('current_array_field', $fieldName);
+                        $context->set('current_array_entity', $entityName);
+                        
+                        $message = "Could you let me know the {$fieldName} for the {$itemName}?";
+                        if ($quantity > 1) {
+                            $message .= " (unit {$fieldName} per item)";
+                        }
+                        
+                        return ActionResult::needsUserInput(
+                            message: $message,
+                            metadata: [
+                                'collecting_array_field' => true,
+                                'item_index' => $i,
+                                'field_name' => $fieldName,
+                                'entity_name' => $entityName,
+                            ]
+                        );
+                    }
+                }
+            }
+            
+            // All items have all required fields - clear tracking
+            $context->forget('current_array_item_index');
+            $context->forget('current_array_field');
+            $context->forget('current_array_entity');
+        }
+        
+        // All array items have all required fields
+        return ActionResult::success(message: 'All array item fields collected');
+    }
+    
+    /**
+     * Extract numeric value from user response
+     */
+    protected function extractNumericValue(string $response): ?float
+    {
+        // Remove common currency symbols and text
+        $cleaned = preg_replace('/[^\d.,\-]/', '', $response);
+        $cleaned = str_replace(',', '', $cleaned);
+        
+        if (is_numeric($cleaned)) {
+            return (float) $cleaned;
+        }
+        
+        return null;
     }
 
     /**

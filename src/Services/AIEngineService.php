@@ -20,9 +20,11 @@ class AIEngineService
 {
     public function __construct(
         protected CreditManager $creditManager,
-        protected ?ConversationManager $conversationManager = null
+        protected ?ConversationManager $conversationManager = null,
+        protected ?Drivers\DriverRegistry $driverRegistry = null
     ) {
         $this->conversationManager = $conversationManager ?? app(ConversationManager::class);
+        $this->driverRegistry = $driverRegistry ?? app(Drivers\DriverRegistry::class);
     }
 
     /**
@@ -32,13 +34,13 @@ class AIEngineService
     {
         $startTime = microtime(true);
         $requestId = uniqid('ai_req_');
-        
+
         // Auto-detect authenticated user if userId not provided
         // IMPORTANT: withUserId returns a NEW immutable request, so we must reassign
         if (!$request->userId && auth()->check()) {
-            $request = $request->withUserId((string)auth()->id());
+            $request = $request->withUserId((string) auth()->id());
         }
-        
+
         // Debug mode: Log prompt before sending
         $debugMode = config('ai-engine.debug', false) || ($request->metadata['debug'] ?? false);
         if ($debugMode) {
@@ -58,7 +60,7 @@ class AIEngineService
         try {
             // Check credits before processing (if enabled)
             $creditsEnabled = config('ai-engine.credits.enabled', false);
-            
+
             if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
                 throw new InsufficientCreditsException('Insufficient credits for this request');
             }
@@ -84,7 +86,7 @@ class AIEngineService
             if ($creditsEnabled && $response->success && $request->userId) {
                 $creditsUsed = $this->creditManager->calculateCredits($request);
                 $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
-                
+
                 // Add credits to response for tracking
                 $response = $response->withUsage(
                     tokensUsed: $response->tokensUsed,
@@ -93,7 +95,7 @@ class AIEngineService
             }
 
             $processingTime = microtime(true) - $startTime;
-            
+
             // Debug mode: Log response and timing
             if ($debugMode) {
                 \Log::channel('ai-engine')->info('✅ AI Response Debug', [
@@ -120,7 +122,7 @@ class AIEngineService
         } catch (InsufficientCreditsException $e) {
             // Re-throw InsufficientCreditsException so caller can handle it
             throw $e;
-            
+
         } catch (\Exception $e) {
             $processingTime = microtime(true) - $startTime;
 
@@ -206,9 +208,9 @@ class AIEngineService
     {
         // Auto-detect authenticated user if userId not provided
         if (!$request->userId && auth()->check()) {
-            $request = $request->withUserId((string)auth()->id());
+            $request = $request->withUserId((string) auth()->id());
         }
-        
+
         // Check credits before processing (if enabled)
         $creditsEnabled = config('ai-engine.credits.enabled', false);
         if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
@@ -235,6 +237,11 @@ class AIEngineService
      */
     protected function getDriver(EngineEnum $engine): EngineDriverInterface
     {
+        if ($this->driverRegistry) {
+            return $this->driverRegistry->resolve($engine);
+        }
+
+        // Fallback for backward compatibility if registry fails or not present (legacy logic)
         $driverClass = $engine->driverClass();
 
         if (!class_exists($driverClass)) {
@@ -242,10 +249,11 @@ class AIEngineService
         }
 
         $config = config("ai-engine.engines.{$engine->value}", []);
-        
-        // For OpenAI and Anthropic drivers, inject HTTP client if available in container
-        if ($driverClass === \LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class ||
-            $driverClass === \LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver::class) {
+
+        if (
+            $driverClass === \LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class ||
+            $driverClass === \LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver::class
+        ) {
             try {
                 $httpClient = app(\GuzzleHttp\Client::class);
                 return new $driverClass($config, $httpClient);
@@ -253,7 +261,7 @@ class AIEngineService
                 return new $driverClass($config);
             }
         }
-        
+
         return new $driverClass($config);
     }
 

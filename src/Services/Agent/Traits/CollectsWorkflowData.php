@@ -96,9 +96,11 @@ trait CollectsWorkflowData
         }
         
         // Otherwise, collect data normally
+        // Pass workflow instance so identifierProvider can be called
         return $this->dataCollector()->collectData(
             $context,
-            $this->getFieldDefinitions()
+            $this->getFieldDefinitions(),
+            $this
         );
     }
     
@@ -135,15 +137,6 @@ trait CollectsWorkflowData
     protected function getCollectedData(UnifiedActionContext $context): array
     {
         return $context->get('collected_data', []);
-    }
-    
-    /**
-     * Validate collected data
-     */
-    protected function validateCollectedData(UnifiedActionContext $context): array
-    {
-        $data = $this->getCollectedData($context);
-        return $this->dataCollector()->validateData($data, $this->getFieldDefinitions());
     }
     
     /**

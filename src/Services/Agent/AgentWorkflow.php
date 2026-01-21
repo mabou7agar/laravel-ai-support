@@ -217,6 +217,20 @@ abstract class AgentWorkflow
         return "Workflow: " . $this->getName();
     }
 
+    /**
+     * Get entity fields that this workflow manages
+     * Subflows should override this to declare which entity reference fields they use
+     * This allows the system to automatically clear these fields between instances
+     * 
+     * Static method to avoid unnecessary workflow instantiation
+     * 
+     * @return array List of entity field names (e.g., ['category', 'unit', 'brand'])
+     */
+    public static function getEntityFields(): array
+    {
+        return [];
+    }
+
     protected function useTool(string $toolName, array $parameters, UnifiedActionContext $context): ActionResult
     {
         if (!$this->tools) {

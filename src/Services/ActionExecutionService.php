@@ -17,10 +17,12 @@ class ActionExecutionService
     public function __construct(
         protected ?ChatService $chatService = null,
         protected ?AIEngineService $aiService = null,
-        protected ?Node\RemoteActionService $remoteActionService = null
+        protected ?Node\RemoteActionService $remoteActionService = null,
+        protected ?Actions\ActionRegistry $registry = null
     ) {
-        $this->registerDefaultHandlers();
-        $this->registerExecutors();
+        $this->registry = $registry ?? app(Actions\ActionRegistry::class);
+        $this->registerDefaultHandlers(); // Will now register into the registry
+        $this->registerExecutors();       // Will now register into the registry
     }
 
     /**
@@ -28,70 +30,39 @@ class ActionExecutionService
      */
     protected function registerExecutors(): void
     {
+        $registry = $this->registry;
+
         // Model executors
-        $this->executors['model.create'] = function (array $params, $userId) {
-            return $this->executeModelCreate($params, $userId);
-        };
-        
-        $this->executors['model.dynamic'] = function (array $params, $userId) {
-            return $this->executeModelCreate($params, $userId);
-        };
+        $registry->registerExecutor('model.create', fn($p, $u) => $this->executeModelCreate($p, $u));
+        $registry->registerExecutor('model.dynamic', fn($p, $u) => $this->executeModelCreate($p, $u));
 
         // Email executors
-        $this->executors['email.reply'] = function (array $params, $userId) {
-            return $this->executeEmailReply($params, $userId);
-        };
-        
-        $this->executors['email.forward'] = function (array $params, $userId) {
-            return $this->executeEmailForward($params, $userId);
-        };
+        $registry->registerExecutor('email.reply', fn($p, $u) => $this->executeEmailReply($p, $u));
+        $registry->registerExecutor('email.forward', fn($p, $u) => $this->executeEmailForward($p, $u));
 
         // Calendar executors
-        $this->executors['calendar.create'] = function (array $params, $userId) {
-            return $this->executeCalendarCreate($params, $userId);
-        };
+        $registry->registerExecutor('calendar.create', fn($p, $u) => $this->executeCalendarCreate($p, $u));
 
         // Task executors
-        $this->executors['task.create'] = function (array $params, $userId) {
-            return $this->executeTaskCreate($params, $userId);
-        };
+        $registry->registerExecutor('task.create', fn($p, $u) => $this->executeTaskCreate($p, $u));
 
         // Source executors
-        $this->executors['source.view'] = function (array $params, $userId) {
-            return $this->handleViewSource($params, $userId);
-        };
-        
-        $this->executors['source.find_similar'] = function (array $params, $userId) {
-            return $this->handleFindSimilar($params, $userId);
-        };
+        $registry->registerExecutor('source.view', fn($p, $u) => $this->handleViewSource($p, $u));
+        $registry->registerExecutor('source.find_similar', fn($p, $u) => $this->handleFindSimilar($p, $u));
 
         // Item executors
-        $this->executors['item.mark_priority'] = function (array $params, $userId) {
-            return $this->handleMarkPriority($params, $userId);
-        };
+        $registry->registerExecutor('item.mark_priority', fn($p, $u) => $this->handleMarkPriority($p, $u));
 
         // AI executors
-        $this->executors['ai.summarize'] = function (array $params, $userId) {
-            return $this->executeAISummarize($params, $userId);
-        };
-        
-        $this->executors['ai.translate'] = function (array $params, $userId) {
-            return $this->executeAITranslate($params, $userId);
-        };
+        $registry->registerExecutor('ai.summarize', fn($p, $u) => $this->executeAISummarize($p, $u));
+        $registry->registerExecutor('ai.translate', fn($p, $u) => $this->executeAITranslate($p, $u));
 
         // Chat executors
-        $this->executors['chat.send'] = function (array $params, $userId, $sessionId) {
-            return $this->executeChatSend($params, $userId, $sessionId);
-        };
-        
-        $this->executors['chat.regenerate'] = function (array $params, $userId, $sessionId) {
-            return $this->handleRegenerate($params, $userId, $sessionId);
-        };
+        $registry->registerExecutor('chat.send', fn($p, $u, $s) => $this->executeChatSend($p, $u, $s));
+        $registry->registerExecutor('chat.regenerate', fn($p, $u, $s) => $this->handleRegenerate($p, $u, $s));
 
         // Clipboard executors
-        $this->executors['clipboard.copy'] = function (array $params, $userId) {
-            return $this->handleCopy($params);
-        };
+        $registry->registerExecutor('clipboard.copy', fn($p) => $this->handleCopy($p));
     }
 
     /**
@@ -155,7 +126,8 @@ class ActionExecutionService
      */
     public function registerHandler(string $actionType, callable $handler): void
     {
-        $this->handlers[$actionType] = $handler;
+        // $this->handlers[$actionType] = $handler; // Legacy array
+        $this->registry->registerHandler($actionType, $handler);
     }
 
     /**
@@ -173,21 +145,22 @@ class ActionExecutionService
         if ($this->shouldExecuteRemotely($data)) {
             return $this->executeOnRemoteNode($actionType, $data, $userId, $sessionId);
         }
-        
+
         // Check if this is a smart action with executor
-        if (isset($data['executor']) && isset($this->executors[$data['executor']])) {
-            $executor = $this->executors[$data['executor']];
+        $executorId = $data['executor'] ?? null;
+        if ($executorId && $this->registry->hasExecutor($executorId)) {
+            $executor = $this->registry->getExecutor($executorId);
             $params = $data['params'] ?? $data;
-            
+
             // Check if action is ready (all params filled)
             if (isset($data['ready']) && !$data['ready']) {
                 $missingParams = $data['missing_params'] ?? [];
-                
+
                 // Try to fill missing params with AI
                 if (!empty($missingParams) && $this->aiService) {
                     $filledParams = $this->fillMissingParamsWithAI($params, $missingParams, $actionType);
                     $params = array_merge($params, $filledParams);
-                    
+
                     // Re-check if still missing
                     $stillMissing = array_filter($missingParams, fn($p) => empty($params[$p]));
                     if (!empty($stillMissing)) {
@@ -201,17 +174,17 @@ class ActionExecutionService
                     }
                 }
             }
-            
+
             // Pass full data array to executor (includes model_class, executor, etc.)
             return $executor($data, $userId, $sessionId);
         }
-        
+
         // Legacy handler support
-        if (isset($this->handlers[$actionType])) {
-            $handler = $this->handlers[$actionType];
+        if ($this->registry->hasHandler($actionType)) {
+            $handler = $this->registry->getHandler($actionType);
             return $handler($data, $userId, $sessionId);
         }
-        
+
         throw new \InvalidArgumentException("Unknown action type: {$actionType}");
     }
 
@@ -224,26 +197,26 @@ class ActionExecutionService
         if (!empty($data['node']) || !empty($data['node_slug'])) {
             return true;
         }
-        
+
         // Check if source is from a remote node
         if (!empty($data['params']['source_node'])) {
             return true;
         }
-        
+
         // Check model class for remote indicator (format: "node_slug:ModelClass")
         if (!empty($data['params']['model_class'])) {
             $modelClass = $data['params']['model_class'];
             if (strpos($modelClass, ':') !== false) {
                 return true;
             }
-            
+
             // Check if model class belongs to a remote node's collections
             $nodeForCollection = $this->findNodeForCollection($modelClass);
             if ($nodeForCollection !== null) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -261,7 +234,7 @@ class ActionExecutionService
             // Use NodeRegistryService to find the node
             $registry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
             $node = $registry->findNodeForCollection($modelClass);
-            
+
             return $node?->slug;
         } catch (\Exception $e) {
             Log::warning('Failed to find node for collection', [
@@ -292,11 +265,11 @@ class ActionExecutionService
         // 3. Node prefix in model_class (format: "node_slug:ModelClass")
         // 4. Collection-to-node mapping
         $nodeSlug = $data['node'] ?? $data['node_slug'] ?? $data['params']['source_node'] ?? null;
-        
+
         // Extract node from model class if needed (format: "node_slug:ModelClass")
         if (!$nodeSlug && !empty($data['params']['model_class'])) {
             $modelClass = $data['params']['model_class'];
-            
+
             // Check for node prefix format
             if (strpos($modelClass, ':') !== false) {
                 [$nodeSlug, $actualModelClass] = explode(':', $modelClass, 2);
@@ -388,7 +361,7 @@ class ActionExecutionService
     public function getAvailableActionsFromAllNodes(?string $context = null): array
     {
         $localActions = $this->getAvailableActions($context);
-        
+
         if (!$this->remoteActionService) {
             return [
                 'local' => $localActions,
@@ -580,7 +553,7 @@ class ActionExecutionService
 
         try {
             $model = $modelClass::find($modelId);
-            
+
             if (!$model) {
                 return [
                     'success' => false,
@@ -640,7 +613,7 @@ class ActionExecutionService
 
         try {
             $model = $modelClass::find($modelId);
-            
+
             if (!$model) {
                 return [
                     'success' => false,
@@ -843,7 +816,7 @@ class ActionExecutionService
     protected function handleCreateCalendarEvent(array $data, $userId): array
     {
         $content = $data['content'] ?? '';
-        
+
         // Extract date/time from content (basic extraction)
         $eventData = [
             'title' => 'New Event',
@@ -895,7 +868,7 @@ class ActionExecutionService
                         if (isset($model->{$field}) || $model->isFillable($field)) {
                             $model->{$field} = true;
                             $model->save();
-                            
+
                             return [
                                 'success' => true,
                                 'type' => 'mark_priority',
@@ -964,13 +937,13 @@ class ActionExecutionService
     protected function getUserIdColumn($model): ?string
     {
         $table = $model->getTable();
-        
+
         foreach (['user_id', 'owner_id', 'created_by', 'author_id'] as $column) {
             if (\Schema::hasColumn($table, $column)) {
                 return $column;
             }
         }
-        
+
         return null;
     }
 
@@ -982,12 +955,15 @@ class ActionExecutionService
         try {
             $userModel = config('auth.providers.users.model', 'App\\Models\\User');
             $user = $userModel::find($userId);
-            
-            if (!$user) return false;
-            
-            if (isset($user->is_admin) && $user->is_admin) return true;
-            if (method_exists($user, 'hasRole') && $user->hasRole(['admin', 'super-admin'])) return true;
-            
+
+            if (!$user)
+                return false;
+
+            if (isset($user->is_admin) && $user->is_admin)
+                return true;
+            if (method_exists($user, 'hasRole') && $user->hasRole(['admin', 'super-admin']))
+                return true;
+
             return false;
         } catch (\Exception $e) {
             return false;
@@ -1001,11 +977,11 @@ class ActionExecutionService
     {
         $content = $model->body ?? $model->content ?? $model->description ?? $model->text ?? '';
         $content = strip_tags($content);
-        
+
         if (strlen($content) > $length) {
             return substr($content, 0, $length) . '...';
         }
-        
+
         return $content;
     }
 
@@ -1022,15 +998,15 @@ class ActionExecutionService
 
         // Generate reply draft with AI
         $draftBody = $params['draft_body'] ?? null;
-        
+
         if (!$draftBody && $this->aiService && !empty($originalContent)) {
             try {
                 $prompt = "Write a professional, concise email reply to this message:\n\n";
                 $prompt .= "Original email:\n{$originalContent}\n\n";
                 $prompt .= "Write a helpful reply. Be professional but friendly. Do not include subject line or greeting - just the body.";
-                
+
                 $response = $this->aiService->generate($this->createAIRequest($prompt, 500));
-                
+
                 $draftBody = $response->getContent();
             } catch (\Exception $e) {
                 Log::warning("AI draft generation failed: " . $e->getMessage());
@@ -1080,7 +1056,7 @@ class ActionExecutionService
         $date = $params['date'] ?? date('Y-m-d', strtotime('+1 day'));
         $time = $params['time'] ?? '09:00';
         $duration = $params['duration'] ?? 60;
-        
+
         // Generate ICS data for calendar
         $icsData = $this->generateICS($title, $date, $time, $duration, $params);
 
@@ -1109,7 +1085,7 @@ class ActionExecutionService
     protected function executeTaskCreate(array $params, $userId): array
     {
         $title = $params['title'] ?? 'New Task';
-        
+
         return [
             'success' => true,
             'type' => 'task',
@@ -1141,7 +1117,7 @@ class ActionExecutionService
             try {
                 $prompt = "Summarize this in {$maxLength} characters or less:\n\n{$content}";
                 $response = $this->aiService->generate($this->createAIRequest($prompt, 200));
-                
+
                 return [
                     'success' => true,
                     'type' => 'summary',
@@ -1182,7 +1158,7 @@ class ActionExecutionService
             try {
                 $prompt = "Translate this to {$targetLanguage}. Return only the translation:\n\n{$content}";
                 $response = $this->aiService->generate($this->createAIRequest($prompt, 1000));
-                
+
                 return [
                     'success' => true,
                     'type' => 'translation',
@@ -1211,37 +1187,37 @@ class ActionExecutionService
         // Model class can be at root level or in params
         $modelClass = $data['model_class'] ?? $data['params']['model_class'] ?? null;
         $modelParams = $data['params'] ?? $data;
-        
+
         // Remove model_class from params if it exists there
         unset($modelParams['model_class']);
-        
+
         if (!$modelClass) {
             return ['success' => false, 'error' => 'Model class not specified'];
         }
-        
+
         if (!class_exists($modelClass)) {
             return ['success' => false, 'error' => "Model class not found: {$modelClass}"];
         }
-        
+
         // Check if model has executeAI method
         if (!method_exists($modelClass, 'executeAI')) {
             return ['success' => false, 'error' => 'Model does not support AI actions'];
         }
-        
+
         try {
             Log::info('Executing model create', [
                 'model_class' => $modelClass,
                 'params' => array_keys($modelParams),
             ]);
-            
+
             // Execute the AI action on the model
             $result = $modelClass::executeAI('create', $modelParams);
-            
+
             // Handle AIActionResource responses
             if ($result instanceof \LaravelAIEngine\Contracts\AIActionResponse) {
                 return $result->toArray();
             }
-            
+
             // Handle array responses (backward compatibility)
             return [
                 'success' => $result['success'] ?? false,
@@ -1253,7 +1229,7 @@ class ActionExecutionService
                 'model_class' => $modelClass,
                 'error' => $e->getMessage(),
             ]);
-            
+
             return [
                 'success' => false,
                 'error' => 'Execution failed: ' . $e->getMessage(),
@@ -1320,16 +1296,16 @@ class ActionExecutionService
         $description = $params['description'] ?? '';
 
         return "BEGIN:VCALENDAR\r\n" .
-               "VERSION:2.0\r\n" .
-               "BEGIN:VEVENT\r\n" .
-               "UID:{$uid}\r\n" .
-               "DTSTART:{$startDateTime}\r\n" .
-               "DTEND:{$endDateTime}\r\n" .
-               "SUMMARY:{$title}\r\n" .
-               "LOCATION:{$location}\r\n" .
-               "DESCRIPTION:{$description}\r\n" .
-               "END:VEVENT\r\n" .
-               "END:VCALENDAR\r\n";
+            "VERSION:2.0\r\n" .
+            "BEGIN:VEVENT\r\n" .
+            "UID:{$uid}\r\n" .
+            "DTSTART:{$startDateTime}\r\n" .
+            "DTEND:{$endDateTime}\r\n" .
+            "SUMMARY:{$title}\r\n" .
+            "LOCATION:{$location}\r\n" .
+            "DESCRIPTION:{$description}\r\n" .
+            "END:VEVENT\r\n" .
+            "END:VCALENDAR\r\n";
     }
 
     /**
@@ -1340,7 +1316,7 @@ class ActionExecutionService
         $startDateTime = str_replace(['-', ':'], '', $date . 'T' . $time . ':00');
         $endTime = date('His', strtotime($time . ':00') + ($duration * 60));
         $endDateTime = str_replace('-', '', $date) . 'T' . $endTime;
-        
+
         $queryParams = [
             'action' => 'TEMPLATE',
             'text' => $title,

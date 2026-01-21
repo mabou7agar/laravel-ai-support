@@ -141,10 +141,24 @@ class WorkflowConfigBuilder
     
     /**
      * Enable confirmation before completing the workflow
+     * 
+     * @param bool $confirm Whether to show confirmation
+     * @param bool $skipInSubflow Whether to skip confirmation when running as a subflow (default: true)
      */
-    public function confirmBeforeComplete(bool $confirm = true): self
+    public function confirmBeforeComplete(bool $confirm = true, bool $skipInSubflow = true): self
     {
         $this->config['confirm_before_complete'] = $confirm;
+        $this->config['skip_confirmation_in_subflow'] = $skipInSubflow;
+        return $this;
+    }
+    
+    /**
+     * Set custom confirmation message format rules
+     * These rules are passed to the AI when generating confirmation messages
+     */
+    public function confirmationFormat(string $format): self
+    {
+        $this->config['confirmation_format'] = $format;
         return $this;
     }
 
@@ -156,12 +170,19 @@ class WorkflowConfigBuilder
      */
     public function fromModel(string $modelClass, array $fieldMapping = []): self
     {
-        // Get model's AI configuration
-        if (!method_exists($modelClass, 'getAIConfig')) {
-            throw new \Exception("Model {$modelClass} does not have AI configuration");
-        }
+        // Get model's AI configuration - support both static and instance methods
+        $aiConfig = null;
         
-        $aiConfig = $modelClass::getAIConfig();
+        if (method_exists($modelClass, 'getAIConfig')) {
+            // Static method (legacy)
+            $aiConfig = $modelClass::getAIConfig();
+        } elseif (method_exists($modelClass, 'initializeAI')) {
+            // Instance method (new approach)
+            $instance = new $modelClass();
+            $aiConfig = $instance->initializeAI();
+        } else {
+            throw new \Exception("Model {$modelClass} does not have AI configuration (missing getAIConfig() or initializeAI() method)");
+        }
         
         // Import goal from model if available
         if (empty($this->config['goal']) && !empty($aiConfig['goal'])) {
@@ -192,7 +213,7 @@ class WorkflowConfigBuilder
                 // Auto-generate field definition for data collection
                 $isMultiple = !empty($entityConfig['multiple']) || str_ends_with($fieldName, 's') || str_contains($fieldName, 'items');
                 
-                $this->config['fields'][$fieldName] = [
+                $fieldDef = [
                     'type' => 'entity', // Mark as entity type so AI extraction skips it
                     'required' => true,
                     'description' => ucfirst($entityName) . ' identifier',
@@ -200,6 +221,13 @@ class WorkflowConfigBuilder
                         ? "What {$entityName} would you like to add?" 
                         : "What is the {$entityName} name, email, or identifier?",
                 ];
+                
+                // Import parsing guide if available
+                if (!empty($entityConfig['parsing_guide'])) {
+                    $fieldDef['parsing_guide'] = $entityConfig['parsing_guide'];
+                }
+                
+                $this->config['fields'][$fieldName] = $fieldDef;
                 
                 // Convert AI config entity to workflow entity
                 $workflowEntity = [
