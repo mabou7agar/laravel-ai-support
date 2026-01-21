@@ -2461,66 +2461,77 @@ class DataCollectorService
         try {
             $configArray = $config->toArray();
             
-            // Serialize to JSON to avoid PHP serialization issues with Redis
+            // Serialize to JSON
             $serialized = json_encode($configArray, JSON_UNESCAPED_UNICODE);
             if ($serialized === false) {
                 throw new \RuntimeException('Failed to JSON encode config: ' . json_last_error_msg());
             }
             
-            // Store as JSON string instead of letting Laravel serialize
-            Cache::put(
-                $key,
-                $serialized,
-                $this->cacheTtl
+            // Save to database for persistence (primary storage)
+            \Illuminate\Support\Facades\DB::table('data_collector_configs')->updateOrInsert(
+                ['name' => $config->name],
+                [
+                    'name' => $config->name,
+                    'config_data' => $serialized,
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ]
             );
             
-            // Verify it was actually saved by immediately reading it back
-            $verification = Cache::get($key);
-            if (!$verification) {
-                Log::channel('ai-engine')->warning('Config saved but verification failed', [
-                    'key' => $key,
-                    'name' => $config->name,
-                ]);
-            }
+            // Also save to cache for fast access
+            Cache::put($key, $serialized, $this->cacheTtl);
             
-            Log::channel('ai-engine')->debug('Config saved to cache', [
+            Log::channel('ai-engine')->debug('Config saved to database and cache', [
                 'key' => $key,
                 'name' => $config->name,
                 'title' => $config->title,
-                'verified' => $verification !== null,
                 'serialized_length' => strlen($serialized),
             ]);
         } catch (\Exception $e) {
-            Log::channel('ai-engine')->error('Failed to save config to cache', [
+            Log::channel('ai-engine')->error('Failed to save config', [
                 'key' => $key,
                 'name' => $config->name,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
 
     /**
-     * Load config from cache
+     * Load config from database/cache
      */
     public function loadConfig(string $name): ?DataCollectorConfig
     {
         $key = $this->cachePrefix . 'config_' . $name;
         
-        Log::channel('ai-engine')->debug('Attempting to load config from cache', [
-            'key' => $key,
-            'name' => $name,
-            'cache_prefix' => $this->cachePrefix,
-        ]);
-        
+        // Try cache first for speed
         $serialized = Cache::get($key);
         
+        // If not in cache, try database
         if (!$serialized) {
-            Log::channel('ai-engine')->debug('Config not found in cache', [
-                'key' => $key,
+            $dbConfig = \Illuminate\Support\Facades\DB::table('data_collector_configs')
+                ->where('name', $name)
+                ->first();
+            
+            if ($dbConfig && isset($dbConfig->config_data)) {
+                $serialized = $dbConfig->config_data;
+                
+                // Warm up cache for next time
+                Cache::put($key, $serialized, $this->cacheTtl);
+                
+                Log::channel('ai-engine')->debug('Config loaded from database', [
+                    'name' => $name,
+                    'cached_for_next_time' => true,
+                ]);
+            }
+        } else {
+            Log::channel('ai-engine')->debug('Config loaded from cache', [
                 'name' => $name,
-                'data_type' => gettype($serialized),
-                'data_value' => $serialized,
+            ]);
+        }
+        
+        if (!$serialized) {
+            Log::channel('ai-engine')->debug('Config not found in cache or database', [
+                'name' => $name,
             ]);
             return null;
         }
@@ -2528,20 +2539,12 @@ class DataCollectorService
         // Decode JSON string
         $data = json_decode($serialized, true);
         if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
-            Log::channel('ai-engine')->error('Failed to decode config JSON from cache', [
-                'key' => $key,
+            Log::channel('ai-engine')->error('Failed to decode config JSON', [
                 'name' => $name,
                 'error' => json_last_error_msg(),
             ]);
             return null;
         }
-
-        Log::channel('ai-engine')->debug('Config loaded from cache', [
-            'key' => $key,
-            'name' => $name,
-            'data_keys' => array_keys($data),
-            'serialized_length' => strlen($serialized),
-        ]);
         
         return DataCollectorConfig::fromArray($data);
     }
