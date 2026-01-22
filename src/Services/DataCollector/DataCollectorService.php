@@ -291,54 +291,80 @@ class DataCollectorService
             goto validateAndSave;
         }
 
-        // Use intent analysis to intelligently extract field value
-        $intentAnalysis = $this->analyzeFieldIntent(
-            $message,
-            $state->currentField,
-            $config,
-            $state->getData()
-        );
-
-        Log::channel('ai-engine')->info('Field intent analysis completed', [
-            'session_id' => $state->sessionId,
-            'intent' => $intentAnalysis['intent'],
-            'confidence' => $intentAnalysis['confidence'],
-            'extracted_value' => $intentAnalysis['extracted_value'] ?? null,
-            'current_field' => $state->currentField,
-        ]);
-
-        // Handle different intents from analysis
-        $extractedFields = [];
-
-        if ($intentAnalysis['intent'] === 'provide_value' && !empty($intentAnalysis['extracted_value'])) {
-            // User provided a value - use it
-            $extractedFields[$state->currentField] = $intentAnalysis['extracted_value'];
-
-            Log::channel('ai-engine')->info('Using value from intent analysis', [
-                'field' => $state->currentField,
-                'value' => $intentAnalysis['extracted_value'],
-                'confidence' => $intentAnalysis['confidence'],
+        // CRITICAL: Check for modification intent BEFORE intent analysis
+        // This prevents "I want to change X" from being extracted as field data
+        $isModificationIntent = $this->isRejectionIntent($message, $state, $config);
+        
+        if ($isModificationIntent) {
+            Log::channel('ai-engine')->info('Modification intent detected - skipping field extraction', [
+                'session_id' => $state->sessionId,
+                'current_field' => $state->currentField,
+                'user_message' => substr($message, 0, 100),
             ]);
-        } elseif ($intentAnalysis['intent'] === 'question') {
-            // User is asking a question - don't extract, let AI respond
-            Log::channel('ai-engine')->info('User asked a question, no extraction needed');
-        } elseif ($intentAnalysis['intent'] === 'suggest') {
-            // User wants suggestions - generate AI-powered suggestions
-            return $this->handleSuggestionRequest($state, $config, $engine, $model);
-        } elseif ($intentAnalysis['intent'] === 'skip') {
-            // User wants to skip - handle skip logic
-            Log::channel('ai-engine')->info('User wants to skip field', [
-                'field' => $state->currentField,
-            ]);
-        } elseif ($intentAnalysis['intent'] === 'unclear') {
-            // Message is unclear - let AI ask for clarification
-            Log::channel('ai-engine')->info('User message unclear, AI will ask for clarification');
+            
+            // Don't extract anything - let AI handle the modification request
+            $extractedFields = [];
+            $intentAnalysis = ['intent' => 'modification', 'confidence' => 1.0];
+            
+            // Generate AI response to handle modification
+            $aiResponse = $this->generateAIResponse(
+                $config->getSystemPrompt(),
+                $this->buildContextPrompt($state, $config) . "\n\nUser wants to modify something. Ask what they'd like to change.",
+                $state->messageHistory ?? [],
+                $engine,
+                $model
+            );
+            $responseContent = $aiResponse->getContent();
         } else {
-            // Fallback: Parse AI response for field extractions
-            Log::channel('ai-engine')->info('Intent analysis returned no value, falling back to marker parsing', [
+            // Use intent analysis to intelligently extract field value
+            $intentAnalysis = $this->analyzeFieldIntent(
+                $message,
+                $state->currentField,
+                $config,
+                $state->getData()
+            );
+
+            Log::channel('ai-engine')->info('Field intent analysis completed', [
+                'session_id' => $state->sessionId,
                 'intent' => $intentAnalysis['intent'],
+                'confidence' => $intentAnalysis['confidence'],
+                'extracted_value' => $intentAnalysis['extracted_value'] ?? null,
+                'current_field' => $state->currentField,
             ]);
-            $extractedFields = $this->parseFieldExtractions($responseContent, $config);
+
+            // Handle different intents from analysis
+            $extractedFields = [];
+
+            if ($intentAnalysis['intent'] === 'provide_value' && !empty($intentAnalysis['extracted_value'])) {
+                // User provided a value - use it
+                $extractedFields[$state->currentField] = $intentAnalysis['extracted_value'];
+
+                Log::channel('ai-engine')->info('Using value from intent analysis', [
+                    'field' => $state->currentField,
+                    'value' => $intentAnalysis['extracted_value'],
+                    'confidence' => $intentAnalysis['confidence'],
+                ]);
+            } elseif ($intentAnalysis['intent'] === 'question') {
+                // User is asking a question - don't extract, let AI respond
+                Log::channel('ai-engine')->info('User asked a question, no extraction needed');
+            } elseif ($intentAnalysis['intent'] === 'suggest') {
+                // User wants suggestions - generate AI-powered suggestions
+                return $this->handleSuggestionRequest($state, $config, $engine, $model);
+            } elseif ($intentAnalysis['intent'] === 'skip') {
+                // User wants to skip - handle skip logic
+                Log::channel('ai-engine')->info('User wants to skip field', [
+                    'field' => $state->currentField,
+                ]);
+            } elseif ($intentAnalysis['intent'] === 'unclear') {
+                // Message is unclear - let AI ask for clarification
+                Log::channel('ai-engine')->info('User message unclear, AI will ask for clarification');
+            } else {
+                // Fallback: Parse AI response for field extractions
+                Log::channel('ai-engine')->info('Intent analysis returned no value, falling back to marker parsing', [
+                    'intent' => $intentAnalysis['intent'],
+                ]);
+                $extractedFields = $this->parseFieldExtractions($responseContent, $config);
+            }
         }
 
         validateAndSave:
@@ -379,15 +405,32 @@ class DataCollectorService
                 'has_field_collected_marker' => str_contains($responseContent, 'FIELD_COLLECTED:'),
             ]);
 
-            // Direct extraction: assume user's message is the value for current field
-            Log::channel('ai-engine')->warning('Using direct extraction fallback', [
-                'session_id' => $state->sessionId,
-                'current_field' => $state->currentField,
-                'user_message' => substr($message, 0, 100),
-            ]);
+            // CRITICAL: Before direct extraction, check if user wants to modify/change something
+            // This prevents "I want to change the name" from being saved as the field value
+            $isModificationIntent = $this->isRejectionIntent($message, $state, $config);
+            
+            if ($isModificationIntent) {
+                Log::channel('ai-engine')->info('Modification intent detected during collection - skipping direct extraction', [
+                    'session_id' => $state->sessionId,
+                    'current_field' => $state->currentField,
+                    'user_message' => substr($message, 0, 100),
+                ]);
+                
+                // Let the AI handle this as a clarification/modification request
+                // Don't extract anything - the AI response should guide the user
+                $extractedFields = [];
+                $usedDirectExtraction = false;
+            } else {
+                // Direct extraction: assume user's message is the value for current field
+                Log::channel('ai-engine')->warning('Using direct extraction fallback', [
+                    'session_id' => $state->sessionId,
+                    'current_field' => $state->currentField,
+                    'user_message' => substr($message, 0, 100),
+                ]);
 
-            $extractedFields = $this->extractFromUserMessage($message, $state->currentField, $config);
-            $usedDirectExtraction = !empty($extractedFields);
+                $extractedFields = $this->extractFromUserMessage($message, $state->currentField, $config);
+                $usedDirectExtraction = !empty($extractedFields);
+            }
 
             if ($usedDirectExtraction) {
                 Log::channel('ai-engine')->info('Direct extraction succeeded', [
@@ -2148,6 +2191,7 @@ class DataCollectorService
 
         // Clean the message
         $value = trim($message);
+        $lowerValue = strtolower($value);
 
         // For select fields, try to match against options
         if ($field->type === 'select' && !empty($field->options)) {
@@ -3052,19 +3096,28 @@ PROMPT;
     protected function isRejectionIntent(string $message, DataCollectorState $state, DataCollectorConfig $config): bool
     {
         // Use AI to detect rejection/modification intent in any language
-        $intentPrompt = "Analyze the user's message and determine if they want to reject, modify, or change the collected data.\n\n";
+        $intentPrompt = "Analyze if the user's message expresses intent to change, modify, edit, update, reject, or correct something.\n\n";
         $intentPrompt .= "User message: \"{$message}\"\n\n";
-        $intentPrompt .= "Respond with ONLY 'YES' if they want to make changes/reject/modify, or 'NO' if they accept/confirm.";
+        $intentPrompt .= "Answer YES if they want to make any changes or modifications.\n";
+        $intentPrompt .= "Answer NO if they are accepting, confirming, or providing new information.\n\n";
+        $intentPrompt .= "Respond with ONLY 'YES' or 'NO'.";
         
         try {
             $response = $this->aiEngine
                 ->engine(EngineEnum::OPENAI)
                 ->model(EntityEnum::GPT_4O_MINI)
-                ->withSystemPrompt("You are an intent classifier. Respond with only YES or NO.")
+                ->withSystemPrompt("You are an intent classifier. Analyze user intent and respond with only YES or NO.")
                 ->withMaxTokens(10)
                 ->generate($intentPrompt);
             
             $intent = strtoupper(trim($response->getContent()));
+            
+            Log::channel('ai-engine')->debug('Rejection intent detection', [
+                'message' => $message,
+                'ai_response' => $intent,
+                'detected' => str_contains($intent, 'YES'),
+            ]);
+            
             return str_contains($intent, 'YES');
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('Failed to detect rejection intent, defaulting to false', [

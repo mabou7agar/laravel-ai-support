@@ -30,6 +30,7 @@ class DataCollectorState
         public ?array $embeddedConfig = null,  // Embedded config for persistence
         public array $metadata = [],  // Additional metadata (e.g., output modifications)
         public ?string $confirmedActionSummary = null,  // The action summary that was confirmed by user
+        public ?string $detectedLocale = null,  // Auto-detected locale from user messages
     ) {
         $this->startedAt = $this->startedAt ?? new \DateTimeImmutable();
     }
