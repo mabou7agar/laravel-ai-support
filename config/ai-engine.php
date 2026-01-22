@@ -550,7 +550,10 @@ return [
         //   - Credit history tracking
         //
         // Example:
-        //   'lifecycle_handler' => \App\Services\AI\ExpiringCreditHandler::class,
+        //   'lifecycle_handler' => \LaravelAIEngine\Handlers\ExpiringCreditHandler::class,
+        //
+        // The package includes ExpiringCreditHandler for credit expiration support.
+        // To use it, publish migrations: php artisan vendor:publish --tag=ai-engine-migrations
         //
         // Set to null to use default credit management
         'lifecycle_handler' => env('AI_LIFECYCLE_HANDLER', null),
