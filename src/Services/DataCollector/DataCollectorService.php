@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Service for managing data collection chat sessions
- * 
+ *
  * This service orchestrates the conversation flow for collecting structured data
  * from users through natural language interaction.
  */
@@ -48,7 +48,7 @@ class DataCollectorService
         if (isset($this->registeredConfigs[$name])) {
             return $this->registeredConfigs[$name];
         }
-        
+
         // Then check cache (for configs created via API)
         $cached = $this->loadConfig($name);
         if ($cached) {
@@ -56,10 +56,10 @@ class DataCollectorService
             $this->registeredConfigs[$name] = $cached;
             return $cached;
         }
-        
+
         return null;
     }
-    
+
     /**
      * Get config for a session - checks registry, cache, then embedded state
      */
@@ -70,20 +70,20 @@ class DataCollectorService
         if ($config) {
             return $config;
         }
-        
+
         // 2. Load from embedded config in state
         if ($state->embeddedConfig) {
             $config = DataCollectorConfig::fromArray($state->embeddedConfig);
             // Register for future use in this request
             $this->registerConfig($config);
-            
+
             Log::channel('ai-engine')->debug('Config loaded from embedded state', [
                 'session_id' => $sessionId,
                 'config_name' => $config->name,
             ]);
             return $config;
         }
-        
+
         return null;
     }
 
@@ -97,7 +97,7 @@ class DataCollectorService
     ): DataCollectorState {
         // Merge config's initial data with provided initial data (provided takes precedence)
         $mergedInitialData = array_merge($config->initialData, $initialData);
-        
+
         // Determine the first uncollected field (skip fields with initial data)
         $firstUncollectedField = null;
         foreach ($config->getFields() as $fieldName => $field) {
@@ -106,7 +106,7 @@ class DataCollectorService
                 break;
             }
         }
-        
+
         $state = new DataCollectorState(
             sessionId: $sessionId,
             configName: $config->name,
@@ -120,7 +120,7 @@ class DataCollectorService
         if (!isset($this->registeredConfigs[$config->name])) {
             $this->registerConfig($config);
         }
-        
+
         // Save config to cache for persistence across requests
         $this->saveConfig($config);
 
@@ -137,7 +137,7 @@ class DataCollectorService
 
     /**
      * Process a user message in the data collection flow
-     * 
+     *
      * @param string $sessionId Session identifier
      * @param string $message User's message
      * @param string $engine AI engine to use
@@ -150,7 +150,7 @@ class DataCollectorService
         string $model = 'gpt-4o'
     ): DataCollectorResponse {
         $state = $this->getState($sessionId);
-        
+
         if (!$state) {
             return new DataCollectorResponse(
                 success: false,
@@ -161,7 +161,7 @@ class DataCollectorService
 
         // Get config - tries registry, cache, then embedded state
         $config = $this->getConfigForSession($sessionId, $state);
-        
+
         if (!$config) {
             return new DataCollectorResponse(
                 success: false,
@@ -186,7 +186,7 @@ class DataCollectorService
                 ]);
             }
         }
-        
+
         // Add user message to history
         $state->addMessage('user', $message);
 
@@ -222,13 +222,13 @@ class DataCollectorService
     ): DataCollectorResponse {
         // Build the prompt for the AI
         $systemPrompt = $config->getSystemPrompt();
-        
+
         // Add current state context
         $contextPrompt = $this->buildContextPrompt($state, $config);
-        
+
         // Add locale instruction to ensure consistent language
         $locale = $state->detectedLocale ?? $config->locale ?? null;
-        
+
         if ($config->locale) {
             // If locale is explicitly configured, enforce it strictly
             $languageNames = [
@@ -248,7 +248,7 @@ class DataCollectorService
                 'it' => 'Italian',
                 'pt' => 'Portuguese',
             ];
-            
+
             $languageName = $languageNames[$config->locale] ?? $config->locale;
             $contextPrompt .= "\n\n⚠️ LANGUAGE REQUIREMENT: You MUST respond ENTIRELY in {$languageName}. Do NOT mix languages in your response. All text, questions, acknowledgments, examples, and field descriptions must be in {$languageName} only.\n";
         } elseif ($locale && $locale !== 'en') {
@@ -258,7 +258,7 @@ class DataCollectorService
             // Auto-detect mode - respond in whatever language the user uses
             $contextPrompt .= "\n\n⚠️ LANGUAGE REQUIREMENT: Respond in the SAME language as the user's message. If the user switches languages, switch with them. Do NOT mix multiple languages in a single response.\n";
         }
-        
+
         // Generate AI response (using context summary instead of full history)
         $aiResponse = $this->generateAIResponse(
             $systemPrompt,
@@ -269,7 +269,7 @@ class DataCollectorService
         );
 
         $responseContent = $aiResponse->getContent();
-        
+
         // Check if user is selecting a suggestion by number
         $selectedSuggestion = $this->checkSuggestionSelection($message, $state);
         $usedSuggestionSelection = false;
@@ -277,20 +277,20 @@ class DataCollectorService
             // User selected a suggestion - treat it as providing a value
             $extractedFields = [$state->currentField => $selectedSuggestion];
             $usedSuggestionSelection = true;
-            
+
             Log::channel('ai-engine')->info('User selected suggestion by number', [
                 'field' => $state->currentField,
                 'selected_value' => substr($selectedSuggestion, 0, 100),
             ]);
-            
+
             // Clear suggestions after selection
             unset($state->lastSuggestions);
-            
+
             // Skip intent analysis and AI response generation, go straight to validation
             $responseContent = ''; // No AI response needed
             goto validateAndSave;
         }
-        
+
         // Use intent analysis to intelligently extract field value
         $intentAnalysis = $this->analyzeFieldIntent(
             $message,
@@ -298,7 +298,7 @@ class DataCollectorService
             $config,
             $state->getData()
         );
-        
+
         Log::channel('ai-engine')->info('Field intent analysis completed', [
             'session_id' => $state->sessionId,
             'intent' => $intentAnalysis['intent'],
@@ -306,14 +306,14 @@ class DataCollectorService
             'extracted_value' => $intentAnalysis['extracted_value'] ?? null,
             'current_field' => $state->currentField,
         ]);
-        
+
         // Handle different intents from analysis
         $extractedFields = [];
-        
+
         if ($intentAnalysis['intent'] === 'provide_value' && !empty($intentAnalysis['extracted_value'])) {
             // User provided a value - use it
             $extractedFields[$state->currentField] = $intentAnalysis['extracted_value'];
-            
+
             Log::channel('ai-engine')->info('Using value from intent analysis', [
                 'field' => $state->currentField,
                 'value' => $intentAnalysis['extracted_value'],
@@ -340,9 +340,9 @@ class DataCollectorService
             ]);
             $extractedFields = $this->parseFieldExtractions($responseContent, $config);
         }
-        
+
         validateAndSave:
-        
+
         Log::channel('ai-engine')->info('Field extraction results', [
             'session_id' => $state->sessionId,
             'extracted_count' => count($extractedFields),
@@ -350,13 +350,13 @@ class DataCollectorService
             'current_field' => $state->currentField,
             'used_intent_analysis' => !empty($intentAnalysis['extracted_value'] ?? null),
         ]);
-        
+
         // CRITICAL: Only accept extraction for the current field to prevent hallucination
         if ($state->currentField) {
             $beforeFilter = count($extractedFields);
             $extractedFields = $this->filterToCurrentField($extractedFields, $state->currentField, $state->getData());
             $afterFilter = count($extractedFields);
-            
+
             if ($beforeFilter !== $afterFilter) {
                 Log::channel('ai-engine')->warning('Fields filtered out', [
                     'before' => $beforeFilter,
@@ -365,10 +365,10 @@ class DataCollectorService
                 ]);
             }
         }
-        
+
         // Track if we used direct extraction
         $usedDirectExtraction = false;
-        
+
         // If no fields extracted and we have a current field, try to extract from user message directly
         if (empty($extractedFields) && $state->currentField) {
             Log::channel('ai-engine')->warning('No fields extracted from AI response, trying direct extraction', [
@@ -378,17 +378,17 @@ class DataCollectorService
                 'response_preview' => substr($responseContent, 0, 200),
                 'has_field_collected_marker' => str_contains($responseContent, 'FIELD_COLLECTED:'),
             ]);
-            
+
             // Direct extraction: assume user's message is the value for current field
             Log::channel('ai-engine')->warning('Using direct extraction fallback', [
                 'session_id' => $state->sessionId,
                 'current_field' => $state->currentField,
                 'user_message' => substr($message, 0, 100),
             ]);
-            
+
             $extractedFields = $this->extractFromUserMessage($message, $state->currentField, $config);
             $usedDirectExtraction = !empty($extractedFields);
-            
+
             if ($usedDirectExtraction) {
                 Log::channel('ai-engine')->info('Direct extraction succeeded', [
                     'field' => $state->currentField,
@@ -401,10 +401,10 @@ class DataCollectorService
                 ]);
             }
         }
-        
+
         $validationFailed = false;
         $validationErrorMessage = '';
-        
+
         foreach ($extractedFields as $fieldName => $value) {
             $field = $config->getField($fieldName);
             if ($field) {
@@ -422,13 +422,13 @@ class DataCollectorService
                 } else {
                     $validationFailed = true;
                     $state->setValidationErrors([$fieldName => $errors]);
-                    
+
                     // Generate validation error message using AI in user's language
                     $fieldInfo = $field->getFieldInfo();
                     $errorsJson = json_encode($errors, JSON_UNESCAPED_UNICODE);
                     $fieldDescription = $fieldInfo['description'] ?? $fieldName;
                     $fieldExamples = $fieldInfo['examples'] ?? [];
-                    
+
                     $errorPrompt = "The user provided a value that failed validation.\n\n";
                     $errorPrompt .= "Field: {$fieldDescription}\n";
                     $errorPrompt .= "Validation errors: {$errorsJson}\n\n";
@@ -437,7 +437,7 @@ class DataCollectorService
                     $errorPrompt .= "2. Asks them to provide a valid value\n";
                     $errorPrompt .= "3. Mentions examples if available: " . json_encode($fieldExamples, JSON_UNESCAPED_UNICODE) . "\n\n";
                     $errorPrompt .= "Be polite and helpful. Respond in the user's language.";
-                    
+
                     try {
                         $errorResponse = $this->generateAIResponse(
                             $config->getSystemPrompt(),
@@ -446,7 +446,7 @@ class DataCollectorService
                             $engine,
                             $model
                         );
-                        
+
                         $validationErrorMessage = trim($errorResponse->getContent());
                     } catch (\Exception $e) {
                         // Fallback: return empty message, let system handle it
@@ -455,7 +455,7 @@ class DataCollectorService
                             'error' => $e->getMessage(),
                         ]);
                     }
-                    
+
                     Log::channel('ai-engine')->error('Field validation failed - VALUE REJECTED', [
                         'field' => $fieldName,
                         'value' => substr($value, 0, 100),
@@ -486,7 +486,7 @@ class DataCollectorService
         if ($validationFailed && !empty($validationErrorMessage)) {
             $state->setLastAIResponse($validationErrorMessage);
             $state->addMessage('assistant', $validationErrorMessage);
-            
+
             // Don't count the failed field as collected for progress calculation
             return new DataCollectorResponse(
                 success: false,
@@ -499,10 +499,10 @@ class DataCollectorService
                 validationErrors: $state->validationErrors,
             );
         }
-        
+
         // Clean the response first (remove field extraction markers)
         $cleanResponse = $this->cleanAIResponse($responseContent);
-        
+
         // CRITICAL FIX: Always validate and correct the AI's acknowledgment
         // If we extracted a field (either via intent analysis or direct extraction),
         // ensure the response mentions the CORRECT field name
@@ -510,19 +510,19 @@ class DataCollectorService
             $fieldName = array_key_first($extractedFields);
             $fieldValue = $extractedFields[$fieldName];
             $field = $config->getField($fieldName);
-            
+
             // Check if AI mentioned wrong field names in its response (case-insensitive, generic)
             $mentionedWrongField = false;
             $lowerResponse = strtolower($cleanResponse);
-            
+
             foreach ($config->getFields() as $otherFieldName => $otherField) {
                 if ($otherFieldName !== $fieldName) {
                     // Check if AI incorrectly mentioned another field (case-insensitive)
                     $descriptionLower = strtolower($otherField->description);
                     $fieldNameLower = strtolower($otherFieldName);
-                    
+
                     // Check for field description or name in response
-                    if (str_contains($lowerResponse, $descriptionLower) || 
+                    if (str_contains($lowerResponse, $descriptionLower) ||
                         str_contains($lowerResponse, $fieldNameLower)) {
                         $mentionedWrongField = true;
                         Log::channel('ai-engine')->warning('AI mentioned wrong field in response', [
@@ -535,7 +535,7 @@ class DataCollectorService
                     }
                 }
             }
-            
+
             // If AI mentioned wrong field OR we used direct extraction, generate correct acknowledgment via AI
             // Skip this if we used suggestion selection (we'll generate continuation response later)
             if (!$usedSuggestionSelection && ($mentionedWrongField || $usedDirectExtraction)) {
@@ -554,14 +554,14 @@ class DataCollectorService
                     // Fallback to field description only
                     $cleanResponse = $field->description . ": " . substr($fieldValue, 0, 100);
                 }
-                
+
                 Log::channel('ai-engine')->info('Overrode AI response with correct field acknowledgment', [
                     'field' => $fieldName,
                     'reason' => $mentionedWrongField ? 'wrong_field_mentioned' : 'direct_extraction',
                 ]);
             }
         }
-        
+
         // Update state (skip if we used suggestion selection - we'll update in continuation)
         if (!$usedSuggestionSelection) {
             $state->setLastAIResponse($cleanResponse);
@@ -573,17 +573,17 @@ class DataCollectorService
             if ($config->confirmBeforeComplete) {
                 $state->setStatus(DataCollectorState::STATUS_CONFIRMING);
                 $state->setCurrentField(null); // Clear current field to prevent showing field options
-                
+
                 // Generate data summary - use AI if summaryPrompt is configured
                 $summary = $config->summaryPrompt
                     ? $this->generateAISummary($config, $state->getData(), $engine, $model)
                     : $config->generateSummary($state->getData());
-                
+
                 // Generate action summary - use AI if actionSummaryPrompt is configured
                 $actionSummary = $config->actionSummaryPrompt
                     ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model, '', $state)
                     : $config->generateActionSummary($state->getData());
-                
+
                 // Generate full confirmation message via AI in user's language
                 $confirmPrompt = "Present the data summary and action summary, then ask the user to confirm or make changes.\n\nData Summary:\n{$summary}\n\nWhat will happen:\n{$actionSummary}";
                 try {
@@ -598,7 +598,7 @@ class DataCollectorService
                 } catch (\Exception $e) {
                     $fullMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . $actionSummary . "\n\nPlease confirm to proceed.";
                 }
-                
+
                 return new DataCollectorResponse(
                     success: true,
                     message: $fullMessage,
@@ -617,18 +617,18 @@ class DataCollectorService
         $nextField = $this->getNextFieldToCollect($state, $config);
         if ($nextField) {
             $state->setCurrentField($nextField->name);
-            
+
             // Generate a new AI response that acknowledges the field AND asks for the next one
             // This ensures everything is in the user's language naturally
             $fieldInfo = $nextField->getFieldInfo();
             $fieldInfoJson = json_encode($fieldInfo, JSON_UNESCAPED_UNICODE);
-            
+
             $continuationPrompt = "The user just provided a value. Now:\n";
             $continuationPrompt .= "1. Briefly acknowledge what they provided\n";
             $continuationPrompt .= "2. Ask for the next field using this information:\n" . $fieldInfoJson . "\n";
             $continuationPrompt .= "3. Naturally mention examples or requirements if provided\n\n";
             $continuationPrompt .= "Be conversational and natural in the user's language.";
-            
+
             try {
                 $continuationResponse = $this->generateAIResponse(
                     $config->getSystemPrompt(),
@@ -637,11 +637,11 @@ class DataCollectorService
                     $engine,
                     $model
                 );
-                
+
                 $cleanResponse = $this->cleanAIResponse($continuationResponse->getContent());
                 $state->setLastAIResponse($cleanResponse);
                 $state->addMessage('assistant', $cleanResponse);
-                
+
                 return new DataCollectorResponse(
                     success: true,
                     message: $cleanResponse,
@@ -707,26 +707,23 @@ class DataCollectorService
             return $this->handleCompletion($state, $config, $engine, $model);
         }
 
-        // Check for rejection/modification request (English and Arabic)
-        $rejectWords = ['no', 'n', 'change', 'modify', 'edit', 'wrong', 'incorrect', 'لا', 'تغيير', 'تعديل', 'خطأ', 'غلط'];
-        if (in_array($lowerMessage, $rejectWords)) {
+        // Use AI to detect if user wants to reject/modify the data
+        $isRejection = $this->isRejectionIntent($message, $state, $config);
+        
+        if ($isRejection) {
             if ($config->allowEnhancement) {
                 $state->setStatus(DataCollectorState::STATUS_ENHANCING);
-                
+
                 // Generate enhancement prompt via AI in user's language
                 $enhancementPrompt = "The user wants to make changes. Ask them what they'd like to modify.";
-                try {
-                    $enhancementResponse = $this->generateAIResponse(
-                        $config->getSystemPrompt(),
-                        $this->buildContextPrompt($state, $config) . "\n\n" . $enhancementPrompt,
-                        [],
-                        $engine,
-                        $model
-                    );
-                    $enhancementMessage = trim($enhancementResponse->getContent());
-                } catch (\Exception $e) {
-                    $enhancementMessage = "What would you like to change?";
-                }
+                $enhancementResponse = $this->generateAIResponse(
+                    $config->getSystemPrompt(),
+                    $this->buildContextPrompt($state, $config) . "\n\n" . $enhancementPrompt,
+                    [],
+                    $engine,
+                    $model
+                );
+                $enhancementMessage = trim($enhancementResponse->getContent());
                 
                 return new DataCollectorResponse(
                     success: true,
@@ -739,23 +736,18 @@ class DataCollectorService
                 $state->setStatus(DataCollectorState::STATUS_COLLECTING);
                 $state->collectedData = [];
                 $state->setCurrentField($config->getFirstField()?->name);
-                
+
                 // Generate restart message via AI
-                $firstFieldPrompt = $config->getFirstField()?->getCollectionPrompt();
                 $restartPrompt = "The user wants to start over. Acknowledge this and ask for the first field.";
-                try {
-                    $restartResponse = $this->generateAIResponse(
-                        $config->getSystemPrompt(),
-                        $this->buildContextPrompt($state, $config) . "\n\n" . $restartPrompt,
-                        [],
-                        $engine,
-                        $model
-                    );
-                    $restartMessage = trim($restartResponse->getContent());
-                } catch (\Exception $e) {
-                    $restartMessage = "Let's start over. " . $firstFieldPrompt;
-                }
-                
+                $restartResponse = $this->generateAIResponse(
+                    $config->getSystemPrompt(),
+                    $this->buildContextPrompt($state, $config) . "\n\n" . $restartPrompt,
+                    [],
+                    $engine,
+                    $model
+                );
+                $restartMessage = trim($restartResponse->getContent());
+
                 return new DataCollectorResponse(
                     success: true,
                     message: $restartMessage,
@@ -785,7 +777,7 @@ class DataCollectorService
             // Fallback to empty - system will handle
             $clarificationMessage = '';
         }
-        
+
         return new DataCollectorResponse(
             success: true,
             message: $clarificationMessage,
@@ -806,12 +798,12 @@ class DataCollectorService
     ): DataCollectorResponse {
         // Check if user wants to modify the generated output (lessons, etc.)
         $isOutputModification = $this->isOutputModificationRequest($message, $config);
-        
+
         if ($isOutputModification && $config->actionSummaryPrompt) {
             // User wants to modify the generated output (e.g., lessons)
             return $this->handleOutputModification($state, $config, $message, $engine, $model);
         }
-        
+
         // Build enhancement prompt for input fields (generic, no hardcoded language)
         $systemPrompt = $config->getSystemPrompt() . "\n\n";
         $systemPrompt .= "Current data:\n" . $config->generateSummary($state->getData()) . "\n\n";
@@ -831,10 +823,10 @@ class DataCollectorService
         );
 
         $responseContent = $aiResponse->getContent();
-        
+
         // Parse field extractions (enhancement phase allows any field)
         $extractedFields = $this->parseFieldExtractions($responseContent, $config);
-        
+
         // If no fields extracted, try direct extraction from user message
         if (empty($extractedFields)) {
             // Try to detect which field user wants to modify
@@ -842,7 +834,7 @@ class DataCollectorService
             foreach ($config->getFields() as $fieldName => $field) {
                 $fieldNameLower = strtolower($fieldName);
                 $descriptionLower = strtolower($field->description);
-                
+
                 // Check if user mentioned this field
                 if (str_contains($lowerMessage, $fieldNameLower) || str_contains($lowerMessage, $descriptionLower)) {
                     // Extract value from message (remove field name mentions)
@@ -858,10 +850,10 @@ class DataCollectorService
                 }
             }
         }
-        
+
         $fieldUpdated = false;
         $updatedFieldName = null;
-        
+
         // During enhancement, validate but don't skip already collected fields
         // User is explicitly modifying them
         foreach ($extractedFields as $fieldName => $value) {
@@ -888,7 +880,7 @@ class DataCollectorService
         if ($fieldUpdated && $updatedFieldName) {
             $field = $config->getField($updatedFieldName);
             $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-            
+
             // Generate AI acknowledgment in user's language
             $ackPrompt = "The user just updated the {$field->description}. Generate a brief acknowledgment and ask if they want to make any other changes or if they're done.";
             try {
@@ -901,25 +893,27 @@ class DataCollectorService
                 );
                 $cleanResponse = trim($ackResponse->getContent());
             } catch (\Exception $e) {
-                // Fallback
-                $cleanResponse = "Updated {$field->description}. Any other changes?";
+                Log::channel('ai-engine')->error('Failed to generate acknowledgment', [
+                    'error' => $e->getMessage(),
+                ]);
+                throw $e;
             }
         } else {
             // Clean response
             $cleanResponse = $this->cleanAIResponse($responseContent);
         }
-        
+
         // Check if user is done enhancing using AI intent detection
         $isDone = $this->isCompletionIntent($message);
-        
+
         if ($isDone) {
             $state->setStatus(DataCollectorState::STATUS_CONFIRMING);
-            
+
             // Generate data summary - use AI if summaryPrompt is configured
             $summary = $config->summaryPrompt
                 ? $this->generateAISummary($config, $state->getData(), $engine, $model)
                 : $config->generateSummary($state->getData());
-            
+
             // Generate action summary - use AI if actionSummaryPrompt is configured
             // Include any output modifications that were stored
             $modificationContext = '';
@@ -929,11 +923,11 @@ class DataCollectorService
                     $modificationContext .= "- {$mod}\n";
                 }
             }
-            
+
             $actionSummary = $config->actionSummaryPrompt
                 ? $this->generateAIActionSummary($config, $state->getData(), $engine, $model, $modificationContext, $state)
                 : $config->generateActionSummary($state->getData());
-            
+
             // Generate confirmation message via AI in user's language
             $confirmPrompt = "Present the collected data summary and action summary, then ask the user to confirm or make changes.\n\nData Summary:\n{$summary}\n\nWhat will happen:\n{$actionSummary}";
             try {
@@ -948,7 +942,7 @@ class DataCollectorService
             } catch (\Exception $e) {
                 $fullMessage = $summary . "\n\n" . $actionSummary . "\n\nPlease confirm to proceed.";
             }
-            
+
             return new DataCollectorResponse(
                 success: true,
                 message: $fullMessage,
@@ -964,7 +958,7 @@ class DataCollectorService
 
         // Generate updated summary
         $summary = $config->generateSummary($state->getData());
-        
+
         // For enhancement mode, use static summary to avoid repeated AI calls
         $actionSummary = $config->generateActionSummary($state->getData());
 
@@ -988,16 +982,16 @@ class DataCollectorService
     protected function isOutputModificationRequest(string $message, DataCollectorConfig $config): bool
     {
         $lowerMessage = strtolower($message);
-        
+
         // Keywords that suggest output modification
         $outputKeywords = ['lesson', 'lessons', 'structure', 'curriculum', 'content', 'outline', 'syllabus'];
-        
+
         foreach ($outputKeywords as $keyword) {
             if (str_contains($lowerMessage, $keyword)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -1015,13 +1009,13 @@ class DataCollectorService
         $modifications = $state->metadata['output_modifications'] ?? [];
         $modifications[] = $message;
         $state->setMetadata(array_merge($state->metadata, ['output_modifications' => $modifications]));
-        
+
         // Build prompt to regenerate action summary with modifications
         $modificationContext = "\n\nUSER REQUESTED MODIFICATIONS:\n";
         foreach ($modifications as $mod) {
             $modificationContext .= "- {$mod}\n";
         }
-        
+
         // Regenerate action summary with modifications
         $actionSummary = $this->generateAIActionSummary(
             $config,
@@ -1031,7 +1025,7 @@ class DataCollectorService
             $modificationContext,
             $state
         );
-        
+
         // Generate response via AI in user's language
         $modificationPrompt = "Present the updated action summary and ask if they want more changes or to proceed.\n\nUpdated structure:\n{$actionSummary}";
         try {
@@ -1044,15 +1038,18 @@ class DataCollectorService
             );
             $response = trim($modResponse->getContent());
         } catch (\Exception $e) {
-            $response = $actionSummary . "\n\nWould you like any other changes?";
+            Log::channel('ai-engine')->error('Failed to generate modification response', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
         }
-        
+
         return new DataCollectorResponse(
-            success: true,
-            message: $response,
-            state: $state,
-            actionSummary: $actionSummary,
+            success:              true,
+            message:              $response,
+            state:                $state,
             requiresConfirmation: false,
+            actionSummary:        $actionSummary,
         );
     }
 
@@ -1071,25 +1068,25 @@ class DataCollectorService
             'collected_data' => $state->getData(),
             'status' => $state->status,
         ]);
-        
+
         // Final validation
         $errors = $config->validateAll($state->getData());
-        
+
         if (!empty($errors)) {
             Log::channel('ai-engine')->warning('Data collection validation failed', [
                 'session_id' => $state->sessionId,
                 'errors' => $errors,
                 'data' => $state->getData(),
             ]);
-            
+
             $state->setValidationErrors($errors);
             $state->setStatus(DataCollectorState::STATUS_COLLECTING);
-            
+
             $errorMessage = "There are some validation errors:\n";
             foreach ($errors as $field => $fieldErrors) {
                 $errorMessage .= "- {$field}: " . implode(', ', $fieldErrors) . "\n";
             }
-            
+
             return new DataCollectorResponse(
                 success: false,
                 message: $errorMessage . "\nPlease provide the correct values.",
@@ -1107,18 +1104,18 @@ class DataCollectorService
         // Execute completion callback
         $result = null;
         $error = null;
-        
+
         try {
             // Pass generated output to the callback if available
             $callbackData = $state->getData();
             if ($generatedOutput) {
                 $callbackData['_generated_output'] = $generatedOutput;
             }
-            
+
             $result = $config->executeOnComplete($callbackData);
             $state->setResult($result);
             $state->setStatus(DataCollectorState::STATUS_COMPLETED);
-            
+
             Log::channel('ai-engine')->info('Data collection completed successfully', [
                 'session_id' => $state->sessionId,
                 'config' => $config->name,
@@ -1135,7 +1132,7 @@ class DataCollectorService
         }
 
         $successMessage = $config->successMessage ?? "Thank you! Your information has been successfully collected and processed.";
-        
+
         if ($error) {
             return new DataCollectorResponse(
                 success: false,
@@ -1166,7 +1163,7 @@ class DataCollectorService
         string $model
     ): DataCollectorResponse {
         $field = $config->getField($state->currentField);
-        
+
         if (!$field) {
             return new DataCollectorResponse(
                 success: false,
@@ -1174,31 +1171,31 @@ class DataCollectorService
                 state: $state,
             );
         }
-        
+
         Log::channel('ai-engine')->info('Generating suggestions for field', [
             'session_id' => $state->sessionId,
             'field' => $state->currentField,
             'field_description' => $field->description,
         ]);
-        
+
         // Build context for suggestion generation
         $contextData = $state->getData();
         $contextPrompt = "Generate helpful suggestions for the following field:\n\n";
         $contextPrompt .= "**Field**: {$state->currentField}\n";
         $contextPrompt .= "**Description**: {$field->description}\n";
-        
+
         if ($field->type === 'select' && !empty($field->options)) {
             $contextPrompt .= "**Valid Options**: " . implode(', ', $field->options) . "\n";
         }
-        
+
         if (!empty($field->examples)) {
             $contextPrompt .= "**Examples**: " . implode(', ', $field->examples) . "\n";
         }
-        
+
         if ($field->validation) {
             $contextPrompt .= "**Requirements**: {$field->validation}\n";
         }
-        
+
         // Add context from already collected fields
         if (!empty($contextData)) {
             $contextPrompt .= "\n**Context from collected information**:\n";
@@ -1208,13 +1205,13 @@ class DataCollectorService
                 }
             }
         }
-        
+
         $contextPrompt .= "\n**Task**: Generate 3-5 creative, relevant suggestions for the '{$field->description}' field.";
         $contextPrompt .= "\nConsider the context provided and make suggestions that are specific, helpful, and appropriate.";
         $contextPrompt .= "\nFormat each suggestion on a new line with a number (1., 2., 3., etc.).";
-        
+
         // Locale context is already in buildContextPrompt - no need for explicit instruction
-        
+
         try {
             $aiResponse = $this->aiEngine
                 ->engine($engine)
@@ -1222,26 +1219,26 @@ class DataCollectorService
                 ->withSystemPrompt("You are a helpful assistant providing creative suggestions for data collection.")
                 ->withMaxTokens(500)
                 ->generate($contextPrompt);
-            
+
             $suggestions = $aiResponse->getContent();
-            
+
             // Store suggestions in state for later selection
             $state->lastSuggestions = [
                 'field' => $state->currentField,
                 'suggestions' => $suggestions,
             ];
-            
+
             // Simple format - AI already generated in user's language
             $responseMessage = $suggestions;
-            
+
             $state->setLastAIResponse($responseMessage);
             $state->addMessage('assistant', $responseMessage);
-            
+
             Log::channel('ai-engine')->info('Suggestions generated successfully', [
                 'session_id' => $state->sessionId,
                 'field' => $state->currentField,
             ]);
-            
+
             return new DataCollectorResponse(
                 success: true,
                 message: $responseMessage,
@@ -1249,19 +1246,19 @@ class DataCollectorService
                 aiResponse: $aiResponse,
                 currentField: $state->currentField,
             );
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Failed to generate suggestions', [
                 'session_id' => $state->sessionId,
                 'field' => $state->currentField,
                 'error' => $e->getMessage(),
             ]);
-            
+
             // Fallback to examples if available
             if (!empty($field->examples)) {
                 $examplesList = implode("\n", array_map(fn($ex, $i) => ($i+1) . ". {$ex}", $field->examples, array_keys($field->examples)));
                 $fallbackMessage = "Examples for {$field->description}:\n\n{$examplesList}";
-                
+
                 return new DataCollectorResponse(
                     success: true,
                     message: $fallbackMessage,
@@ -1269,9 +1266,9 @@ class DataCollectorService
                     currentField: $state->currentField,
                 );
             }
-            
+
             $errorMessage = "Sorry, I couldn't generate suggestions. Please provide {$field->description}.";
-            
+
             return new DataCollectorResponse(
                 success: false,
                 message: $errorMessage,
@@ -1308,7 +1305,7 @@ class DataCollectorService
 
     /**
      * Generate AI-based action summary using a prompt
-     * 
+     *
      * This allows dynamic generation of action summaries like lesson plans,
      * product descriptions, etc. based on collected data.
      */
@@ -1352,7 +1349,7 @@ class DataCollectorService
 
             // Add language context - AI will detect from conversation
             $locale = $state ? ($state->detectedLocale ?? $config->locale) : $config->locale;
-            
+
             // Build strong language enforcement
             $languageNames = [
                 'ar' => 'Arabic',
@@ -1371,7 +1368,7 @@ class DataCollectorService
                 'it' => 'Italian',
                 'pt' => 'Portuguese',
             ];
-            
+
             $languageContext = '';
             if ($locale && $locale !== 'en') {
                 $languageName = $languageNames[$locale] ?? $locale;
@@ -1387,7 +1384,7 @@ class DataCollectorService
             $systemPrompt = "You are a helpful assistant generating a preview/summary of what will be created based on user input. "
                 . "Format your response in a clear, readable way using markdown. "
                 . "Be specific and detailed in your preview.";
-            
+
             if ($locale && $locale !== 'en') {
                 $languageName = $languageNames[$locale] ?? $locale;
                 $systemPrompt .= " ⚠️ CRITICAL: You MUST respond ENTIRELY in {$languageName}. Do NOT use English or mix languages.";
@@ -1479,7 +1476,7 @@ class DataCollectorService
                 'it' => 'Italian',
                 'pt' => 'Portuguese',
             ];
-            
+
             $localeInstruction = '';
             if ($locale && $locale !== 'en') {
                 $languageName = $languageNames[$locale] ?? $locale;
@@ -1495,7 +1492,7 @@ class DataCollectorService
             $systemPrompt = "You are a helpful assistant generating a summary of collected data. "
                 . "Format your response in a clear, readable way using markdown. "
                 . "Be concise but comprehensive.";
-            
+
             if ($locale && $locale !== 'en') {
                 $languageName = $languageNames[$locale] ?? $locale;
                 $systemPrompt .= " ⚠️ CRITICAL: You MUST respond ENTIRELY in {$languageName}. Do NOT use English or any other language.";
@@ -1529,7 +1526,7 @@ class DataCollectorService
 
     /**
      * Generate structured output based on schema definition
-     * 
+     *
      * This generates structured data like courses with lessons, products with variants, etc.
      * based on the collected data and the defined output schema.
      */
@@ -1545,7 +1542,7 @@ class DataCollectorService
 
         try {
             $data = $state->getData();
-            
+
             // Get engine/model from config or use defaults
             $outputConfig = $config->outputConfig ?? [];
             $useEngine = $outputConfig['engine'] ?? $engine;
@@ -1567,7 +1564,7 @@ class DataCollectorService
 
             // Use custom prompt if provided, otherwise generate one
             $prompt = $config->outputPrompt ?? "Generate the structured output based on the collected data.";
-            
+
             // Replace placeholders in prompt
             foreach ($data as $key => $value) {
                 if (is_string($value) || is_numeric($value)) {
@@ -1596,7 +1593,7 @@ class DataCollectorService
 
             // Add language context - AI will detect from conversation
             $locale = $state->detectedLocale ?? $config->locale ?? null;
-            
+
             // Build strong language enforcement
             $languageNames = [
                 'ar' => 'Arabic',
@@ -1615,7 +1612,7 @@ class DataCollectorService
                 'it' => 'Italian',
                 'pt' => 'Portuguese',
             ];
-            
+
             $languageContext = '';
             if ($locale && $locale !== 'en') {
                 $languageName = $languageNames[$locale] ?? $locale;
@@ -1625,7 +1622,7 @@ class DataCollectorService
                 $languageContext .= "Do NOT use English or any other language for the content values.\n";
                 $languageContext .= "The user has been communicating in {$languageName} throughout this conversation.\n";
             }
-            
+
             $fullPrompt = $dataContext . "\n---\n\n" . $prompt . $actionSummaryContext . $languageContext;
 
             $systemPrompt = "You are a data generation assistant. Generate structured JSON output based on user input.\n\n";
@@ -1635,7 +1632,7 @@ class DataCollectorService
             $systemPrompt .= "2. Follow the schema structure exactly\n";
             $systemPrompt .= "3. Generate realistic, relevant content based on the input data\n";
             $systemPrompt .= "4. For arrays, generate the number of items specified or a reasonable default\n";
-            
+
             if ($locale && $locale !== 'en') {
                 $languageName = $languageNames[$locale] ?? $locale;
                 $systemPrompt .= "5. ⚠️ CRITICAL: Generate ALL text content (titles, descriptions, names, etc.) ENTIRELY in {$languageName}. Only JSON keys in English.\n";
@@ -1656,7 +1653,7 @@ class DataCollectorService
                 ->generate($fullPrompt);
 
             $content = $response->getContent();
-            
+
             // Clean up response - remove markdown code blocks if present
             $content = preg_replace('/^```json\s*/i', '', $content);
             $content = preg_replace('/^```\s*/i', '', $content);
@@ -1665,7 +1662,7 @@ class DataCollectorService
 
             // Parse JSON
             $output = json_decode($content, true);
-            
+
             if (json_last_error() !== JSON_ERROR_NONE) {
                 Log::channel('ai-engine')->warning('Failed to parse structured output JSON', [
                     'config' => $config->name,
@@ -1701,7 +1698,7 @@ class DataCollectorService
                     $type = $value['type'];
                     $desc = $value['description'] ?? '';
                     $count = $value['count'] ?? null;
-                    
+
                     if ($type === 'array' && isset($value['items'])) {
                         $countStr = $count ? " (generate {$count} items)" : "";
                         $description .= "{$prefix}{$key}: array of objects{$countStr}\n";
@@ -1779,22 +1776,22 @@ class DataCollectorService
     protected function parseFieldExtractions(string $response, DataCollectorConfig $config): array
     {
         $extracted = [];
-        
+
         // Pattern: FIELD_COLLECTED:field_name=value
         preg_match_all('/FIELD_COLLECTED:(\w+)=(.+?)(?=\n|FIELD_COLLECTED:|$)/s', $response, $matches, PREG_SET_ORDER);
-        
+
         Log::channel('ai-engine')->info('Parsing field extractions from AI response', [
             'found_markers' => count($matches),
             'has_marker_text' => str_contains($response, 'FIELD_COLLECTED:'),
             'response_length' => strlen($response),
             'response_preview' => substr($response, 0, 200),
         ]);
-        
+
         foreach ($matches as $match) {
             $fieldName = trim($match[1]);
             $value = trim($match[2]);
             $extracted[$fieldName] = $value;
-            
+
             Log::channel('ai-engine')->info('Extracted field from marker', [
                 'field' => $fieldName,
                 'value' => substr($value, 0, 100),
@@ -1807,15 +1804,15 @@ class DataCollectorService
             Log::channel('ai-engine')->info('Running fallback parser (markers found)', [
                 'already_extracted' => array_keys($extracted),
             ]);
-            
+
             $fallbackExtracted = $this->parseFieldsFromSummary($response, $config);
-            
+
             if (!empty($fallbackExtracted)) {
                 Log::channel('ai-engine')->info('Fallback parser found additional fields', [
                     'fallback_fields' => array_keys($fallbackExtracted),
                 ]);
             }
-            
+
             foreach ($fallbackExtracted as $key => $value) {
                 // Only accept if field exists in config and not already extracted
                 if ($config->getField($key) && (!isset($extracted[$key]) || empty($extracted[$key]))) {
@@ -1842,13 +1839,13 @@ class DataCollectorService
     protected function parseFieldsFromSummary(string $response, DataCollectorConfig $config): array
     {
         $extracted = [];
-        
+
         // Build field mappings dynamically from config to avoid hardcoded assumptions
         $fieldMappings = [];
         foreach ($config->getFields() as $fieldName => $field) {
             $fieldMappings[strtolower($fieldName)] = $fieldName;
             $fieldMappings[strtolower($field->description)] = $fieldName;
-            
+
             // Add common variations only for known fields
             if ($fieldName === 'name') {
                 $fieldMappings['course name'] = 'name';
@@ -1866,36 +1863,36 @@ class DataCollectorService
         // Pattern: **Label**: Value or - **Label:** Value or **Label:** Value
         // Handles both **Label**: and **Label:**
         preg_match_all('/\*\*([^*:]+):?\*\*:?\s*(.+?)(?=\n|$)/i', $response, $matches, PREG_SET_ORDER);
-        
+
         Log::channel('ai-engine')->debug('Fallback parser scanning response', [
             'bold_patterns_found' => count($matches),
             'available_mappings' => array_keys($fieldMappings),
         ]);
-        
+
         foreach ($matches as $match) {
             $label = strtolower(trim($match[1]));
             $value = trim($match[2]);
-            
+
             // Map display name to field key
             $fieldKey = $fieldMappings[$label] ?? str_replace(' ', '_', $label);
-            
+
             Log::channel('ai-engine')->debug('Fallback parser processing bold text', [
                 'label' => $label,
                 'mapped_to' => $fieldKey,
                 'value_preview' => substr($value, 0, 50),
             ]);
-            
+
             // Clean up value (remove trailing punctuation, extra text)
             $value = preg_replace('/\s*\(.*?\)\s*$/', '', $value); // Remove parenthetical notes
             $value = rtrim($value, '.,;:');
-            
+
             // Extract numeric values for duration/lessons
             if (in_array($fieldKey, ['duration', 'lessons_count'])) {
                 if (preg_match('/(\d+)/', $value, $numMatch)) {
                     $value = $numMatch[1];
                 }
             }
-            
+
             if (!empty($value)) {
                 $extracted[$fieldKey] = $value;
                 Log::channel('ai-engine')->info('Fallback parser extracted field', [
@@ -1921,7 +1918,7 @@ class DataCollectorService
                 }
                 $extracted[$fieldKey] = $value;
             }
-            
+
             // Extract numeric values for duration/lessons
             if (in_array($fieldKey, ['duration', 'lessons_count'])) {
                 if (preg_match('/(\d+)/', $value, $numMatch)) {
@@ -1944,7 +1941,7 @@ class DataCollectorService
         array $collectedData
     ): array {
         $field = $config->getField($currentField);
-        
+
         if (!$field) {
             return [
                 'intent' => 'unknown',
@@ -1952,7 +1949,7 @@ class DataCollectorService
                 'extracted_value' => null,
             ];
         }
-        
+
         try {
             $prompt = "Analyze the user's message to extract a value for a specific field.\n\n";
             $prompt .= "User Message: \"{$message}\"\n\n";
@@ -1961,26 +1958,26 @@ class DataCollectorService
             $prompt .= "- Description: {$field->description}\n";
             $prompt .= "- Type: {$field->type}\n";
             $prompt .= "- Required: " . ($field->required ? 'YES' : 'NO') . "\n";
-            
+
             if (!empty($field->options)) {
                 $prompt .= "- Valid Options: " . implode(', ', $field->options) . "\n";
             }
-            
+
             if (!empty($field->examples)) {
                 $prompt .= "- Examples: " . implode(', ', $field->examples) . "\n";
             }
-            
+
             if ($field->validation) {
                 $prompt .= "- Validation: {$field->validation}\n";
             }
-            
+
             $prompt .= "\nALREADY COLLECTED FIELDS (DO NOT extract these):\n";
             foreach ($collectedData as $fieldName => $value) {
                 if (!empty($value)) {
                     $prompt .= "- {$fieldName}: {$value}\n";
                 }
             }
-            
+
             $prompt .= "\nYOUR TASK:\n";
             $prompt .= "Analyze the user's message and determine their intent:\n\n";
             $prompt .= "1. 'provide_value' - User is providing a value for the '{$currentField}' field\n";
@@ -1996,7 +1993,7 @@ class DataCollectorService
             $prompt .= "   → Do NOT extract any value\n";
             $prompt .= "5. 'unclear' - Message is ambiguous or doesn't contain a clear value\n";
             $prompt .= "   → Do NOT extract any value\n\n";
-            
+
             $prompt .= "CRITICAL EXTRACTION RULES:\n";
             $prompt .= "- ONLY extract a value if the user is clearly providing one for '{$currentField}'\n";
             $prompt .= "- NEVER extract values for other fields (they're already collected)\n";
@@ -2005,7 +2002,7 @@ class DataCollectorService
             $prompt .= "- For select fields, match user's input to the closest valid option\n";
             $prompt .= "- For numeric fields, extract just the number (remove units, currency, etc.)\n";
             $prompt .= "- If unclear or ambiguous, set intent to 'unclear' and extracted_value to null\n\n";
-            
+
             $prompt .= "EXAMPLES:\n";
             if ($field->type === 'select' && !empty($field->options)) {
                 $prompt .= "Field: {$currentField} (select from: " . implode(', ', $field->options) . ")\n";
@@ -2022,7 +2019,7 @@ class DataCollectorService
                 $prompt .= "- User: 'Learn Laravel basics' → intent: 'provide_value', value: 'Learn Laravel basics'\n";
                 $prompt .= "- User: 'what should I write?' → intent: 'question', value: null\n";
             }
-            
+
             $prompt .= "\nRespond with ONLY valid JSON in this exact format:\n";
             $prompt .= "{\n";
             $prompt .= '  "intent": "provide_value|question|suggest|skip|unclear",'."\n";
@@ -2030,7 +2027,7 @@ class DataCollectorService
             $prompt .= '  "extracted_value": "the actual value from user message or null",'."\n";
             $prompt .= '  "reasoning": "Brief explanation of why you chose this intent"'."\n";
             $prompt .= "}\n";
-            
+
             // Use fast model for intent analysis
             $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
                 prompt: $prompt,
@@ -2039,14 +2036,14 @@ class DataCollectorService
                 maxTokens: 200,
                 temperature: 0
             );
-            
+
             $response = app(\LaravelAIEngine\Services\AIEngineService::class)->generate($aiRequest);
-            
+
             if (!$response->success) {
                 Log::channel('ai-engine')->warning('Field intent analysis failed', [
                     'error' => $response->error,
                 ]);
-                
+
                 return [
                     'intent' => 'provide_value',
                     'confidence' => 0.5,
@@ -2054,17 +2051,17 @@ class DataCollectorService
                     'reasoning' => 'AI analysis failed, using raw message',
                 ];
             }
-            
+
             $content = $response->getContent();
-            
+
             // Extract JSON from response
             $jsonContent = $content;
             if (preg_match('/(\{.*\})/s', $content, $matches)) {
                 $jsonContent = $matches[1];
             }
-            
+
             $result = json_decode($jsonContent, true);
-            
+
             if (is_array($result) && isset($result['intent'])) {
                 Log::channel('ai-engine')->info('Field intent analysis successful', [
                     'intent' => $result['intent'],
@@ -2072,14 +2069,14 @@ class DataCollectorService
                     'has_value' => !empty($result['extracted_value']),
                     'reasoning' => $result['reasoning'] ?? '',
                 ]);
-                
+
                 return $result;
             }
-            
+
             Log::channel('ai-engine')->warning('Failed to parse intent analysis JSON', [
                 'content' => substr($content, 0, 200),
             ]);
-            
+
             // Fallback
             return [
                 'intent' => 'provide_value',
@@ -2087,12 +2084,12 @@ class DataCollectorService
                 'extracted_value' => trim($message),
                 'reasoning' => 'JSON parsing failed, using raw message',
             ];
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Field intent analysis exception', [
                 'error' => $e->getMessage(),
             ]);
-            
+
             return [
                 'intent' => 'provide_value',
                 'confidence' => 0.5,
@@ -2109,7 +2106,7 @@ class DataCollectorService
     protected function filterToCurrentField(array $extractedFields, string $currentField, array $collectedData): array
     {
         $filtered = [];
-        
+
         foreach ($extractedFields as $fieldName => $value) {
             // Skip if field is already collected (prevent re-extraction)
             if (isset($collectedData[$fieldName]) && !empty($collectedData[$fieldName])) {
@@ -2120,7 +2117,7 @@ class DataCollectorService
                 ]);
                 continue;
             }
-            
+
             // During collection phase, only accept the current field
             // This prevents AI from jumping ahead or extracting wrong fields
             if ($fieldName === $currentField) {
@@ -2133,7 +2130,7 @@ class DataCollectorService
                 ]);
             }
         }
-        
+
         return $filtered;
     }
 
@@ -2144,14 +2141,14 @@ class DataCollectorService
     {
         $extracted = [];
         $field = $config->getField($currentField);
-        
+
         if (!$field) {
             return $extracted;
         }
-        
+
         // Clean the message
         $value = trim($message);
-        
+
         // For select fields, try to match against options
         if ($field->type === 'select' && !empty($field->options)) {
             $lowerValue = strtolower($value);
@@ -2167,7 +2164,7 @@ class DataCollectorService
                 }
             }
         }
-        
+
         // For numeric fields, extract numbers
         if ($field->type === 'number' || str_contains($field->validation ?? '', 'numeric')) {
             if (preg_match('/(\d+(?:\.\d+)?)/', $value, $match)) {
@@ -2180,7 +2177,7 @@ class DataCollectorService
                 return $extracted;
             }
         }
-        
+
         // For text fields, use the entire message (unless it's too short or looks like a question)
         if (strlen($value) >= 2 && !str_ends_with($value, '?')) {
             $extracted[$currentField] = $value;
@@ -2196,7 +2193,7 @@ class DataCollectorService
                 'message' => $value,
             ]);
         }
-        
+
         return $extracted;
     }
 
@@ -2207,13 +2204,13 @@ class DataCollectorService
     {
         // Remove FIELD_COLLECTED markers
         $clean = preg_replace('/FIELD_COLLECTED:\w+=.+?(?=\n|FIELD_COLLECTED:|$)/s', '', $response);
-        
+
         // Remove completion/cancellation markers
         $clean = str_replace(['DATA_COLLECTION_COMPLETE', 'DATA_COLLECTION_CANCELLED'], '', $clean);
-        
+
         // Clean up extra whitespace
         $clean = preg_replace('/\n{3,}/', "\n\n", $clean);
-        
+
         return trim($clean);
     }
 
@@ -2223,7 +2220,7 @@ class DataCollectorService
     protected function buildContextPrompt(DataCollectorState $state, DataCollectorConfig $config): string
     {
         $prompt = "CURRENT COLLECTION STATUS:\n";
-        
+
         // Show collected fields
         $collected = array_filter($state->getData(), fn($v) => $v !== null && $v !== '');
         if (!empty($collected)) {
@@ -2242,15 +2239,15 @@ class DataCollectorService
                 $prompt .= "   Field name: {$state->currentField}\n";
                 $prompt .= "   Description: {$currentField->description}\n";
                 $prompt .= "   Required: " . ($currentField->required ? 'YES' : 'NO') . "\n";
-                
+
                 if (!empty($currentField->examples)) {
                     $prompt .= "   Examples: " . implode(', ', $currentField->examples) . "\n";
                 }
-                
+
                 if ($currentField->validation) {
                     $prompt .= "   Validation: {$currentField->validation}\n";
                 }
-                
+
                 $prompt .= "\n⚠️  CRITICAL RULES:\n";
                 $prompt .= "   1. ONLY ask for and acknowledge '{$state->currentField}' ({$currentField->description})\n";
                 $prompt .= "   2. NEVER mention other field names or descriptions in your response\n";
@@ -2326,7 +2323,7 @@ class DataCollectorService
     {
         // First, try to get missing required fields
         $missing = $config->getMissingFields($state->getData());
-        
+
         if (!empty($missing)) {
             return reset($missing);
         }
@@ -2354,9 +2351,9 @@ class DataCollectorService
         if (empty($state->lastSuggestions) || $state->lastSuggestions['field'] !== $state->currentField) {
             return null;
         }
-        
+
         $suggestions = $state->lastSuggestions['suggestions'];
-        
+
         // Let AI determine if user is selecting a suggestion and extract it
         $detectionPrompt = "The user was previously shown these suggestions:\n\n{$suggestions}\n\n";
         $detectionPrompt .= "The user just responded with: \"{$message}\"\n\n";
@@ -2365,7 +2362,7 @@ class DataCollectorService
         $detectionPrompt .= "2. If YES, extract and return ONLY the full text of the selected suggestion\n";
         $detectionPrompt .= "3. If NO (user is providing their own value instead), return exactly: NO_SELECTION\n\n";
         $detectionPrompt .= "Return ONLY the suggestion text OR 'NO_SELECTION'. Nothing else.";
-        
+
         try {
             $aiResponse = $this->aiEngine
                 ->engine('openai')
@@ -2373,9 +2370,9 @@ class DataCollectorService
                 ->withSystemPrompt("You are a helpful assistant that detects and extracts user selections from suggestion lists.")
                 ->withMaxTokens(500)
                 ->generate($detectionPrompt);
-            
+
             $result = trim($aiResponse->getContent());
-            
+
             // Check if AI detected a selection
             if ($result === 'NO_SELECTION' || empty($result)) {
                 Log::channel('ai-engine')->debug('AI detected user is NOT selecting a suggestion', [
@@ -2383,7 +2380,7 @@ class DataCollectorService
                 ]);
                 return null;
             }
-            
+
             // AI detected and extracted a selection
             if (strlen($result) > 10) {
                 Log::channel('ai-engine')->info('AI detected and extracted suggestion selection', [
@@ -2392,22 +2389,22 @@ class DataCollectorService
                 ]);
                 return $result;
             }
-            
+
             Log::channel('ai-engine')->warning('AI extraction returned invalid text', [
                 'user_input' => $message,
                 'extracted_text' => $result,
             ]);
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Failed to detect/extract suggestion using AI', [
                 'user_input' => $message,
                 'error' => $e->getMessage(),
             ]);
         }
-        
+
         return null;
     }
-    
+
     /**
      * Detect locale from user message
      * Supports multiple languages automatically
@@ -2418,51 +2415,51 @@ class DataCollectorService
         if (preg_match('/[\x{0600}-\x{06FF}]/u', $message)) {
             return 'ar';
         }
-        
+
         // Check for Chinese characters (Simplified/Traditional)
         if (preg_match('/[\x{4E00}-\x{9FFF}]/u', $message)) {
             return 'zh';
         }
-        
+
         // Check for Japanese characters (Hiragana, Katakana, Kanji)
         if (preg_match('/[\x{3040}-\x{309F}\x{30A0}-\x{30FF}\x{4E00}-\x{9FFF}]/u', $message)) {
             return 'ja';
         }
-        
+
         // Check for Korean characters
         if (preg_match('/[\x{AC00}-\x{D7AF}]/u', $message)) {
             return 'ko';
         }
-        
+
         // Check for Cyrillic (Russian, Ukrainian, etc.)
         if (preg_match('/[\x{0400}-\x{04FF}]/u', $message)) {
             return 'ru';
         }
-        
+
         // Check for Greek
         if (preg_match('/[\x{0370}-\x{03FF}]/u', $message)) {
             return 'el';
         }
-        
+
         // Check for Hebrew
         if (preg_match('/[\x{0590}-\x{05FF}]/u', $message)) {
             return 'he';
         }
-        
+
         // Check for Thai
         if (preg_match('/[\x{0E00}-\x{0E7F}]/u', $message)) {
             return 'th';
         }
-        
+
         // Check for Devanagari (Hindi, Sanskrit, etc.)
         if (preg_match('/[\x{0900}-\x{097F}]/u', $message)) {
             return 'hi';
         }
-        
+
         // Default to English (or could be any Latin-based language)
         return 'en';
     }
-    
+
 
     /**
      * Check if message is a cancellation request
@@ -2471,7 +2468,7 @@ class DataCollectorService
     {
         $cancelPhrases = ['cancel', 'stop', 'quit', 'exit', 'abort', 'nevermind', 'never mind'];
         $lowerMessage = strtolower(trim($message));
-        
+
         foreach ($cancelPhrases as $phrase) {
             if ($lowerMessage === $phrase || str_starts_with($lowerMessage, $phrase . ' ')) {
                 return true;
@@ -2487,10 +2484,10 @@ class DataCollectorService
     public function getState(string $sessionId): ?DataCollectorState
     {
         $key = $this->cachePrefix . $sessionId;
-        
+
         // Try cache first for speed
         $serialized = Cache::get($key);
-        
+
         // If not in cache, try database
         if (!$serialized) {
             $dbState = \Illuminate\Support\Facades\DB::table('data_collector_states')
@@ -2500,13 +2497,13 @@ class DataCollectorService
                           ->orWhere('expires_at', '>', now());
                 })
                 ->first();
-            
+
             if ($dbState && isset($dbState->state_data)) {
                 $serialized = $dbState->state_data;
-                
+
                 // Warm up cache for next time
                 Cache::put($key, $serialized, $this->cacheTtl);
-                
+
                 Log::channel('ai-engine')->debug('State loaded from database', [
                     'session_id' => $sessionId,
                     'cached_for_next_time' => true,
@@ -2517,7 +2514,7 @@ class DataCollectorService
                 'session_id' => $sessionId,
             ]);
         }
-        
+
         if (!$serialized) {
             Log::channel('ai-engine')->debug('State not found in cache or database', [
                 'session_id' => $sessionId,
@@ -2544,16 +2541,16 @@ class DataCollectorService
     protected function saveState(DataCollectorState $state): void
     {
         $key = $this->cachePrefix . $state->sessionId;
-        
+
         try {
             $stateArray = $state->toArray();
-            
+
             // Serialize to JSON
             $serialized = json_encode($stateArray, JSON_UNESCAPED_UNICODE);
             if ($serialized === false) {
                 throw new \RuntimeException('Failed to JSON encode state: ' . json_last_error_msg());
             }
-            
+
             // Save to database for persistence (primary storage)
             \Illuminate\Support\Facades\DB::table('data_collector_states')->updateOrInsert(
                 ['session_id' => $state->sessionId],
@@ -2566,10 +2563,10 @@ class DataCollectorService
                     'created_at' => now(),
                 ]
             );
-            
+
             // Also save to cache for fast access
             Cache::put($key, $serialized, $this->cacheTtl);
-            
+
             Log::channel('ai-engine')->debug('State saved to database and cache', [
                 'session_id' => $state->sessionId,
                 'status' => $state->status,
@@ -2589,16 +2586,16 @@ class DataCollectorService
     public function saveConfig(DataCollectorConfig $config): void
     {
         $key = $this->cachePrefix . 'config_' . $config->name;
-        
+
         try {
             $configArray = $config->toArray();
-            
+
             // Serialize to JSON
             $serialized = json_encode($configArray, JSON_UNESCAPED_UNICODE);
             if ($serialized === false) {
                 throw new \RuntimeException('Failed to JSON encode config: ' . json_last_error_msg());
             }
-            
+
             // Save to database for persistence (primary storage)
             \Illuminate\Support\Facades\DB::table('data_collector_configs')->updateOrInsert(
                 ['name' => $config->name],
@@ -2609,10 +2606,10 @@ class DataCollectorService
                     'created_at' => now(),
                 ]
             );
-            
+
             // Also save to cache for fast access
             Cache::put($key, $serialized, $this->cacheTtl);
-            
+
             Log::channel('ai-engine')->debug('Config saved to database and cache', [
                 'key' => $key,
                 'name' => $config->name,
@@ -2634,22 +2631,22 @@ class DataCollectorService
     public function loadConfig(string $name): ?DataCollectorConfig
     {
         $key = $this->cachePrefix . 'config_' . $name;
-        
+
         // Try cache first for speed
         $serialized = Cache::get($key);
-        
+
         // If not in cache, try database
         if (!$serialized) {
             $dbConfig = \Illuminate\Support\Facades\DB::table('data_collector_configs')
                 ->where('name', $name)
                 ->first();
-            
+
             if ($dbConfig && isset($dbConfig->config_data)) {
                 $serialized = $dbConfig->config_data;
-                
+
                 // Warm up cache for next time
                 Cache::put($key, $serialized, $this->cacheTtl);
-                
+
                 Log::channel('ai-engine')->debug('Config loaded from database', [
                     'name' => $name,
                     'cached_for_next_time' => true,
@@ -2660,7 +2657,7 @@ class DataCollectorService
                 'name' => $name,
             ]);
         }
-        
+
         if (!$serialized) {
             Log::channel('ai-engine')->debug('Config not found in cache or database', [
                 'name' => $name,
@@ -2677,7 +2674,7 @@ class DataCollectorService
             ]);
             return null;
         }
-        
+
         return DataCollectorConfig::fromArray($data);
     }
 
@@ -2690,7 +2687,7 @@ class DataCollectorService
         \Illuminate\Support\Facades\DB::table('data_collector_states')
             ->where('session_id', $sessionId)
             ->delete();
-        
+
         // Delete from cache
         Cache::forget($this->cachePrefix . $sessionId);
     }
@@ -2704,7 +2701,7 @@ class DataCollectorService
         if (Cache::has($this->cachePrefix . $sessionId)) {
             return true;
         }
-        
+
         // Check database
         return \Illuminate\Support\Facades\DB::table('data_collector_states')
             ->where('session_id', $sessionId)
@@ -2721,7 +2718,7 @@ class DataCollectorService
     public function getGreeting(DataCollectorConfig $config, ?DataCollectorState $state = null): string
     {
         $locale = $state?->detectedLocale ?? $config->locale ?? 'en';
-        
+
         // Localized greeting phrases
         $greetings = [
             'en' => [
@@ -2735,9 +2732,9 @@ class DataCollectorService
                 'already_have' => "لدي بالفعل بعض المعلومات:",
             ],
         ];
-        
+
         $phrases = $greetings[$locale] ?? $greetings['en'];
-        
+
         $greeting = $phrases['hello'] . "\n\n";
 
         // If we have initial data, mention it
@@ -2756,11 +2753,11 @@ class DataCollectorService
 
         // Get the next uncollected field
         $nextField = $state ? $this->getNextFieldToCollect($state, $config) : $config->getFirstField();
-        
+
         if ($nextField) {
             $fieldName = $nextField->description ?: $nextField->name;
             $greeting .= $phrases['provide'] . ": " . $fieldName;
-            
+
             // Add validation hints
             if ($nextField->validation) {
                 $hints = $this->getValidationHints($nextField->validation, $locale);
@@ -2772,7 +2769,7 @@ class DataCollectorService
 
         return $greeting;
     }
-    
+
     /**
      * Get human-readable validation hints
      */
@@ -2780,7 +2777,7 @@ class DataCollectorService
     {
         $hints = [];
         $rules = explode('|', $validation);
-        
+
         $labels = [
             'en' => [
                 'required' => 'Required',
@@ -2793,9 +2790,9 @@ class DataCollectorService
                 'max' => 'الحد الأقصى %d حرف',
             ],
         ];
-        
+
         $l = $labels[$locale] ?? $labels['en'];
-        
+
         foreach ($rules as $rule) {
             if ($rule === 'required') {
                 // Skip required, it's implied
@@ -2808,18 +2805,18 @@ class DataCollectorService
                 $hints[] = sprintf($l['max'], $matches[1]);
             }
         }
-        
+
         if (empty($hints)) {
             return '';
         }
-        
+
         // Simple format - AI will present naturally in user's language
         return implode(', ', $hints);
     }
 
     /**
      * Extract structured data from file content using AI
-     * 
+     *
      * @param string $sessionId
      * @param string $content File content
      * @param array $fields Field names to extract
@@ -2836,19 +2833,19 @@ class DataCollectorService
         // Get config from session if available
         $state = $this->getState($sessionId);
         $config = $state ? $this->getConfig($state->configName) : null;
-        
+
         // Build field descriptions with validation hints for the AI
         $fieldDescriptions = [];
         foreach ($fields as $fieldName) {
             // Try to get field from config, or use passed fieldConfig
             $field = $config?->getField($fieldName);
             $fieldData = $fieldConfig[$fieldName] ?? [];
-            
+
             $description = $field?->description ?? $fieldData['description'] ?? ucfirst(str_replace('_', ' ', $fieldName));
             $validation = $field?->validation ?? $fieldData['validation'] ?? '';
             $type = $field?->type ?? $fieldData['type'] ?? 'text';
             $options = $field?->options ?? $fieldData['options'] ?? [];
-            
+
             // Add validation hints
             $hints = [];
             if ($validation) {
@@ -2865,12 +2862,12 @@ class DataCollectorService
                     $hints[] = "maximum: {$matches[1]}";
                 }
             }
-            
+
             // Add options for select fields
             if ($type === 'select' && !empty($options)) {
                 $hints[] = 'must be one of: ' . implode(', ', $options);
             }
-            
+
             $fieldDescriptions[$fieldName] = $description . ($hints ? ' (' . implode(', ', $hints) . ')' : '');
         }
 
@@ -2880,7 +2877,7 @@ class DataCollectorService
         try {
             // Use AI to extract data
             $systemPrompt = "You are a data extraction assistant. Extract structured data from the provided content and return it as valid JSON only. Do not include any text outside the JSON object.";
-            
+
             $response = $this->aiEngine
                 ->engine('openai')
                 ->model('gpt-4o')
@@ -2889,13 +2886,13 @@ class DataCollectorService
                 ->generate($prompt);
 
             $responseContent = $response->getContent();
-            
+
             // Clean markdown code blocks if present
             $responseContent = trim($responseContent);
             if (preg_match('/```(?:json)?\s*([\s\S]*?)\s*```/', $responseContent, $matches)) {
                 $responseContent = trim($matches[1]);
             }
-            
+
             $extracted = json_decode($responseContent, true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -2925,7 +2922,7 @@ class DataCollectorService
     protected function buildExtractionPrompt(string $content, array $fieldDescriptions, string $language): string
     {
         $fieldsJson = json_encode($fieldDescriptions, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        
+
         if ($language === 'ar') {
             return <<<PROMPT
 قم بتحليل المحتوى التالي واستخراج المعلومات المطلوبة.
@@ -2963,7 +2960,7 @@ PROMPT;
 
     /**
      * Apply extracted data to session and move to confirmation
-     * 
+     *
      * @param string $sessionId
      * @param array $extractedData
      * @param string $language
@@ -2975,24 +2972,24 @@ PROMPT;
         string $language = 'en'
     ): DataCollectorResponse {
         $state = $this->getState($sessionId);
-        
+
         if (!$state) {
             return new DataCollectorResponse(
                 success: false,
-                message: $language === 'ar' 
-                    ? 'لم يتم العثور على جلسة نشطة.' 
+                message: $language === 'ar'
+                    ? 'لم يتم العثور على جلسة نشطة.'
                     : 'No active session found.',
                 state: null,
             );
         }
 
         $config = $this->getConfig($state->configName);
-        
+
         if (!$config) {
             return new DataCollectorResponse(
                 success: false,
-                message: $language === 'ar' 
-                    ? 'لم يتم العثور على التكوين.' 
+                message: $language === 'ar'
+                    ? 'لم يتم العثور على التكوين.'
                     : 'Configuration not found.',
                 state: $state,
             );
@@ -3034,7 +3031,7 @@ PROMPT;
     protected function buildConfirmationSummary(DataCollectorState $state, DataCollectorConfig $config, string $language): string
     {
         $summary = '';
-        
+
         foreach ($state->collectedData as $fieldName => $value) {
             $field = $config->getField($fieldName);
             $label = $field?->description ?? ucfirst(str_replace('_', ' ', $fieldName));
@@ -3045,31 +3042,58 @@ PROMPT;
     }
 
     /**
-     * Detect if user message indicates they're done with modifications (works in any language)
+     * Detect if user wants to reject/modify the data using AI intent detection
+     */
+    protected function isRejectionIntent(string $message, DataCollectorState $state, DataCollectorConfig $config): bool
+    {
+        // Use AI to detect rejection/modification intent in any language
+        $intentPrompt = "Analyze the user's message and determine if they want to reject, modify, or change the collected data.\n\n";
+        $intentPrompt .= "User message: \"{$message}\"\n\n";
+        $intentPrompt .= "Respond with ONLY 'YES' if they want to make changes/reject/modify, or 'NO' if they accept/confirm.";
+        
+        try {
+            $response = $this->aiEngine
+                ->engine(EngineEnum::OPENAI)
+                ->model(EntityEnum::GPT_4O_MINI)
+                ->withSystemPrompt("You are an intent classifier. Respond with only YES or NO.")
+                ->withMaxTokens(10)
+                ->generate($intentPrompt);
+            
+            $intent = strtoupper(trim($response->getContent()));
+            return str_contains($intent, 'YES');
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to detect rejection intent, defaulting to false', [
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Detect if user message indicates they're done with modifications using AI
      */
     protected function isCompletionIntent(string $message): bool
     {
-        $lowerMessage = strtolower(trim($message));
+        // Use AI to detect completion intent in any language
+        $intentPrompt = "Analyze the user's message and determine if they are done/finished/ready to complete.\n\n";
+        $intentPrompt .= "User message: \"{$message}\"\n\n";
+        $intentPrompt .= "Respond with ONLY 'YES' if they are done/finished/ready, or 'NO' if they want to continue.";
         
-        // Quick check for common completion words in multiple languages
-        $completionWords = [
-            'done', 'finish', 'finished', 'complete', 'ready', 'ok', 'okay',
-            'تم', 'انتهيت', 'جاهز', 'موافق', 'نعم',  // Arabic
-            '完成', '好的', '可以',  // Chinese
-            '完了', 'はい', 'オーケー',  // Japanese
-            '완료', '좋아요', '네',  // Korean
-            'готово', 'да', 'хорошо',  // Russian
-            'listo', 'terminado', 'sí',  // Spanish
-            'prêt', 'fini', 'oui',  // French
-            'fertig', 'bereit', 'ja',  // German
-        ];
-        
-        foreach ($completionWords as $word) {
-            if ($lowerMessage === strtolower($word) || str_contains($lowerMessage, strtolower($word))) {
-                return true;
-            }
+        try {
+            $response = $this->aiEngine
+                ->engine(EngineEnum::OPENAI)
+                ->model(EntityEnum::GPT_4O_MINI)
+                ->withSystemPrompt("You are an intent classifier. Respond with only YES or NO.")
+                ->withMaxTokens(10)
+                ->generate($intentPrompt);
+            
+            $intent = strtoupper(trim($response->getContent()));
+            return str_contains($intent, 'YES');
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to detect completion intent, defaulting to false', [
+                'error' => $e->getMessage(),
+            ]);
+            return false;
         }
-        
-        return false;
     }
 }

@@ -1528,6 +1528,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function formatFieldName(field) {
+        // Use field description from config if available (supports localized labels)
+        if (config.fields && config.fields[field] && config.fields[field].description) {
+            return config.fields[field].description;
+        }
+        // Fallback to title case conversion
         return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
     
