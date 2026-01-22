@@ -1212,6 +1212,10 @@ class DataCollectorService
 
             $state->setValidationErrors($errors);
             $state->setStatus(DataCollectorState::STATUS_COLLECTING);
+            
+            // Set currentField to the first invalid field so handleCollecting can process it
+            $firstInvalidField = array_key_first($errors);
+            $state->setCurrentField($firstInvalidField);
 
             // Use AI to generate user-friendly validation error message
             $errorMessage = $this->generateValidationErrorMessage($config, $errors, $state, $engine, $model);
@@ -3223,8 +3227,8 @@ PROMPT;
             $prompt .= "5. Is conversational and friendly, not technical\n";
             
             $response = $this->aiEngine
-                ->engine(EngineEnum::from($engine))
-                ->model(EntityEnum::from($model))
+                ->engine($engine)
+                ->model($model)
                 ->withSystemPrompt("You are a helpful assistant. Generate friendly validation error messages in the user's language.")
                 ->withMaxTokens(200)
                 ->generate($prompt);
