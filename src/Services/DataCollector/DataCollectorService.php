@@ -2291,27 +2291,32 @@ class DataCollectorService
         }
 
         // Strong reminder to use field markers (repeated in every request)
-        $prompt .= "\n" . str_repeat('=', 70) . "\n";
-        $prompt .= "⚠️  CRITICAL FORMAT REQUIREMENT (MUST FOLLOW):\n";
-        $prompt .= "When you extract the '{$state->currentField}' field value, you MUST add:\n";
-        $prompt .= "FIELD_COLLECTED:{$state->currentField}=value\n";
-        $prompt .= "Place the marker at the END of your response.\n";
-        $prompt .= "\n⚠️  FIELD NAME VALIDATION (CRITICAL):\n";
-        $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-        $prompt .= "CURRENT FIELD: '{$state->currentField}' = {$currentField->description}\n";
-        $prompt .= "\nWHAT YOU MUST SAY:\n";
-        $prompt .= "✓ 'I've recorded {$currentField->description}: [value]'\n";
-        $prompt .= "✓ 'Great! I've noted the {$currentField->description}'\n";
-        $prompt .= "✓ 'Perfect! {$currentField->description} recorded'\n";
-        $prompt .= "\nWHAT YOU MUST NOT SAY:\n";
-        foreach ($config->getFields() as $fname => $fld) {
-            if ($fname !== $state->currentField) {
-                $prompt .= "✗ DO NOT mention '{$fname}' or '{$fld->description}'\n";
+        if ($state->currentField) {
+            $currentFieldObj = $config->getField($state->currentField);
+            if ($currentFieldObj) {
+                $prompt .= "\n" . str_repeat('=', 70) . "\n";
+                $prompt .= "⚠️  CRITICAL FORMAT REQUIREMENT (MUST FOLLOW):\n";
+                $prompt .= "When you extract the '{$state->currentField}' field value, you MUST add:\n";
+                $prompt .= "FIELD_COLLECTED:{$state->currentField}=value\n";
+                $prompt .= "Place the marker at the END of your response.\n";
+                $prompt .= "\n⚠️  FIELD NAME VALIDATION (CRITICAL):\n";
+                $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+                $prompt .= "CURRENT FIELD: '{$state->currentField}' = {$currentFieldObj->description}\n";
+                $prompt .= "\nWHAT YOU MUST SAY:\n";
+                $prompt .= "✓ 'I've recorded {$currentFieldObj->description}: [value]'\n";
+                $prompt .= "✓ 'Great! I've noted the {$currentFieldObj->description}'\n";
+                $prompt .= "✓ 'Perfect! {$currentFieldObj->description} recorded'\n";
+                $prompt .= "\nWHAT YOU MUST NOT SAY:\n";
+                foreach ($config->getFields() as $fname => $fld) {
+                    if ($fname !== $state->currentField) {
+                        $prompt .= "✗ DO NOT mention '{$fname}' or '{$fld->description}'\n";
+                    }
+                }
+                $prompt .= "\nREMEMBER: You are ONLY collecting '{$state->currentField}' right now!\n";
+                $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+                $prompt .= str_repeat('=', 70) . "\n";
             }
         }
-        $prompt .= "\nREMEMBER: You are ONLY collecting '{$state->currentField}' right now!\n";
-        $prompt .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-        $prompt .= str_repeat('=', 70) . "\n";
 
         return $prompt;
     }
