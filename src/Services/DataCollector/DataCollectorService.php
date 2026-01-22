@@ -2206,7 +2206,14 @@ class DataCollectorService
         if (!empty($state->validationErrors)) {
             $prompt .= "\n❌ Validation errors to address:\n";
             foreach ($state->validationErrors as $field => $errors) {
-                $prompt .= "  - {$field}: " . implode(', ', $errors) . "\n";
+                // $errors is an array of structured error arrays, not strings
+                $errorMessages = array_map(function($error) {
+                    if (is_array($error)) {
+                        return $error['rule'] ?? 'validation_failed';
+                    }
+                    return (string)$error;
+                }, $errors);
+                $prompt .= "  - {$field}: " . implode(', ', $errorMessages) . "\n";
             }
         }
 
