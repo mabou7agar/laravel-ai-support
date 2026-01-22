@@ -1179,26 +1179,12 @@ class DataCollectorService
             $state->setValidationErrors($errors);
             $state->setStatus(DataCollectorState::STATUS_COLLECTING);
 
-            $errorMessage = "There are some validation errors:\n";
-            foreach ($errors as $field => $fieldErrors) {
-                $errorsArray = is_array($fieldErrors) ? $fieldErrors : [$fieldErrors];
-                // Convert each error to string (handle objects/arrays)
-                $errorStrings = array_map(function($error) {
-                    if (is_string($error)) {
-                        return $error;
-                    } elseif (is_array($error)) {
-                        return $error['message'] ?? json_encode($error);
-                    } elseif (is_object($error)) {
-                        return method_exists($error, '__toString') ? (string)$error : json_encode($error);
-                    }
-                    return (string)$error;
-                }, $errorsArray);
-                $errorMessage .= "- {$field}: " . implode(', ', $errorStrings) . "\n";
-            }
+            // Use AI to generate user-friendly validation error message
+            $errorMessage = $this->generateValidationErrorMessage($config, $errors, $state, $engine, $model);
 
             return new DataCollectorResponse(
                 success: false,
-                message: $errorMessage . "\nPlease provide the correct values.",
+                message: $errorMessage,
                 state: $state,
                 validationErrors: $errors,
             );
@@ -3154,6 +3140,73 @@ PROMPT;
         }
 
         return $summary ?: ($language === 'ar' ? 'لا توجد بيانات' : 'No data');
+    }
+
+    /**
+     * Generate user-friendly validation error message using AI
+     */
+    protected function generateValidationErrorMessage(
+        DataCollectorConfig $config,
+        array $errors,
+        DataCollectorState $state,
+        string $engine = 'openai',
+        string $model = 'gpt-4o'
+    ): string {
+        try {
+            // Build error context for AI
+            $errorContext = "Validation errors occurred:\n\n";
+            foreach ($errors as $field => $fieldErrors) {
+                $fieldObj = $config->getField($field);
+                $fieldLabel = $fieldObj ? $fieldObj->description : $field;
+                
+                $errorsArray = is_array($fieldErrors) ? $fieldErrors : [$fieldErrors];
+                foreach ($errorsArray as $error) {
+                    if (is_array($error)) {
+                        $rule = $error['rule'] ?? 'validation';
+                        $errorContext .= "- Field: {$fieldLabel} ({$field})\n";
+                        $errorContext .= "  Rule: {$rule}\n";
+                        if (isset($error['min'])) {
+                            $errorContext .= "  Required minimum: {$error['min']}\n";
+                            $errorContext .= "  Actual: {$error['actual']}\n";
+                        }
+                        if (isset($error['max'])) {
+                            $errorContext .= "  Maximum allowed: {$error['max']}\n";
+                            $errorContext .= "  Actual: {$error['actual']}\n";
+                        }
+                    }
+                }
+            }
+            
+            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
+            
+            $prompt = "Generate a friendly validation error message for the user.\n\n";
+            $prompt .= $errorContext . "\n";
+            $prompt .= "Create a helpful, polite message that:\n";
+            $prompt .= "1. Explains what went wrong in simple terms\n";
+            $prompt .= "2. Tells them what they need to fix\n";
+            $prompt .= "3. Encourages them to try again\n";
+            $prompt .= "4. Is written in {$locale} language\n";
+            $prompt .= "5. Is conversational and friendly, not technical\n";
+            
+            $response = $this->aiEngine
+                ->engine(EngineEnum::from($engine))
+                ->model(EntityEnum::from($model))
+                ->withSystemPrompt("You are a helpful assistant. Generate friendly validation error messages in the user's language.")
+                ->withMaxTokens(200)
+                ->generate($prompt);
+            
+            return trim($response->getContent());
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Failed to generate validation error message', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Fallback to simple message
+            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
+            return $locale === 'ar' 
+                ? 'عذراً، هناك بعض الأخطاء في البيانات المدخلة. يرجى المحاولة مرة أخرى.'
+                : 'Sorry, there are some validation errors. Please try again with correct values.';
+        }
     }
 
     /**
