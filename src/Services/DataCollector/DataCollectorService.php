@@ -757,6 +757,18 @@ class DataCollectorService
             if ($config->allowEnhancement) {
                 $state->setStatus(DataCollectorState::STATUS_ENHANCING);
 
+                // Use AI to detect which field they want to modify
+                $targetField = $this->detectTargetField($message, $config);
+                
+                // Store the target field for next message
+                if ($targetField) {
+                    $state->setMetadata(array_merge($state->metadata, ['pending_field_update' => $targetField]));
+                    Log::channel('ai-engine')->info('Stored pending field in CONFIRMING->ENHANCING transition', [
+                        'field' => $targetField,
+                        'session_id' => $state->sessionId,
+                    ]);
+                }
+
                 // Generate enhancement prompt via AI in user's language
                 $enhancementPrompt = "The user wants to make changes. Ask them what they'd like to modify.";
                 $enhancementResponse = $this->generateAIResponse(
@@ -867,40 +879,70 @@ class DataCollectorService
 
         $responseContent = $aiResponse->getContent();
 
-        // Parse field extractions (enhancement phase allows any field)
-        $extractedFields = $this->parseFieldExtractions($responseContent, $config);
-
-        // If no fields extracted, try direct extraction from user message
-        if (empty($extractedFields)) {
-            // CRITICAL: Check if this is just a modification request phrase (not actual data)
-            // Prevents "I want to change the name" from being saved as the name value
-            $isModificationIntent = $this->isRejectionIntent($message, $state, $config);
+        // CRITICAL: Check for modification intent FIRST before any extraction
+        $isModificationIntent = $this->isRejectionIntent($message, $state, $config);
+        
+        if ($isModificationIntent) {
+            Log::channel('ai-engine')->info('Modification intent detected in ENHANCING', [
+                'session_id' => $state->sessionId,
+                'user_message' => substr($message, 0, 100),
+            ]);
             
-            if ($isModificationIntent) {
-                Log::channel('ai-engine')->info('Modification intent detected during enhancement - not extracting as field value', [
+            // Use AI to detect which field they want to modify
+            $targetField = $this->detectTargetField($message, $config);
+            
+            if ($targetField) {
+                $state->setMetadata(array_merge($state->metadata, ['pending_field_update' => $targetField]));
+                Log::channel('ai-engine')->info('Stored pending field in ENHANCING', [
+                    'field' => $targetField,
                     'session_id' => $state->sessionId,
-                    'user_message' => substr($message, 0, 100),
                 ]);
-                // Don't extract anything - let AI ask what they want to change
+            }
+            
+            // Don't extract any fields - let AI ask what to change
+            $extractedFields = [];
+        } else {
+            // Check if there's a pending field update from previous modification intent
+            $pendingField = $state->metadata['pending_field_update'] ?? null;
+            
+            if ($pendingField) {
+                // User previously said they want to change a field, now providing new value
+                $extractedFields = [$pendingField => trim($message)];
+                
+                Log::channel('ai-engine')->info('Using pending field update', [
+                    'field' => $pendingField,
+                    'new_value' => substr($message, 0, 100),
+                ]);
+                
+                // Clear the pending field update
+                $metadata = $state->metadata;
+                unset($metadata['pending_field_update']);
+                $state->setMetadata($metadata);
             } else {
-                // Try to detect which field user wants to modify
-                $lowerMessage = strtolower($message);
-                foreach ($config->getFields() as $fieldName => $field) {
-                    $fieldNameLower = strtolower($fieldName);
-                    $descriptionLower = strtolower($field->description);
+                // Parse field extractions (enhancement phase allows any field)
+                $extractedFields = $this->parseFieldExtractions($responseContent, $config);
+            }
+        }
 
-                    // Check if user mentioned this field
-                    if (str_contains($lowerMessage, $fieldNameLower) || str_contains($lowerMessage, $descriptionLower)) {
-                        // Extract value from message (remove field name mentions)
-                        $value = trim(preg_replace('/\b(name|description|duration|level|price)\b/i', '', $message));
-                        if (!empty($value) && strlen($value) > 2) {
-                            $extractedFields[$fieldName] = $value;
-                            Log::channel('ai-engine')->info('Direct field extraction during enhancement', [
-                                'field' => $fieldName,
-                                'value' => $value,
-                            ]);
-                            break;
-                        }
+        // If no fields extracted and not modification intent, try direct extraction from user message
+        if (empty($extractedFields) && !$isModificationIntent) {
+            // Try to detect which field user wants to modify
+            $lowerMessage = strtolower($message);
+            foreach ($config->getFields() as $fieldName => $field) {
+                $fieldNameLower = strtolower($fieldName);
+                $descriptionLower = strtolower($field->description);
+
+                // Check if user mentioned this field
+                if (str_contains($lowerMessage, $fieldNameLower) || str_contains($lowerMessage, $descriptionLower)) {
+                    // Extract value from message (remove field name mentions)
+                    $value = trim(preg_replace('/\b(name|description|duration|level|price)\b/i', '', $message));
+                    if (!empty($value) && strlen($value) > 2) {
+                        $extractedFields[$fieldName] = $value;
+                        Log::channel('ai-engine')->info('Direct field extraction during enhancement', [
+                            'field' => $fieldName,
+                            'value' => $value,
+                        ]);
+                        break;
                     }
                 }
             }
@@ -3100,6 +3142,54 @@ PROMPT;
         }
 
         return $summary ?: ($language === 'ar' ? 'لا توجد بيانات' : 'No data');
+    }
+
+    /**
+     * Use AI to detect which field the user wants to modify
+     */
+    protected function detectTargetField(string $message, DataCollectorConfig $config): ?string
+    {
+        $fieldsList = [];
+        foreach ($config->getFields() as $fieldName => $field) {
+            $fieldsList[] = "- {$fieldName}: {$field->description}";
+        }
+        $fieldsText = implode("\n", $fieldsList);
+        
+        $prompt = "Which field does the user want to modify?\n\n";
+        $prompt .= "User message: \"{$message}\"\n\n";
+        $prompt .= "Available fields:\n{$fieldsText}\n\n";
+        $prompt .= "Respond with ONLY the field name (e.g., 'course_name') or 'NONE' if unclear.";
+        
+        try {
+            $response = $this->aiEngine
+                ->engine(EngineEnum::OPENAI)
+                ->model(EntityEnum::GPT_4O_MINI)
+                ->withSystemPrompt("You are a field detector. Respond with only the field name or NONE.")
+                ->withMaxTokens(20)
+                ->generate($prompt);
+            
+            $detectedField = strtolower(trim($response->getContent()));
+            
+            // Validate the detected field exists
+            if ($detectedField !== 'none' && $config->getField($detectedField)) {
+                Log::channel('ai-engine')->debug('AI detected target field', [
+                    'message' => $message,
+                    'detected_field' => $detectedField,
+                ]);
+                return $detectedField;
+            }
+            
+            Log::channel('ai-engine')->debug('AI could not detect valid field', [
+                'message' => $message,
+                'ai_response' => $detectedField,
+            ]);
+            return null;
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to detect target field', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 
     /**
