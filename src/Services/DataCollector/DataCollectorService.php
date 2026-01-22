@@ -1182,7 +1182,18 @@ class DataCollectorService
             $errorMessage = "There are some validation errors:\n";
             foreach ($errors as $field => $fieldErrors) {
                 $errorsArray = is_array($fieldErrors) ? $fieldErrors : [$fieldErrors];
-                $errorMessage .= "- {$field}: " . implode(', ', $errorsArray) . "\n";
+                // Convert each error to string (handle objects/arrays)
+                $errorStrings = array_map(function($error) {
+                    if (is_string($error)) {
+                        return $error;
+                    } elseif (is_array($error)) {
+                        return $error['message'] ?? json_encode($error);
+                    } elseif (is_object($error)) {
+                        return method_exists($error, '__toString') ? (string)$error : json_encode($error);
+                    }
+                    return (string)$error;
+                }, $errorsArray);
+                $errorMessage .= "- {$field}: " . implode(', ', $errorStrings) . "\n";
             }
 
             return new DataCollectorResponse(
