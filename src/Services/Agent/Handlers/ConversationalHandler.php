@@ -30,28 +30,23 @@ class ConversationalHandler implements MessageHandlerInterface
         Log::channel('ai-engine')->info('Handling conversational message', [
             'session_id' => $context->sessionId,
         ]);
-        
         // Load conversation history
         $history = $context->conversationHistory ?? [];
-        
         // Build prompt with history
         $prompt = $this->buildConversationalPrompt($message, $history);
-        
         // Generate response
         $aiResponse = $this->ai->generate(new AIRequest(
             prompt: $prompt,
             engine: EngineEnum::from($options['engine'] ?? 'openai'),
             model: EntityEnum::from($options['model'] ?? 'gpt-4o-mini'),
             maxTokens: 500,
-            temperature: 0.8
+            temperature: 0.8,
         ));
-        
         $response = AgentResponse::conversational(
-            message: $aiResponse->content,
+            message: $aiResponse->getContent(),
             context: $context
         );
-        
-        $context->addAssistantMessage($aiResponse->content);
+        $context->addAssistantMessage($aiResponse->getContent());
         
         return $response;
     }
