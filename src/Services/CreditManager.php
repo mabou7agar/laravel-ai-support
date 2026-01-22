@@ -258,6 +258,46 @@ class CreditManager
      */
     private function getUserModel(string $ownerId): Model
     {
+        // Check for custom query resolver first
+        $queryResolverClass = config('ai-engine.credits.query_resolver');
+        
+        if ($queryResolverClass && class_exists($queryResolverClass)) {
+            try {
+                $resolver = app($queryResolverClass);
+                
+                // Support callable resolvers (with __invoke method)
+                if (is_callable($resolver)) {
+                    $model = $resolver($ownerId);
+                    if ($model instanceof Model) {
+                        return $model;
+                    }
+                }
+                
+                // Support resolvers with resolve() method
+                if (method_exists($resolver, 'resolve')) {
+                    $model = $resolver->resolve($ownerId);
+                    if ($model instanceof Model) {
+                        return $model;
+                    }
+                }
+                
+                // Support resolvers with query() method that returns a query builder
+                if (method_exists($resolver, 'query')) {
+                    $query = $resolver->query($ownerId);
+                    if ($query) {
+                        return $query->firstOrFail();
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Failed to resolve owner model with custom query resolver', [
+                    'resolver' => $queryResolverClass,
+                    'owner_id' => $ownerId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+        
+        // Fallback to default query logic
         // Get the model class from config (can be User, Tenant, Workspace, etc.)
         $ownerModel = config('ai-engine.credits.owner_model', config('ai-engine.user_model', 'App\\Models\\User'));
         

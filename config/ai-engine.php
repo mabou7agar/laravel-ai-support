@@ -508,6 +508,28 @@ return [
         // Set to null to use default auth()->id() behavior
         'user_id_resolver' => env('AI_USER_ID_RESOLVER', null),
         
+        // Custom Query Resolver (Advanced)
+        // Specify a custom class to override how the owner model is queried
+        // This allows you to add custom conditions, eager loading, or complex logic
+        // based on owner type or other factors.
+        //
+        // The resolver class should implement one of the following:
+        //   - __invoke($ownerId) method - returns Model instance
+        //   - resolve($ownerId) method - returns Model instance
+        //   - query($ownerId) method - returns Query Builder instance
+        //
+        // Example use cases:
+        //   - Add where conditions: ->where('status', 'active')
+        //   - Eager load relationships: ->with('subscription')
+        //   - Different queries per owner type
+        //   - Soft delete filtering
+        //
+        // Example:
+        //   'query_resolver' => \App\Services\AI\TenantQueryResolver::class,
+        //
+        // Set to null to use default query: Model::where($column, $ownerId)->firstOrFail()
+        'query_resolver' => env('AI_QUERY_RESOLVER', null),
+        
         // Engine conversion rates: MyCredits to Engine Credits
         // Example: 'openai' => 2.0 means 100 MyCredits = 50 OpenAI credits
         'engine_rates' => [
