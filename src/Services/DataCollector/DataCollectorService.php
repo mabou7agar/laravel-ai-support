@@ -1352,11 +1352,34 @@ class DataCollectorService
 
             // Add language context - AI will detect from conversation
             $locale = $state ? ($state->detectedLocale ?? $config->locale) : $config->locale;
+            
+            // Build strong language enforcement
+            $languageNames = [
+                'ar' => 'Arabic',
+                'en' => 'English',
+                'zh' => 'Chinese',
+                'ja' => 'Japanese',
+                'ko' => 'Korean',
+                'ru' => 'Russian',
+                'el' => 'Greek',
+                'he' => 'Hebrew',
+                'th' => 'Thai',
+                'hi' => 'Hindi',
+                'es' => 'Spanish',
+                'fr' => 'French',
+                'de' => 'German',
+                'it' => 'Italian',
+                'pt' => 'Portuguese',
+            ];
+            
             $languageContext = '';
             if ($locale && $locale !== 'en') {
-                $languageContext = "\n\nLANGUAGE REQUIREMENT:\n";
-                $languageContext .= "Generate ALL content in the SAME language the user has been using throughout this conversation.\n";
-                $languageContext .= "Maintain language consistency with the user's messages.\n";
+                $languageName = $languageNames[$locale] ?? $locale;
+                $languageContext = "\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT:\n";
+                $languageContext .= "You MUST generate ALL content ENTIRELY in {$languageName}.\n";
+                $languageContext .= "Do NOT use English or any other language.\n";
+                $languageContext .= "ALL titles, descriptions, text, and content must be in {$languageName} only.\n";
+                $languageContext .= "The user has been communicating in {$languageName} throughout this conversation.\n";
             }
 
             $fullPrompt = $dataContext . $prompt . $modificationContext . $languageContext;
@@ -1366,7 +1389,8 @@ class DataCollectorService
                 . "Be specific and detailed in your preview.";
             
             if ($locale && $locale !== 'en') {
-                $systemPrompt .= " CRITICAL: Respond in the SAME language as the user's conversation.";
+                $languageName = $languageNames[$locale] ?? $locale;
+                $systemPrompt .= " ⚠️ CRITICAL: You MUST respond ENTIRELY in {$languageName}. Do NOT use English or mix languages.";
             }
 
             Log::channel('ai-engine')->info('Generating AI action summary', [
@@ -1436,18 +1460,46 @@ class DataCollectorService
                 }
             }
 
-            $fullPrompt = "Collected data:\n\n{$dataContext}\n\n" . $prompt;
-
-            // Include locale context for natural language generation
+            // Build strong language enforcement
+            $locale = $state ? ($state->detectedLocale ?? $config->locale) : $config->locale;
+            $languageNames = [
+                'ar' => 'Arabic',
+                'en' => 'English',
+                'zh' => 'Chinese',
+                'ja' => 'Japanese',
+                'ko' => 'Korean',
+                'ru' => 'Russian',
+                'el' => 'Greek',
+                'he' => 'Hebrew',
+                'th' => 'Thai',
+                'hi' => 'Hindi',
+                'es' => 'Spanish',
+                'fr' => 'French',
+                'de' => 'German',
+                'it' => 'Italian',
+                'pt' => 'Portuguese',
+            ];
+            
             $localeInstruction = '';
-            if ($config->locale && $config->locale !== 'en') {
-                $localeInstruction = "\n\nIMPORTANT: Generate the summary in the same language as the field labels above. Match the language naturally.";
+            if ($locale && $locale !== 'en') {
+                $languageName = $languageNames[$locale] ?? $locale;
+                $localeInstruction = "\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT:\n";
+                $localeInstruction .= "You MUST generate the ENTIRE summary in {$languageName}.\n";
+                $localeInstruction .= "Do NOT use English, Spanish, or any other language.\n";
+                $localeInstruction .= "ALL text must be in {$languageName} only.\n";
+                $localeInstruction .= "The user has been communicating in {$languageName} throughout this conversation.\n";
             }
+
+            $fullPrompt = "Collected data:\n\n{$dataContext}\n\n" . $prompt . $localeInstruction;
 
             $systemPrompt = "You are a helpful assistant generating a summary of collected data. "
                 . "Format your response in a clear, readable way using markdown. "
-                . "Be concise but comprehensive."
-                . $localeInstruction;
+                . "Be concise but comprehensive.";
+            
+            if ($locale && $locale !== 'en') {
+                $languageName = $languageNames[$locale] ?? $locale;
+                $systemPrompt .= " ⚠️ CRITICAL: You MUST respond ENTIRELY in {$languageName}. Do NOT use English or any other language.";
+            }
 
             Log::channel('ai-engine')->info('Generating AI data summary', [
                 'config' => $config->name,
@@ -1544,11 +1596,34 @@ class DataCollectorService
 
             // Add language context - AI will detect from conversation
             $locale = $state->detectedLocale ?? $config->locale ?? null;
+            
+            // Build strong language enforcement
+            $languageNames = [
+                'ar' => 'Arabic',
+                'en' => 'English',
+                'zh' => 'Chinese',
+                'ja' => 'Japanese',
+                'ko' => 'Korean',
+                'ru' => 'Russian',
+                'el' => 'Greek',
+                'he' => 'Hebrew',
+                'th' => 'Thai',
+                'hi' => 'Hindi',
+                'es' => 'Spanish',
+                'fr' => 'French',
+                'de' => 'German',
+                'it' => 'Italian',
+                'pt' => 'Portuguese',
+            ];
+            
             $languageContext = '';
             if ($locale && $locale !== 'en') {
-                $languageContext = "\n\nLANGUAGE REQUIREMENT:\n";
-                $languageContext .= "Generate ALL content (titles, descriptions, lesson names, etc.) in the SAME language the user has been using.\n";
-                $languageContext .= "Only JSON keys should remain in English, all values must match the user's language.\n";
+                $languageName = $languageNames[$locale] ?? $locale;
+                $languageContext = "\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT:\n";
+                $languageContext .= "You MUST generate ALL text content ENTIRELY in {$languageName}.\n";
+                $languageContext .= "JSON keys should be in English, but ALL VALUES (titles, descriptions, names, etc.) must be in {$languageName}.\n";
+                $languageContext .= "Do NOT use English or any other language for the content values.\n";
+                $languageContext .= "The user has been communicating in {$languageName} throughout this conversation.\n";
             }
             
             $fullPrompt = $dataContext . "\n---\n\n" . $prompt . $actionSummaryContext . $languageContext;
@@ -1562,7 +1637,8 @@ class DataCollectorService
             $systemPrompt .= "4. For arrays, generate the number of items specified or a reasonable default\n";
             
             if ($locale && $locale !== 'en') {
-                $systemPrompt .= "5. CRITICAL: Generate ALL text content in the SAME language as the user (only JSON keys in English)\n";
+                $languageName = $languageNames[$locale] ?? $locale;
+                $systemPrompt .= "5. ⚠️ CRITICAL: Generate ALL text content (titles, descriptions, names, etc.) ENTIRELY in {$languageName}. Only JSON keys in English.\n";
             }
 
             Log::channel('ai-engine')->info('Generating structured output', [
