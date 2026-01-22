@@ -38,7 +38,7 @@ class AIEngineService
         // Auto-detect authenticated user if userId not provided
         // IMPORTANT: withUserId returns a NEW immutable request, so we must reassign
         if (!$request->userId && auth()->check()) {
-            $request = $request->withUserId((string) auth()->id());
+            $request = $request->withUserId($this->resolveUserId());
         }
 
         // Debug mode: Log prompt before sending
@@ -208,7 +208,7 @@ class AIEngineService
     {
         // Auto-detect authenticated user if userId not provided
         if (!$request->userId && auth()->check()) {
-            $request = $request->withUserId((string) auth()->id());
+            $request = $request->withUserId($this->resolveUserId());
         }
 
         // Check credits before processing (if enabled)
@@ -311,5 +311,53 @@ class AIEngineService
         }
 
         return $this->generate($request);
+    }
+
+    /**
+     * Resolve the user ID for credit management
+     * Supports custom resolvers via config for multi-tenant applications
+     */
+    protected function resolveUserId(): string
+    {
+        $resolverClass = config('ai-engine.credits.user_id_resolver');
+
+        // If custom resolver is configured, use it
+        if ($resolverClass && class_exists($resolverClass)) {
+            try {
+                $resolver = app($resolverClass);
+                
+                // Support callable resolvers (with __invoke method)
+                if (is_callable($resolver)) {
+                    $userId = $resolver();
+                    if ($userId) {
+                        return (string) $userId;
+                    }
+                }
+                
+                // Support resolvers with resolve() method
+                if (method_exists($resolver, 'resolve')) {
+                    $userId = $resolver->resolve();
+                    if ($userId) {
+                        return (string) $userId;
+                    }
+                }
+                
+                // Support static resolveUserId() method
+                if (method_exists($resolver, 'resolveUserId')) {
+                    $userId = $resolver::resolveUserId();
+                    if ($userId) {
+                        return (string) $userId;
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Failed to resolve user ID with custom resolver', [
+                    'resolver' => $resolverClass,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Fallback to default auth()->id()
+        return (string) auth()->id();
     }
 }

@@ -492,6 +492,22 @@ return [
         // Examples: 'id', 'tenant_id', 'workspace_id', 'organization_id'
         'owner_id_column' => env('AI_CREDITS_OWNER_ID_COLUMN', 'id'),
         
+        // Custom User ID Resolver (Multi-Tenant Support)
+        // Specify a custom class to resolve the owner ID for credit management
+        // This is useful for multi-tenant applications where credits are tied to
+        // tenants, workspaces, or organizations instead of individual users.
+        //
+        // The resolver class should implement one of the following:
+        //   - __invoke() method (callable)
+        //   - resolve() method
+        //   - static resolveUserId() method
+        //
+        // Example resolver that prioritizes tenant_id over workspace_id over user_id:
+        //   'user_id_resolver' => \App\Services\AI\TenantUserIdResolver::class,
+        //
+        // Set to null to use default auth()->id() behavior
+        'user_id_resolver' => env('AI_USER_ID_RESOLVER', null),
+        
         // Engine conversion rates: MyCredits to Engine Credits
         // Example: 'openai' => 2.0 means 100 MyCredits = 50 OpenAI credits
         'engine_rates' => [
