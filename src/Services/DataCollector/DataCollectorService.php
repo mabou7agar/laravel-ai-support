@@ -1181,7 +1181,8 @@ class DataCollectorService
 
             $errorMessage = "There are some validation errors:\n";
             foreach ($errors as $field => $fieldErrors) {
-                $errorMessage .= "- {$field}: " . implode(', ', $fieldErrors) . "\n";
+                $errorsArray = is_array($fieldErrors) ? $fieldErrors : [$fieldErrors];
+                $errorMessage .= "- {$field}: " . implode(', ', $errorsArray) . "\n";
             }
 
             return new DataCollectorResponse(
@@ -1555,7 +1556,7 @@ class DataCollectorService
             }
 
             // Build strong language enforcement
-            $locale = $state ? ($state->detectedLocale ?? $config->locale) : $config->locale;
+            $locale = $config->locale ?? 'en';
             $languageNames = [
                 'ar' => 'Arabic',
                 'en' => 'English',
