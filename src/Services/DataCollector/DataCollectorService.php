@@ -872,23 +872,35 @@ class DataCollectorService
 
         // If no fields extracted, try direct extraction from user message
         if (empty($extractedFields)) {
-            // Try to detect which field user wants to modify
-            $lowerMessage = strtolower($message);
-            foreach ($config->getFields() as $fieldName => $field) {
-                $fieldNameLower = strtolower($fieldName);
-                $descriptionLower = strtolower($field->description);
+            // CRITICAL: Check if this is just a modification request phrase (not actual data)
+            // Prevents "I want to change the name" from being saved as the name value
+            $isModificationIntent = $this->isRejectionIntent($message, $state, $config);
+            
+            if ($isModificationIntent) {
+                Log::channel('ai-engine')->info('Modification intent detected during enhancement - not extracting as field value', [
+                    'session_id' => $state->sessionId,
+                    'user_message' => substr($message, 0, 100),
+                ]);
+                // Don't extract anything - let AI ask what they want to change
+            } else {
+                // Try to detect which field user wants to modify
+                $lowerMessage = strtolower($message);
+                foreach ($config->getFields() as $fieldName => $field) {
+                    $fieldNameLower = strtolower($fieldName);
+                    $descriptionLower = strtolower($field->description);
 
-                // Check if user mentioned this field
-                if (str_contains($lowerMessage, $fieldNameLower) || str_contains($lowerMessage, $descriptionLower)) {
-                    // Extract value from message (remove field name mentions)
-                    $value = trim(preg_replace('/\b(name|description|duration|level|price)\b/i', '', $message));
-                    if (!empty($value) && strlen($value) > 2) {
-                        $extractedFields[$fieldName] = $value;
-                        Log::channel('ai-engine')->info('Direct field extraction during enhancement', [
-                            'field' => $fieldName,
-                            'value' => $value,
-                        ]);
-                        break;
+                    // Check if user mentioned this field
+                    if (str_contains($lowerMessage, $fieldNameLower) || str_contains($lowerMessage, $descriptionLower)) {
+                        // Extract value from message (remove field name mentions)
+                        $value = trim(preg_replace('/\b(name|description|duration|level|price)\b/i', '', $message));
+                        if (!empty($value) && strlen($value) > 2) {
+                            $extractedFields[$fieldName] = $value;
+                            Log::channel('ai-engine')->info('Direct field extraction during enhancement', [
+                                'field' => $fieldName,
+                                'value' => $value,
+                            ]);
+                            break;
+                        }
                     }
                 }
             }
