@@ -13,9 +13,27 @@ use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 
 class CreditManager
 {
+    protected static ?string $globalQueryResolver = null;
+    
     public function __construct(
         private Application $app
     ) {}
+    
+    /**
+     * Set global query resolver at runtime
+     */
+    public static function setQueryResolver(?string $resolverClass): void
+    {
+        static::$globalQueryResolver = $resolverClass;
+    }
+    
+    /**
+     * Get the configured query resolver
+     */
+    protected function getQueryResolverClass(): ?string
+    {
+        return static::$globalQueryResolver ?? config('ai-engine.credits.query_resolver');
+    }
 
     /**
      * Calculate required MyCredits for a request (with engine conversion)
@@ -259,7 +277,7 @@ class CreditManager
     private function getUserModel(string $ownerId): Model
     {
         // Check for custom query resolver first
-        $queryResolverClass = config('ai-engine.credits.query_resolver');
+        $queryResolverClass = $this->getQueryResolverClass();
         
         if ($queryResolverClass && class_exists($queryResolverClass)) {
             try {

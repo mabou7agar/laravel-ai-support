@@ -116,3 +116,68 @@ if (!function_exists('is_vectorizable')) {
         return in_array('LaravelAIEngine\Traits\Vectorizable', $traits);
     }
 }
+
+if (!function_exists('ai_set_user_resolver')) {
+    /**
+     * Set the global user ID resolver at runtime
+     * 
+     * @param string|null $resolverClass Fully qualified class name or null to reset
+     * @return void
+     * 
+     * @example
+     * // Set custom resolver
+     * ai_set_user_resolver(\App\Services\AI\TenantUserIdResolver::class);
+     * 
+     * // Reset to config default
+     * ai_set_user_resolver(null);
+     */
+    function ai_set_user_resolver(?string $resolverClass): void
+    {
+        \LaravelAIEngine\Services\AIEngineService::setUserIdResolver($resolverClass);
+    }
+}
+
+if (!function_exists('ai_set_query_resolver')) {
+    /**
+     * Set the global query resolver at runtime
+     * 
+     * @param string|null $resolverClass Fully qualified class name or null to reset
+     * @return void
+     * 
+     * @example
+     * // Set custom resolver
+     * ai_set_query_resolver(\App\Services\AI\TenantQueryResolver::class);
+     * 
+     * // Reset to config default
+     * ai_set_query_resolver(null);
+     */
+    function ai_set_query_resolver(?string $resolverClass): void
+    {
+        \LaravelAIEngine\Services\CreditManager::setQueryResolver($resolverClass);
+    }
+}
+
+if (!function_exists('ai_set_resolvers')) {
+    /**
+     * Set both user ID and query resolvers at once
+     * 
+     * @param string|null $userIdResolver User ID resolver class or null
+     * @param string|null $queryResolver Query resolver class or null
+     * @return void
+     * 
+     * @example
+     * // Set both resolvers
+     * ai_set_resolvers(
+     *     \App\Services\AI\TenantUserIdResolver::class,
+     *     \App\Services\AI\TenantQueryResolver::class
+     * );
+     * 
+     * // Reset both to config defaults
+     * ai_set_resolvers(null, null);
+     */
+    function ai_set_resolvers(?string $userIdResolver, ?string $queryResolver): void
+    {
+        ai_set_user_resolver($userIdResolver);
+        ai_set_query_resolver($queryResolver);
+    }
+}

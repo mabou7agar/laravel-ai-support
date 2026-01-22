@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Event;
 
 class AIEngineService
 {
+    protected static ?string $globalUserIdResolver = null;
+    
     public function __construct(
         protected CreditManager $creditManager,
         protected ?ConversationManager $conversationManager = null,
@@ -25,6 +27,22 @@ class AIEngineService
     ) {
         $this->conversationManager = $conversationManager ?? app(ConversationManager::class);
         $this->driverRegistry = $driverRegistry ?? app(Drivers\DriverRegistry::class);
+    }
+    
+    /**
+     * Set global user ID resolver at runtime
+     */
+    public static function setUserIdResolver(?string $resolverClass): void
+    {
+        static::$globalUserIdResolver = $resolverClass;
+    }
+    
+    /**
+     * Get the configured user ID resolver
+     */
+    protected function getUserIdResolverClass(): ?string
+    {
+        return static::$globalUserIdResolver ?? config('ai-engine.credits.user_id_resolver');
     }
 
     /**
@@ -319,7 +337,7 @@ class AIEngineService
      */
     protected function resolveUserId(): string
     {
-        $resolverClass = config('ai-engine.credits.user_id_resolver');
+        $resolverClass = $this->getUserIdResolverClass();
 
         // If custom resolver is configured, use it
         if ($resolverClass && class_exists($resolverClass)) {
