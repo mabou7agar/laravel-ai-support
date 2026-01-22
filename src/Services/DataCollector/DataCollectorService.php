@@ -316,21 +316,55 @@ class DataCollectorService
             );
             $responseContent = $aiResponse->getContent();
         } else {
-            // Use intent analysis to intelligently extract field value
-            $intentAnalysis = $this->analyzeFieldIntent(
-                $message,
-                $state->currentField,
-                $config,
-                $state->getData()
-            );
+            // Use intent analysis to intelligently extract field value (only if we have a current field)
+            if ($state->currentField) {
+                $intentAnalysis = $this->analyzeFieldIntent(
+                    $message,
+                    $state->currentField,
+                    $config,
+                    $state->getData()
+                );
 
-            Log::channel('ai-engine')->info('Field intent analysis completed', [
-                'session_id' => $state->sessionId,
-                'intent' => $intentAnalysis['intent'],
-                'confidence' => $intentAnalysis['confidence'],
-                'extracted_value' => $intentAnalysis['extracted_value'] ?? null,
-                'current_field' => $state->currentField,
-            ]);
+                Log::channel('ai-engine')->info('Field intent analysis completed', [
+                    'session_id' => $state->sessionId,
+                    'intent' => $intentAnalysis['intent'],
+                    'confidence' => $intentAnalysis['confidence'],
+                    'extracted_value' => $intentAnalysis['extracted_value'] ?? null,
+                    'current_field' => $state->currentField,
+                ]);
+            } else {
+                // No current field - check if there's a pending field update
+                $pendingField = $state->metadata['pending_field_update'] ?? null;
+                
+                if ($pendingField) {
+                    // Set pending field as current field and analyze intent for it
+                    $state->setCurrentField($pendingField);
+                    
+                    Log::channel('ai-engine')->info('Using pending field as current field', [
+                        'session_id' => $state->sessionId,
+                        'pending_field' => $pendingField,
+                    ]);
+                    
+                    // Now analyze intent with the pending field as current
+                    $intentAnalysis = $this->analyzeFieldIntent(
+                        $message,
+                        $pendingField,
+                        $config,
+                        $state->getData()
+                    );
+                    
+                    // Clear the pending field update
+                    $metadata = $state->metadata;
+                    unset($metadata['pending_field_update']);
+                    $state->setMetadata($metadata);
+                } else {
+                    // No current field and no pending field - skip intent analysis
+                    $intentAnalysis = ['intent' => 'unclear', 'confidence' => 0];
+                    Log::channel('ai-engine')->info('Skipping intent analysis - no current field', [
+                        'session_id' => $state->sessionId,
+                    ]);
+                }
+            }
 
             // Handle different intents from analysis
             $extractedFields = [];
