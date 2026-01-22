@@ -181,3 +181,23 @@ if (!function_exists('ai_set_resolvers')) {
         ai_set_query_resolver($queryResolver);
     }
 }
+
+if (!function_exists('ai_set_lifecycle_handler')) {
+    /**
+     * Set the global credit lifecycle handler at runtime
+     * 
+     * @param string|null $handlerClass Fully qualified class name or null to reset
+     * @return void
+     * 
+     * @example
+     * // Set custom lifecycle handler
+     * ai_set_lifecycle_handler(\App\Services\AI\ExpiringCreditHandler::class);
+     * 
+     * // Reset to config default
+     * ai_set_lifecycle_handler(null);
+     */
+    function ai_set_lifecycle_handler(?string $handlerClass): void
+    {
+        \LaravelAIEngine\Services\CreditManager::setLifecycleHandler($handlerClass);
+    }
+}

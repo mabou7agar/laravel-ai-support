@@ -530,6 +530,31 @@ return [
         // Set to null to use default query: Model::where($column, $ownerId)->firstOrFail()
         'query_resolver' => env('AI_QUERY_RESOLVER', null),
         
+        // Custom Credit Lifecycle Handler (Advanced)
+        // Specify a custom class to override credit management logic
+        // This allows you to implement custom credit expiration, validation,
+        // deduction strategies, and other business rules.
+        //
+        // The handler class must implement CreditLifecycleInterface with methods:
+        //   - hasCredits(Model $owner, AIRequest $request): bool
+        //   - deductCredits(Model $owner, AIRequest $request, float $credits): bool
+        //   - addCredits(Model $owner, float $credits, array $metadata): bool
+        //   - getAvailableCredits(Model $owner): float
+        //   - hasLowCredits(Model $owner): bool
+        //
+        // Example use cases:
+        //   - Credit expiration dates
+        //   - Priority-based credit consumption
+        //   - Credit packages with different rates
+        //   - Subscription-based unlimited credits
+        //   - Credit history tracking
+        //
+        // Example:
+        //   'lifecycle_handler' => \App\Services\AI\ExpiringCreditHandler::class,
+        //
+        // Set to null to use default credit management
+        'lifecycle_handler' => env('AI_LIFECYCLE_HANDLER', null),
+        
         // Engine conversion rates: MyCredits to Engine Credits
         // Example: 'openai' => 2.0 means 100 MyCredits = 50 OpenAI credits
         'engine_rates' => [

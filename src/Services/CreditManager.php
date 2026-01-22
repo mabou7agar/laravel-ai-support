@@ -14,6 +14,7 @@ use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 class CreditManager
 {
     protected static ?string $globalQueryResolver = null;
+    protected static ?string $globalLifecycleHandler = null;
     
     public function __construct(
         private Application $app
@@ -28,11 +29,51 @@ class CreditManager
     }
     
     /**
+     * Set global credit lifecycle handler at runtime
+     */
+    public static function setLifecycleHandler(?string $handlerClass): void
+    {
+        static::$globalLifecycleHandler = $handlerClass;
+    }
+    
+    /**
      * Get the configured query resolver
      */
     protected function getQueryResolverClass(): ?string
     {
         return static::$globalQueryResolver ?? config('ai-engine.credits.query_resolver');
+    }
+    
+    /**
+     * Get the configured lifecycle handler
+     */
+    protected function getLifecycleHandlerClass(): ?string
+    {
+        return static::$globalLifecycleHandler ?? config('ai-engine.credits.lifecycle_handler');
+    }
+    
+    /**
+     * Get lifecycle handler instance
+     */
+    protected function getLifecycleHandler(): ?\LaravelAIEngine\Contracts\CreditLifecycleInterface
+    {
+        $handlerClass = $this->getLifecycleHandlerClass();
+        
+        if ($handlerClass && class_exists($handlerClass)) {
+            try {
+                $handler = app($handlerClass);
+                if ($handler instanceof \LaravelAIEngine\Contracts\CreditLifecycleInterface) {
+                    return $handler;
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Failed to instantiate lifecycle handler', [
+                    'handler' => $handlerClass,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+        
+        return null;
     }
 
     /**
@@ -59,20 +100,26 @@ class CreditManager
     }
 
     /**
-     * Check if user has sufficient MyCredits
+     * Check if user has enough MyCredits for a request
      */
     public function hasCredits(string $userId, AIRequest $request): bool
     {
         $user = $this->getUserModel($userId);
         
+        // Use custom lifecycle handler if configured
+        $handler = $this->getLifecycleHandler();
+        if ($handler) {
+            return $handler->hasCredits($user, $request);
+        }
+        
+        // Default behavior
         // Check unlimited first
         if (isset($user->has_unlimited_credits) && $user->has_unlimited_credits) {
             return true;
         }
         
         $requiredCredits = $this->calculateCredits($request);
-        
-        return ($user->my_credits ?? 0) >= $requiredCredits;
+        return $user->my_credits >= $requiredCredits;
     }
 
     /**
@@ -82,12 +129,19 @@ class CreditManager
     {
         $user = $this->getUserModel($userId);
         
+        $creditsToDeduct = $actualCreditsUsed ?? $this->calculateCredits($request);
+        
+        // Use custom lifecycle handler if configured
+        $handler = $this->getLifecycleHandler();
+        if ($handler) {
+            return $handler->deductCredits($user, $request, $creditsToDeduct);
+        }
+        
+        // Default behavior
         // Don't deduct if unlimited
         if ($user->has_unlimited_credits) {
             return true;
         }
-        
-        $creditsToDeduct = $actualCreditsUsed ?? $this->calculateCredits($request);
         
         if ($user->my_credits < $creditsToDeduct) {
             throw new InsufficientCreditsException(
@@ -102,9 +156,17 @@ class CreditManager
     /**
      * Add MyCredits to user
      */
-    public function addCredits(string $userId, float $credits): bool
+    public function addCredits(string $userId, float $credits, array $metadata = []): bool
     {
         $user = $this->getUserModel($userId);
+        
+        // Use custom lifecycle handler if configured
+        $handler = $this->getLifecycleHandler();
+        if ($handler) {
+            return $handler->addCredits($user, $credits, $metadata);
+        }
+        
+        // Default behavior
         $user->my_credits += $credits;
         return $user->save();
     }
