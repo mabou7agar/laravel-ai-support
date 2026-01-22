@@ -426,14 +426,16 @@ class DataCollectorService
                     // Generate validation error message using AI in user's language
                     $fieldInfo = $field->getFieldInfo();
                     $errorsJson = json_encode($errors, JSON_UNESCAPED_UNICODE);
+                    $fieldDescription = $fieldInfo['description'] ?? $fieldName;
+                    $fieldExamples = $fieldInfo['examples'] ?? [];
                     
                     $errorPrompt = "The user provided a value that failed validation.\n\n";
-                    $errorPrompt .= "Field: {$fieldInfo['description']}\n";
+                    $errorPrompt .= "Field: {$fieldDescription}\n";
                     $errorPrompt .= "Validation errors: {$errorsJson}\n\n";
                     $errorPrompt .= "Generate a friendly error message that:\n";
                     $errorPrompt .= "1. Explains what went wrong based on the validation errors\n";
                     $errorPrompt .= "2. Asks them to provide a valid value\n";
-                    $errorPrompt .= "3. Mentions examples if available: " . json_encode($fieldInfo['examples'] ?? [], JSON_UNESCAPED_UNICODE) . "\n\n";
+                    $errorPrompt .= "3. Mentions examples if available: " . json_encode($fieldExamples, JSON_UNESCAPED_UNICODE) . "\n\n";
                     $errorPrompt .= "Be polite and helpful. Respond in the user's language.";
                     
                     try {
@@ -623,7 +625,7 @@ class DataCollectorService
             
             $continuationPrompt = "The user just provided a value. Now:\n";
             $continuationPrompt .= "1. Briefly acknowledge what they provided\n";
-            $continuationPrompt .= "2. Ask for the next field using this information:\n{$fieldInfoJson}\n";
+            $continuationPrompt .= "2. Ask for the next field using this information:\n" . $fieldInfoJson . "\n";
             $continuationPrompt .= "3. Naturally mention examples or requirements if provided\n\n";
             $continuationPrompt .= "Be conversational and natural in the user's language.";
             
