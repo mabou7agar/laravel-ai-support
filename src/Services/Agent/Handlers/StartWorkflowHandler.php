@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Services\Agent\Handlers;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentMode;
+use LaravelAIEngine\Services\Agent\WorkflowDiscoveryService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -13,7 +14,8 @@ use Illuminate\Support\Facades\Log;
 class StartWorkflowHandler implements MessageHandlerInterface
 {
     public function __construct(
-        protected AgentMode $agentMode
+        protected AgentMode $agentMode,
+        protected WorkflowDiscoveryService $workflowDiscovery
     ) {}
 
     public function handle(
@@ -45,12 +47,19 @@ class StartWorkflowHandler implements MessageHandlerInterface
     
     protected function detectWorkflow(string $message): ?string
     {
-        $workflows = config('ai-agent.workflows', []);
+        // Merge config-based workflows with auto-discovered workflows
+        $configWorkflows = config('ai-agent.workflows', []);
+        $discoveredWorkflows = $this->workflowDiscovery->discoverWorkflows(useCache: true);
+        
+        // Config takes precedence over discovered
+        $workflows = array_merge($discoveredWorkflows, $configWorkflows);
         
         Log::channel('ai-engine')->debug('StartWorkflowHandler: Detecting workflow', [
             'message' => $message,
+            'config_workflows' => count($configWorkflows),
+            'discovered_workflows' => count($discoveredWorkflows),
+            'total_workflows' => count($workflows),
             'registered_workflows' => array_keys($workflows),
-            'workflow_count' => count($workflows),
         ]);
         
         foreach ($workflows as $workflowClass => $triggers) {
@@ -65,6 +74,7 @@ class StartWorkflowHandler implements MessageHandlerInterface
                         'workflow' => $workflowClass,
                         'matched_trigger' => $trigger,
                         'message' => $message,
+                        'source' => isset($configWorkflows[$workflowClass]) ? 'config' : 'auto-discovered',
                     ]);
                     return $workflowClass;
                 }
