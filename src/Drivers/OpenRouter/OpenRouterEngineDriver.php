@@ -223,7 +223,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     /**
      * Get supported capabilities
      */
-    public function getSupportedCapabilities(): array
+    protected function getSupportedCapabilities(): array
     {
         return ['text', 'chat', 'streaming'];
     }
@@ -231,7 +231,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     /**
      * Get the engine enum
      */
-    public function getEngineEnum(): EngineEnum
+    protected function getEngineEnum(): EngineEnum
     {
         return EngineEnum::from(EngineEnum::OPENROUTER);
     }
@@ -239,7 +239,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     /**
      * Get the default model
      */
-    public function getDefaultModel(): EntityEnum
+    protected function getDefaultModel(): EntityEnum
     {
         $model = config('ai-engine.engines.openrouter.default_model', 'meta-llama/llama-3.1-8b-instruct:free');
         return EntityEnum::from($model);
@@ -256,7 +256,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     /**
      * Validate the configuration
      */
-    public function validateConfig(): void
+    protected function validateConfig(): void
     {
         if (empty($this->getApiKey())) {
             throw new \InvalidArgumentException('OpenRouter API key is required');
