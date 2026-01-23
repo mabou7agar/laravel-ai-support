@@ -634,7 +634,9 @@ trait AutomatesSteps
             $prompt .= "- {$fieldName} ({$type}): {$description}\n";
         }
 
-        $prompt .= "\nReturn ONLY valid JSON with extracted fields.";
+        $prompt .= "\nExample output format:\n";
+        $prompt .= '{"customer_id": "John Smith", "items": [{"product": "iPhone 15 Pro", "quantity": 2}, {"product": "AirPods", "quantity": 1}]}';
+        $prompt .= "\n\nReturn ONLY valid JSON with extracted fields.";
 
         try {
             // askAI expects array context, not UnifiedActionContext
