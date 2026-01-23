@@ -56,10 +56,10 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
             $messages = $this->buildMessages($request);
             $payload = [
-                'model' => $request->model->value,
+                'model' => $request->getModel()->value,
                 'messages' => $messages,
-                'max_tokens' => $request->maxTokens ?? 4096,
-                'temperature' => $request->temperature ?? 0.7,
+                'max_tokens' => $request->getMaxTokens() ?? 4096,
+                'temperature' => $request->getTemperature() ?? 0.7,
             ];
 
             // Add OpenRouter specific parameters
@@ -107,13 +107,15 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     {
         $messages = [];
 
-        if ($request->systemPrompt) {
-            $messages[] = ['role' => 'system', 'content' => $request->systemPrompt];
+        $systemPrompt = $request->getSystemPrompt();
+        if ($systemPrompt) {
+            $messages[] = ['role' => 'system', 'content' => $systemPrompt];
         }
 
         // Add conversation history if present
-        if (!empty($request->conversationHistory)) {
-            foreach ($request->conversationHistory as $msg) {
+        $conversationHistory = $request->getConversationHistory();
+        if (!empty($conversationHistory)) {
+            foreach ($conversationHistory as $msg) {
                 $messages[] = [
                     'role' => $msg['role'] ?? 'user',
                     'content' => $msg['content'] ?? '',
@@ -122,7 +124,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
         }
 
         // Add the current prompt
-        $messages[] = ['role' => 'user', 'content' => $request->prompt];
+        $messages[] = ['role' => 'user', 'content' => $request->getPrompt()];
 
         return $messages;
     }
