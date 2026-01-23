@@ -16,7 +16,7 @@ class AgentMode
 
     public function __construct()
     {
-        $this->maxSteps = config('ai-agent.agent_mode.max_steps', 10);
+        $this->maxSteps = config('ai-agent.agent_mode.max_steps', 100);
         $this->maxRetries = config('ai-agent.agent_mode.max_retries', 3);
         $this->crudHandler = app(\LaravelAIEngine\Services\IntelligentCRUDHandler::class);
     }
@@ -746,7 +746,7 @@ class AgentMode
         $currentStepKey = $context->currentWorkflow . '::' . ($context->currentStep ?? 'start');
         $stepExecutionCount = $context->get('step_execution_count', []);
         $executionCount = $stepExecutionCount[$currentStepKey] ?? 0;
-        $maxStepExecutions = config('ai-engine.workflow.max_step_executions', 20);
+        $maxStepExecutions = config('ai-engine.workflow.max_step_executions', 100);
         
         if ($executionCount >= $maxStepExecutions) {
             Log::channel('ai-engine')->error('⚠️ Step execution limit exceeded - possible infinite loop', [
