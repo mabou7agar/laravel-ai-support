@@ -112,10 +112,10 @@ class OpenRouterEngineDriver extends BaseEngineDriver
             $messages[] = ['role' => 'system', 'content' => $systemPrompt];
         }
 
-        // Add conversation history if present
-        $conversationHistory = $request->getConversationHistory();
-        if (!empty($conversationHistory)) {
-            foreach ($conversationHistory as $msg) {
+        // Add conversation history if present (stored in messages)
+        $existingMessages = $request->getMessages();
+        if (!empty($existingMessages)) {
+            foreach ($existingMessages as $msg) {
                 $messages[] = [
                     'role' => $msg['role'] ?? 'user',
                     'content' => $msg['content'] ?? '',
