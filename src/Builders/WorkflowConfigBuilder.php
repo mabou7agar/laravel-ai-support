@@ -128,19 +128,10 @@ class WorkflowConfigBuilder
      * 
      * @param string $identifierField The field name (e.g., 'items')
      * @param \LaravelAIEngine\DTOs\EntityFieldConfig $config Entity configuration
-     * @param string|null $entityName Optional explicit entity name (e.g., 'products'). If null, derives from identifierField
+     * @param string $entityName Entity name for context storage (e.g., 'products')
      */
-    public function entitiesField(string $identifierField, \LaravelAIEngine\DTOs\EntityFieldConfig $config, ?string $entityName = null): self
+    public function entitiesField(string $identifierField, \LaravelAIEngine\DTOs\EntityFieldConfig $config, string $entityName): self
     {
-        // If entity name not provided, derive from identifier field
-        if ($entityName === null) {
-            $entityName = rtrim($identifierField, 's'); // items -> item, products -> product
-            if ($entityName === $identifierField) {
-                // If no 's' was removed, try common patterns
-                $entityName = preg_replace('/ies$/', 'y', $identifierField); // categories -> category
-            }
-        }
-        
         $configArray = $config->toArray();
         $configArray['identifier_field'] = $identifierField;
         $configArray['multiple'] = true;
@@ -151,8 +142,8 @@ class WorkflowConfigBuilder
         $this->field($identifierField, [
             'type' => 'entity',
             'required' => $configArray['required'] ?? true,
-            'description' => $configArray['description'] ?? ucfirst($entityName) . 's',
-            'prompt' => $configArray['prompt'] ?? "What {$entityName}s would you like to add?",
+            'description' => $configArray['description'] ?? ucfirst($entityName),
+            'prompt' => $configArray['prompt'] ?? "What {$entityName} would you like to add?",
         ]);
         
         return $this;
