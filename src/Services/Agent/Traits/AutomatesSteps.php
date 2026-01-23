@@ -1060,6 +1060,40 @@ trait AutomatesSteps
 
         $identifier = $collectedData[$identifierField] ?? null;
 
+        // Normalize string arrays to object arrays if needed
+        if ($isMultiple && is_array($identifier) && !empty($identifier)) {
+            $needsNormalization = false;
+            foreach ($identifier as $item) {
+                if (is_string($item)) {
+                    $needsNormalization = true;
+                    break;
+                }
+            }
+
+            if ($needsNormalization) {
+                $normalized = [];
+                foreach ($identifier as $item) {
+                    if (is_string($item)) {
+                        $normalized[] = [
+                            'product' => $item,
+                            'name' => $item,
+                            'quantity' => 1,
+                        ];
+                    } else {
+                        $normalized[] = $item;
+                    }
+                }
+                $identifier = $normalized;
+                $collectedData[$identifierField] = $normalized;
+                $context->set('collected_data', $collectedData);
+
+                Log::channel('ai-engine')->info('Normalized string array to objects at entity resolution', [
+                    'entity' => $entityName,
+                    'count' => count($normalized),
+                ]);
+            }
+        }
+
         Log::channel('ai-engine')->info('AutomatesSteps: Looking for identifier in collected_data', [
             'entity' => $entityName,
             'identifier_field' => $identifierField,
