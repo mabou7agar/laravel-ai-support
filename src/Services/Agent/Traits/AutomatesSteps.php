@@ -616,11 +616,7 @@ trait AutomatesSteps
             return [];
         }
 
-        // Get config to access entity parsing guides
-        $config = method_exists($this, 'config') ? $this->config() : [];
-        $entities = $config['entities'] ?? [];
-
-        // Build generic extraction prompt similar to WorkflowDataCollector
+        // Build simple extraction prompt - trust AI intelligence
         $prompt = "Extract structured data from the user's message.\n\n";
         $prompt .= "User said: \"{$combinedMessage}\"\n\n";
 
@@ -638,37 +634,7 @@ trait AutomatesSteps
             $prompt .= "- {$fieldName} ({$type}): {$description}\n";
         }
 
-        // Add entity-specific parsing guides if available
-        $hasParsingGuides = false;
-        foreach ($entities as $entityName => $entityConfig) {
-            $identifierField = $entityConfig['identifier_field'] ?? $entityName;
-            if (isset($fields[$identifierField]) && !empty($entityConfig['parsing_guide'])) {
-                if (!$hasParsingGuides) {
-                    $prompt .= "\nEntity-Specific Parsing Rules:\n";
-                    $hasParsingGuides = true;
-                }
-                $prompt .= "\nFor '{$identifierField}' field:\n";
-                $prompt .= $entityConfig['parsing_guide'] . "\n";
-            }
-        }
-
-        $prompt .= "\nGeneral Rules:\n";
-        $prompt .= "- Only extract fields that are clearly mentioned in the message\n";
-        $prompt .= "- Return empty object {} if no fields can be extracted\n";
-        $prompt .= "- For numeric fields, extract only numbers\n";
-        $prompt .= "- CRITICAL: For array fields (like 'items'), ALWAYS extract as array of OBJECTS, never as array of strings\n";
-        $prompt .= "- Each item in an array MUST be an object with 'product' and 'quantity' fields\n";
-        $prompt .= "- IMPORTANT: Preserve COMPLETE names including ALL details (model numbers, versions, specifications, sizes, colors, etc.)\n";
-        $prompt .= "- Never truncate or abbreviate names - extract the FULL name exactly as stated\n";
-        $prompt .= "- When user says 'X and Y', extract as TWO separate objects in the array\n";
-        $prompt .= "- If quantity not specified, use 1 as default\n";
-        $prompt .= "- Don't guess or infer data not explicitly stated\n\n";
-
-        $prompt .= "REQUIRED FORMAT for items/products:\n";
-        $prompt .= "CORRECT: {\"items\": [{\"product\": \"Macbook Pro M4 Max\", \"quantity\": 1}, {\"product\": \"iPhone 15\", \"quantity\": 1}]}\n";
-        $prompt .= "WRONG: {\"items\": [\"Macbook Pro M4 Max\", \"iPhone 15\"]}\n\n";
-
-        $prompt .= "Return ONLY valid JSON with extracted fields following the format above.";
+        $prompt .= "\nReturn ONLY valid JSON with extracted fields.";
 
         try {
             // askAI expects array context, not UnifiedActionContext
@@ -682,9 +648,6 @@ trait AutomatesSteps
             $extracted = json_decode($response, true);
 
             if (json_last_error() === JSON_ERROR_NONE && is_array($extracted)) {
-                // Normalize array items - convert string arrays to object arrays
-                $extracted = $this->normalizeExtractedArrays($extracted, $fields);
-                
                 \Illuminate\Support\Facades\Log::info('AI extracted data successfully', [
                     'workflow' => class_basename($this),
                     'field_count' => count($extracted),
@@ -1059,40 +1022,6 @@ trait AutomatesSteps
         }
 
         $identifier = $collectedData[$identifierField] ?? null;
-
-        // Normalize string arrays to object arrays if needed
-        if ($isMultiple && is_array($identifier) && !empty($identifier)) {
-            $needsNormalization = false;
-            foreach ($identifier as $item) {
-                if (is_string($item)) {
-                    $needsNormalization = true;
-                    break;
-                }
-            }
-
-            if ($needsNormalization) {
-                $normalized = [];
-                foreach ($identifier as $item) {
-                    if (is_string($item)) {
-                        $normalized[] = [
-                            'product' => $item,
-                            'name' => $item,
-                            'quantity' => 1,
-                        ];
-                    } else {
-                        $normalized[] = $item;
-                    }
-                }
-                $identifier = $normalized;
-                $collectedData[$identifierField] = $normalized;
-                $context->set('collected_data', $collectedData);
-
-                Log::channel('ai-engine')->info('Normalized string array to objects at entity resolution', [
-                    'entity' => $entityName,
-                    'count' => count($normalized),
-                ]);
-            }
-        }
 
         Log::channel('ai-engine')->info('AutomatesSteps: Looking for identifier in collected_data', [
             'entity' => $entityName,
