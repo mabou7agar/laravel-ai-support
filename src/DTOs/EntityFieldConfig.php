@@ -27,6 +27,7 @@ class EntityFieldConfig
         public ?string $parsingGuide = null,
         public array $includeFields = [],
         public array $baseFields = [],
+        public array $requiredItemFields = [],
     ) {}
 
     /**
@@ -236,6 +237,17 @@ class EntityFieldConfig
     }
 
     /**
+     * Set required fields for array items (e.g., price and quantity for products)
+     * These fields will be collected for each item in the array if missing
+     * Example: ['sale_price', 'quantity']
+     */
+    public function requiredItemFields(array $fields): self
+    {
+        $this->requiredItemFields = $fields;
+        return $this;
+    }
+
+    /**
      * Convert to array format for AI config
      */
     public function toArray(): array
@@ -263,6 +275,7 @@ class EntityFieldConfig
             'parsing_guide' => $this->parsingGuide,
             'include_fields' => $this->includeFields ?: null,
             'base_fields' => $this->baseFields ?: null,
+            'required_item_fields' => $this->requiredItemFields ?: null,
         ], fn($value) => $value !== null);
     }
 
