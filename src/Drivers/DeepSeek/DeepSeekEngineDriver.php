@@ -184,13 +184,11 @@ class DeepSeekEngineDriver extends BaseEngineDriver
         // Use specialized system prompt for code generation
         $codeSystemPrompt = "You are an expert programmer. Generate clean, efficient, and well-documented code. Follow best practices and include comments where appropriate.";
 
-        $originalSystemPrompt = $request->systemPrompt;
-        $request->systemPrompt = $codeSystemPrompt . ($originalSystemPrompt ? "\n\n" . $originalSystemPrompt : "");
+        // Clone request to avoid mutating original
+        $modifiedRequest = clone $request;
+        $modifiedRequest->systemPrompt = $codeSystemPrompt . ($request->systemPrompt ? "\n\n" . $request->systemPrompt : "");
 
-        $response = $this->generateText($request);
-
-        // Restore original system prompt
-        $request->systemPrompt = $originalSystemPrompt;
+        $response = $this->generateText($modifiedRequest);
 
         return $response->withDetailedUsage([
             'code_generation' => true,
@@ -205,13 +203,11 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     {
         $mathSystemPrompt = "You are an expert mathematician. Provide step-by-step solutions with clear explanations. Use proper mathematical notation and verify your answers.";
 
-        $originalSystemPrompt = $request->systemPrompt;
-        $request->systemPrompt = $mathSystemPrompt . ($originalSystemPrompt ? "\n\n" . $originalSystemPrompt : "");
+        // Clone request to avoid mutating original
+        $modifiedRequest = clone $request;
+        $modifiedRequest->systemPrompt = $mathSystemPrompt . ($request->systemPrompt ? "\n\n" . $request->systemPrompt : "");
 
-        $response = $this->generateText($request);
-
-        // Restore original system prompt
-        $request->systemPrompt = $originalSystemPrompt;
+        $response = $this->generateText($modifiedRequest);
 
         return $response->withDetailedUsage([
             'math_generation' => true,
