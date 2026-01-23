@@ -616,6 +616,9 @@ trait AutomatesSteps
             return [];
         }
 
+        // Get config to access extraction example
+        $config = method_exists($this, 'config') ? $this->config() : [];
+        
         // Build simple extraction prompt - trust AI intelligence
         $prompt = "Extract structured data from the user's message.\n\n";
         $prompt .= "User said: \"{$combinedMessage}\"\n\n";
@@ -634,8 +637,16 @@ trait AutomatesSteps
             $prompt .= "- {$fieldName} ({$type}): {$description}\n";
         }
 
-        $prompt .= "\nExample output format:\n";
-        $prompt .= '{"customer_id": "John Smith", "items": [{"product": "iPhone 15 Pro", "quantity": 2}, {"product": "AirPods", "quantity": 1}]}';
+        // Add extraction example if provided in config
+        if (!empty($config['extraction_example'])) {
+            $prompt .= "\nExample output format:\n";
+            $prompt .= $config['extraction_example'];
+        } else {
+            // Default example
+            $prompt .= "\nExample output format:\n";
+            $prompt .= '{"customer_id": "John Smith", "items": [{"product": "iPhone 15 Pro", "quantity": 2}, {"product": "AirPods", "quantity": 1}]}';
+        }
+        
         $prompt .= "\n\nReturn ONLY valid JSON with extracted fields.";
 
         try {

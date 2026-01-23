@@ -10,6 +10,7 @@ class WorkflowConfigBuilder
         'entities' => [],
         'conversational_guidance' => [],
         'final_action' => null,
+        'extraction_example' => null,
     ];
 
     /**
@@ -159,6 +160,16 @@ class WorkflowConfigBuilder
     public function confirmationFormat(string $format): self
     {
         $this->config['confirmation_format'] = $format;
+        return $this;
+    }
+
+    /**
+     * Set example output format for AI extraction
+     * Provides a concrete example to guide AI without being overly prescriptive
+     */
+    public function extractionExample(string|array $example): self
+    {
+        $this->config['extraction_example'] = is_array($example) ? json_encode($example) : $example;
         return $this;
     }
 
