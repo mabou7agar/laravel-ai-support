@@ -125,13 +125,20 @@ class WorkflowConfigBuilder
     /**
      * Add multiple entities field using EntityFieldConfig DTO
      * For array/collection of entities (e.g., products, items)
+     * 
+     * @param string $identifierField The field name (e.g., 'items')
+     * @param \LaravelAIEngine\DTOs\EntityFieldConfig $config Entity configuration
+     * @param string|null $entityName Optional explicit entity name (e.g., 'products'). If null, derives from identifierField
      */
-    public function entitiesField(string $identifierField, \LaravelAIEngine\DTOs\EntityFieldConfig $config): self
+    public function entitiesField(string $identifierField, \LaravelAIEngine\DTOs\EntityFieldConfig $config, ?string $entityName = null): self
     {
-        $entityName = rtrim($identifierField, 's'); // items -> item, products -> product
-        if ($entityName === $identifierField) {
-            // If no 's' was removed, try common patterns
-            $entityName = preg_replace('/ies$/', 'y', $identifierField); // categories -> category
+        // If entity name not provided, derive from identifier field
+        if ($entityName === null) {
+            $entityName = rtrim($identifierField, 's'); // items -> item, products -> product
+            if ($entityName === $identifierField) {
+                // If no 's' was removed, try common patterns
+                $entityName = preg_replace('/ies$/', 'y', $identifierField); // categories -> category
+            }
         }
         
         $configArray = $config->toArray();
