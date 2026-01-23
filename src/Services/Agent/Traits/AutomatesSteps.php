@@ -656,15 +656,19 @@ trait AutomatesSteps
         $prompt .= "- Only extract fields that are clearly mentioned in the message\n";
         $prompt .= "- Return empty object {} if no fields can be extracted\n";
         $prompt .= "- For numeric fields, extract only numbers\n";
-        $prompt .= "- For arrays, extract as array of objects with relevant properties\n";
+        $prompt .= "- CRITICAL: For array fields (like 'items'), ALWAYS extract as array of OBJECTS, never as array of strings\n";
+        $prompt .= "- Each item in an array MUST be an object with 'product' and 'quantity' fields\n";
         $prompt .= "- IMPORTANT: Preserve COMPLETE names including ALL details (model numbers, versions, specifications, sizes, colors, etc.)\n";
         $prompt .= "- Never truncate or abbreviate names - extract the FULL name exactly as stated\n";
-        $prompt .= "- For product items, use 'product' or 'name' field for the complete product name\n";
-        $prompt .= "- When user says 'X and Y', extract as TWO separate items in the array\n";
+        $prompt .= "- When user says 'X and Y', extract as TWO separate objects in the array\n";
+        $prompt .= "- If quantity not specified, use 1 as default\n";
         $prompt .= "- Don't guess or infer data not explicitly stated\n\n";
 
-        $prompt .= "Return ONLY valid JSON with extracted fields. Example:\n";
-        $prompt .= '{"customer_id": "Sarah Mitchell", "items": [{"product": "Dell XPS 15 9530 Silver", "quantity": 1}, {"product": "Magic Mouse", "quantity": 2}]}';
+        $prompt .= "REQUIRED FORMAT for items/products:\n";
+        $prompt .= "CORRECT: {\"items\": [{\"product\": \"Macbook Pro M4 Max\", \"quantity\": 1}, {\"product\": \"iPhone 15\", \"quantity\": 1}]}\n";
+        $prompt .= "WRONG: {\"items\": [\"Macbook Pro M4 Max\", \"iPhone 15\"]}\n\n";
+
+        $prompt .= "Return ONLY valid JSON with extracted fields following the format above.";
 
         try {
             // askAI expects array context, not UnifiedActionContext
