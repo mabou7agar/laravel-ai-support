@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * AI-Enhanced Workflow Service
- * 
+ *
  * Provides AI-driven capabilities for workflow operations:
  * - Validation with context awareness
  * - Entity matching with semantic search
@@ -42,21 +42,21 @@ class AIEnhancedWorkflowService
             $prompt .= "DESCRIPTION: " . ($fieldDefinition['description'] ?? 'N/A') . "\n";
             $prompt .= "TYPE: " . ($fieldDefinition['type'] ?? 'string') . "\n";
             $prompt .= "VALUE PROVIDED: " . json_encode($value) . "\n\n";
-            
+
             if (!empty($context)) {
                 $prompt .= "CONTEXT:\n" . json_encode($context, JSON_PRETTY_PRINT) . "\n\n";
             }
-            
+
             $prompt .= "VALIDATION RULES:\n";
             $prompt .= "1. Check if value matches the expected type\n";
             $prompt .= "2. Check if value makes sense in the business context\n";
             $prompt .= "3. Check for common mistakes (typos, wrong format, unrealistic values)\n";
             $prompt .= "4. Consider the conversation context\n\n";
-            
+
             if (!empty($fieldDefinition['validation'])) {
                 $prompt .= "ADDITIONAL RULES: " . $fieldDefinition['validation'] . "\n\n";
             }
-            
+
             $prompt .= "Respond with JSON:\n";
             $prompt .= '{"valid": true/false, "error": "error message if invalid", "suggestion": "helpful suggestion if any"}';
 
@@ -68,8 +68,8 @@ class AIEnhancedWorkflowService
                 temperature: 0
             ));
 
-            $result = json_decode($response->content, true);
-            
+            $result = json_decode($response->getContent(), true);
+
             if (json_last_error() === JSON_ERROR_NONE) {
                 return $result;
             }
@@ -106,11 +106,11 @@ class AIEnhancedWorkflowService
             $prompt = "You are finding matching entities based on a user's natural language query.\n\n";
             $prompt .= "USER QUERY: \"{$userQuery}\"\n\n";
             $prompt .= "AVAILABLE ENTITIES:\n" . json_encode($samples, JSON_PRETTY_PRINT) . "\n\n";
-            
+
             if (!empty($conversationContext)) {
                 $prompt .= "CONVERSATION CONTEXT:\n" . json_encode($conversationContext, JSON_PRETTY_PRINT) . "\n\n";
             }
-            
+
             $prompt .= "INSTRUCTIONS:\n";
             $prompt .= "1. Find entities that match the user's query\n";
             $prompt .= "2. Consider semantic similarity, not just exact matches\n";
@@ -128,8 +128,8 @@ class AIEnhancedWorkflowService
                 temperature: 0.3
             ));
 
-            $matches = json_decode($response->content, true);
-            
+            $matches = json_decode($response->getContent(), true);
+
             if (json_last_error() === JSON_ERROR_NONE && is_array($matches)) {
                 return $matches;
             }
@@ -173,8 +173,8 @@ class AIEnhancedWorkflowService
                 temperature: 0
             ));
 
-            $result = json_decode($response->content, true);
-            
+            $result = json_decode($response->getContent(), true);
+
             if (json_last_error() === JSON_ERROR_NONE) {
                 return $result;
             }
@@ -201,11 +201,11 @@ class AIEnhancedWorkflowService
             $prompt .= "DESCRIPTION: " . ($fieldDefinition['description'] ?? 'N/A') . "\n";
             $prompt .= "TYPE: " . ($fieldDefinition['type'] ?? 'string') . "\n";
             $prompt .= "REQUIRED: " . ($fieldDefinition['required'] ? 'yes' : 'no') . "\n\n";
-            
+
             if (!empty($collectedData)) {
                 $prompt .= "ALREADY COLLECTED:\n" . json_encode($collectedData, JSON_PRETTY_PRINT) . "\n\n";
             }
-            
+
             if (!empty($conversationHistory)) {
                 $recentHistory = array_slice($conversationHistory, -3);
                 $prompt .= "RECENT CONVERSATION:\n";
@@ -214,7 +214,7 @@ class AIEnhancedWorkflowService
                 }
                 $prompt .= "\n";
             }
-            
+
             $prompt .= "INSTRUCTIONS:\n";
             $prompt .= "1. Generate a natural, friendly prompt\n";
             $prompt .= "2. Match the conversation tone and style\n";
@@ -235,7 +235,7 @@ class AIEnhancedWorkflowService
                 temperature: 0.7
             ));
 
-            return trim($response->content);
+            return trim($response->getContent());
 
         } catch (\Exception $e) {
             Log::error('AI prompt generation failed', ['error' => $e->getMessage()]);
@@ -259,11 +259,11 @@ class AIEnhancedWorkflowService
             $prompt .= "FIELD: {$fieldName}\n";
             $prompt .= "USER PROVIDED: " . json_encode($value) . "\n";
             $prompt .= "VALIDATION ERROR: {$validationError}\n\n";
-            
+
             if (!empty($context)) {
                 $prompt .= "CONTEXT:\n" . json_encode($context, JSON_PRETTY_PRINT) . "\n\n";
             }
-            
+
             $prompt .= "INSTRUCTIONS:\n";
             $prompt .= "1. Generate a friendly, helpful error message\n";
             $prompt .= "2. Explain what's wrong in simple terms\n";
@@ -284,7 +284,7 @@ class AIEnhancedWorkflowService
                 temperature: 0.7
             ));
 
-            return trim($response->content);
+            return trim($response->getContent());
 
         } catch (\Exception $e) {
             Log::error('AI error message generation failed', ['error' => $e->getMessage()]);
@@ -305,15 +305,15 @@ class AIEnhancedWorkflowService
         try {
             $prompt = "You are inferring the data type of a field based on its name, description, and sample data.\n\n";
             $prompt .= "FIELD NAME: {$fieldName}\n";
-            
+
             if ($description) {
                 $prompt .= "DESCRIPTION: {$description}\n";
             }
-            
+
             if (!empty($sampleData)) {
                 $prompt .= "SAMPLE DATA: " . json_encode($sampleData) . "\n";
             }
-            
+
             $prompt .= "\nAVAILABLE TYPES:\n";
             $prompt .= "- string: text, names, descriptions\n";
             $prompt .= "- integer: whole numbers, counts, IDs\n";
@@ -334,8 +334,8 @@ class AIEnhancedWorkflowService
                 temperature: 0
             ));
 
-            $type = strtolower(trim($response->content));
-            
+            $type = strtolower(trim($response->getContent()));
+
             // Validate it's a known type
             $validTypes = ['string', 'integer', 'number', 'email', 'phone', 'date', 'boolean', 'array', 'url'];
             if (in_array($type, $validTypes)) {
@@ -370,7 +370,7 @@ class AIEnhancedWorkflowService
                 $prompt .= "- {$name}" . ($required ? ' (required)' : ' (optional)') . ": {$desc}\n";
             }
             $prompt .= "\n";
-            
+
             if (!empty($conversationHistory)) {
                 $prompt .= "CONVERSATION CONTEXT:\n";
                 $recentHistory = array_slice($conversationHistory, -3);
@@ -379,7 +379,7 @@ class AIEnhancedWorkflowService
                 }
                 $prompt .= "\n";
             }
-            
+
             $prompt .= "INSTRUCTIONS:\n";
             $prompt .= "1. Determine what required fields are still missing\n";
             $prompt .= "2. Consider if we have enough information to proceed\n";
@@ -396,8 +396,8 @@ class AIEnhancedWorkflowService
                 temperature: 0
             ));
 
-            $missing = json_decode($response->content, true);
-            
+            $missing = json_decode($response->getContent(), true);
+
             if (json_last_error() === JSON_ERROR_NONE && is_array($missing)) {
                 return $missing;
             }

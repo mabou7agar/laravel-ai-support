@@ -78,7 +78,7 @@ class SuggestValueTool extends AgentTool
         UnifiedActionContext $context
     ): ?string {
         $collectedData = $context->workflowState;
-        
+
         $prompt = "Suggest an appropriate value for the field '{$fieldName}'.\n\n";
         $prompt .= "Field Type: {$fieldType}\n\n";
 
@@ -115,8 +115,8 @@ class SuggestValueTool extends AgentTool
             );
 
             $response = $this->ai->generate($request);
-            
-            return trim($response->content);
+
+            return trim($response->getContent());
         } catch (\Exception $e) {
             return null;
         }

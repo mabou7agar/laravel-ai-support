@@ -25,30 +25,30 @@ class AIRequestCompleted
         // Set convenience properties from request and response
         $this->engine = $request->getEngine()->value;
         $this->model = $request->getModel()->value;
-        
+
         // Set token usage properties
         $usage = $response->usage ?? [];
         $this->inputTokens = $usage['prompt_tokens'] ?? $usage['input_tokens'] ?? 0;
         $this->outputTokens = $usage['completion_tokens'] ?? $usage['output_tokens'] ?? 0;
         $this->totalTokens = $usage['total_tokens'] ?? ($this->inputTokens + $this->outputTokens);
-        
+
         // Set timing properties
         $this->responseTime = $executionTime;
-        
+
         // Set cost and credits properties (use property_exists to avoid errors)
         $this->creditsUsed = property_exists($response, 'creditsUsed') ? ($response->creditsUsed ?? 0) : 0;
         $this->cost = $this->creditsUsed * 0.001; // Calculate cost from credits
-        
+
         // Set status properties
         $this->success = method_exists($response, 'isSuccess') ? $response->isSuccess() : true;
         $this->finishReason = property_exists($response, 'finishReason') ? ($response->finishReason ?? 'complete') : 'complete';
         $this->errorMessage = property_exists($response, 'error') ? $response->error : null;
-        
+
         // Set content properties
-        $this->content = property_exists($response, 'content') ? ($response->content ?? '') : '';
+        $this->content = method_exists($response, 'getContent') ? ($response->getContent() ?? '') : '';
         $this->contentLength = strlen($this->content);
     }
-    
+
     public string $engine;
     public string $model;
     public int $inputTokens;

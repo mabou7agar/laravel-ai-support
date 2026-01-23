@@ -25,7 +25,7 @@ class AzureEngineDriver implements EngineDriverInterface
         $this->apiKey = config('ai-engine.engines.azure.api_key');
         $this->region = config('ai-engine.engines.azure.region', 'eastus');
         $this->baseUrl = config('ai-engine.engines.azure.base_url', "https://{$this->region}.api.cognitive.microsoft.com");
-        
+
         if (empty($this->apiKey)) {
             throw new AIEngineException('Azure Cognitive Services API key is required');
         }
@@ -119,7 +119,7 @@ class AzureEngineDriver implements EngineDriverInterface
         }
 
         $audioContent = Storage::get($request->parameters['audio_file']);
-        
+
         $response = $this->client->post('/speechtotext/v3.0/transcriptions', [
             'headers' => [
                 'Content-Type' => 'audio/wav',
@@ -128,7 +128,7 @@ class AzureEngineDriver implements EngineDriverInterface
         ]);
 
         $data = json_decode($response->getBody()->getContents(), true);
-        
+
         $transcriptionData = [
             'text' => $data['DisplayText'] ?? '',
             'confidence' => $data['Confidence'] ?? 0,
@@ -211,7 +211,7 @@ class AzureEngineDriver implements EngineDriverInterface
         ];
 
         $analysisType = $request->parameters['analysis_type'] ?? 'sentiment';
-        
+
         $endpoint = match ($analysisType) {
             'sentiment' => '/text/analytics/v3.1/sentiment',
             'key_phrases' => '/text/analytics/v3.1/keyPhrases',
@@ -255,7 +255,7 @@ class AzureEngineDriver implements EngineDriverInterface
         }
 
         $analysisType = $request->parameters['analysis_type'] ?? 'analyze';
-        
+
         if (!empty($request->parameters['image_url'])) {
             $payload = ['url' => $request->parameters['image_url']];
             $headers = ['Content-Type' => 'application/json'];
@@ -338,7 +338,7 @@ class AzureEngineDriver implements EngineDriverInterface
         // Azure Cognitive Services doesn't support streaming for most services
         // Return the full response as a single chunk
         $response = $this->generate($request);
-        yield $response->content;
+        yield $response->getContent();
     }
 
     public function getAvailableModels(): array
@@ -397,13 +397,13 @@ class AzureEngineDriver implements EngineDriverInterface
                     throw new AIEngineException('Text is required for text-to-speech');
                 }
                 break;
-                
+
             case EntityEnum::AZURE_STT:
                 if (empty($request->parameters['audio_file'])) {
                     throw new AIEngineException('Audio file is required for speech-to-text');
                 }
                 break;
-                
+
             case EntityEnum::AZURE_COMPUTER_VISION:
                 if (empty($request->parameters['image_url']) && empty($request->parameters['image_file'])) {
                     throw new AIEngineException('Image URL or file is required for computer vision');

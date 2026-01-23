@@ -23,7 +23,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     {
         $this->apiKey = config('ai-engine.engines.plagiarism_check.api_key');
         $this->baseUrl = config('ai-engine.engines.plagiarism_check.base_url', 'https://api.plagiarismcheck.org');
-        
+
         if (empty($this->apiKey)) {
             throw new AIEngineException('Plagiarism Check API key is required');
         }
@@ -71,7 +71,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
         ]);
 
         $data = json_decode($response->getBody()->getContents(), true);
-        
+
         return $this->formatPlagiarismResponse($data, $request);
     }
 
@@ -93,7 +93,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
         ]);
 
         $data = json_decode($response->getBody()->getContents(), true);
-        
+
         return $this->formatPlagiarismResponse($data, $request);
     }
 
@@ -117,7 +117,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
         ]);
 
         $data = json_decode($response->getBody()->getContents(), true);
-        
+
         return $this->formatPlagiarismResponse($data, $request);
     }
 
@@ -218,7 +218,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
         // Plagiarism checking doesn't support streaming
         // Return the full response as a single chunk
         $response = $this->generate($request);
-        yield $response->content;
+        yield $response->getContent();
     }
 
     public function getAvailableModels(): array
@@ -264,7 +264,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
         // Check word count limits
         $wordCount = str_word_count($request->prompt);
         $maxWords = $this->getMaxWordsForModel($request->entity);
-        
+
         if ($wordCount > $maxWords) {
             throw new AIEngineException("Text exceeds maximum word limit of {$maxWords} words for {$request->entity->value}");
         }

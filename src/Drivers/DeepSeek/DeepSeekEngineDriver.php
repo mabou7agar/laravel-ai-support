@@ -19,7 +19,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     public function __construct(array $config)
     {
         parent::__construct($config);
-        
+
         $this->httpClient = new Client([
             'timeout' => $this->getTimeout(),
             'base_uri' => $this->getBaseUrl(),
@@ -33,7 +33,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     public function generate(AIRequest $request): AIResponse
     {
         $contentType = $request->model->getContentType();
-        
+
         return match ($contentType) {
             'text' => $this->generateText($request),
             default => throw new \InvalidArgumentException("Unsupported content type: {$contentType}")
@@ -56,7 +56,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
         if (empty($this->getApiKey())) {
             return false;
         }
-        
+
         if (!$this->supports($request->model->getContentType())) {
             return false;
         }
@@ -91,7 +91,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
                 engine: EngineEnum::DEEPSEEK,
                 model: EntityEnum::DEEPSEEK_CHAT
             );
-            
+
             $response = $this->generateText($testRequest);
             return $response->isSuccess();
         } catch (\Exception $e) {
@@ -106,7 +106,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     {
         try {
             $this->logApiRequest('generateText', $request);
-            
+
             $messages = $this->buildMessages($request);
             $payload = $this->buildChatPayload($request, $messages, [
                 'top_p' => $request->parameters['top_p'] ?? 1.0,
@@ -141,7 +141,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     {
         try {
             $messages = $this->buildMessages($request);
-            
+
             $payload = [
                 'model' => $request->model->value,
                 'messages' => $messages,
@@ -163,7 +163,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
                     if ($jsonData === '[DONE]') {
                         break;
                     }
-                    
+
                     $data = json_decode($jsonData, true);
                     if (isset($data['choices'][0]['delta']['content'])) {
                         yield $data['choices'][0]['delta']['content'];
@@ -183,18 +183,18 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     {
         // Use specialized system prompt for code generation
         $codeSystemPrompt = "You are an expert programmer. Generate clean, efficient, and well-documented code. Follow best practices and include comments where appropriate.";
-        
+
         $originalSystemPrompt = $request->systemPrompt;
         $request->systemPrompt = $codeSystemPrompt . ($originalSystemPrompt ? "\n\n" . $originalSystemPrompt : "");
-        
+
         $response = $this->generateText($request);
-        
+
         // Restore original system prompt
         $request->systemPrompt = $originalSystemPrompt;
-        
+
         return $response->withDetailedUsage([
             'code_generation' => true,
-            'language_detected' => $this->detectProgrammingLanguage($response->content),
+            'language_detected' => $this->detectProgrammingLanguage($response->getContent()),
         ]);
     }
 
@@ -204,18 +204,18 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     public function generateMath(AIRequest $request): AIResponse
     {
         $mathSystemPrompt = "You are an expert mathematician. Provide step-by-step solutions with clear explanations. Use proper mathematical notation and verify your answers.";
-        
+
         $originalSystemPrompt = $request->systemPrompt;
         $request->systemPrompt = $mathSystemPrompt . ($originalSystemPrompt ? "\n\n" . $originalSystemPrompt : "");
-        
+
         $response = $this->generateText($request);
-        
+
         // Restore original system prompt
         $request->systemPrompt = $originalSystemPrompt;
-        
+
         return $response->withDetailedUsage([
             'math_generation' => true,
-            'contains_latex' => $this->containsLatex($response->content),
+            'contains_latex' => $this->containsLatex($response->getContent()),
         ]);
     }
 

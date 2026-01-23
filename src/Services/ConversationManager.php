@@ -19,7 +19,7 @@ class ConversationManager
         // RAG service is lazy-loaded to avoid circular dependency
         // ConversationManager -> IntelligentRAGService -> ConversationService -> ConversationManager
     }
-    
+
     /**
      * Get RAG service (lazy loaded to avoid circular dependency)
      */
@@ -74,7 +74,7 @@ class ConversationManager
         array $metadata = []
     ): Message {
         $conversation = $this->getConversation($conversationId);
-        
+
         if (!$conversation) {
             throw new \InvalidArgumentException("Conversation not found: {$conversationId}");
         }
@@ -88,7 +88,7 @@ class ConversationManager
         AIResponse $response
     ): Message {
         $conversation = $this->getConversation($conversationId);
-        
+
         if (!$conversation) {
             throw new \InvalidArgumentException("Conversation not found: {$conversationId}");
         }
@@ -103,7 +103,7 @@ class ConversationManager
         // Update usage statistics with credits
         $usage = $response->getUsage();
         $creditsUsed = $response->getCreditsUsed(); // Get credits from response
-        
+
         $message->updateUsageStats(
             $usage['total_tokens'] ?? null,
             $creditsUsed
@@ -122,7 +122,7 @@ class ConversationManager
         int $maxMessages = null
     ): array {
         $conversation = $this->getConversation($conversationId);
-        
+
         if (!$conversation) {
             return [];
         }
@@ -149,7 +149,7 @@ class ConversationManager
         string $conversationId
     ): AIRequest {
         $context = $this->getConversationContext($conversationId);
-        
+
         // Add user message to context
         $context[] = [
             'role' => 'user',
@@ -176,7 +176,7 @@ class ConversationManager
     public function deleteConversation(string $conversationId): bool
     {
         $conversation = $this->getConversation($conversationId);
-        
+
         if (!$conversation) {
             return false;
         }
@@ -188,7 +188,7 @@ class ConversationManager
     public function clearConversationHistory(string $conversationId): bool
     {
         $conversation = $this->getConversation($conversationId);
-        
+
         if (!$conversation) {
             return false;
         }
@@ -204,7 +204,7 @@ class ConversationManager
         array $settings
     ): bool {
         $conversation = $this->getConversation($conversationId);
-        
+
         if (!$conversation) {
             return false;
         }
@@ -219,7 +219,7 @@ class ConversationManager
     {
         // For engines that support message arrays (like OpenAI), return as-is
         // For engines that need a single prompt, format the conversation
-        
+
         if (in_array($engine->value, ['openai', 'anthropic', 'gemini'])) {
             // These engines support message arrays
             return json_encode($context);
@@ -258,7 +258,7 @@ class ConversationManager
     {
         // Simple title generation - take first 50 characters
         $title = trim(substr($content, 0, 50));
-        
+
         if (strlen($content) > 50) {
             $title .= '...';
         }
@@ -304,7 +304,7 @@ class ConversationManager
 
         // Add assistant message with sources
         $metadata = $response->getMetadata();
-        $conversation->addMessage('assistant', $response->content, [
+        $conversation->addMessage('assistant', $response->getContent(), [
             'sources' => $metadata['sources'] ?? [],
             'context_count' => count($metadata['sources'] ?? []),
             'rag_enabled' => true,
@@ -358,11 +358,11 @@ class ConversationManager
         );
 
         // Call callback with final response
-        $callback($response->content, true);
+        $callback($response->getContent(), true);
 
         // Add assistant message with sources
         $metadata = $response->getMetadata();
-        $conversation->addMessage('assistant', $response->content, [
+        $conversation->addMessage('assistant', $response->getContent(), [
             'sources' => $metadata['sources'] ?? [],
             'context_count' => count($metadata['sources'] ?? []),
             'rag_enabled' => true,
@@ -371,7 +371,7 @@ class ConversationManager
         $conversation->touch('last_activity_at');
 
         return [
-            'response' => $response->content,
+            'response' => $response->getContent(),
             'sources' => $metadata['sources'] ?? [],
             'context_count' => count($metadata['sources'] ?? []),
             'query' => $query,
@@ -415,7 +415,7 @@ class ConversationManager
     public function getConversationStats(string $conversationId): array
     {
         $conversation = $this->getConversation($conversationId);
-        
+
         if (!$conversation) {
             return [];
         }

@@ -11,7 +11,7 @@ use LaravelAIEngine\Enums\EntityEnum;
 
 /**
  * Generic AI-Powered Data Collector for Workflows
- * 
+ *
  * Similar to DataCollector but designed for complex workflows with:
  * - AI-powered data extraction from natural language
  * - Progressive data collection across multiple turns
@@ -25,10 +25,10 @@ class WorkflowDataCollector
     ) {
         // Services instantiated on-demand to avoid circular dependencies
     }
-    
+
     /**
      * Define fields to collect
-     * 
+     *
      * @param array $fields Field definitions
      * Example:
      * [
@@ -49,7 +49,7 @@ class WorkflowDataCollector
         $this->fields = $fields;
         return $this;
     }
-    
+
     /**
      * Collect data from user messages
      */
@@ -57,11 +57,11 @@ class WorkflowDataCollector
     {
         try {
             $collectedData = $context->get('collected_data', []);
-            
+
             // Try to extract data from conversation history
             if (!empty($context->conversationHistory)) {
                 $askingFor = $context->get('asking_for');
-                
+
                 // Get the latest user message
                 $lastMessage = null;
                 foreach (array_reverse($context->conversationHistory) as $msg) {
@@ -70,7 +70,7 @@ class WorkflowDataCollector
                         break;
                     }
                 }
-                
+
                 if (!empty($lastMessage)) {
                     try {
                         $newData = $this->extractDataFromMessage(
@@ -79,7 +79,7 @@ class WorkflowDataCollector
                             $collectedData,
                             $askingFor
                         );
-                        
+
                         if (!empty($newData)) {
                             $collectedData = array_merge($collectedData, $newData);
                             $context->set('collected_data', $collectedData);
@@ -89,32 +89,32 @@ class WorkflowDataCollector
                     }
                 }
             }
-            
+
             // Determine what's still missing
             $missing = $this->getMissingFields($collectedData, $fieldDefinitions);
-            
+
             if (!empty($missing)) {
                 $firstMissing = $missing[0];
                 $fieldDef = $fieldDefinitions[$firstMissing];
                 $prompt = $fieldDef['prompt'] ?? $fieldDef['description'] ?? "Please provide {$firstMissing}";
-                
+
                 // If this is an entity field, check if a suggestion was pre-generated
                 if (($fieldDef['type'] ?? '') === 'entity') {
                     $suggestion = $context->get("_suggestion_{$firstMissing}");
-                    
+
                     if ($suggestion) {
                         // Append suggestion to the prompt
                         $prompt .= " I suggest: {$suggestion}";
-                        
+
                         \Illuminate\Support\Facades\Log::info('Using pre-generated suggestion for field', [
                             'field' => $firstMissing,
                             'suggestion' => $suggestion,
                         ]);
                     }
                 }
-                
+
                 $context->set('asking_for', $firstMissing);
-                
+
                 return ActionResult::needsUserInput(
                     message: $prompt,
                     data: [
@@ -124,7 +124,7 @@ class WorkflowDataCollector
                     ]
                 );
             }
-            
+
             return ActionResult::success(
                 message: 'All data collected',
                 data: $collectedData
@@ -135,7 +135,7 @@ class WorkflowDataCollector
             );
         }
     }
-    
+
     /**
      * Extract data from user message using AI with intelligent prompting
      */
@@ -150,13 +150,13 @@ class WorkflowDataCollector
             $fieldDef = $fieldDefinitions[$askingFor];
             $type = $fieldDef['type'] ?? 'string';
             $description = $fieldDef['description'] ?? $askingFor;
-            
+
             // OPTIMIZATION: For short, simple messages, use direct extraction
             $trimmedMessage = trim($message);
-            $isSimpleMessage = strlen($trimmedMessage) < 100 && 
-                              !str_contains($trimmedMessage, ' is ') && 
+            $isSimpleMessage = strlen($trimmedMessage) < 100 &&
+                              !str_contains($trimmedMessage, ' is ') &&
                               !str_contains($trimmedMessage, ':');
-            
+
             if ($isSimpleMessage) {
                 // Numeric types: extract first number
                 if (in_array($type, ['integer', 'float', 'number'])) {
@@ -165,11 +165,11 @@ class WorkflowDataCollector
                     }
                     return [];
                 }
-                
+
                 // String types: use entire message
                 return [$askingFor => $trimmedMessage];
             }
-            
+
             // Build AI extraction prompt for specific field
             $prompt = "Extract the value for '{$askingFor}' from the user's message.\n\n";
             $prompt .= "User message: {$message}\n\n";
@@ -186,15 +186,15 @@ class WorkflowDataCollector
             $prompt = "Extract structured data from the user's message.\n\n";
             $prompt .= "User message: {$message}\n\n";
             $prompt .= "FIELDS TO EXTRACT:\n";
-            
+
             $extractableFields = $this->filterExtractableFields($fieldDefinitions);
-            
+
             foreach ($extractableFields as $fieldName => $fieldDef) {
                 $type = $fieldDef['type'] ?? 'string';
                 $description = $fieldDef['description'] ?? $fieldName;
                 $prompt .= "- {$fieldName} ({$type}): {$description}\n";
             }
-            
+
             $prompt .= "\nRules:\n";
             $prompt .= "- Extract values EXACTLY as typed - preserve complete strings\n";
             $prompt .= "- For string fields: copy the ENTIRE string exactly\n";
@@ -202,7 +202,7 @@ class WorkflowDataCollector
             $prompt .= "- Return empty {} if no data to extract\n\n";
             $prompt .= "Return ONLY valid JSON.";
         }
-        
+
         try {
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -211,16 +211,16 @@ class WorkflowDataCollector
                 maxTokens: 300,
                 temperature: 0
             ));
-            
-            $extracted = json_decode($response->content, true);
-            
+
+            $extracted = json_decode($response->getContent(), true);
+
             return (json_last_error() === JSON_ERROR_NONE) ? ($extracted ?? []) : [];
-            
+
         } catch (\Exception $e) {
             return [];
         }
     }
-    
+
     /**
      * Merge new data with existing data using simple array_merge
      */
@@ -229,26 +229,26 @@ class WorkflowDataCollector
         // Simple merge: new values override existing
         return array_merge($existing, $new);
     }
-    
-    
+
+
     /**
      * Get list of missing required fields
      */
     protected function getMissingFields(array $collectedData, array $fieldDefinitions): array
     {
         $missing = [];
-        
+
         foreach ($fieldDefinitions as $fieldName => $fieldDef) {
             $required = $fieldDef['required'] ?? false;
-            
+
             if ($required && empty($collectedData[$fieldName])) {
                 $missing[] = $fieldName;
             }
         }
-        
+
         return $missing;
     }
-    
+
     /**
      * Get field value from collected data
      */
@@ -257,7 +257,7 @@ class WorkflowDataCollector
         $collectedData = $context->get('collected_data', []);
         return $collectedData[$fieldName] ?? $default;
     }
-    
+
     /**
      * Set field value in collected data
      */
@@ -267,7 +267,7 @@ class WorkflowDataCollector
         $collectedData[$fieldName] = $value;
         $context->set('collected_data', $collectedData);
     }
-    
+
     /**
      * Clear collected data
      */
@@ -276,34 +276,34 @@ class WorkflowDataCollector
         $context->forget('collected_data');
         $context->forget('asking_for');
     }
-    
+
     /**
      * Filter out entity fields that should not be auto-extracted
-     * 
+     *
      * Entity fields with subflows or identifierProviders should be resolved
      * through their dedicated resolution steps, not auto-suggested during data collection.
      * This prevents the AI from auto-populating categories, customers, etc. before
      * the user is asked for them.
-     * 
+     *
      * @param array $fieldDefinitions
      * @return array Filtered field definitions safe for AI extraction
      */
     protected function filterExtractableFields(array $fieldDefinitions): array
     {
         $extractableFields = [];
-        
+
         foreach ($fieldDefinitions as $fieldName => $fieldDef) {
             // Skip if not an array (simple string definitions are always extractable)
             if (!is_array($fieldDef)) {
                 $extractableFields[$fieldName] = $fieldDef;
                 continue;
             }
-            
+
             // Check if this is an entity field with special resolution
             $hasSubflow = !empty($fieldDef['subflow']);
             $hasIdentifierProvider = !empty($fieldDef['identifierProvider']) || !empty($fieldDef['identifier_provider']);
             $isEntityType = ($fieldDef['type'] ?? '') === 'entity';
-            
+
             // Skip entity fields that have subflows or identifierProviders
             // These should be resolved through dedicated steps, not auto-extracted
             if ($isEntityType && ($hasSubflow || $hasIdentifierProvider)) {
@@ -315,11 +315,11 @@ class WorkflowDataCollector
                 ]);
                 continue;
             }
-            
+
             // Include this field in extraction
             $extractableFields[$fieldName] = $fieldDef;
         }
-        
+
         return $extractableFields;
     }
 }

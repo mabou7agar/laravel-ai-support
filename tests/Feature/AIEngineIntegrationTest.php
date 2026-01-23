@@ -29,7 +29,7 @@ class AIEngineIntegrationTest extends TestCase
 
         // Create a test user and request
         $user = $this->createTestUser();
-        
+
         $request = new AIRequest(
             prompt: 'Generate a test response',
             engine: EngineEnum::OPENAI,
@@ -47,7 +47,7 @@ class AIEngineIntegrationTest extends TestCase
 
         // Test that the AI engine service can be instantiated
         $this->assertInstanceOf(\LaravelAIEngine\Services\AIEngineService::class, $this->aiEngineService);
-        
+
         // Test that events can be created properly
         $startedEvent = new AIRequestStarted($request, 'test-123');
         $this->assertEquals('test-123', $startedEvent->requestId);
@@ -74,12 +74,12 @@ class AIEngineIntegrationTest extends TestCase
         $mockResponse->shouldReceive('getStatusCode')->andReturn(200);
         $mockResponse->shouldReceive('getHeaderLine')->andReturn('application/json');
         $mockResponse->shouldReceive('getHeaders')->andReturn(['content-type' => ['application/json']]);
-        
+
         $mockClient = \Mockery::mock(\GuzzleHttp\Client::class);
         $mockClient->shouldReceive('post')->andReturn($mockResponse);
         $mockClient->shouldReceive('sendRequest')->andReturn($mockResponse);
         $mockClient->shouldReceive('send')->andReturn($mockResponse);
-        
+
         $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
 
         $request = new AIRequest(
@@ -97,12 +97,12 @@ class AIEngineIntegrationTest extends TestCase
         $response = $this->aiEngineService->generate($request);
 
         $this->assertInstanceOf(AIResponse::class, $response);
-        
+
         // Debug output if test fails
         if (!$response->success) {
             $this->fail('Image generation failed: ' . ($response->error ?? 'No error message provided'));
         }
-        
+
         $this->assertTrue($response->success);
         $this->assertNotEmpty($response->files);
         $this->assertStringContainsString('generated-image.png', $response->files[0]);
@@ -120,25 +120,25 @@ class AIEngineIntegrationTest extends TestCase
 
         // Test credit manager functionality
         $creditManager = app(\LaravelAIEngine\Services\CreditManager::class);
-        
+
         // Test getting initial credits
         $initialCredits = $creditManager->getUserCredits($user->id, EngineEnum::OPENAI, EntityEnum::GPT_4O);
         $this->assertEquals(100.0, $initialCredits['balance']);
         $this->assertFalse($initialCredits['is_unlimited']);
-        
+
         // Test credit calculation
         $testRequest = AIRequest::make('Test prompt', EngineEnum::OPENAI, EntityEnum::GPT_4O)->forUser($user->id);
         $hasCredits = $creditManager->hasCredits($user->id, $testRequest);
         $this->assertTrue($hasCredits);
-        
+
         // Test deducting credits
         $deductResult = $creditManager->deductCredits($user->id, $testRequest);
         $this->assertTrue($deductResult);
-        
+
         // Verify credits were deducted
         $remainingCredits = $creditManager->getUserCredits($user->id, EngineEnum::OPENAI, EntityEnum::GPT_4O);
         $this->assertEquals(96.0, $remainingCredits['balance']); // Adjusted to match actual calculation
-        
+
         // This test verifies credit system infrastructure without requiring actual API calls
         $this->assertTrue(true);
     }
@@ -148,13 +148,13 @@ class AIEngineIntegrationTest extends TestCase
         // Mock streaming response
         $mockClient = \Mockery::mock(\GuzzleHttp\Client::class);
         $mockResponse = \Mockery::mock(\GuzzleHttp\Psr7\Response::class);
-        
+
         $streamData = [
             'data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Hello"}}]}' . "\n\n",
             'data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":" world"}}]}' . "\n\n",
             'data: [DONE]' . "\n\n"
         ];
-        
+
         $mockBody = \Mockery::mock(\Psr\Http\Message\StreamInterface::class);
         $mockBody->shouldReceive('getContents')
             ->andReturn(implode('', $streamData));
@@ -164,16 +164,16 @@ class AIEngineIntegrationTest extends TestCase
             ->andReturn($streamData[0], $streamData[1], $streamData[2]);
         $mockBody->shouldReceive('isReadable')
             ->andReturn(true);
-            
+
         $mockResponse->shouldReceive('getBody')
             ->andReturn($mockBody);
-            
+
         $mockResponse->shouldReceive('getStatusCode')
             ->andReturn(200);
-            
+
         $mockClient->shouldReceive('post')
             ->andReturn($mockResponse);
-            
+
         // Mock the send method for streaming requests
         $mockClient->shouldReceive('send')
             ->andReturn($mockResponse);
@@ -249,24 +249,24 @@ class AIEngineIntegrationTest extends TestCase
                 'total_tokens' => 15
             ]
         ]));
-        
+
         // Create a mock handler and add the response
         $mock = new \GuzzleHttp\Handler\MockHandler([$mockResponse]);
         $handlerStack = \GuzzleHttp\HandlerStack::create($mock);
-        
+
         // Create a client with the mock handler
         $mockClient = new \GuzzleHttp\Client([
             'handler' => $handlerStack
         ]);
-        
+
         // Bind the mock client to the container
         $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
-        
+
         // Configure the OpenAI engine
         config(['ai-engine.engines.openai' => [
             'api_key' => 'test-key'
         ]]);
-        
+
         // Create the request
         $openaiRequest = new AIRequest(
             prompt: 'Test OpenAI',
@@ -277,12 +277,12 @@ class AIEngineIntegrationTest extends TestCase
 
         // Generate the response using our service
         $openaiResponse = $this->aiEngineService->generate($openaiRequest);
-        
+
         // Debug information
         if (!$openaiResponse->success) {
             $this->fail('OpenAI response failed: ' . ($openaiResponse->error ?? 'No error message'));
         }
-        
+
         $this->assertTrue($openaiResponse->success);
         $this->assertEquals('OpenAI response', $openaiResponse->content);
     }
@@ -299,26 +299,26 @@ class AIEngineIntegrationTest extends TestCase
             'stop_reason' => 'end_turn',
             'model' => 'claude-3-5-sonnet-20240620'
         ]));
-        
+
         // Create a mock handler and add the response
         $mock = new \GuzzleHttp\Handler\MockHandler([$mockResponse]);
         $handlerStack = \GuzzleHttp\HandlerStack::create($mock);
-        
+
         // Create a client with the mock handler
         $mockClient = new \GuzzleHttp\Client([
             'handler' => $handlerStack,
             'base_uri' => 'https://api.anthropic.com'
         ]);
-        
+
         // Bind the mock client to the container
         $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
-        
+
         // Configure the Anthropic engine
         config(['ai-engine.engines.anthropic' => [
             'api_key' => 'test-key',
             'base_url' => 'https://api.anthropic.com'
         ]]);
-        
+
         // Create the request
         $anthropicRequest = new AIRequest(
             prompt: 'Test Anthropic',
@@ -329,12 +329,12 @@ class AIEngineIntegrationTest extends TestCase
 
         // Generate the response using our service
         $anthropicResponse = $this->aiEngineService->generate($anthropicRequest);
-        
+
         // Debug information
         if (!$anthropicResponse->success) {
             $this->fail('Anthropic response failed: ' . ($anthropicResponse->error ?? 'No error message'));
         }
-        
+
         $this->assertTrue($anthropicResponse->success);
         $this->assertEquals('Anthropic response', $anthropicResponse->content);
     }
@@ -379,12 +379,12 @@ class AIEngineIntegrationTest extends TestCase
         $mockResponse->shouldReceive('getStatusCode')->andReturn(200);
         $mockResponse->shouldReceive('getHeaderLine')->andReturn('application/json');
         $mockResponse->shouldReceive('getHeaders')->andReturn(['content-type' => ['application/json']]);
-        
+
         $mockClient = \Mockery::mock(\GuzzleHttp\Client::class);
         $mockClient->shouldReceive('post')->andReturn($mockResponse);
         $mockClient->shouldReceive('sendRequest')->andReturn($mockResponse);
         $mockClient->shouldReceive('send')->andReturn($mockResponse);
-        
+
         $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
 
         $request = new AIRequest(
@@ -403,7 +403,7 @@ class AIEngineIntegrationTest extends TestCase
         }
 
         $this->assertTrue($response->success);
-        $this->assertStringContainsString('Professional tech response', $response->content);
+        $this->assertStringContainsString('Professional tech response', $response->getContent());
     }
 
     public function test_webhook_notifications()
@@ -414,7 +414,7 @@ class AIEngineIntegrationTest extends TestCase
 
         // Create a simple mock response that doesn't depend on complex HTTP mocking
         $user = $this->createTestUser();
-        
+
         $request = new AIRequest(
             prompt: 'Test webhook',
             engine: EngineEnum::OPENAI,
@@ -425,16 +425,16 @@ class AIEngineIntegrationTest extends TestCase
         // Test that webhook manager can be instantiated and configured
         $webhookManager = new \LaravelAIEngine\Services\WebhookManager();
         $this->assertInstanceOf(\LaravelAIEngine\Services\WebhookManager::class, $webhookManager);
-        
+
         // Test that events can be created properly
         $startedEvent = new \LaravelAIEngine\Events\AIRequestStarted($request, 'test-123');
         $this->assertEquals('test-123', $startedEvent->requestId);
         $this->assertEquals($request, $startedEvent->request);
-        
+
         // Test that webhook configuration is working
         $this->assertTrue(config('ai-engine.webhooks.enabled'));
         $this->assertEquals('https://example.com/webhook', config('ai-engine.webhooks.endpoints.completion'));
-        
+
         // This test verifies webhook infrastructure without requiring actual HTTP calls
         $this->assertTrue(true);
     }

@@ -103,8 +103,8 @@ class ExplainFieldTool extends AgentTool
             );
 
             $response = $this->ai->generate($request);
-            
-            return trim($response->content);
+
+            return trim($response->getContent());
         } catch (\Exception $e) {
             return null;
         }

@@ -103,17 +103,17 @@ trait AutomatesSteps
         if (!empty($config['entities'])) {
             foreach ($config['entities'] as $entityName => $entityConfig) {
                 $identifierField = $entityConfig['identifier_field'] ?? $entityName;
-                
+
                 // If this entity has an identifierProvider, call it now and store the result
-                if (!empty($entityConfig['identifier_provider']) && 
+                if (!empty($entityConfig['identifier_provider']) &&
                     $entityConfig['identifier_provider'] instanceof \Closure) {
-                    
+
                     try {
                         $suggestion = $entityConfig['identifier_provider']($context);
                         if ($suggestion) {
                             // Store the suggestion string (not the Closure) in context
                             $context->set("_suggestion_{$identifierField}", $suggestion);
-                            
+
                             \Illuminate\Support\Facades\Log::info('Pre-generated suggestion for entity field', [
                                 'field' => $identifierField,
                                 'suggestion' => $suggestion,
@@ -226,12 +226,12 @@ trait AutomatesSteps
         // Check if we should skip confirmation when running as subflow
         $skipInSubflow = $config['skip_confirmation_in_subflow'] ?? false;
         $activeSubflow = $context->get('active_subflow');
-        
+
         if ($skipInSubflow && $activeSubflow) {
             // Skip confirmation and proceed directly to final action
             return ActionResult::success(message: 'Skipping confirmation in subflow context');
         }
-        
+
         // Otherwise, show normal confirmation
         return $this->confirmBeforeComplete($context, $config);
     }
@@ -381,9 +381,9 @@ trait AutomatesSteps
 
         // Get confirmation format rules from config or use default
         $confirmationFormat = $config['confirmation_format'] ?? null;
-        
+
         $prompt = "Convert the following data into a user-friendly confirmation message. Format it nicely with clear labels and readable values.\n\n";
-        
+
         if ($confirmationFormat) {
             // Use workflow-specific format rules
             $prompt .= "FORMATTING RULES:\n{$confirmationFormat}\n\n";
@@ -394,7 +394,7 @@ trait AutomatesSteps
             $prompt .= "- Keep it concise and professional\n";
             $prompt .= "- Format prices with $ symbol\n\n";
         }
-        
+
         $prompt .= "Data:\n" . json_encode($formattedData, JSON_PRETTY_PRINT) . "\n\n";
         $prompt .= "Return ONLY the formatted confirmation message text, starting with '**Please confirm the following details:**'";
 
@@ -409,7 +409,7 @@ trait AutomatesSteps
                 userId:     null
             );
 
-            return $response->content ?? $this->fallbackConfirmationMessage($formattedData);
+            return $response->getContent() ?? $this->fallbackConfirmationMessage($formattedData);
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('AutomatesSteps: AI enhancement failed, using fallback', [
@@ -425,10 +425,10 @@ trait AutomatesSteps
     protected function fallbackConfirmationMessage(array $data): string
     {
         $message = "**Please confirm the following details:**\n\n";
-        
+
         // Fields to skip (internal/duplicate fields)
         $skipFields = ['name', 'email', 'product_name', 'collected_data', 'items'];
-        
+
         // Field label mapping for better UX
         $labelMap = [
             'customer_id' => 'Customer',
@@ -445,7 +445,7 @@ trait AutomatesSteps
             if (in_array($key, $skipFields)) {
                 continue;
             }
-            
+
             // Get user-friendly label
             $label = $labelMap[$key] ?? ucfirst(str_replace('_', ' ', $key));
 
@@ -453,32 +453,32 @@ trait AutomatesSteps
                 // Handle array values (like products list)
                 $message .= "**{$label}:**\n";
                 $grandTotal = 0;
-                
+
                 foreach ($value as $item) {
                     if (is_array($item)) {
                         // Extract readable product info
                         $productName = $item['name'] ?? $item['product'] ?? $item['item'] ?? 'Unknown';
                         $qty = $item['quantity'] ?? 1;
                         $price = $item['price'] ?? $item['price_each'] ?? null;
-                        
+
                         if ($price !== null) {
                             // Calculate line total
                             $lineTotal = $qty * $price;
                             $grandTotal += $lineTotal;
-                            
+
                             // Format: Product × Qty @ $UnitPrice = $LineTotal
                             $itemStr = "{$productName} × {$qty} @ \${$price} = \${$lineTotal}";
                         } else {
                             // No price available
                             $itemStr = "{$productName} × {$qty}";
                         }
-                        
+
                         $message .= "  • {$itemStr}\n";
                     } else {
                         $message .= "  • {$item}\n";
                     }
                 }
-                
+
                 // Show grand total if we have prices
                 if ($grandTotal > 0) {
                     $message .= "\n**Total:** \${$grandTotal}\n";
@@ -486,12 +486,12 @@ trait AutomatesSteps
             } else {
                 // Handle simple values
                 $displayValue = $value;
-                
+
                 // Format prices
                 if (in_array($key, ['sale_price', 'purchase_price', 'price']) && is_numeric($value)) {
                     $displayValue = "\${$value}";
                 }
-                
+
                 $message .= "**{$label}:** {$displayValue}\n";
             }
         }
@@ -539,7 +539,7 @@ trait AutomatesSteps
                 useActions: false
             );
 
-            $jsonResponse = json_decode($response->content, true);
+            $jsonResponse = json_decode($response->getContent(), true);
 
             if (!$jsonResponse || !isset($jsonResponse['action']) || $jsonResponse['action'] === 'unknown') {
                 return null;
@@ -782,24 +782,24 @@ trait AutomatesSteps
         // This prevents infinite loops when subflow completes but we're still on resolve step
         // Check both entity_id and entity_name_id formats
         $entityId = $context->get($entityName . '_id') ?? $context->get($entityName);
-        
+
         // For category, also check if it's stored in collected_data
         if (!$entityId) {
             $collectedData = $context->get('collected_data', []);
             $entityId = $collectedData[$entityName . '_id'] ?? null;
         }
-        
+
         // IMPORTANT: For multiple entities (like products), a single numeric ID means one product was created
         // but there might be more to create. Don't treat it as "all resolved" - let GenericEntityResolver handle it.
         $isMultiple = $entityConfig['multiple'] ?? false;
-        
+
         // If we have a numeric ID and it's a SINGLE entity (not multiple), entity is resolved
         if ($entityId && is_numeric($entityId) && !$isMultiple) {
             Log::channel('ai-engine')->info('Entity already resolved in context', [
                 'entity' => $entityName,
                 'entity_id' => $entityId,
             ]);
-            
+
             // Only clear active_subflow if it's for this specific entity
             // Don't clear if we're in a parent subflow (nested subflows)
             $activeSubflow = $context->get('active_subflow');
@@ -809,13 +809,13 @@ trait AutomatesSteps
                     'entity' => $entityName,
                 ]);
             }
-            
+
             return ActionResult::success(
                 message: ucfirst($entityName) . " resolved",
                 data: [$entityName . '_id' => $entityId, $entityName => $entityId]
             );
         }
-        
+
         // If we have a string identifier, check if entity was just created in database
         if ($entityId && !is_numeric($entityId)) {
             $modelClass = $entityConfig['model'] ?? null;
@@ -823,37 +823,37 @@ trait AutomatesSteps
                 try {
                     $searchFields = $entityConfig['search_fields'] ?? ['name'];
                     $query = $modelClass::query();
-                    
+
                     // Apply filters if configured
                     if (!empty($entityConfig['filters']) && is_callable($entityConfig['filters'])) {
                         $query = $entityConfig['filters']($query);
                     }
-                    
+
                     // Search for exact match
                     $query->where(function($q) use ($searchFields, $entityId) {
                         foreach ($searchFields as $field) {
                             $q->orWhere($field, $entityId);
                         }
                     });
-                    
+
                     $entity = $query->first();
-                    
+
                     if ($entity && $entity->id) {
                         Log::channel('ai-engine')->info('Found entity in database, storing numeric ID', [
                             'entity' => $entityName,
                             'entity_id' => $entity->id,
                             'identifier' => $entityId,
                         ]);
-                        
+
                         // Store the numeric ID
                         $context->set($entityName . '_id', $entity->id);
                         $collectedData = $context->get('collected_data', []);
                         $collectedData[$entityName . '_id'] = $entity->id;
                         $context->set('collected_data', $collectedData);
-                        
+
                         // Clear any active subworkflow state
                         $context->forget('active_subflow');
-                        
+
                         return ActionResult::success(
                             message: ucfirst($entityName) . " resolved",
                             data: [$entityName . '_id' => $entity->id, $entityName => $entity->id]
@@ -867,7 +867,7 @@ trait AutomatesSteps
                 }
             }
         }
-        
+
         // Check if there's an active subworkflow for single entity (not multiple)
         // For multiple entities, GenericEntityResolver handles subflow completion
         $isMultiple = $entityConfig['multiple'] ?? false;
@@ -875,11 +875,11 @@ trait AutomatesSteps
         if ($activeSubflow && $activeSubflow['field_name'] === $entityName && !$isMultiple) {
             $stepPrefix = $activeSubflow['step_prefix'] ?? '';
             $currentStep = $context->currentStep ?? '';
-            
+
             // Check if we're back on the parent resolve step (indicates subflow completed)
             $parentResolveStep = "resolve_{$entityName}";
             $isOnParentResolveStep = str_ends_with($currentStep, $parentResolveStep);
-            
+
             Log::channel('ai-engine')->info('Active subworkflow detected', [
                 'entity' => $entityName,
                 'step_prefix' => $stepPrefix,
@@ -887,54 +887,54 @@ trait AutomatesSteps
                 'parent_resolve_step' => $parentResolveStep,
                 'is_on_parent_resolve' => $isOnParentResolveStep,
             ]);
-            
+
             // If we're back on the parent resolve step, subflow completed
             if ($isOnParentResolveStep) {
                 Log::channel('ai-engine')->info('Subworkflow completed, extracting entity', [
                     'entity' => $entityName,
                     'current_step' => $currentStep,
                 ]);
-                
+
                 // Clear subworkflow state
                 $context->forget('active_subflow');
-                
+
                 // Try to find the created entity by searching for it
                 $modelClass = $entityConfig['model'] ?? null;
                 $collectedData = $context->get('collected_data', []);
                 $identifier = $collectedData[$entityName . '_id'] ?? $context->get($entityName . '_identifier');
-                
+
                 if ($modelClass && $identifier && !is_numeric($identifier)) {
                     try {
                         // Search for the entity that was just created
                         $searchFields = $entityConfig['search_fields'] ?? ['name'];
                         $query = $modelClass::query();
-                        
+
                         // Apply filters if configured
                         if (!empty($entityConfig['filters']) && is_callable($entityConfig['filters'])) {
                             $query = $entityConfig['filters']($query);
                         }
-                        
+
                         // Search for exact match
                         $query->where(function($q) use ($searchFields, $identifier) {
                             foreach ($searchFields as $field) {
                                 $q->orWhere($field, $identifier);
                             }
                         });
-                        
+
                         $entity = $query->first();
-                        
+
                         if ($entity && $entity->id) {
                             Log::channel('ai-engine')->info('Found created entity, storing ID', [
                                 'entity' => $entityName,
                                 'entity_id' => $entity->id,
                                 'identifier' => $identifier,
                             ]);
-                            
+
                             // Store the numeric ID
                             $context->set($entityName . '_id', $entity->id);
                             $collectedData[$entityName . '_id'] = $entity->id;
                             $context->set('collected_data', $collectedData);
-                            
+
                             return ActionResult::success(
                                 message: ucfirst($entityName) . " created successfully",
                                 data: [$entityName . '_id' => $entity->id, $entityName => $entity->id]
@@ -947,11 +947,11 @@ trait AutomatesSteps
                         ]);
                     }
                 }
-                
+
                 // Fall through to normal resolution - entity_id check above will catch it next time
             }
         }
-        
+
         $identifierField = $entityConfig['identifier_field'] ?? $entityName;
         $modelClass = $entityConfig['model'] ?? null;
         $isMultiple = $entityConfig['multiple'] ?? false;
@@ -971,7 +971,7 @@ trait AutomatesSteps
 
         // Get identifier from collected data
         $collectedData = $context->get('collected_data', []);
-        
+
         // IMPORTANT: For multiple entities, restore parent collected_data if needed
         // This ensures the items array is available after a subflow completes
         if ($isMultiple && !isset($collectedData[$identifierField])) {
@@ -979,7 +979,7 @@ trait AutomatesSteps
             if ($parentCollectedData && isset($parentCollectedData[$identifierField])) {
                 $context->set('collected_data', $parentCollectedData);
                 $collectedData = $parentCollectedData;
-                
+
                 Log::channel('ai-engine')->info('AutomatesSteps: Restored parent collected_data', [
                     'entity' => $entityName,
                     'identifier_field' => $identifierField,
@@ -987,7 +987,7 @@ trait AutomatesSteps
                 ]);
             }
         }
-        
+
         $identifier = $collectedData[$identifierField] ?? null;
 
         Log::channel('ai-engine')->info('AutomatesSteps: Looking for identifier in collected_data', [
@@ -1058,7 +1058,7 @@ trait AutomatesSteps
                 // The workflow expects 'category_id' not just 'category'
                 if ($entityId) {
                     $context->set($entityName . '_id', $entityId);
-                    
+
                     // IMPORTANT: Also update collected_data so the final action can access it
                     // This ensures createProduct() can read the numeric category_id
                     $collectedData = $context->get('collected_data', []);
@@ -1372,40 +1372,40 @@ trait AutomatesSteps
     {
         // Check if we're waiting for a response to update an array item
         $waitingForArrayField = $context->get('current_array_field');
-        
+
         if ($waitingForArrayField) {
             // User has responded - extract the value from their message
             $conversationHistory = $context->conversationHistory ?? [];
             $lastUserMessage = array_filter($conversationHistory, fn($msg) => ($msg['role'] ?? '') === 'user');
-            
+
             if (!empty($lastUserMessage)) {
                 $lastMsg = end($lastUserMessage);
                 $userResponse = trim($lastMsg['content'] ?? '');
-                
+
                 // Extract numeric value from response
                 $value = $this->extractNumericValue($userResponse);
-                
+
                 if ($value !== null) {
                     // Update the array item with the provided value
                     $entityName = $context->get('current_array_entity');
                     $itemIndex = $context->get('current_array_item_index');
                     $fieldName = $context->get('current_array_field');
-                    
+
                     $entityConfig = $config['entities'][$entityName] ?? [];
                     $identifierField = $entityConfig['identifier_field'] ?? $entityName;
                     $arrayData = $context->get($identifierField, []);
-                    
+
                     if (isset($arrayData[$itemIndex])) {
                         $arrayData[$itemIndex][$fieldName] = $value;
                         $context->set($identifierField, $arrayData);
-                        
+
                         \Illuminate\Support\Facades\Log::info('AutomatesSteps: Updated array item field', [
                             'entity' => $entityName,
                             'item_index' => $itemIndex,
                             'field' => $fieldName,
                             'value' => $value,
                         ]);
-                        
+
                         // Move to next item
                         $context->set('current_array_item_index', $itemIndex + 1);
                         $context->forget('current_array_field');
@@ -1413,53 +1413,53 @@ trait AutomatesSteps
                 }
             }
         }
-        
+
         $entities = $config['entities'] ?? [];
-        
+
         // Check each entity that has array data
         foreach ($entities as $entityName => $entityConfig) {
             $entityIdKey = $entityName . '_id';
             $entityIds = $context->get($entityIdKey);
-            
+
             // Skip if not an array of IDs (single entity)
             if (!is_array($entityIds)) {
                 continue;
             }
-            
+
             // Get the actual array data (e.g., products array)
             $identifierField = $entityConfig['identifier_field'] ?? $entityName;
             $arrayData = $context->get($identifierField, []);
-            
+
             if (empty($arrayData) || !is_array($arrayData)) {
                 continue;
             }
-            
+
             // Define required fields for array items (e.g., price for products)
             $requiredItemFields = $entityConfig['required_item_fields'] ?? ['price'];
-            
+
             // Check each item for missing required fields
             $currentItemIndex = $context->get('current_array_item_index', 0);
-            
+
             for ($i = $currentItemIndex; $i < count($arrayData); $i++) {
                 $item = $arrayData[$i];
-                
+
                 // Check if this item is missing any required fields
                 foreach ($requiredItemFields as $fieldName) {
                     if (!isset($item[$fieldName]) || $item[$fieldName] === null || $item[$fieldName] === '') {
                         // Missing field found - ask for it
                         $itemName = $item['name'] ?? $item['product'] ?? $item['item'] ?? "item " . ($i + 1);
                         $quantity = $item['quantity'] ?? 1;
-                        
+
                         // Store current position
                         $context->set('current_array_item_index', $i);
                         $context->set('current_array_field', $fieldName);
                         $context->set('current_array_entity', $entityName);
-                        
+
                         $message = "Could you let me know the {$fieldName} for the {$itemName}?";
                         if ($quantity > 1) {
                             $message .= " (unit {$fieldName} per item)";
                         }
-                        
+
                         return ActionResult::needsUserInput(
                             message: $message,
                             metadata: [
@@ -1472,17 +1472,17 @@ trait AutomatesSteps
                     }
                 }
             }
-            
+
             // All items have all required fields - clear tracking
             $context->forget('current_array_item_index');
             $context->forget('current_array_field');
             $context->forget('current_array_entity');
         }
-        
+
         // All array items have all required fields
         return ActionResult::success(message: 'All array item fields collected');
     }
-    
+
     /**
      * Extract numeric value from user response
      */
@@ -1491,11 +1491,11 @@ trait AutomatesSteps
         // Remove common currency symbols and text
         $cleaned = preg_replace('/[^\d.,\-]/', '', $response);
         $cleaned = str_replace(',', '', $cleaned);
-        
+
         if (is_numeric($cleaned)) {
             return (float) $cleaned;
         }
-        
+
         return null;
     }
 

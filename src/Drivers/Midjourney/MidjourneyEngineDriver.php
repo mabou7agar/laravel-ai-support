@@ -29,7 +29,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
         $this->discordToken = config('ai-engine.engines.midjourney.discord_token');
         $this->serverId = config('ai-engine.engines.midjourney.server_id');
         $this->channelId = config('ai-engine.engines.midjourney.channel_id');
-        
+
         if (empty($this->apiKey) || empty($this->discordToken)) {
             throw new AIEngineException('Midjourney API key and Discord token are required');
         }
@@ -66,10 +66,10 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     {
         // Step 1: Submit the imagine request
         $jobId = $this->submitImagineRequest($request, $version);
-        
+
         // Step 2: Poll for completion
         $result = $this->pollForCompletion($jobId);
-        
+
         // Step 3: Process and save images
         $images = $this->processImages($result);
 
@@ -93,7 +93,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     private function submitImagineRequest(AIRequest $request, string $version): string
     {
         $prompt = $this->buildPrompt($request, $version);
-        
+
         $payload = [
             'type' => 'imagine',
             'prompt' => $prompt,
@@ -108,7 +108,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
         ]);
 
         $data = json_decode($response->getBody()->getContents(), true);
-        
+
         if (!isset($data['job_id'])) {
             throw new AIEngineException('Failed to submit Midjourney request');
         }
@@ -119,7 +119,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     private function buildPrompt(AIRequest $request, string $version): string
     {
         $prompt = $request->prompt;
-        
+
         // Add version parameter
         if ($version === 'v6') {
             $prompt .= ' --v 6';
@@ -191,7 +191,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     private function processImages(array $result): array
     {
         $images = [];
-        
+
         if (!isset($result['images']) || empty($result['images'])) {
             throw new AIEngineException('No images returned from Midjourney');
         }
@@ -199,7 +199,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
         foreach ($result['images'] as $index => $imageData) {
             $imageUrl = $imageData['url'];
             $filename = $this->saveImageFromUrl($imageUrl, $index);
-            
+
             $images[] = [
                 'url' => $imageUrl,
                 'filename' => $filename,
@@ -223,7 +223,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
 
         $filename = 'ai-generated/midjourney/images/' . Str::uuid() . '_' . ($index + 1) . '.png';
         Storage::put($filename, $imageContent);
-        
+
         return $filename;
     }
 
@@ -244,7 +244,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
 
         $data = json_decode($response->getBody()->getContents(), true);
         $upscaleJobId = $data['job_id'];
-        
+
         // Poll for upscale completion
         $result = $this->pollForCompletion($upscaleJobId);
         $images = $this->processImages($result);
@@ -283,7 +283,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
 
         $data = json_decode($response->getBody()->getContents(), true);
         $varyJobId = $data['job_id'];
-        
+
         // Poll for variation completion
         $result = $this->pollForCompletion($varyJobId);
         $images = $this->processImages($result);
@@ -310,7 +310,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
         // Midjourney doesn't support streaming for image generation
         // Return the full response as a single chunk
         $response = $this->generate($request);
-        yield $response->content;
+        yield $response->getContent();
     }
 
     public function getAvailableModels(): array

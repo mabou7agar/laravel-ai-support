@@ -23,7 +23,7 @@ class FalAIEngineDriver implements EngineDriverInterface
     {
         $this->apiKey = config('ai-engine.engines.fal_ai.api_key');
         $this->baseUrl = config('ai-engine.engines.fal_ai.base_url', 'https://fal.run/fal-ai');
-        
+
         if (empty($this->apiKey)) {
             throw new AIEngineException('FAL AI API key is required');
         }
@@ -42,7 +42,7 @@ class FalAIEngineDriver implements EngineDriverInterface
     {
         try {
             $entity = $request->entity;
-            
+
             switch ($entity->getContentType()) {
                 case 'image':
                     return $this->generateImage($request);
@@ -83,7 +83,7 @@ class FalAIEngineDriver implements EngineDriverInterface
         ]);
 
         $data = json_decode($response->getBody()->getContents(), true);
-        
+
         if (!isset($data['images']) || empty($data['images'])) {
             throw new AIEngineException('No images returned from FAL AI');
         }
@@ -92,7 +92,7 @@ class FalAIEngineDriver implements EngineDriverInterface
         foreach ($data['images'] as $imageData) {
             $imageUrl = $imageData['url'];
             $filename = $this->saveImageFromUrl($imageUrl);
-            
+
             $images[] = [
                 'url' => $imageUrl,
                 'filename' => $filename,
@@ -143,14 +143,14 @@ class FalAIEngineDriver implements EngineDriverInterface
         ]);
 
         $data = json_decode($response->getBody()->getContents(), true);
-        
+
         if (!isset($data['video']) || empty($data['video']['url'])) {
             throw new AIEngineException('No video returned from FAL AI');
         }
 
         $videoUrl = $data['video']['url'];
         $filename = $this->saveVideoFromUrl($videoUrl);
-        
+
         $videoData = [
             'url' => $videoUrl,
             'filename' => $filename,
@@ -206,7 +206,7 @@ class FalAIEngineDriver implements EngineDriverInterface
 
         $filename = 'ai-generated/fal-ai/images/' . Str::uuid() . '.png';
         Storage::put($filename, $imageContent);
-        
+
         return $filename;
     }
 
@@ -219,7 +219,7 @@ class FalAIEngineDriver implements EngineDriverInterface
 
         $filename = 'ai-generated/fal-ai/videos/' . Str::uuid() . '.mp4';
         Storage::put($filename, $videoContent);
-        
+
         return $filename;
     }
 
@@ -228,7 +228,7 @@ class FalAIEngineDriver implements EngineDriverInterface
         // FAL AI doesn't support streaming for image/video generation
         // Return the full response as a single chunk
         $response = $this->generate($request);
-        yield $response->content;
+        yield $response->getContent();
     }
 
     public function getAvailableModels(): array
@@ -265,7 +265,7 @@ class FalAIEngineDriver implements EngineDriverInterface
                 'description' => 'Latest Stable Diffusion model',
                 'max_resolution' => '1024x1024',
             ],
-            
+
             // Video Generation Models
             EntityEnum::FAL_STABLE_VIDEO->value => [
                 'name' => 'Stable Video Diffusion',
@@ -291,7 +291,7 @@ class FalAIEngineDriver implements EngineDriverInterface
     public function validateRequest(AIRequest $request): bool
     {
         $entity = $request->entity;
-        
+
         // Check if model is supported
         if (!in_array($entity, [
             EntityEnum::FAL_FLUX_PRO,
@@ -343,7 +343,7 @@ class FalAIEngineDriver implements EngineDriverInterface
                 engine: EngineEnum::FAL_AI,
                 model: EntityEnum::FAL_FLUX_PRO
             );
-            
+
             $response = $this->generate($testRequest);
             return $response->isSuccess();
         } catch (\Exception $e) {

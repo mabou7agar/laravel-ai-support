@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Intelligent Prompt Generator
- * 
+ *
  * Uses intent analysis to generate contextual, intelligent prompts
  * that guide the AI to make better decisions and extractions
  */
@@ -43,7 +43,7 @@ class IntelligentPromptGenerator
     protected function inferIntentFromContext(UnifiedActionContext $context, string $message): string
     {
         // PRIORITY 1: Context-based inference (works in ANY language)
-        
+
         // If we're asking for specific field, user is providing data
         if ($context->get('asking_for')) {
             return 'provide_data';
@@ -52,13 +52,13 @@ class IntelligentPromptGenerator
         // If we're waiting for confirmation, analyze the response
         if ($context->get('awaiting_confirmation')) {
             $messageLength = mb_strlen(trim($message));
-            
+
             // Very short messages (1-5 chars) are almost always yes/no
             // Works for: "yes", "ok", "да", "نعم", "是", "oui", "si", "ja"
             if ($messageLength <= 5) {
                 return 'confirm';
             }
-            
+
             // Medium length (6-15 chars) - could be confirmation or correction
             // Let AI in the extraction step handle the nuance
             if ($messageLength <= 15) {
@@ -67,7 +67,7 @@ class IntelligentPromptGenerator
                     return 'confirm'; // Single word = likely yes/no
                 }
             }
-            
+
             // Longer messages = providing corrections/changes
             return 'provide_data';
         }
@@ -78,7 +78,7 @@ class IntelligentPromptGenerator
         }
 
         // PRIORITY 2: Message pattern analysis (language-agnostic)
-        
+
         // Very short messages in workflow context are likely confirmations
         if (!empty($context->currentWorkflow)) {
             $messageLength = mb_strlen(trim($message));
@@ -89,7 +89,7 @@ class IntelligentPromptGenerator
         }
 
         // PRIORITY 3: Default based on context state
-        
+
         // No active workflow = likely starting new action
         if (empty($context->currentWorkflow)) {
             return 'create';
@@ -114,17 +114,17 @@ class IntelligentPromptGenerator
         $prompt = "CONTEXT:\n";
         $prompt .= "- User Intent: {$intent}\n";
         $prompt .= "- Message: \"{$message}\"\n";
-        
+
         if ($askingFor) {
             $prompt .= "- Currently asking for: '{$askingFor}'\n";
         }
-        
+
         if (!empty($collectedData)) {
             $prompt .= "- Already collected: " . implode(', ', array_keys($collectedData)) . "\n";
         }
-        
+
         $prompt .= "\nRULES:\n";
-        
+
         // Intent-specific rules (simplified)
         switch ($intent) {
             case 'provide_data':
@@ -136,12 +136,12 @@ class IntelligentPromptGenerator
                     $prompt .= "- Extract into '{$askingFor}' field ONLY\n";
                 }
                 break;
-                
+
             case 'create':
                 $prompt .= "- Extract ALL relevant information\n";
                 $prompt .= "- Don't ask for what's already provided\n";
                 break;
-                
+
             case 'update':
                 $prompt .= "- Extract identifier and new values\n";
                 break;
@@ -164,10 +164,10 @@ class IntelligentPromptGenerator
 
         $nextField = $missingFields[0];
         $fieldDef = $fieldDefinitions[$nextField] ?? [];
-        
+
         // Use friendlyName if available (especially for entity fields like category_id → "category name")
         $displayName = $fieldDef['friendly_name'] ?? $nextField;
-        
+
         // If a custom prompt is provided, use it directly (highest priority)
         if (!empty($fieldDef['prompt'])) {
             return $fieldDef['prompt'];
@@ -179,17 +179,17 @@ class IntelligentPromptGenerator
         $prompt .= "- We're collecting: {$displayName}\n";
         $prompt .= "- Field type: " . ($fieldDef['type'] ?? 'string') . "\n";
         $prompt .= "- Description: " . ($fieldDef['description'] ?? $displayName) . "\n";
-        
+
         // Add required/optional status
         $isRequired = $fieldDef['required'] ?? true;
         $prompt .= "- Required: " . ($isRequired ? 'yes' : 'no (optional)') . "\n";
-        
+
         // Add examples if provided
         if (!empty($fieldDef['examples'])) {
             $examples = is_array($fieldDef['examples']) ? implode(', ', $fieldDef['examples']) : $fieldDef['examples'];
             $prompt .= "- Examples: {$examples}\n";
         }
-        
+
         // Add validation requirements for AI to understand
         if (!empty($fieldDef['validation'])) {
             $validationRules = is_array($fieldDef['validation']) ? $fieldDef['validation'] : explode('|', $fieldDef['validation']);
@@ -239,7 +239,7 @@ class IntelligentPromptGenerator
                 temperature: 0.7
             ));
 
-            return trim($response->content);
+            return trim($response->getContent());
         } catch (\Exception $e) {
             // Fallback to simple question using friendly name
             return $fieldDef['prompt'] ?? "Please provide {$displayName}";

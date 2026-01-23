@@ -103,7 +103,7 @@ class SearchOptionsTool extends AgentTool
     protected function searchWithAI(string $fieldName, string $query, UnifiedActionContext $context): array
     {
         $prompt = "Suggest appropriate options for the field '{$fieldName}'.\n\n";
-        
+
         if (!empty($query)) {
             $prompt .= "Context: {$query}\n\n";
         }
@@ -121,8 +121,8 @@ class SearchOptionsTool extends AgentTool
             );
 
             $response = $this->ai->generate($request);
-            
-            if (preg_match('/\[[\s\S]*\]/', $response->content, $matches)) {
+
+            if (preg_match('/\[[\s\S]*\]/', $response->getContent(), $matches)) {
                 $options = json_decode($matches[0], true);
                 return is_array($options) ? $options : [];
             }

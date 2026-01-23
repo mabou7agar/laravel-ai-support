@@ -38,32 +38,32 @@ class IntelligentCRUDHandler
                 sessionId: 'crud-detection',
                 userId: null
             );
-            
+
             // Add conversation history to context
             if (!empty($conversationHistory)) {
                 $context->conversationHistory = $conversationHistory;
             }
-            
+
             // Generate intelligent prompt for CRUD detection (simplified - no AI call)
             $contextualPrompt = $this->intelligentPrompt->generatePrompt(
                 $message,
                 $context,
                 ['operation' => 'crud_detection']
             );
-            
+
             // Discover available entities dynamically
             $availableEntities = $this->getAvailableEntities();
-            
+
             // Build detection prompt
             $prompt = $contextualPrompt . "\n\n";
             $prompt .= "TASK: Detect CRUD operation\n\n";
-            
+
             $prompt .= "OPERATIONS:\n";
             $prompt .= "- CREATE: User wants to create/add/make a new entity\n";
             $prompt .= "- READ: User wants to view/show/list/find/search entities\n";
             $prompt .= "- UPDATE: User wants to edit/modify/change/update an existing entity\n";
             $prompt .= "- DELETE: User wants to remove/delete/cancel an entity\n\n";
-            
+
             $prompt .= "AVAILABLE ENTITIES:\n";
             if (!empty($availableEntities)) {
                 foreach ($availableEntities as $entity => $description) {
@@ -73,13 +73,13 @@ class IntelligentCRUDHandler
                 $prompt .= "- Any entity type mentioned by the user\n";
             }
             $prompt .= "\n";
-            
+
             $prompt .= "EXAMPLES:\n";
             $prompt .= "- 'create invoice' → {\"operation\": \"create\", \"entity\": \"invoice\", \"identifier\": null}\n";
             $prompt .= "- 'update product 123' → {\"operation\": \"update\", \"entity\": \"product\", \"identifier\": \"123\"}\n";
             $prompt .= "- 'delete the simple product' → {\"operation\": \"delete\", \"entity\": \"product\", \"identifier\": \"simple product\"}\n";
             $prompt .= "- 'show all customers' → {\"operation\": \"read\", \"entity\": \"customer\", \"identifier\": null}\n\n";
-            
+
             $prompt .= "Return ONLY valid JSON:\n";
             $prompt .= '{\"operation\": \"create|read|update|delete\", \"entity\": \"product|customer|invoice|etc\", \"identifier\": \"id or search term or null\"}';
 
@@ -91,8 +91,8 @@ class IntelligentCRUDHandler
                 temperature: 0
             ));
 
-            $result = json_decode($response->content, true);
-            
+            $result = json_decode($response->getContent(), true);
+
             if (json_last_error() === JSON_ERROR_NONE && isset($result['operation'])) {
                 Log::channel('ai-engine')->info('CRUD operation detected', $result);
                 return $result;
@@ -556,7 +556,7 @@ class IntelligentCRUDHandler
                 temperature: 0
             ));
 
-            $fields = json_decode($response->content, true);
+            $fields = json_decode($response->getContent(), true);
             return $fields ?? [];
 
         } catch (\Exception $e) {

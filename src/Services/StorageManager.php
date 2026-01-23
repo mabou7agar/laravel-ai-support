@@ -37,8 +37,8 @@ class StorageManager
         $folder = $options['folder'] ?? $this->getDefaultFolder($contentType);
 
         // Store main content if it's text
-        if ($contentType === 'text' && !empty($response->content)) {
-            $textFile = $this->storeTextContent($response->content, $disk, $folder, $options);
+        if ($contentType === 'text' && !empty($response->getContent())) {
+            $textFile = $this->storeTextContent($response->getContent(), $disk, $folder, $options);
             $storedFiles['content'] = $textFile;
         }
 

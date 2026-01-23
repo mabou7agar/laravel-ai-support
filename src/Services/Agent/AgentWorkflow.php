@@ -25,15 +25,15 @@ abstract class AgentWorkflow
         $this->tools = $tools;
         $this->stepPrefix = $stepPrefix;
         $this->steps = $this->defineSteps();
-        
+
         // Apply step prefix if this is a subworkflow
         if ($this->stepPrefix) {
             $this->steps = $this->applyStepPrefix($this->steps, $this->stepPrefix);
         }
-        
+
         // Removed logging to prevent memory exhaustion from serializing steps array
     }
-    
+
     /**
      * Apply prefix to all step names for subworkflow isolation
      */
@@ -43,17 +43,17 @@ abstract class AgentWorkflow
             // Clone the step and update its name and transitions
             $originalName = $step->getName();
             $prefixedName = $prefix . '_' . $originalName;
-            
+
             // Create new step with prefixed name
             $newStep = WorkflowStep::make($prefixedName)
                 ->description($step->getDescription())
                 ->execute($step->getExecutor());
-            
+
             // Copy requiresInput flag if the method exists
             if ($step->doesRequireUserInput()) {
                 $newStep->requiresUserInput();
             }
-            
+
             // Prefix success/failure transitions
             $onSuccess = $step->getOnSuccess();
             if ($onSuccess && $onSuccess !== 'complete' && $onSuccess !== 'error') {
@@ -61,14 +61,14 @@ abstract class AgentWorkflow
             } else {
                 $newStep->onSuccess($onSuccess);
             }
-            
+
             $onFailure = $step->getOnFailure();
             if ($onFailure && $onFailure !== 'complete' && $onFailure !== 'error') {
                 $newStep->onFailure($prefix . '_' . $onFailure);
             } else {
                 $newStep->onFailure($onFailure);
             }
-            
+
             return $newStep;
         }, $steps);
     }
@@ -98,7 +98,7 @@ abstract class AgentWorkflow
     protected function extractWithAI(string $message, array $fields, array $context = []): array
     {
         $prompt = $this->buildExtractionPrompt($message, $fields, $context);
-        
+
         $request = new AIRequest(
             prompt: $prompt,
             engine: EngineEnum::from('openai'),
@@ -108,15 +108,15 @@ abstract class AgentWorkflow
         );
 
         $response = $this->ai->generate($request);
-        
-        return $this->parseExtractionResponse($response->content, $fields);
+
+        return $this->parseExtractionResponse($response->getContent(), $fields);
     }
 
     protected function buildExtractionPrompt(string $message, array $fields, array $context): string
     {
         $prompt = "Extract structured data from the user's message.\n\n";
         $prompt .= "User Message: \"{$message}\"\n\n";
-        
+
         if (!empty($context)) {
             $prompt .= "Context:\n";
             foreach ($context as $key => $value) {
@@ -126,21 +126,21 @@ abstract class AgentWorkflow
             }
             $prompt .= "\n";
         }
-        
+
         $prompt .= "Fields to extract:\n";
         foreach ($fields as $field => $rules) {
             $isRequired = str_contains($rules, 'required');
             $type = $this->extractType($rules);
             $prompt .= "- {$field} ({$type})" . ($isRequired ? ' [REQUIRED]' : ' [OPTIONAL]') . "\n";
         }
-        
+
         $prompt .= "\nRespond in JSON format:\n";
         $prompt .= "{\n";
         $prompt .= "  \"extracted\": { \"field_name\": \"value\", ... },\n";
         $prompt .= "  \"missing\": [\"field1\", \"field2\"],\n";
         $prompt .= "  \"confidence\": 0.0-1.0\n";
         $prompt .= "}";
-        
+
         return $prompt;
     }
 
@@ -156,14 +156,14 @@ abstract class AgentWorkflow
     {
         if (preg_match('/\{[\s\S]*\}/', $content, $matches)) {
             $json = json_decode($matches[0], true);
-            
+
             if ($json) {
                 $extracted = $json['extracted'] ?? [];
                 $missing = $json['missing'] ?? [];
-                
+
                 $requiredFields = array_keys(array_filter($fields, fn($rules) => str_contains($rules, 'required')));
                 $missingRequired = array_intersect($requiredFields, $missing);
-                
+
                 return [
                     'data' => $extracted,
                     'missing_fields' => $missing,
@@ -172,7 +172,7 @@ abstract class AgentWorkflow
                 ];
             }
         }
-        
+
         return [
             'data' => [],
             'missing_fields' => array_keys($fields),
@@ -184,7 +184,7 @@ abstract class AgentWorkflow
     protected function askAI(string $question, array $context = []): string
     {
         $prompt = $question;
-        
+
         if (!empty($context)) {
             $prompt .= "\n\nContext:\n";
             foreach ($context as $key => $value) {
@@ -193,7 +193,7 @@ abstract class AgentWorkflow
                 }
             }
         }
-        
+
         $request = new AIRequest(
             prompt: $prompt,
             engine: EngineEnum::from('openai'),
@@ -203,8 +203,8 @@ abstract class AgentWorkflow
         );
 
         $response = $this->ai->generate($request);
-        
-        return trim($response->content);
+
+        return trim($response->getContent());
     }
 
     public function getName(): string
@@ -221,9 +221,9 @@ abstract class AgentWorkflow
      * Get entity fields that this workflow manages
      * Subflows should override this to declare which entity reference fields they use
      * This allows the system to automatically clear these fields between instances
-     * 
+     *
      * Static method to avoid unnecessary workflow instantiation
-     * 
+     *
      * @return array List of entity field names (e.g., ['category', 'unit', 'brand'])
      */
     public static function getEntityFields(): array
@@ -319,10 +319,10 @@ abstract class AgentWorkflow
         }
 
         $content = strtolower(trim($lastMessage['content'] ?? ''));
-        
+
         // Check for cancel keywords
         $cancelKeywords = ['cancel', 'abort', 'stop', 'quit', 'exit', 'nevermind', 'never mind'];
-        
+
         foreach ($cancelKeywords as $keyword) {
             if ($content === $keyword || str_starts_with($content, $keyword . ' ')) {
                 Log::channel('ai-engine')->info('User requested workflow cancellation', [
@@ -333,7 +333,7 @@ abstract class AgentWorkflow
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -358,10 +358,10 @@ abstract class AgentWorkflow
 
     /**
      * Generic entity resolution helper
-     * 
+     *
      * Resolves entities using GenericEntityResolver and model's aiConfig.
      * Auto-detects single vs multiple entities and delegates accordingly.
-     * 
+     *
      * @param string $configField Field name in aiConfig (e.g., 'customer_id', 'items')
      * @param string $dataField Field name in collected data (e.g., 'customer_identifier', 'products')
      * @param array $aiConfig The model's aiConfig array
@@ -376,31 +376,31 @@ abstract class AgentWorkflow
     ): ActionResult {
         // Get entity config from aiConfig
         $entityConfig = $aiConfig['fields'][$configField] ?? null;
-        
+
         if (!$entityConfig) {
             return ActionResult::failure(error: "Field '{$configField}' not configured in aiConfig");
         }
-        
+
         // Get GenericEntityResolver
         $resolver = app(\LaravelAIEngine\Services\GenericEntityResolver::class);
-        
+
         // Check if we're in the middle of creation
         $creationStep = $context->get("{$configField}_creation_step");
-        
+
         if ($creationStep) {
             // Continue with stored identifier
             $identifier = $context->get("{$configField}_identifier", '');
         } else {
             // First time - get from collected data
-            $data = method_exists($this, 'getCollectedData') 
-                ? $this->getCollectedData($context) 
+            $data = method_exists($this, 'getCollectedData')
+                ? $this->getCollectedData($context)
                 : [];
             $identifier = $data[$dataField] ?? '';
         }
 
         // Auto-detect if single or multiple entities
         $isMultiple = $this->isMultipleEntities($entityConfig, $identifier);
-        
+
         // Use GenericEntityResolver
         if ($isMultiple) {
             // Multiple entities (e.g., products)
@@ -410,15 +410,15 @@ abstract class AgentWorkflow
             // Single entity (e.g., customer)
             $result = $resolver->resolveEntity($configField, $entityConfig, $identifier, $context);
         }
-        
+
         // Store resolved ID(s) in context
         if ($result->success && isset($result->data[$configField])) {
             $context->set($configField, $result->data[$configField]);
         }
-        
+
         return $result;
     }
-    
+
     /**
      * Auto-detect if dealing with single or multiple entities
      */
@@ -428,7 +428,7 @@ abstract class AgentWorkflow
         if (isset($config['type'])) {
             return $config['type'] === 'entities';
         }
-        
+
         // Auto-detect from data
         if (is_array($data)) {
             // If it's an array with numeric keys, it's multiple
@@ -442,7 +442,7 @@ abstract class AgentWorkflow
             // If it has multiple items, it's multiple
             return count($data) > 1;
         }
-        
+
         // String or single value = single entity
         return false;
     }
@@ -462,10 +462,10 @@ abstract class AgentWorkflow
         $context->workflowState = [];
         $context->currentWorkflow = null;
         $context->currentStep = null;
-        
+
         // Keep conversation history for context
         // Keep user ID and session ID for tracking
-        
+
         Log::channel('ai-engine')->info('Workflow state cleaned', [
             'workflow' => $this->getName(),
             'session_id' => $context->sessionId,

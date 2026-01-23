@@ -56,27 +56,27 @@ class TestEnginesCommand extends Command
             }
 
             $this->info("🔧 Testing {$engine->value}...");
-            
+
             $models = $this->getModelsForEngine($engine, $modelFilter, $quick);
-            
+
             foreach ($models as $model) {
                 $totalTests++;
                 $result = $this->testModel($engine, $model, $timeout, $verbose);
                 $results[$engine->value][$model->value] = $result;
-                
+
                 if ($result['success']) {
                     $passedTests++;
                     $this->line("  ✅ {$model->value} - {$result['response_time']}ms");
                 } else {
                     $this->line("  ❌ {$model->value} - {$result['error']}");
                 }
-                
+
                 if ($verbose && $result['success']) {
                     $this->line("     Content: " . substr($result['content'], 0, 100) . '...');
                     $this->line("     Credits: {$result['credits_used']}");
                 }
             }
-            
+
             $this->newLine();
         }
 
@@ -88,7 +88,7 @@ class TestEnginesCommand extends Command
         );
 
         $overallSuccessRate = $totalTests > 0 ? round(($passedTests / $totalTests) * 100, 1) : 0;
-        
+
         if ($overallSuccessRate >= 80) {
             $this->info("🎉 Overall Success Rate: {$overallSuccessRate}% ({$passedTests}/{$totalTests})");
         } else {
@@ -108,9 +108,9 @@ class TestEnginesCommand extends Command
     {
         // Build config key from engine value
         $configKey = "ai-engine.engines.{$engine->value}.api_key";
-        
+
         $apiKey = config($configKey);
-        
+
         // Check if API key is a non-empty string
         return is_string($apiKey) && !empty(trim($apiKey));
     }
@@ -118,7 +118,7 @@ class TestEnginesCommand extends Command
     private function getModelsForEngine(EngineEnum $engine, ?string $modelFilter, bool $quick = false): array
     {
         $allModels = array_filter(EntityEnum::cases(), fn($model) => $model->engine() === $engine);
-        
+
         if ($modelFilter) {
             $allModels = array_filter($allModels, fn($model) => $model->value === $modelFilter);
         }
@@ -137,10 +137,10 @@ class TestEnginesCommand extends Command
     {
         try {
             $startTime = microtime(true);
-            
+
             $testPrompt = $this->getTestPrompt($model);
             $testParameters = $this->getTestParameters($model);
-            
+
             $request = new AIRequest(
                 prompt: $testPrompt,
                 engine: $engine,
@@ -157,7 +157,7 @@ class TestEnginesCommand extends Command
 
             return [
                 'success' => true,
-                'content' => $response->content,
+                'content' => $response->getContent(),
                 'response_time' => $responseTime,
                 'credits_used' => $response->usage['total_cost'] ?? 0,
                 'metadata' => $response->metadata ?? [],
@@ -224,13 +224,13 @@ class TestEnginesCommand extends Command
     private function generateSummaryTable(array $results): array
     {
         $table = [];
-        
+
         foreach ($results as $engine => $models) {
             $total = count($models);
             $passed = count(array_filter($models, fn($result) => $result['success']));
             $failed = $total - $passed;
             $successRate = $total > 0 ? round(($passed / $total) * 100, 1) . '%' : '0%';
-            
+
             $table[] = [
                 $engine,
                 $total,
@@ -239,7 +239,7 @@ class TestEnginesCommand extends Command
                 $successRate,
             ];
         }
-        
+
         return $table;
     }
 

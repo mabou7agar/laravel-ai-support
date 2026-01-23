@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Event;
 class AIEngineService
 {
     protected static ?string $globalUserIdResolver = null;
-    
+
     public function __construct(
         protected CreditManager $creditManager,
         protected ?ConversationManager $conversationManager = null,
@@ -28,7 +28,7 @@ class AIEngineService
         $this->conversationManager = $conversationManager ?? app(ConversationManager::class);
         $this->driverRegistry = $driverRegistry ?? app(Drivers\DriverRegistry::class);
     }
-    
+
     /**
      * Set global user ID resolver at runtime
      */
@@ -36,7 +36,7 @@ class AIEngineService
     {
         static::$globalUserIdResolver = $resolverClass;
     }
-    
+
     /**
      * Get the configured user ID resolver
      */
@@ -119,8 +119,8 @@ class AIEngineService
                 \Log::channel('ai-engine')->info('✅ AI Response Debug', [
                     'request_id' => $requestId,
                     'execution_time' => round($processingTime, 3) . 's',
-                    'response_length' => strlen($response->content),
-                    'response_preview' => substr($response->content, 0, 200),
+                    'response_length' => strlen($response->getContent()),
+                    'response_preview' => substr($response->getContent(), 0, 200),
                     'success' => $response->success,
                     'tokens_used' => $response->metadata['usage'] ?? null,
                 ]);
@@ -211,7 +211,7 @@ class AIEngineService
         if ($response->success) {
             $this->conversationManager->addAssistantMessage(
                 $conversationId,
-                $response->content,
+                $response->getContent(),
                 $response
             );
         }
@@ -343,7 +343,7 @@ class AIEngineService
         if ($resolverClass && class_exists($resolverClass)) {
             try {
                 $resolver = app($resolverClass);
-                
+
                 // Support callable resolvers (with __invoke method)
                 if (is_callable($resolver)) {
                     $userId = $resolver();
@@ -351,7 +351,7 @@ class AIEngineService
                         return (string) $userId;
                     }
                 }
-                
+
                 // Support resolvers with resolve() method
                 if (method_exists($resolver, 'resolve')) {
                     $userId = $resolver->resolve();
@@ -359,7 +359,7 @@ class AIEngineService
                         return (string) $userId;
                     }
                 }
-                
+
                 // Support static resolveUserId() method
                 if (method_exists($resolver, 'resolveUserId')) {
                     $userId = $resolver::resolveUserId();
