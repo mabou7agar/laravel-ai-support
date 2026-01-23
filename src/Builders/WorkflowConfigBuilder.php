@@ -100,6 +100,58 @@ class WorkflowConfigBuilder
     }
 
     /**
+     * Add a single entity field using EntityFieldConfig DTO
+     * Provides type-safe, fluent configuration
+     */
+    public function entityField(string $identifierField, \LaravelAIEngine\DTOs\EntityFieldConfig $config): self
+    {
+        $entityName = preg_replace('/_id$/', '', $identifierField);
+        $configArray = $config->toArray();
+        $configArray['identifier_field'] = $identifierField;
+        
+        $this->entity($entityName, $config->model, $configArray);
+        
+        // Also add field definition for data collection
+        $this->field($identifierField, [
+            'type' => 'entity',
+            'required' => $configArray['required'] ?? true,
+            'description' => $configArray['description'] ?? ucfirst($entityName),
+            'prompt' => $configArray['prompt'] ?? "What is the {$entityName}?",
+        ]);
+        
+        return $this;
+    }
+
+    /**
+     * Add multiple entities field using EntityFieldConfig DTO
+     * For array/collection of entities (e.g., products, items)
+     */
+    public function entitiesField(string $identifierField, \LaravelAIEngine\DTOs\EntityFieldConfig $config): self
+    {
+        $entityName = rtrim($identifierField, 's'); // items -> item, products -> product
+        if ($entityName === $identifierField) {
+            // If no 's' was removed, try common patterns
+            $entityName = preg_replace('/ies$/', 'y', $identifierField); // categories -> category
+        }
+        
+        $configArray = $config->toArray();
+        $configArray['identifier_field'] = $identifierField;
+        $configArray['multiple'] = true;
+        
+        $this->entity($entityName, $config->model, $configArray);
+        
+        // Also add field definition for data collection
+        $this->field($identifierField, [
+            'type' => 'entity',
+            'required' => $configArray['required'] ?? true,
+            'description' => $configArray['description'] ?? ucfirst($entityName) . 's',
+            'prompt' => $configArray['prompt'] ?? "What {$entityName}s would you like to add?",
+        ]);
+        
+        return $this;
+    }
+
+    /**
      * Add multiple entities (like products)
      */
     public function multipleEntities(
