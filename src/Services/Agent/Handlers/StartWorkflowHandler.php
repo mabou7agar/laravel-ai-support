@@ -93,8 +93,13 @@ class StartWorkflowHandler implements MessageHandlerInterface
             $prompt .= "Respond with ONLY the workflow class name, or 'NONE' if no match.\n";
             $prompt .= "Consider the goal description to understand what each workflow does.\n";
             
-            $response = $this->ai->generateText($prompt, maxTokens: 100);
-            $selectedWorkflow = trim($response);
+            $request = new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                maxTokens: 100
+            );
+            
+            $response = $this->ai->generateText($request);
+            $selectedWorkflow = trim($response->getContent());
             
             // Validate the response
             if ($selectedWorkflow === 'NONE' || empty($selectedWorkflow)) {
