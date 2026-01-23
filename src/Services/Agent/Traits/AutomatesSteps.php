@@ -682,6 +682,9 @@ trait AutomatesSteps
             $extracted = json_decode($response, true);
 
             if (json_last_error() === JSON_ERROR_NONE && is_array($extracted)) {
+                // Normalize array items - convert string arrays to object arrays
+                $extracted = $this->normalizeExtractedArrays($extracted, $fields);
+                
                 \Illuminate\Support\Facades\Log::info('AI extracted data successfully', [
                     'workflow' => class_basename($this),
                     'field_count' => count($extracted),
@@ -701,6 +704,50 @@ trait AutomatesSteps
         }
 
         return [];
+    }
+
+    /**
+     * Normalize extracted arrays - convert string arrays to object arrays
+     * Handles cases where AI extracts ["Product1", "Product2"] instead of [{"product": "Product1"}, {"product": "Product2"}]
+     */
+    protected function normalizeExtractedArrays(array $extracted, array $fields): array
+    {
+        foreach ($extracted as $key => $value) {
+            // Check if this is an array field
+            if (!is_array($value) || empty($value)) {
+                continue;
+            }
+
+            // Check if it's an array of strings (needs normalization)
+            $isStringArray = true;
+            foreach ($value as $item) {
+                if (!is_string($item)) {
+                    $isStringArray = false;
+                    break;
+                }
+            }
+
+            // Convert string array to object array
+            if ($isStringArray) {
+                $normalizedItems = [];
+                foreach ($value as $item) {
+                    $normalizedItems[] = [
+                        'product' => $item,
+                        'name' => $item,
+                        'quantity' => 1,
+                    ];
+                }
+                $extracted[$key] = $normalizedItems;
+
+                \Illuminate\Support\Facades\Log::info('Normalized string array to object array', [
+                    'field' => $key,
+                    'original_count' => count($value),
+                    'normalized_count' => count($normalizedItems),
+                ]);
+            }
+        }
+
+        return $extracted;
     }
 
     /**
