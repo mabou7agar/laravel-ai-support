@@ -52,7 +52,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
             return false;
         }
         
-        if (!$this->supports($request->model->getContentType())) {
+        if (!$this->supports($request->getModel()->getContentType())) {
             return false;
         }
 
@@ -104,14 +104,14 @@ class PerplexityEngineDriver extends BaseEngineDriver
             
             $messages = $this->buildMessages($request);
             $payload = $this->buildChatPayload($request, $messages, [
-                'top_p' => $request->parameters['top_p'] ?? 0.9,
-                'search_domain_filter' => $request->parameters['search_domain_filter'] ?? [],
-                'return_citations' => $request->parameters['return_citations'] ?? true,
-                'search_recency_filter' => $request->parameters['search_recency_filter'] ?? 'month',
-                'top_k' => $request->parameters['top_k'] ?? 0,
+                'top_p' => $request->getParameters()['top_p'] ?? 0.9,
+                'search_domain_filter' => $request->getParameters()['search_domain_filter'] ?? [],
+                'return_citations' => $request->getParameters()['return_citations'] ?? true,
+                'search_recency_filter' => $request->getParameters()['search_recency_filter'] ?? 'month',
+                'top_k' => $request->getParameters()['top_k'] ?? 0,
                 'stream' => false,
-                'presence_penalty' => $request->parameters['presence_penalty'] ?? 0,
-                'frequency_penalty' => $request->parameters['frequency_penalty'] ?? 1,
+                'presence_penalty' => $request->getParameters()['presence_penalty'] ?? 0,
+                'frequency_penalty' => $request->getParameters()['frequency_penalty'] ?? 1,
             ]);
 
             $response = $this->httpClient->post('/chat/completions', [
@@ -154,10 +154,10 @@ class PerplexityEngineDriver extends BaseEngineDriver
             $messages = $this->buildMessages($request);
             
             $payload = [
-                'model' => $request->model->value,
+                'model' => $request->getModel()->value,
                 'messages' => $messages,
-                'max_tokens' => $request->maxTokens ?? 4096,
-                'temperature' => $request->temperature ?? 0.2,
+                'max_tokens' => $request->getMaxTokens() ?? 4096,
+                'temperature' => $request->getTemperature() ?? 0.2,
                 'stream' => true,
                 'return_citations' => true,
             ];
@@ -194,10 +194,10 @@ class PerplexityEngineDriver extends BaseEngineDriver
     public function webSearch(AIRequest $request): AIResponse
     {
         try {
-            $searchQuery = $request->prompt;
-            $domainFilter = $request->parameters['domain_filter'] ?? [];
-            $recencyFilter = $request->parameters['recency_filter'] ?? 'month';
-            $maxResults = $request->parameters['max_results'] ?? 10;
+            $searchQuery = $request->getPrompt();
+            $domainFilter = $request->getParameters()['domain_filter'] ?? [];
+            $recencyFilter = $request->getParameters()['recency_filter'] ?? 'month';
+            $maxResults = $request->getParameters()['max_results'] ?? 10;
 
             // Use Perplexity's search-focused model
             $messages = [
@@ -219,7 +219,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
                 'search_domain_filter' => $domainFilter,
                 'search_recency_filter' => $recencyFilter,
                 'return_citations' => true,
-                'return_images' => $request->parameters['return_images'] ?? false,
+                'return_images' => $request->getParameters()['return_images'] ?? false,
             ];
 
             $response = $this->httpClient->post('/chat/completions', [
@@ -234,8 +234,8 @@ class PerplexityEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 $content,
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'search_query' => $searchQuery,
                 'citations' => $citations,
@@ -249,8 +249,8 @@ class PerplexityEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Perplexity web search error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -261,7 +261,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
     public function academicResearch(AIRequest $request): AIResponse
     {
         try {
-            $researchTopic = $request->prompt;
+            $researchTopic = $request->getPrompt();
             
             $messages = [
                 [
@@ -294,8 +294,8 @@ class PerplexityEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 $content,
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'research_topic' => $researchTopic,
                 'citations' => $citations,
@@ -306,8 +306,8 @@ class PerplexityEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Perplexity academic research error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -319,8 +319,8 @@ class PerplexityEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Image generation not supported by Perplexity',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 

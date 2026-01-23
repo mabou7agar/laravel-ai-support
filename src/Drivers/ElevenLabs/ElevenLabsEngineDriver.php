@@ -32,7 +32,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
      */
     public function generate(AIRequest $request): AIResponse
     {
-        $contentType = $request->model->getContentType();
+        $contentType = $request->getModel()->getContentType();
         
         return match ($contentType) {
             'audio' => $this->generateAudio($request),
@@ -58,7 +58,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
             return false;
         }
         
-        if (!$this->supports($request->model->getContentType())) {
+        if (!$this->supports($request->getModel()->getContentType())) {
             return false;
         }
 
@@ -107,8 +107,8 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Text generation not supported by ElevenLabs',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 
@@ -118,15 +118,15 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     public function generateAudio(AIRequest $request): AIResponse
     {
         try {
-            $voiceId = $request->parameters['voice_id'] ?? 'pNInz6obpgDQGcFmaJgB'; // Default voice
-            $stability = $request->parameters['stability'] ?? 0.5;
-            $similarityBoost = $request->parameters['similarity_boost'] ?? 0.5;
-            $style = $request->parameters['style'] ?? 0.0;
-            $useSpeakerBoost = $request->parameters['use_speaker_boost'] ?? true;
+            $voiceId = $request->getParameters()['voice_id'] ?? 'pNInz6obpgDQGcFmaJgB'; // Default voice
+            $stability = $request->getParameters()['stability'] ?? 0.5;
+            $similarityBoost = $request->getParameters()['similarity_boost'] ?? 0.5;
+            $style = $request->getParameters()['style'] ?? 0.0;
+            $useSpeakerBoost = $request->getParameters()['use_speaker_boost'] ?? true;
 
             $payload = [
-                'text' => $request->prompt,
-                'model_id' => $request->model->value,
+                'text' => $request->getPrompt(),
+                'model_id' => $request->getModel()->value,
                 'voice_settings' => [
                     'stability' => $stability,
                     'similarity_boost' => $similarityBoost,
@@ -142,15 +142,15 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
             $audioData = $response->getBody()->getContents();
             $filename = $this->saveAudioFile($audioData);
 
-            $charactersUsed = strlen($request->prompt);
+            $charactersUsed = strlen($request->getPrompt());
 
             return AIResponse::success(
-                $request->prompt,
-                $request->engine,
-                $request->model
+                $request->getPrompt(),
+                $request->getEngine(),
+                $request->getModel()
             )->withFiles([$filename])
              ->withUsage(
-                 creditsUsed: $charactersUsed * $request->model->creditIndex()
+                 creditsUsed: $charactersUsed * $request->getModel()->creditIndex()
              )->withDetailedUsage([
                  'voice_id' => $voiceId,
                  'characters_used' => $charactersUsed,
@@ -165,14 +165,14 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
         } catch (RequestException $e) {
             return AIResponse::error(
                 'ElevenLabs API error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Unexpected error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -183,14 +183,14 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     public function generateAudioStream(AIRequest $request): \Generator
     {
         try {
-            $voiceId = $request->parameters['voice_id'] ?? 'pNInz6obpgDQGcFmaJgB';
+            $voiceId = $request->getParameters()['voice_id'] ?? 'pNInz6obpgDQGcFmaJgB';
             
             $payload = [
-                'text' => $request->prompt,
-                'model_id' => $request->model->value,
+                'text' => $request->getPrompt(),
+                'model_id' => $request->getModel()->value,
                 'voice_settings' => [
-                    'stability' => $request->parameters['stability'] ?? 0.5,
-                    'similarity_boost' => $request->parameters['similarity_boost'] ?? 0.5,
+                    'stability' => $request->getParameters()['stability'] ?? 0.5,
+                    'similarity_boost' => $request->getParameters()['similarity_boost'] ?? 0.5,
                 ],
             ];
 
@@ -219,8 +219,8 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Speech-to-text not supported by ElevenLabs',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 
@@ -230,9 +230,9 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     public function cloneVoice(AIRequest $request): AIResponse
     {
         try {
-            $name = $request->parameters['voice_name'] ?? 'Cloned Voice';
-            $description = $request->parameters['description'] ?? 'Voice cloned via Laravel AI Engine';
-            $files = $request->files ?? [];
+            $name = $request->getParameters()['voice_name'] ?? 'Cloned Voice';
+            $description = $request->getParameters()['description'] ?? 'Voice cloned via Laravel AI Engine';
+            $files = $request->getFiles() ?? [];
 
             if (empty($files)) {
                 throw new \InvalidArgumentException('Audio files are required for voice cloning');
@@ -259,8 +259,8 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 "Voice '{$name}' cloned successfully",
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'voice_id' => $data['voice_id'] ?? null,
                 'voice_name' => $name,
@@ -270,8 +270,8 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Voice cloning error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }

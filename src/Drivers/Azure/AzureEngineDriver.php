@@ -65,12 +65,12 @@ class AzureEngineDriver implements EngineDriverInterface
     private function generateSpeech(AIRequest $request): AIResponse
     {
         $payload = [
-            'text' => $request->prompt,
-            'voice' => $request->parameters['voice'] ?? 'en-US-AriaNeural',
-            'rate' => $request->parameters['rate'] ?? '0%',
-            'pitch' => $request->parameters['pitch'] ?? '0%',
-            'volume' => $request->parameters['volume'] ?? '0%',
-            'output_format' => $request->parameters['output_format'] ?? 'audio-16khz-128kbitrate-mono-mp3',
+            'text' => $request->getPrompt(),
+            'voice' => $request->getParameters()['voice'] ?? 'en-US-AriaNeural',
+            'rate' => $request->getParameters()['rate'] ?? '0%',
+            'pitch' => $request->getParameters()['pitch'] ?? '0%',
+            'volume' => $request->getParameters()['volume'] ?? '0%',
+            'output_format' => $request->getParameters()['output_format'] ?? 'audio-16khz-128kbitrate-mono-mp3',
         ];
 
         $ssml = $this->buildSSML($payload);
@@ -90,7 +90,7 @@ class AzureEngineDriver implements EngineDriverInterface
         $audioData = [
             'filename' => $filename,
             'path' => Storage::url($filename),
-            'duration' => $this->estimateAudioDuration($request->prompt),
+            'duration' => $this->estimateAudioDuration($request->getPrompt()),
             'voice' => $payload['voice'],
             'format' => $payload['output_format'],
             'size' => strlen($audioContent),
@@ -99,7 +99,7 @@ class AzureEngineDriver implements EngineDriverInterface
         return new AIResponse(
             content: json_encode($audioData),
             usage: [
-                'characters_processed' => strlen($request->prompt),
+                'characters_processed' => strlen($request->getPrompt()),
                 'audio_duration' => $audioData['duration'],
                 'total_cost' => $request->entity->creditIndex(),
             ],
@@ -114,11 +114,11 @@ class AzureEngineDriver implements EngineDriverInterface
 
     private function transcribeAudio(AIRequest $request): AIResponse
     {
-        if (empty($request->parameters['audio_file'])) {
+        if (empty($request->getParameters()['audio_file'])) {
             throw new AIEngineException('Audio file is required for speech-to-text');
         }
 
-        $audioContent = Storage::get($request->parameters['audio_file']);
+        $audioContent = Storage::get($request->getParameters()['audio_file']);
 
         $response = $this->client->post('/speechtotext/v3.0/transcriptions', [
             'headers' => [
@@ -156,12 +156,12 @@ class AzureEngineDriver implements EngineDriverInterface
     {
         $payload = [
             [
-                'text' => $request->prompt,
+                'text' => $request->getPrompt(),
             ]
         ];
 
-        $targetLanguage = $request->parameters['target_language'] ?? 'es';
-        $sourceLanguage = $request->parameters['source_language'] ?? null;
+        $targetLanguage = $request->getParameters()['target_language'] ?? 'es';
+        $sourceLanguage = $request->getParameters()['source_language'] ?? null;
 
         $queryParams = ['api-version' => '3.0', 'to' => $targetLanguage];
         if ($sourceLanguage) {
@@ -176,7 +176,7 @@ class AzureEngineDriver implements EngineDriverInterface
         $translation = $data[0]['translations'][0] ?? [];
 
         $translationData = [
-            'original_text' => $request->prompt,
+            'original_text' => $request->getPrompt(),
             'translated_text' => $translation['text'] ?? '',
             'source_language' => $data[0]['detectedLanguage']['language'] ?? $sourceLanguage,
             'target_language' => $targetLanguage,
@@ -186,7 +186,7 @@ class AzureEngineDriver implements EngineDriverInterface
         return new AIResponse(
             content: $translationData['translated_text'],
             usage: [
-                'characters_translated' => strlen($request->prompt),
+                'characters_translated' => strlen($request->getPrompt()),
                 'total_cost' => $request->entity->creditIndex(),
             ],
             metadata: [
@@ -204,13 +204,13 @@ class AzureEngineDriver implements EngineDriverInterface
             'documents' => [
                 [
                     'id' => '1',
-                    'text' => $request->prompt,
-                    'language' => $request->parameters['language'] ?? 'en',
+                    'text' => $request->getPrompt(),
+                    'language' => $request->getParameters()['language'] ?? 'en',
                 ]
             ]
         ];
 
-        $analysisType = $request->parameters['analysis_type'] ?? 'sentiment';
+        $analysisType = $request->getParameters()['analysis_type'] ?? 'sentiment';
 
         $endpoint = match ($analysisType) {
             'sentiment' => '/text/analytics/v3.1/sentiment',
@@ -236,7 +236,7 @@ class AzureEngineDriver implements EngineDriverInterface
         return new AIResponse(
             content: json_encode($analysisData),
             usage: [
-                'characters_analyzed' => strlen($request->prompt),
+                'characters_analyzed' => strlen($request->getPrompt()),
                 'total_cost' => $request->entity->creditIndex(),
             ],
             metadata: [
@@ -250,23 +250,23 @@ class AzureEngineDriver implements EngineDriverInterface
 
     private function analyzeImage(AIRequest $request): AIResponse
     {
-        if (empty($request->parameters['image_url']) && empty($request->parameters['image_file'])) {
+        if (empty($request->getParameters()['image_url']) && empty($request->getParameters()['image_file'])) {
             throw new AIEngineException('Image URL or file is required for computer vision');
         }
 
-        $analysisType = $request->parameters['analysis_type'] ?? 'analyze';
+        $analysisType = $request->getParameters()['analysis_type'] ?? 'analyze';
 
-        if (!empty($request->parameters['image_url'])) {
-            $payload = ['url' => $request->parameters['image_url']];
+        if (!empty($request->getParameters()['image_url'])) {
+            $payload = ['url' => $request->getParameters()['image_url']];
             $headers = ['Content-Type' => 'application/json'];
             $body = json_encode($payload);
         } else {
-            $imageContent = Storage::get($request->parameters['image_file']);
+            $imageContent = Storage::get($request->getParameters()['image_file']);
             $headers = ['Content-Type' => 'application/octet-stream'];
             $body = $imageContent;
         }
 
-        $features = $request->parameters['features'] ?? ['Categories', 'Description', 'Objects', 'Tags'];
+        $features = $request->getParameters()['features'] ?? ['Categories', 'Description', 'Objects', 'Tags'];
         $endpoint = "/vision/v3.2/{$analysisType}?" . http_build_query(['visualFeatures' => implode(',', $features)]);
 
         $response = $this->client->post($endpoint, [
@@ -393,19 +393,19 @@ class AzureEngineDriver implements EngineDriverInterface
         // Validate based on service type
         switch ($request->entity) {
             case EntityEnum::AZURE_TTS:
-                if (empty($request->prompt)) {
+                if (empty($request->getPrompt())) {
                     throw new AIEngineException('Text is required for text-to-speech');
                 }
                 break;
 
             case EntityEnum::AZURE_STT:
-                if (empty($request->parameters['audio_file'])) {
+                if (empty($request->getParameters()['audio_file'])) {
                     throw new AIEngineException('Audio file is required for speech-to-text');
                 }
                 break;
 
             case EntityEnum::AZURE_COMPUTER_VISION:
-                if (empty($request->parameters['image_url']) && empty($request->parameters['image_file'])) {
+                if (empty($request->getParameters()['image_url']) && empty($request->getParameters()['image_file'])) {
                     throw new AIEngineException('Image URL or file is required for computer vision');
                 }
                 break;

@@ -100,7 +100,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
             'discord_token' => $this->discordToken,
             'server_id' => $this->serverId,
             'channel_id' => $this->channelId,
-            'callback_url' => $request->parameters['callback_url'] ?? null,
+            'callback_url' => $request->getParameters()['callback_url'] ?? null,
         ];
 
         $response = $this->client->post('/v1/imagine', [
@@ -118,7 +118,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
 
     private function buildPrompt(AIRequest $request, string $version): string
     {
-        $prompt = $request->prompt;
+        $prompt = $request->getPrompt();
 
         // Add version parameter
         if ($version === 'v6') {
@@ -130,33 +130,33 @@ class MidjourneyEngineDriver implements EngineDriverInterface
         }
 
         // Add aspect ratio if specified
-        if (!empty($request->parameters['aspect_ratio'])) {
-            $prompt .= ' --ar ' . $request->parameters['aspect_ratio'];
+        if (!empty($request->getParameters()['aspect_ratio'])) {
+            $prompt .= ' --ar ' . $request->getParameters()['aspect_ratio'];
         }
 
         // Add quality setting
-        if (!empty($request->parameters['quality'])) {
-            $prompt .= ' --q ' . $request->parameters['quality'];
+        if (!empty($request->getParameters()['quality'])) {
+            $prompt .= ' --q ' . $request->getParameters()['quality'];
         }
 
         // Add stylize parameter
-        if (!empty($request->parameters['stylize'])) {
-            $prompt .= ' --s ' . $request->parameters['stylize'];
+        if (!empty($request->getParameters()['stylize'])) {
+            $prompt .= ' --s ' . $request->getParameters()['stylize'];
         }
 
         // Add chaos parameter
-        if (!empty($request->parameters['chaos'])) {
-            $prompt .= ' --c ' . $request->parameters['chaos'];
+        if (!empty($request->getParameters()['chaos'])) {
+            $prompt .= ' --c ' . $request->getParameters()['chaos'];
         }
 
         // Add seed for reproducibility
-        if (!empty($request->parameters['seed'])) {
-            $prompt .= ' --seed ' . $request->parameters['seed'];
+        if (!empty($request->getParameters()['seed'])) {
+            $prompt .= ' --seed ' . $request->getParameters()['seed'];
         }
 
         // Add style reference
-        if (!empty($request->parameters['style_ref'])) {
-            $prompt .= ' --sref ' . $request->parameters['style_ref'];
+        if (!empty($request->getParameters()['style_ref'])) {
+            $prompt .= ' --sref ' . $request->getParameters()['style_ref'];
         }
 
         return $prompt;
@@ -349,12 +349,12 @@ class MidjourneyEngineDriver implements EngineDriverInterface
         }
 
         // Validate prompt
-        if (empty($request->prompt)) {
+        if (empty($request->getPrompt())) {
             throw new AIEngineException('Prompt is required for Midjourney generation');
         }
 
         // Validate prompt length
-        if (strlen($request->prompt) > 4000) {
+        if (strlen($request->getPrompt()) > 4000) {
             throw new AIEngineException('Prompt exceeds maximum length of 4000 characters');
         }
 

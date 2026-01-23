@@ -41,7 +41,7 @@ class OllamaEngineDriver extends BaseEngineDriver
     {
         $this->validateRequest($request);
         
-        $contentType = $request->model->getContentType();
+        $contentType = $request->getModel()->getContentType();
         
         return match ($contentType) {
             'text' => $this->generateText($request),

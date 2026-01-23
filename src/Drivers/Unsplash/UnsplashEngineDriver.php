@@ -97,8 +97,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Text generation not supported by Unsplash',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 
@@ -108,14 +108,14 @@ class UnsplashEngineDriver extends BaseEngineDriver
     public function searchPhotos(AIRequest $request): AIResponse
     {
         try {
-            $query = $request->prompt;
-            $page = $request->parameters['page'] ?? 1;
-            $perPage = $request->parameters['per_page'] ?? 20;
-            $orderBy = $request->parameters['order_by'] ?? 'relevant';
-            $collections = $request->parameters['collections'] ?? null;
-            $contentFilter = $request->parameters['content_filter'] ?? 'low';
-            $color = $request->parameters['color'] ?? null;
-            $orientation = $request->parameters['orientation'] ?? null;
+            $query = $request->getPrompt();
+            $page = $request->getParameters()['page'] ?? 1;
+            $perPage = $request->getParameters()['per_page'] ?? 20;
+            $orderBy = $request->getParameters()['order_by'] ?? 'relevant';
+            $collections = $request->getParameters()['collections'] ?? null;
+            $contentFilter = $request->getParameters()['content_filter'] ?? 'low';
+            $color = $request->getParameters()['color'] ?? null;
+            $orientation = $request->getParameters()['orientation'] ?? null;
 
             $params = [
                 'query' => $query,
@@ -147,8 +147,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 json_encode($photos),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'search_query' => $query,
                 'photos_count' => count($photos),
@@ -164,14 +164,14 @@ class UnsplashEngineDriver extends BaseEngineDriver
         } catch (RequestException $e) {
             return AIResponse::error(
                 'Unsplash API error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Unexpected error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -182,13 +182,13 @@ class UnsplashEngineDriver extends BaseEngineDriver
     public function getRandomPhotos(AIRequest $request): AIResponse
     {
         try {
-            $count = $request->parameters['count'] ?? 10;
-            $collections = $request->parameters['collections'] ?? null;
-            $topics = $request->parameters['topics'] ?? null;
-            $username = $request->parameters['username'] ?? null;
-            $query = $request->parameters['query'] ?? null;
-            $orientation = $request->parameters['orientation'] ?? null;
-            $contentFilter = $request->parameters['content_filter'] ?? 'low';
+            $count = $request->getParameters()['count'] ?? 10;
+            $collections = $request->getParameters()['collections'] ?? null;
+            $topics = $request->getParameters()['topics'] ?? null;
+            $username = $request->getParameters()['username'] ?? null;
+            $query = $request->getParameters()['query'] ?? null;
+            $orientation = $request->getParameters()['orientation'] ?? null;
+            $contentFilter = $request->getParameters()['content_filter'] ?? 'low';
 
             $params = [
                 'count' => min($count, 30), // Max 30 photos
@@ -223,8 +223,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 json_encode($formattedPhotos),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'photos_count' => count($formattedPhotos),
                 'collections' => $collections,
@@ -238,8 +238,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Unsplash random photos error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -250,7 +250,7 @@ class UnsplashEngineDriver extends BaseEngineDriver
     public function getPhotoDetails(AIRequest $request): AIResponse
     {
         try {
-            $photoId = $request->parameters['photo_id'] ?? $request->prompt;
+            $photoId = $request->getParameters()['photo_id'] ?? $request->getPrompt();
             
             if (!$photoId) {
                 throw new \InvalidArgumentException('Photo ID is required');
@@ -263,8 +263,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 json_encode($photo),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'photo_id' => $photoId,
                 'photo_details' => $photo,
@@ -273,8 +273,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Unsplash photo details error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -285,7 +285,7 @@ class UnsplashEngineDriver extends BaseEngineDriver
     public function downloadPhoto(AIRequest $request): AIResponse
     {
         try {
-            $photoId = $request->parameters['photo_id'] ?? $request->prompt;
+            $photoId = $request->getParameters()['photo_id'] ?? $request->getPrompt();
             
             if (!$photoId) {
                 throw new \InvalidArgumentException('Photo ID is required');
@@ -303,8 +303,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 $downloadUrl,
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'photo_id' => $photoId,
                 'download_url' => $downloadUrl,
@@ -314,8 +314,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Unsplash download error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -327,8 +327,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Image generation not supported by Unsplash',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 

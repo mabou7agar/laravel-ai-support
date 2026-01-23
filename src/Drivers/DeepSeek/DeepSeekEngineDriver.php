@@ -32,7 +32,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
      */
     public function generate(AIRequest $request): AIResponse
     {
-        $contentType = $request->model->getContentType();
+        $contentType = $request->getModel()->getContentType();
 
         return match ($contentType) {
             'text' => $this->generateText($request),
@@ -57,7 +57,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
             return false;
         }
 
-        if (!$this->supports($request->model->getContentType())) {
+        if (!$this->supports($request->getModel()->getContentType())) {
             return false;
         }
 
@@ -109,9 +109,9 @@ class DeepSeekEngineDriver extends BaseEngineDriver
 
             $messages = $this->buildMessages($request);
             $payload = $this->buildChatPayload($request, $messages, [
-                'top_p' => $request->parameters['top_p'] ?? 1.0,
-                'frequency_penalty' => $request->parameters['frequency_penalty'] ?? 0.0,
-                'presence_penalty' => $request->parameters['presence_penalty'] ?? 0.0,
+                'top_p' => $request->getParameters()['top_p'] ?? 1.0,
+                'frequency_penalty' => $request->getParameters()['frequency_penalty'] ?? 0.0,
+                'presence_penalty' => $request->getParameters()['presence_penalty'] ?? 0.0,
                 'stream' => false,
             ]);
 
@@ -143,10 +143,10 @@ class DeepSeekEngineDriver extends BaseEngineDriver
             $messages = $this->buildMessages($request);
 
             $payload = [
-                'model' => $request->model->value,
+                'model' => $request->getModel()->value,
                 'messages' => $messages,
-                'max_tokens' => $request->maxTokens ?? 4096,
-                'temperature' => $request->temperature ?? 0.7,
+                'max_tokens' => $request->getMaxTokens() ?? 4096,
+                'temperature' => $request->getTemperature() ?? 0.7,
                 'stream' => true,
             ];
 
@@ -226,8 +226,8 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Image generation not supported by DeepSeek',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 

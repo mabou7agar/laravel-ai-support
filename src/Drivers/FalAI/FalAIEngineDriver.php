@@ -59,22 +59,22 @@ class FalAIEngineDriver implements EngineDriverInterface
     private function generateImage(AIRequest $request): AIResponse
     {
         $payload = [
-            'prompt' => $request->prompt,
-            'image_size' => $request->parameters['image_size'] ?? '1024x1024',
-            'num_inference_steps' => $request->parameters['steps'] ?? 50,
-            'guidance_scale' => $request->parameters['guidance_scale'] ?? 7.5,
-            'num_images' => $request->parameters['num_images'] ?? 1,
-            'enable_safety_checker' => $request->parameters['safety_checker'] ?? true,
+            'prompt' => $request->getPrompt(),
+            'image_size' => $request->getParameters()['image_size'] ?? '1024x1024',
+            'num_inference_steps' => $request->getParameters()['steps'] ?? 50,
+            'guidance_scale' => $request->getParameters()['guidance_scale'] ?? 7.5,
+            'num_images' => $request->getParameters()['num_images'] ?? 1,
+            'enable_safety_checker' => $request->getParameters()['safety_checker'] ?? true,
         ];
 
         // Add negative prompt if provided
-        if (!empty($request->parameters['negative_prompt'])) {
-            $payload['negative_prompt'] = $request->parameters['negative_prompt'];
+        if (!empty($request->getParameters()['negative_prompt'])) {
+            $payload['negative_prompt'] = $request->getParameters()['negative_prompt'];
         }
 
         // Add seed for reproducibility
-        if (!empty($request->parameters['seed'])) {
-            $payload['seed'] = $request->parameters['seed'];
+        if (!empty($request->getParameters()['seed'])) {
+            $payload['seed'] = $request->getParameters()['seed'];
         }
 
         $endpoint = $this->getImageEndpoint($request->entity);
@@ -120,21 +120,21 @@ class FalAIEngineDriver implements EngineDriverInterface
     private function generateVideo(AIRequest $request): AIResponse
     {
         $payload = [
-            'prompt' => $request->prompt,
-            'duration' => $request->parameters['duration'] ?? 5,
-            'fps' => $request->parameters['fps'] ?? 24,
-            'resolution' => $request->parameters['resolution'] ?? '1280x720',
-            'motion_scale' => $request->parameters['motion_scale'] ?? 1.0,
+            'prompt' => $request->getPrompt(),
+            'duration' => $request->getParameters()['duration'] ?? 5,
+            'fps' => $request->getParameters()['fps'] ?? 24,
+            'resolution' => $request->getParameters()['resolution'] ?? '1280x720',
+            'motion_scale' => $request->getParameters()['motion_scale'] ?? 1.0,
         ];
 
         // Add image input for image-to-video
-        if (!empty($request->parameters['image_url'])) {
-            $payload['image_url'] = $request->parameters['image_url'];
+        if (!empty($request->getParameters()['image_url'])) {
+            $payload['image_url'] = $request->getParameters()['image_url'];
         }
 
         // Add seed for reproducibility
-        if (!empty($request->parameters['seed'])) {
-            $payload['seed'] = $request->parameters['seed'];
+        if (!empty($request->getParameters()['seed'])) {
+            $payload['seed'] = $request->getParameters()['seed'];
         }
 
         $endpoint = $this->getVideoEndpoint($request->entity);
@@ -307,7 +307,7 @@ class FalAIEngineDriver implements EngineDriverInterface
         }
 
         // Validate prompt
-        if (empty($request->prompt)) {
+        if (empty($request->getPrompt())) {
             throw new AIEngineException('Prompt is required for FAL AI generation');
         }
 

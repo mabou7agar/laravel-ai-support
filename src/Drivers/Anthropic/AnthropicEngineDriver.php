@@ -34,7 +34,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
     public function generate(AIRequest $request): AIResponse
     {
         // Route to appropriate generation method based on content type
-        $contentType = $request->model->getContentType();
+        $contentType = $request->getModel()->getContentType();
         
         return match ($contentType) {
             'text' => $this->generateText($request),
@@ -62,7 +62,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
         }
 
         // Check if model is supported
-        if (!$this->supports($request->model->getContentType())) {
+        if (!$this->supports($request->getModel()->getContentType())) {
             return false;
         }
 
@@ -116,8 +116,8 @@ class AnthropicEngineDriver extends BaseEngineDriver
             $messages = $this->buildMessages($request);
             $payload = $this->buildChatPayload($request, $messages);
 
-            if ($request->systemPrompt) {
-                $payload['system'] = $request->systemPrompt;
+            if ($request->getSystemPrompt()) {
+                $payload['system'] = $request->getSystemPrompt();
             }
 
             $response = $this->httpClient->post('/v1/messages', [
@@ -148,15 +148,15 @@ class AnthropicEngineDriver extends BaseEngineDriver
             $messages = $this->buildMessages($request);
             
             $payload = [
-                'model' => $request->model->value,
+                'model' => $request->getModel()->value,
                 'messages' => $messages,
-                'max_tokens' => $request->maxTokens ?? 4096,
-                'temperature' => $request->temperature ?? 0.7,
+                'max_tokens' => $request->getMaxTokens() ?? 4096,
+                'temperature' => $request->getTemperature() ?? 0.7,
                 'stream' => true,
             ];
 
-            if ($request->systemPrompt) {
-                $payload['system'] = $request->systemPrompt;
+            if ($request->getSystemPrompt()) {
+                $payload['system'] = $request->getSystemPrompt();
             }
 
             $response = $this->httpClient->post('/v1/messages', [
@@ -187,8 +187,8 @@ class AnthropicEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Image generation not supported by Anthropic',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 

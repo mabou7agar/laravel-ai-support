@@ -205,15 +205,15 @@ abstract class BaseEngineDriver implements EngineDriverInterface
         if (isset($response['error'])) {
             return AIResponse::error(
                 $response['error']['message'] ?? 'Unknown error',
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
 
         return AIResponse::success(
             $response['content'] ?? '',
-            $request->engine,
-            $request->model,
+            $request->getEngine(),
+            $request->getModel(),
             $response
         );
     }
@@ -268,10 +268,10 @@ abstract class BaseEngineDriver implements EngineDriverInterface
         $messages = [];
 
         // Add system message if provided
-        if ($includeSystemPrompt && $request->systemPrompt) {
+        if ($includeSystemPrompt && $request->getSystemPrompt()) {
             $messages[] = [
                 'role' => 'system',
-                'content' => $request->systemPrompt,
+                'content' => $request->getSystemPrompt(),
             ];
         }
 
@@ -284,7 +284,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
         // Add the main prompt
         $messages[] = [
             'role' => 'user',
-            'content' => $request->prompt,
+            'content' => $request->getPrompt(),
         ];
 
         return $messages;
@@ -318,8 +318,8 @@ abstract class BaseEngineDriver implements EngineDriverInterface
             : "Unexpected error during {$context}: {$exception->getMessage()}";
 
         \Log::error($errorMessage, [
-            'engine' => $request->engine->value,
-            'model' => $request->model->value,
+            'engine' => $request->getEngine()->value,
+            'model' => $request->getModel()->value,
             'context' => $context,
             'exception' => get_class($exception),
             'trace' => config('app.debug') ? $exception->getTraceAsString() : null,
@@ -327,8 +327,8 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
         return AIResponse::error(
             $errorMessage,
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 
@@ -382,7 +382,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
      */
     protected function buildChatPayload(AIRequest $request, array $messages, array $additionalParams = []): array
     {
-        $model = $request->model->value;
+        $model = $request->getModel()->value;
 
         $payload = [
             'model' => $model,
@@ -401,17 +401,17 @@ abstract class BaseEngineDriver implements EngineDriverInterface
         // GPT-5 family models have different parameter requirements
         if ($this->isGpt5FamilyModel($model)) {
             // GPT-5 uses max_completion_tokens and doesn't support temperature
-            $payload['max_completion_tokens'] = $request->maxTokens;
+            $payload['max_completion_tokens'] = $request->getMaxTokens();
             // Use reasoning_effort instead of temperature for GPT-5
-            $payload['reasoning_effort'] = $this->mapTemperatureToReasoningEffort($request->temperature ?? 0.7);
+            $payload['reasoning_effort'] = $this->mapTemperatureToReasoningEffort($request->getTemperature() ?? 0.7);
         } elseif ($this->isReasoningModel($model)) {
             // o1, o3 models use max_completion_tokens
-            $payload['max_completion_tokens'] = $request->maxTokens;
+            $payload['max_completion_tokens'] = $request->getMaxTokens();
             $payload['temperature'] = 1; // Reasoning models only support temperature=1
         } else {
             // Standard models (GPT-4, GPT-3.5, etc.)
-            $payload['max_tokens'] = $request->maxTokens;
-            $payload['temperature'] = $request->temperature ?? 0.7;
+            $payload['max_tokens'] = $request->getMaxTokens();
+            $payload['temperature'] = $request->getTemperature() ?? 0.7;
         }
 
         return array_merge($payload, $additionalParams);
@@ -482,9 +482,9 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     {
         if (config('ai-engine.debug', false)) {
             \Log::debug("{$this->getEngineEnum()->value} API Request: {$operation}", array_merge([
-                'engine' => $request->engine->value,
-                'model' => $request->model->value,
-                'prompt_length' => strlen($request->prompt),
+                'engine' => $request->getEngine()->value,
+                'model' => $request->getModel()->value,
+                'prompt_length' => strlen($request->getPrompt()),
                 'has_history' => !empty($request->getMessages()),
                 'history_count' => count($request->getMessages()),
             ], $additionalData));
@@ -502,7 +502,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
      */
     protected function validateFiles(AIRequest $request, int $minFiles = 1, int $maxFiles = 1): void
     {
-        $fileCount = count($request->files);
+        $fileCount = count($request->getFiles());
 
         if ($fileCount < $minFiles) {
             throw new \InvalidArgumentException("At least {$minFiles} file(s) required");
@@ -534,11 +534,11 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
         $response = AIResponse::success(
             $content,
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         )->withUsage(
             tokensUsed: $tokensUsed,
-            creditsUsed: $tokensUsed * $request->model->creditIndex()
+            creditsUsed: $tokensUsed * $request->getModel()->creditIndex()
         );
 
         // Add request ID if available
@@ -644,8 +644,8 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     {
         return AIResponse::error(
             "{$operation} not supported by {$this->getEngineEnum()->value}",
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 

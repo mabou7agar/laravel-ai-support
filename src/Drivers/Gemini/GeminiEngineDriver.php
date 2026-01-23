@@ -31,7 +31,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     public function generate(AIRequest $request): AIResponse
     {
-        $contentType = $request->model->getContentType();
+        $contentType = $request->getModel()->getContentType();
         
         return match ($contentType) {
             'text' => $this->generateText($request),
@@ -57,7 +57,7 @@ class GeminiEngineDriver extends BaseEngineDriver
             return false;
         }
         
-        if (!$this->supports($request->model->getContentType())) {
+        if (!$this->supports($request->getModel()->getContentType())) {
             return false;
         }
 
@@ -112,18 +112,18 @@ class GeminiEngineDriver extends BaseEngineDriver
             $payload = [
                 'contents' => $contents,
                 'generationConfig' => [
-                    'temperature' => $request->temperature ?? 0.7,
-                    'maxOutputTokens' => $request->maxTokens ?? 2048,
+                    'temperature' => $request->getTemperature() ?? 0.7,
+                    'maxOutputTokens' => $request->getMaxTokens() ?? 2048,
                 ],
             ];
 
-            if ($request->systemPrompt) {
+            if ($request->getSystemPrompt()) {
                 $payload['systemInstruction'] = [
-                    'parts' => [['text' => $request->systemPrompt]]
+                    'parts' => [['text' => $request->getSystemPrompt()]]
                 ];
             }
 
-            $url = "/v1beta/models/{$request->model->value}:generateContent";
+            $url = "/v1beta/models/{$request->getModel()->value}:generateContent";
             $response = $this->httpClient->post($url, [
                 'json' => $payload,
                 'query' => ['key' => $this->getApiKey()],
@@ -155,18 +155,18 @@ class GeminiEngineDriver extends BaseEngineDriver
             $payload = [
                 'contents' => $contents,
                 'generationConfig' => [
-                    'temperature' => $request->temperature ?? 0.7,
-                    'maxOutputTokens' => $request->maxTokens ?? 2048,
+                    'temperature' => $request->getTemperature() ?? 0.7,
+                    'maxOutputTokens' => $request->getMaxTokens() ?? 2048,
                 ],
             ];
 
-            if ($request->systemPrompt) {
+            if ($request->getSystemPrompt()) {
                 $payload['systemInstruction'] = [
-                    'parts' => [['text' => $request->systemPrompt]]
+                    'parts' => [['text' => $request->getSystemPrompt()]]
                 ];
             }
 
-            $url = "/v1beta/models/{$request->model->value}:streamGenerateContent";
+            $url = "/v1beta/models/{$request->getModel()->value}:streamGenerateContent";
             $response = $this->httpClient->post($url, [
                 'json' => $payload,
                 'query' => ['key' => $this->getApiKey()],
@@ -196,8 +196,8 @@ class GeminiEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Image generation not directly supported by Gemini',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 
@@ -210,7 +210,7 @@ class GeminiEngineDriver extends BaseEngineDriver
             $payload = [
                 'model' => "models/text-embedding-004",
                 'content' => [
-                    'parts' => [['text' => $request->prompt]]
+                    'parts' => [['text' => $request->getPrompt()]]
                 ],
             ];
 
@@ -224,8 +224,8 @@ class GeminiEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 json_encode($embeddings),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'embeddings' => $embeddings,
                 'dimensions' => count($embeddings),
@@ -234,8 +234,8 @@ class GeminiEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Gemini embeddings error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -328,7 +328,7 @@ class GeminiEngineDriver extends BaseEngineDriver
         // Add the main prompt
         $contents[] = [
             'role' => 'user',
-            'parts' => [['text' => $request->prompt]]
+            'parts' => [['text' => $request->getPrompt()]]
         ];
 
         return $contents;

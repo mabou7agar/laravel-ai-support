@@ -59,11 +59,11 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     private function checkPlagiarismBasic(AIRequest $request): AIResponse
     {
         $payload = [
-            'text' => $request->prompt,
-            'language' => $request->parameters['language'] ?? 'en',
+            'text' => $request->getPrompt(),
+            'language' => $request->getParameters()['language'] ?? 'en',
             'check_type' => 'basic',
-            'include_citations' => $request->parameters['include_citations'] ?? false,
-            'exclude_quotes' => $request->parameters['exclude_quotes'] ?? true,
+            'include_citations' => $request->getParameters()['include_citations'] ?? false,
+            'exclude_quotes' => $request->getParameters()['exclude_quotes'] ?? true,
         ];
 
         $response = $this->client->post('/v1/check', [
@@ -78,14 +78,14 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     private function checkPlagiarismAdvanced(AIRequest $request): AIResponse
     {
         $payload = [
-            'text' => $request->prompt,
-            'language' => $request->parameters['language'] ?? 'en',
+            'text' => $request->getPrompt(),
+            'language' => $request->getParameters()['language'] ?? 'en',
             'check_type' => 'advanced',
-            'include_citations' => $request->parameters['include_citations'] ?? true,
-            'exclude_quotes' => $request->parameters['exclude_quotes'] ?? true,
-            'check_paraphrasing' => $request->parameters['check_paraphrasing'] ?? true,
-            'similarity_threshold' => $request->parameters['similarity_threshold'] ?? 15,
-            'sources' => $request->parameters['sources'] ?? ['web', 'academic', 'publications'],
+            'include_citations' => $request->getParameters()['include_citations'] ?? true,
+            'exclude_quotes' => $request->getParameters()['exclude_quotes'] ?? true,
+            'check_paraphrasing' => $request->getParameters()['check_paraphrasing'] ?? true,
+            'similarity_threshold' => $request->getParameters()['similarity_threshold'] ?? 15,
+            'sources' => $request->getParameters()['sources'] ?? ['web', 'academic', 'publications'],
         ];
 
         $response = $this->client->post('/v1/check/advanced', [
@@ -100,16 +100,16 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     private function checkPlagiarismAcademic(AIRequest $request): AIResponse
     {
         $payload = [
-            'text' => $request->prompt,
-            'language' => $request->parameters['language'] ?? 'en',
+            'text' => $request->getPrompt(),
+            'language' => $request->getParameters()['language'] ?? 'en',
             'check_type' => 'academic',
-            'include_citations' => $request->parameters['include_citations'] ?? true,
-            'exclude_quotes' => $request->parameters['exclude_quotes'] ?? true,
-            'check_paraphrasing' => $request->parameters['check_paraphrasing'] ?? true,
-            'check_ai_content' => $request->parameters['check_ai_content'] ?? true,
-            'similarity_threshold' => $request->parameters['similarity_threshold'] ?? 10,
-            'sources' => $request->parameters['sources'] ?? ['academic', 'publications', 'dissertations', 'web'],
-            'citation_style' => $request->parameters['citation_style'] ?? 'apa',
+            'include_citations' => $request->getParameters()['include_citations'] ?? true,
+            'exclude_quotes' => $request->getParameters()['exclude_quotes'] ?? true,
+            'check_paraphrasing' => $request->getParameters()['check_paraphrasing'] ?? true,
+            'check_ai_content' => $request->getParameters()['check_ai_content'] ?? true,
+            'similarity_threshold' => $request->getParameters()['similarity_threshold'] ?? 10,
+            'sources' => $request->getParameters()['sources'] ?? ['academic', 'publications', 'dissertations', 'web'],
+            'citation_style' => $request->getParameters()['citation_style'] ?? 'apa',
         ];
 
         $response = $this->client->post('/v1/check/academic', [
@@ -127,8 +127,8 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
             'overall_similarity' => $data['similarity_percentage'] ?? 0,
             'uniqueness_percentage' => 100 - ($data['similarity_percentage'] ?? 0),
             'total_sources_found' => count($data['sources'] ?? []),
-            'word_count' => $data['word_count'] ?? str_word_count($request->prompt),
-            'character_count' => $data['character_count'] ?? strlen($request->prompt),
+            'word_count' => $data['word_count'] ?? str_word_count($request->getPrompt()),
+            'character_count' => $data['character_count'] ?? strlen($request->getPrompt()),
             'check_id' => $data['check_id'] ?? Str::uuid(),
             'status' => $this->getStatusFromSimilarity($data['similarity_percentage'] ?? 0),
             'sources' => $this->formatSources($data['sources'] ?? []),
@@ -148,9 +148,9 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
             metadata: [
                 'model' => $request->entity->value,
                 'engine' => EngineEnum::PLAGIARISM_CHECK->value,
-                'check_type' => $request->parameters['check_type'] ?? 'basic',
-                'language' => $request->parameters['language'] ?? 'en',
-                'similarity_threshold' => $request->parameters['similarity_threshold'] ?? 15,
+                'check_type' => $request->getParameters()['check_type'] ?? 'basic',
+                'language' => $request->getParameters()['language'] ?? 'en',
+                'similarity_threshold' => $request->getParameters()['similarity_threshold'] ?? 15,
                 'plagiarism_results' => $results,
             ]
         );
@@ -257,12 +257,12 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
         }
 
         // Validate text content
-        if (empty($request->prompt)) {
+        if (empty($request->getPrompt())) {
             throw new AIEngineException('Text content is required for plagiarism checking');
         }
 
         // Check word count limits
-        $wordCount = str_word_count($request->prompt);
+        $wordCount = str_word_count($request->getPrompt());
         $maxWords = $this->getMaxWordsForModel($request->entity);
 
         if ($wordCount > $maxWords) {

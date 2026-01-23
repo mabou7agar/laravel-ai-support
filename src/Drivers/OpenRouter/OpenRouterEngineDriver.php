@@ -77,7 +77,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
             if (!$response->successful()) {
                 $error = $response->json()['error']['message'] ?? $response->body();
-                return AIResponse::error($error, $request->engine, $request->model);
+                return AIResponse::error($error, $request->getEngine(), $request->getModel());
             }
 
             $data = $response->json();
@@ -85,10 +85,10 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 $content,
-                $request->engine,
-                $request->model,
+                $request->getEngine(),
+                $request->getModel(),
                 [
-                    'model' => $data['model'] ?? $request->model->value,
+                    'model' => $data['model'] ?? $request->getModel()->value,
                     'usage' => $data['usage'] ?? [],
                     'openrouter_id' => $data['id'] ?? null,
                     'provider' => $data['provider'] ?? null,
@@ -96,7 +96,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
             );
 
         } catch (\Exception $e) {
-            return AIResponse::error($e->getMessage(), $request->engine, $request->model);
+            return AIResponse::error($e->getMessage(), $request->getEngine(), $request->getModel());
         }
     }
 

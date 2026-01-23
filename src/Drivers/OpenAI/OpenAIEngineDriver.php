@@ -45,7 +45,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
     public function generate(AIRequest $request): AIResponse
     {
         // Route to appropriate generation method based on content type
-        $contentType = $request->model->getContentType();
+        $contentType = $request->getModel()->getContentType();
         
         return match ($contentType) {
             'text' => $this->generateText($request),
@@ -148,7 +148,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
             $aiResponse = new AIResponse(
                 content: $content,
                 engine: new EngineEnum(EngineEnum::OPENAI),
-                model: $request->model,
+                model: $request->getModel(),
                 metadata: $response->toArray(),
                 tokensUsed: $response->usage->totalTokens ?? null,
                 usage: [
@@ -200,13 +200,13 @@ class OpenAIEngineDriver extends BaseEngineDriver
     public function generateImage(AIRequest $request): AIResponse
     {
         try {
-            $imageCount = $request->parameters['image_count'] ?? 1;
-            $size = $request->parameters['size'] ?? '1024x1024';
-            $quality = $request->parameters['quality'] ?? 'standard';
+            $imageCount = $request->getParameters()['image_count'] ?? 1;
+            $size = $request->getParameters()['size'] ?? '1024x1024';
+            $quality = $request->getParameters()['quality'] ?? 'standard';
 
             $response = $this->openAIClient->images()->create([
-                'model' => $request->model->value,
-                'prompt' => $request->prompt,
+                'model' => $request->getModel()->value,
+                'prompt' => $request->getPrompt(),
                 'n' => $imageCount,
                 'size' => $size,
                 'quality' => $quality,
@@ -215,19 +215,19 @@ class OpenAIEngineDriver extends BaseEngineDriver
             $imageUrls = array_map(fn($image) => $image->url, $response->data);
 
             return AIResponse::success(
-                $request->prompt,
-                $request->engine,
-                $request->model
+                $request->getPrompt(),
+                $request->getEngine(),
+                $request->getModel()
             )->withFiles($imageUrls)
              ->withUsage(
-                 creditsUsed: $imageCount * $request->model->creditIndex()
+                 creditsUsed: $imageCount * $request->getModel()->creditIndex()
              );
 
         } catch (\Exception $e) {
             return AIResponse::error(
                 'OpenAI image generation error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -238,7 +238,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
     protected function doAudioToText(AIRequest $request): AIResponse
     {
         try {
-            $audioFile = $request->files[0] ?? null;
+            $audioFile = $request->getFiles()[0] ?? null;
             if (!$audioFile) {
                 throw new \InvalidArgumentException('Audio file is required');
             }
@@ -249,21 +249,21 @@ class OpenAIEngineDriver extends BaseEngineDriver
                 'response_format' => 'json',
             ]);
 
-            $duration = $request->parameters['audio_minutes'] ?? 1.0;
+            $duration = $request->getParameters()['audio_minutes'] ?? 1.0;
 
             return AIResponse::success(
                 $response->text,
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withUsage(
-                creditsUsed: $duration * $request->model->creditIndex()
+                creditsUsed: $duration * $request->getModel()->creditIndex()
             );
 
         } catch (\Exception $e) {
             return AIResponse::error(
                 'OpenAI audio transcription error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -275,20 +275,20 @@ class OpenAIEngineDriver extends BaseEngineDriver
     {
         try {
             $response = $this->openAIClient->embeddings()->create([
-                'model' => $request->model->value,
-                'input' => $request->prompt,
+                'model' => $request->getModel()->value,
+                'input' => $request->getPrompt(),
             ]);
 
             $embeddings = $response->embeddings[0]->embedding;
-            $tokensUsed = $response->usage->totalTokens ?? $this->calculateTokensUsed($request->prompt);
+            $tokensUsed = $response->usage->totalTokens ?? $this->calculateTokensUsed($request->getPrompt());
 
             return AIResponse::success(
                 json_encode($embeddings),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withUsage(
                 tokensUsed: $tokensUsed,
-                creditsUsed: $tokensUsed * $request->model->creditIndex()
+                creditsUsed: $tokensUsed * $request->getModel()->creditIndex()
             )->withDetailedUsage([
                 'embeddings' => $embeddings,
                 'dimensions' => count($embeddings),
@@ -297,8 +297,8 @@ class OpenAIEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'OpenAI embeddings error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }

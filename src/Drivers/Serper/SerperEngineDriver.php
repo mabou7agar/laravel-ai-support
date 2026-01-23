@@ -97,8 +97,8 @@ class SerperEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Text generation not supported by Serper',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 
@@ -108,12 +108,12 @@ class SerperEngineDriver extends BaseEngineDriver
     public function webSearch(AIRequest $request): AIResponse
     {
         try {
-            $query = $request->prompt;
-            $searchType = $request->parameters['search_type'] ?? 'search';
-            $location = $request->parameters['location'] ?? 'us';
-            $language = $request->parameters['language'] ?? 'en';
-            $num = $request->parameters['num'] ?? 10;
-            $page = $request->parameters['page'] ?? 1;
+            $query = $request->getPrompt();
+            $searchType = $request->getParameters()['search_type'] ?? 'search';
+            $location = $request->getParameters()['location'] ?? 'us';
+            $language = $request->getParameters()['language'] ?? 'en';
+            $num = $request->getParameters()['num'] ?? 10;
+            $page = $request->getParameters()['page'] ?? 1;
 
             $payload = [
                 'q' => $query,
@@ -126,10 +126,10 @@ class SerperEngineDriver extends BaseEngineDriver
             // Add specific parameters based on search type
             if ($searchType === 'images') {
                 $payload['type'] = 'images';
-                $payload['safe'] = $request->parameters['safe'] ?? 'active';
+                $payload['safe'] = $request->getParameters()['safe'] ?? 'active';
             } elseif ($searchType === 'news') {
                 $payload['type'] = 'news';
-                $payload['tbs'] = $request->parameters['time_filter'] ?? 'qdr:d'; // Last day
+                $payload['tbs'] = $request->getParameters()['time_filter'] ?? 'qdr:d'; // Last day
             } elseif ($searchType === 'videos') {
                 $payload['type'] = 'videos';
             } elseif ($searchType === 'shopping') {
@@ -147,8 +147,8 @@ class SerperEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 json_encode($results),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'search_query' => $query,
                 'search_type' => $searchType,
@@ -163,14 +163,14 @@ class SerperEngineDriver extends BaseEngineDriver
         } catch (RequestException $e) {
             return AIResponse::error(
                 'Serper API error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Unexpected error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -180,7 +180,7 @@ class SerperEngineDriver extends BaseEngineDriver
      */
     public function searchImages(AIRequest $request): AIResponse
     {
-        $request->parameters['search_type'] = 'images';
+        $request->getParameters()['search_type'] = 'images';
         return $this->webSearch($request);
     }
 
@@ -189,7 +189,7 @@ class SerperEngineDriver extends BaseEngineDriver
      */
     public function searchNews(AIRequest $request): AIResponse
     {
-        $request->parameters['search_type'] = 'news';
+        $request->getParameters()['search_type'] = 'news';
         return $this->webSearch($request);
     }
 
@@ -198,7 +198,7 @@ class SerperEngineDriver extends BaseEngineDriver
      */
     public function searchVideos(AIRequest $request): AIResponse
     {
-        $request->parameters['search_type'] = 'videos';
+        $request->getParameters()['search_type'] = 'videos';
         return $this->webSearch($request);
     }
 
@@ -207,7 +207,7 @@ class SerperEngineDriver extends BaseEngineDriver
      */
     public function searchShopping(AIRequest $request): AIResponse
     {
-        $request->parameters['search_type'] = 'shopping';
+        $request->getParameters()['search_type'] = 'shopping';
         return $this->webSearch($request);
     }
 
@@ -217,7 +217,7 @@ class SerperEngineDriver extends BaseEngineDriver
     public function getSearchSuggestions(AIRequest $request): AIResponse
     {
         try {
-            $query = $request->prompt;
+            $query = $request->getPrompt();
             
             $response = $this->httpClient->get('/autocomplete', [
                 'query' => ['q' => $query],
@@ -228,8 +228,8 @@ class SerperEngineDriver extends BaseEngineDriver
 
             return AIResponse::success(
                 json_encode($suggestions),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withDetailedUsage([
                 'query' => $query,
                 'suggestions_count' => count($suggestions),
@@ -239,8 +239,8 @@ class SerperEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Serper suggestions error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -252,8 +252,8 @@ class SerperEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Image generation not supported by Serper',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 

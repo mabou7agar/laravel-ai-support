@@ -32,7 +32,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
      */
     public function generate(AIRequest $request): AIResponse
     {
-        $contentType = $request->model->getContentType();
+        $contentType = $request->getModel()->getContentType();
         
         return match ($contentType) {
             'image' => $this->generateImage($request),
@@ -58,7 +58,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
             return false;
         }
         
-        if (!$this->supports($request->model->getContentType())) {
+        if (!$this->supports($request->getModel()->getContentType())) {
             return false;
         }
 
@@ -107,8 +107,8 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
     {
         return AIResponse::error(
             'Text generation not supported by Stable Diffusion',
-            $request->engine,
-            $request->model
+            $request->getEngine(),
+            $request->getModel()
         );
     }
 
@@ -118,16 +118,16 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
     public function generateImage(AIRequest $request): AIResponse
     {
         try {
-            $imageCount = $request->parameters['image_count'] ?? 1;
-            $width = $request->parameters['width'] ?? 1024;
-            $height = $request->parameters['height'] ?? 1024;
-            $steps = $request->parameters['steps'] ?? 30;
-            $cfgScale = $request->parameters['cfg_scale'] ?? 7.0;
+            $imageCount = $request->getParameters()['image_count'] ?? 1;
+            $width = $request->getParameters()['width'] ?? 1024;
+            $height = $request->getParameters()['height'] ?? 1024;
+            $steps = $request->getParameters()['steps'] ?? 30;
+            $cfgScale = $request->getParameters()['cfg_scale'] ?? 7.0;
             $seed = $request->seed ?? rand(0, 4294967295);
 
             $payload = [
                 'text_prompts' => [
-                    ['text' => $request->prompt, 'weight' => 1.0]
+                    ['text' => $request->getPrompt(), 'weight' => 1.0]
                 ],
                 'cfg_scale' => $cfgScale,
                 'height' => $height,
@@ -138,14 +138,14 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
             ];
 
             // Add negative prompt if provided
-            if (isset($request->parameters['negative_prompt'])) {
+            if (isset($request->getParameters()['negative_prompt'])) {
                 $payload['text_prompts'][] = [
-                    'text' => $request->parameters['negative_prompt'],
+                    'text' => $request->getParameters()['negative_prompt'],
                     'weight' => -1.0
                 ];
             }
 
-            $endpoint = $this->getGenerationEndpoint($request->model);
+            $endpoint = $this->getGenerationEndpoint($request->getModel());
             $response = $this->httpClient->post($endpoint, [
                 'json' => $payload,
             ]);
@@ -161,12 +161,12 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
             }
 
             return AIResponse::success(
-                $request->prompt,
-                $request->engine,
-                $request->model
+                $request->getPrompt(),
+                $request->getEngine(),
+                $request->getModel()
             )->withFiles($imageUrls)
              ->withUsage(
-                 creditsUsed: $imageCount * $request->model->creditIndex()
+                 creditsUsed: $imageCount * $request->getModel()->creditIndex()
              )->withDetailedUsage([
                  'seed' => $seed,
                  'steps' => $steps,
@@ -177,14 +177,14 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
         } catch (RequestException $e) {
             return AIResponse::error(
                 'Stable Diffusion API error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Unexpected error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
@@ -195,14 +195,14 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
     public function generateVideo(AIRequest $request): AIResponse
     {
         try {
-            $videoCount = $request->parameters['video_count'] ?? 1;
-            $motionBucketId = $request->parameters['motion_bucket_id'] ?? 127;
-            $cfgScale = $request->parameters['cfg_scale'] ?? 1.8;
+            $videoCount = $request->getParameters()['video_count'] ?? 1;
+            $motionBucketId = $request->getParameters()['motion_bucket_id'] ?? 127;
+            $cfgScale = $request->getParameters()['cfg_scale'] ?? 1.8;
             $seed = $request->seed ?? rand(0, 4294967295);
 
             // For image-to-video, we need an input image
-            $initImage = $request->files[0] ?? null;
-            if (!$initImage && !isset($request->parameters['init_image_url'])) {
+            $initImage = $request->getFiles()[0] ?? null;
+            if (!$initImage && !isset($request->getParameters()['init_image_url'])) {
                 throw new \InvalidArgumentException('Input image is required for video generation');
             }
 
@@ -215,8 +215,8 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
             // Add image data
             if ($initImage) {
                 $payload['image'] = base64_encode(file_get_contents($initImage));
-            } elseif (isset($request->parameters['init_image_url'])) {
-                $payload['image'] = base64_encode(file_get_contents($request->parameters['init_image_url']));
+            } elseif (isset($request->getParameters()['init_image_url'])) {
+                $payload['image'] = base64_encode(file_get_contents($request->getParameters()['init_image_url']));
             }
 
             $response = $this->httpClient->post('/v2beta/image-to-video', [
@@ -228,11 +228,11 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
             // Video generation is typically async, return job ID
             return AIResponse::success(
                 'Video generation started',
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             )->withRequestId($data['id'] ?? null)
              ->withUsage(
-                 creditsUsed: $videoCount * $request->model->creditIndex()
+                 creditsUsed: $videoCount * $request->getModel()->creditIndex()
              )->withDetailedUsage([
                  'job_id' => $data['id'] ?? null,
                  'status' => 'processing',
@@ -242,8 +242,8 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Stable Diffusion video error: ' . $e->getMessage(),
-                $request->engine,
-                $request->model
+                $request->getEngine(),
+                $request->getModel()
             );
         }
     }
