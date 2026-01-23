@@ -232,9 +232,7 @@ class AIEngineServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(\LaravelAIEngine\Services\Agent\WorkflowDiscoveryService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Agent\WorkflowDiscoveryService(
-                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
-            );
+            return new \LaravelAIEngine\Services\Agent\WorkflowDiscoveryService();
         });
 
         // Register AgentOrchestrator (handlers instantiated per-request)

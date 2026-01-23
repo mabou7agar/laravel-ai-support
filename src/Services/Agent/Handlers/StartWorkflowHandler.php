@@ -49,7 +49,7 @@ class StartWorkflowHandler implements MessageHandlerInterface
     {
         // Merge config-based workflows with auto-discovered workflows
         $configWorkflows = config('ai-agent.workflows', []);
-        $discoveredWorkflows = $this->workflowDiscovery->discoverWorkflows(useCache: true);
+        $discoveredWorkflows = $this->workflowDiscovery->getTriggersMap(useCache: true);
         
         // Config takes precedence over discovered
         $workflows = array_merge($discoveredWorkflows, $configWorkflows);
