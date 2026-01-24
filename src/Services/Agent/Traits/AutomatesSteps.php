@@ -957,13 +957,31 @@ trait AutomatesSteps
 
                 // Check if extracted key matches any pattern for this field
                 if (isset($patterns[$fieldName]) && in_array($extractedKey, $patterns[$fieldName])) {
-                    $mappedData[$fieldName] = $extractedValue;
+                    // Check if this field should be an array (items, products, etc.)
+                    $fieldConfig = $fields[$fieldName] ?? [];
+                    $fieldType = is_array($fieldConfig) ? ($fieldConfig['type'] ?? 'string') : 'string';
+                    
+                    // If field is array type and value is string, convert to array
+                    if ($fieldType === 'array' && is_string($extractedValue)) {
+                        $mappedData[$fieldName] = [['name' => $extractedValue, 'quantity' => 1]];
+                    } else {
+                        $mappedData[$fieldName] = $extractedValue;
+                    }
                     break;
                 }
 
                 // Check reverse pattern
                 if (isset($patterns[$extractedKey]) && in_array($fieldName, $patterns[$extractedKey])) {
-                    $mappedData[$fieldName] = $extractedValue;
+                    // Check if this field should be an array
+                    $fieldConfig = $fields[$fieldName] ?? [];
+                    $fieldType = is_array($fieldConfig) ? ($fieldConfig['type'] ?? 'string') : 'string';
+                    
+                    // If field is array type and value is string, convert to array
+                    if ($fieldType === 'array' && is_string($extractedValue)) {
+                        $mappedData[$fieldName] = [['name' => $extractedValue, 'quantity' => 1]];
+                    } else {
+                        $mappedData[$fieldName] = $extractedValue;
+                    }
                     break;
                 }
             }
@@ -1244,6 +1262,15 @@ trait AutomatesSteps
                         'error' => $e->getMessage(),
                     ]);
                 }
+            } else {
+                // No custom parser but field expects array - convert string to array automatically
+                Log::channel('ai-engine')->info('AutomatesSteps: Auto-converting string to array for multiple entity', [
+                    'entity' => $entityName,
+                    'identifier' => $identifier,
+                ]);
+                $identifier = [['name' => $identifier, 'quantity' => 1]];
+                $collectedData[$identifierField] = $identifier;
+                $context->set('collected_data', $collectedData);
             }
         }
 
