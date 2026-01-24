@@ -35,9 +35,18 @@ class StartWorkflowHandler implements MessageHandlerInterface
             );
         }
         
-        Log::channel('ai-engine')->info('Starting new workflow', [
-            'workflow' => $workflowClass,
-        ]);
+        // Store CRUD operation in context for workflow to use
+        if (isset($options['crud_operation'])) {
+            $context->set('crud_operation', $options['crud_operation']);
+            Log::channel('ai-engine')->info('Starting workflow with CRUD operation', [
+                'workflow' => $workflowClass,
+                'operation' => $options['crud_operation'],
+            ]);
+        } else {
+            Log::channel('ai-engine')->info('Starting new workflow', [
+                'workflow' => $workflowClass,
+            ]);
+        }
         
         return $this->agentMode->startWorkflow($workflowClass, $context, $message);
     }

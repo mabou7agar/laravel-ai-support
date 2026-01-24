@@ -119,6 +119,7 @@ class MessageAnalyzer
                     'type' => 'new_workflow',
                     'action' => 'start_workflow',
                     'operation' => $intent,
+                    'crud_operation' => $intent, // Pass operation to workflow
                     'confidence' => 0.85,
                     'reasoning' => "AI detected {$intent} operation"
                 ];

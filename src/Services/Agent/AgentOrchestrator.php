@@ -53,7 +53,9 @@ class AgentOrchestrator
         // STEP 2: Find and execute handler
         foreach ($this->handlers as $handler) {
             if ($handler->canHandle($analysis['action'])) {
-                $response = $handler->handle($message, $context, $options);
+                // Pass analysis metadata (including crud_operation) to handler
+                $handlerOptions = array_merge($options, $analysis);
+                $response = $handler->handle($message, $context, $handlerOptions);
                 
                 // Add assistant's response to conversation history for persistence
                 $context->addAssistantMessage($response->message);
