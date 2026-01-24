@@ -3,7 +3,9 @@
 namespace LaravelAIEngine\Services\Agent;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Services\IntentAnalysisService;
+use LaravelAIEngine\Services\AIEngineService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -13,7 +15,8 @@ use Illuminate\Support\Facades\Log;
 class MessageAnalyzer
 {
     public function __construct(
-        protected IntentAnalysisService $intentAnalysis
+        protected IntentAnalysisService $intentAnalysis,
+        protected AIEngineService $aiEngine
     ) {}
 
     /**
@@ -292,33 +295,11 @@ class MessageAnalyzer
     }
 
     /**
-     * Analyze for workflow/action request
+     * Analyze for workflow/action request using AI intelligence
      */
     protected function analyzeForWorkflow(string $message, UnifiedActionContext $context): array
     {
-        $messageLower = strtolower(trim($message));
-
-        // STEP 1: Try exact pattern matching first (fast, no AI cost)
-        $actionPatterns = [
-            'create' => '/^(create|make|add|new)/i',
-            'update' => '/^(update|edit|change|modify)/i',
-            'delete' => '/^(delete|remove)/i',
-            'read' => '/^(show|list|find|search|get)/i',
-        ];
-
-        foreach ($actionPatterns as $action => $pattern) {
-            if (preg_match($pattern, $messageLower)) {
-                return [
-                    'type' => 'new_workflow',
-                    'action' => 'start_workflow',
-                    'operation' => $action,
-                    'confidence' => 0.85,
-                    'reasoning' => "User requesting {$action} operation (exact match)"
-                ];
-            }
-        }
-
-        // STEP 2: Use AI to detect intent with typos/variations
+        // Use AI to intelligently detect intent (handles typos, variations, and natural language)
         $aiIntent = $this->detectIntentWithAI($message);
         if ($aiIntent) {
             return $aiIntent;
@@ -334,40 +315,50 @@ class MessageAnalyzer
     }
 
     /**
-     * Use AI to detect workflow intent (handles typos and variations)
+     * Use AI to intelligently detect workflow intent
+     * Handles typos, variations, and natural language understanding
      */
     protected function detectIntentWithAI(string $message): ?array
     {
         try {
-            // Use the existing analyzeMessageIntent method
-            $result = $this->intentAnalysis->analyzeMessageIntent($message, null, [
-                'create', 'update', 'delete', 'read'
-            ]);
+            $prompt = "Analyze this user message: \"{$message}\"\n\n";
+            $prompt .= "What is the user trying to do? Respond with ONLY ONE WORD:\n";
+            $prompt .= "- create (if creating/making/adding something new)\n";
+            $prompt .= "- update (if editing/modifying/changing something)\n";
+            $prompt .= "- delete (if removing/deleting something)\n";
+            $prompt .= "- read (if viewing/showing/listing/searching something)\n";
+            $prompt .= "- none (if just chatting/greeting/asking questions)\n\n";
+            $prompt .= "IMPORTANT: Handle typos intelligently:\n";
+            $prompt .= "- 'creat invoice' → create\n";
+            $prompt .= "- 'mak product' → create\n";
+            $prompt .= "- 'ad customer' → create\n";
+            $prompt .= "- 'invoice pls' → create\n";
+            $prompt .= "- 'I need an invoice' → create\n";
+            $prompt .= "- 'hello' → none\n\n";
+            $prompt .= "Respond with ONLY the word (create/update/delete/read/none):";
 
-            // Ensure result is an array
-            if (!is_array($result)) {
-                Log::channel('ai-engine')->debug('Intent analysis returned non-array', [
-                    'result_type' => gettype($result),
-                ]);
-                return null;
-            }
+            $request = new AIRequest(
+                prompt: $prompt,
+                maxTokens: 5,
+                temperature: 0
+            );
 
-            $intent = strtolower($result['intent'] ?? '');
+            $response = $this->aiEngine->generate($request);
+            $intent = strtolower(trim($response->getContent()));
 
             // Check if it's a CRUD operation
             if (in_array($intent, ['create', 'update', 'delete', 'read'])) {
                 Log::channel('ai-engine')->info('AI detected workflow intent', [
                     'message' => $message,
                     'detected_intent' => $intent,
-                    'confidence' => $result['confidence'] ?? 0.8,
                 ]);
 
                 return [
                     'type' => 'new_workflow',
                     'action' => 'start_workflow',
                     'operation' => $intent,
-                    'confidence' => $result['confidence'] ?? 0.80,
-                    'reasoning' => "User requesting {$intent} operation (AI detected with typo tolerance)"
+                    'confidence' => 0.85,
+                    'reasoning' => "AI detected {$intent} operation"
                 ];
             }
 

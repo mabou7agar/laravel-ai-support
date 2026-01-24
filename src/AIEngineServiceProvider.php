@@ -223,7 +223,8 @@ class AIEngineServiceProvider extends ServiceProvider
         // Register Agent Services (Intelligent Routing)
         $this->app->singleton(\LaravelAIEngine\Services\Agent\MessageAnalyzer::class, function ($app) {
             return new \LaravelAIEngine\Services\Agent\MessageAnalyzer(
-                $app->make(\LaravelAIEngine\Services\IntentAnalysisService::class)
+                $app->make(\LaravelAIEngine\Services\IntentAnalysisService::class),
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class)
             );
         });
 
