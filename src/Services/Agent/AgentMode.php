@@ -563,6 +563,12 @@ class AgentMode
                         if (isset($currentCollectedData[$this->nameFieldName])) {
                             $itemName = $currentCollectedData[$this->nameFieldName];
                             
+                            Log::channel('ai-engine')->info('Attempting to merge subflow data', [
+                                'item_name' => $itemName,
+                                'current_collected_data' => $currentCollectedData,
+                                'parent_items' => $parentCollectedData[$this->itemsFieldName],
+                            ]);
+                            
                             // Find matching item in parent's items array
                             foreach ($mergedData[$this->itemsFieldName] as $index => $item) {
                                 if (($item[$this->nameFieldName] ?? '') === $itemName) {
@@ -570,10 +576,14 @@ class AgentMode
                                     $mergedFields = [];
                                     
                                     foreach ($currentCollectedData as $key => $value) {
-                                        // Skip system fields and fields already in parent item
-                                        if (!in_array($key, $this->systemFields) && !isset($item[$key])) {
-                                            $mergedData[$this->itemsFieldName][$index][$key] = $value;
-                                            $mergedFields[$key] = $value;
+                                        // Skip system fields but ALWAYS merge important fields like price
+                                        // Don't skip if value is meaningful (not null/empty)
+                                        if (!in_array($key, $this->systemFields)) {
+                                            // Always merge if parent doesn't have the field OR if we have a better value
+                                            if (!isset($item[$key]) || empty($item[$key]) || in_array($key, ['sale_price', 'price', 'purchase_price'])) {
+                                                $mergedData[$this->itemsFieldName][$index][$key] = $value;
+                                                $mergedFields[$key] = $value;
+                                            }
                                         }
                                     }
                                     
@@ -583,13 +593,12 @@ class AgentMode
                                         $mergedFields[$this->idFieldName] = $entityId;
                                     }
                                     
-                                    if (!empty($mergedFields)) {
-                                        Log::channel('ai-engine')->info('Merged subflow data into parent items', [
-                                            'item_name' => $itemName,
-                                            'merged_fields' => array_keys($mergedFields),
-                                            'field_values' => $mergedFields,
-                                        ]);
-                                    }
+                                    Log::channel('ai-engine')->info('Merged subflow data into parent items', [
+                                        'item_name' => $itemName,
+                                        'merged_fields' => array_keys($mergedFields),
+                                        'field_values' => $mergedFields,
+                                        'updated_item' => $mergedData[$this->itemsFieldName][$index],
+                                    ]);
                                     break;
                                 }
                             }
