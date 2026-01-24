@@ -529,30 +529,41 @@ class AgentMode
                         $mergedData[$fieldName . '_id'] = $entityId;
                     }
                     
-                    // IMPORTANT: For product subflows, merge the collected price back into parent's items array
-                    // When a product is created, the subflow has: name, quantity, sale_price
-                    // We need to merge this back into the parent's items array
+                    // IMPORTANT: For subflows, merge collected data back into parent's array items
+                    // When a subflow completes, merge any collected fields back to parent's items array
                     if (isset($parentCollectedData['items']) && is_array($parentCollectedData['items'])) {
-                        // Check if current collected_data has product data (name + sale_price)
-                        if (isset($currentCollectedData['name']) && isset($currentCollectedData['sale_price'])) {
-                            $productName = $currentCollectedData['name'];
-                            $salePrice = $currentCollectedData['sale_price'];
+                        // Check if current collected_data has an entity name field
+                        if (isset($currentCollectedData['name'])) {
+                            $itemName = $currentCollectedData['name'];
                             
-                            // Find matching item in parent's items array and add the price
+                            // Find matching item in parent's items array
                             foreach ($mergedData['items'] as $index => $item) {
-                                if (($item['name'] ?? '') === $productName) {
-                                    $mergedData['items'][$index]['sale_price'] = $salePrice;
+                                if (($item['name'] ?? '') === $itemName) {
+                                    // Merge all fields from subflow (except system fields)
+                                    $systemFields = ['items', 'workflow_stack', 'active_subflow', 'current_workflow'];
+                                    $mergedFields = [];
                                     
-                                    // Also add the product ID if it exists
-                                    if ($entityId) {
-                                        $mergedData['items'][$index]['id'] = $entityId;
+                                    foreach ($currentCollectedData as $key => $value) {
+                                        // Skip system fields and fields already in parent item
+                                        if (!in_array($key, $systemFields) && !isset($item[$key])) {
+                                            $mergedData['items'][$index][$key] = $value;
+                                            $mergedFields[$key] = $value;
+                                        }
                                     }
                                     
-                                    Log::channel('ai-engine')->info('Merged product price into parent items', [
-                                        'product_name' => $productName,
-                                        'sale_price' => $salePrice,
-                                        'product_id' => $entityId,
-                                    ]);
+                                    // Also add the entity ID if it exists
+                                    if ($entityId) {
+                                        $mergedData['items'][$index]['id'] = $entityId;
+                                        $mergedFields['id'] = $entityId;
+                                    }
+                                    
+                                    if (!empty($mergedFields)) {
+                                        Log::channel('ai-engine')->info('Merged subflow data into parent items', [
+                                            'item_name' => $itemName,
+                                            'merged_fields' => array_keys($mergedFields),
+                                            'field_values' => $mergedFields,
+                                        ]);
+                                    }
                                     break;
                                 }
                             }
