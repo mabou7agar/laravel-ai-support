@@ -298,7 +298,7 @@ class MessageAnalyzer
     {
         $messageLower = strtolower(trim($message));
 
-        // Check for action keywords
+        // STEP 1: Try exact pattern matching first (fast, no AI cost)
         $actionPatterns = [
             'create' => '/^(create|make|add|new)/i',
             'update' => '/^(update|edit|change|modify)/i',
@@ -313,9 +313,15 @@ class MessageAnalyzer
                     'action' => 'start_workflow',
                     'operation' => $action,
                     'confidence' => 0.85,
-                    'reasoning' => "User requesting {$action} operation"
+                    'reasoning' => "User requesting {$action} operation (exact match)"
                 ];
             }
+        }
+
+        // STEP 2: Use AI to detect intent with typos/variations
+        $aiIntent = $this->detectIntentWithAI($message);
+        if ($aiIntent) {
+            return $aiIntent;
         }
 
         // Default: conversational
@@ -325,5 +331,52 @@ class MessageAnalyzer
             'confidence' => 0.6,
             'reasoning' => 'General conversation'
         ];
+    }
+
+    /**
+     * Use AI to detect workflow intent (handles typos and variations)
+     */
+    protected function detectIntentWithAI(string $message): ?array
+    {
+        try {
+            // Use the existing analyzeMessageIntent method
+            $result = $this->intentAnalysis->analyzeMessageIntent($message, null, [
+                'create', 'update', 'delete', 'read'
+            ]);
+
+            // Ensure result is an array
+            if (!is_array($result)) {
+                Log::channel('ai-engine')->debug('Intent analysis returned non-array', [
+                    'result_type' => gettype($result),
+                ]);
+                return null;
+            }
+
+            $intent = strtolower($result['intent'] ?? '');
+
+            // Check if it's a CRUD operation
+            if (in_array($intent, ['create', 'update', 'delete', 'read'])) {
+                Log::channel('ai-engine')->info('AI detected workflow intent', [
+                    'message' => $message,
+                    'detected_intent' => $intent,
+                    'confidence' => $result['confidence'] ?? 0.8,
+                ]);
+
+                return [
+                    'type' => 'new_workflow',
+                    'action' => 'start_workflow',
+                    'operation' => $intent,
+                    'confidence' => $result['confidence'] ?? 0.80,
+                    'reasoning' => "User requesting {$intent} operation (AI detected with typo tolerance)"
+                ];
+            }
+
+            return null;
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('AI intent detection failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 }
