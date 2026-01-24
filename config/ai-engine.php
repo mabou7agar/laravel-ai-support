@@ -1321,6 +1321,44 @@ return [
             'max_actions' => env('AI_WORKFLOW_INTENT_MAX_ACTIONS', 10),
             'filter_relevance' => env('AI_WORKFLOW_INTENT_FILTER_RELEVANCE', true),
         ],
+        
+        // Field Names (Configurable for different use cases)
+        // These allow you to customize field names used throughout the workflow system
+        'items_field_name' => env('AI_WORKFLOW_ITEMS_FIELD', 'items'),
+        'name_field_name' => env('AI_WORKFLOW_NAME_FIELD', 'name'),
+        'id_field_name' => env('AI_WORKFLOW_ID_FIELD', 'id'),
+        
+        // System Fields (Fields that should not be merged between workflows)
+        // Add any custom system fields your application uses
+        'system_fields' => [
+            'items',
+            'workflow_stack',
+            'active_subflow',
+            'current_workflow',
+            'step_execution_count',
+            '_entity_states',
+            'asking_for',
+        ],
+        
+        // Step Names (Configurable workflow control flow)
+        'complete_step_name' => env('AI_WORKFLOW_COMPLETE_STEP', 'complete'),
+        'error_step_name' => env('AI_WORKFLOW_ERROR_STEP', 'error'),
+        'cancel_step_name' => env('AI_WORKFLOW_CANCEL_STEP', 'cancel'),
+        
+        // Workflow State Keys to Clear on Restart
+        // These keys are cleared when a workflow is restarted
+        'clear_on_restart' => [
+            'collected_data',
+            'validated_products',
+            'missing_products',
+            'customer_id',
+            'products',
+            'confirmation_message_shown',
+            'user_confirmed_action',
+            'awaiting_confirmation',
+            'asked_for_customer',
+            'asked_for_products',
+        ],
     ],
 
     /*

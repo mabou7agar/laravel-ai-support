@@ -13,12 +13,39 @@ class AgentMode
     protected int $maxSteps;
     protected int $maxRetries;
     protected $crudHandler;
+    
+    // Configurable field names
+    protected string $itemsFieldName;
+    protected string $nameFieldName;
+    protected string $idFieldName;
+    protected array $systemFields;
+    
+    // Configurable step names
+    protected string $completeStepName;
+    protected string $errorStepName;
+    protected string $cancelStepName;
 
     public function __construct()
     {
         $this->maxSteps = config('ai-agent.agent_mode.max_steps', 100);
         $this->maxRetries = config('ai-agent.agent_mode.max_retries', 3);
         $this->crudHandler = app(\LaravelAIEngine\Services\IntelligentCRUDHandler::class);
+        
+        // Load configurable field names
+        $this->itemsFieldName = config('ai-engine.workflow.items_field_name', 'items');
+        $this->nameFieldName = config('ai-engine.workflow.name_field_name', 'name');
+        $this->idFieldName = config('ai-engine.workflow.id_field_name', 'id');
+        
+        // Load system fields that should not be merged
+        $this->systemFields = config('ai-engine.workflow.system_fields', [
+            'items', 'workflow_stack', 'active_subflow', 'current_workflow',
+            'step_execution_count', '_entity_states', 'asking_for'
+        ]);
+        
+        // Load configurable step names
+        $this->completeStepName = config('ai-engine.workflow.complete_step_name', 'complete');
+        $this->errorStepName = config('ai-engine.workflow.error_step_name', 'error');
+        $this->cancelStepName = config('ai-engine.workflow.cancel_step_name', 'cancel');
     }
 
     public function execute(
@@ -456,7 +483,7 @@ class AgentMode
 
         // Check if we just completed a subworkflow
         $activeSubflow = $context->get('active_subflow');
-        if ($activeSubflow && ($nextStepName === 'complete' || !$nextStepName)) {
+        if ($activeSubflow && ($nextStepName === $this->completeStepName || !$nextStepName)) {
             $stepPrefix = $activeSubflow['step_prefix'] ?? '';
             $currentStepName = $step->getName();
             
@@ -520,7 +547,7 @@ class AgentMode
                         'current_collected_data_keys' => array_keys($currentCollectedData),
                         'parent_collected_data_keys' => array_keys($parentCollectedData),
                         'has_products_validated' => isset($currentCollectedData['products_validated']),
-                        'has_items_in_parent' => isset($parentCollectedData['items']),
+                        'has_items_in_parent' => isset($parentCollectedData[$this->itemsFieldName]),
                     ]);
                     
                     // Merge: parent data first, then add entity ID if it exists
@@ -531,30 +558,29 @@ class AgentMode
                     
                     // IMPORTANT: For subflows, merge collected data back into parent's array items
                     // When a subflow completes, merge any collected fields back to parent's items array
-                    if (isset($parentCollectedData['items']) && is_array($parentCollectedData['items'])) {
+                    if (isset($parentCollectedData[$this->itemsFieldName]) && is_array($parentCollectedData[$this->itemsFieldName])) {
                         // Check if current collected_data has an entity name field
-                        if (isset($currentCollectedData['name'])) {
-                            $itemName = $currentCollectedData['name'];
+                        if (isset($currentCollectedData[$this->nameFieldName])) {
+                            $itemName = $currentCollectedData[$this->nameFieldName];
                             
                             // Find matching item in parent's items array
-                            foreach ($mergedData['items'] as $index => $item) {
-                                if (($item['name'] ?? '') === $itemName) {
+                            foreach ($mergedData[$this->itemsFieldName] as $index => $item) {
+                                if (($item[$this->nameFieldName] ?? '') === $itemName) {
                                     // Merge all fields from subflow (except system fields)
-                                    $systemFields = ['items', 'workflow_stack', 'active_subflow', 'current_workflow'];
                                     $mergedFields = [];
                                     
                                     foreach ($currentCollectedData as $key => $value) {
                                         // Skip system fields and fields already in parent item
-                                        if (!in_array($key, $systemFields) && !isset($item[$key])) {
-                                            $mergedData['items'][$index][$key] = $value;
+                                        if (!in_array($key, $this->systemFields) && !isset($item[$key])) {
+                                            $mergedData[$this->itemsFieldName][$index][$key] = $value;
                                             $mergedFields[$key] = $value;
                                         }
                                     }
                                     
                                     // Also add the entity ID if it exists
                                     if ($entityId) {
-                                        $mergedData['items'][$index]['id'] = $entityId;
-                                        $mergedFields['id'] = $entityId;
+                                        $mergedData[$this->itemsFieldName][$index][$this->idFieldName] = $entityId;
+                                        $mergedFields[$this->idFieldName] = $entityId;
                                     }
                                     
                                     if (!empty($mergedFields)) {
@@ -598,7 +624,7 @@ class AgentMode
         }
 
         // Check if workflow is complete
-        if (!$nextStepName || $nextStepName === 'complete') {
+        if (!$nextStepName || $nextStepName === $this->completeStepName) {
             // Call cleanup method on workflow before clearing state
             if (method_exists($workflow, 'cleanupAfterCompletion')) {
                 $workflow->cleanupAfterCompletion($context);
@@ -619,7 +645,7 @@ class AgentMode
         }
 
         // Check if workflow encountered error
-        if ($nextStepName === 'error' || $nextStepName === 'cancel') {
+        if ($nextStepName === $this->errorStepName || $nextStepName === $this->cancelStepName) {
             // Call cleanup method on workflow before clearing state
             if (method_exists($workflow, 'cleanupAfterCompletion')) {
                 $workflow->cleanupAfterCompletion($context);
@@ -741,16 +767,22 @@ class AgentMode
         $context->workflowState = [];
         
         // Clear workflow-specific data to start fresh
-        $context->forget('collected_data');
-        $context->forget('validated_products');
-        $context->forget('missing_products');
-        $context->forget('customer_id');
-        $context->forget('products');
-        $context->forget('confirmation_message_shown');
-        $context->forget('user_confirmed_action');
-        $context->forget('awaiting_confirmation');
-        $context->forget('asked_for_customer');
-        $context->forget('asked_for_products');
+        $workflowDataKeys = config('ai-engine.workflow.clear_on_restart', [
+            'collected_data',
+            'validated_products',
+            'missing_products',
+            'customer_id',
+            'products',
+            'confirmation_message_shown',
+            'user_confirmed_action',
+            'awaiting_confirmation',
+            'asked_for_customer',
+            'asked_for_products',
+        ]);
+        
+        foreach ($workflowDataKeys as $key) {
+            $context->forget($key);
+        }
         
         // Get workflow instance to determine first step
         $workflow = $this->getWorkflow($workflowClass);
