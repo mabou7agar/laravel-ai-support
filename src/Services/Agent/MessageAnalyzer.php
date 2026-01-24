@@ -321,21 +321,15 @@ class MessageAnalyzer
     protected function detectIntentWithAI(string $message): ?array
     {
         try {
-            $prompt = "Analyze this user message: \"{$message}\"\n\n";
-            $prompt .= "What is the user trying to do? Respond with ONLY ONE WORD:\n";
-            $prompt .= "- create (if creating/making/adding something new)\n";
-            $prompt .= "- update (if editing/modifying/changing something)\n";
-            $prompt .= "- delete (if removing/deleting something)\n";
-            $prompt .= "- read (if viewing/showing/listing/searching something)\n";
-            $prompt .= "- none (if just chatting/greeting/asking questions)\n\n";
-            $prompt .= "IMPORTANT: Handle typos intelligently:\n";
-            $prompt .= "- 'creat invoice' → create\n";
-            $prompt .= "- 'mak product' → create\n";
-            $prompt .= "- 'ad customer' → create\n";
-            $prompt .= "- 'invoice pls' → create\n";
-            $prompt .= "- 'I need an invoice' → create\n";
-            $prompt .= "- 'hello' → none\n\n";
-            $prompt .= "Respond with ONLY the word (create/update/delete/read/none):";
+            $prompt = "User message: \"{$message}\"\n\n";
+            $prompt .= "What does the user want to DO? Respond with ONE word:\n\n";
+            $prompt .= "create - if they want to CREATE/MAKE/ADD/BUILD/GENERATE/SETUP/REGISTER something\n";
+            $prompt .= "update - if they want to UPDATE/EDIT/MODIFY/CHANGE existing data\n";
+            $prompt .= "delete - if they want to DELETE/REMOVE something\n";
+            $prompt .= "read - if they want to VIEW/SHOW/LIST/FIND/SEARCH/GET information\n";
+            $prompt .= "none - if they're just CHATTING/GREETING/ASKING ABOUT CAPABILITIES\n\n";
+            $prompt .= "Ignore typos. Focus on intent.\n";
+            $prompt .= "Answer (create/update/delete/read/none):";
 
             $request = new AIRequest(
                 prompt: $prompt,
