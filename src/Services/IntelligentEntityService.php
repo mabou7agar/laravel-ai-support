@@ -289,24 +289,28 @@ class IntelligentEntityService
 
     /**
      * Interpret user's modification request
-     * Returns array with action, field, value, item_name or null
+     * Returns array with action, field, value, item_name, item_field or null
      */
     public function interpretModificationRequest(string $userInput, array $currentData): ?array
     {
         $prompt = "User wants to modify their data. Current data: " . json_encode($currentData) . "\n";
         $prompt .= "User request: \"{$userInput}\"\n\n";
         $prompt .= "Determine what they want to modify:\n";
-        $prompt .= "- action: 'add', 'remove', or 'change'\n";
+        $prompt .= "- action: 'add', 'remove', 'change', or 'update_item_field'\n";
         $prompt .= "- field: which field to modify (e.g., 'items', 'products')\n";
-        $prompt .= "- item_name: name of item to remove (for remove action)\n";
-        $prompt .= "- value: new value (for add/change actions)\n\n";
+        $prompt .= "- item_name: name of item to modify (if modifying array item)\n";
+        $prompt .= "- item_field: which field within the item to update (e.g., 'price', 'sale_price', 'quantity')\n";
+        $prompt .= "- value: new value (for add/change/update actions)\n\n";
         $prompt .= "Return JSON with these fields or null if unclear.\n";
-        $prompt .= "Example: {\"action\":\"remove\",\"field\":\"items\",\"item_name\":\"macboss\"}";
+        $prompt .= "Examples:\n";
+        $prompt .= "- Remove item: {\"action\":\"remove\",\"field\":\"items\",\"item_name\":\"macboss\"}\n";
+        $prompt .= "- Change price: {\"action\":\"update_item_field\",\"field\":\"products\",\"item_name\":\"Macbook\",\"item_field\":\"price\",\"value\":300}\n";
+        $prompt .= "- Change quantity: {\"action\":\"update_item_field\",\"field\":\"items\",\"item_name\":\"Rice\",\"item_field\":\"quantity\",\"value\":10}";
 
         try {
             $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
                 prompt: $prompt,
-                maxTokens: 100,
+                maxTokens: 150,
                 temperature: 0
             ));
 
@@ -318,6 +322,10 @@ class IntelligentEntityService
             $result = json_decode($content, true);
             
             if (json_last_error() === JSON_ERROR_NONE && isset($result['action'])) {
+                Log::info('IntelligentEntityService: Modification request interpreted', [
+                    'user_input' => $userInput,
+                    'interpretation' => $result,
+                ]);
                 return $result;
             }
             

@@ -402,6 +402,16 @@ class WorkflowConfigBuilder
     }
 
     /**
+     * Set arbitrary configuration value
+     * Allows workflows to define custom configuration
+     */
+    public function set(string $key, mixed $value): self
+    {
+        $this->config[$key] = $value;
+        return $this;
+    }
+
+    /**
      * Build and return the configuration array
      */
     public function build(): array

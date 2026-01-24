@@ -1359,6 +1359,24 @@ return [
             'asked_for_customer',
             'asked_for_products',
         ],
+        
+        // Field Aliases (for modification handling)
+        // When a field is updated, also update its aliases
+        'field_aliases' => [
+            'price' => ['sale_price', 'unit_price'],
+            'sale_price' => ['price', 'unit_price'],
+            'unit_price' => ['price', 'sale_price'],
+            'quantity' => ['qty', 'amount'],
+            'qty' => ['quantity', 'amount'],
+        ],
+        
+        // Array Field Name Mapping
+        // Maps user-friendly names to actual field names in collected_data
+        'array_field_mapping' => [
+            'products' => 'items',
+            'items' => 'items',
+            'line_items' => 'items',
+        ],
     ],
 
     /*

@@ -443,6 +443,15 @@ trait AutomatesSteps
         $field = $modification['field'] ?? null;
         $value = $modification['value'] ?? null;
         $itemName = $modification['item_name'] ?? null;
+        $itemField = $modification['item_field'] ?? null;
+        
+        Log::channel('ai-engine')->info('AutomatesSteps: Applying modification', [
+            'action' => $action,
+            'field' => $field,
+            'item_name' => $itemName,
+            'item_field' => $itemField,
+            'value' => $value,
+        ]);
         
         if ($action === 'remove' && $field && $itemName) {
             // Remove item from array field
@@ -451,6 +460,55 @@ trait AutomatesSteps
                     $collectedData[$field],
                     fn($item) => !str_contains(strtolower($item['name'] ?? ''), strtolower($itemName))
                 ));
+                
+                Log::channel('ai-engine')->info('AutomatesSteps: Removed item from array', [
+                    'field' => $field,
+                    'item_name' => $itemName,
+                    'remaining_count' => count($collectedData[$field]),
+                ]);
+            }
+        } elseif ($action === 'update_item_field' && $field && $itemName && $itemField && $value !== null) {
+            // Update a specific field within an array item
+            // Get field aliases from workflow config (prioritize workflow config over global)
+            $fieldAliases = $config['field_aliases'] ?? config('ai-engine.workflow.field_aliases', []);
+            
+            // Get array field name mapping from workflow config (prioritize workflow config over global)
+            $arrayFieldMap = $config['array_field_mapping'] ?? config('ai-engine.workflow.array_field_mapping', []);
+            
+            // Map the field name if needed
+            $actualField = $arrayFieldMap[$field] ?? $field;
+            
+            if (isset($collectedData[$actualField]) && is_array($collectedData[$actualField])) {
+                foreach ($collectedData[$actualField] as $index => $item) {
+                    // Match item by name (case-insensitive partial match)
+                    if (isset($item['name']) && str_contains(strtolower($item['name']), strtolower($itemName))) {
+                        // Update the specific field
+                        $collectedData[$actualField][$index][$itemField] = $value;
+                        
+                        // Also update field aliases if configured
+                        if (isset($fieldAliases[$itemField])) {
+                            foreach ($fieldAliases[$itemField] as $alias) {
+                                $collectedData[$actualField][$index][$alias] = $value;
+                            }
+                        }
+                        
+                        Log::channel('ai-engine')->info('AutomatesSteps: Updated item field', [
+                            'requested_field' => $field,
+                            'actual_field' => $actualField,
+                            'item_name' => $item['name'],
+                            'item_field' => $itemField,
+                            'new_value' => $value,
+                            'aliases_updated' => $fieldAliases[$itemField] ?? [],
+                        ]);
+                        break; // Only update first match
+                    }
+                }
+            } else {
+                Log::channel('ai-engine')->warning('AutomatesSteps: Array field not found for modification', [
+                    'requested_field' => $field,
+                    'actual_field' => $actualField,
+                    'available_fields' => array_keys($collectedData),
+                ]);
             }
         } elseif ($action === 'add' && $field && $value) {
             // Add item to array field
@@ -459,10 +517,20 @@ trait AutomatesSteps
             }
             if (is_array($collectedData[$field])) {
                 $collectedData[$field][] = $value;
+                
+                Log::channel('ai-engine')->info('AutomatesSteps: Added item to array', [
+                    'field' => $field,
+                    'new_count' => count($collectedData[$field]),
+                ]);
             }
         } elseif ($action === 'change' && $field) {
             // Change field value
             $collectedData[$field] = $value;
+            
+            Log::channel('ai-engine')->info('AutomatesSteps: Changed field value', [
+                'field' => $field,
+                'new_value' => $value,
+            ]);
         }
         
         return $collectedData;
