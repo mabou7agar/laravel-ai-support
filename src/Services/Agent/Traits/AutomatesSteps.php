@@ -201,6 +201,23 @@ trait AutomatesSteps
                         // Don't add empty arrays - let the workflow prompt for them
                         unset($mappedData[$key]);
                     }
+                    
+                    // CRITICAL FIX: Convert strings to arrays for entity fields that expect multiple items
+                    $fieldConfig = $fields[$key] ?? [];
+                    if (is_string($value) && is_array($fieldConfig)) {
+                        $fieldType = $fieldConfig['type'] ?? 'string';
+                        $isMultiple = $fieldConfig['multiple'] ?? false;
+                        
+                        // If field is entity type with multiple=true, convert string to array
+                        if ($fieldType === 'entity' && $isMultiple) {
+                            $mappedData[$key] = [['name' => $value, 'quantity' => 1]];
+                            \Illuminate\Support\Facades\Log::info('Auto-converted string to array during extraction', [
+                                'field' => $key,
+                                'original' => $value,
+                                'converted' => $mappedData[$key],
+                            ]);
+                        }
+                    }
                 }
                 $context->set('attempted_ai_extraction', $attemptedExtraction);
 
