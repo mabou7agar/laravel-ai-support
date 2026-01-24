@@ -98,11 +98,44 @@ trait AutomatesSteps
             return ActionResult::success(message: 'No data to collect');
         }
 
+        \Illuminate\Support\Facades\Log::info('AutomatesSteps: autoCollectData called', [
+            'fields_count' => count($fields),
+            'fields' => array_keys($fields),
+            'has_entities' => !empty($config['entities']),
+        ]);
+
         // Pre-generate suggestions for entity fields with identifierProvider
         // Store only the suggestion strings (not Closures) to avoid serialization errors
+        // Also ensure 'multiple' and 'is_array' flags are set for entity fields
         if (!empty($config['entities'])) {
             foreach ($config['entities'] as $entityName => $entityConfig) {
                 $identifierField = $entityConfig['identifier_field'] ?? $entityName;
+                
+                \Illuminate\Support\Facades\Log::info('AutomatesSteps: Processing entity', [
+                    'entity' => $entityName,
+                    'identifier_field' => $identifierField,
+                    'is_multiple' => ($entityConfig['multiple'] ?? false),
+                    'field_exists' => isset($fields[$identifierField]),
+                ]);
+                
+                // Ensure 'multiple' and 'is_array' flags are set if entity is multiple
+                if (($entityConfig['multiple'] ?? false)) {
+                    if (isset($fields[$identifierField])) {
+                        $fields[$identifierField]['multiple'] = true;
+                        $fields[$identifierField]['is_array'] = true;
+                        
+                        \Illuminate\Support\Facades\Log::info('AutomatesSteps: Set multiple flags on field', [
+                            'field' => $identifierField,
+                            'entity' => $entityName,
+                        ]);
+                    } else {
+                        \Illuminate\Support\Facades\Log::warning('AutomatesSteps: Field not found for multiple entity', [
+                            'field' => $identifierField,
+                            'entity' => $entityName,
+                            'available_fields' => array_keys($fields),
+                        ]);
+                    }
+                }
 
                 // If this entity has an identifierProvider, call it now and store the result
                 if (!empty($entityConfig['identifier_provider']) &&
@@ -301,6 +334,15 @@ trait AutomatesSteps
                     // For multiple entities, get the actual data from collected_data
                     $identifierField = $entityConfig['identifier_field'] ?? $entityName;
                     $entityData = $collectedData[$identifierField] ?? [];
+                    
+                    // Log what we're getting from collected_data
+                    \Illuminate\Support\Facades\Log::info('AutomatesSteps: Getting entity data for confirmation', [
+                        'entity' => $entityName,
+                        'identifier_field' => $identifierField,
+                        'entity_data' => $entityData,
+                        'has_prices' => isset($entityData[0]['sale_price']) || isset($entityData[0]['price']),
+                    ]);
+                    
                     $dataForDisplay[$entityName] = $entityData;
                 } else {
                     // For single entity, get the name
@@ -337,14 +379,50 @@ trait AutomatesSteps
                 $lastUserMessage = array_filter($conversationHistory, fn($msg) => ($msg['role'] ?? '') === 'user');
                 if (!empty($lastUserMessage)) {
                     $lastMsg = end($lastUserMessage);
-                    $response = strtolower(trim($lastMsg['content'] ?? ''));
+                    $userResponse = trim($lastMsg['content'] ?? '');
 
-                    if (str_contains($response, 'yes') || str_contains($response, 'confirm') || str_contains($response, 'ok')) {
+                    // Check if user wants to modify the data (add/remove/change)
+                    if (preg_match('/(add|remove|delete|change|modify|update)/i', $userResponse)) {
+                        // User wants to modify - use AI to interpret the modification
+                        $intelligentService = app(\LaravelAIEngine\Services\IntelligentEntityService::class);
+                        $modification = $intelligentService->interpretModificationRequest($userResponse, $dataForDisplay);
+                        
+                        if ($modification) {
+                            // Apply the modification to collected_data
+                            $collectedData = $context->get('collected_data', []);
+                            $collectedData = $this->applyModification($collectedData, $modification, $config);
+                            $context->set('collected_data', $collectedData);
+                            
+                            // Reset confirmation to show updated data
+                            $context->forget('confirmation_message_shown');
+                            $context->forget('awaiting_confirmation');
+                            
+                            return ActionResult::needsUserInput(
+                                message: 'Updated. Please review the changes.',
+                                metadata: ['modification_applied' => true]
+                            );
+                        }
+                    }
+                    
+                    // Use AI to interpret confirmation intent (language-agnostic)
+                    $intelligentService = app(\LaravelAIEngine\Services\IntelligentEntityService::class);
+                    $intent = $intelligentService->interpretConfirmationIntent($userResponse);
+
+                    if ($intent === 'confirm') {
                         $context->set('user_confirmed_action', true);
                         return ActionResult::success(message: 'Confirmed');
-                    } elseif (str_contains($response, 'no') || str_contains($response, 'cancel')) {
-                        return ActionResult::failure(error: 'Action cancelled by user');
+                    } elseif ($intent === 'cancel') {
+                        // Clear confirmation flags to prevent infinite loop
+                        $context->forget('confirmation_message_shown');
+                        $context->forget('awaiting_confirmation');
+                        $context->forget('user_confirmed_action');
+                        
+                        return ActionResult::failure(
+                            error: 'Action cancelled by user',
+                            data: ['user_cancelled' => true]
+                        );
                     }
+                    // If intent is null/unclear, continue to show confirmation again
                 }
             }
         }
@@ -354,6 +432,40 @@ trait AutomatesSteps
             message: $message,
             metadata: ['awaiting_confirmation' => true]
         );
+    }
+
+    /**
+     * Apply modification to collected data based on user request
+     */
+    protected function applyModification(array $collectedData, array $modification, array $config): array
+    {
+        $action = $modification['action'] ?? null;
+        $field = $modification['field'] ?? null;
+        $value = $modification['value'] ?? null;
+        $itemName = $modification['item_name'] ?? null;
+        
+        if ($action === 'remove' && $field && $itemName) {
+            // Remove item from array field
+            if (isset($collectedData[$field]) && is_array($collectedData[$field])) {
+                $collectedData[$field] = array_values(array_filter(
+                    $collectedData[$field],
+                    fn($item) => !str_contains(strtolower($item['name'] ?? ''), strtolower($itemName))
+                ));
+            }
+        } elseif ($action === 'add' && $field && $value) {
+            // Add item to array field
+            if (!isset($collectedData[$field])) {
+                $collectedData[$field] = [];
+            }
+            if (is_array($collectedData[$field])) {
+                $collectedData[$field][] = $value;
+            }
+        } elseif ($action === 'change' && $field) {
+            // Change field value
+            $collectedData[$field] = $value;
+        }
+        
+        return $collectedData;
     }
 
     /**
@@ -395,7 +507,13 @@ trait AutomatesSteps
             $prompt .= "- Format prices with $ symbol\n\n";
         }
 
+        // Log the data being sent for confirmation
+        \Illuminate\Support\Facades\Log::info('AutomatesSteps: Sending data for confirmation enhancement', [
+            'formatted_data' => $formattedData,
+        ]);
+        
         $prompt .= "Data:\n" . json_encode($formattedData, JSON_PRETTY_PRINT) . "\n\n";
+        $prompt .= "IMPORTANT: Use the prices from the data provided. Do NOT look up prices from any database.\n\n";
         $prompt .= "Return ONLY the formatted confirmation message text, starting with '**Please confirm the following details:**'";
 
         try {
@@ -1036,6 +1154,31 @@ trait AutomatesSteps
 
         $identifier = $collectedData[$identifierField] ?? null;
 
+        // Apply custom parser if identifier is a string and field expects array
+        if ($identifier && is_string($identifier) && ($entityConfig['multiple'] ?? false)) {
+            if (isset($entityConfig['custom_parser']) && $entityConfig['custom_parser'] instanceof \Closure) {
+                try {
+                    $parsed = $entityConfig['custom_parser']($identifier);
+                    if (is_array($parsed) && !empty($parsed)) {
+                        Log::channel('ai-engine')->info('AutomatesSteps: Custom parser converted string to array', [
+                            'entity' => $entityName,
+                            'original' => $identifier,
+                            'parsed_count' => count($parsed),
+                        ]);
+                        $identifier = $parsed;
+                        // Update collected_data with parsed array
+                        $collectedData[$identifierField] = $parsed;
+                        $context->set('collected_data', $collectedData);
+                    }
+                } catch (\Exception $e) {
+                    Log::channel('ai-engine')->warning('AutomatesSteps: Custom parser failed', [
+                        'entity' => $entityName,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
         Log::channel('ai-engine')->info('AutomatesSteps: Looking for identifier in collected_data', [
             'entity' => $entityName,
             'identifier_field' => $identifierField,
@@ -1301,9 +1444,10 @@ trait AutomatesSteps
                     );
                 }
 
-                // Subflow failed
+                // Subflow failed - propagate the actual error message
                 $context->popWorkflow();
-                return ActionResult::failure(error: "Subflow failed to create {$entityName}");
+                $errorMessage = $response->error ?: $response->message ?: "Subflow failed to create {$entityName}";
+                return ActionResult::failure(error: $errorMessage);
             }
 
             // First time - start new subflow with ISOLATED CONTEXT
@@ -1444,12 +1588,21 @@ trait AutomatesSteps
                     if (isset($arrayData[$itemIndex])) {
                         $arrayData[$itemIndex][$fieldName] = $value;
                         $context->set($identifierField, $arrayData);
+                        
+                        // IMPORTANT: Also update collected_data so the value persists
+                        $collectedData = $context->get('collected_data', []);
+                        if (!isset($collectedData[$identifierField])) {
+                            $collectedData[$identifierField] = [];
+                        }
+                        $collectedData[$identifierField] = $arrayData;
+                        $context->set('collected_data', $collectedData);
 
                         \Illuminate\Support\Facades\Log::info('AutomatesSteps: Updated array item field', [
                             'entity' => $entityName,
                             'item_index' => $itemIndex,
                             'field' => $fieldName,
                             'value' => $value,
+                            'updated_collected_data' => true,
                         ]);
 
                         // Move to next item
@@ -1501,9 +1654,12 @@ trait AutomatesSteps
                         $context->set('current_array_field', $fieldName);
                         $context->set('current_array_entity', $entityName);
 
-                        $message = "Could you let me know the {$fieldName} for the {$itemName}?";
+                        // Make field name friendly (e.g., "sale_price" -> "sale price")
+                        $friendlyFieldName = str_replace('_', ' ', $fieldName);
+                        
+                        $message = "What is the {$friendlyFieldName} for **{$itemName}**?";
                         if ($quantity > 1) {
-                            $message .= " (unit {$fieldName} per item)";
+                            $message .= " (unit {$friendlyFieldName} per item)";
                         }
 
                         return ActionResult::needsUserInput(
@@ -1525,7 +1681,24 @@ trait AutomatesSteps
             $context->forget('current_array_entity');
         }
 
-        // All array items have all required fields
+        // All array items have all required fields collected
+        // Sync the updated array data to the entity context variable
+        foreach ($entities as $entityName => $entityConfig) {
+            $identifierField = $entityConfig['identifier_field'] ?? $entityName;
+            $arrayData = $context->get($identifierField, []);
+            
+            if (!empty($arrayData) && is_array($arrayData)) {
+                // Also set it with the entity name (e.g., 'products' not just 'items')
+                $context->set($entityName, $arrayData);
+                
+                \Illuminate\Support\Facades\Log::info('AutomatesSteps: Synced array data to entity name', [
+                    'entity' => $entityName,
+                    'identifier_field' => $identifierField,
+                    'items_count' => count($arrayData),
+                ]);
+            }
+        }
+        
         return ActionResult::success(message: 'All array item fields collected');
     }
 
@@ -1576,6 +1749,33 @@ trait AutomatesSteps
 
             return ActionResult::failure(error: "Failed: {$e->getMessage()}");
         }
+    }
+
+    /**
+     * Helper method to retry a field when validation fails
+     * Automatically handles clearing the invalid value and transitioning back to data collection
+     */
+    protected function retryField(UnifiedActionContext $context, string $fieldName, string $message): ActionResult
+    {
+        // Clear the invalid field value
+        $collectedData = $context->get('collected_data', []);
+        unset($collectedData[$fieldName]);
+        $context->set('collected_data', $collectedData);
+        $context->set('asking_for', $fieldName);
+        
+        // Get step prefix for subflow handling
+        $currentStep = $context->currentStep ?? '';
+        $stepPrefix = str_contains($currentStep, '__') 
+            ? substr($currentStep, 0, strpos($currentStep, '__') + 2) 
+            : '';
+        
+        // Transition back to collect_data step
+        $context->currentStep = $stepPrefix . 'collect_data';
+        
+        return ActionResult::needsUserInput(
+            message: $message,
+            metadata: ['retry_field' => $fieldName]
+        );
     }
 
     /**

@@ -92,12 +92,12 @@ class GenericEntityResolver
         ]);
 
         $modelClass = $config['model'] ?? null;
-        
+
         Log::channel('ai-engine')->info('resolveEntity: Extracting config', [
             'field' => $fieldName,
             'model' => $modelClass,
         ]);
-        
+
         $searchFields = $config['search_fields'] ?? ['name'];
         $interactive = $config['interactive'] ?? true;
         $confirmBeforeCreate = $config['confirm_before_create'] ?? false;
@@ -132,13 +132,13 @@ class GenericEntityResolver
 
         // Check if we're in the middle of creation
         $creationStep = $context->get("{$fieldName}_creation_step");
-        
+
         Log::channel('ai-engine')->info('resolveEntity: Creation step check result', [
             'field' => $fieldName,
             'creation_step_value' => $creationStep,
             'has_creation_step' => !empty($creationStep),
         ]);
-        
+
         if ($creationStep) {
             Log::channel('ai-engine')->info('🔄 Continuing entity creation', [
                 'field' => $fieldName,
@@ -146,7 +146,7 @@ class GenericEntityResolver
             ]);
             return $this->continueEntityCreation($fieldName, $config, $context);
         }
-        
+
         Log::channel('ai-engine')->info('resolveEntity: About to check duplicates', [
             'field' => $fieldName,
             'checkDuplicates' => $checkDuplicates,
@@ -232,19 +232,19 @@ class GenericEntityResolver
 
         if ($confirmBeforeCreate || $interactive) {
             $result = $this->startInteractiveCreation($fieldName, $config, $identifier, $context);
-            
+
             Log::channel('ai-engine')->info('startInteractiveCreation returned', [
                 'field' => $fieldName,
                 'success' => $result->success,
                 'needs_user_input' => $result->metadata['needs_user_input'] ?? false,
                 'message' => substr($result->message ?? '', 0, 100),
             ]);
-            
+
             return $result;
         } else {
             return $this->createEntityAuto($fieldName, $config, $identifier, $context);
         }
-        
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Exception in resolveEntity', [
                 'field' => $fieldName,
@@ -255,7 +255,7 @@ class GenericEntityResolver
                 'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString(),
             ]);
-            
+
             // Return user input request instead of failure to prevent workflow termination
             return ActionResult::needsUserInput(
                 message: "Unable to resolve {$fieldName}. Error: {$e->getMessage()}\n\nWould you like to try again?",
@@ -348,18 +348,18 @@ class GenericEntityResolver
                 'has_items' => isset($parentCollectedData['items']),
                 'parent_items_count' => isset($parentCollectedData['items']) ? count($parentCollectedData['items']) : 0,
             ]);
-            
+
             // Re-extract items from restored data
             $identifierField = $config['identifier_field'] ?? $fieldName;
             $collectedData = $context->get('collected_data', []);
             $items = $collectedData[$identifierField] ?? [];
-            
+
             Log::channel('ai-engine')->info('Re-extracted items from parent data', [
                 'field' => $fieldName,
                 'items_count' => count($items),
             ]);
         }
-        
+
         // Check if custom resolver is specified
         if (isset($config['resolver']) && $config['resolver'] !== 'GenericEntityResolver') {
             return $this->delegateToCustomResolver($config['resolver'], $fieldName, $config, $items, $context, true);
@@ -383,18 +383,18 @@ class GenericEntityResolver
 
         // Check if a subflow just completed for this field
         $activeSubflow = $context->get('active_subflow');
-        
+
         Log::channel('ai-engine')->info('Checking for active subflow', [
             'field' => $fieldName,
             'has_active_subflow' => !empty($activeSubflow),
             'active_subflow_field' => $activeSubflow['field_name'] ?? null,
             'matches_field' => $activeSubflow && ($activeSubflow['field_name'] ?? null) === $fieldName,
         ]);
-        
+
         if ($activeSubflow && $activeSubflow['field_name'] === $fieldName) {
             $stepPrefix = $activeSubflow['step_prefix'] ?? '';
             $currentStep = $context->currentStep ?? '';
-            
+
             Log::channel('ai-engine')->info('Active subflow detected, checking completion', [
                 'field' => $fieldName,
                 'step_prefix' => $stepPrefix,
@@ -402,21 +402,21 @@ class GenericEntityResolver
                 'has_prefix' => $stepPrefix && $currentStep && str_starts_with($currentStep, $stepPrefix),
                 'subflow_completed' => $stepPrefix && $currentStep && !str_starts_with($currentStep, $stepPrefix),
             ]);
-            
+
             // If current step doesn't have the prefix, subflow completed
             if ($stepPrefix && $currentStep && !str_starts_with($currentStep, $stepPrefix)) {
                 Log::channel('ai-engine')->info('Product subflow completed, checking for next product', [
                     'field' => $fieldName,
                     'current_step' => $currentStep,
                 ]);
-                
+
                 // Get the created entity ID
                 $entityId = $context->get('product_id') ?? $context->get('entity_id');
-                
+
                 if ($entityId) {
                     // Clear subflow state
                     $context->forget('active_subflow');
-                    
+
                     // Restore parent workflow's collected_data (contains items array)
                     $parentCollectedData = $context->get('parent_collected_data', []);
                     if (!empty($parentCollectedData)) {
@@ -426,18 +426,18 @@ class GenericEntityResolver
                             'has_items' => isset($parentCollectedData['items']),
                         ]);
                     }
-                    
+
                     // Get current creation index and missing items
                     $index = $context->get("{$fieldName}_creation_index", 0);
                     $missing = $context->get("{$fieldName}_missing", []);
                     $validated = $context->get("{$fieldName}_validated", []);
-                    
+
                     // Add created entity to validated list
                     if (!empty($missing[$index])) {
                         // Fetch the complete entity from database to get all fields (including prices)
                         $modelClass = $config['model'] ?? null;
                         $createdEntity = null;
-                        
+
                         if ($modelClass && class_exists($modelClass)) {
                             try {
                                 $createdEntity = $modelClass::find($entityId);
@@ -449,48 +449,58 @@ class GenericEntityResolver
                                 ]);
                             }
                         }
+
+                        // Get collected data to preserve prices
+                        $collectedData = $context->get('collected_data', []);
+                        
+                        Log::channel('ai-engine')->info('GenericEntityResolver: Merging created entity data', [
+                            'missing_item' => $missing[$index],
+                            'has_sale_price_in_missing' => isset($missing[$index]['sale_price']),
+                            'collected_data_keys' => array_keys($collectedData),
+                        ]);
                         
                         if ($createdEntity) {
-                            // Use complete entity data from database
+                            // Use complete entity data from database, but preserve collected prices
                             $createdItem = array_merge($missing[$index], [
                                 'id' => $entityId,
                                 'name' => $createdEntity->name ?? $missing[$index]['name'] ?? $missing[$index]['product'] ?? '',
-                                'sale_price' => $createdEntity->sale_price ?? 0,
-                                'purchase_price' => $createdEntity->purchase_price ?? 0,
+                                // Use collected price first, fallback to database price
+                                'sale_price' => $missing[$index]['sale_price'] ?? $createdEntity->sale_price ?? 0,
+                                'purchase_price' => $missing[$index]['purchase_price'] ?? $createdEntity->purchase_price ?? 0,
                             ]);
                         } else {
                             // Fallback to original behavior if entity fetch fails
                             $createdItem = array_merge($missing[$index], ['id' => $entityId]);
                         }
-                        
+
                         $validated[] = $createdItem;
                         $context->set("{$fieldName}_validated", $validated);
                     }
-                    
+
                     // Move to next product
                     $nextIndex = $index + 1;
-                    
+
                     if ($nextIndex < count($missing)) {
                         // More products to create
                         $context->set("{$fieldName}_creation_index", $nextIndex);
                         $context->set("{$fieldName}_creation_step", 'create_entity');
-                        
+
                         Log::channel('ai-engine')->info('Moving to next product', [
                             'next_index' => $nextIndex,
                             'total_missing' => count($missing),
                         ]);
-                        
+
                         return $this->askForEntityDetails($fieldName, $config, $missing, $nextIndex, $context);
                     } else {
                         // All products created
                         $context->set($fieldName, $validated);
-                        
+
                         // Clear creation state
                         $context->forget("{$fieldName}_creation_step");
                         $context->forget("{$fieldName}_creation_index");
                         $context->forget("{$fieldName}_missing");
                         $context->forget("{$fieldName}_validated");
-                        
+
                         $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
                         return ActionResult::success(
                             message: "All {$entityName} created successfully",
@@ -543,13 +553,13 @@ class GenericEntityResolver
             if ($entity) {
                 // Merge entity data from database with user input
                 // User input takes precedence, but include entity fields if not provided
-                
+
                 // Get base fields from config (fields that are always included)
                 // Default: id, name (from entity), quantity (from user input)
                 $baseFields = $config['base_fields'] ?? ['id', 'name'];
-                
+
                 $entityData = [];
-                
+
                 // Add base fields from entity
                 foreach ($baseFields as $field) {
                     if ($field === 'id') {
@@ -560,21 +570,22 @@ class GenericEntityResolver
                         $entityData[$field] = $entity->$field;
                     }
                 }
-                
+
                 // Always include quantity from user input if provided
                 if (isset($quantity)) {
                     $entityData['quantity'] = $quantity;
                 }
-                
+
                 // Include additional fields from entity based on config
+                // Only include if not already set (don't overwrite collected values)
                 $includeFields = $config['include_fields'] ?? ['price', 'sale_price', 'cost'];
-                
+
                 foreach ($includeFields as $field) {
-                    if (!isset($item[$field]) && isset($entity->$field)) {
+                    if (!isset($item[$field]) && !isset($entityData[$field]) && isset($entity->$field)) {
                         $entityData[$field] = $entity->$field;
                     }
                 }
-                
+
                 // Merge with user input (user input takes precedence)
                 $validated[] = array_merge($entityData, $item);
             } else {
@@ -922,11 +933,11 @@ class GenericEntityResolver
                 $lastMessage = $lastMsg['content'] ?? '';
             }
         }
-        
+
         $duplicates = $context->get("{$fieldName}_found_duplicates");
         $singleDuplicate = $context->get("{$fieldName}_found_duplicate");
 
-        $maxOptions = $duplicates ? $duplicates->count() : 1;
+        $maxOptions = $duplicates ? (is_array($duplicates) ? count($duplicates) : $duplicates->count()) : 1;
 
         // Use AI to interpret user's choice
         $interpretation = $this->intelligentService->interpretDuplicateChoice($lastMessage, $maxOptions);
@@ -1330,6 +1341,31 @@ class GenericEntityResolver
 
         // If user just confirmed to create all entities
         if ($step === 'ask_create') {
+            // Check user's response using AI to understand intent
+            $conversationHistory = $context->conversationHistory ?? [];
+            $lastUserMessage = array_filter($conversationHistory, fn($msg) => ($msg['role'] ?? '') === 'user');
+
+            if (!empty($lastUserMessage)) {
+                $lastMsg = end($lastUserMessage);
+                $userResponse = trim($lastMsg['content'] ?? '');
+
+                // Use AI to determine if user wants to proceed or decline
+                $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
+                $userIntent = $this->determineUserIntent($userResponse, "create {$entityName}");
+
+                if ($userIntent === 'decline') {
+                    // Clear creation state
+                    $context->forget("{$fieldName}_creation_step");
+                    $context->forget("{$fieldName}_creation_index");
+                    $context->forget("{$fieldName}_missing");
+                    $context->forget("{$fieldName}_validated");
+
+                    return ActionResult::failure(
+                        error: "User declined to create {$entityName}"
+                    );
+                }
+            }
+
             // Move to first entity creation
             $context->set("{$fieldName}_creation_step", 'create_entity');
             $context->set("{$fieldName}_creation_index", 0);
@@ -1449,7 +1485,7 @@ class GenericEntityResolver
                 'collected_data' => $context->get('collected_data', []),
             ];
             $context->set('workflow_stack', $workflowStack);
-            
+
             Log::channel('ai-engine')->info('Pushed workflow onto stack', [
                 'stack_depth' => count($workflowStack),
                 'current_step' => $context->currentStep,
@@ -1460,37 +1496,37 @@ class GenericEntityResolver
             // Pre-populate context with entity-specific data
             // IMPORTANT: Preserve parent workflow's collected_data by storing it
             $parentCollectedData = $context->get('collected_data', []);
-            
+
             // CRITICAL: When starting a subflow for multiple entities (like products in an invoice),
             // clear stale entity-specific fields while preserving parent workflow's data.
             if ($config['multiple'] ?? false) {
                 // Get entity fields to clear from the subflow (static call - no instantiation needed)
                 $entityFieldsToClear = ['asking_for']; // Always clear asking_for
-                
+
                 $subflowClass = $config['subflow'];
                 if (class_exists($subflowClass) && method_exists($subflowClass, 'getEntityFields')) {
                     $declaredFields = $subflowClass::getEntityFields();
-                    
+
                     // Add both field name and _id variant for each declared field
                     foreach ($declaredFields as $fieldName) {
                         $entityFieldsToClear[] = $fieldName;
                         $entityFieldsToClear[] = $fieldName . '_id';
                     }
                 }
-                
+
                 // Clear entity-specific context keys
                 foreach ($entityFieldsToClear as $field) {
                     $context->forget($field);
                 }
-                
+
                 // Clear entity fields from collected_data while preserving parent fields
                 foreach ($entityFieldsToClear as $field) {
                     unset($parentCollectedData[$field]);
                 }
             }
-            
+
             $context->set('parent_collected_data', $parentCollectedData);
-            
+
             // Start with fresh collected_data for this specific entity
             // This ensures each product/entity gets its own data collection
             $newCollectedData = [];
@@ -1499,12 +1535,12 @@ class GenericEntityResolver
             // Use the identifier field name from config, or default to 'name'
             $identifierField = $config['identifier_field'] ?? 'name';
             $newCollectedData[$identifierField] = $identifier;
-            
+
             // Also set 'name' if it's different from identifier field
             if ($identifierField !== 'name') {
                 $newCollectedData['name'] = $identifier;
             }
-            
+
             // Map item data fields to collected_data
             // This allows passing through data like price, quantity, etc. from parent workflow
             if (!empty($itemData) && is_array($itemData)) {
@@ -1518,7 +1554,7 @@ class GenericEntityResolver
 
             // Set the fresh collected_data (replacing any previous data temporarily)
             $context->set('collected_data', $newCollectedData);
-            
+
             Log::channel('ai-engine')->info('Starting subflow with fresh collected_data', [
                 'entity' => $entityName,
                 'identifier' => $identifier,
@@ -1686,6 +1722,44 @@ class GenericEntityResolver
         }
 
         return "Unknown {$entityType}";
+    }
+
+    /**
+     * Determine user intent using AI (accept/decline)
+     */
+    private function determineUserIntent(string $userResponse, string $action): string
+    {
+        try {
+            $userId = auth()->check() ? (string) auth()->id() : null;
+
+            $prompt = "User was asked: 'Would you like to {$action}?'\n";
+            $prompt .= "User responded: \"{$userResponse}\"\n\n";
+            $prompt .= "Does the user want to proceed or decline?\n";
+            $prompt .= "Respond with ONLY one word: 'accept' or 'decline'";
+
+            $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
+                prompt:                                      $prompt,
+                                                userId:      $userId,
+                                                maxTokens:   10,
+                                                temperature: 0
+            ));
+
+            $intent = strtolower(trim($response->getContent()));
+
+            return str_contains($intent, 'accept') ? 'accept' : 'decline';
+
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to determine user intent, using fallback', [
+                'error' => $e->getMessage(),
+            ]);
+
+            // Fallback: simple heuristic if AI fails
+            $lower = strtolower($userResponse);
+            if (strlen($lower) <= 3 && (str_contains($lower, 'yes') || str_contains($lower, 'ok'))) {
+                return 'accept';
+            }
+            return 'decline';
+        }
     }
 
     /**

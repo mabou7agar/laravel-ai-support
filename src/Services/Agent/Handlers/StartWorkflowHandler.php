@@ -57,7 +57,19 @@ class StartWorkflowHandler implements MessageHandlerInterface
             return null;
         }
         
-        // Try AI-based intelligent routing first
+        // Try keyword matching FIRST (fast, free)
+        $workflowClass = $this->detectWorkflowWithKeywords($message, $discoveredWorkflows);
+        
+        if ($workflowClass) {
+            Log::channel('ai-engine')->info('Workflow detected via keyword', [
+                'workflow' => $workflowClass,
+                'message' => $message,
+            ]);
+            return $workflowClass;
+        }
+        
+        // Fallback to AI-based intelligent routing only if keywords don't match
+        Log::channel('ai-engine')->debug('Keyword matching failed, trying AI routing');
         $workflowClass = $this->detectWorkflowWithAI($message, $discoveredWorkflows);
         
         if ($workflowClass) {
@@ -68,9 +80,7 @@ class StartWorkflowHandler implements MessageHandlerInterface
             return $workflowClass;
         }
         
-        // Fallback to keyword matching if AI routing fails
-        Log::channel('ai-engine')->debug('AI routing failed, trying keyword fallback');
-        return $this->detectWorkflowWithKeywords($message, $discoveredWorkflows);
+        return null;
     }
     
     /**
@@ -79,46 +89,43 @@ class StartWorkflowHandler implements MessageHandlerInterface
     protected function detectWorkflowWithAI(string $message, array $workflows): ?string
     {
         try {
-            // Build prompt with workflow options
+            // Build prompt with numbered workflow options for easier selection
             $prompt = "User request: \"{$message}\"\n\n";
             $prompt .= "Available workflows:\n";
             
+            $workflowList = [];
+            $index = 1;
             foreach ($workflows as $workflowClass => $metadata) {
                 $goal = $metadata['goal'] ?? 'Unknown';
-                $priority = $metadata['priority'] ?? 0;
-                $prompt .= "- {$workflowClass}: {$goal} (priority: {$priority})\n";
+                $workflowList[$index] = $workflowClass;
+                $prompt .= "{$index}. {$goal}\n";
+                $index++;
             }
             
-            $prompt .= "\nWhich workflow best matches the user's request?\n";
-            $prompt .= "Respond with ONLY the workflow class name, or 'NONE' if no match.\n";
-            $prompt .= "Consider the goal description to understand what each workflow does.\n";
+            $prompt .= "\nWhich workflow number (1-" . count($workflowList) . ") best matches the user's request?\n";
+            $prompt .= "Respond with ONLY the number, or '0' if no match.\n";
+            $prompt .= "Consider what the user wants to accomplish.\n";
             
             $request = new \LaravelAIEngine\DTOs\AIRequest(
                 prompt: $prompt,
-                maxTokens: 100
+                maxTokens: 10
             );
             
             $response = $this->ai->generateText($request);
-            $selectedWorkflow = trim($response->getContent());
+            $selectedNumber = (int) trim($response->getContent());
+            
+            Log::channel('ai-engine')->debug('AI workflow selection', [
+                'message' => $message,
+                'ai_response' => $response->getContent(),
+                'selected_number' => $selectedNumber,
+            ]);
             
             // Validate the response
-            if ($selectedWorkflow === 'NONE' || empty($selectedWorkflow)) {
+            if ($selectedNumber === 0 || !isset($workflowList[$selectedNumber])) {
                 return null;
             }
             
-            // Check if the selected workflow exists
-            if (isset($workflows[$selectedWorkflow])) {
-                return $selectedWorkflow;
-            }
-            
-            // Try to find partial match (in case AI returned short name)
-            foreach (array_keys($workflows) as $workflowClass) {
-                if (str_contains($workflowClass, $selectedWorkflow)) {
-                    return $workflowClass;
-                }
-            }
-            
-            return null;
+            return $workflowList[$selectedNumber];
             
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('AI workflow detection failed', [

@@ -512,15 +512,53 @@ class AgentMode
                     $context->set('current_workflow', $parentContext['workflow']);
                     $context->set('active_subflow', $parentContext['active_subflow']);
                     
-                    // CRITICAL: Merge collected_data - restore parent data + keep entity ID from subflow
+                    // CRITICAL: Merge collected_data - restore parent data + keep entity data from subflow
                     $currentCollectedData = $context->get('collected_data', []);
                     $parentCollectedData = $parentContext['collected_data'] ?? [];
+                    
+                    Log::channel('ai-engine')->info('AgentMode: Before merging collected_data', [
+                        'current_collected_data_keys' => array_keys($currentCollectedData),
+                        'parent_collected_data_keys' => array_keys($parentCollectedData),
+                        'has_products_validated' => isset($currentCollectedData['products_validated']),
+                        'has_items_in_parent' => isset($parentCollectedData['items']),
+                    ]);
                     
                     // Merge: parent data first, then add entity ID if it exists
                     $mergedData = $parentCollectedData;
                     if ($entityId) {
                         $mergedData[$fieldName . '_id'] = $entityId;
                     }
+                    
+                    // IMPORTANT: For product subflows, merge the collected price back into parent's items array
+                    // When a product is created, the subflow has: name, quantity, sale_price
+                    // We need to merge this back into the parent's items array
+                    if (isset($parentCollectedData['items']) && is_array($parentCollectedData['items'])) {
+                        // Check if current collected_data has product data (name + sale_price)
+                        if (isset($currentCollectedData['name']) && isset($currentCollectedData['sale_price'])) {
+                            $productName = $currentCollectedData['name'];
+                            $salePrice = $currentCollectedData['sale_price'];
+                            
+                            // Find matching item in parent's items array and add the price
+                            foreach ($mergedData['items'] as $index => $item) {
+                                if (($item['name'] ?? '') === $productName) {
+                                    $mergedData['items'][$index]['sale_price'] = $salePrice;
+                                    
+                                    // Also add the product ID if it exists
+                                    if ($entityId) {
+                                        $mergedData['items'][$index]['id'] = $entityId;
+                                    }
+                                    
+                                    Log::channel('ai-engine')->info('Merged product price into parent items', [
+                                        'product_name' => $productName,
+                                        'sale_price' => $salePrice,
+                                        'product_id' => $entityId,
+                                    ]);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
                     $context->set('collected_data', $mergedData);
                     
                     Log::channel('ai-engine')->info('Popped workflow from stack', [
@@ -584,7 +622,7 @@ class AgentMode
             $context->persist();
 
             return AgentResponse::failure(
-                message: $result->message ?? 'Workflow failed',
+                message: $result->error ?? $result->message ?? 'Workflow failed',
                 data: $result->data,
                 context: $context
             );
@@ -709,9 +747,18 @@ class AgentMode
             $firstStep = $workflow->getFirstStep();
             $context->currentStep = $firstStep ? $firstStep->getName() : null;
             
+            // Store initial message for data extraction
+            if (!empty($initialMessage)) {
+                $context->set('_initial_workflow_message', $initialMessage);
+                Log::channel('ai-engine')->debug('Stored initial workflow message', [
+                    'message' => $initialMessage,
+                ]);
+            }
+            
             Log::channel('ai-engine')->info('Workflow initialized', [
                 'workflow' => $workflowClass,
                 'first_step' => $context->currentStep,
+                'has_initial_message' => !empty($initialMessage),
             ]);
         } else {
             $context->currentStep = null;

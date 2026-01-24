@@ -25,98 +25,6 @@ class IntelligentEntityService
     }
     
     /**
-     * Extract structured data from natural language input
-     * Example: "2 laptops at $1500" -> {product: "laptop", quantity: 2, price: 1500}
-     */
-    public function extractDataFromNaturalLanguage(string $input, array $expectedFields, string $entityType): array
-    {
-        try {
-            $fieldsJson = json_encode($expectedFields, JSON_PRETTY_PRINT);
-            
-            $prompt = "Extract structured data from the following user input.\n\n";
-            $prompt .= "User Input: \"{$input}\"\n\n";
-            $prompt .= "Entity Type: {$entityType}\n\n";
-            $prompt .= "Expected Fields:\n{$fieldsJson}\n\n";
-            $prompt .= "Instructions:\n";
-            $prompt .= "- Extract all relevant information from the input\n";
-            $prompt .= "- Handle natural language variations\n";
-            $prompt .= "- Infer missing fields when possible\n";
-            $prompt .= "- Return as JSON object with field names as keys\n";
-            $prompt .= "- Use null for fields that cannot be determined\n\n";
-            $prompt .= "Examples:\n";
-            $prompt .= "Input: '2 laptops at $1500 each'\n";
-            $prompt .= "Output: {\"product\": \"laptop\", \"quantity\": 2, \"price\": 1500}\n\n";
-            $prompt .= "Input: 'iPhone 13 for $999'\n";
-            $prompt .= "Output: {\"product\": \"iPhone 13\", \"price\": 999, \"quantity\": 1}\n\n";
-            $prompt .= "JSON Response:";
-            
-            // TODO: Enable AI extraction once caching resolved
-            // For now, use intelligent parsing
-            return $this->parseNaturalLanguageFallback($input, $expectedFields);
-            
-        } catch (\Exception $e) {
-            Log::channel('ai-engine')->warning('NL data extraction failed', [
-                'input' => $input,
-                'error' => $e->getMessage(),
-            ]);
-            
-            return $this->parseNaturalLanguageFallback($input, $expectedFields);
-        }
-    }
-    
-    /**
-     * Intelligent fallback for natural language parsing
-     */
-    private function parseNaturalLanguageFallback(string $input, array $expectedFields): array
-    {
-        $extracted = [];
-        $input = strtolower(trim($input));
-        
-        // Extract quantity
-        if (in_array('quantity', $expectedFields)) {
-            if (preg_match('/(\d+)\s*(x|pieces?|items?|units?)?/i', $input, $matches)) {
-                $extracted['quantity'] = (int) $matches[1];
-            }
-        }
-        
-        // Extract price/cost
-        if (in_array('price', $expectedFields) || in_array('cost', $expectedFields)) {
-            if (preg_match('/\$?\s*(\d+(?:\.\d{2})?)/i', $input, $matches)) {
-                $key = in_array('price', $expectedFields) ? 'price' : 'cost';
-                $extracted[$key] = (float) $matches[1];
-            }
-        }
-        
-        // Extract sale/purchase price
-        if (in_array('sale_price', $expectedFields)) {
-            if (preg_match('/sale\s*(?:price)?\s*\$?\s*(\d+(?:\.\d{2})?)/i', $input, $matches)) {
-                $extracted['sale_price'] = (float) $matches[1];
-            }
-        }
-        
-        if (in_array('purchase_price', $expectedFields)) {
-            if (preg_match('/purchase\s*(?:price)?\s*\$?\s*(\d+(?:\.\d{2})?)/i', $input, $matches)) {
-                $extracted['purchase_price'] = (float) $matches[1];
-            }
-        }
-        
-        // Extract product/item name (remove numbers and prices)
-        if (in_array('product', $expectedFields) || in_array('name', $expectedFields)) {
-            $name = preg_replace('/\d+\s*(x|pieces?|items?|units?)?/i', '', $input);
-            $name = preg_replace('/\$?\s*\d+(?:\.\d{2})?/', '', $name);
-            $name = preg_replace('/(sale|purchase)\s*(?:price)?/i', '', $name);
-            $name = trim($name);
-            
-            if (!empty($name)) {
-                $key = in_array('product', $expectedFields) ? 'product' : 'name';
-                $extracted[$key] = ucwords($name);
-            }
-        }
-        
-        return $extracted;
-    }
-    
-    /**
      * Infer missing field values based on context and existing data
      */
     public function inferMissingFields(array $existingData, array $allFields, string $entityType, UnifiedActionContext $context): array
@@ -324,47 +232,139 @@ class IntelligentEntityService
     }
     
     /**
-     * Interpret user's duplicate choice from natural language
+     * Interpret user's duplicate choice using AI (language-agnostic)
      */
     public function interpretDuplicateChoice(string $userInput, int $maxOptions): ?array
     {
-        $input = strtolower(trim($userInput));
-        
-        // Check for "use" or "yes" (use first/only option)
-        if (preg_match('/^(use|yes|y|ok|sure|yeah)$/i', $input)) {
-            return ['action' => 'use', 'index' => 0];
-        }
-        
-        // Check for "new" or "create"
-        if (preg_match('/(new|create|different|another)/i', $input)) {
-            return ['action' => 'create'];
-        }
-        
-        // Check for number selection
-        if (preg_match('/(\d+)/', $input, $matches)) {
-            $number = (int) $matches[1];
-            if ($number >= 1 && $number <= $maxOptions) {
-                return ['action' => 'use', 'index' => $number - 1];
+        $prompt = "User is choosing from {$maxOptions} similar options or creating new.\n";
+        $prompt .= "User response: \"{$userInput}\"\n\n";
+        $prompt .= "Determine their choice:\n";
+        $prompt .= "- If selecting an option (1-{$maxOptions}), return: {\"action\":\"use\",\"index\":N}\n";
+        $prompt .= "- If creating new, return: {\"action\":\"create\"}\n";
+        $prompt .= "- If unclear, return: null\n\n";
+        $prompt .= "Examples:\n";
+        $prompt .= "Input: 'use first' → {\"action\":\"use\",\"index\":0}\n";
+        $prompt .= "Input: '2' → {\"action\":\"use\",\"index\":1}\n";
+        $prompt .= "Input: 'create new' → {\"action\":\"create\"}\n";
+        $prompt .= "Input: 'none' → {\"action\":\"create\"}\n\n";
+        $prompt .= "Return ONLY valid JSON or null";
+
+        try {
+            $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                maxTokens: 50,
+                temperature: 0
+            ));
+
+            $content = trim($response->getContent());
+            $content = preg_replace('/^```json\s*\n?/m', '', $content);
+            $content = preg_replace('/\n?```\s*$/m', '', $content);
+            $content = trim($content);
+            
+            if ($content === 'null') {
+                return null;
             }
-        }
-        
-        // Check for ordinal words
-        $ordinals = [
-            'first' => 0, 'second' => 1, 'third' => 2, 'fourth' => 3, 'fifth' => 4,
-            '1st' => 0, '2nd' => 1, '3rd' => 2, '4th' => 3, '5th' => 4,
-        ];
-        
-        foreach ($ordinals as $word => $index) {
-            if (str_contains($input, $word) && $index < $maxOptions) {
-                return ['action' => 'use', 'index' => $index];
+            
+            $result = json_decode($content, true);
+            
+            if (json_last_error() === JSON_ERROR_NONE && isset($result['action'])) {
+                // Validate index is within range
+                if ($result['action'] === 'use' && isset($result['index'])) {
+                    if ($result['index'] >= 0 && $result['index'] < $maxOptions) {
+                        return $result;
+                    }
+                } else if ($result['action'] === 'create') {
+                    return $result;
+                }
             }
+            
+            return null;
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('AI duplicate choice interpretation failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
         }
-        
-        // Check for "none" or "neither"
-        if (preg_match('/(none|neither|no|nope)/i', $input)) {
-            return ['action' => 'create'];
+    }
+
+    /**
+     * Interpret user's modification request
+     * Returns array with action, field, value, item_name or null
+     */
+    public function interpretModificationRequest(string $userInput, array $currentData): ?array
+    {
+        $prompt = "User wants to modify their data. Current data: " . json_encode($currentData) . "\n";
+        $prompt .= "User request: \"{$userInput}\"\n\n";
+        $prompt .= "Determine what they want to modify:\n";
+        $prompt .= "- action: 'add', 'remove', or 'change'\n";
+        $prompt .= "- field: which field to modify (e.g., 'items', 'products')\n";
+        $prompt .= "- item_name: name of item to remove (for remove action)\n";
+        $prompt .= "- value: new value (for add/change actions)\n\n";
+        $prompt .= "Return JSON with these fields or null if unclear.\n";
+        $prompt .= "Example: {\"action\":\"remove\",\"field\":\"items\",\"item_name\":\"macboss\"}";
+
+        try {
+            $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                maxTokens: 100,
+                temperature: 0
+            ));
+
+            $content = trim($response->getContent());
+            $content = preg_replace('/^```json\s*\n?/m', '', $content);
+            $content = preg_replace('/\n?```\s*$/m', '', $content);
+            $content = trim($content);
+            
+            $result = json_decode($content, true);
+            
+            if (json_last_error() === JSON_ERROR_NONE && isset($result['action'])) {
+                return $result;
+            }
+            
+            return null;
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('AI modification interpretation failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
         }
-        
-        return null; // Could not interpret
+    }
+
+    /**
+     * Interpret user's confirmation intent using AI
+     * Returns: 'confirm', 'cancel', or null if unclear
+     */
+    public function interpretConfirmationIntent(string $userInput): ?string
+    {
+        $prompt = "The user was asked to confirm an action (yes to proceed, no to cancel).\n";
+        $prompt .= "User response: \"{$userInput}\"\n\n";
+        $prompt .= "Determine the user's intent:\n";
+        $prompt .= "- If they want to PROCEED/CONFIRM, return: confirm\n";
+        $prompt .= "- If they want to CANCEL/DECLINE, return: cancel\n";
+        $prompt .= "- If unclear, return: unclear\n\n";
+        $prompt .= "Return ONLY one word: confirm, cancel, or unclear";
+
+        try {
+            $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                maxTokens: 10,
+                temperature: 0
+            ));
+
+            $intent = strtolower(trim($response->getContent()));
+            
+            if (str_contains($intent, 'confirm')) {
+                return 'confirm';
+            } elseif (str_contains($intent, 'cancel')) {
+                return 'cancel';
+            }
+            
+            return null;
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('AI confirmation intent detection failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 }

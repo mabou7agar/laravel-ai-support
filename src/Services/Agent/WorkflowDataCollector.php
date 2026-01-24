@@ -58,6 +58,36 @@ class WorkflowDataCollector
         try {
             $collectedData = $context->get('collected_data', []);
 
+            // Check if we have an initial workflow message to extract from
+            $initialMessage = $context->get('_initial_workflow_message');
+            $extractionDone = $context->get('_initial_extraction_done', false);
+
+            if (!empty($initialMessage) && !$extractionDone) {
+                try {
+                    // Use AI to extract all fields from initial message (same as normal flow)
+                    $extractedData = $this->extractDataFromMessage(
+                        $initialMessage,
+                        $fieldDefinitions,
+                        $collectedData,
+                        null // Extract all fields from initial message
+                    );
+
+                    if (!empty($extractedData)) {
+                        \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Initial extraction completed', [
+                            'extracted_fields' => array_keys($extractedData),
+                            'extracted_data' => $extractedData,
+                        ]);
+                        $collectedData = array_merge($collectedData, $extractedData);
+                        $context->set('collected_data', $collectedData);
+                    }
+
+                    // Mark extraction as done
+                    $context->set('_initial_extraction_done', true);
+                } catch (\Exception $e) {
+                    $context->set('_initial_extraction_done', true);
+                }
+            }
+
             // Try to extract data from conversation history
             if (!empty($context->conversationHistory)) {
                 $askingFor = $context->get('asking_for');
@@ -72,6 +102,12 @@ class WorkflowDataCollector
                 }
 
                 if (!empty($lastMessage)) {
+                    \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Attempting extraction from conversation', [
+                        'message' => $lastMessage,
+                        'asking_for' => $askingFor,
+                        'field_definitions' => array_keys($fieldDefinitions),
+                    ]);
+                    
                     try {
                         $newData = $this->extractDataFromMessage(
                             $lastMessage,
@@ -97,6 +133,11 @@ class WorkflowDataCollector
                 $firstMissing = $missing[0];
                 $fieldDef = $fieldDefinitions[$firstMissing];
                 $prompt = $fieldDef['prompt'] ?? $fieldDef['description'] ?? "Please provide {$firstMissing}";
+                
+                // If prompt is a Closure, evaluate it with context
+                if ($prompt instanceof \Closure) {
+                    $prompt = $prompt($context);
+                }
 
                 // If this is an entity field, check if a suggestion was pre-generated
                 if (($fieldDef['type'] ?? '') === 'entity') {
@@ -192,47 +233,121 @@ class WorkflowDataCollector
             foreach ($extractableFields as $fieldName => $fieldDef) {
                 $type = $fieldDef['type'] ?? 'string';
                 $description = $fieldDef['description'] ?? $fieldName;
-                $prompt .= "- {$fieldName} ({$type}): {$description}\n";
+                $isArray = ($fieldDef['multiple'] ?? false) || ($fieldDef['is_array'] ?? false);
+                $parsingGuide = $fieldDef['parsing_guide'] ?? null;
+                
+                if ($isArray) {
+                    $prompt .= "- {$fieldName} (MUST BE ARRAY - NEVER STRING): {$description}\n";
+                    
+                    // Use parsing guide from config if available
+                    if ($parsingGuide) {
+                        $prompt .= "  {$parsingGuide}\n";
+                    } else {
+                        $prompt .= "  REQUIRED: Parse into array of objects with 'name' and 'quantity' fields\n";
+                        $prompt .= "  Example: \"2 laptops and 3 mice\" MUST become:\n";
+                        $prompt .= "  [{\"name\":\"laptops\",\"quantity\":2},{\"name\":\"mice\",\"quantity\":3}]\n";
+                    }
+                    $prompt .= "  CRITICAL: Do NOT return a string. MUST be array format.\n";
+                } else {
+                    $prompt .= "- {$fieldName} ({$type}): {$description}\n";
+                    if ($parsingGuide) {
+                        $prompt .= "  {$parsingGuide}\n";
+                    }
+                }
             }
 
-            $prompt .= "\nRules:\n";
-            $prompt .= "- Extract values EXACTLY as typed - preserve complete strings\n";
-            $prompt .= "- For string fields: copy the ENTIRE string exactly\n";
-            $prompt .= "- For numeric fields: extract only the number\n";
-            $prompt .= "- Return empty {} if no data to extract\n\n";
-            $prompt .= "Return ONLY valid JSON.";
+            $prompt .= "\nCRITICAL RULES:\n";
+            $prompt .= "1. ARRAY fields: MUST return as [{\"name\":\"...\",\"quantity\":N},...] format\n";
+            $prompt .= "2. NEVER return array fields as strings\n";
+            $prompt .= "3. Parse \"2 X and 3 Y\" as TWO separate array items\n";
+            $prompt .= "4. Extract quantity numbers from text\n";
+            $prompt .= "5. Return empty {} only if NO data can be extracted\n\n";
+            $prompt .= "Return ONLY valid JSON with correct array structures.";
         }
 
         try {
+            // Use the same AI service that's already configured
+            // Include userId from auth for credit checking
+            $userId = auth()->check() ? (string) auth()->id() : null;
+
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
-                engine: EngineEnum::from('openai'),
-                model: EntityEnum::from('gpt-4o-mini'),
                 maxTokens: 300,
-                temperature: 0
+                temperature: 0,
+                userId: $userId
             ));
 
-            $extracted = json_decode($response->getContent(), true);
+            $content = $response->getContent();
 
-            return (json_last_error() === JSON_ERROR_NONE) ? ($extracted ?? []) : [];
+            // Remove markdown code blocks if present (AI sometimes wraps JSON in ```json...```)
+            $content = preg_replace('/^```json\s*\n?/m', '', $content);
+            $content = preg_replace('/\n?```\s*$/m', '', $content);
+            $content = trim($content);
+
+            $extracted = json_decode($content, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: JSON decode failed', [
+                    'content' => $content,
+                    'error' => json_last_error_msg(),
+                ]);
+                return [];
+            }
+            
+            \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Extraction result', [
+                'extracted' => $extracted,
+                'fields' => array_keys($extracted ?? []),
+            ]);
+
+            // Validate array fields - if string returned instead of array, try custom parser
+            foreach ($fieldDefinitions as $fieldName => $fieldDef) {
+                $isArray = ($fieldDef['multiple'] ?? false) || ($fieldDef['is_array'] ?? false);
+                
+                if ($isArray && isset($extracted[$fieldName]) && is_string($extracted[$fieldName])) {
+                    \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: Array field returned as string', [
+                        'field' => $fieldName,
+                        'value' => $extracted[$fieldName],
+                        'has_custom_parser' => isset($fieldDef['custom_parser']),
+                    ]);
+                    
+                    // Try custom parser if provided by workflow
+                    if (isset($fieldDef['custom_parser']) && $fieldDef['custom_parser'] instanceof \Closure) {
+                        try {
+                            $parsed = $fieldDef['custom_parser']($extracted[$fieldName]);
+                            if (is_array($parsed) && !empty($parsed)) {
+                                \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Custom parser successfully parsed string', [
+                                    'field' => $fieldName,
+                                    'parsed_count' => count($parsed),
+                                ]);
+                                $extracted[$fieldName] = $parsed;
+                                continue;
+                            }
+                        } catch (\Exception $e) {
+                            \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: Custom parser failed', [
+                                'field' => $fieldName,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                    
+                    // If no custom parser or parsing failed, clear the field
+                    \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: Clearing string value from array field', [
+                        'field' => $fieldName,
+                    ]);
+                    unset($extracted[$fieldName]);
+                }
+            }
+
+            return $extracted ?? [];
 
         } catch (\Exception $e) {
+            // AI extraction failed - return empty and let normal flow ask for the field
             return [];
         }
     }
-
+        
     /**
-     * Merge new data with existing data using simple array_merge
-     */
-    protected function mergeData(array $existing, array $new): array
-    {
-        // Simple merge: new values override existing
-        return array_merge($existing, $new);
-    }
-
-
-    /**
-     * Get list of missing required fields
+     * Get missing required fields
      */
     protected function getMissingFields(array $collectedData, array $fieldDefinitions): array
     {

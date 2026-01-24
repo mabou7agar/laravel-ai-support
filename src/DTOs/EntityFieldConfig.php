@@ -28,6 +28,7 @@ class EntityFieldConfig
         public array $includeFields = [],
         public array $baseFields = [],
         public array $requiredItemFields = [],
+        public ?\Closure $customParser = null,
     ) {}
 
     /**
@@ -248,6 +249,18 @@ class EntityFieldConfig
     }
 
     /**
+     * Set custom parser function for this field
+     * Parser receives: (string $input) and returns parsed array
+     * Example: fn($input) => parseProductList($input)
+     * Use when AI extraction needs workflow-specific parsing logic
+     */
+    public function customParser(\Closure $parser): self
+    {
+        $this->customParser = $parser;
+        return $this;
+    }
+
+    /**
      * Convert to array format for AI config
      */
     public function toArray(): array
@@ -276,6 +289,7 @@ class EntityFieldConfig
             'include_fields' => $this->includeFields ?: null,
             'base_fields' => $this->baseFields ?: null,
             'required_item_fields' => $this->requiredItemFields ?: null,
+            'custom_parser' => $this->customParser,
         ], fn($value) => $value !== null);
     }
 

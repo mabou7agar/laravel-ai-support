@@ -428,14 +428,17 @@ class AIConfigBuilder
             $config = $config->toArray();
         }
         
-        // Ensure multiple flag is set
+        // Ensure multiple and is_array flags are set for AI extraction
         $config['multiple'] = true;
+        $config['is_array'] = true;
         
         $this->config['fields'][$name] = array_merge([
             'type' => 'entities',
             'required' => $config['required'] ?? false,
             'description' => $config['description'] ?? 'Multiple ' . class_basename($config['model'] ?? '') . ' references',
             'resolver' => $config['resolver'] ?? 'GenericEntityResolver',
+            'multiple' => true,
+            'is_array' => true,
         ], $config);
         
         // Store as entities config for workflow integration
