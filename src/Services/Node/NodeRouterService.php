@@ -340,6 +340,7 @@ class NodeRouterService
                     'node_name' => $node->name,
                     'response' => $data['response'] ?? '',
                     'metadata' => $data['metadata'] ?? [],
+                    'credits_used' => $data['credits_used'] ?? 0,
                     'duration_ms' => $duration,
                 ];
             }

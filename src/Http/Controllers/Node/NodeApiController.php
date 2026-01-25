@@ -527,10 +527,14 @@ class NodeApiController extends Controller
                 'agent_strategy' => $fullMetadata['agent_strategy'] ?? null,
             ];
             
+            // Include credits used so master node can deduct them
+            $creditsUsed = $response->getCreditsUsed();
+            
             return response()->json([
                 'success' => true,
                 'response' => $response->getContent(),
                 'metadata' => $essentialMetadata,
+                'credits_used' => $creditsUsed,
                 'duration_ms' => round($duration, 2),
             ]);
             

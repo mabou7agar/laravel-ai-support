@@ -393,7 +393,37 @@ class ChatService
             Log::channel('ai-engine')->info('Child node chat successful', [
                 'node' => $node->slug,
                 'duration_ms' => $response['duration_ms'] ?? 0,
+                'credits_used' => $response['credits_used'] ?? 0,
             ]);
+            
+            // Deduct credits on master node based on child node's usage
+            $creditsUsed = $response['credits_used'] ?? 0;
+            if ($creditsUsed > 0 && $userId && config('ai-engine.credits.enabled', false)) {
+                try {
+                    $creditManager = app(\LaravelAIEngine\Services\CreditManager::class);
+                    $creditManager->deductCredits(
+                        (string) $userId,
+                        new \LaravelAIEngine\DTOs\AIRequest(
+                            prompt: $message,
+                            engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
+                            model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                            userId: (string) $userId
+                        ),
+                        $creditsUsed
+                    );
+                    Log::channel('ai-engine')->info('Credits deducted for cross-node request', [
+                        'user_id' => $userId,
+                        'credits' => $creditsUsed,
+                        'node' => $node->slug,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::channel('ai-engine')->error('Failed to deduct credits for cross-node request', [
+                        'user_id' => $userId,
+                        'credits' => $creditsUsed,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
             
             return new AIResponse(
                 content: $response['response'],
@@ -403,6 +433,7 @@ class ChatService
                     'routed_to_node' => $node->slug,
                     'routed_to_node_name' => $node->name,
                     'routing_reason' => $routing['reason'],
+                    'credits_used' => $creditsUsed,
                 ]),
                 success: true,
                 conversationId: $conversationId
