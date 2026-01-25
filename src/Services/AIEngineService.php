@@ -77,7 +77,8 @@ class AIEngineService
 
         try {
             // Check credits before processing (if enabled)
-            $creditsEnabled = config('ai-engine.credits.enabled', false);
+            // Credits are only managed on the master node to avoid double-deduction
+            $creditsEnabled = config('ai-engine.credits.enabled', false) && $this->shouldProcessCredits();
 
             if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
                 throw new InsufficientCreditsException('Insufficient credits for this request');
@@ -230,7 +231,8 @@ class AIEngineService
         }
 
         // Check credits before processing (if enabled)
-        $creditsEnabled = config('ai-engine.credits.enabled', false);
+        // Credits are only managed on the master node to avoid double-deduction
+        $creditsEnabled = config('ai-engine.credits.enabled', false) && $this->shouldProcessCredits();
         if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
             throw new InsufficientCreditsException('Insufficient credits for this request');
         }
@@ -248,6 +250,22 @@ class AIEngineService
         if ($creditsEnabled && $request->userId) {
             $this->creditManager->deductCredits($request->userId, $request);
         }
+    }
+
+    /**
+     * Check if credits should be processed on this node.
+     * Credits are only managed on the master node to avoid double-deduction
+     * when requests are forwarded to child nodes.
+     */
+    protected function shouldProcessCredits(): bool
+    {
+        // If nodes are not enabled, always process credits
+        if (!config('ai-engine.nodes.enabled', false)) {
+            return true;
+        }
+
+        // Only process credits on the master node
+        return config('ai-engine.nodes.is_master', true);
     }
 
     /**

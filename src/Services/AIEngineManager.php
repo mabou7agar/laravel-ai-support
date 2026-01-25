@@ -132,8 +132,8 @@ class AIEngineManager
             // Check rate limits
             $this->rateLimitManager->checkRateLimit($request->engine, $request->userId);
 
-            // Check credits
-            if ($request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
+            // Check credits (only on master node to avoid double-deduction)
+            if ($this->shouldProcessCredits() && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
                 throw new \LaravelAIEngine\Exceptions\InsufficientCreditsException();
             }
 
@@ -158,8 +158,8 @@ class AIEngineManager
             $latency = (microtime(true) - $startTime) * 1000; // Convert to milliseconds
             $response = $response->withUsage(latency: $latency);
 
-            // Deduct credits
-            if ($request->userId && $response->isSuccess()) {
+            // Deduct credits (only on master node to avoid double-deduction)
+            if ($this->shouldProcessCredits() && $request->userId && $response->isSuccess()) {
                 $creditsUsed = $response->creditsUsed ?? $this->creditManager->calculateCredits($request);
                 $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
                 $response = $response->withUsage(creditsUsed: $creditsUsed);
@@ -199,7 +199,7 @@ class AIEngineManager
             // Check rate limits and credits (same as regular request)
             $this->rateLimitManager->checkRateLimit($request->engine, $request->userId);
             
-            if ($request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
+            if ($this->shouldProcessCredits() && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
                 throw new \LaravelAIEngine\Exceptions\InsufficientCreditsException();
             }
 
@@ -215,6 +215,22 @@ class AIEngineManager
             $this->analyticsManager->recordError($request, $e);
             throw $e;
         }
+    }
+
+    /**
+     * Check if credits should be processed on this node.
+     * Credits are only managed on the master node to avoid double-deduction
+     * when requests are forwarded to child nodes.
+     */
+    protected function shouldProcessCredits(): bool
+    {
+        // If nodes are not enabled, always process credits
+        if (!config('ai-engine.nodes.enabled', false)) {
+            return true;
+        }
+
+        // Only process credits on the master node
+        return config('ai-engine.nodes.is_master', true);
     }
 
     /**
