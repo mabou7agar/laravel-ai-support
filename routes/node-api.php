@@ -24,6 +24,7 @@ Route::prefix('api/ai-engine')->group(function () {
     ])->group(function () {
         Route::post('search', [NodeApiController::class, 'search']);
         Route::post('aggregate', [NodeApiController::class, 'aggregate']);
+        Route::post('chat', [NodeApiController::class, 'chat']); // Forward entire chat/workflow
         Route::post('actions', [NodeApiController::class, 'executeAction']);
         Route::post('execute', [NodeApiController::class, 'execute']);
         Route::get('status', [NodeApiController::class, 'status']);

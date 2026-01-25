@@ -186,6 +186,38 @@ class ChatService
             Log::warning('Failed to fire AISessionStarted event: ' . $e->getMessage());
         }
 
+        // Check if this message should be routed to a child node
+        // Only route if: nodes enabled, routing mode, this is master node, and not already forwarded
+        $nodesEnabled = config('ai-engine.nodes.enabled', false);
+        $isMaster = config('ai-engine.nodes.is_master', true);
+        $searchMode = config('ai-engine.nodes.search_mode', 'routing');
+        $isForwarded = $this->isForwardedRequest();
+        
+        if ($nodesEnabled && $isMaster && $searchMode === 'routing' && !$isForwarded) {
+            $routedResponse = $this->tryRouteToChildNode(
+                $message, $sessionId, $userId, $engine, $model,
+                $useMemory, $useActions, $useIntelligentRAG, $ragCollections,
+                $searchInstructions, $conversationId
+            );
+            
+            if ($routedResponse !== null) {
+                // Track if workflow is active on child node for session continuity
+                $metadata = $routedResponse->getMetadata();
+                if (!empty($metadata['workflow_active']) && !empty($metadata['routed_to_node'])) {
+                    Cache::put(
+                        "session_node:{$sessionId}",
+                        $metadata['routed_to_node'],
+                        now()->addHours(1)
+                    );
+                } elseif (empty($metadata['workflow_active'])) {
+                    // Workflow completed, clear the session-node mapping
+                    Cache::forget("session_node:{$sessionId}");
+                }
+                
+                return $routedResponse;
+            }
+        }
+
         // Delegate ALL routing and intelligence to AgentOrchestrator
         $orchestrator = $this->getAgentOrchestrator();
         if (!$orchestrator) {
@@ -228,6 +260,162 @@ class ChatService
             success: $agentResponse->success,
             conversationId: $conversationId
         );
+    }
+    
+    /**
+     * Check if this request was forwarded from another node
+     * Prevents infinite forwarding loops
+     */
+    protected function isForwardedRequest(): bool
+    {
+        // Check for forwarded header or context flag
+        $request = request();
+        if ($request && $request->hasHeader('X-Forwarded-From-Node')) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Try to route the message to a child node based on intent
+     * Returns AIResponse if routed, null if should be handled locally
+     */
+    protected function tryRouteToChildNode(
+        string $message,
+        string $sessionId,
+        $userId,
+        string $engine,
+        string $model,
+        bool $useMemory,
+        bool $useActions,
+        bool $useIntelligentRAG,
+        array $ragCollections,
+        ?string $searchInstructions,
+        $conversationId
+    ): ?AIResponse {
+        try {
+            // Get NodeRouterService
+            if (!app()->bound(\LaravelAIEngine\Services\Node\NodeRouterService::class)) {
+                return null;
+            }
+            
+            $router = app(\LaravelAIEngine\Services\Node\NodeRouterService::class);
+            
+            // FIRST: Check if this session already has an active workflow on a child node
+            $existingNodeSlug = Cache::get("session_node:{$sessionId}");
+            if ($existingNodeSlug) {
+                $existingNode = \LaravelAIEngine\Models\AINode::where('slug', $existingNodeSlug)->first();
+                if ($existingNode) {
+                    Log::channel('ai-engine')->info('Session has active workflow on child node, continuing there', [
+                        'session_id' => $sessionId,
+                        'node' => $existingNodeSlug,
+                    ]);
+                    
+                    // Route to the existing node
+                    $routing = [
+                        'node' => $existingNode,
+                        'is_local' => false,
+                        'reason' => "Session has active workflow on node {$existingNode->name}",
+                    ];
+                    
+                    // Skip to forwarding
+                    return $this->forwardToNode($router, $routing, $message, $sessionId, $userId, $engine, $model, $useMemory, $useActions, $useIntelligentRAG, $ragCollections, $searchInstructions, $conversationId);
+                }
+            }
+            
+            // Determine routing based on message content
+            $routing = $router->route($message, $ragCollections);
+            
+            // If should be handled locally, return null
+            if ($routing['is_local']) {
+                Log::channel('ai-engine')->debug('Message routed locally', [
+                    'reason' => $routing['reason'],
+                ]);
+                return null;
+            }
+            
+            // Forward to child node
+            return $this->forwardToNode($router, $routing, $message, $sessionId, $userId, $engine, $model, $useMemory, $useActions, $useIntelligentRAG, $ragCollections, $searchInstructions, $conversationId);
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Node routing failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+    
+    /**
+     * Forward a chat message to a specific node
+     */
+    protected function forwardToNode(
+        $router,
+        array $routing,
+        string $message,
+        string $sessionId,
+        $userId,
+        string $engine,
+        string $model,
+        bool $useMemory,
+        bool $useActions,
+        bool $useIntelligentRAG,
+        array $ragCollections,
+        ?string $searchInstructions,
+        $conversationId
+    ): ?AIResponse {
+        $node = $routing['node'];
+        
+        Log::channel('ai-engine')->info('Forwarding chat to child node', [
+            'node' => $node->slug,
+            'node_name' => $node->name,
+            'reason' => $routing['reason'],
+            'session_id' => $sessionId,
+        ]);
+        
+        $response = $router->forwardChat(
+            $node,
+            $message,
+            $sessionId,
+            [
+                'engine' => $engine,
+                'model' => $model,
+                'use_memory' => $useMemory,
+                'use_actions' => $useActions,
+                'use_intelligent_rag' => $useIntelligentRAG,
+                'rag_collections' => $ragCollections,
+                'search_instructions' => $searchInstructions,
+            ],
+            $userId
+        );
+        
+        if ($response['success']) {
+            Log::channel('ai-engine')->info('Child node chat successful', [
+                'node' => $node->slug,
+                'duration_ms' => $response['duration_ms'] ?? 0,
+            ]);
+            
+            return new AIResponse(
+                content: $response['response'],
+                engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
+                model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                metadata: array_merge($response['metadata'] ?? [], [
+                    'routed_to_node' => $node->slug,
+                    'routed_to_node_name' => $node->name,
+                    'routing_reason' => $routing['reason'],
+                ]),
+                success: true,
+                conversationId: $conversationId
+            );
+        }
+        
+        // Child node failed, fall back to local processing
+        Log::channel('ai-engine')->warning('Child node chat failed, falling back to local', [
+            'node' => $node->slug,
+            'error' => $response['error'] ?? 'Unknown error',
+        ]);
+        
+        return null;
     }
 
     /**

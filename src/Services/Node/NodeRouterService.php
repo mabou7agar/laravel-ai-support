@@ -238,9 +238,11 @@ class NodeRouterService
             $response = NodeHttpClient::makeForSearch($node)
                 ->post($node->getApiUrl('search'), [
                     'query' => $query,
-                    'collections' => $collections,
                     'limit' => $limit,
-                    'options' => array_merge($options, ['user_id' => $userId]),
+                    'options' => array_merge($options, [
+                        'collections' => $collections,
+                        'user_id' => $userId,
+                    ]),
                 ]);
             
             $duration = (int) ((microtime(true) - $startTime) * 1000);
@@ -311,6 +313,9 @@ class NodeRouterService
         
         try {
             $response = NodeHttpClient::makeAuthenticated($node)
+                ->withHeaders([
+                    'X-Forwarded-From-Node' => config('app.name', 'master'),
+                ])
                 ->post($node->getApiUrl('chat'), [
                     'message' => $message,
                     'session_id' => $sessionId,

@@ -261,7 +261,9 @@ class VectorAccessControl
                 'requested_user_id' => $userId,
                 'demo_user_id' => $demoUserId,
             ]);
-            return array_merge($baseFilters, ['user_id' => $demoUserId]);
+            // Cast to int if numeric to match Qdrant integer index type
+            $filterUserId = is_numeric($demoUserId) ? (int) $demoUserId : $demoUserId;
+            return array_merge($baseFilters, ['user_id' => $filterUserId]);
         }
 
         $userId = method_exists($user, 'getAuthIdentifier') 

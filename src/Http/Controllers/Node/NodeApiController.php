@@ -321,7 +321,8 @@ class NodeApiController extends Controller
                 $searchResults = $collection::vectorSearch(
                     query: $validated['query'],
                     limit: $validated['limit'] ?? 10,
-                    threshold: $validated['options']['threshold'] ?? 0.3,
+                    threshold: $validated['options']['threshold'] ?? 0.0, // Use 0.0 to get all results, let caller filter
+                    filters: $filters,
                     userId: $userId
                 );
                 
@@ -470,6 +471,78 @@ class NodeApiController extends Controller
             return response()->json([
                 'success' => false,
                 'error' => 'Aggregate query failed',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    
+    /**
+     * Chat endpoint - forward entire chat/workflow to this node
+     * This allows the master node to delegate chat handling to child nodes
+     */
+    public function chat(Request $request)
+    {
+        $validated = $request->validate([
+            'message' => 'required|string',
+            'session_id' => 'required|string',
+            'user_id' => 'nullable',
+            'options' => 'array',
+        ]);
+        
+        $startTime = microtime(true);
+        
+        try {
+            // Get ChatService to process the message
+            $chatService = app(\LaravelAIEngine\Services\ChatService::class);
+            
+            $options = $validated['options'] ?? [];
+            
+            $response = $chatService->processMessage(
+                message: $validated['message'],
+                sessionId: $validated['session_id'],
+                engine: $options['engine'] ?? 'openai',
+                model: $options['model'] ?? 'gpt-4o-mini',
+                useMemory: $options['use_memory'] ?? true,
+                useActions: $options['use_actions'] ?? true,
+                useIntelligentRAG: $options['use_intelligent_rag'] ?? true,
+                ragCollections: $options['rag_collections'] ?? [],
+                userId: $validated['user_id']
+            );
+            
+            $duration = (microtime(true) - $startTime) * 1000;
+            
+            \Log::channel('ai-engine')->info('NodeApiController: Chat processed', [
+                'session_id' => $validated['session_id'],
+                'user_id' => $validated['user_id'],
+                'duration_ms' => round($duration, 2),
+            ]);
+            
+            // Only return essential metadata to reduce response size and memory usage
+            $fullMetadata = $response->getMetadata();
+            $essentialMetadata = [
+                'workflow_active' => $fullMetadata['workflow_active'] ?? false,
+                'workflow_class' => $fullMetadata['workflow_class'] ?? null,
+                'workflow_completed' => $fullMetadata['workflow_completed'] ?? false,
+                'current_step' => $fullMetadata['current_step'] ?? null,
+                'agent_strategy' => $fullMetadata['agent_strategy'] ?? null,
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'response' => $response->getContent(),
+                'metadata' => $essentialMetadata,
+                'duration_ms' => round($duration, 2),
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::channel('ai-engine')->error('NodeApiController: Chat failed', [
+                'session_id' => $validated['session_id'],
+                'error' => $e->getMessage(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Chat processing failed',
                 'message' => $e->getMessage(),
             ], 500);
         }
