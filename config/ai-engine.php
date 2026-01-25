@@ -1240,7 +1240,11 @@ return [
         // Max parallel requests
         'max_parallel_requests' => env('AI_ENGINE_MAX_PARALLEL_REQUESTS', 10),
 
-        // Search result merging
+        // Node search mode: 'routing' (simple, route to single node) or 'federated' (search all nodes)
+        // Routing is simpler and faster, federated is more comprehensive but complex
+        'search_mode' => env('AI_ENGINE_NODE_SEARCH_MODE', 'routing'),
+        
+        // Search result merging (only used in federated mode)
         'merge' => [
             'strategy' => env('AI_ENGINE_MERGE_STRATEGY', 'score'), // score, round_robin, node_priority, diversity, hybrid
             'deduplication' => env('AI_ENGINE_MERGE_DEDUPLICATION', true),

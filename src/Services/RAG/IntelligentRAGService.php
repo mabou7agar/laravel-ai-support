@@ -27,6 +27,7 @@ class IntelligentRAGService
 
     protected $nodeRegistry = null;
     protected $federatedSearch = null;
+    protected $nodeRouter = null;
 
     public function __construct(
         VectorSearchService $vectorSearch,
@@ -45,6 +46,9 @@ class IntelligentRAGService
         }
         if (class_exists(\LaravelAIEngine\Services\Node\FederatedSearchService::class)) {
             $this->federatedSearch = app(\LaravelAIEngine\Services\Node\FederatedSearchService::class);
+        }
+        if (class_exists(\LaravelAIEngine\Services\Node\NodeRouterService::class)) {
+            $this->nodeRouter = app(\LaravelAIEngine\Services\Node\NodeRouterService::class);
         }
     }
 
@@ -1195,12 +1199,22 @@ PROMPT;
         $maxResults = $options['max_context'] ?? $this->config['max_context_items'] ?? 5;
         $threshold = $options['min_score'] ?? $this->config['min_relevance_score'] ?? 0.3;
 
-        // Use federated search if available and enabled
-        $useFederatedSearch = $this->federatedSearch && config('ai-engine.nodes.enabled', false);
+        // Check if nodes are enabled
+        $nodesEnabled = config('ai-engine.nodes.enabled', false);
+        $searchMode = config('ai-engine.nodes.search_mode', 'routing');
+        
+        // Use routing mode (simple) or federated mode (complex)
+        if ($nodesEnabled && $this->nodeRouter && $searchMode === 'routing') {
+            // Simple routing: route to single node based on collections
+            return $this->retrieveWithRouting($searchQueries, $collections, $maxResults, $threshold, $options, $userId);
+        }
+        
+        // Use federated search if available and enabled (legacy/complex mode)
+        $useFederatedSearch = $this->federatedSearch && $nodesEnabled && $searchMode === 'federated';
 
         Log::channel('ai-engine')->info('retrieveRelevantContext decision', [
-            'federatedSearch_available' => $this->federatedSearch !== null,
-            'nodes_enabled_config' => config('ai-engine.nodes.enabled', false),
+            'nodes_enabled' => $nodesEnabled,
+            'search_mode' => $searchMode,
             'useFederatedSearch' => $useFederatedSearch,
             'collections_count' => count($collections),
         ]);
@@ -1252,6 +1266,90 @@ PROMPT;
 
         // Use local search
         return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
+    }
+    
+    /**
+     * Retrieve context using simple routing (route to single node)
+     * 
+     * This is simpler and faster than federated search - routes the request
+     * to the appropriate node based on collections instead of searching all nodes.
+     */
+    protected function retrieveWithRouting(
+        array $searchQueries,
+        array $collections,
+        int $maxResults,
+        float $threshold,
+        array $options,
+        $userId = null
+    ): Collection {
+        // Determine which node should handle this request
+        $routing = $this->nodeRouter->route(implode(' ', $searchQueries), $collections, $options);
+        
+        Log::channel('ai-engine')->info('Node routing decision', [
+            'is_local' => $routing['is_local'],
+            'node' => $routing['node']?->slug ?? 'local',
+            'reason' => $routing['reason'],
+        ]);
+        
+        // If local, use local search
+        if ($routing['is_local']) {
+            // Validate collections exist locally
+            $validCollections = array_filter($collections, function ($collection) {
+                return class_exists($collection);
+            });
+            
+            if (empty($validCollections)) {
+                return collect();
+            }
+            
+            return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
+        }
+        
+        // Route to remote node
+        $node = $routing['node'];
+        $allResults = collect();
+        
+        foreach ($searchQueries as $searchQuery) {
+            $response = $this->nodeRouter->forwardSearch(
+                $node,
+                $searchQuery,
+                $collections,
+                $maxResults,
+                array_merge($options, ['threshold' => $threshold]),
+                $userId
+            );
+            
+            if ($response['success'] && !empty($response['results'])) {
+                // Convert remote results to collection format
+                foreach ($response['results'] as $result) {
+                    $allResults->push((object) [
+                        'id' => $result['id'] ?? null,
+                        'model_id' => $result['model_id'] ?? $result['id'] ?? null,
+                        'content' => $result['content'] ?? '',
+                        'vector_score' => $result['score'] ?? 0,
+                        'vector_metadata' => array_merge($result['metadata'] ?? [], [
+                            'source_node' => $node->slug,
+                            'source_node_name' => $node->name,
+                        ]),
+                        'source_node' => $node->slug,
+                        'source_node_name' => $node->name,
+                    ]);
+                }
+            } else if (!$response['success']) {
+                // Fallback to local search if remote fails
+                Log::channel('ai-engine')->warning('Remote node failed, falling back to local', [
+                    'node' => $node->slug,
+                    'error' => $response['error'] ?? 'Unknown error',
+                ]);
+                
+                $validCollections = array_filter($collections, fn($c) => class_exists($c));
+                if (!empty($validCollections)) {
+                    return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
+                }
+            }
+        }
+        
+        return $allResults->sortByDesc('vector_score')->take($maxResults);
     }
 
     /**

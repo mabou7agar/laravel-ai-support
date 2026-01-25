@@ -430,6 +430,14 @@ class AIEngineServiceProvider extends ServiceProvider
                 $app->make(\LaravelAIEngine\Services\Node\SearchResultMerger::class)
             );
         });
+        
+        // Node Router Service (simple routing alternative to federated search)
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRouterService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\NodeRouterService(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class)
+            );
+        });
 
         // Remote Action Service
         $this->app->singleton(\LaravelAIEngine\Services\Node\RemoteActionService::class, function ($app) {
