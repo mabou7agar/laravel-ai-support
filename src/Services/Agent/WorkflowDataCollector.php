@@ -77,7 +77,16 @@ class WorkflowDataCollector
                             'extracted_fields' => array_keys($extractedData),
                             'extracted_data' => $extractedData,
                         ]);
+                        
+                        // Store in both collected_data and user_inputs
                         $collectedData = array_merge($collectedData, $extractedData);
+                        
+                        // Also store in user_inputs to preserve original user data
+                        if (!isset($collectedData['user_inputs'])) {
+                            $collectedData['user_inputs'] = [];
+                        }
+                        $collectedData['user_inputs'] = array_merge($collectedData['user_inputs'], $extractedData);
+                        
                         $context->set('collected_data', $collectedData);
                     }
 
@@ -118,6 +127,13 @@ class WorkflowDataCollector
 
                         if (!empty($newData)) {
                             $collectedData = array_merge($collectedData, $newData);
+                            
+                            // Also store in user_inputs to preserve original user data
+                            if (!isset($collectedData['user_inputs'])) {
+                                $collectedData['user_inputs'] = [];
+                            }
+                            $collectedData['user_inputs'] = array_merge($collectedData['user_inputs'], $newData);
+                            
                             $context->set('collected_data', $collectedData);
                         }
                     } catch (\Exception $e) {
@@ -243,9 +259,10 @@ class WorkflowDataCollector
                     if ($parsingGuide) {
                         $prompt .= "  {$parsingGuide}\n";
                     } else {
-                        $prompt .= "  REQUIRED: Parse into array of objects with 'name' and 'quantity' fields\n";
-                        $prompt .= "  Example: \"2 laptops and 3 mice\" MUST become:\n";
-                        $prompt .= "  [{\"name\":\"laptops\",\"quantity\":2},{\"name\":\"mice\",\"quantity\":3}]\n";
+                        $prompt .= "  REQUIRED: Parse into array of objects with 'name', 'quantity', and 'sale_price' fields\n";
+                        $prompt .= "  Extract price if user specifies it (e.g., 'at \$200', 'for 100', '@ 50')\n";
+                        $prompt .= "  Example: \"2 laptops at \$500 and 3 mice for \$25\" MUST become:\n";
+                        $prompt .= "  [{\"name\":\"laptops\",\"quantity\":2,\"sale_price\":500},{\"name\":\"mice\",\"quantity\":3,\"sale_price\":25}]\n";
                     }
                     $prompt .= "  CRITICAL: Do NOT return a string. MUST be array format.\n";
                 } else {
@@ -381,6 +398,78 @@ class WorkflowDataCollector
         $collectedData = $context->get('collected_data', []);
         $collectedData[$fieldName] = $value;
         $context->set('collected_data', $collectedData);
+    }
+
+    /**
+     * Set user input value - stores in user_inputs to preserve original user data
+     * User inputs are never overwritten by entity resolution
+     */
+    public function setUserInput(UnifiedActionContext $context, string $fieldName, $value): void
+    {
+        $collectedData = $context->get('collected_data', []);
+        
+        // Initialize user_inputs if not exists
+        if (!isset($collectedData['user_inputs'])) {
+            $collectedData['user_inputs'] = [];
+        }
+        
+        $collectedData['user_inputs'][$fieldName] = $value;
+        $context->set('collected_data', $collectedData);
+    }
+
+    /**
+     * Get user input value
+     */
+    public function getUserInput(UnifiedActionContext $context, string $fieldName, $default = null)
+    {
+        $collectedData = $context->get('collected_data', []);
+        return $collectedData['user_inputs'][$fieldName] ?? $default;
+    }
+
+    /**
+     * Get all user inputs
+     */
+    public function getAllUserInputs(UnifiedActionContext $context): array
+    {
+        $collectedData = $context->get('collected_data', []);
+        return $collectedData['user_inputs'] ?? [];
+    }
+
+    /**
+     * Merge user inputs with resolved data - user inputs take precedence
+     * Used when preparing final data for action execution
+     */
+    public function mergeUserInputsWithResolved(UnifiedActionContext $context): array
+    {
+        $collectedData = $context->get('collected_data', []);
+        $userInputs = $collectedData['user_inputs'] ?? [];
+        
+        // Start with collected data (resolved entities)
+        $merged = $collectedData;
+        
+        // Merge user inputs on top - they take precedence
+        foreach ($userInputs as $key => $value) {
+            if (is_array($value) && isset($merged[$key]) && is_array($merged[$key])) {
+                // For arrays, merge item by item preserving user modifications
+                if (isset($value[0]) && is_array($value[0]) && isset($merged[$key][0]) && is_array($merged[$key][0])) {
+                    // Array of items - merge each item
+                    foreach ($value as $index => $userItem) {
+                        if (isset($merged[$key][$index]) && is_array($merged[$key][$index])) {
+                            $merged[$key][$index] = array_merge($merged[$key][$index], $userItem);
+                        } else {
+                            $merged[$key][$index] = $userItem;
+                        }
+                    }
+                } else {
+                    // Simple array merge
+                    $merged[$key] = array_merge($merged[$key], $value);
+                }
+            } else {
+                $merged[$key] = $value;
+            }
+        }
+        
+        return $merged;
     }
 
     /**

@@ -133,7 +133,7 @@ class InteractiveAction
     ): self {
         return new self(
             $id,
-            ActionTypeEnum::QUICK_REPLY,
+            ActionTypeEnum::from(ActionTypeEnum::QUICK_REPLY),
             $label,
             $description,
             [

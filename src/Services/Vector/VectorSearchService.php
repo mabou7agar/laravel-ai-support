@@ -426,6 +426,7 @@ class VectorSearchService
 
     /**
      * Get metadata from model
+     * Includes both ISO string dates and Unix timestamps for range filtering
      */
     protected function getMetadata(object $model): array
     {
@@ -434,14 +435,55 @@ class VectorSearchService
             'model_id' => $model->id,
             'created_at' => $model->created_at?->toIso8601String(),
             'updated_at' => $model->updated_at?->toIso8601String(),
+            // Store timestamps as integers for range filtering
+            'created_at_ts' => $model->created_at?->timestamp,
+            'updated_at_ts' => $model->updated_at?->timestamp,
         ];
 
         // Add custom metadata if method exists
         if (method_exists($model, 'getVectorMetadata')) {
-            $metadata = array_merge($metadata, $model->getVectorMetadata());
+            $customMetadata = $model->getVectorMetadata();
+            
+            // Auto-convert any Carbon/DateTime fields to timestamps
+            foreach ($customMetadata as $key => $value) {
+                if ($value instanceof \Carbon\Carbon || $value instanceof \DateTimeInterface) {
+                    $metadata[$key] = $value->format('Y-m-d\TH:i:sP');
+                    $metadata[$key . '_ts'] = $value->getTimestamp();
+                } else {
+                    $metadata[$key] = $value;
+                }
+            }
+        } else {
+            $metadata = array_merge($metadata, $this->extractDateFieldsAsTimestamps($model));
         }
 
         return $metadata;
+    }
+    
+    /**
+     * Extract common date fields from model and add as timestamps
+     */
+    protected function extractDateFieldsAsTimestamps(object $model): array
+    {
+        $timestamps = [];
+        $dateFields = ['issue_date', 'due_date', 'paid_date', 'sent_date', 'date', 'published_at', 'deleted_at'];
+        
+        foreach ($dateFields as $field) {
+            if (isset($model->$field) && $model->$field !== null) {
+                $value = $model->$field;
+                if ($value instanceof \Carbon\Carbon || $value instanceof \DateTimeInterface) {
+                    $timestamps[$field . '_ts'] = $value->getTimestamp();
+                } elseif (is_string($value)) {
+                    try {
+                        $timestamps[$field . '_ts'] = strtotime($value);
+                    } catch (\Exception $e) {
+                        // Skip if can't parse
+                    }
+                }
+            }
+        }
+        
+        return $timestamps;
     }
 
     /**
@@ -583,6 +625,115 @@ class VectorSearchService
                 'error' => $e->getMessage()
             ]);
             return null;
+        }
+    }
+    
+    /**
+     * Hybrid aggregation: Vector filter + SQL aggregation
+     * Uses vector DB for filtering, then SQL for efficient aggregation
+     * 
+     * @param string $modelClass Model class name
+     * @param string $operation Aggregation operation (sum, avg, min, max, count)
+     * @param string $field Database field to aggregate
+     * @param array $filters Vector filters (supports date ranges)
+     * @return float|int Aggregated value
+     * 
+     * Example:
+     * $vectorSearch->aggregate(Invoice::class, 'sum', 'total', ['created_at' => ['gte' => '2026-01-01']]);
+     */
+    public function aggregate(string $modelClass, string $operation, string $field, array $filters = []): float|int
+    {
+        try {
+            $collection = $this->getCollectionName($modelClass);
+            $driver = $this->driverManager->driver();
+            
+            // Get matching IDs from vector DB
+            $ids = $driver->getMatchingIds($collection, $filters);
+            
+            if (empty($ids)) {
+                return 0;
+            }
+            
+            // Use SQL for aggregation (much more efficient)
+            $query = $modelClass::whereIn('id', $ids);
+            
+            return match ($operation) {
+                'sum' => (float) $query->sum($field),
+                'avg' => (float) $query->avg($field),
+                'min' => (float) $query->min($field),
+                'max' => (float) $query->max($field),
+                'count' => (int) $query->count(),
+                default => throw new \InvalidArgumentException("Unknown operation: {$operation}"),
+            };
+            
+        } catch (\Exception $e) {
+            Log::error('Hybrid aggregation failed', [
+                'model' => $modelClass,
+                'operation' => $operation,
+                'field' => $field,
+                'error' => $e->getMessage(),
+            ]);
+            return 0;
+        }
+    }
+    
+    /**
+     * Sum field values for records matching vector filters
+     */
+    public function sum(string $modelClass, string $field, array $filters = []): float
+    {
+        return (float) $this->aggregate($modelClass, 'sum', $field, $filters);
+    }
+    
+    /**
+     * Average field values for records matching vector filters
+     */
+    public function avg(string $modelClass, string $field, array $filters = []): float
+    {
+        return (float) $this->aggregate($modelClass, 'avg', $field, $filters);
+    }
+    
+    /**
+     * Minimum field value for records matching vector filters
+     */
+    public function min(string $modelClass, string $field, array $filters = []): float
+    {
+        return (float) $this->aggregate($modelClass, 'min', $field, $filters);
+    }
+    
+    /**
+     * Maximum field value for records matching vector filters
+     */
+    public function max(string $modelClass, string $field, array $filters = []): float
+    {
+        return (float) $this->aggregate($modelClass, 'max', $field, $filters);
+    }
+    
+    /**
+     * Count records matching vector filters (uses vector DB count, not SQL)
+     */
+    public function countWithFilters(string $modelClass, array $filters = []): int
+    {
+        return $this->getIndexedCountWithFilters($modelClass, $filters);
+    }
+    
+    /**
+     * Get all model IDs matching vector filters
+     * Useful for custom queries
+     */
+    public function getMatchingIds(string $modelClass, array $filters = []): array
+    {
+        try {
+            $collection = $this->getCollectionName($modelClass);
+            $driver = $this->driverManager->driver();
+            
+            return $driver->getMatchingIds($collection, $filters);
+        } catch (\Exception $e) {
+            Log::error('Failed to get matching IDs', [
+                'model' => $modelClass,
+                'error' => $e->getMessage(),
+            ]);
+            return [];
         }
     }
 

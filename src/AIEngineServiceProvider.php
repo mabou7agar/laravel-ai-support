@@ -250,6 +250,7 @@ class AIEngineServiceProvider extends ServiceProvider
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\CancelWorkflowHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\DirectAnswerHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\KnowledgeSearchHandler::class));
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\SuggestWorkflowHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\StartWorkflowHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ConversationalHandler::class));
             
@@ -637,6 +638,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\VectorSearchCommand::class,
                 Console\Commands\VectorAnalyticsCommand::class,
                 Console\Commands\VectorCleanCommand::class,
+                Console\Commands\VectorFixIndexesCommand::class,
                 Console\Commands\AnalyzeModelCommand::class,
                 Console\Commands\VectorStatusCommand::class,
                 Console\Commands\ListVectorizableModelsCommand::class,

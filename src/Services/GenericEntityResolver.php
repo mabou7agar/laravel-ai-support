@@ -18,23 +18,23 @@ use Illuminate\Support\Facades\Log;
  * the data it needs, and returns only the final result (not intermediate state).
  *
  * Example flow:
- * 1. Parent workflow (Invoice) needs customer
- * 2. Creates isolated subcontext with customer identifier
- * 3. Executes customer creation subworkflow with isolated context
- * 4. Subworkflow collects name, email, etc. in its own context
- * 5. Returns only the created customer entity
+ * 1. Parent workflow needs an entity
+ * 2. Creates isolated subcontext with entity identifier
+ * 3. Executes entity creation subworkflow with isolated context
+ * 4. Subworkflow collects required fields in its own context
+ * 5. Returns only the created entity
  * 6. Parent merges only the result, not intermediate data
  *
  * This prevents issues like:
- * - Price "500" being added to parent's items array
- * - Email being duplicated across name and email fields
+ * - Parent workflow seeing subworkflow's intermediate steps
+ * - Subworkflow data leaking into parent context
  * - Context pollution between workflows
  *
  * Usage in aiConfig:
- * ->entityField('customer_id', [
- *     'model' => Customer::class,
- *     'search_fields' => ['name', 'email', 'contact'],
- *     'subflow' => DeclarativeCustomerWorkflow::class,
+ * ->entityField('entity_field', [
+ *     'model' => EntityModel::class,
+ *     'search_fields' => ['name', 'identifier'],
+ *     'subflow' => EntityWorkflow::class,
  *     'interactive' => true,
  * ])
  */
@@ -113,6 +113,47 @@ class GenericEntityResolver
 
         if (!$modelClass) {
             return ActionResult::failure(error: "No model class specified for {$fieldName}");
+        }
+
+        // Handle identifier as object (e.g., {name: "John", email: "john@test.com"})
+        $identifierData = [];
+        if (is_array($identifier)) {
+            $identifierData = $identifier;
+            // Use search_fields from config to determine primary search field, fallback to first available
+            $searchIdentifier = null;
+            foreach ($searchFields as $searchField) {
+                if (isset($identifier[$searchField]) && !empty($identifier[$searchField])) {
+                    $searchIdentifier = $identifier[$searchField];
+                    break;
+                }
+            }
+            // If no search field matched, use first non-empty value
+            if ($searchIdentifier === null) {
+                $searchIdentifier = reset($identifier) ?: '';
+            }
+            $identifier = $searchIdentifier;
+            
+            Log::channel('ai-engine')->info('resolveEntity: Identifier is object, extracted search value', [
+                'field' => $fieldName,
+                'identifier_data' => $identifierData,
+                'search_fields' => $searchFields,
+                'search_identifier' => $identifier,
+            ]);
+            
+            // Store full identifier data for later use in subflow
+            // Only set if not already stored (preserve original extraction)
+            $existingExtractedData = $context->get("{$fieldName}_extracted_data", []);
+            if (empty($existingExtractedData)) {
+                $context->set("{$fieldName}_extracted_data", $identifierData);
+            } else {
+                // Merge new data with existing, but don't overwrite existing values
+                foreach ($identifierData as $key => $value) {
+                    if (!isset($existingExtractedData[$key]) && !empty($value)) {
+                        $existingExtractedData[$key] = $value;
+                    }
+                }
+                $context->set("{$fieldName}_extracted_data", $existingExtractedData);
+            }
         }
 
         Log::channel('ai-engine')->info('resolveEntity: Checking duplicate choice', [
@@ -213,6 +254,29 @@ class GenericEntityResolver
                     'id' => $entity->id,
                 ]);
 
+                // Store full entity data if includeFields is specified
+                $includeFields = $config['include_fields'] ?? [];
+                if (!empty($includeFields)) {
+                    $collectedData = $context->get('collected_data', []);
+                    $entityData = ['id' => $entity->id];
+                    
+                    foreach ($includeFields as $field) {
+                        if (isset($entity->$field)) {
+                            $entityData[$field] = $entity->$field;
+                        }
+                    }
+                    
+                    $collectedData[$fieldName] = $entityData;
+                    $context->set('collected_data', $collectedData);
+                    
+                    Log::channel('ai-engine')->info('Stored full entity data in GenericEntityResolver', [
+                        'field' => $fieldName,
+                        'entity_id' => $entity->id,
+                        'include_fields' => $includeFields,
+                        'stored_data' => $entityData,
+                    ]);
+                }
+
                 return ActionResult::success(
                     message: "Found existing " . class_basename($modelClass),
                     data: [$fieldName => $entity->id, 'entity' => $entity]
@@ -289,9 +353,6 @@ class GenericEntityResolver
             'resolveEntities',
             // Specific methods based on field name
             'resolve' . ucfirst($fieldName),
-            // Legacy methods
-            'resolveCustomer',
-            'resolveProducts',
         ];
 
         foreach ($methods as $method) {
@@ -450,24 +511,75 @@ class GenericEntityResolver
                             }
                         }
 
-                        // Get collected data to preserve prices
+                        // Get collected data to preserve fields from subflow
                         $collectedData = $context->get('collected_data', []);
                         
-                        Log::channel('ai-engine')->info('GenericEntityResolver: Merging created entity data', [
-                            'missing_item' => $missing[$index],
-                            'has_sale_price_in_missing' => isset($missing[$index]['sale_price']),
-                            'collected_data_keys' => array_keys($collectedData),
+                        Log::channel('ai-engine')->info('GenericEntityResolver: BEFORE merging subflow data', [
+                            'field' => $fieldName,
+                            'index' => $index,
+                            'missing_item_before' => $missing[$index],
+                            'collected_data' => $collectedData,
+                            'required_fields' => $config['required_item_fields'] ?? [],
+                            'include_fields' => $config['include_fields'] ?? [],
+                        ]);
+                        
+                        // CRITICAL: Merge subflow collected data into missing item
+                        // When subflow completes, collected fields need to be merged into the item
+                        // Use requiredItemFields from config to know which fields to merge
+                        $requiredFields = $config['required_item_fields'] ?? [];
+                        $mergedFields = [];
+                        foreach ($requiredFields as $field) {
+                            if (isset($collectedData[$field]) && !isset($missing[$index][$field])) {
+                                $missing[$index][$field] = $collectedData[$field];
+                                $mergedFields[] = $field;
+                            }
+                        }
+                        
+                        // Also merge any includeFields that exist in collected_data
+                        $includeFields = $config['include_fields'] ?? [];
+                        foreach ($includeFields as $field) {
+                            if (isset($collectedData[$field]) && !isset($missing[$index][$field])) {
+                                $missing[$index][$field] = $collectedData[$field];
+                                $mergedFields[] = $field;
+                            }
+                        }
+                        
+                        Log::channel('ai-engine')->info('GenericEntityResolver: AFTER merging subflow data', [
+                            'field' => $fieldName,
+                            'missing_item_after' => $missing[$index],
+                            'merged_fields' => $mergedFields,
+                            'has_sale_price' => isset($missing[$index]['sale_price']),
                         ]);
                         
                         if ($createdEntity) {
-                            // Use complete entity data from database, but preserve collected prices
-                            $createdItem = array_merge($missing[$index], [
-                                'id' => $entityId,
-                                'name' => $createdEntity->name ?? $missing[$index]['name'] ?? $missing[$index]['product'] ?? '',
-                                // Use collected price first, fallback to database price
-                                'sale_price' => $missing[$index]['sale_price'] ?? $createdEntity->sale_price ?? 0,
-                                'purchase_price' => $missing[$index]['purchase_price'] ?? $createdEntity->purchase_price ?? 0,
-                            ]);
+                            // Build entity data dynamically from includeFields config
+                            $entityData = ['id' => $entityId];
+                            $includeFields = $config['include_fields'] ?? [];
+                            
+                            // If includeFields specified, use those fields
+                            if (!empty($includeFields)) {
+                                foreach ($includeFields as $field) {
+                                    if (isset($createdEntity->$field)) {
+                                        $entityData[$field] = $createdEntity->$field;
+                                    }
+                                }
+                            } else {
+                                // Fallback: include all non-system attributes from entity
+                                $attributes = $createdEntity->getAttributes();
+                                foreach ($attributes as $key => $value) {
+                                    // Skip system fields using pattern matching
+                                    if (preg_match('/(_at|^id)$/', $key)) {
+                                        continue;
+                                    }
+                                    $entityData[$key] = $value;
+                                }
+                            }
+                            
+                            // Merge collected data with entity data
+                            $createdItem = \LaravelAIEngine\Services\AI\FieldDetector::mergeData(
+                                $missing[$index],
+                                $entityData
+                            );
                         } else {
                             // Fallback to original behavior if entity fetch fails
                             $createdItem = array_merge($missing[$index], ['id' => $entityId]);
@@ -494,6 +606,25 @@ class GenericEntityResolver
                     } else {
                         // All products created
                         $context->set($fieldName, $validated);
+                        
+                        // CRITICAL: Also update collected_data with validated items (including prices)
+                        $collectedData = $context->get('collected_data', []);
+                        $identifierField = $config['identifier_field'] ?? $fieldName;
+                        
+                        // Store under identifier field (e.g., 'items') and field name (e.g., 'products')
+                        // This matches the simplified storage approach
+                        $collectedData[$identifierField] = $validated;
+                        if ($identifierField !== $fieldName) {
+                            $collectedData[$fieldName] = $validated;
+                        }
+                        $context->set('collected_data', $collectedData);
+                        
+                        Log::channel('ai-engine')->info('Updated collected_data with validated items', [
+                            'field' => $fieldName,
+                            'identifier_field' => $identifierField,
+                            'validated_count' => count($validated),
+                            'has_prices' => isset($validated[0]['sale_price']) || isset($validated[0]['price']),
+                        ]);
 
                         // Clear creation state
                         $context->forget("{$fieldName}_creation_step");
@@ -514,10 +645,12 @@ class GenericEntityResolver
         $validated = [];
         $missing = [];
 
+        $searchFields = $config['search_fields'] ?? [];
+        
         foreach ($items as $item) {
             // Handle case where item is a string instead of array
             if (is_string($item)) {
-                $item = ['name' => $item, 'quantity' => 1];
+                $item = \LaravelAIEngine\Services\AI\FieldDetector::stringToArrayItem($item, $config);
             }
 
             // Ensure $item is an array
@@ -525,24 +658,24 @@ class GenericEntityResolver
                 continue;
             }
 
-            // Try multiple possible field names for the identifier
-            $identifier = $item['name'] ?? $item['item'] ?? $item['product'] ?? '';
-            $quantity = $item['quantity'] ?? 1;
-
-            // Combine with any additional detail fields (specifications, storage, version, model, etc.)
-            // This preserves complete product names like "iPhone 15 Pro Max 256GB" or "Samsung Galaxy S24 Ultra 512GB"
-            $detailFields = ['specifications', 'storage', 'version', 'model', 'size', 'capacity', 'color', 'variant'];
-            foreach ($detailFields as $field) {
-                if (!empty($item[$field])) {
-                    $identifier = trim($identifier . ' ' . $item[$field]);
-                }
+            // Use config-driven field detection
+            $fieldNames = \LaravelAIEngine\Services\AI\FieldDetector::getFieldNames($config);
+            
+            // Get identifier from config field or detect dynamically
+            $identifier = $item[$fieldNames['identifier']] ?? null;
+            if (empty($identifier)) {
+                $identifier = \LaravelAIEngine\Services\AI\FieldDetector::detectIdentifier($item, $searchFields) ?? '';
             }
+            
+            // Get quantity from config field, default to 1
+            $quantity = $item[$fieldNames['quantity']] ?? 1;
 
             // Skip if no identifier found
             if (empty($identifier)) {
+                $fieldNames = \LaravelAIEngine\Services\AI\FieldDetector::getFieldNames($config);
                 $missing[] = array_merge([
-                    'name' => 'Unknown',
-                    'quantity' => $quantity,
+                    $fieldNames['identifier'] => 'Unknown',
+                    $fieldNames['quantity'] => $quantity,
                 ], $item);
                 continue;
             }
@@ -578,7 +711,7 @@ class GenericEntityResolver
 
                 // Include additional fields from entity based on config
                 // Only include if not already set (don't overwrite collected values)
-                $includeFields = $config['include_fields'] ?? ['price', 'sale_price', 'cost'];
+                $includeFields = $config['include_fields'] ?? [];
 
                 foreach ($includeFields as $field) {
                     if (!isset($item[$field]) && !isset($entityData[$field]) && isset($entity->$field)) {
@@ -589,9 +722,10 @@ class GenericEntityResolver
                 // Merge with user input (user input takes precedence)
                 $validated[] = array_merge($entityData, $item);
             } else {
+                $fieldNames = \LaravelAIEngine\Services\AI\FieldDetector::getFieldNames($config);
                 $missing[] = array_merge([
-                    'name' => $identifier,
-                    'quantity' => $quantity,
+                    $fieldNames['identifier'] => $identifier,
+                    $fieldNames['quantity'] => $quantity,
                 ], $item);
             }
         }
@@ -1050,18 +1184,23 @@ class GenericEntityResolver
                 }
             }
 
-            $response = strtolower(trim($lastMessage));
             $identifier = $context->get("{$fieldName}_identifier", '');
+            
+            // Use IntentAnalysisService to determine user intent
+            $intentAnalysis = app(\LaravelAIEngine\Services\IntentAnalysisService::class)->analyzeMessageIntent($lastMessage);
+            $isConfirmation = $intentAnalysis['intent'] === 'confirm';
+            $isDecline = $intentAnalysis['intent'] === 'decline';
 
             Log::channel('ai-engine')->info('Checking user confirmation response', [
                 'step' => $step,
-                'response' => $response,
+                'response' => $lastMessage,
+                'intent' => $intentAnalysis['intent'],
                 'field' => $fieldName,
                 'identifier' => $identifier,
                 'has_conversation_history' => !empty($conversationHistory),
             ]);
 
-            if (str_contains($response, 'yes') || str_contains($response, 'confirm') || str_contains($response, 'ok')) {
+            if ($isConfirmation) {
                 // User confirmed - proceed with entity creation
 
                 Log::channel('ai-engine')->info('User confirmed entity creation', [
@@ -1097,7 +1236,7 @@ class GenericEntityResolver
 
                 // No subflow - use auto creation
                 return $this->createEntityAuto($fieldName, $config, $identifier, $context);
-            } elseif (str_contains($response, 'no') || str_contains($response, 'cancel')) {
+            } elseif ($isDecline) {
                 // User declined
                 $context->forget("{$fieldName}_creation_step");
                 $context->forget("{$fieldName}_identifier");
@@ -1531,13 +1670,25 @@ class GenericEntityResolver
             // This ensures each product/entity gets its own data collection
             $newCollectedData = [];
 
-            // Set the identifier in collected_data
+            // Set the identifier in collected_data for the subflow
             // Use the identifier field name from config, or default to 'name'
             $identifierField = $config['identifier_field'] ?? 'name';
-            $newCollectedData[$identifierField] = $identifier;
-
-            // Also set 'name' if it's different from identifier field
-            if ($identifierField !== 'name') {
+            
+            // Check if we have extracted data from an object identifier
+            $extractedData = $context->get("{$fieldName}_extracted_data", []);
+            
+            // If we have extracted data (identifier was an object), use all its fields
+            if (!empty($extractedData)) {
+                foreach ($extractedData as $key => $value) {
+                    if (!empty($value)) {
+                        $newCollectedData[$key] = $value;
+                    }
+                }
+                // Clear the extracted data after using it
+                $context->forget("{$fieldName}_extracted_data");
+            } else {
+                // For subflows, only set 'name' field, not the entity field itself
+                // The entity field will be populated with full data when entity is resolved
                 $newCollectedData['name'] = $identifier;
             }
 
@@ -1563,9 +1714,11 @@ class GenericEntityResolver
             ]);
 
             // Mark that we're in a subflow (for autoResolveEntity to detect)
+            // Store parent's field name so merge knows where to put the data
             $context->set('active_subflow', [
                 'workflow_class' => $config['subflow'],
-                'field_name' => $fieldName,
+                'field_name' => $fieldName,  // Parent workflow's field name (e.g., 'products')
+                'parent_field_name' => $fieldName,  // Explicitly store for merge
                 'entity_name' => $entityName,
                 'step_prefix' => $stepPrefix,
             ]);

@@ -25,7 +25,18 @@ class StartWorkflowHandler implements MessageHandlerInterface
         UnifiedActionContext $context,
         array $options = []
     ): AgentResponse {
-        $workflowClass = $this->detectWorkflow($message);
+        // Check if there's a suggested workflow class from a previous suggestion
+        $suggestedWorkflowClass = $context->get('suggested_workflow_class');
+        
+        if ($suggestedWorkflowClass) {
+            Log::channel('ai-engine')->info('Using suggested workflow class', [
+                'workflow' => $suggestedWorkflowClass,
+            ]);
+            $workflowClass = $suggestedWorkflowClass;
+            $context->set('suggested_workflow_class', null); // Clear after use
+        } else {
+            $workflowClass = $this->detectWorkflow($message);
+        }
         
         if (!$workflowClass) {
             Log::channel('ai-engine')->warning('No workflow detected');
@@ -46,6 +57,45 @@ class StartWorkflowHandler implements MessageHandlerInterface
             Log::channel('ai-engine')->info('Starting new workflow', [
                 'workflow' => $workflowClass,
             ]);
+        }
+        
+        // Check if there's pre-extracted data from a suggestion
+        $suggestedData = $context->get('suggested_transaction_data');
+        $originalMessage = $context->get('original_message');
+        
+        if ($suggestedData) {
+            Log::channel('ai-engine')->info('Starting workflow with pre-extracted data from suggestion', [
+                'workflow' => $workflowClass,
+                'suggested_data' => $suggestedData,
+            ]);
+            
+            // Pre-populate collected_data with the extracted data
+            $collectedData = $context->get('collected_data', []);
+            
+            // Map extracted data to workflow fields
+            if (isset($suggestedData['customer_name'])) {
+                $collectedData['customer_id'] = $suggestedData['customer_name'];
+                $collectedData['user_inputs']['customer_id'] = $suggestedData['customer_name'];
+            }
+            if (isset($suggestedData['vendor_name'])) {
+                $collectedData['vendor_id'] = $suggestedData['vendor_name'];
+                $collectedData['user_inputs']['vendor_id'] = $suggestedData['vendor_name'];
+            }
+            if (isset($suggestedData['items'])) {
+                $collectedData['items'] = $suggestedData['items'];
+                $collectedData['user_inputs']['items'] = $suggestedData['items'];
+            }
+            
+            $context->set('collected_data', $collectedData);
+            
+            // Clear the suggestion data so it's not reused
+            $context->set('suggested_transaction_data', null);
+            
+            // Use original message for workflow processing
+            if ($originalMessage) {
+                $message = $originalMessage;
+                $context->set('original_message', null);
+            }
         }
         
         return $this->agentMode->startWorkflow($workflowClass, $context, $message);

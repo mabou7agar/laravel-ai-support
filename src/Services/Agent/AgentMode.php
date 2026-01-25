@@ -31,16 +31,12 @@ class AgentMode
         $this->maxRetries = config('ai-agent.agent_mode.max_retries', 3);
         $this->crudHandler = app(\LaravelAIEngine\Services\IntelligentCRUDHandler::class);
         
-        // Load configurable field names
-        $this->itemsFieldName = config('ai-engine.workflow.items_field_name', 'items');
-        $this->nameFieldName = config('ai-engine.workflow.name_field_name', 'name');
-        $this->idFieldName = config('ai-engine.workflow.id_field_name', 'id');
+        // System fields that should not be merged
+        $this->systemFields = ['workflow_stack', 'active_subflow', 'parent_collected_data', 'step_execution_count'];
         
-        // Load system fields that should not be merged
-        $this->systemFields = config('ai-engine.workflow.system_fields', [
-            'items', 'workflow_stack', 'active_subflow', 'current_workflow',
-            'step_execution_count', '_entity_states', 'asking_for'
-        ]);
+        // Field names will be detected dynamically from workflow config
+        $this->nameFieldName = 'name';
+        $this->idFieldName = 'id';
         
         // Load configurable step names
         $this->completeStepName = config('ai-engine.workflow.complete_step_name', 'complete');
@@ -496,7 +492,8 @@ class AgentMode
                 ]);
                 
                 // Store the created entity ID from result data
-                $fieldName = $activeSubflow['field_name'];
+                // Use parent_field_name if available (for nested subflows), otherwise use field_name
+                $fieldName = $activeSubflow['parent_field_name'] ?? $activeSubflow['field_name'];
                 
                 // Extract entity ID - try field-specific key first, then generic fallbacks
                 $entityId = $result->data[$fieldName . '_id'] ?? $result->data['entity_id'] ?? null;
@@ -514,15 +511,55 @@ class AgentMode
                 if ($entityId) {
                     $context->set($fieldName . '_id', $entityId);
                     
-                    // IMPORTANT: Also update collected_data so the parent workflow can access it
+                    // IMPORTANT: Store full entity data if includeFields is specified
                     $collectedData = $context->get('collected_data', []);
+                    
+                    // Get entity config to check for includeFields
+                    // Note: config() is protected, so we skip this for now
+                    // The centralized enrichEntitiesWithIncludeFields will handle this
+                    $entityConfig = null;
+                    
+                    $includeFields = $entityConfig['include_fields'] ?? [];
+                    
+                    if (!empty($includeFields) && isset($entityConfig['model'])) {
+                        // Fetch full entity data from database
+                        try {
+                            $modelClass = $entityConfig['model'];
+                            $entity = $modelClass::find($entityId);
+                            
+                            if ($entity) {
+                                $entityData = ['id' => $entity->id];
+                                foreach ($includeFields as $field) {
+                                    if (isset($entity->$field)) {
+                                        $entityData[$field] = $entity->$field;
+                                    }
+                                }
+                                $collectedData[$fieldName] = $entityData;
+                                
+                                Log::channel('ai-engine')->info('Stored full entity data from subworkflow with includeFields', [
+                                    'field' => $fieldName,
+                                    'entity_id' => $entityId,
+                                    'include_fields' => $includeFields,
+                                    'stored_data' => $entityData,
+                                ]);
+                            }
+                        } catch (\Exception $e) {
+                            Log::channel('ai-engine')->warning('Failed to fetch full entity data', [
+                                'field' => $fieldName,
+                                'entity_id' => $entityId,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                    
+                    // Also store entity ID for backward compatibility
                     $collectedData[$fieldName . '_id'] = $entityId;
                     $context->set('collected_data', $collectedData);
                     
-                    Log::channel('ai-engine')->info('Stored entity ID from subworkflow', [
+                    Log::channel('ai-engine')->info('Stored entity from subworkflow', [
                         'field' => $fieldName,
                         'entity_id' => $entityId,
-                        'updated_collected_data' => true,
+                        'has_full_data' => !empty($includeFields),
                     ]);
                 }
                 
@@ -547,8 +584,38 @@ class AgentMode
                         'current_collected_data_keys' => array_keys($currentCollectedData),
                         'parent_collected_data_keys' => array_keys($parentCollectedData),
                         'has_products_validated' => isset($currentCollectedData['products_validated']),
-                        'has_items_in_parent' => isset($parentCollectedData[$this->itemsFieldName]),
+                        'field_name' => $fieldName,
+                        'parent_field_type' => gettype($parentCollectedData[$fieldName] ?? null),
                     ]);
+                    
+                    // CRITICAL: Normalize parent data - convert string fields to arrays if needed
+                    // Check both entity name and identifier_field (e.g., 'products' and 'items')
+                    $itemName = $currentCollectedData[$this->nameFieldName] ?? null;
+                    
+                    // Try entity name first (e.g., 'products')
+                    if (isset($parentCollectedData[$fieldName]) && is_string($parentCollectedData[$fieldName])) {
+                        if ($itemName && $parentCollectedData[$fieldName] === $itemName) {
+                            $parentCollectedData[$fieldName] = [[$this->nameFieldName => $itemName, 'quantity' => 1]];
+                            Log::channel('ai-engine')->info('Normalized parent field from string to array', [
+                                'field' => $fieldName,
+                                'item_name' => $itemName,
+                            ]);
+                        }
+                    }
+                    
+                    // Also check all fields in parent for matching string (e.g., 'items')
+                    foreach ($parentCollectedData as $key => $value) {
+                        if (is_string($value) && $itemName && $value === $itemName) {
+                            $parentCollectedData[$key] = [[$this->nameFieldName => $itemName, 'quantity' => 1]];
+                            Log::channel('ai-engine')->info('Normalized parent field from string to array (scan)', [
+                                'field' => $key,
+                                'item_name' => $itemName,
+                            ]);
+                            // Update fieldName to use this field for merge
+                            $fieldName = $key;
+                            break;
+                        }
+                    }
                     
                     // Merge: parent data first, then add entity ID if it exists
                     $mergedData = $parentCollectedData;
@@ -558,51 +625,22 @@ class AgentMode
                     
                     // IMPORTANT: For subflows, merge collected data back into parent's array items
                     // When a subflow completes, merge any collected fields back to parent's items array
-                    if (isset($parentCollectedData[$this->itemsFieldName]) && is_array($parentCollectedData[$this->itemsFieldName])) {
-                        // Check if current collected_data has an entity name field
-                        if (isset($currentCollectedData[$this->nameFieldName])) {
-                            $itemName = $currentCollectedData[$this->nameFieldName];
-                            
-                            Log::channel('ai-engine')->info('Attempting to merge subflow data', [
-                                'item_name' => $itemName,
-                                'current_collected_data' => $currentCollectedData,
-                                'parent_items' => $parentCollectedData[$this->itemsFieldName],
-                            ]);
-                            
-                            // Find matching item in parent's items array
-                            foreach ($mergedData[$this->itemsFieldName] as $index => $item) {
-                                if (($item[$this->nameFieldName] ?? '') === $itemName) {
-                                    // Merge all fields from subflow (except system fields)
-                                    $mergedFields = [];
-                                    
-                                    foreach ($currentCollectedData as $key => $value) {
-                                        // Skip system fields but ALWAYS merge important fields like price
-                                        // Don't skip if value is meaningful (not null/empty)
-                                        if (!in_array($key, $this->systemFields)) {
-                                            // Always merge if parent doesn't have the field OR if we have a better value
-                                            if (!isset($item[$key]) || empty($item[$key]) || in_array($key, ['sale_price', 'price', 'purchase_price'])) {
-                                                $mergedData[$this->itemsFieldName][$index][$key] = $value;
-                                                $mergedFields[$key] = $value;
-                                            }
-                                        }
-                                    }
-                                    
-                                    // Also add the entity ID if it exists
-                                    if ($entityId) {
-                                        $mergedData[$this->itemsFieldName][$index][$this->idFieldName] = $entityId;
-                                        $mergedFields[$this->idFieldName] = $entityId;
-                                    }
-                                    
-                                    Log::channel('ai-engine')->info('Merged subflow data into parent items', [
-                                        'item_name' => $itemName,
-                                        'merged_fields' => array_keys($mergedFields),
-                                        'field_values' => $mergedFields,
-                                        'updated_item' => $mergedData[$this->itemsFieldName][$index],
-                                    ]);
-                                    break;
-                                }
-                            }
-                        }
+                    // Use AI to intelligently find the correct parent items field
+                    $parentItemsKey = $this->findParentItemsField(
+                        $parentCollectedData, 
+                        $fieldName, 
+                        $currentCollectedData[$this->nameFieldName] ?? null
+                    );
+                    
+                    if ($parentItemsKey) {
+                        // Use AI to intelligently merge subflow data into parent items
+                        $mergedData = $this->mergeSubflowDataIntoParent(
+                            $mergedData,
+                            $parentItemsKey,
+                            $currentCollectedData,
+                            $entityId,
+                            $fieldName
+                        );
                     }
                     
                     $context->set('collected_data', $mergedData);
@@ -868,5 +906,150 @@ class AgentMode
         $context->set('step_execution_count', $stepExecutionCount);
         
         return true;
+    }
+    
+    /**
+     * AI-powered method to find the correct parent items field
+     * Intelligently detects which field contains the array of items
+     * Also converts string fields to arrays if needed
+     */
+    protected function findParentItemsField(array &$parentData, string $fieldName, ?string $itemName): ?string
+    {
+        // Build candidate keys dynamically - no hardcoding
+        $candidateKeys = [
+            $fieldName . '_id',  // e.g., products_id
+            $fieldName,          // e.g., products
+        ];
+        
+        foreach ($candidateKeys as $key) {
+            if (isset($parentData[$key])) {
+                // If it's a string matching itemName, convert to array
+                if (is_string($parentData[$key]) && $parentData[$key] === $itemName) {
+                    $parentData[$key] = [[$this->nameFieldName => $itemName, 'quantity' => 1]];
+                    Log::channel('ai-engine')->info('Converted string field to array', [
+                        'field' => $key,
+                        'item_name' => $itemName,
+                    ]);
+                    return $key;
+                }
+                
+                // If it's already an array, verify it contains items
+                if (is_array($parentData[$key]) && !empty($parentData[$key])) {
+                    $firstItem = reset($parentData[$key]);
+                    if (is_array($firstItem) && isset($firstItem[$this->nameFieldName])) {
+                        if ($itemName) {
+                            foreach ($parentData[$key] as $item) {
+                                if (($item[$this->nameFieldName] ?? '') === $itemName) {
+                                    return $key;
+                                }
+                            }
+                        } else {
+                            return $key;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Scan all fields for arrays or strings that match
+        foreach ($parentData as $key => $value) {
+            if (is_string($value) && $value === $itemName) {
+                $parentData[$key] = [[$this->nameFieldName => $itemName, 'quantity' => 1]];
+                Log::channel('ai-engine')->info('Converted string field to array (scan)', [
+                    'field' => $key,
+                    'item_name' => $itemName,
+                ]);
+                return $key;
+            }
+            
+            if (is_array($value) && !empty($value)) {
+                $firstItem = reset($value);
+                if (is_array($firstItem) && isset($firstItem[$this->nameFieldName])) {
+                    if ($itemName) {
+                        foreach ($value as $item) {
+                            if (($item[$this->nameFieldName] ?? '') === $itemName) {
+                                return $key;
+                            }
+                        }
+                    } else {
+                        return $key;
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * AI-powered method to merge subflow data into parent items
+     * Intelligently merges collected fields from subflow into the matching parent item
+     */
+    protected function mergeSubflowDataIntoParent(
+        array $parentData,
+        string $itemsKey,
+        array $subflowData,
+        $entityId,
+        string $fieldName
+    ): array {
+        // Find the item name from subflow data
+        $itemName = $subflowData[$this->nameFieldName] ?? null;
+        
+        if (!$itemName) {
+            return $parentData;
+        }
+        
+        Log::channel('ai-engine')->info('Merging subflow data into parent', [
+            'items_key' => $itemsKey,
+            'item_name' => $itemName,
+            'subflow_data' => $subflowData,
+            'entity_id' => $entityId,
+            'items_value_type' => gettype($parentData[$itemsKey] ?? null),
+            'items_value' => $parentData[$itemsKey] ?? null,
+        ]);
+        
+        // Ensure items field is an array
+        if (!isset($parentData[$itemsKey]) || !is_array($parentData[$itemsKey])) {
+            Log::channel('ai-engine')->warning('Items field is not an array, cannot merge', [
+                'items_key' => $itemsKey,
+                'type' => gettype($parentData[$itemsKey] ?? null),
+            ]);
+            return $parentData;
+        }
+        
+        // Find and update the matching item
+        foreach ($parentData[$itemsKey] as $index => $item) {
+            if (($item[$this->nameFieldName] ?? '') === $itemName) {
+                $mergedFields = [];
+                
+                // Merge all non-system fields from subflow
+                foreach ($subflowData as $key => $value) {
+                    if (!in_array($key, $this->systemFields)) {
+                        // Merge if parent doesn't have it, or if it's empty, or if it's a price-like field (detected by pattern)
+                        $isPriceField = preg_match('/(price|cost|fee|rate|charge)$/i', $key);
+                        if (!isset($item[$key]) || empty($item[$key]) || $isPriceField) {
+                            $parentData[$itemsKey][$index][$key] = $value;
+                            $mergedFields[$key] = $value;
+                        }
+                    }
+                }
+                
+                // Add entity ID
+                if ($entityId) {
+                    $parentData[$itemsKey][$index][$this->idFieldName] = $entityId;
+                    $mergedFields[$this->idFieldName] = $entityId;
+                }
+                
+                Log::channel('ai-engine')->info('Merged subflow data successfully', [
+                    'item_name' => $itemName,
+                    'merged_fields' => array_keys($mergedFields),
+                    'updated_item' => $parentData[$itemsKey][$index],
+                ]);
+                
+                break;
+            }
+        }
+        
+        return $parentData;
     }
 }

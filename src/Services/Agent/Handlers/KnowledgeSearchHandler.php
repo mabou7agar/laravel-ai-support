@@ -48,6 +48,28 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
             ]);
         }
         
+        // FAST PATH: For aggregate queries, use smart aggregate directly
+        if ($this->isAggregateQuery($message) && !empty($ragCollections)) {
+            $aggregateData = $this->rag->getSmartAggregateData($ragCollections, $message, $context->userId);
+            
+            if (!empty($aggregateData)) {
+                $responseText = $this->formatAggregateResponse($aggregateData);
+                
+                Log::channel('ai-engine')->info('KnowledgeSearchHandler: Fast aggregate path', [
+                    'collections' => array_keys($aggregateData),
+                ]);
+                
+                $response = AgentResponse::conversational(
+                    message: $responseText,
+                    context: $context
+                );
+                $context->metadata['fast_path'] = true;
+                $context->metadata['aggregate_data'] = $aggregateData;
+                $context->addAssistantMessage($responseText);
+                return $response;
+            }
+        }
+        
         $conversationHistory = $context->conversationHistory ?? [];
         
         $ragOptions = [
@@ -86,5 +108,45 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
     public function canHandle(string $action): bool
     {
         return $action === 'search_knowledge';
+    }
+    
+    protected function isAggregateQuery(string $message): bool
+    {
+        $query = strtolower($message);
+        $patterns = ['how many', 'how much', 'count', 'total', 'number of'];
+        
+        foreach ($patterns as $pattern) {
+            if (str_contains($query, $pattern)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    protected function formatAggregateResponse(array $aggregateData): string
+    {
+        $parts = [];
+        foreach ($aggregateData as $name => $data) {
+            $count = $data['count'] ?? 0;
+            $displayName = $data['display_name'] ?? $name;
+            $filters = $data['filters_applied'] ?? [];
+            
+            if ($count > 0) {
+                $filterStr = "";
+                if (!empty($filters['created_at'])) {
+                    $dateFilter = $filters['created_at'];
+                    if (is_array($dateFilter)) {
+                        $filterStr = " (from {$dateFilter['gte']} to {$dateFilter['lte']})";
+                    } else {
+                        $filterStr = " (on {$dateFilter})";
+                    }
+                }
+                $parts[] = "**{$count}** {$displayName}(s){$filterStr}";
+            }
+        }
+        
+        return !empty($parts) 
+            ? "Based on your data:\n- " . implode("\n- ", $parts)
+            : "No matching records found.";
     }
 }

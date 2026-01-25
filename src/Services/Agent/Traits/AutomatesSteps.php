@@ -110,20 +110,20 @@ trait AutomatesSteps
         if (!empty($config['entities'])) {
             foreach ($config['entities'] as $entityName => $entityConfig) {
                 $identifierField = $entityConfig['identifier_field'] ?? $entityName;
-                
+
                 \Illuminate\Support\Facades\Log::info('AutomatesSteps: Processing entity', [
                     'entity' => $entityName,
                     'identifier_field' => $identifierField,
                     'is_multiple' => ($entityConfig['multiple'] ?? false),
                     'field_exists' => isset($fields[$identifierField]),
                 ]);
-                
+
                 // Ensure 'multiple' and 'is_array' flags are set if entity is multiple
                 if (($entityConfig['multiple'] ?? false)) {
                     if (isset($fields[$identifierField])) {
                         $fields[$identifierField]['multiple'] = true;
                         $fields[$identifierField]['is_array'] = true;
-                        
+
                         \Illuminate\Support\Facades\Log::info('AutomatesSteps: Set multiple flags on field', [
                             'field' => $identifierField,
                             'entity' => $entityName,
@@ -201,16 +201,16 @@ trait AutomatesSteps
                         // Don't add empty arrays - let the workflow prompt for them
                         unset($mappedData[$key]);
                     }
-                    
+
                     // CRITICAL FIX: Convert strings to arrays for entity fields that expect multiple items
                     $fieldConfig = $fields[$key] ?? [];
                     if (is_string($value) && is_array($fieldConfig)) {
                         $fieldType = $fieldConfig['type'] ?? 'string';
                         $isMultiple = $fieldConfig['multiple'] ?? false;
-                        
+
                         // If field is entity type with multiple=true, convert string to array
                         if ($fieldType === 'entity' && $isMultiple) {
-                            $mappedData[$key] = [['name' => $value, 'quantity' => 1]];
+                            $mappedData[$key] = \LaravelAIEngine\Services\AI\FieldDetector::stringToItemArray($value, $fieldConfig);
                             \Illuminate\Support\Facades\Log::info('Auto-converted string to array during extraction', [
                                 'field' => $key,
                                 'original' => $value,
@@ -223,6 +223,11 @@ trait AutomatesSteps
 
                 // Merge mapped data with any existing collected data
                 $collectedData = array_merge($collectedData, $mappedData);
+
+                // CRITICAL: Normalize data types based on field configuration
+                // Convert strings to arrays for entity fields with multiple=true
+                $collectedData = $this->normalizeCollectedDataTypes($collectedData, $fields);
+
                 $context->set('collected_data', $collectedData);
 
                 \Illuminate\Support\Facades\Log::info('AI extracted data from message', [
@@ -314,6 +319,11 @@ trait AutomatesSteps
         $collectedData = $context->get('collected_data', []);
         $entities = $config['entities'] ?? [];
 
+        // CRITICAL: Enrich entity data with includeFields before confirmation
+        // This ensures entities are stored as objects with full data, not just IDs/strings
+        $collectedData = $this->enrichEntitiesWithIncludeFields($collectedData, $entities, $context);
+        $context->set('collected_data', $collectedData);
+
         // Prepare data for display
         $dataForDisplay = [];
 
@@ -348,36 +358,61 @@ trait AutomatesSteps
                 $modelClass = $entityConfig['model'] ?? null;
 
                 if (is_array($entityId)) {
-                    // For multiple entities, get the actual data from collected_data
+                    // For multiple entities, check identifier_field first, then entity name
                     $identifierField = $entityConfig['identifier_field'] ?? $entityName;
-                    $entityData = $collectedData[$identifierField] ?? [];
-                    
-                    // Log what we're getting from collected_data
-                    \Illuminate\Support\Facades\Log::info('AutomatesSteps: Getting entity data for confirmation', [
-                        'entity' => $entityName,
-                        'identifier_field' => $identifierField,
-                        'entity_data' => $entityData,
-                        'has_prices' => isset($entityData[0]['sale_price']) || isset($entityData[0]['price']),
-                    ]);
-                    
+                    $entityData = [];
+
+                    // Priority 1: Check identifier_field (e.g., 'items')
+                    if (isset($collectedData[$identifierField]) && is_array($collectedData[$identifierField])) {
+                        $entityData = $collectedData[$identifierField];
+                    }
+                    // Priority 2: Check entity name (e.g., 'products')
+                    elseif (isset($collectedData[$entityName]) && is_array($collectedData[$entityName])) {
+                        $entityData = $collectedData[$entityName];
+                    }
+                    // Priority 3: Check with _id suffix (backward compatibility)
+                    elseif (isset($collectedData[$entityName . '_id']) && is_array($collectedData[$entityName . '_id'])) {
+                        $entityData = $collectedData[$entityName . '_id'];
+                    }
+
                     $dataForDisplay[$entityName] = $entityData;
                 } else {
-                    // For single entity, get the name
-                    $entityName_value = $entityId;
-                    if ($modelClass && class_exists($modelClass)) {
-                        try {
-                            $entity = $modelClass::find($entityId);
-                            if ($entity) {
-                                $entityName_value = $entity->name ?? $entity->title ?? $entity->label ?? $entityId;
-                            }
-                        } catch (\Exception $e) {
-                            // Use ID as fallback
-                        }
+                    // For single entity, check if enriched data exists in collected_data first
+                    $entityData = $collectedData[$entityName] ?? null;
+
+                    // Handle case where data is stored as array with one element [{...}]
+                    if (is_array($entityData) && isset($entityData[0]) && is_array($entityData[0])) {
+                        $entityData = $entityData[0];
                     }
-                    $dataForDisplay[$entityName] = $entityName_value;
+
+                    if (is_array($entityData) && isset($entityData['id'])) {
+                        // Use enriched data from collected_data
+                        $dataForDisplay[$entityName] = $entityData['name'] ?? $entityData['title'] ?? $entityId;
+                    } else {
+                        // Fallback: get the name from database
+                        $entityName_value = $entityId;
+                        if ($modelClass && class_exists($modelClass)) {
+                            try {
+                                $entity = $modelClass::find($entityId);
+                                if ($entity) {
+                                    $entityName_value = $entity->name ?? $entity->title ?? $entity->label ?? $entityId;
+                                }
+                            } catch (\Exception $e) {
+                                // Use ID as fallback
+                            }
+                        }
+                        $dataForDisplay[$entityName] = $entityName_value;
+                    }
                 }
             }
         }
+
+        // Log what data we're about to display
+        \Illuminate\Support\Facades\Log::info('AutomatesSteps: Data prepared for confirmation display', [
+            'dataForDisplay' => $dataForDisplay,
+            'collected_data' => $collectedData,
+            'entities' => array_keys($entities),
+        ]);
 
         // Create user-friendly confirmation message using AI enhancement
         $message = $this->enhanceConfirmationMessage($dataForDisplay, $config);
@@ -398,29 +433,61 @@ trait AutomatesSteps
                     $lastMsg = end($lastUserMessage);
                     $userResponse = trim($lastMsg['content'] ?? '');
 
-                    // Check if user wants to modify the data (add/remove/change)
-                    if (preg_match('/(add|remove|delete|change|modify|update)/i', $userResponse)) {
-                        // User wants to modify - use AI to interpret the modification
-                        $intelligentService = app(\LaravelAIEngine\Services\IntelligentEntityService::class);
-                        $modification = $intelligentService->interpretModificationRequest($userResponse, $dataForDisplay);
+                    // Use IntentAnalysisService to determine if user wants to modify
+                    $intentAnalysis = app(\LaravelAIEngine\Services\IntentAnalysisService::class)->analyzeMessageIntent($userResponse);
+                    $isModification = in_array($intentAnalysis['intent'], ['modify', 'update', 'change', 'new_request']);
+                    
+                    // Also check if the message contains data that looks like a modification (e.g., "set price 600")
+                    if (!$isModification && !empty($userResponse) && $intentAnalysis['intent'] !== 'confirm' && $intentAnalysis['intent'] !== 'reject') {
+                        // If not a simple confirm/reject, treat as potential modification
+                        $isModification = true;
+                    }
+                    
+                    if ($isModification) {
+                        // User wants to modify - apply to full collected_data, then extract changes to user_inputs
+                        $collectedData = $context->get('collected_data', []);
+                        $userInputs = $collectedData['user_inputs'] ?? [];
                         
-                        if ($modification) {
-                            // Apply the modification to collected_data
-                            $collectedData = $context->get('collected_data', []);
-                            $collectedData = $this->applyModification($collectedData, $modification, $config);
-                            $context->set('collected_data', $collectedData);
+                        // Build merged data for AI to modify (resolved data + user inputs)
+                        // Exclude user_inputs key itself from the data sent to AI
+                        $dataForModification = array_filter($collectedData, fn($k) => $k !== 'user_inputs', ARRAY_FILTER_USE_KEY);
+                        
+                        // Apply modification to merged data
+                        $modifiedData = $this->applyAIModification($userResponse, $dataForModification, $config);
+                        
+                        if ($modifiedData !== null) {
+                            // Extract user modifications (fields that changed)
+                            foreach ($modifiedData as $key => $value) {
+                                // Update main collected_data
+                                $collectedData[$key] = $value;
+                                
+                                // Also store in user_inputs to preserve the modification
+                                if (!isset($collectedData['user_inputs'])) {
+                                    $collectedData['user_inputs'] = [];
+                                }
+                                $collectedData['user_inputs'][$key] = $value;
+                            }
                             
-                            // Reset confirmation to show updated data
-                            $context->forget('confirmation_message_shown');
-                            $context->forget('awaiting_confirmation');
+                            $context->set('collected_data', $collectedData);
+
+                            // Keep confirmation flags set so next "yes" proceeds directly
+                            // Don't reset - the summary we show IS the confirmation
+                            $context->set('confirmation_message_shown', true);
+                            $context->set('awaiting_confirmation', true);
+
+                            // Use workflow's confirmation formatting (same as regular confirmation)
+                            $summary = $this->enhanceConfirmationMessage($collectedData, $config);
+                            
+                            // Prepend "Updated!" to the confirmation message
+                            $message = "✅ **Updated!**\n\n" . $summary;
                             
                             return ActionResult::needsUserInput(
-                                message: 'Updated. Please review the changes.',
+                                message: $message,
                                 metadata: ['modification_applied' => true]
                             );
                         }
                     }
-                    
+
                     // Use AI to interpret confirmation intent (language-agnostic)
                     $intelligentService = app(\LaravelAIEngine\Services\IntelligentEntityService::class);
                     $intent = $intelligentService->interpretConfirmationIntent($userResponse);
@@ -433,7 +500,7 @@ trait AutomatesSteps
                         $context->forget('confirmation_message_shown');
                         $context->forget('awaiting_confirmation');
                         $context->forget('user_confirmed_action');
-                        
+
                         return ActionResult::failure(
                             error: 'Action cancelled by user',
                             data: ['user_cancelled' => true]
@@ -461,7 +528,7 @@ trait AutomatesSteps
         $value = $modification['value'] ?? null;
         $itemName = $modification['item_name'] ?? null;
         $itemField = $modification['item_field'] ?? null;
-        
+
         Log::channel('ai-engine')->info('AutomatesSteps: Applying modification', [
             'action' => $action,
             'field' => $field,
@@ -469,7 +536,7 @@ trait AutomatesSteps
             'item_field' => $itemField,
             'value' => $value,
         ]);
-        
+
         if ($action === 'remove' && $field && $itemName) {
             // Remove item from array field
             if (isset($collectedData[$field]) && is_array($collectedData[$field])) {
@@ -477,7 +544,7 @@ trait AutomatesSteps
                     $collectedData[$field],
                     fn($item) => !str_contains(strtolower($item['name'] ?? ''), strtolower($itemName))
                 ));
-                
+
                 Log::channel('ai-engine')->info('AutomatesSteps: Removed item from array', [
                     'field' => $field,
                     'item_name' => $itemName,
@@ -488,27 +555,27 @@ trait AutomatesSteps
             // Update a specific field within an array item
             // Get field aliases from workflow config (prioritize workflow config over global)
             $fieldAliases = $config['field_aliases'] ?? config('ai-engine.workflow.field_aliases', []);
-            
+
             // Get array field name mapping from workflow config (prioritize workflow config over global)
             $arrayFieldMap = $config['array_field_mapping'] ?? config('ai-engine.workflow.array_field_mapping', []);
-            
+
             // Map the field name if needed
             $actualField = $arrayFieldMap[$field] ?? $field;
-            
+
             if (isset($collectedData[$actualField]) && is_array($collectedData[$actualField])) {
                 foreach ($collectedData[$actualField] as $index => $item) {
                     // Match item by name (case-insensitive partial match)
                     if (isset($item['name']) && str_contains(strtolower($item['name']), strtolower($itemName))) {
                         // Update the specific field
                         $collectedData[$actualField][$index][$itemField] = $value;
-                        
+
                         // Also update field aliases if configured
                         if (isset($fieldAliases[$itemField])) {
                             foreach ($fieldAliases[$itemField] as $alias) {
                                 $collectedData[$actualField][$index][$alias] = $value;
                             }
                         }
-                        
+
                         Log::channel('ai-engine')->info('AutomatesSteps: Updated item field', [
                             'requested_field' => $field,
                             'actual_field' => $actualField,
@@ -534,7 +601,7 @@ trait AutomatesSteps
             }
             if (is_array($collectedData[$field])) {
                 $collectedData[$field][] = $value;
-                
+
                 Log::channel('ai-engine')->info('AutomatesSteps: Added item to array', [
                     'field' => $field,
                     'new_count' => count($collectedData[$field]),
@@ -543,14 +610,101 @@ trait AutomatesSteps
         } elseif ($action === 'change' && $field) {
             // Change field value
             $collectedData[$field] = $value;
-            
+
             Log::channel('ai-engine')->info('AutomatesSteps: Changed field value', [
                 'field' => $field,
                 'new_value' => $value,
             ]);
         }
-        
+
         return $collectedData;
+    }
+
+    /**
+     * Apply modification using AI to interpret user request and modify full JSON
+     * Sends the complete collected data to AI and asks it to apply the user's modification
+     */
+    protected function applyAIModification(string $userRequest, array $collectedData, array $config): ?array
+    {
+        try {
+            // Use AIEngineService directly to avoid workflow detection
+            $aiService = app(\LaravelAIEngine\Services\AIEngineService::class);
+            
+            // Build prompt with full JSON
+            $jsonData = json_encode($collectedData, JSON_PRETTY_PRINT);
+            
+            // Get modification rules from workflow config or use generic defaults
+            $modificationRules = $config['modification_rules'] ?? 
+                "1. Only modify what the user explicitly requested\n" .
+                "2. Preserve all other fields exactly as they are\n" .
+                "3. Return valid JSON only, no explanations";
+            
+            $prompt = <<<PROMPT
+You are a data modification assistant. The user wants to modify the following data:
+
+Current Data (JSON):
+```json
+{$jsonData}
+```
+
+User Request: "{$userRequest}"
+
+Apply the user's modification to the data and return ONLY the modified JSON.
+Rules:
+{$modificationRules}
+
+Modified JSON:
+PROMPT;
+
+            $response = $aiService->generate(new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                maxTokens: 1000,
+                temperature: 0
+            ));
+
+            $content = $response->getContent() ?? '';
+            
+            // Extract JSON from response
+            if (preg_match('/```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```/s', $content, $matches)) {
+                $content = $matches[1];
+            }
+            
+            // Try to parse JSON
+            $modifiedData = json_decode($content, true);
+            
+            if (json_last_error() === JSON_ERROR_NONE && is_array($modifiedData)) {
+                Log::channel('ai-engine')->info('AutomatesSteps: AI modification applied', [
+                    'user_request' => $userRequest,
+                    'original_keys' => array_keys($collectedData),
+                    'modified_keys' => array_keys($modifiedData),
+                ]);
+                
+                return $modifiedData;
+            }
+            
+            Log::channel('ai-engine')->warning('AutomatesSteps: AI modification returned invalid JSON', [
+                'user_request' => $userRequest,
+                'response' => substr($content, 0, 500),
+            ]);
+            
+            // Fallback to old method
+            $intelligentService = app(\LaravelAIEngine\Services\IntelligentEntityService::class);
+            $modification = $intelligentService->interpretModificationRequest($userRequest, $collectedData);
+            
+            if ($modification) {
+                return $this->applyModification($collectedData, $modification, $config);
+            }
+            
+            return null;
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('AutomatesSteps: AI modification failed', [
+                'error' => $e->getMessage(),
+                'user_request' => $userRequest,
+            ]);
+            
+            return null;
+        }
     }
 
     /**
@@ -596,23 +750,28 @@ trait AutomatesSteps
         \Illuminate\Support\Facades\Log::info('AutomatesSteps: Sending data for confirmation enhancement', [
             'formatted_data' => $formattedData,
         ]);
-        
+
         $prompt .= "Data:\n" . json_encode($formattedData, JSON_PRETTY_PRINT) . "\n\n";
         $prompt .= "IMPORTANT: Use the prices from the data provided. Do NOT look up prices from any database.\n\n";
         $prompt .= "Return ONLY the formatted confirmation message text, starting with '**Please confirm the following details:**'";
 
         try {
-            $chatService = app(\LaravelAIEngine\Services\ChatService::class);
+            // Use direct AI call instead of chat service to avoid workflow detection
+            $aiService = app(\LaravelAIEngine\Services\AIEngineService::class);
 
-            $response = $chatService->processMessage(
-                message:    $prompt,
-                sessionId:  'confirmation_enhancement_' . uniqid(),
-                useMemory:  false,
-                useActions: false,
-                userId:     null
-            );
+            $response = $aiService->generate(new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                maxTokens: 500,
+                temperature: 0.3
+            ));
 
-            return $response->getContent() ?? $this->fallbackConfirmationMessage($formattedData);
+            $content = $response->getContent() ?? null;
+
+            if ($content && str_contains($content, 'confirm')) {
+                return $content;
+            }
+
+            return $this->fallbackConfirmationMessage($formattedData);
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('AutomatesSteps: AI enhancement failed, using fallback', [
@@ -629,28 +788,24 @@ trait AutomatesSteps
     {
         $message = "**Please confirm the following details:**\n\n";
 
-        // Fields to skip (internal/duplicate fields)
-        $skipFields = ['name', 'email', 'product_name', 'collected_data', 'items'];
-
-        // Field label mapping for better UX
-        $labelMap = [
-            'customer_id' => 'Customer',
-            'sale_price' => 'Price',
-            'purchase_price' => 'Cost',
-            'quantity' => 'Quantity',
-            'product_type' => 'Type',
-            'category_id' => 'Category',
-            'unit_id' => 'Unit',
-        ];
+        // Fields to skip - use patterns instead of hardcoded names
+        $skipPatterns = ['collected_data'];
 
         foreach ($data as $key => $value) {
-            // Skip internal/duplicate fields
-            if (in_array($key, $skipFields)) {
+            // Skip internal fields using patterns
+            $shouldSkip = false;
+            foreach ($skipPatterns as $pattern) {
+                if ($key === $pattern || preg_match('/' . $pattern . '/', $key)) {
+                    $shouldSkip = true;
+                    break;
+                }
+            }
+            if ($shouldSkip) {
                 continue;
             }
 
-            // Get user-friendly label
-            $label = $labelMap[$key] ?? ucfirst(str_replace('_', ' ', $key));
+            // Dynamic label generation - remove _id suffix and capitalize
+            $label = ucfirst(str_replace('_', ' ', preg_replace('/_id$/', '', $key)));
 
             if (is_array($value)) {
                 // Handle array values (like products list)
@@ -659,10 +814,11 @@ trait AutomatesSteps
 
                 foreach ($value as $item) {
                     if (is_array($item)) {
-                        // Extract readable product info
-                        $productName = $item['name'] ?? $item['product'] ?? $item['item'] ?? 'Unknown';
-                        $qty = $item['quantity'] ?? 1;
-                        $price = $item['price'] ?? $item['price_each'] ?? null;
+                        // Get field values - use defaults for display
+                        $fieldNames = \LaravelAIEngine\Services\AI\FieldDetector::getFieldNames();
+                        $productName = $item[$fieldNames['identifier']] ?? \LaravelAIEngine\Services\AI\FieldDetector::detectIdentifier($item) ?? 'Unknown';
+                        $qty = $item[$fieldNames['quantity']] ?? 1;
+                        $price = \LaravelAIEngine\Services\AI\FieldDetector::detectPrice($item);
 
                         if ($price !== null) {
                             // Calculate line total
@@ -690,8 +846,8 @@ trait AutomatesSteps
                 // Handle simple values
                 $displayValue = $value;
 
-                // Format prices
-                if (in_array($key, ['sale_price', 'purchase_price', 'price']) && is_numeric($value)) {
+                // Format prices - detect by pattern instead of hardcoded names
+                if (is_numeric($value) && preg_match('/(price|cost|fee|rate|charge|amount)$/i', $key)) {
                     $displayValue = "\${$value}";
                 }
 
@@ -821,7 +977,7 @@ trait AutomatesSteps
 
         // Get config to access extraction example
         $config = method_exists($this, 'config') ? $this->config() : [];
-        
+
         // Build simple extraction prompt - trust AI intelligence
         $prompt = "Extract structured data from the user's message.\n\n";
         $prompt .= "User said: \"{$combinedMessage}\"\n\n";
@@ -849,7 +1005,7 @@ trait AutomatesSteps
             $prompt .= "\nExample output format:\n";
             $prompt .= '{"customer_id": "John Smith", "items": [{"product": "iPhone 15 Pro", "quantity": 2}, {"product": "AirPods", "quantity": 1}]}';
         }
-        
+
         $prompt .= "\n\nReturn ONLY valid JSON with extracted fields.";
 
         try {
@@ -908,13 +1064,12 @@ trait AutomatesSteps
 
             // Convert string array to object array
             if ($isStringArray) {
+                $fieldConfig = $fields[$key] ?? [];
+                $configArray = is_array($fieldConfig) ? $fieldConfig : [];
+                
                 $normalizedItems = [];
                 foreach ($value as $item) {
-                    $normalizedItems[] = [
-                        'product' => $item,
-                        'name' => $item,
-                        'quantity' => 1,
-                    ];
+                    $normalizedItems[] = \LaravelAIEngine\Services\AI\FieldDetector::stringToArrayItem($item, $configArray);
                 }
                 $extracted[$key] = $normalizedItems;
 
@@ -959,43 +1114,30 @@ trait AutomatesSteps
                     continue;
                 }
 
-                // Check for common patterns
-                $patterns = [
-                    // customer_id matches: customer, customer_name, customer_id
-                    'customer_id' => ['customer', 'customer_name', 'customer_email'],
-                    'customer' => ['customer_id', 'customer_name', 'customer_email'],
-                    // items matches: products, items, product
-                    'items' => ['products', 'product', 'items'],
-                    'products' => ['items', 'product'],
-                    // vendor_id matches: vendor, vendor_name
-                    'vendor_id' => ['vendor', 'vendor_name'],
-                    'vendor' => ['vendor_id', 'vendor_name'],
-                ];
+                // Dynamic pattern matching - no hardcoded field names
+                // Match if extracted key contains field name or vice versa
+                // e.g., 'customer_id' matches 'customer', 'items' matches 'item'
+                $fieldNameBase = rtrim($fieldName, '_id');
+                $extractedKeyBase = rtrim($extractedKey, '_id');
+                
+                $isMatch = (
+                    $fieldNameBase === $extractedKeyBase ||
+                    str_contains($fieldName, $extractedKeyBase) ||
+                    str_contains($extractedKey, $fieldNameBase) ||
+                    // Singular/plural matching
+                    rtrim($fieldNameBase, 's') === rtrim($extractedKeyBase, 's')
+                );
 
-                // Check if extracted key matches any pattern for this field
-                if (isset($patterns[$fieldName]) && in_array($extractedKey, $patterns[$fieldName])) {
+                // Check if extracted key matches this field dynamically
+                if ($isMatch) {
                     // Check if this field should be an array (items, products, etc.)
                     $fieldConfig = $fields[$fieldName] ?? [];
                     $fieldType = is_array($fieldConfig) ? ($fieldConfig['type'] ?? 'string') : 'string';
-                    
-                    // If field is array type and value is string, convert to array
-                    if ($fieldType === 'array' && is_string($extractedValue)) {
-                        $mappedData[$fieldName] = [['name' => $extractedValue, 'quantity' => 1]];
-                    } else {
-                        $mappedData[$fieldName] = $extractedValue;
-                    }
-                    break;
-                }
 
-                // Check reverse pattern
-                if (isset($patterns[$extractedKey]) && in_array($fieldName, $patterns[$extractedKey])) {
-                    // Check if this field should be an array
-                    $fieldConfig = $fields[$fieldName] ?? [];
-                    $fieldType = is_array($fieldConfig) ? ($fieldConfig['type'] ?? 'string') : 'string';
-                    
                     // If field is array type and value is string, convert to array
                     if ($fieldType === 'array' && is_string($extractedValue)) {
-                        $mappedData[$fieldName] = [['name' => $extractedValue, 'quantity' => 1]];
+                        $configArray = is_array($fieldConfig) ? $fieldConfig : [];
+                        $mappedData[$fieldName] = \LaravelAIEngine\Services\AI\FieldDetector::stringToItemArray($extractedValue, $configArray);
                     } else {
                         $mappedData[$fieldName] = $extractedValue;
                     }
@@ -1053,7 +1195,12 @@ trait AutomatesSteps
         // For category, also check if it's stored in collected_data
         if (!$entityId) {
             $collectedData = $context->get('collected_data', []);
-            $entityId = $collectedData[$entityName . '_id'] ?? null;
+            // Check field name first (full data object), then _id suffix (backward compatibility)
+            if (isset($collectedData[$entityName])) {
+                $entityId = is_array($collectedData[$entityName]) ? ($collectedData[$entityName]['id'] ?? null) : $collectedData[$entityName];
+            } else {
+                $entityId = $collectedData[$entityName . '_id'] ?? null;
+            }
         }
 
         // IMPORTANT: For multiple entities (like products), a single numeric ID means one product was created
@@ -1112,10 +1259,33 @@ trait AutomatesSteps
                             'identifier' => $entityId,
                         ]);
 
-                        // Store the numeric ID
-                        $context->set($entityName . '_id', $entity->id);
+                        // Store entity data in collected_data
                         $collectedData = $context->get('collected_data', []);
-                        $collectedData[$entityName . '_id'] = $entity->id;
+
+                        $includeFields = $entityConfig['include_fields'] ?? [];
+                        if (!empty($includeFields)) {
+                            // Store full entity data under field name from config
+                            $entityData = ['id' => $entity->id];
+                            foreach ($includeFields as $field) {
+                                if (isset($entity->$field)) {
+                                    $entityData[$field] = $entity->$field;
+                                }
+                            }
+                            $collectedData[$entityName] = $entityData;
+
+                            Log::channel('ai-engine')->info('Stored full entity data with includeFields', [
+                                'entity' => $entityName,
+                                'entity_id' => $entity->id,
+                                'include_fields' => $includeFields,
+                                'stored_data' => $entityData,
+                            ]);
+                        } else {
+                            // Store just the ID if no includeFields specified
+                            $collectedData[$entityName] = $entity->id;
+                        }
+
+                        // Store numeric ID in context for internal use
+                        $context->set($entityName . '_id', $entity->id);
                         $context->set('collected_data', $collectedData);
 
                         // Clear any active subworkflow state
@@ -1168,7 +1338,14 @@ trait AutomatesSteps
                 // Try to find the created entity by searching for it
                 $modelClass = $entityConfig['model'] ?? null;
                 $collectedData = $context->get('collected_data', []);
-                $identifier = $collectedData[$entityName . '_id'] ?? $context->get($entityName . '_identifier');
+                // Check field name first, then _id suffix
+                $identifier = null;
+                if (isset($collectedData[$entityName])) {
+                    $identifier = is_array($collectedData[$entityName]) ? ($collectedData[$entityName]['name'] ?? null) : $collectedData[$entityName];
+                }
+                if (!$identifier) {
+                    $identifier = $collectedData[$entityName . '_id'] ?? $context->get($entityName . '_identifier');
+                }
 
                 if ($modelClass && $identifier && !is_numeric($identifier)) {
                     try {
@@ -1197,9 +1374,33 @@ trait AutomatesSteps
                                 'identifier' => $identifier,
                             ]);
 
-                            // Store the numeric ID
+                            // Store entity data in collected_data
+                            $collectedData = $context->get('collected_data', []);
+
+                            $includeFields = $entityConfig['include_fields'] ?? [];
+                            if (!empty($includeFields)) {
+                                // Store full entity data under field name from config
+                                $entityData = ['id' => $entity->id];
+                                foreach ($includeFields as $field) {
+                                    if (isset($entity->$field)) {
+                                        $entityData[$field] = $entity->$field;
+                                    }
+                                }
+                                $collectedData[$entityName] = $entityData;
+
+                                Log::channel('ai-engine')->info('Stored full entity data with includeFields (after creation)', [
+                                    'entity' => $entityName,
+                                    'entity_id' => $entity->id,
+                                    'include_fields' => $includeFields,
+                                    'stored_data' => $entityData,
+                                ]);
+                            } else {
+                                // Store just the ID if no includeFields specified
+                                $collectedData[$entityName] = $entity->id;
+                            }
+
+                            // Store numeric ID in context for internal use
                             $context->set($entityName . '_id', $entity->id);
-                            $collectedData[$entityName . '_id'] = $entity->id;
                             $context->set('collected_data', $collectedData);
 
                             return ActionResult::success(
@@ -1285,7 +1486,7 @@ trait AutomatesSteps
                     'entity' => $entityName,
                     'identifier' => $identifier,
                 ]);
-                $identifier = [['name' => $identifier, 'quantity' => 1]];
+                $identifier = \LaravelAIEngine\Services\AI\FieldDetector::stringToItemArray($identifier, $entityConfig);
                 $collectedData[$identifierField] = $identifier;
                 $context->set('collected_data', $collectedData);
             }
@@ -1361,15 +1562,81 @@ trait AutomatesSteps
                     $context->set($entityName . '_id', $entityId);
 
                     // IMPORTANT: Also update collected_data so the final action can access it
-                    // This ensures createProduct() can read the numeric category_id
+                    // Store under field name if includeFields is specified, otherwise use _id suffix
                     $collectedData = $context->get('collected_data', []);
-                    $collectedData[$entityName . '_id'] = $entityId;
+                    $includeFields = $entityConfig['include_fields'] ?? [];
+
+                    if (!empty($includeFields)) {
+                        // Fetch and store full entity data
+                        $modelClass = $entityConfig['model'] ?? null;
+                        if ($modelClass && class_exists($modelClass)) {
+                            try {
+                                $entity = $modelClass::find($entityId);
+                                if ($entity) {
+                                    $entityData = ['id' => $entity->id];
+                                    foreach ($includeFields as $field) {
+                                        if (isset($entity->$field)) {
+                                            $entityData[$field] = $entity->$field;
+                                        }
+                                    }
+                                    
+                                    // IMPORTANT: Preserve user modifications - don't overwrite existing values
+                                    // User modifications take precedence over database values
+                                    $existingData = $collectedData[$entityName] ?? [];
+                                    if (is_array($existingData)) {
+                                        // Merge: database values first, then existing (user-modified) values on top
+                                        $collectedData[$entityName] = array_merge($entityData, $existingData);
+                                    } else {
+                                        $collectedData[$entityName] = $entityData;
+                                    }
+
+                                    Log::channel('ai-engine')->info('Stored full entity data after resolution', [
+                                        'entity' => $entityName,
+                                        'entity_id' => $entityId,
+                                        'include_fields' => $includeFields,
+                                        'stored_data' => $collectedData[$entityName],
+                                        'preserved_user_modifications' => !empty($existingData),
+                                    ]);
+                                }
+                            } catch (\Exception $e) {
+                                Log::channel('ai-engine')->warning('Failed to fetch full entity data after resolution', [
+                                    'entity' => $entityName,
+                                    'entity_id' => $entityId,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        }
+                    }
+
+                    // Store resolved entity data
+                    // For array entities (like products), merge with user_inputs (user modifications take precedence)
+                    $userInputs = $collectedData['user_inputs'] ?? [];
+                    
+                    if (is_array($entityId)) {
+                        // Get user inputs for this entity (check both entity name and identifier field)
+                        $userItems = $userInputs[$entityName] ?? $userInputs['items'] ?? [];
+                        
+                        if (is_array($userItems) && !empty($userItems)) {
+                            // Merge user modifications into resolved entity data
+                            foreach ($entityId as $index => $resolvedItem) {
+                                if (isset($userItems[$index]) && is_array($userItems[$index])) {
+                                    // User modifications take precedence over DB values
+                                    $entityId[$index] = array_merge($resolvedItem, $userItems[$index]);
+                                }
+                            }
+                        }
+                        // Store array entities directly in entity name (e.g., 'products')
+                        $collectedData[$entityName] = $entityId;
+                    } else {
+                        // For single entities, store ID in entity_id field for backward compatibility
+                        $collectedData[$entityName . '_id'] = $entityId;
+                    }
                     $context->set('collected_data', $collectedData);
 
                     Log::channel('ai-engine')->info('Entity resolved and stored in context', [
                         'entity' => $entityName,
-                        'entity_id' => $entityId,
-                        'context_key' => $entityName . '_id',
+                        'entity_data' => $entityId,
+                        'context_key' => is_array($entityId) ? $entityName : $entityName . '_id',
                         'updated_collected_data' => true,
                     ]);
                 }
@@ -1537,8 +1804,10 @@ trait AutomatesSteps
                     $context->mergeSubworkflowResult($response->data ?? []);
 
                     // Also set entity-specific fields for backward compatibility
-                    if ($entityName === 'customer' && isset($response->data['customer_id'])) {
-                        $context->set('customer_id', $response->data['customer_id']);
+                    // Dynamic: set {entityName}_id if present in response data
+                    $entityIdKey = $entityName . '_id';
+                    if (isset($response->data[$entityIdKey])) {
+                        $context->set($entityIdKey, $response->data[$entityIdKey]);
                     }
 
                     return ActionResult::success(
@@ -1622,8 +1891,10 @@ trait AutomatesSteps
                 $context->popWorkflow();
                 $context->mergeSubworkflowResult($response->data ?? []);
 
-                if ($entityName === 'customer' && isset($response->data['customer_id'])) {
-                    $context->set('customer_id', $response->data['customer_id']);
+                // Dynamic: set {entityName}_id if present in response data
+                $entityIdKey = $entityName . '_id';
+                if (isset($response->data[$entityIdKey])) {
+                    $context->set($entityIdKey, $response->data[$entityIdKey]);
                 }
 
                 return ActionResult::success(
@@ -1700,7 +1971,7 @@ trait AutomatesSteps
                     if (isset($arrayData[$itemIndex])) {
                         $arrayData[$itemIndex][$fieldName] = $value;
                         $context->set($identifierField, $arrayData);
-                        
+
                         // IMPORTANT: Also update collected_data so the value persists
                         $collectedData = $context->get('collected_data', []);
                         if (!isset($collectedData[$identifierField])) {
@@ -1758,8 +2029,9 @@ trait AutomatesSteps
                 foreach ($requiredItemFields as $fieldName) {
                     if (!isset($item[$fieldName]) || $item[$fieldName] === null || $item[$fieldName] === '') {
                         // Missing field found - ask for it
-                        $itemName = $item['name'] ?? $item['product'] ?? $item['item'] ?? "item " . ($i + 1);
-                        $quantity = $item['quantity'] ?? 1;
+                        $fieldNames = \LaravelAIEngine\Services\AI\FieldDetector::getFieldNames($entityConfig);
+                        $itemName = $item[$fieldNames['identifier']] ?? "item " . ($i + 1);
+                        $quantity = $item[$fieldNames['quantity']] ?? 1;
 
                         // Store current position
                         $context->set('current_array_item_index', $i);
@@ -1768,7 +2040,7 @@ trait AutomatesSteps
 
                         // Make field name friendly (e.g., "sale_price" -> "sale price")
                         $friendlyFieldName = str_replace('_', ' ', $fieldName);
-                        
+
                         $message = "What is the {$friendlyFieldName} for **{$itemName}**?";
                         if ($quantity > 1) {
                             $message .= " (unit {$friendlyFieldName} per item)";
@@ -1798,11 +2070,11 @@ trait AutomatesSteps
         foreach ($entities as $entityName => $entityConfig) {
             $identifierField = $entityConfig['identifier_field'] ?? $entityName;
             $arrayData = $context->get($identifierField, []);
-            
+
             if (!empty($arrayData) && is_array($arrayData)) {
                 // Also set it with the entity name (e.g., 'products' not just 'items')
                 $context->set($entityName, $arrayData);
-                
+
                 \Illuminate\Support\Facades\Log::info('AutomatesSteps: Synced array data to entity name', [
                     'entity' => $entityName,
                     'identifier_field' => $identifierField,
@@ -1810,7 +2082,7 @@ trait AutomatesSteps
                 ]);
             }
         }
-        
+
         return ActionResult::success(message: 'All array item fields collected');
     }
 
@@ -1874,24 +2146,134 @@ trait AutomatesSteps
         unset($collectedData[$fieldName]);
         $context->set('collected_data', $collectedData);
         $context->set('asking_for', $fieldName);
-        
+
         // Get step prefix for subflow handling
         $currentStep = $context->currentStep ?? '';
-        $stepPrefix = str_contains($currentStep, '__') 
-            ? substr($currentStep, 0, strpos($currentStep, '__') + 2) 
+        $stepPrefix = str_contains($currentStep, '__')
+            ? substr($currentStep, 0, strpos($currentStep, '__') + 2)
             : '';
-        
+
         // Transition back to collect_data step
         $context->currentStep = $stepPrefix . 'collect_data';
-        
+
         return ActionResult::needsUserInput(
             message: $message,
             metadata: ['retry_field' => $fieldName]
         );
     }
 
-    /**
-     * Must be implemented by workflow
-     */
-    abstract protected function config(): array;
+/**
+ * Enrich entity data with includeFields
+ * Converts entity IDs/strings to full data objects when includeFields is specified
+ */
+protected function enrichEntitiesWithIncludeFields(array $collectedData, array $entities, $context): array
+{
+    foreach ($entities as $entityName => $entityConfig) {
+        $includeFields = $entityConfig['include_fields'] ?? [];
+
+        // Skip if no includeFields specified
+        if (empty($includeFields)) {
+            continue;
+        }
+
+        $modelClass = $entityConfig['model'] ?? null;
+        if (!$modelClass || !class_exists($modelClass)) {
+            continue;
+        }
+
+        // Check if entity data is just an ID or string (not already enriched)
+        $entityValue = $collectedData[$entityName] ?? null;
+        $entityId = null;
+
+        // Get entity ID from various sources
+        if (is_numeric($entityValue)) {
+            $entityId = $entityValue;
+        } elseif (is_string($entityValue) && !empty($entityValue)) {
+            // It's a string (name) - try to find the entity
+            $entityId = $collectedData[$entityName . '_id'] ?? $context->get($entityName . '_id');
+        } elseif (is_array($entityValue) && isset($entityValue['id'])) {
+            // Already enriched, skip
+            continue;
+        }
+
+        // Also check _id field
+        if (!$entityId) {
+            $entityId = $collectedData[$entityName . '_id'] ?? $context->get($entityName . '_id');
+        }
+
+        if ($entityId && is_numeric($entityId)) {
+            try {
+                $entity = $modelClass::find($entityId);
+
+                if ($entity) {
+                    $entityData = ['id' => $entity->id];
+
+                    foreach ($includeFields as $field) {
+                        if (isset($entity->$field)) {
+                            $entityData[$field] = $entity->$field;
+                        }
+                    }
+
+                    $collectedData[$entityName] = $entityData;
+
+                    Log::channel('ai-engine')->info('Enriched entity with includeFields', [
+                        'entity' => $entityName,
+                        'entity_id' => $entityId,
+                        'include_fields' => $includeFields,
+                        'enriched_data' => $entityData,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Failed to enrich entity with includeFields', [
+                    'entity' => $entityName,
+                    'entity_id' => $entityId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    return $collectedData;
+}
+
+/**
+ * Normalize collected data types based on field configuration
+ * Intelligently converts strings to arrays for entity fields with multiple=true
+ */
+protected function normalizeCollectedDataTypes(array $collectedData, array $fields): array
+{
+    foreach ($fields as $fieldName => $fieldConfig) {
+        // Skip if field doesn't exist in collected data
+        if (!isset($collectedData[$fieldName])) {
+            continue;
+        }
+
+        // Check if this is an entity field with multiple=true
+        if (is_array($fieldConfig)) {
+            $fieldType = $fieldConfig['type'] ?? 'string';
+            $isMultiple = $fieldConfig['multiple'] ?? false;
+
+            // If it's an entity field expecting multiple items and current value is a string
+            if ($fieldType === 'entity' && $isMultiple && is_string($collectedData[$fieldName])) {
+                $originalValue = $collectedData[$fieldName];
+                // Convert string to array format
+                $collectedData[$fieldName] = \LaravelAIEngine\Services\AI\FieldDetector::stringToItemArray($originalValue, $fieldConfig);
+
+                \Illuminate\Support\Facades\Log::info('Normalized field type: string to array', [
+                    'field' => $fieldName,
+                    'original_value' => $originalValue,
+                    'normalized_value' => $collectedData[$fieldName],
+                ]);
+            }
+        }
+    }
+
+    return $collectedData;
+}
+
+/**
+ * Get workflow configuration
+ * Must be implemented by workflow
+ */
+abstract protected function config(): array;
 }

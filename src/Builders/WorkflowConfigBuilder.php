@@ -214,6 +214,16 @@ class WorkflowConfigBuilder
     }
 
     /**
+     * Set custom modification rules for when user wants to change data before confirmation
+     * These rules are passed to the AI when applying user modifications
+     */
+    public function modificationRules(string $rules): self
+    {
+        $this->config['modification_rules'] = $rules;
+        return $this;
+    }
+
+    /**
      * Set example output format for AI extraction
      * Provides a concrete example to guide AI without being overly prescriptive
      */

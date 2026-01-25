@@ -102,6 +102,33 @@ class IntelligentRAGService
             // Check if intelligent mode is enabled (default: true)
             $useIntelligent = $options['intelligent'] ?? true;
             $intentAnalysis = $options['intent_analysis'] ?? null;
+            
+            // FAST PATH: For pure aggregate queries, skip analysis and go straight to aggregate
+            $isPure = $this->isPureAggregateQuery($message);
+            $hasCollections = !empty($availableCollections);
+            
+            Log::info('RAG Fast path check', [
+                'isPureAggregateQuery' => $isPure,
+                'hasCollections' => $hasCollections,
+                'collections_count' => count($availableCollections),
+            ]);
+            
+            if ($isPure && $hasCollections) {
+                $aggregateData = $this->getSmartAggregateData($availableCollections, $message, $userId);
+                
+                Log::info('RAG Fast path aggregate data', [
+                    'data_empty' => empty($aggregateData),
+                    'keys' => array_keys($aggregateData),
+                ]);
+                
+                if (!empty($aggregateData)) {
+                    Log::channel('ai-engine')->info('Fast path: Pure aggregate query - RETURNING', [
+                        'message' => $message,
+                        'collections' => array_keys($aggregateData),
+                    ]);
+                    return $this->generateAggregateResponse($message, $aggregateData, $options);
+                }
+            }
 
             // Step 1: Analyze if query needs context retrieval
             if ($intentAnalysis && isset($intentAnalysis['intent'])) {
@@ -150,20 +177,24 @@ class IntelligentRAGService
 
             $aggregateData = [];
             if ($needsAggregate) {
-                // Always use availableCollections (discovered models) for aggregate data
-                // The AI-suggested collections might not exist locally
-                $aggregateData = $this->getAggregateData(
+                // Let AI extract filters from the query, then use hybrid vector+SQL
+                $aggregateData = $this->getSmartAggregateData(
                     $availableCollections,
+                    $message,
                     $userId
                 );
-
-                Log::channel('ai-engine')->info('Aggregate data retrieved', [
+                
+                Log::channel('ai-engine')->info('Smart aggregate data retrieved', [
                     'user_id' => $userId,
                     'message' => $message,
-                    'available_collections' => $availableCollections,
                     'collections' => array_keys($aggregateData),
-                    'data' => $aggregateData,
                 ]);
+                
+                // For pure aggregate queries (count/how many), skip context retrieval
+                // Just answer directly with the aggregate data
+                if ($this->isPureAggregateQuery($message) && !empty($aggregateData)) {
+                    return $this->generateAggregateResponse($message, $aggregateData, $options);
+                }
             }
 
             // Step 3: Retrieve context if needed (for non-aggregate or combined queries)
@@ -1420,22 +1451,14 @@ PROMPT;
                         ]);
                     }
 
-                    // If vector search returned no results, try database fallback
-                    // Note: Relevance is already checked by AgentOrchestrator routing
-                    // Only queries routed to KnowledgeSearchHandler will reach here
-                    if ($results->isEmpty() || $results->count() === 0) {
-                        \Log::warning('🔄 DATABASE FALLBACK TRIGGERED', [
-                            'collection' => $collection,
-                            'query' => $searchQuery,
-                            'results_type' => gettype($results),
-                            'results_count' => $results->count(),
-                        ]);
-
+                    // If vector search returned no results, optionally try database fallback
+                    // Database fallback is disabled by default to prevent memory issues
+                    $enableDbFallback = config('ai-engine.intelligent_rag.enable_database_fallback', false);
+                    
+                    if ($enableDbFallback && ($results->isEmpty() || $results->count() === 0)) {
                         Log::channel('ai-engine')->info('Vector search returned no results, trying database fallback', [
                             'collection' => $collection,
                             'query' => $searchQuery,
-                            'results_type' => gettype($results),
-                            'results_count' => $results->count(),
                         ]);
 
                         try {
@@ -1457,28 +1480,30 @@ PROMPT;
 
                     $allResults = $allResults->merge($results);
                 } catch (\Exception $e) {
-                    Log::channel('ai-engine')->warning('Vector search failed, trying database fallback', [
+                    Log::channel('ai-engine')->warning('Vector search failed', [
                         'collection' => $collection,
                         'query' => $searchQuery,
                         'user_id' => $userId,
                         'error' => $e->getMessage(),
                     ]);
 
-                    // Fallback to local database query
-                    try {
-                        $dbResults = $this->fallbackDatabaseSearch($collection, $searchQuery, $maxResults, $userId);
-                        if ($dbResults->isNotEmpty()) {
-                            Log::channel('ai-engine')->info('Database fallback successful', [
+                    // Optionally fallback to local database query (disabled by default)
+                    if ($enableDbFallback) {
+                        try {
+                            $dbResults = $this->fallbackDatabaseSearch($collection, $searchQuery, $maxResults, $userId);
+                            if ($dbResults->isNotEmpty()) {
+                                Log::channel('ai-engine')->info('Database fallback successful', [
+                                    'collection' => $collection,
+                                    'results_count' => $dbResults->count(),
+                                ]);
+                                $allResults = $allResults->merge($dbResults);
+                            }
+                        } catch (\Exception $dbError) {
+                            Log::channel('ai-engine')->error('Database fallback also failed', [
                                 'collection' => $collection,
-                                'results_count' => $dbResults->count(),
+                                'error' => $dbError->getMessage(),
                             ]);
-                            $allResults = $allResults->merge($dbResults);
                         }
-                    } catch (\Exception $dbError) {
-                        Log::channel('ai-engine')->error('Database fallback also failed', [
-                            'collection' => $collection,
-                            'error' => $dbError->getMessage(),
-                        ]);
                     }
                 }
             }
@@ -2588,6 +2613,168 @@ PROMPT;
 
         return false;
     }
+    
+    /**
+     * Check if query is a pure aggregate query (just wants count, no details)
+     */
+    protected function isPureAggregateQuery(string $query): bool
+    {
+        $query = strtolower($query);
+        $purePatterns = ['how many', 'count', 'total', 'number of'];
+        
+        foreach ($purePatterns as $pattern) {
+            if (str_contains($query, $pattern)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Generate a direct response for aggregate queries (fast path)
+     */
+    protected function generateAggregateResponse(string $message, array $aggregateData, array $options = []): AIResponse
+    {
+        // Build response from aggregate data
+        $parts = [];
+        foreach ($aggregateData as $name => $data) {
+            $count = $data['count'] ?? 0;
+            $displayName = $data['display_name'] ?? $name;
+            $filters = $data['filters_applied'] ?? [];
+            
+            if ($count > 0) {
+                $filterStr = "";
+                if (!empty($filters['created_at'])) {
+                    $dateFilter = $filters['created_at'];
+                    if (is_array($dateFilter)) {
+                        $filterStr = " from {$dateFilter['gte']} to {$dateFilter['lte']}";
+                    } else {
+                        $filterStr = " on {$dateFilter}";
+                    }
+                }
+                $parts[] = "**{$count}** {$displayName}(s){$filterStr}";
+            }
+        }
+        
+        $response = !empty($parts) 
+            ? "Based on your data, there are:\n- " . implode("\n- ", $parts)
+            : "No matching records found for your query.";
+        
+        return new AIResponse(
+            content: $response,
+            engine: \LaravelAIEngine\Enums\EngineEnum::OPENAI,
+            model: \LaravelAIEngine\Enums\EntityEnum::GPT_4O_MINI,
+            metadata: ['aggregate_data' => $aggregateData, 'fast_path' => true]
+        );
+    }
+    
+    /**
+     * Smart aggregate: Use AI to extract filters from query, then hybrid vector+SQL
+     * 
+     * @param array $collections Available collections
+     * @param string $query User's natural language query
+     * @param string|int|null $userId User ID for filtering
+     * @return array Aggregate data
+     */
+    public function getSmartAggregateData(array $collections, string $query, $userId = null): array
+    {
+        // Ask AI to extract filters from the query
+        $filters = $this->extractFiltersWithAI($query);
+        
+        Log::channel('ai-engine')->info('Smart aggregate - AI extracted filters', [
+            'query' => $query,
+            'filters' => $filters,
+        ]);
+        
+        $aggregateData = [];
+        
+        foreach ($collections as $collection) {
+            if (!class_exists($collection)) {
+                continue;
+            }
+            
+            try {
+                $instance = new $collection();
+                $name = class_basename($collection);
+                $displayName = method_exists($instance, 'getRAGDisplayName') 
+                    ? $instance->getRAGDisplayName() 
+                    : $name;
+                
+                // Build filters: user_id + AI-extracted filters
+                $queryFilters = $userId !== null ? ['user_id' => $userId] : [];
+                $queryFilters = array_merge($queryFilters, $filters);
+                
+                // Use hybrid vector+SQL count
+                $count = $this->vectorSearch->countWithFilters($collection, $queryFilters);
+                
+                $aggregateData[$name] = [
+                    'count' => $count,
+                    'display_name' => $displayName,
+                    'filters_applied' => $filters,
+                ];
+                
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Smart aggregate failed for collection', [
+                    'collection' => $collection,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+        
+        return $aggregateData;
+    }
+    
+    /**
+     * Extract date filters from query using pattern matching (fast, no AI call)
+     * 
+     * @param string $query User's query
+     * @return array Filters array for vector search
+     */
+    protected function extractFiltersWithAI(string $query): array
+    {
+        $queryLower = strtolower($query);
+        
+        // Month + Year pattern (e.g., "January 2026", "jan 2026")
+        $months = [
+            'january' => 1, 'jan' => 1, 'february' => 2, 'feb' => 2,
+            'march' => 3, 'mar' => 3, 'april' => 4, 'apr' => 4,
+            'may' => 5, 'june' => 6, 'jun' => 6, 'july' => 7, 'jul' => 7,
+            'august' => 8, 'aug' => 8, 'september' => 9, 'sep' => 9,
+            'october' => 10, 'oct' => 10, 'november' => 11, 'nov' => 11,
+            'december' => 12, 'dec' => 12,
+        ];
+        
+        foreach ($months as $name => $num) {
+            if (preg_match("/{$name}\s+(\d{4})/i", $query, $m)) {
+                $year = $m[1];
+                $days = cal_days_in_month(CAL_GREGORIAN, $num, (int)$year);
+                $month = str_pad($num, 2, '0', STR_PAD_LEFT);
+                return ['created_at' => ['gte' => "{$year}-{$month}-01", 'lte' => "{$year}-{$month}-{$days}"]];
+            }
+        }
+        
+        // Relative dates
+        if (str_contains($queryLower, 'today')) {
+            return ['created_at' => now()->format('Y-m-d')];
+        }
+        if (str_contains($queryLower, 'yesterday')) {
+            return ['created_at' => now()->subDay()->format('Y-m-d')];
+        }
+        if (str_contains($queryLower, 'this week')) {
+            return ['created_at' => ['gte' => now()->startOfWeek()->format('Y-m-d'), 'lte' => now()->endOfWeek()->format('Y-m-d')]];
+        }
+        if (str_contains($queryLower, 'last week')) {
+            return ['created_at' => ['gte' => now()->subWeek()->startOfWeek()->format('Y-m-d'), 'lte' => now()->subWeek()->endOfWeek()->format('Y-m-d')]];
+        }
+        if (str_contains($queryLower, 'this month')) {
+            return ['created_at' => ['gte' => now()->startOfMonth()->format('Y-m-d'), 'lte' => now()->endOfMonth()->format('Y-m-d')]];
+        }
+        if (str_contains($queryLower, 'last month')) {
+            return ['created_at' => ['gte' => now()->subMonth()->startOfMonth()->format('Y-m-d'), 'lte' => now()->subMonth()->endOfMonth()->format('Y-m-d')]];
+        }
+        
+        return [];
+    }
 
     /**
      * Get human-readable display name for a model
@@ -2859,27 +3046,36 @@ PROMPT;
                 });
             }
 
-            // Get results ordered by most recent
+            // Get results ordered by most recent with strict limit
+            // Use a hard limit to prevent memory issues even if maxResults is high
+            $hardLimit = min($maxResults, config('ai-engine.intelligent_rag.database_fallback_limit', 20));
+            
             $results = $queryBuilder
                 ->orderBy('created_at', 'desc')
-                ->limit($maxResults)
+                ->limit($hardLimit)
                 ->get();
 
             // Transform to match vector search result format (must return objects, not arrays)
             return $results->map(function ($item) {
-                // Try to get searchable array if method exists, otherwise use toArray
-                $content = method_exists($item, 'toSearchableArray')
-                    ? json_encode($item->toSearchableArray())
-                    : json_encode($item->toArray());
+                // Use getVectorContent if available for consistent content
+                $content = method_exists($item, 'getVectorContent')
+                    ? $item->getVectorContent()
+                    : (method_exists($item, 'toSearchableArray')
+                        ? json_encode($item->toSearchableArray())
+                        : json_encode($item->only($item->getFillable())));
 
                 // Return as object to match vector search format
+                // Only include essential metadata to prevent memory issues
                 return (object) [
                     'id' => $item->id,
                     'model_type' => get_class($item),
                     'model_id' => $item->id,
                     'content' => $content,
                     'vector_score' => 0.5, // Default score for database results
-                    'metadata' => $item->toArray(),
+                    'metadata' => [
+                        'id' => $item->id,
+                        'model_class' => get_class($item),
+                    ],
                 ];
             });
 

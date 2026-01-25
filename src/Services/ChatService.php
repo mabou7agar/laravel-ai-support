@@ -561,17 +561,9 @@ class ChatService
                                 $modelA = class_basename($a->data['model_class'] ?? '');
                                 $modelB = class_basename($b->data['model_class'] ?? '');
 
-                                // Check if message contains model keywords
+                                // Check if message contains model keywords (dynamic - no hardcoded names)
                                 $matchA = str_contains($messageLower, strtolower($modelA)) ? 1 : 0;
                                 $matchB = str_contains($messageLower, strtolower($modelB)) ? 1 : 0;
-
-                                // Also check for common variations
-                                if (!$matchA && str_contains($modelA, 'Product')) {
-                                    $matchA = str_contains($messageLower, 'product') ? 1 : 0;
-                                }
-                                if (!$matchB && str_contains($modelB, 'Product')) {
-                                    $matchB = str_contains($messageLower, 'product') ? 1 : 0;
-                                }
 
                                 if ($matchA !== $matchB) {
                                     return $matchB <=> $matchA; // Higher match first
@@ -1555,14 +1547,8 @@ class ChatService
             if (($message['role'] ?? '') === 'user') {
                 $content = $message['content'] ?? '';
 
-                // Check if this message was about creating a product
-                if (
-                    str_contains(strtolower($content), 'product') ||
-                    str_contains(strtolower($content), 'sell') ||
-                    str_contains(strtolower($content), 'price') ||
-                    str_contains($content, '$')
-                ) {
-
+                // Check if this message could trigger an action (any non-trivial message)
+                if (!empty(trim($content)) && strlen($content) > 5) {
                     // Re-generate the action from this message
                     if ($this->actionManager) {
                         try {

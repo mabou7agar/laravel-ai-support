@@ -37,7 +37,7 @@ class IntentAnalysisService
     {
         // Quick check for single-word confirmations (optimization)
         $messageLower = strtolower(trim($message));
-        $quickConfirms = ['yes', 'ok', 'okay', 'confirm', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead'];
+        $quickConfirms = ['yes', 'ok', 'okay', 'confirm', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead', 'create', 'do it', 'make it'];
 
         if (in_array($messageLower, $quickConfirms)) {
             return [
@@ -315,5 +315,138 @@ class IntentAnalysisService
         // ... (simplified for this extraction, relies on config mainly)
 
         return $error;
+    }
+    
+    /**
+     * Check if message is a confirmation using AI
+     * Reusable across the codebase
+     */
+    public function isConfirmation(string $message, ?string $context = null): bool
+    {
+        $messageLower = strtolower(trim($message));
+        
+        // Quick check for obvious confirmations (optimization - no AI call needed)
+        $quickConfirms = ['yes', 'ok', 'okay', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead', 'do it', 'confirm'];
+        if (in_array($messageLower, $quickConfirms)) {
+            return true;
+        }
+        
+        // Quick check for obvious rejections
+        $quickRejects = ['no', 'cancel', 'stop', 'abort', 'nevermind', 'nope'];
+        if (in_array($messageLower, $quickRejects)) {
+            return false;
+        }
+        
+        // Use AI for ambiguous messages
+        try {
+            $prompt = "Is this message a CONFIRMATION or AGREEMENT?\n";
+            $prompt .= "Message: \"{$message}\"\n";
+            if ($context) {
+                $prompt .= "Context: {$context}\n";
+            }
+            $prompt .= "\nRespond with ONLY 'yes' or 'no'.";
+            
+            $response = $this->aiEngineService->generate(new AIRequest(
+                prompt: $prompt,
+                maxTokens: 3,
+                temperature: 0
+            ));
+            
+            return strtolower(trim($response->getContent())) === 'yes';
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('AI confirmation check failed', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+    
+    /**
+     * Check if message is a rejection/cancellation using AI
+     */
+    public function isRejection(string $message, ?string $context = null): bool
+    {
+        $messageLower = strtolower(trim($message));
+        
+        // Quick check for obvious rejections
+        $quickRejects = ['no', 'cancel', 'stop', 'abort', 'nevermind', 'nope', 'reject'];
+        if (in_array($messageLower, $quickRejects)) {
+            return true;
+        }
+        
+        // Quick check for obvious confirmations
+        $quickConfirms = ['yes', 'ok', 'okay', 'sure', 'yep', 'yeah', 'yup', 'proceed'];
+        if (in_array($messageLower, $quickConfirms)) {
+            return false;
+        }
+        
+        // Use AI for ambiguous messages
+        try {
+            $prompt = "Is this message a REJECTION, CANCELLATION, or NEGATIVE response?\n";
+            $prompt .= "Message: \"{$message}\"\n";
+            if ($context) {
+                $prompt .= "Context: {$context}\n";
+            }
+            $prompt .= "\nRespond with ONLY 'yes' or 'no'.";
+            
+            $response = $this->aiEngineService->generate(new AIRequest(
+                prompt: $prompt,
+                maxTokens: 3,
+                temperature: 0
+            ));
+            
+            return strtolower(trim($response->getContent())) === 'yes';
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('AI rejection check failed', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+    
+    /**
+     * Detect message type using AI (confirmation, rejection, modification, data, question)
+     */
+    public function detectMessageType(string $message, ?string $context = null): string
+    {
+        $messageLower = strtolower(trim($message));
+        
+        // Quick checks for common patterns
+        $quickConfirms = ['yes', 'ok', 'okay', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead', 'confirm'];
+        if (in_array($messageLower, $quickConfirms)) {
+            return 'confirmation';
+        }
+        
+        $quickRejects = ['no', 'cancel', 'stop', 'abort', 'nevermind', 'nope'];
+        if (in_array($messageLower, $quickRejects)) {
+            return 'rejection';
+        }
+        
+        // Use AI for complex messages
+        try {
+            $prompt = "Classify this message into ONE category:\n";
+            $prompt .= "Message: \"{$message}\"\n";
+            if ($context) {
+                $prompt .= "Context: {$context}\n";
+            }
+            $prompt .= "\nCategories:\n";
+            $prompt .= "- confirmation: User agrees/confirms/approves\n";
+            $prompt .= "- rejection: User disagrees/cancels/rejects\n";
+            $prompt .= "- modification: User wants to change/update something\n";
+            $prompt .= "- data: User is providing data/information\n";
+            $prompt .= "- question: User is asking a question\n";
+            $prompt .= "- other: None of the above\n";
+            $prompt .= "\nRespond with ONLY the category name:";
+            
+            $response = $this->aiEngineService->generate(new AIRequest(
+                prompt: $prompt,
+                maxTokens: 10,
+                temperature: 0
+            ));
+            
+            $type = strtolower(trim($response->getContent()));
+            $validTypes = ['confirmation', 'rejection', 'modification', 'data', 'question', 'other'];
+            
+            return in_array($type, $validTypes) ? $type : 'other';
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('AI message type detection failed', ['error' => $e->getMessage()]);
+            return 'other';
+        }
     }
 }
