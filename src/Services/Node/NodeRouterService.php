@@ -85,12 +85,10 @@ class NodeRouterService
     }
     
     /**
-     * Route based on query analysis (keywords, domains)
+     * Route based on AI analysis of query intent vs node descriptions/goals
      */
     protected function routeByQueryAnalysis(string $query, array $options = []): array
     {
-        $queryLower = strtolower($query);
-        
         // Get all active child nodes
         $nodes = AINode::active()->healthy()->child()->get();
         
@@ -103,7 +101,159 @@ class NodeRouterService
             ];
         }
         
-        // Score each node based on query match
+        // Use AI to determine the best node based on descriptions and goals
+        $selectedNode = $this->aiSelectNode($query, $nodes);
+        
+        if (!$selectedNode) {
+            return [
+                'node' => null,
+                'is_local' => true,
+                'reason' => 'AI determined query should be handled locally',
+                'collections' => [],
+            ];
+        }
+        
+        // Check if node is available
+        if (!$this->isNodeAvailable($selectedNode['node'])) {
+            return [
+                'node' => null,
+                'is_local' => true,
+                'reason' => "Selected node {$selectedNode['node']->name} is unavailable",
+                'collections' => [],
+            ];
+        }
+        
+        return [
+            'node' => $selectedNode['node'],
+            'is_local' => false,
+            'reason' => $selectedNode['reason'],
+            'collections' => $selectedNode['node']->collections ?? [],
+        ];
+    }
+    
+    /**
+     * Use AI to select the best node for a query based on node descriptions and goals
+     */
+    protected function aiSelectNode(string $query, $nodes): ?array
+    {
+        // Build node descriptions for AI
+        $nodeDescriptions = [];
+        foreach ($nodes as $node) {
+            $nodeDescriptions[] = [
+                'id' => $node->id,
+                'name' => $node->name,
+                'slug' => $node->slug,
+                'description' => $node->description ?? '',
+                'capabilities' => $node->capabilities ?? [],
+                'domains' => $node->domains ?? [],
+                'data_types' => $node->data_types ?? [],
+            ];
+        }
+        
+        // If no nodes have descriptions, fall back to keyword matching
+        $hasDescriptions = collect($nodeDescriptions)->filter(fn($n) => !empty($n['description']))->isNotEmpty();
+        if (!$hasDescriptions) {
+            Log::channel('ai-engine')->debug('No node descriptions available, falling back to keyword matching');
+            return $this->keywordBasedSelection($query, $nodes);
+        }
+        
+        $prompt = $this->buildNodeSelectionPrompt($query, $nodeDescriptions);
+        
+        try {
+            $aiManager = app(\LaravelAIEngine\Services\AIEngineManager::class);
+            
+            $response = $aiManager->generate(
+                prompt: $prompt,
+                engine: config('ai-engine.default', 'openai'),
+                model: config('ai-engine.nodes.routing_model', 'gpt-4o-mini'),
+                options: [
+                    'temperature' => 0.1,
+                    'max_tokens' => 200,
+                ]
+            );
+            
+            $result = $this->parseNodeSelectionResponse($response->getContent(), $nodes);
+            
+            Log::channel('ai-engine')->info('AI node selection result', [
+                'query' => substr($query, 0, 100),
+                'selected_node' => $result ? $result['node']->slug : 'local',
+                'reason' => $result['reason'] ?? 'handled locally',
+            ]);
+            
+            return $result;
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('AI node selection failed, falling back to keyword matching', [
+                'error' => $e->getMessage(),
+            ]);
+            return $this->keywordBasedSelection($query, $nodes);
+        }
+    }
+    
+    /**
+     * Build the prompt for AI node selection
+     */
+    protected function buildNodeSelectionPrompt(string $query, array $nodeDescriptions): string
+    {
+        $nodesJson = json_encode($nodeDescriptions, JSON_PRETTY_PRINT);
+        
+        return <<<PROMPT
+You are a routing assistant. Analyze the user's query and determine which specialized node should handle it.
+
+Available nodes:
+{$nodesJson}
+
+User query: "{$query}"
+
+Instructions:
+1. Analyze the user's intent from their query
+2. Match the intent against each node's description, capabilities, and domains
+3. Select the BEST matching node, or respond with "LOCAL" if no node is appropriate
+
+Respond in this exact format:
+NODE: <node_slug or LOCAL>
+REASON: <brief explanation>
+PROMPT;
+    }
+    
+    /**
+     * Parse AI response and return selected node
+     */
+    protected function parseNodeSelectionResponse(string $response, $nodes): ?array
+    {
+        // Extract node slug from response
+        if (preg_match('/NODE:\s*(\S+)/i', $response, $matches)) {
+            $selectedSlug = strtolower(trim($matches[1]));
+            
+            if ($selectedSlug === 'local' || $selectedSlug === 'none') {
+                return null;
+            }
+            
+            // Find the node
+            $node = $nodes->first(fn($n) => strtolower($n->slug) === $selectedSlug);
+            
+            if ($node) {
+                $reason = 'AI selected based on intent analysis';
+                if (preg_match('/REASON:\s*(.+)/i', $response, $reasonMatch)) {
+                    $reason = trim($reasonMatch[1]);
+                }
+                
+                return [
+                    'node' => $node,
+                    'reason' => $reason,
+                ];
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Fallback: keyword-based node selection
+     */
+    protected function keywordBasedSelection(string $query, $nodes): ?array
+    {
+        $queryLower = strtolower($query);
         $scores = [];
         
         foreach ($nodes as $node) {
@@ -117,41 +267,21 @@ class NodeRouterService
             }
         }
         
-        // If no node matches, route locally
         if (empty($scores)) {
-            return [
-                'node' => null,
-                'is_local' => true,
-                'reason' => 'No node matches the query',
-                'collections' => [],
-            ];
+            return null;
         }
         
-        // Get highest scoring node
         uasort($scores, fn($a, $b) => $b['score'] <=> $a['score']);
         $best = reset($scores);
-        $bestNode = $best['node'];
-        
-        // Check if node is available
-        if (!$this->isNodeAvailable($bestNode)) {
-            return [
-                'node' => null,
-                'is_local' => true,
-                'reason' => "Best matching node {$bestNode->name} is unavailable",
-                'collections' => [],
-            ];
-        }
         
         return [
-            'node' => $bestNode,
-            'is_local' => false,
-            'reason' => "Query matches node {$bestNode->name} (score: {$best['score']})",
-            'collections' => $bestNode->collections ?? [],
+            'node' => $best['node'],
+            'reason' => "Keyword match (score: {$best['score']})",
         ];
     }
     
     /**
-     * Score how well a node matches a query
+     * Score how well a node matches a query (used as fallback)
      */
     protected function scoreNodeForQuery(AINode $node, string $queryLower): int
     {
@@ -179,11 +309,6 @@ class NodeRouterService
             $collectionName = strtolower(class_basename($collection));
             if (str_contains($queryLower, $collectionName)) {
                 $score += 15;
-            }
-            // Also check plural/singular
-            if (str_contains($queryLower, $collectionName . 's') || 
-                str_contains($queryLower, rtrim($collectionName, 's'))) {
-                $score += 10;
             }
         }
         
