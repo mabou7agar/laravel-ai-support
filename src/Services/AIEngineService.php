@@ -100,13 +100,19 @@ class AIEngineService
             // Generate the response
             $response = $driver->generate($request);
 
-            // Calculate and deduct credits if successful (if enabled)
-            $creditsUsed = 0;
+            // Calculate credits for this request (always, for accumulation)
+            $creditsUsed = $this->creditManager->calculateCredits($request);
+            
+            // Always accumulate credits (for cross-node tracking)
+            CreditManager::accumulate($creditsUsed);
+            
+            // Deduct credits if enabled on this node (master only)
             if ($creditsEnabled && $response->success && $request->userId) {
-                $creditsUsed = $this->creditManager->calculateCredits($request);
                 $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
-
-                // Add credits to response for tracking
+            }
+            
+            // Add credits to response for tracking
+            if ($response->success) {
                 $response = $response->withUsage(
                     tokensUsed: $response->tokensUsed,
                     creditsUsed: $creditsUsed

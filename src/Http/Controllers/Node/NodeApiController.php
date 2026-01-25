@@ -492,6 +492,9 @@ class NodeApiController extends Controller
         $startTime = microtime(true);
         
         try {
+            // Start accumulating credits for this request (child node tracks but doesn't deduct)
+            \LaravelAIEngine\Services\CreditManager::startAccumulating();
+            
             // Get ChatService to process the message
             $chatService = app(\LaravelAIEngine\Services\ChatService::class);
             
@@ -527,8 +530,8 @@ class NodeApiController extends Controller
                 'agent_strategy' => $fullMetadata['agent_strategy'] ?? null,
             ];
             
-            // Include credits used so master node can deduct them
-            $creditsUsed = $response->getCreditsUsed();
+            // Get total accumulated credits from all AI calls during this request
+            $creditsUsed = \LaravelAIEngine\Services\CreditManager::stopAccumulating();
             
             return response()->json([
                 'success' => true,
@@ -539,6 +542,9 @@ class NodeApiController extends Controller
             ]);
             
         } catch (\Exception $e) {
+            // Stop accumulating credits on error (cleanup)
+            \LaravelAIEngine\Services\CreditManager::stopAccumulating();
+            
             \Log::channel('ai-engine')->error('NodeApiController: Chat failed', [
                 'session_id' => $validated['session_id'],
                 'error' => $e->getMessage(),

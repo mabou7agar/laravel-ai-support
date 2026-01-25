@@ -16,9 +16,63 @@ class CreditManager
     protected static ?string $globalQueryResolver = null;
     protected static ?string $globalLifecycleHandler = null;
     
+    /**
+     * Request-scoped credit accumulator for tracking cumulative credits
+     * across multiple AI calls within a single request
+     */
+    protected static float $requestCreditsAccumulator = 0.0;
+    protected static bool $isAccumulating = false;
+    
     public function __construct(
         private Application $app
     ) {}
+    
+    /**
+     * Start accumulating credits for this request.
+     * Call this at the beginning of a chat request to track all AI calls.
+     */
+    public static function startAccumulating(): void
+    {
+        static::$requestCreditsAccumulator = 0.0;
+        static::$isAccumulating = true;
+    }
+    
+    /**
+     * Stop accumulating and return total credits used.
+     */
+    public static function stopAccumulating(): float
+    {
+        $total = static::$requestCreditsAccumulator;
+        static::$requestCreditsAccumulator = 0.0;
+        static::$isAccumulating = false;
+        return $total;
+    }
+    
+    /**
+     * Add credits to the accumulator (called by AIEngineService after each AI call).
+     */
+    public static function accumulate(float $credits): void
+    {
+        if (static::$isAccumulating) {
+            static::$requestCreditsAccumulator += $credits;
+        }
+    }
+    
+    /**
+     * Get current accumulated credits without stopping.
+     */
+    public static function getAccumulatedCredits(): float
+    {
+        return static::$requestCreditsAccumulator;
+    }
+    
+    /**
+     * Check if currently accumulating credits.
+     */
+    public static function isAccumulating(): bool
+    {
+        return static::$isAccumulating;
+    }
     
     /**
      * Set global query resolver at runtime
