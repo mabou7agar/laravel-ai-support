@@ -163,6 +163,10 @@ class AINode extends Model
             'actions' => '/api/v1/actions/execute',
             'actions/execute' => '/api/v1/actions/execute',
             'model-actions' => '/api/v1/modules/discover',
+            'chat' => '/api/ai-engine/chat',
+            'ping' => '/api/ai-engine/health',
+            'search' => '/api/ai-engine/search',
+            'execute' => '/api/ai-engine/execute',
         ];
         
         // Use mapped endpoint if available, otherwise construct URL
