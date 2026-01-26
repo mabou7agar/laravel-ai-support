@@ -167,11 +167,11 @@ class NodeRouterService
 
             // Create AI request for node selection
             $request = new AIRequest(
-                prompt: $prompt,
-                engine: EngineEnum::from(config('ai-engine.default', 'openai')),
-                model: EntityEnum::from(config('ai-engine.nodes.routing_model', 'gpt-4o-mini')),
-                temperature: 0.1,
-                maxTokens: 200
+                prompt:      $prompt,
+                engine:      EngineEnum::from(config('ai-engine.default', 'openai')),
+                model:       EntityEnum::from(config('ai-engine.nodes.routing_model', 'gpt-4o-mini')),
+                maxTokens:   200,
+                temperature: 0.1
             );
 
             $response = $aiService->generate($request);
