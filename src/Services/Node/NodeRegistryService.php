@@ -128,12 +128,31 @@ class NodeRegistryService
             $node->recordPing($success, $duration);
             
             if ($success) {
-                // Update node metadata from response
+                // Update node metadata from response (auto-discovered from child)
                 $data = $response->json();
-                $node->update([
+                $updateData = [
                     'version' => $data['version'] ?? $node->version,
                     'capabilities' => $data['capabilities'] ?? $node->capabilities,
-                ]);
+                ];
+                
+                // Sync auto-discovered metadata if provided
+                if (!empty($data['description'])) {
+                    $updateData['description'] = $data['description'];
+                }
+                if (!empty($data['domains'])) {
+                    $updateData['domains'] = $data['domains'];
+                }
+                if (!empty($data['data_types'])) {
+                    $updateData['data_types'] = $data['data_types'];
+                }
+                if (!empty($data['keywords'])) {
+                    $updateData['keywords'] = $data['keywords'];
+                }
+                if (!empty($data['collections'])) {
+                    $updateData['collections'] = $data['collections'];
+                }
+                
+                $node->update($updateData);
                 
                 // Record success in circuit breaker
                 $this->circuitBreaker->recordSuccess($node);

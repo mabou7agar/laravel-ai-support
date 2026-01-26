@@ -11,14 +11,26 @@ use LaravelAIEngine\Services\Vector\VectorSearchService;
 class NodeApiController extends Controller
 {
     /**
-     * Health check endpoint
+     * Health check endpoint - includes discovered metadata for master to sync
      */
     public function health()
     {
+        // Auto-discover node metadata
+        $discovery = new \LaravelAIEngine\Services\Node\NodeMetadataDiscovery();
+        $metadata = $discovery->discover();
+        
         return response()->json([
             'status' => 'healthy',
             'version' => config('ai-engine.version', '1.0.0'),
-            'capabilities' => config('ai-engine.nodes.capabilities', ['search', 'actions']),
+            'name' => config('app.name'),
+            'url' => config('app.url'),
+            'description' => $metadata['description'],
+            'capabilities' => $metadata['capabilities'],
+            'domains' => $metadata['domains'],
+            'data_types' => $metadata['data_types'],
+            'keywords' => $metadata['keywords'],
+            'collections' => $metadata['collections'],
+            'workflows' => $metadata['workflows'],
             'timestamp' => now()->toIso8601String(),
         ]);
     }
