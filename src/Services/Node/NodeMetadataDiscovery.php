@@ -58,7 +58,7 @@ class NodeMetadataDiscovery
             $entities[] = strtolower(Str::snake($className));
         }
         
-        $entities = array_unique($entities);
+        $entities = array_values(array_unique($entities));
         
         if (!empty($entities)) {
             $entityList = $this->formatList($entities);
@@ -103,10 +103,10 @@ class NodeMetadataDiscovery
             $capabilities[] = 'actions';
         }
         
-        return array_unique(array_merge(
+        return array_values(array_unique(array_merge(
             $capabilities,
             config('ai-engine.nodes.capabilities', [])
-        ));
+        )));
     }
 
     /**
@@ -141,10 +141,10 @@ class NodeMetadataDiscovery
             }
         }
         
-        return array_unique(array_merge(
+        return array_values(array_unique(array_merge(
             $domains,
             config('ai-engine.nodes.domains', [])
-        ));
+        )));
     }
 
     /**
@@ -160,10 +160,10 @@ class NodeMetadataDiscovery
             $dataTypes[] = strtolower(Str::snake($modelName));
         }
         
-        return array_unique(array_merge(
+        return array_values(array_unique(array_merge(
             $dataTypes,
             config('ai-engine.nodes.data_types', [])
-        ));
+        )));
     }
 
     /**
@@ -192,10 +192,10 @@ class NodeMetadataDiscovery
             }
         }
         
-        return array_unique(array_merge(
+        return array_values(array_unique(array_merge(
             $keywords,
             config('ai-engine.nodes.keywords', [])
-        ));
+        )));
     }
 
     /**
@@ -220,10 +220,10 @@ class NodeMetadataDiscovery
             }
         }
         
-        return array_unique(array_merge(
+        return array_values(array_unique(array_merge(
             $collections,
             config('ai-engine.nodes.collections', [])
-        ));
+        )));
     }
 
     /**
@@ -256,7 +256,7 @@ class NodeMetadataDiscovery
             }
         }
         
-        return array_unique($workflows);
+        return array_values(array_unique($workflows));
     }
 
     /**
