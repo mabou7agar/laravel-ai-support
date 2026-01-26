@@ -358,21 +358,14 @@ trait AutomatesSteps
                 $modelClass = $entityConfig['model'] ?? null;
 
                 if (is_array($entityId)) {
-                    // For multiple entities, prioritize resolved data (entity name) over raw input (identifier_field)
-                    $identifierField = $entityConfig['identifier_field'] ?? $entityName;
-                    $entityData = [];
-
-                    // Priority 1: Check entity name (e.g., 'products') - has resolved data with prices
-                    if (isset($collectedData[$entityName]) && is_array($collectedData[$entityName]) && !empty($collectedData[$entityName])) {
-                        $entityData = $collectedData[$entityName];
-                    }
-                    // Priority 2: Check with _id suffix (backward compatibility)
-                    elseif (isset($collectedData[$entityName . '_id']) && is_array($collectedData[$entityName . '_id'])) {
-                        $entityData = $collectedData[$entityName . '_id'];
-                    }
-                    // Priority 3: Check identifier_field (e.g., 'items') - raw user input
-                    elseif (isset($collectedData[$identifierField]) && is_array($collectedData[$identifierField])) {
-                        $entityData = $collectedData[$identifierField];
+                    // For multiple entities, use entity name as single source of truth
+                    // Data is stored under entity name (e.g., 'products') with all resolved fields
+                    $entityData = $collectedData[$entityName] ?? [];
+                    
+                    // Fallback to identifier field for backward compatibility
+                    if (empty($entityData)) {
+                        $identifierField = $entityConfig['identifier_field'] ?? $entityName;
+                        $entityData = $collectedData[$identifierField] ?? [];
                     }
 
                     $dataForDisplay[$entityName] = $entityData;
@@ -1609,24 +1602,31 @@ PROMPT;
                     }
 
                     // Store resolved entity data
-                    // For array entities (like products), merge with user_inputs (user modifications take precedence)
-                    $userInputs = $collectedData['user_inputs'] ?? [];
+                    // For array entities (like products), merge with identifier field data (e.g., 'items')
+                    // which may have richer data from subflows (like prices)
+                    $identifierField = $entityConfig['identifier_field'] ?? $entityName;
                     
                     if (is_array($entityId)) {
-                        // Get user inputs for this entity (check both entity name and identifier field)
-                        $userItems = $userInputs[$entityName] ?? $userInputs['items'] ?? [];
+                        // Check if identifier field (e.g., 'items') has richer data with prices
+                        $identifierData = $collectedData[$identifierField] ?? [];
                         
-                        if (is_array($userItems) && !empty($userItems)) {
-                            // Merge user modifications into resolved entity data
+                        if (is_array($identifierData) && !empty($identifierData)) {
+                            // Merge: identifier field data (with prices from subflow) takes precedence
                             foreach ($entityId as $index => $resolvedItem) {
-                                if (isset($userItems[$index]) && is_array($userItems[$index])) {
-                                    // User modifications take precedence over DB values
-                                    $entityId[$index] = array_merge($resolvedItem, $userItems[$index]);
+                                if (isset($identifierData[$index]) && is_array($identifierData[$index])) {
+                                    // Identifier data (from subflow) takes precedence over resolved data
+                                    $entityId[$index] = array_merge($resolvedItem, $identifierData[$index]);
                                 }
                             }
                         }
-                        // Store array entities directly in entity name (e.g., 'products')
+                        
+                        // Store only under entity name (single source of truth)
                         $collectedData[$entityName] = $entityId;
+                        
+                        // Remove identifier field to avoid duplication
+                        if ($identifierField !== $entityName && isset($collectedData[$identifierField])) {
+                            unset($collectedData[$identifierField]);
+                        }
                     } else {
                         // For single entities, store ID in entity_id field for backward compatibility
                         $collectedData[$entityName . '_id'] = $entityId;

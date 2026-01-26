@@ -575,11 +575,13 @@ class GenericEntityResolver
                                 }
                             }
                             
-                            // Merge collected data with entity data
-                            $createdItem = \LaravelAIEngine\Services\AI\FieldDetector::mergeData(
-                                $missing[$index],
-                                $entityData
-                            );
+                            // CRITICAL: User-entered prices should take precedence over database prices
+                            // First merge entity data into missing item (database fills gaps)
+                            // Then user input overwrites database values
+                            $createdItem = array_merge($entityData, $missing[$index]);
+                            
+                            // Ensure ID is always from the created/found entity
+                            $createdItem['id'] = $entityId;
                         } else {
                             // Fallback to original behavior if entity fetch fails
                             $createdItem = array_merge($missing[$index], ['id' => $entityId]);
@@ -607,16 +609,17 @@ class GenericEntityResolver
                         // All products created
                         $context->set($fieldName, $validated);
                         
-                        // CRITICAL: Also update collected_data with validated items (including prices)
+                        // Store only under entity name (e.g., 'products') - single source of truth
                         $collectedData = $context->get('collected_data', []);
                         $identifierField = $config['identifier_field'] ?? $fieldName;
                         
-                        // Store under identifier field (e.g., 'items') and field name (e.g., 'products')
-                        // This matches the simplified storage approach
-                        $collectedData[$identifierField] = $validated;
-                        if ($identifierField !== $fieldName) {
-                            $collectedData[$fieldName] = $validated;
+                        // Remove old identifier field data to avoid duplication
+                        if ($identifierField !== $fieldName && isset($collectedData[$identifierField])) {
+                            unset($collectedData[$identifierField]);
                         }
+                        
+                        // Store only under entity name (single source of truth)
+                        $collectedData[$fieldName] = $validated;
                         $context->set('collected_data', $collectedData);
                         
                         Log::channel('ai-engine')->info('Updated collected_data with validated items', [
@@ -732,6 +735,19 @@ class GenericEntityResolver
 
         if (empty($missing)) {
             $context->set($fieldName, $validated);
+            
+            // Store in collected_data under entity name (single source of truth)
+            $collectedData = $context->get('collected_data', []);
+            $identifierField = $config['identifier_field'] ?? $fieldName;
+            
+            // Remove old identifier field data to avoid duplication
+            if ($identifierField !== $fieldName && isset($collectedData[$identifierField])) {
+                unset($collectedData[$identifierField]);
+            }
+            
+            $collectedData[$fieldName] = $validated;
+            $context->set('collected_data', $collectedData);
+            
             return ActionResult::success(
                 message: 'All entities found',
                 data: [$fieldName => $validated]
