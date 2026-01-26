@@ -150,6 +150,7 @@ class NodeRouterService
                 'capabilities' => $node->capabilities ?? [],
                 'domains' => $node->domains ?? [],
                 'data_types' => $node->data_types ?? [],
+                'workflows' => array_map(fn($w) => class_basename($w), $node->workflows ?? []),
             ];
         }
 
@@ -211,8 +212,9 @@ User query: "{$query}"
 
 Instructions:
 1. Analyze the user's intent from their query
-2. Match the intent against each node's description, capabilities, and domains
-3. Select the BEST matching node, or respond with "LOCAL" if no node is appropriate
+2. Match the intent against each node's description, capabilities, domains, and available workflows
+3. If a node has a workflow that matches the user's intent (e.g., "CreateInvoiceWorkflow" for "create invoice"), that node should handle it
+4. Select the BEST matching node, or respond with "LOCAL" if no node is appropriate
 
 Respond in this exact format:
 NODE: <node_slug or LOCAL>

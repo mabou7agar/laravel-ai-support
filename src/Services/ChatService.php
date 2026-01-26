@@ -161,7 +161,7 @@ class ChatService
             'use_actions' => $useActions,
             'caller' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3),
         ]);
-        
+
         // Load conversation history if memory is enabled
         $conversationId = null;
         if ($useMemory) {
@@ -192,14 +192,14 @@ class ChatService
         $isMaster = config('ai-engine.nodes.is_master', true);
         $searchMode = config('ai-engine.nodes.search_mode', 'routing');
         $isForwarded = $this->isForwardedRequest();
-        
+
         if ($nodesEnabled && $isMaster && $searchMode === 'routing' && !$isForwarded) {
             $routedResponse = $this->tryRouteToChildNode(
                 $message, $sessionId, $userId, $engine, $model,
                 $useMemory, $useActions, $useIntelligentRAG, $ragCollections,
                 $searchInstructions, $conversationId
             );
-            
+
             if ($routedResponse !== null) {
                 // Track if workflow is active on child node for session continuity
                 $metadata = $routedResponse->getMetadata();
@@ -213,7 +213,7 @@ class ChatService
                     // Workflow completed, clear the session-node mapping
                     Cache::forget("session_node:{$sessionId}");
                 }
-                
+
                 return $routedResponse;
             }
         }
@@ -261,7 +261,7 @@ class ChatService
             conversationId: $conversationId
         );
     }
-    
+
     /**
      * Check if this request was forwarded from another node
      * Prevents infinite forwarding loops
@@ -273,10 +273,10 @@ class ChatService
         if ($request && $request->hasHeader('X-Forwarded-From-Node')) {
             return true;
         }
-        
+
         return false;
     }
-    
+
     /**
      * Try to route the message to a child node based on intent
      * Returns AIResponse if routed, null if should be handled locally
@@ -299,9 +299,9 @@ class ChatService
             if (!app()->bound(\LaravelAIEngine\Services\Node\NodeRouterService::class)) {
                 return null;
             }
-            
+
             $router = app(\LaravelAIEngine\Services\Node\NodeRouterService::class);
-            
+
             // FIRST: Check if this session already has an active workflow on a child node
             $existingNodeSlug = Cache::get("session_node:{$sessionId}");
             if ($existingNodeSlug) {
@@ -311,22 +311,22 @@ class ChatService
                         'session_id' => $sessionId,
                         'node' => $existingNodeSlug,
                     ]);
-                    
+
                     // Route to the existing node
                     $routing = [
                         'node' => $existingNode,
                         'is_local' => false,
                         'reason' => "Session has active workflow on node {$existingNode->name}",
                     ];
-                    
+
                     // Skip to forwarding
                     return $this->forwardToNode($router, $routing, $message, $sessionId, $userId, $engine, $model, $useMemory, $useActions, $useIntelligentRAG, $ragCollections, $searchInstructions, $conversationId);
                 }
             }
-            
+
             // Determine routing based on message content
             $routing = $router->route($message, $ragCollections);
-            
+
             // If should be handled locally, return null
             if ($routing['is_local']) {
                 Log::channel('ai-engine')->debug('Message routed locally', [
@@ -334,10 +334,10 @@ class ChatService
                 ]);
                 return null;
             }
-            
+
             // Forward to child node
             return $this->forwardToNode($router, $routing, $message, $sessionId, $userId, $engine, $model, $useMemory, $useActions, $useIntelligentRAG, $ragCollections, $searchInstructions, $conversationId);
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Node routing failed', [
                 'error' => $e->getMessage(),
@@ -345,7 +345,7 @@ class ChatService
             return null;
         }
     }
-    
+
     /**
      * Forward a chat message to a specific node
      */
@@ -365,14 +365,18 @@ class ChatService
         $conversationId
     ): ?AIResponse {
         $node = $routing['node'];
-        
+
         Log::channel('ai-engine')->info('Forwarding chat to child node', [
             'node' => $node->slug,
             'node_name' => $node->name,
             'reason' => $routing['reason'],
             'session_id' => $sessionId,
         ]);
-        
+
+        // Use node's collections if no specific collections were requested
+        // This allows the child node to use its own auto-discovered collections
+        $collectionsToUse = !empty($ragCollections) ? $ragCollections : ($routing['collections'] ?? []);
+
         $response = $router->forwardChat(
             $node,
             $message,
@@ -383,19 +387,19 @@ class ChatService
                 'use_memory' => $useMemory,
                 'use_actions' => $useActions,
                 'use_intelligent_rag' => $useIntelligentRAG,
-                'rag_collections' => $ragCollections,
+                'rag_collections' => $collectionsToUse,
                 'search_instructions' => $searchInstructions,
             ],
             $userId
         );
-        
+
         if ($response['success']) {
             Log::channel('ai-engine')->info('Child node chat successful', [
                 'node' => $node->slug,
                 'duration_ms' => $response['duration_ms'] ?? 0,
                 'credits_used' => $response['credits_used'] ?? 0,
             ]);
-            
+
             // Deduct credits on master node based on child node's usage
             $creditsUsed = $response['credits_used'] ?? 0;
             if ($creditsUsed > 0 && $userId && config('ai-engine.credits.enabled', false)) {
@@ -424,7 +428,7 @@ class ChatService
                     ]);
                 }
             }
-            
+
             return new AIResponse(
                 content: $response['response'],
                 engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
@@ -439,13 +443,13 @@ class ChatService
                 conversationId: $conversationId
             );
         }
-        
+
         // Child node failed, fall back to local processing
         Log::channel('ai-engine')->warning('Child node chat failed, falling back to local', [
             'node' => $node->slug,
             'error' => $response['error'] ?? 'Unknown error',
         ]);
-        
+
         return null;
     }
 
@@ -453,679 +457,6 @@ class ChatService
      * Legacy method - kept for backward compatibility
      * All logic now handled by AgentOrchestrator
      */
-    private function continueWithLegacyRAG(
-        string $message,
-        string $sessionId,
-        string $engine,
-        string $model,
-        bool $useIntelligentRAG,
-        array $ragCollections,
-        $userId,
-        ?string $searchInstructions,
-        $conversationId
-    ): AIResponse {
-        // This method is kept for reference but should not be called
-        // All RAG logic is now in KnowledgeSearchHandler
-
-        // Use Intelligent RAG if enabled and available (but skip for action intents)
-        Log::info('ChatService processMessage', [
-            'useIntelligentRAG' => $useIntelligentRAG,
-            'intelligentRAG_available' => $this->getIntelligentRAG() !== null,
-            'message' => substr($message, 0, 50),
-            'ragCollections_count' => count($ragCollections),
-            'ragCollections_names' => array_map(fn($c) => class_basename($c), array_slice($ragCollections, 0, 5)),
-        ]);
-
-        if ($useIntelligentRAG && $this->getIntelligentRAG() !== null) {
-            try {
-                // Auto-discover collections ONLY if not provided
-                // If user passes specific collections, respect them strictly
-                if (empty($ragCollections) && $this->getRagDiscovery() !== null) {
-                    $ragCollections = $this->getRagDiscovery()->discover();
-
-                    Log::channel('ai-engine')->info('Auto-discovered RAG collections (none passed)', [
-                        'collections' => $ragCollections,
-                        'count' => count($ragCollections),
-                    ]);
-                } else {
-                    Log::channel('ai-engine')->info('Using user-passed RAG collections', [
-                        'collections' => $ragCollections,
-                        'count' => count($ragCollections),
-                    ]);
-                }
-
-                $conversationHistory = !empty($messages) ? $messages : [];
-
-                // SECURITY: Pass userId for multi-tenant access control
-                $ragOptions = [
-                    'engine' => $engine,
-                    'model' => $model,
-                    'max_tokens' => config('ai-engine.actions.thresholds.max_tokens_rag', 4000),
-                    'search_instructions' => $searchInstructions,
-                ];
-
-                if ($intentAnalysis) {
-                    $ragOptions['intent_analysis'] = $intentAnalysis;
-                }
-
-                $response = $this->getIntelligentRAG()->processMessage(
-                    $message,
-                    $sessionId,
-                    $ragCollections,
-                    $conversationHistory,
-                    $ragOptions,
-                    $userId // CRITICAL: User ID for access control (fetched internally)
-                );
-
-                if (config('ai-engine.debug')) {
-                    Log::channel('ai-engine')->debug('Intelligent RAG used', [
-                        'has_sources' => !empty($response->getMetadata()['sources'] ?? []),
-                        'source_count' => count($response->getMetadata()['sources'] ?? []),
-                    ]);
-                }
-            } catch (\Exception $e) {
-                Log::channel('ai-engine')->warning('Intelligent RAG failed, falling back to regular response', [
-                    'error' => $e->getMessage(),
-                ]);
-
-                // Fallback to regular response
-                $response = $this->aiEngineService->generate($aiRequest);
-            }
-        } else {
-            // Generate regular AI response
-            $response = $this->aiEngineService->generate($aiRequest);
-        }
-
-        // Check for actions if enabled (inline action handling)
-        if ($useActions && $this->getActionManager() !== null) {
-            try {
-                $sources = $response->getMetadata()['sources'] ?? [];
-                $conversationHistory = !empty($messages) ? $messages : [];
-
-                $context = [
-                    'conversation_history' => $conversationHistory,
-                    'user_id' => $userId,
-                    'session_id' => $sessionId,
-                ];
-
-                // Skip action generation if user is providing data for existing incomplete action
-                $skipActionGeneration = false;
-                if (isset($intentAnalysis['intent']) && $intentAnalysis['intent'] === 'provide_data') {
-                    $pendingAction = $this->pendingActionService?->get($sessionId);
-                    if ($pendingAction) {
-                        $skipActionGeneration = true;
-                        Log::channel('ai-engine')->info('Skipping action generation - user providing data for pending action', [
-                            'pending_action' => $pendingAction->label,
-                            'intent' => 'provide_data',
-                        ]);
-
-                        // Update pending action with extracted data
-                        $extractedData = $intentAnalysis['extracted_data'] ?? [];
-                        if (!empty($extractedData)) {
-                            $this->getPendingActionService()?->updateParams($sessionId, $extractedData);
-                            Log::channel('ai-engine')->info('Updated pending action with provided data', [
-                                'session_id' => $sessionId,
-                                'extracted_data' => $extractedData,
-                            ]);
-                        }
-                    }
-                }
-
-                if (!$skipActionGeneration) {
-                    // Skip action generation for retrieval intents - they should use RAG data, not workflows
-                    $isRetrievalIntent = $intentAnalysis && ($intentAnalysis['intent'] ?? '') === 'retrieval';
-
-                    if ($isRetrievalIntent) {
-                        Log::channel('ai-engine')->info('Skipping action generation for retrieval intent', [
-                            'message' => $processedMessage,
-                            'intent' => $intentAnalysis['intent'],
-                            'reason' => 'Retrieval queries should use RAG data, not trigger workflows',
-                        ]);
-                        $actions = [];
-                    } else {
-                        Log::channel('ai-engine')->info('Generating actions for context', [
-                            'message' => $processedMessage,
-                            'has_manager' => $this->getActionManager() !== null,
-                            'conversation_history_count' => count($conversationHistory),
-                            'intent' => $intentAnalysis['intent'] ?? null,
-                        ]);
-
-                        $actions = $this->getActionManager()->generateActionsForContext(
-                            $processedMessage,
-                            $context,
-                            $intentAnalysis
-                        );
-                    }
-
-                    Log::channel('ai-engine')->info('Actions generated', [
-                        'count' => count($actions),
-                        'actions' => array_map(fn($a) => $a->label, $actions),
-                    ]);
-
-                    // Store actions in smartActions variable for consistency
-                    $smartActions = $actions;
-                } else {
-                    // No new actions, will use pending action
-                    $smartActions = [];
-                }
-
-                // Add actions to metadata
-                $metadata = array_merge($context, ['smart_actions' => $smartActions]);
-
-                // If no actions generated, check if there's a pending action from provide_data flow
-                if (empty($smartActions)) {
-                    $pendingAction = $this->pendingActionService?->get($sessionId);
-                    $cachedActionData = $pendingAction ? [
-                        'id' => $pendingAction->id,
-                        'type' => $pendingAction->type->value,
-                        'label' => $pendingAction->label,
-                        'description' => $pendingAction->description,
-                        'data' => $pendingAction->data,
-                        'missing_fields' => $pendingAction->data['missing_fields'] ?? [],
-                        'is_incomplete' => !empty($pendingAction->data['missing_fields'] ?? []),
-                    ] : null;
-
-                    // Check if user just provided data for pending action
-                    if (
-                        $cachedActionData &&
-                        isset($intentAnalysis['intent']) &&
-                        $intentAnalysis['intent'] === 'provide_data'
-                    ) {
-
-                        Log::channel('ai-engine')->info('Presenting completed action after data provided', [
-                            'action' => $cachedActionData['label'],
-                            'params' => array_keys($cachedActionData['data']['params'] ?? []),
-                        ]);
-
-                        // Generate updated description with current data
-                        $params = $cachedActionData['data']['params'] ?? [];
-                        $modelClass = $cachedActionData['data']['model_class'] ?? '';
-                        $modelName = class_basename($modelClass);
-
-                        $description = "**Confirm {$modelName} Creation**\n\n";
-                        $description .= "**Summary of Information:**\n\n";
-
-                        // Show all collected data
-                        $context = ['field_labels' => $intentAnalysis['field_labels'] ?? []];
-                        foreach ($params as $key => $value) {
-                            $label = $this->getFormatter()->formatFieldLabel($key, $context);
-                            if (is_array($value)) {
-                                $description .= "- **{$label}:** " . json_encode($value) . "\n";
-                            } else {
-                                $description .= "- **{$label}:** {$value}\n";
-                            }
-                        }
-
-                        $description .= "\n**Please review the information above.**\n";
-                        $description .= "Reply 'yes' to create, or tell me what you'd like to change.";
-
-                        // Convert cached action back to InteractiveAction with updated description
-                        $smartActions = [
-                            new \LaravelAIEngine\DTOs\InteractiveAction(
-                                id: $cachedActionData['id'],
-                                type: \LaravelAIEngine\Enums\ActionTypeEnum::from($cachedActionData['type']),
-                                label: str_replace(' (Incomplete)', '', $cachedActionData['label']),
-                                description: $description,
-                                data: $cachedActionData['data']
-                            )
-                        ];
-
-                        $metadata['smart_actions'] = $smartActions;
-                    }
-                }
-
-                // If no actions generated but user is confirming or providing optional params, retrieve from cache
-                if (empty($smartActions) && ($this->isConfirmationMessage($processedMessage) || $this->hasOptionalParamValues($processedMessage))) {
-                    Log::channel('ai-engine')->info('Confirmation or optional params detected, checking cache for pending action', [
-                        'message' => $processedMessage,
-                        'session_id' => $sessionId
-                    ]);
-
-                    // Try to get pending action from database
-                    $pendingAction = $this->pendingActionService?->get($sessionId);
-                    $cachedActionData = $pendingAction ? [
-                        'id' => $pendingAction->id,
-                        'type' => $pendingAction->type->value,
-                        'label' => $pendingAction->label,
-                        'description' => $pendingAction->description,
-                        'data' => $pendingAction->data,
-                        'missing_fields' => $pendingAction->data['missing_fields'] ?? [],
-                        'is_incomplete' => !empty($pendingAction->data['missing_fields'] ?? []),
-                    ] : null;
-
-                    if ($cachedActionData) {
-                        // Check if user provided optional parameters or wants to use suggestions
-                        $isConfirmation = $this->isConfirmationMessage($processedMessage);
-                        $additionalParams = [];
-
-                        if ($isConfirmation && isset($cachedActionData['suggested_params'])) {
-                            // User confirmed - use AI suggestions
-                            $additionalParams = $cachedActionData['suggested_params'];
-                            Log::channel('ai-engine')->info('Using AI-suggested parameters', [
-                                'suggested_params' => $additionalParams
-                            ]);
-                        } else {
-                            // Extract any custom values user provided
-                            $additionalParams = $this->extractOptionalParamsFromMessage($processedMessage, $cachedActionData['optional_params'] ?? []);
-                            Log::channel('ai-engine')->info('Extracted custom parameters', [
-                                'custom_params' => $additionalParams
-                            ]);
-                        }
-
-                        // Merge additional params with existing params
-                        if (!empty($additionalParams)) {
-                            $cachedActionData['data']['params'] = array_merge(
-                                $cachedActionData['data']['params'] ?? [],
-                                $additionalParams
-                            );
-                        }
-
-                        // Reconstruct InteractiveAction from cached data
-                        $cachedAction = new \LaravelAIEngine\DTOs\InteractiveAction(
-                            id: $cachedActionData['id'],
-                            type: \LaravelAIEngine\Enums\ActionTypeEnum::from($cachedActionData['type']),
-                            label: $cachedActionData['label'],
-                            description: $cachedActionData['description'],
-                            data: $cachedActionData['data']
-                        );
-                        $smartActions = [$cachedAction];
-                        Log::channel('ai-engine')->info('Retrieved pending action from cache', [
-                            'action' => $cachedAction->label,
-                            'params' => $cachedAction->data['params'] ?? []
-                        ]);
-                    } else {
-                        Log::channel('ai-engine')->info('No cached action found, trying history');
-                        // Fallback to history if cache missed
-                        $smartActions = $this->getPendingActionsFromHistory($conversationHistory);
-                    }
-
-                    Log::channel('ai-engine')->info('Actions retrieved', [
-                        'count' => count($smartActions)
-                    ]);
-                }
-
-                if (!empty($smartActions)) {
-                    // PRIORITY 1: Check if AI intent analysis suggested a specific action
-                    $suggestedActionId = $intentAnalysis['suggested_action_id'] ?? null;
-                    $aiSuggestedAction = null;
-
-                    if ($suggestedActionId) {
-                        // Find the action that matches AI's suggestion
-                        foreach ($smartActions as $action) {
-                            $actionId = $action->data['action_id'] ?? '';
-                            // Match by action_id (with or without unique suffix)
-                            if ($actionId === $suggestedActionId || str_starts_with($actionId, $suggestedActionId . '_')) {
-                                $aiSuggestedAction = $action;
-                                Log::channel('ai-engine')->info('AI suggested action found', [
-                                    'suggested_id' => $suggestedActionId,
-                                    'matched_action' => $actionId,
-                                    'label' => $action->label,
-                                ]);
-                                break;
-                            }
-                        }
-                    }
-
-                    // PRIORITY 2: If no AI suggestion, sort by confidence and keyword relevance
-                    if (!$aiSuggestedAction) {
-                        $messageLower = strtolower($processedMessage);
-
-                        usort($smartActions, function ($a, $b) use ($messageLower) {
-                            $confA = $a->data['confidence'] ?? 0;
-                            $confB = $b->data['confidence'] ?? 0;
-
-                            // If confidence is equal, prioritize by keyword match
-                            if (abs($confA - $confB) < 0.01) {
-                                // Extract model name from action
-                                $modelA = class_basename($a->data['model_class'] ?? '');
-                                $modelB = class_basename($b->data['model_class'] ?? '');
-
-                                // Check if message contains model keywords (dynamic - no hardcoded names)
-                                $matchA = str_contains($messageLower, strtolower($modelA)) ? 1 : 0;
-                                $matchB = str_contains($messageLower, strtolower($modelB)) ? 1 : 0;
-
-                                if ($matchA !== $matchB) {
-                                    return $matchB <=> $matchA; // Higher match first
-                                }
-                            }
-
-                            return $confB <=> $confA; // Descending order by confidence
-                        });
-                    }
-
-                    // Select the action to cache
-                    if ($aiSuggestedAction) {
-                        // Use AI's suggestion (highest priority)
-                        $actionToCache = $aiSuggestedAction;
-                    } else {
-                        // Fallback: Use first action (already sorted by confidence and keyword match)
-                        // The first action is the most relevant based on our sorting logic
-                        $actionToCache = $smartActions[0];
-                    }
-
-                    $isIncomplete = !($actionToCache->data['ready_to_execute'] ?? true);
-                    $missingFields = $actionToCache->data['missing_fields'] ?? [];
-
-                    // Check if this is a workflow action - workflows handle their own conversation flow
-                    $actionDefinition = $this->getActionDefinition($actionToCache->data['action_id'] ?? null);
-                    $isWorkflow = ($actionDefinition['executor'] ?? null) === 'workflow' ||
-                        ($actionDefinition['type'] ?? null) === 'workflow_action';
-
-                    // If action is incomplete and NOT a workflow, override response to ask for missing information
-                    // Workflows handle their own prompts, so skip this for workflow actions
-                    if ($isIncomplete && !empty($missingFields) && !$isWorkflow) {
-                        $modelClass = $actionToCache->data['model_class'] ?? '';
-                        $modelName = class_basename($modelClass);
-
-                        // Store the incomplete action in database so we can continue the conversation
-                        $this->pendingActionService?->store($sessionId, $actionToCache, $userId);
-
-                        Log::channel('ai-engine')->info('Stored incomplete action for continuation', [
-                            'session_id' => $sessionId,
-                            'action' => $actionToCache->label,
-                            'missing_fields' => $missingFields,
-                        ]);
-
-                        // Build a helpful message asking for missing information
-                        $askForInfo = "I'll help you create a {$modelName}. To proceed, I need the following information:\n\n";
-
-                        foreach ($missingFields as $field) {
-                            $fieldLabel = $this->getFormatter()->formatFieldLabel($field, $actionDefinition);
-                            $askForInfo .= "- **" . $fieldLabel . "**\n";
-                        }
-                        $askForInfo .= "\nPlease provide these details.";
-
-                        // Create a simple response asking for missing info
-                        return new AIResponse(
-                            content: $askForInfo,
-                            engine: $response->getEngine(),
-                            model: $response->getModel(),
-                            actions: $smartActions,
-                            metadata: $metadata,
-                            tokensUsed: $response->getTokensUsed(),
-                            creditsUsed: $response->getCreditsUsed(),
-                            latency: $response->getLatency(),
-                            requestId: $response->getRequestId(),
-                            finishReason: 'incomplete_action',
-                            success: true,
-                            conversationId: $response->getConversationId()
-                        );
-                    }
-
-                    // Generate AI suggestions for optional parameters
-                    $optionalParams = $this->getOptionalParamsForAction($actionToCache);
-                    $currentParams = $actionToCache->data['params'] ?? [];
-                    $missingOptional = array_filter($optionalParams, fn($param) => !isset($currentParams[$param]));
-                    $suggestions = [];
-
-                    if (!empty($missingOptional)) {
-                        $suggestions = $this->generateOptionalParamSuggestions($currentParams, $missingOptional);
-                    }
-
-                    // Check if this is a workflow action - workflows execute immediately
-                    $actionDefinition = $this->getActionDefinition($actionToCache->data['action_id'] ?? null);
-                    $isWorkflow = ($actionDefinition['executor'] ?? null) === 'workflow' ||
-                        ($actionDefinition['type'] ?? null) === 'workflow_action';
-
-                    if ($isWorkflow) {
-                        // Workflows execute immediately and handle their own conversation flow
-                        Log::channel('ai-engine')->info('Executing workflow action immediately', [
-                            'action' => $actionToCache->label,
-                            'workflow_class' => $actionDefinition['workflow_class'] ?? 'unknown',
-                        ]);
-
-                        // Create new action with session_id and original message for workflow
-                        $workflowData = $actionToCache->data;
-                        $workflowData['session_id'] = $sessionId;
-                        $workflowData['original_message'] = $processedMessage;
-                        // Add message to params for workflow to access
-                        if (!isset($workflowData['params'])) {
-                            $workflowData['params'] = [];
-                        }
-                        $workflowData['params']['message'] = $processedMessage;
-
-                        $workflowAction = new \LaravelAIEngine\DTOs\InteractiveAction(
-                            id: $actionToCache->id,
-                            type: $actionToCache->type,
-                            label: $actionToCache->label,
-                            description: $actionToCache->description,
-                            data: $workflowData
-                        );
-
-                        $executionResult = $this->executeSmartActionInline($workflowAction, $userId);
-
-                        // Check if workflow needs user input (success can be false but still valid)
-                        $hasMessage = !empty($executionResult['message']);
-                        $hasError = !empty($executionResult['error']);
-
-                        if ($hasMessage && !$hasError) {
-                            // Return workflow response (either success or needs input)
-                            return new AIResponse(
-                                content: $executionResult['message'],
-                                engine: $response->getEngine(),
-                                model: $response->getModel(),
-                                metadata: array_merge($metadata, [
-                                    'workflow_active' => true,
-                                    'workflow_class' => $actionDefinition['workflow_class'] ?? null,
-                                    'workflow_data' => $executionResult['data'] ?? [],
-                                ]),
-                                tokensUsed: $response->getTokensUsed(),
-                                creditsUsed: $response->getCreditsUsed(),
-                                latency: $response->getLatency(),
-                                requestId: $response->getRequestId(),
-                                finishReason: 'workflow_active',
-                                success: true,
-                                conversationId: $response->getConversationId()
-                            );
-                        } else {
-                            return new AIResponse(
-                                content: "❌ Failed to start workflow: " . ($executionResult['error'] ?? 'Unknown error'),
-                                engine: $response->getEngine(),
-                                model: $response->getModel(),
-                                error: $executionResult['error'] ?? 'Workflow failed',
-                                success: false,
-                                conversationId: $response->getConversationId()
-                            );
-                        }
-                    }
-
-                    // Store pending action in database for confirmation (non-workflow actions)
-                    $this->pendingActionService?->store($sessionId, $actionToCache, $userId);
-
-                    // Check if any action is ready to execute automatically
-                    $autoExecuteAction = $this->checkAutoExecuteAction($smartActions, $processedMessage, $sessionId);
-
-                    Log::channel('ai-engine')->info('Checked for auto-execute', [
-                        'message' => $processedMessage,
-                        'has_actions' => count($smartActions),
-                        'auto_execute' => $autoExecuteAction ? $autoExecuteAction->label : 'none',
-                        'action_data' => $smartActions[0]->data ?? []
-                    ]);
-
-                    if ($autoExecuteAction) {
-                        // Execute action inline and update response
-                        Log::channel('ai-engine')->info('Auto-executing action', [
-                            'action' => $autoExecuteAction->label,
-                            'params' => $autoExecuteAction->data['params'] ?? []
-                        ]);
-
-                        $executionResult = $this->executeSmartActionInline($autoExecuteAction, $userId);
-
-                        // Remove executed action from pending list
-                        $this->removeExecutedAction($sessionId, $autoExecuteAction->id);
-
-                        if ($executionResult['success']) {
-                            // Append execution result to response content
-                            $originalContent = $response->getContent();
-                            $newContent = $originalContent . "\n\n" . $executionResult['message'];
-
-                            // Update response by modifying metadata directly
-                            $metadata = $response->getMetadata();
-
-                            // Get remaining pending actions count
-                            $remainingActions = $this->getPendingActionsCount($sessionId);
-
-                            $metadata['action_executed'] = [
-                                'action' => $autoExecuteAction->label,
-                                'result' => $executionResult,
-                                'remaining_pending_actions' => $remainingActions,
-                            ];
-
-                            // Create new response with all required parameters
-                            $response = new AIResponse(
-                                content: $newContent,
-                                engine: $response->getEngine(),
-                                model: $response->getModel(),
-                                metadata: $metadata,
-                                tokensUsed: $response->getTokensUsed(),
-                                creditsUsed: $response->getCreditsUsed(),
-                                latency: $response->getLatency(),
-                                requestId: $response->getRequestId(),
-                                usage: $response->getUsage(),
-                                cached: $response->isCached(),
-                                finishReason: $response->getFinishReason(),
-                                files: $response->getFiles(),
-                                actions: $response->getActions(),
-                                error: $response->getError(),
-                                success: $response->isSuccess(),
-                                conversationId: $response->getConversationId()
-                            );
-                        }
-                    } else {
-                        // Add smart actions to response metadata with optional params info
-                        $metadata = $response->getMetadata();
-                        $metadata['smart_actions'] = array_map(fn($action) => [
-                            'id' => $action->id,
-                            'type' => $action->type->value ?? 'button',
-                            'label' => $action->label,
-                            'description' => $action->description,
-                            'data' => $action->data,
-                            'optional_params' => $this->getOptionalParamsForAction($action),
-                        ], $smartActions);
-
-                        // Store all actions for potential confirmation (support multiple actions per session)
-                        if (!empty($smartActions)) {
-                            // Get existing pending actions from cache
-                            $cacheKey = "pending_actions_{$sessionId}";
-                            $existingActions = Cache::get($cacheKey, []);
-
-                            // Add new action to the list
-                            $newAction = [
-                                'id' => $smartActions[0]->id,
-                                'label' => $smartActions[0]->label,
-                                'data' => $smartActions[0]->data,
-                                'optional_params' => $this->getOptionalParamsForAction($smartActions[0]),
-                                'created_at' => now()->toIso8601String(),
-                            ];
-
-                            $existingActions[] = $newAction;
-
-                            // Store updated list in cache (24 hour TTL)
-                            Cache::put($cacheKey, $existingActions, 86400);
-
-                            // Keep backward compatibility - store most recent action
-                            $metadata['pending_action'] = $newAction;
-                            $metadata['pending_actions_count'] = count($existingActions);
-                        }
-
-                        // Add prompt for optional parameters to response
-                        $originalContent = $response->getContent();
-
-                        // When smart action is detected, replace the AI response with a positive acknowledgment
-                        // This works in any language since we're not parsing the response
-                        $itemName = $smartActions[0]->data['params']['name'] ?? $smartActions[0]->data['params']['title'] ?? 'this';
-                        $originalContent = "I can help you with that. Let me gather the necessary information.";
-
-                        // Generate summary of collected data
-                        $dataSummary = $this->generateDataSummary($smartActions[0]);
-
-                        $optionalParamsPrompt = $this->generateOptionalParamsPrompt($smartActions[0]);
-
-                        // Add confirmation prompt at the end
-                        $confirmationPrompt = "\n\n**Would you like to proceed with this action?** Reply with 'yes' to confirm.";
-
-                        if ($optionalParamsPrompt) {
-                            $newContent = $originalContent . "\n\n" . $dataSummary . "\n\n" . $optionalParamsPrompt . $confirmationPrompt;
-
-                            // Create new response with updated content
-                            $response = new AIResponse(
-                                content: $newContent,
-                                engine: $response->getEngine(),
-                                model: $response->getModel(),
-                                metadata: $metadata,
-                                tokensUsed: $response->getTokensUsed(),
-                                creditsUsed: $response->getCreditsUsed(),
-                                latency: $response->getLatency(),
-                                requestId: $response->getRequestId(),
-                                usage: $response->getUsage(),
-                                cached: $response->isCached(),
-                                finishReason: $response->getFinishReason(),
-                                files: $response->getFiles(),
-                                actions: $response->getActions(),
-                                error: $response->getError(),
-                                success: $response->isSuccess(),
-                                conversationId: $response->getConversationId()
-                            );
-                        } else {
-                            // No optional params, just add data summary and confirmation prompt
-                            $newContent = $originalContent . "\n\n" . $dataSummary . $confirmationPrompt;
-
-                            $response = new AIResponse(
-                                content: $newContent,
-                                engine: $response->getEngine(),
-                                model: $response->getModel(),
-                                metadata: $metadata,
-                                tokensUsed: $response->getTokensUsed(),
-                                creditsUsed: $response->getCreditsUsed(),
-                                latency: $response->getLatency(),
-                                requestId: $response->getRequestId(),
-                                usage: $response->getUsage(),
-                                cached: $response->isCached(),
-                                finishReason: $response->getFinishReason(),
-                                files: $response->getFiles(),
-                                actions: $response->getActions(),
-                                error: $response->getError(),
-                                success: $response->isSuccess(),
-                                conversationId: $response->getConversationId()
-                            );
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::channel('ai-engine')->warning('Smart action processing failed', [
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        // Save to conversation memory if enabled
-        if ($useMemory && isset($conversationId)) {
-            try {
-                $this->conversationService->saveMessages(
-                    $conversationId,
-                    $message,
-                    $response
-                );
-
-                // Invalidate cache so next request gets fresh data
-                $this->memoryOptimization->invalidateCache($conversationId);
-
-                if (config('ai-engine.debug')) {
-                    Log::channel('ai-engine')->debug('Conversation saved', [
-                        'conversation_id' => $conversationId,
-                    ]);
-                }
-            } catch (\Exception $e) {
-                Log::channel('ai-engine')->error('Failed to save conversation', [
-                    'conversation_id' => $conversationId,
-                    'error' => $e->getMessage(),
-                    'trace' => config('app.debug') ? $e->getTraceAsString() : null,
-                ]);
-            }
-        }
-
-        return $response;
-    }
 
     /**
      * Get system prompt based on configuration and intent analysis
@@ -2023,13 +1354,13 @@ class ChatService
             '/^(delete|remove)\s+/i',
             '/^(find|search|get|show|list)\s+/i',
         ];
-        
+
         foreach ($actionPatterns as $pattern) {
             if (preg_match($pattern, trim($message))) {
                 return true;
             }
         }
-        
+
         return false;
     }
 

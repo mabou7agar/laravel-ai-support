@@ -151,8 +151,16 @@ class NodeRegistryService
                 if (!empty($data['collections'])) {
                     $updateData['collections'] = $data['collections'];
                 }
+                if (!empty($data['workflows'])) {
+                    $updateData['workflows'] = $data['workflows'];
+                }
                 
                 $node->update($updateData);
+                
+                Log::channel('ai-engine')->debug('Node metadata synced', [
+                    'node_slug' => $node->slug,
+                    'synced_fields' => array_keys($updateData),
+                ]);
                 
                 // Record success in circuit breaker
                 $this->circuitBreaker->recordSuccess($node);

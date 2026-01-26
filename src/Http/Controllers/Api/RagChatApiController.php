@@ -78,12 +78,24 @@ class RagChatApiController extends Controller
                 'type' => gettype($ragCollections),
             ]);
             
+            // When routing is enabled on master node, don't auto-discover local collections
+            // Let the ChatService routing determine which node's collections to use
+            $nodesEnabled = config('ai-engine.nodes.enabled', false);
+            $isMaster = config('ai-engine.nodes.is_master', true);
+            $searchMode = config('ai-engine.nodes.search_mode', 'routing');
+            
             if (empty($ragCollections)) {
-                $ragCollections = $this->ragDiscovery->discover();
-                Log::info('RagChatApiController: Auto-discovered collections', [
-                    'count' => count($ragCollections),
-                    'collections' => $ragCollections,
-                ]);
+                if ($nodesEnabled && $isMaster && $searchMode === 'routing') {
+                    // Don't auto-discover - let routing handle collection selection
+                    $ragCollections = [];
+                    Log::info('RagChatApiController: Skipping auto-discovery (routing mode on master)');
+                } else {
+                    $ragCollections = $this->ragDiscovery->discover();
+                    Log::info('RagChatApiController: Auto-discovered collections', [
+                        'count' => count($ragCollections),
+                        'collections' => $ragCollections,
+                    ]);
+                }
             } else {
                 Log::info('RagChatApiController: Using user-passed collections', [
                     'count' => count($ragCollections),
