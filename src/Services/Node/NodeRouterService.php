@@ -2,6 +2,9 @@
 
 namespace LaravelAIEngine\Services\Node;
 
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Models\AINode;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
@@ -9,17 +12,17 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Simple Node Router Service
- * 
+ *
  * Routes requests to the appropriate node based on query intent,
  * instead of searching all nodes in parallel (federated search).
- * 
+ *
  * Flow: Query → Analyze Intent → Find Node → Forward Request → Return Response
  */
 class NodeRouterService
 {
     protected NodeRegistryService $registry;
     protected CircuitBreakerService $circuitBreaker;
-    
+
     public function __construct(
         NodeRegistryService $registry,
         CircuitBreakerService $circuitBreaker
@@ -27,10 +30,10 @@ class NodeRouterService
         $this->registry = $registry;
         $this->circuitBreaker = $circuitBreaker;
     }
-    
+
     /**
      * Route a query to the appropriate node
-     * 
+     *
      * @param string $query User's query
      * @param array $collections Collections to search (from AI analysis)
      * @param array $options Additional options
@@ -42,11 +45,11 @@ class NodeRouterService
         if (!empty($collections)) {
             return $this->routeByCollections($collections);
         }
-        
+
         // Otherwise, analyze query to determine routing
         return $this->routeByQueryAnalysis($query, $options);
     }
-    
+
     /**
      * Route based on specified collections
      */
@@ -55,7 +58,7 @@ class NodeRouterService
         // Check if any collection belongs to a remote node
         foreach ($collections as $collection) {
             $node = $this->registry->findNodeForCollection($collection);
-            
+
             if ($node && $node->type === 'child') {
                 // Check if node is healthy
                 if (!$this->isNodeAvailable($node)) {
@@ -65,7 +68,7 @@ class NodeRouterService
                     ]);
                     continue;
                 }
-                
+
                 return [
                     'node' => $node,
                     'is_local' => false,
@@ -74,7 +77,7 @@ class NodeRouterService
                 ];
             }
         }
-        
+
         // All collections are local or no remote node found
         return [
             'node' => null,
@@ -83,7 +86,7 @@ class NodeRouterService
             'collections' => $collections,
         ];
     }
-    
+
     /**
      * Route based on AI analysis of query intent vs node descriptions/goals
      */
@@ -91,7 +94,7 @@ class NodeRouterService
     {
         // Get all active child nodes
         $nodes = AINode::active()->healthy()->child()->get();
-        
+
         if ($nodes->isEmpty()) {
             return [
                 'node' => null,
@@ -100,10 +103,10 @@ class NodeRouterService
                 'collections' => [],
             ];
         }
-        
+
         // Use AI to determine the best node based on descriptions and goals
         $selectedNode = $this->aiSelectNode($query, $nodes);
-        
+
         if (!$selectedNode) {
             return [
                 'node' => null,
@@ -112,7 +115,7 @@ class NodeRouterService
                 'collections' => [],
             ];
         }
-        
+
         // Check if node is available
         if (!$this->isNodeAvailable($selectedNode['node'])) {
             return [
@@ -122,7 +125,7 @@ class NodeRouterService
                 'collections' => [],
             ];
         }
-        
+
         return [
             'node' => $selectedNode['node'],
             'is_local' => false,
@@ -130,7 +133,7 @@ class NodeRouterService
             'collections' => $selectedNode['node']->collections ?? [],
         ];
     }
-    
+
     /**
      * Use AI to select the best node for a query based on node descriptions and goals
      */
@@ -149,39 +152,40 @@ class NodeRouterService
                 'data_types' => $node->data_types ?? [],
             ];
         }
-        
+
         // If no nodes have descriptions, fall back to keyword matching
         $hasDescriptions = collect($nodeDescriptions)->filter(fn($n) => !empty($n['description']))->isNotEmpty();
         if (!$hasDescriptions) {
             Log::channel('ai-engine')->debug('No node descriptions available, falling back to keyword matching');
             return $this->keywordBasedSelection($query, $nodes);
         }
-        
+
         $prompt = $this->buildNodeSelectionPrompt($query, $nodeDescriptions);
-        
+
         try {
-            $aiManager = app(\LaravelAIEngine\Services\AIEngineManager::class);
-            
-            $response = $aiManager->generate(
+            $aiService = app(\LaravelAIEngine\Services\AIEngineService::class);
+
+            // Create AI request for node selection
+            $request = new AIRequest(
                 prompt: $prompt,
-                engine: config('ai-engine.default', 'openai'),
-                model: config('ai-engine.nodes.routing_model', 'gpt-4o-mini'),
-                options: [
-                    'temperature' => 0.1,
-                    'max_tokens' => 200,
-                ]
+                engine: EngineEnum::from(config('ai-engine.default', 'openai')),
+                model: EntityEnum::from(config('ai-engine.nodes.routing_model', 'gpt-4o-mini')),
+                temperature: 0.1,
+                maxTokens: 200
             );
-            
+
+            $response = $aiService->generate($request);
+
             $result = $this->parseNodeSelectionResponse($response->getContent(), $nodes);
-            
+
             Log::channel('ai-engine')->info('AI node selection result', [
                 'query' => substr($query, 0, 100),
                 'selected_node' => $result ? $result['node']->slug : 'local',
                 'reason' => $result['reason'] ?? 'handled locally',
             ]);
-            
+
             return $result;
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('AI node selection failed, falling back to keyword matching', [
                 'error' => $e->getMessage(),
@@ -189,14 +193,14 @@ class NodeRouterService
             return $this->keywordBasedSelection($query, $nodes);
         }
     }
-    
+
     /**
      * Build the prompt for AI node selection
      */
     protected function buildNodeSelectionPrompt(string $query, array $nodeDescriptions): string
     {
         $nodesJson = json_encode($nodeDescriptions, JSON_PRETTY_PRINT);
-        
+
         return <<<PROMPT
 You are a routing assistant. Analyze the user's query and determine which specialized node should handle it.
 
@@ -215,7 +219,7 @@ NODE: <node_slug or LOCAL>
 REASON: <brief explanation>
 PROMPT;
     }
-    
+
     /**
      * Parse AI response and return selected node
      */
@@ -224,30 +228,30 @@ PROMPT;
         // Extract node slug from response
         if (preg_match('/NODE:\s*(\S+)/i', $response, $matches)) {
             $selectedSlug = strtolower(trim($matches[1]));
-            
+
             if ($selectedSlug === 'local' || $selectedSlug === 'none') {
                 return null;
             }
-            
+
             // Find the node
             $node = $nodes->first(fn($n) => strtolower($n->slug) === $selectedSlug);
-            
+
             if ($node) {
                 $reason = 'AI selected based on intent analysis';
                 if (preg_match('/REASON:\s*(.+)/i', $response, $reasonMatch)) {
                     $reason = trim($reasonMatch[1]);
                 }
-                
+
                 return [
                     'node' => $node,
                     'reason' => $reason,
                 ];
             }
         }
-        
+
         return null;
     }
-    
+
     /**
      * Fallback: keyword-based node selection
      */
@@ -255,10 +259,10 @@ PROMPT;
     {
         $queryLower = strtolower($query);
         $scores = [];
-        
+
         foreach ($nodes as $node) {
             $score = $this->scoreNodeForQuery($node, $queryLower);
-            
+
             if ($score > 0) {
                 $scores[$node->id] = [
                     'node' => $node,
@@ -266,27 +270,27 @@ PROMPT;
                 ];
             }
         }
-        
+
         if (empty($scores)) {
             return null;
         }
-        
+
         uasort($scores, fn($a, $b) => $b['score'] <=> $a['score']);
         $best = reset($scores);
-        
+
         return [
             'node' => $best['node'],
             'reason' => "Keyword match (score: {$best['score']})",
         ];
     }
-    
+
     /**
      * Score how well a node matches a query (used as fallback)
      */
     protected function scoreNodeForQuery(AINode $node, string $queryLower): int
     {
         $score = 0;
-        
+
         // Check keywords
         $keywords = $node->keywords ?? [];
         foreach ($keywords as $keyword) {
@@ -294,7 +298,7 @@ PROMPT;
                 $score += 10;
             }
         }
-        
+
         // Check domains
         $domains = $node->domains ?? [];
         foreach ($domains as $domain) {
@@ -302,7 +306,7 @@ PROMPT;
                 $score += 5;
             }
         }
-        
+
         // Check collection names
         $collections = $node->collections ?? [];
         foreach ($collections as $collection) {
@@ -311,7 +315,7 @@ PROMPT;
                 $score += 15;
             }
         }
-        
+
         // Check data types
         $dataTypes = $node->data_types ?? [];
         foreach ($dataTypes as $dataType) {
@@ -319,10 +323,10 @@ PROMPT;
                 $score += 8;
             }
         }
-        
+
         return $score;
     }
-    
+
     /**
      * Check if a node is available for requests
      */
@@ -332,20 +336,20 @@ PROMPT;
         if ($this->circuitBreaker->isOpen($node)) {
             return false;
         }
-        
+
         // Check if node is healthy
         if (!$node->isHealthy()) {
             return false;
         }
-        
+
         // Check rate limiting
         if ($node->isRateLimited()) {
             return false;
         }
-        
+
         return true;
     }
-    
+
     /**
      * Forward a search request to a specific node
      */
@@ -358,7 +362,7 @@ PROMPT;
         $userId = null
     ): array {
         $startTime = microtime(true);
-        
+
         try {
             $response = NodeHttpClient::makeForSearch($node)
                 ->post($node->getApiUrl('search'), [
@@ -369,20 +373,20 @@ PROMPT;
                         'user_id' => $userId,
                     ]),
                 ]);
-            
+
             $duration = (int) ((microtime(true) - $startTime) * 1000);
-            
+
             if ($response->successful()) {
                 $this->circuitBreaker->recordSuccess($node);
                 $data = $response->json();
-                
+
                 Log::channel('ai-engine')->info('Routed search successful', [
                     'node' => $node->slug,
                     'query' => substr($query, 0, 50),
                     'results_count' => count($data['results'] ?? []),
                     'duration_ms' => $duration,
                 ]);
-                
+
                 return [
                     'success' => true,
                     'node' => $node->slug,
@@ -392,29 +396,29 @@ PROMPT;
                     'duration_ms' => $duration,
                 ];
             }
-            
+
             $this->circuitBreaker->recordFailure($node);
-            
+
             Log::channel('ai-engine')->warning('Routed search failed', [
                 'node' => $node->slug,
                 'status' => $response->status(),
             ]);
-            
+
             return [
                 'success' => false,
                 'node' => $node->slug,
                 'error' => 'HTTP ' . $response->status(),
                 'results' => [],
             ];
-            
+
         } catch (\Exception $e) {
             $this->circuitBreaker->recordFailure($node);
-            
+
             Log::channel('ai-engine')->error('Routed search exception', [
                 'node' => $node->slug,
                 'error' => $e->getMessage(),
             ]);
-            
+
             return [
                 'success' => false,
                 'node' => $node->slug,
@@ -423,7 +427,7 @@ PROMPT;
             ];
         }
     }
-    
+
     /**
      * Forward a chat/RAG request to a specific node
      */
@@ -435,7 +439,7 @@ PROMPT;
         $userId = null
     ): array {
         $startTime = microtime(true);
-        
+
         try {
             $response = NodeHttpClient::makeAuthenticated($node)
                 ->withHeaders([
@@ -447,18 +451,18 @@ PROMPT;
                     'user_id' => $userId,
                     'options' => $options,
                 ]);
-            
+
             $duration = (int) ((microtime(true) - $startTime) * 1000);
-            
+
             if ($response->successful()) {
                 $this->circuitBreaker->recordSuccess($node);
                 $data = $response->json();
-                
+
                 Log::channel('ai-engine')->info('Routed chat successful', [
                     'node' => $node->slug,
                     'duration_ms' => $duration,
                 ]);
-                
+
                 return [
                     'success' => true,
                     'node' => $node->slug,
@@ -469,18 +473,18 @@ PROMPT;
                     'duration_ms' => $duration,
                 ];
             }
-            
+
             $this->circuitBreaker->recordFailure($node);
-            
+
             return [
                 'success' => false,
                 'node' => $node->slug,
                 'error' => 'HTTP ' . $response->status(),
             ];
-            
+
         } catch (\Exception $e) {
             $this->circuitBreaker->recordFailure($node);
-            
+
             return [
                 'success' => false,
                 'node' => $node->slug,
@@ -488,17 +492,17 @@ PROMPT;
             ];
         }
     }
-    
+
     /**
      * Get routing decision for logging/debugging
      */
     public function explainRouting(string $query, array $collections = []): array
     {
         $routing = $this->route($query, $collections);
-        
+
         $nodes = AINode::active()->child()->get();
         $nodeScores = [];
-        
+
         $queryLower = strtolower($query);
         foreach ($nodes as $node) {
             $nodeScores[$node->slug] = [
@@ -509,7 +513,7 @@ PROMPT;
                 'keywords' => $node->keywords ?? [],
             ];
         }
-        
+
         return [
             'query' => $query,
             'collections_requested' => $collections,
