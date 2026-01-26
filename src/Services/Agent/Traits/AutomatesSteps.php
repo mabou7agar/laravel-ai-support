@@ -358,21 +358,21 @@ trait AutomatesSteps
                 $modelClass = $entityConfig['model'] ?? null;
 
                 if (is_array($entityId)) {
-                    // For multiple entities, check identifier_field first, then entity name
+                    // For multiple entities, prioritize resolved data (entity name) over raw input (identifier_field)
                     $identifierField = $entityConfig['identifier_field'] ?? $entityName;
                     $entityData = [];
 
-                    // Priority 1: Check identifier_field (e.g., 'items')
-                    if (isset($collectedData[$identifierField]) && is_array($collectedData[$identifierField])) {
-                        $entityData = $collectedData[$identifierField];
-                    }
-                    // Priority 2: Check entity name (e.g., 'products')
-                    elseif (isset($collectedData[$entityName]) && is_array($collectedData[$entityName])) {
+                    // Priority 1: Check entity name (e.g., 'products') - has resolved data with prices
+                    if (isset($collectedData[$entityName]) && is_array($collectedData[$entityName]) && !empty($collectedData[$entityName])) {
                         $entityData = $collectedData[$entityName];
                     }
-                    // Priority 3: Check with _id suffix (backward compatibility)
+                    // Priority 2: Check with _id suffix (backward compatibility)
                     elseif (isset($collectedData[$entityName . '_id']) && is_array($collectedData[$entityName . '_id'])) {
                         $entityData = $collectedData[$entityName . '_id'];
+                    }
+                    // Priority 3: Check identifier_field (e.g., 'items') - raw user input
+                    elseif (isset($collectedData[$identifierField]) && is_array($collectedData[$identifierField])) {
+                        $entityData = $collectedData[$identifierField];
                     }
 
                     $dataForDisplay[$entityName] = $entityData;
