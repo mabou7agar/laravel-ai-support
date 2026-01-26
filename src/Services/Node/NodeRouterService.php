@@ -213,7 +213,10 @@ User query: "{$query}"
 Instructions:
 1. Analyze the user's intent from their query
 2. Match the intent against each node's description, capabilities, domains, and available workflows
-3. If a node has a workflow that matches the user's intent (e.g., "CreateInvoiceWorkflow" for "create invoice"), that node should handle it
+3. Workflows represent the node's goals and capabilities:
+   - Workflow names contain the entity they manage (e.g., "InvoiceWorkflow" handles invoices)
+   - Common patterns: "Create*", "Declarative*", "Manage*", "Simple*" all indicate entity management
+   - If user wants to "create/add/new/manage X", look for a workflow containing that entity name
 4. Select the BEST matching node, or respond with "LOCAL" if no node is appropriate
 
 Respond in this exact format:
