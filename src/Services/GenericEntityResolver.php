@@ -1504,7 +1504,7 @@ class GenericEntityResolver
                 $lastMsg = end($lastUserMessage);
                 $userResponse = trim($lastMsg['content'] ?? '');
 
-                // Use AI to determine if user wants to proceed or decline
+                // Use AI to determine if user wants to proceed, decline, or modify
                 $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
                 $userIntent = $this->determineUserIntent($userResponse, "create {$entityName}");
 
@@ -1517,6 +1517,53 @@ class GenericEntityResolver
 
                     return ActionResult::failure(
                         error: "User declined to create {$entityName}"
+                    );
+                }
+                
+                if ($userIntent === 'modify') {
+                    // User wants to replace/change the items - extract new items from their response
+                    Log::channel('ai-engine')->info('User wants to modify items', [
+                        'field' => $fieldName,
+                        'user_response' => $userResponse,
+                    ]);
+                    
+                    // Clear ALL creation and entity state to allow fresh re-resolution
+                    $context->forget("{$fieldName}_creation_step");
+                    $context->forget("{$fieldName}_creation_index");
+                    $context->forget("{$fieldName}_missing");
+                    $context->forget("{$fieldName}_validated");
+                    $context->forget("{$fieldName}_id");
+                    $context->forget($fieldName);
+                    
+                    // Extract new items from user response using AI
+                    $newItems = $this->extractItemsFromModification($userResponse, $fieldName, $config);
+                    
+                    if (!empty($newItems)) {
+                        // REPLACE collected_data items completely (not merge)
+                        $collectedData = $context->get('collected_data', []);
+                        $identifierField = $config['identifier_field'] ?? $fieldName;
+                        
+                        // Clear old items completely
+                        unset($collectedData[$identifierField]);
+                        unset($collectedData[$fieldName]);
+                        
+                        // Set new items as the only items
+                        $collectedData[$fieldName] = $newItems;
+                        $context->set('collected_data', $collectedData);
+                        
+                        Log::channel('ai-engine')->info('Replaced items with new items from modification', [
+                            'field' => $fieldName,
+                            'new_items' => $newItems,
+                            'identifier_field' => $identifierField,
+                        ]);
+                        
+                        // Re-resolve entities with new items
+                        return $this->resolveEntities($fieldName, $config, $newItems, $context);
+                    }
+                    
+                    // If extraction failed, ask user for specific products
+                    return ActionResult::needsUserInput(
+                        message: "Please specify which {$entityName} you'd like to use:"
                     );
                 }
             }
@@ -1894,7 +1941,7 @@ class GenericEntityResolver
     }
 
     /**
-     * Determine user intent using AI (accept/decline)
+     * Determine user intent using AI (accept/decline/modify)
      */
     private function determineUserIntent(string $userResponse, string $action): string
     {
@@ -1903,8 +1950,11 @@ class GenericEntityResolver
 
             $prompt = "User was asked: 'Would you like to {$action}?'\n";
             $prompt .= "User responded: \"{$userResponse}\"\n\n";
-            $prompt .= "Does the user want to proceed or decline?\n";
-            $prompt .= "Respond with ONLY one word: 'accept' or 'decline'";
+            $prompt .= "Determine the user's intent:\n";
+            $prompt .= "- 'accept' = user wants to proceed (yes, ok, sure, etc.)\n";
+            $prompt .= "- 'decline' = user wants to cancel/stop (no, cancel, nevermind, etc.)\n";
+            $prompt .= "- 'modify' = user wants to change/replace/update something (replace X with Y, change to Z, use A instead, etc.)\n\n";
+            $prompt .= "Respond with ONLY one word: 'accept', 'decline', or 'modify'";
 
             $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
                 prompt:                                      $prompt,
@@ -1915,7 +1965,12 @@ class GenericEntityResolver
 
             $intent = strtolower(trim($response->getContent()));
 
-            return str_contains($intent, 'accept') ? 'accept' : 'decline';
+            if (str_contains($intent, 'accept')) {
+                return 'accept';
+            } elseif (str_contains($intent, 'modify')) {
+                return 'modify';
+            }
+            return 'decline';
 
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('Failed to determine user intent, using fallback', [
@@ -1927,7 +1982,63 @@ class GenericEntityResolver
             if (strlen($lower) <= 3 && (str_contains($lower, 'yes') || str_contains($lower, 'ok'))) {
                 return 'accept';
             }
+            // Check for modification keywords
+            if (str_contains($lower, 'replace') || str_contains($lower, 'change') || str_contains($lower, 'use') || str_contains($lower, 'instead')) {
+                return 'modify';
+            }
             return 'decline';
+        }
+    }
+
+    /**
+     * Extract items from a modification request like "replace phones with Macbook"
+     */
+    private function extractItemsFromModification(string $userResponse, string $fieldName, array $config): array
+    {
+        try {
+            $userId = auth()->check() ? (string) auth()->id() : null;
+            $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
+
+            $prompt = "User wants to modify their order. They said: \"{$userResponse}\"\n\n";
+            $prompt .= "Extract the new {$entityName} they want to use.\n";
+            $prompt .= "Return a JSON array of items with 'name' and 'quantity' fields.\n";
+            $prompt .= "If quantity is not specified, use 1.\n";
+            $prompt .= "Example: [{\"name\": \"Macbook Pro\", \"quantity\": 2}]\n\n";
+            $prompt .= "Return ONLY the JSON array, no other text.";
+
+            $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
+                prompt: $prompt,
+                userId: $userId,
+                maxTokens: 200,
+                temperature: 0
+            ));
+
+            $content = trim($response->getContent());
+            
+            // Clean up response - remove markdown code blocks if present
+            $content = preg_replace('/^```json?\s*/i', '', $content);
+            $content = preg_replace('/\s*```$/', '', $content);
+            
+            $items = json_decode($content, true);
+            
+            if (is_array($items) && !empty($items)) {
+                // Normalize items
+                return array_map(function($item) {
+                    return [
+                        'name' => $item['name'] ?? $item['product'] ?? 'Unknown',
+                        'quantity' => (int) ($item['quantity'] ?? $item['qty'] ?? 1),
+                    ];
+                }, $items);
+            }
+            
+            return [];
+
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to extract items from modification', [
+                'error' => $e->getMessage(),
+                'user_response' => $userResponse,
+            ]);
+            return [];
         }
     }
 
