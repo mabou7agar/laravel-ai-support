@@ -170,7 +170,22 @@ class IntelligentRAGService
                     'needs_context' => $analysis['needs_context'],
                     'search_queries' => $analysis['search_queries'] ?? [],
                     'collections' => $analysis['collections'] ?? [],
+                    'query_type' => $analysis['query_type'] ?? 'unknown',
                 ]);
+            }
+
+            // FAST PATH: If answer is already in conversation context, respond directly
+            if (($analysis['query_type'] ?? '') === 'already_answered' && !empty($analysis['answer_from_context'])) {
+                Log::channel('ai-engine')->info('Answer found in conversation context', [
+                    'answer' => $analysis['answer_from_context'],
+                ]);
+                
+                return $this->generateContextualResponse(
+                    $message,
+                    $analysis['answer_from_context'],
+                    $conversationHistory,
+                    $options
+                );
             }
 
             // Step 2: Handle aggregate queries (count, how many, etc.)
@@ -2751,6 +2766,49 @@ PROMPT;
         return false;
     }
     
+    /**
+     * Generate a response when the answer is already in conversation context
+     */
+    protected function generateContextualResponse(
+        string $message,
+        string $answerFromContext,
+        array $conversationHistory,
+        array $options = []
+    ): AIResponse {
+        // Use AI to formulate a natural response based on the context answer
+        $prompt = <<<PROMPT
+The user asked: "{$message}"
+
+Based on our previous conversation, the answer is: {$answerFromContext}
+
+Please provide a natural, helpful response that answers their question using this information.
+Be concise and friendly.
+PROMPT;
+
+        try {
+            $response = $this->aiEngine
+                ->model($options['model'] ?? 'gpt-4o-mini')
+                ->withMaxTokens(200)
+                ->withTemperature(0.7)
+                ->generate($prompt);
+            
+            return new AIResponse(
+                content: $response->getContent(),
+                engine: \LaravelAIEngine\Enums\EngineEnum::OPENAI,
+                model: \LaravelAIEngine\Enums\EntityEnum::GPT_4O_MINI,
+                metadata: ['from_context' => true, 'answer_source' => 'conversation_history']
+            );
+        } catch (\Exception $e) {
+            // Fallback: return the answer directly
+            return new AIResponse(
+                content: "Based on our conversation, {$answerFromContext}.",
+                engine: \LaravelAIEngine\Enums\EngineEnum::OPENAI,
+                model: \LaravelAIEngine\Enums\EntityEnum::GPT_4O_MINI,
+                metadata: ['from_context' => true, 'fallback' => true]
+            );
+        }
+    }
+
     /**
      * Generate a direct response for aggregate queries (fast path)
      */

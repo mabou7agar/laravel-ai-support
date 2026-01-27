@@ -112,23 +112,37 @@ Analyze the query and conversation context to determine:
 3. Which collections are relevant? (based on descriptions)
 4. Is this a continuation/reference to previous results?
 
-CRITICAL RULES FOR REFERENCES:
+CRITICAL RULES FOR QUERY TYPES:
+
+AGGREGATE QUERIES (query_type = "aggregate"):
+- "how many", "count", "total", "number of" → User wants a COUNT, not search results
+- Example: "how many emails do I have" → query_type: "aggregate"
+- Example: "count my invoices" → query_type: "aggregate"
+- For aggregate queries, set needs_aggregate: true
+
+NUMBERED REFERENCES:
 - If user types a NUMBER (1, 2, 3, #1, #2) → They want details about that NUMBERED ITEM from the previous response
   → Extract the title/subject/name of that item from the assistant's previous message
   → Use that exact title as the search query
   → Example: Previous response showed "1. Subject: Check This mail" → User types "1" → Search for "Check This mail"
   
+DETAIL REQUESTS:
 - If user says "tell me more", "more details", "expand on that" → They want more info about the LAST item discussed
   → Extract the key identifier from the previous response
   → Search for that specific item
 
+CONTINUATION/PAGINATION:
 - If user says "more", "next", "continue" → They want MORE RESULTS (pagination), not details
   → Use the same search terms as the previous query
 
+CONTEXT-DEPENDENT SHORT QUERIES:
 - Single word/short queries → ALWAYS check conversation context first
   → "1" alone means item #1 from previous list
   → "yes" might be confirmation
   → "that one" refers to something specific in context
+
+IMPORTANT: If the assistant already answered the question in previous messages, use that information!
+- Example: Assistant said "you have one email" → User asks "how many mails" → Answer is already known: 1
 
 RESPOND WITH JSON:
 {
@@ -136,10 +150,12 @@ RESPOND WITH JSON:
   "reasoning": "brief explanation of your decision",
   "search_queries": ["term1", "term2"],
   "collections": ["Full\\\\Namespace\\\\ClassName"],
-  "query_type": "informational|aggregate|continuation|detail_request",
+  "query_type": "informational|aggregate|continuation|detail_request|already_answered",
   "is_continuation": true/false,
   "is_detail_request": true/false,
-  "referenced_item": "the specific item name/title user is asking about"
+  "needs_aggregate": true/false,
+  "referenced_item": "the specific item name/title user is asking about",
+  "answer_from_context": "if answer is already in conversation history, put it here"
 }
 
 Think step by step:
