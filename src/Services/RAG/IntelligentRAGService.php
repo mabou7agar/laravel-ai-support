@@ -28,6 +28,7 @@ class IntelligentRAGService
     protected $nodeRegistry = null;
     protected $federatedSearch = null;
     protected $nodeRouter = null;
+    protected ?AutonomousRAGAnalyzer $autonomousAnalyzer = null;
 
     public function __construct(
         VectorSearchService $vectorSearch,
@@ -39,6 +40,9 @@ class IntelligentRAGService
         $this->conversationService = $conversationService;
         $this->config = config('ai-engine.intelligent_rag', []);
         $this->historyConfig = config('ai-engine.conversation_history', []);
+
+        // Initialize autonomous analyzer
+        $this->autonomousAnalyzer = new AutonomousRAGAnalyzer($aiEngine);
 
         // Lazy load node services if available
         if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
@@ -544,6 +548,20 @@ class IntelligentRAGService
      */
     protected function analyzeQuery(string $query, array $conversationHistory = [], array $availableCollections = []): array
     {
+        // Use autonomous analyzer if available
+        if ($this->autonomousAnalyzer && config('ai-engine.intelligent_rag.use_autonomous_analyzer', true)) {
+            Log::channel('ai-engine')->debug('Using autonomous RAG analyzer', ['query' => $query]);
+            
+            $analysis = $this->autonomousAnalyzer->analyze($query, $conversationHistory, $availableCollections);
+            
+            // Cache the result
+            $cacheKey = 'rag_analysis_' . md5($query . implode(',', array_keys($availableCollections)));
+            cache()->put($cacheKey, $analysis, 300);
+            
+            return $analysis;
+        }
+
+        // Fallback to rule-based analysis
         // 1. HEURISTICS: Quick check for simple messages to skip AI analysis
         if ($this->shouldSkipAnalysis($query)) {
             Log::channel('ai-engine')->debug('Skipping RAG analysis due to heuristics', ['query' => $query]);
