@@ -1761,7 +1761,13 @@ PROMPT;
                 $prompt .= "- Answer directly with the numbers from the statistics\n";
                 $prompt .= "- Be helpful and offer to provide more details if needed\n\n";
             } else {
-                $prompt .= "NO KNOWLEDGE BASE RESULTS FOUND FOR THIS QUERY.\n\n";
+                // Check if user is asking about a specific data type that exists but has no records for them
+                $emptyDataMessage = $this->getEmptyDataMessage($message, $options['available_collections'] ?? [], $options['user_id'] ?? null);
+                if ($emptyDataMessage) {
+                    $prompt .= "USER DATA STATUS:\n{$emptyDataMessage}\n\n";
+                } else {
+                    $prompt .= "NO KNOWLEDGE BASE RESULTS FOUND FOR THIS QUERY.\n\n";
+                }
             }
 
             // Add available collections info so AI knows what data sources exist
@@ -2847,6 +2853,103 @@ PROMPT;
         );
     }
     
+    /**
+     * Get a friendly message when user asks about data that exists but they have none
+     * 
+     * @param string $message User's query
+     * @param array $collections Available collections
+     * @param mixed $userId User ID
+     * @return string|null Friendly message or null if not applicable
+     */
+    protected function getEmptyDataMessage(string $message, array $collections, $userId): ?string
+    {
+        $messageLower = strtolower($message);
+        
+        // Define data type patterns and their friendly messages
+        $dataTypes = [
+            'email' => [
+                'patterns' => ['mail', 'email', 'inbox', 'message'],
+                'collections' => ['EmailCache', 'Email'],
+                'empty_message' => "You don't have any emails yet. Once you connect a mailbox and receive emails, they will appear here.",
+            ],
+            'invoice' => [
+                'patterns' => ['invoice', 'bill', 'billing'],
+                'collections' => ['Invoice', 'Bill'],
+                'empty_message' => "You don't have any invoices yet. Create your first invoice to get started!",
+            ],
+            'order' => [
+                'patterns' => ['order', 'purchase'],
+                'collections' => ['Order'],
+                'empty_message' => "You don't have any orders yet.",
+            ],
+            'customer' => [
+                'patterns' => ['customer', 'client'],
+                'collections' => ['Customer'],
+                'empty_message' => "You don't have any customers yet. Add your first customer to get started!",
+            ],
+            'product' => [
+                'patterns' => ['product', 'item', 'inventory'],
+                'collections' => ['Product'],
+                'empty_message' => "You don't have any products yet. Add your first product to get started!",
+            ],
+        ];
+        
+        foreach ($dataTypes as $type => $config) {
+            // Check if message matches this data type
+            $matchesPattern = false;
+            foreach ($config['patterns'] as $pattern) {
+                if (str_contains($messageLower, $pattern)) {
+                    $matchesPattern = true;
+                    break;
+                }
+            }
+            
+            if (!$matchesPattern) {
+                continue;
+            }
+            
+            // Check if any of the collections for this type exist
+            foreach ($collections as $collection) {
+                $className = class_basename($collection);
+                if (in_array($className, $config['collections'])) {
+                    // Collection exists - check if user has any records
+                    try {
+                        if (class_exists($collection)) {
+                            $query = $collection::query();
+                            
+                            // Apply user filter if model supports it
+                            if (method_exists($collection, 'scopeForUser')) {
+                                $query->forUser($userId);
+                            } elseif (in_array('user_id', (new $collection)->getFillable())) {
+                                $query->where('user_id', $userId);
+                            } elseif (in_array('created_by', (new $collection)->getFillable())) {
+                                $query->where('created_by', $userId);
+                            }
+                            
+                            $count = $query->count();
+                            
+                            if ($count === 0) {
+                                Log::channel('ai-engine')->info('User has no records for data type', [
+                                    'type' => $type,
+                                    'collection' => $collection,
+                                    'user_id' => $userId,
+                                ]);
+                                return $config['empty_message'];
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        Log::channel('ai-engine')->debug('Could not check user data count', [
+                            'collection' => $collection,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+
     /**
      * Smart aggregate: Use AI to extract filters from query, then hybrid vector+SQL
      * 
