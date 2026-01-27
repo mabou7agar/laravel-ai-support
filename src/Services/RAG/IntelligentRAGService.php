@@ -742,6 +742,10 @@ PROMPT;
             $conversationContext .= "2. If user uses numbered reference (#1, #2, option 3) → Extract item name from that number in previous response\n";
             $conversationContext .= "3. If user asks 'tell me more', 'details', 'info about that' → Look for item name in their message or previous context\n";
             $conversationContext .= "4. Keep the SAME collection as the previous search for follow-up queries\n";
+            $conversationContext .= "5. CONTINUATION QUERIES: If user says 'more', 'next', 'continue', 'show more' → Repeat the SAME search from previous query\n";
+            $conversationContext .= "   - Extract the search terms from the previous user query\n";
+            $conversationContext .= "   - Use the SAME collections from the previous search\n";
+            $conversationContext .= "   - Example: Previous query 'latest invoices' → User says 'more' → Search for 'invoices' with same collection\n";
         }
 
         $analysisPrompt = <<<PROMPT
