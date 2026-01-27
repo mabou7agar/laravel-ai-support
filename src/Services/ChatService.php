@@ -194,6 +194,9 @@ class ChatService
         $searchMode = config('ai-engine.nodes.search_mode', 'routing');
         $isForwarded = $this->isForwardedRequest();
 
+        // Track if routing decided to handle locally (for auto-discovery decision)
+        $routingDecision = null;
+        
         if ($nodesEnabled && $isMaster && $searchMode === 'routing' && !$isForwarded) {
             $routedResponse = $this->tryRouteToChildNode(
                 $message, $sessionId, $userId, $engine, $model,
@@ -217,6 +220,9 @@ class ChatService
 
                 return $routedResponse;
             }
+            
+            // Routing returned null = handle locally
+            $routingDecision = 'local';
         }
 
         // Delegate ALL routing and intelligence to AgentOrchestrator
@@ -243,6 +249,7 @@ class ChatService
             'rag_collections' => $ragCollections,
             'search_instructions' => $searchInstructions,
             'conversation_history' => $conversationHistory, // Pass history from middleware to RAG
+            'routing_decision' => $routingDecision, // 'local' if routing decided to handle locally
         ];
 
         $agentResponse = $orchestrator->process($message, $sessionId, $userId, $options);

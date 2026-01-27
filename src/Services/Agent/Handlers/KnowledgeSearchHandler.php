@@ -40,15 +40,39 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         // Use IntelligentRAGService to process message with RAG
         $ragCollections = $options['rag_collections'] ?? [];
         
-        // Auto-discover collections if not provided
-        // IMPORTANT: Even on master node, if we're handling locally (not routed to child),
-        // we need to discover local collections to search
+        // Auto-discover collections logic:
+        // - On child nodes: always auto-discover
+        // - On master node with routing: skip auto-discovery (let routing handle it)
+        // - On master node handling locally (routing returned no collections): auto-discover local collections
+        $nodesEnabled = config('ai-engine.nodes.enabled', false);
+        $isMaster = config('ai-engine.nodes.is_master', true);
+        $searchMode = config('ai-engine.nodes.search_mode', 'routing');
+        
         if (empty($ragCollections) && $this->ragDiscovery) {
-            $ragCollections = $this->ragDiscovery->discover();
-            Log::channel('ai-engine')->info('KnowledgeSearchHandler: Auto-discovered local collections', [
-                'count' => count($ragCollections),
-                'collections' => $ragCollections,
-            ]);
+            // Check if we should skip auto-discovery
+            $shouldSkip = $nodesEnabled && $isMaster && $searchMode === 'routing';
+            
+            if ($shouldSkip) {
+                // On master with routing mode - only discover if this is a "handled locally" case
+                // Check if routing explicitly decided to handle locally (no node matched)
+                $isHandledLocally = ($options['routing_decision'] ?? null) === 'local';
+                
+                if ($isHandledLocally) {
+                    // Routing decided to handle locally - discover local collections
+                    $ragCollections = $this->ragDiscovery->discover();
+                    Log::channel('ai-engine')->info('KnowledgeSearchHandler: Auto-discovered local collections (handled locally)', [
+                        'count' => count($ragCollections),
+                    ]);
+                } else {
+                    Log::channel('ai-engine')->info('KnowledgeSearchHandler: Skipping auto-discovery (routing mode on master)');
+                }
+            } else {
+                // Not master with routing - always auto-discover
+                $ragCollections = $this->ragDiscovery->discover();
+                Log::channel('ai-engine')->info('KnowledgeSearchHandler: Auto-discovered collections', [
+                    'count' => count($ragCollections),
+                ]);
+            }
         }
         
         // FAST PATH: For aggregate queries, use smart aggregate directly
