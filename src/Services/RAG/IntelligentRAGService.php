@@ -212,6 +212,7 @@ class IntelligentRAGService
                 // IMPORTANT: User-passed collections should be strictly respected
                 // AI can only suggest a SUBSET of what user passed, never expand beyond it
                 $suggestedCollections = $analysis['collections'] ?? [];
+                $validCollections = []; // Initialize for debug logging
 
                 // If user passed collections, validate AI suggestions against them
                 // If using auto-discovery (empty availableCollections), trust AI's selection
