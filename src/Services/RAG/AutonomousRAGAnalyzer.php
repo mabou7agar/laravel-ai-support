@@ -154,6 +154,7 @@ PROMPT;
 
     /**
      * Build context summary from conversation history
+     * Uses configurable message limit for efficiency
      */
     protected function buildContextSummary(array $conversationHistory): string
     {
@@ -161,13 +162,20 @@ PROMPT;
             return "CONVERSATION CONTEXT: This is the first message in the conversation.";
         }
 
-        // Get last 3 exchanges for context
-        $recentMessages = array_slice($conversationHistory, -6);
+        // Configurable: how many messages to include in context analysis
+        // Default: 6 messages (3 exchanges) - enough for "1", "more", "tell me more"
+        $messageLimit = config('ai-engine.intelligent_rag.context_messages', 6);
+        $contentLimit = config('ai-engine.intelligent_rag.context_content_length', 200);
+        
+        $recentMessages = array_slice($conversationHistory, -$messageLimit);
         
         $summary = "CONVERSATION CONTEXT (last few messages):\n";
         foreach ($recentMessages as $msg) {
             $role = $msg['role'] === 'user' ? 'USER' : 'ASSISTANT';
-            $content = mb_substr($msg['content'], 0, 200);
+            $content = mb_substr($msg['content'], 0, $contentLimit);
+            if (mb_strlen($msg['content']) > $contentLimit) {
+                $content .= '...';
+            }
             $summary .= "{$role}: {$content}\n";
         }
         
