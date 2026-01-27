@@ -41,20 +41,14 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         $ragCollections = $options['rag_collections'] ?? [];
         
         // Auto-discover collections if not provided
-        // Skip auto-discovery on master node with routing - let routing handle it
-        $nodesEnabled = config('ai-engine.nodes.enabled', false);
-        $isMaster = config('ai-engine.nodes.is_master', true);
-        $searchMode = config('ai-engine.nodes.search_mode', 'routing');
-        
+        // IMPORTANT: Even on master node, if we're handling locally (not routed to child),
+        // we need to discover local collections to search
         if (empty($ragCollections) && $this->ragDiscovery) {
-            if ($nodesEnabled && $isMaster && $searchMode === 'routing') {
-                Log::channel('ai-engine')->info('KnowledgeSearchHandler: Skipping auto-discovery (routing mode on master)');
-            } else {
-                $ragCollections = $this->ragDiscovery->discover();
-                Log::channel('ai-engine')->info('KnowledgeSearchHandler: Auto-discovered collections', [
-                    'count' => count($ragCollections),
-                ]);
-            }
+            $ragCollections = $this->ragDiscovery->discover();
+            Log::channel('ai-engine')->info('KnowledgeSearchHandler: Auto-discovered local collections', [
+                'count' => count($ragCollections),
+                'collections' => $ragCollections,
+            ]);
         }
         
         // FAST PATH: For aggregate queries, use smart aggregate directly
