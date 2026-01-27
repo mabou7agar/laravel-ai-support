@@ -525,7 +525,9 @@ class NodeApiController extends Controller
                 useActions: $options['use_actions'] ?? true,
                 useIntelligentRAG: $options['use_intelligent_rag'] ?? true,
                 ragCollections: $options['rag_collections'] ?? [],
-                userId: $validated['user_id']
+                userId: $validated['user_id'],
+                searchInstructions: $options['search_instructions'] ?? null,
+                conversationHistory: $options['conversation_history'] ?? [] // Pass history from middleware
             );
             
             $duration = (microtime(true) - $startTime) * 1000;

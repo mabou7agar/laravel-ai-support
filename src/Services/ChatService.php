@@ -150,7 +150,8 @@ class ChatService
         bool $useIntelligentRAG = true,
         array $ragCollections = [],
         $userId = null,
-        ?string $searchInstructions = null
+        ?string $searchInstructions = null,
+        array $conversationHistory = [] // Passed from middleware for context-aware responses
     ): AIResponse {
         Log::channel('ai-engine')->info('ChatService::processMessage called', [
             'message' => substr($message, 0, 100),
@@ -241,6 +242,7 @@ class ChatService
             'use_intelligent_rag' => $useIntelligentRAG,
             'rag_collections' => $ragCollections,
             'search_instructions' => $searchInstructions,
+            'conversation_history' => $conversationHistory, // Pass history from middleware to RAG
         ];
 
         $agentResponse = $orchestrator->process($message, $sessionId, $userId, $options);
@@ -379,6 +381,13 @@ class ChatService
             ? $ragCollections 
             : ($routing['collections'] ?? $node->collections ?? []);
 
+        // Load conversation history from middleware to pass to child node
+        // This is CRITICAL for context-aware responses (e.g., "more", "1", "tell me more")
+        $conversationHistory = [];
+        if ($conversationId) {
+            $conversationHistory = $this->conversationService->loadConversationHistory($conversationId, 10);
+        }
+
         $response = $router->forwardChat(
             $node,
             $message,
@@ -391,6 +400,7 @@ class ChatService
                 'use_intelligent_rag' => $useIntelligentRAG,
                 'rag_collections' => $collectionsToUse,
                 'search_instructions' => $searchInstructions,
+                'conversation_history' => $conversationHistory, // Pass history to child node
             ],
             $userId
         );

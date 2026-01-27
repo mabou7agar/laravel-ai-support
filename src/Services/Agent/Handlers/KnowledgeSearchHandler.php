@@ -79,7 +79,16 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
             }
         }
         
-        $conversationHistory = $context->conversationHistory ?? [];
+        // Use conversation history from options (passed from middleware) if available,
+        // otherwise fall back to context history (local)
+        $conversationHistory = !empty($options['conversation_history']) 
+            ? $options['conversation_history'] 
+            : ($context->conversationHistory ?? []);
+        
+        Log::channel('ai-engine')->debug('KnowledgeSearchHandler: Using conversation history', [
+            'from_options' => !empty($options['conversation_history']),
+            'history_count' => count($conversationHistory),
+        ]);
         
         $ragOptions = [
             'engine' => $options['engine'] ?? 'openai',
