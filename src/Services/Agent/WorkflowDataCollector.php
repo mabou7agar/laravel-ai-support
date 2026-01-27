@@ -278,7 +278,11 @@ class WorkflowDataCollector
             $prompt .= "2. NEVER return array fields as strings\n";
             $prompt .= "3. Parse \"2 X and 3 Y\" as TWO separate array items\n";
             $prompt .= "4. Extract quantity numbers from text\n";
-            $prompt .= "5. Return empty {} only if NO data can be extracted\n\n";
+            $prompt .= "5. Return empty {} only if NO data can be extracted\n";
+            $prompt .= "6. IMPORTANT: Do NOT extract generic/category terms as specific product names.\n";
+            $prompt .= "   Generic terms like 'phones', 'laptops', 'items', 'products', 'things' are NOT specific products.\n";
+            $prompt .= "   Only extract SPECIFIC product names like 'iPhone 15', 'MacBook Pro', 'Samsung Galaxy S24'.\n";
+            $prompt .= "   If user says '2 phones' or '3 items', return empty array [] for items field - do NOT include generic terms.\n\n";
             $prompt .= "Return ONLY valid JSON with correct array structures.";
         }
 
