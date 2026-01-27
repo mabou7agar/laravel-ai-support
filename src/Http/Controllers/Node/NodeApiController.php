@@ -19,6 +19,9 @@ class NodeApiController extends Controller
         $discovery = new \LaravelAIEngine\Services\Node\NodeMetadataDiscovery();
         $metadata = $discovery->discover();
         
+        // Get autonomous collectors from registry
+        $autonomousCollectors = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::getCollectorGoals();
+
         return response()->json([
             'status' => 'healthy',
             'version' => config('ai-engine.version', '1.0.0'),
@@ -31,6 +34,7 @@ class NodeApiController extends Controller
             'keywords' => $metadata['keywords'],
             'collections' => $metadata['collections'],
             'workflows' => $metadata['workflows'],
+            'autonomous_collectors' => $autonomousCollectors,
             'timestamp' => now()->toIso8601String(),
         ]);
     }

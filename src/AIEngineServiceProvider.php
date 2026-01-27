@@ -190,6 +190,18 @@ class AIEngineServiceProvider extends ServiceProvider
             );
         });
 
+        // Autonomous Data Collector - AI-driven collection with tools
+        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorService::class, function ($app) {
+            return new \LaravelAIEngine\Services\DataCollector\AutonomousCollectorService(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class)
+            );
+        });
+
+        // Autonomous Collector Discovery Service
+        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class, function ($app) {
+            return new \LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService();
+        });
+
         $this->app->singleton(\LaravelAIEngine\Services\ModelResolver::class, function ($app) {
             return new \LaravelAIEngine\Services\ModelResolver();
         });
@@ -236,6 +248,13 @@ class AIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\Agent\WorkflowDiscoveryService();
         });
 
+        // Register AutonomousCollectorHandler
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler(
+                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorService::class)
+            );
+        });
+
         // Register AgentOrchestrator (handlers instantiated per-request)
         $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentOrchestrator::class, function ($app) {
             $orchestrator = new \LaravelAIEngine\Services\Agent\AgentOrchestrator(
@@ -244,6 +263,8 @@ class AIEngineServiceProvider extends ServiceProvider
             );
             
             // Register handlers (instantiated fresh each time orchestrator is created)
+            // AutonomousCollectorHandler first - highest priority for active collector sessions
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ContinueWorkflowHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AnswerQuestionHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\SubWorkflowHandler::class));
@@ -724,6 +745,23 @@ class AIEngineServiceProvider extends ServiceProvider
 
         // Register scheduled tasks
         $this->registerScheduledTasks();
+
+        // Auto-discover autonomous collectors if enabled
+        if (config('ai-engine.autonomous_collector.auto_discovery', true)) {
+            $this->app->booted(function () {
+                try {
+                    $discoveryService = $this->app->make(
+                        \LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class
+                    );
+                    $discoveryService->registerDiscoveredCollectors();
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::channel('ai-engine')->warning(
+                        'Failed to auto-discover autonomous collectors',
+                        ['error' => $e->getMessage()]
+                    );
+                }
+            });
+        }
     }
 
     /**

@@ -151,6 +151,7 @@ class NodeRouterService
                 'domains' => $node->domains ?? [],
                 'data_types' => $node->data_types ?? [],
                 'workflows' => array_map(fn($w) => class_basename($w), $node->workflows ?? []),
+                'autonomous_collectors' => $node->autonomous_collectors ?? [],
             ];
         }
 
@@ -212,12 +213,17 @@ User query: "{$query}"
 
 Instructions:
 1. Analyze the user's intent from their query
-2. Match the intent against each node's description, capabilities, domains, and available workflows
+2. Match the intent against each node's description, capabilities, domains, workflows, and autonomous_collectors
 3. Workflows represent the node's goals and capabilities:
    - Workflow names contain the entity they manage (e.g., "InvoiceWorkflow" handles invoices)
    - Common patterns: "Create*", "Declarative*", "Manage*", "Simple*" all indicate entity management
-   - If user wants to "create/add/new/manage X", look for a workflow containing that entity name
-4. Select the BEST matching node, or respond with "LOCAL" if no node is appropriate
+4. Autonomous collectors are AI-driven data collection goals:
+   - Each collector has a "goal" describing what it creates (e.g., "Create a sales invoice")
+   - If user wants to create something matching a collector's goal, route to that node
+5. If user wants to "create/add/new/make X", look for:
+   - A workflow containing that entity name, OR
+   - An autonomous_collector with a matching goal
+6. Select the BEST matching node, or respond with "LOCAL" if no node is appropriate
 
 Respond in this exact format:
 NODE: <node_slug or LOCAL>

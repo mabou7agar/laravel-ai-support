@@ -1397,6 +1397,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Autonomous Collector Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure the AI-driven autonomous data collector behavior.
+    |
+    */
+    'autonomous_collector' => [
+        // Enable auto-discovery of collectors implementing DiscoverableAutonomousCollector
+        'auto_discovery' => env('AI_AUTONOMOUS_COLLECTOR_AUTO_DISCOVERY', true),
+
+        // Additional directories to scan for discoverable collectors
+        // Default: app/AI/Configs and app/AI/Collectors are always scanned
+        'discovery_paths' => [
+            // app_path('Custom/Collectors'),
+        ],
+
+        // Custom detection prompt for AI to determine if a message should trigger a collector
+        // Use {count} placeholder for the number of available collectors
+        // Set to null to use the default prompt
+        'detection_prompt' => null,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Chat Authentication Configuration
     |--------------------------------------------------------------------------
     |

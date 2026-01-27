@@ -154,6 +154,9 @@ class NodeRegistryService
                 if (!empty($data['workflows'])) {
                     $updateData['workflows'] = $data['workflows'];
                 }
+                if (!empty($data['autonomous_collectors'])) {
+                    $updateData['autonomous_collectors'] = $data['autonomous_collectors'];
+                }
                 
                 $node->update($updateData);
                 

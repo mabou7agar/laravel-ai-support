@@ -31,12 +31,38 @@ class MessageAnalyzer
      */
     public function analyze(string $message, UnifiedActionContext $context): array
     {
+        // PRIORITY 0: Check active autonomous collector
+        if ($context->get('autonomous_collector')) {
+            Log::channel('ai-engine')->info('Active autonomous collector detected', [
+                'session_id' => $context->sessionId,
+            ]);
+            return [
+                'type' => 'autonomous_collector',
+                'action' => 'continue_autonomous_collector',
+                'confidence' => 0.99,
+                'reasoning' => 'Active autonomous collector session'
+            ];
+        }
+
         // PRIORITY 1: Check active workflow context
         if ($context->currentWorkflow) {
             return $this->analyzeInWorkflowContext($message, $context);
         }
 
-        // PRIORITY 2: Use AI to intelligently route the message
+        // PRIORITY 2: Check for autonomous collector triggers
+        if (\LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message)) {
+            Log::channel('ai-engine')->info('Autonomous collector trigger detected', [
+                'message' => substr($message, 0, 100),
+            ]);
+            return [
+                'type' => 'autonomous_collector',
+                'action' => 'start_autonomous_collector',
+                'confidence' => 0.95,
+                'reasoning' => 'Message matches autonomous collector trigger'
+            ];
+        }
+
+        // PRIORITY 3: Use AI to intelligently route the message
         return $this->analyzeForWorkflow($message, $context);
     }
 
