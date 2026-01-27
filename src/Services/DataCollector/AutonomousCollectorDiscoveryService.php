@@ -95,8 +95,10 @@ class AutonomousCollectorDiscoveryService
             'collectors' => array_keys($collectors),
         ]);
         
-        // Cache for 5 minutes
-        Cache::put($cacheKey, $collectors, 300);
+        // Only cache if we found collectors (prevent caching empty results from early boot)
+        if (!empty($collectors)) {
+            Cache::put($cacheKey, $collectors, 300);
+        }
         
         return $collectors;
     }
