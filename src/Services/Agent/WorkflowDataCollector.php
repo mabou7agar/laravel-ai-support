@@ -77,16 +77,16 @@ class WorkflowDataCollector
                             'extracted_fields' => array_keys($extractedData),
                             'extracted_data' => $extractedData,
                         ]);
-                        
+
                         // Store in both collected_data and user_inputs
                         $collectedData = array_merge($collectedData, $extractedData);
-                        
+
                         // Also store in user_inputs to preserve original user data
                         if (!isset($collectedData['user_inputs'])) {
                             $collectedData['user_inputs'] = [];
                         }
                         $collectedData['user_inputs'] = array_merge($collectedData['user_inputs'], $extractedData);
-                        
+
                         $context->set('collected_data', $collectedData);
                     }
 
@@ -116,7 +116,7 @@ class WorkflowDataCollector
                         'asking_for' => $askingFor,
                         'field_definitions' => array_keys($fieldDefinitions),
                     ]);
-                    
+
                     try {
                         $newData = $this->extractDataFromMessage(
                             $lastMessage,
@@ -127,13 +127,13 @@ class WorkflowDataCollector
 
                         if (!empty($newData)) {
                             $collectedData = array_merge($collectedData, $newData);
-                            
+
                             // Also store in user_inputs to preserve original user data
                             if (!isset($collectedData['user_inputs'])) {
                                 $collectedData['user_inputs'] = [];
                             }
                             $collectedData['user_inputs'] = array_merge($collectedData['user_inputs'], $newData);
-                            
+
                             $context->set('collected_data', $collectedData);
                         }
                     } catch (\Exception $e) {
@@ -149,7 +149,7 @@ class WorkflowDataCollector
                 $firstMissing = $missing[0];
                 $fieldDef = $fieldDefinitions[$firstMissing];
                 $prompt = $fieldDef['prompt'] ?? $fieldDef['description'] ?? "Please provide {$firstMissing}";
-                
+
                 // If prompt is a Closure, evaluate it with context
                 if ($prompt instanceof \Closure) {
                     $prompt = $prompt($context);
@@ -251,10 +251,10 @@ class WorkflowDataCollector
                 $description = $fieldDef['description'] ?? $fieldName;
                 $isArray = ($fieldDef['multiple'] ?? false) || ($fieldDef['is_array'] ?? false);
                 $parsingGuide = $fieldDef['parsing_guide'] ?? null;
-                
+
                 if ($isArray) {
                     $prompt .= "- {$fieldName} (MUST BE ARRAY - NEVER STRING): {$description}\n";
-                    
+
                     // Use parsing guide from config if available
                     if ($parsingGuide) {
                         $prompt .= "  {$parsingGuide}\n";
@@ -291,12 +291,14 @@ class WorkflowDataCollector
             // Include userId from auth for credit checking
             $userId = auth()->check() ? (string) auth()->id() : null;
 
-            $response = $this->ai->generate(new AIRequest(
-                prompt: $prompt,
-                maxTokens: 300,
-                temperature: 0,
-                userId: $userId
-            ));
+            $response = $this->ai->generate(
+                new AIRequest(
+                    prompt:      $prompt,
+                    userId:      $userId,
+                    maxTokens:   300,
+                    temperature: 0
+                )
+            );
 
             $content = $response->getContent();
 
@@ -306,7 +308,7 @@ class WorkflowDataCollector
             $content = trim($content);
 
             $extracted = json_decode($content, true);
-            
+
             if (json_last_error() !== JSON_ERROR_NONE) {
                 \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: JSON decode failed', [
                     'content' => $content,
@@ -314,7 +316,7 @@ class WorkflowDataCollector
                 ]);
                 return [];
             }
-            
+
             \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Extraction result', [
                 'extracted' => $extracted,
                 'fields' => array_keys($extracted ?? []),
@@ -323,14 +325,14 @@ class WorkflowDataCollector
             // Validate array fields - if string returned instead of array, try custom parser
             foreach ($fieldDefinitions as $fieldName => $fieldDef) {
                 $isArray = ($fieldDef['multiple'] ?? false) || ($fieldDef['is_array'] ?? false);
-                
+
                 if ($isArray && isset($extracted[$fieldName]) && is_string($extracted[$fieldName])) {
                     \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: Array field returned as string', [
                         'field' => $fieldName,
                         'value' => $extracted[$fieldName],
                         'has_custom_parser' => isset($fieldDef['custom_parser']),
                     ]);
-                    
+
                     // Try custom parser if provided by workflow
                     if (isset($fieldDef['custom_parser']) && $fieldDef['custom_parser'] instanceof \Closure) {
                         try {
@@ -350,7 +352,7 @@ class WorkflowDataCollector
                             ]);
                         }
                     }
-                    
+
                     // If no custom parser or parsing failed, clear the field
                     \Illuminate\Support\Facades\Log::warning('WorkflowDataCollector: Clearing string value from array field', [
                         'field' => $fieldName,
@@ -366,7 +368,7 @@ class WorkflowDataCollector
             return [];
         }
     }
-        
+
     /**
      * Get missing required fields
      */
@@ -411,12 +413,12 @@ class WorkflowDataCollector
     public function setUserInput(UnifiedActionContext $context, string $fieldName, $value): void
     {
         $collectedData = $context->get('collected_data', []);
-        
+
         // Initialize user_inputs if not exists
         if (!isset($collectedData['user_inputs'])) {
             $collectedData['user_inputs'] = [];
         }
-        
+
         $collectedData['user_inputs'][$fieldName] = $value;
         $context->set('collected_data', $collectedData);
     }
@@ -447,10 +449,10 @@ class WorkflowDataCollector
     {
         $collectedData = $context->get('collected_data', []);
         $userInputs = $collectedData['user_inputs'] ?? [];
-        
+
         // Start with collected data (resolved entities)
         $merged = $collectedData;
-        
+
         // Merge user inputs on top - they take precedence
         foreach ($userInputs as $key => $value) {
             if (is_array($value) && isset($merged[$key]) && is_array($merged[$key])) {
@@ -472,7 +474,7 @@ class WorkflowDataCollector
                 $merged[$key] = $value;
             }
         }
-        
+
         return $merged;
     }
 
