@@ -2,7 +2,7 @@
 
 namespace LaravelAIEngine\Services\RAG;
 
-use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\DTOs\AIRequest;
 use Illuminate\Support\Facades\Log;
 
@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 class AutonomousRAGAnalyzer
 {
     public function __construct(
-        protected AIEngineService $aiEngine
+        protected AIEngineManager $aiEngine
     ) {}
 
     /**
@@ -35,18 +35,30 @@ class AutonomousRAGAnalyzer
             // Let AI make ALL decisions
             $prompt = $this->buildAutonomousPrompt($query, $contextSummary, $collectionsInfo);
             
-            $request = new AIRequest(
-                prompt: $prompt,
-                maxTokens: 500,
-                temperature: 0.1, // Low temperature for consistent decisions
-                responseFormat: 'json'
-            );
-
-            $response = $this->aiEngine->generate($request);
-            $analysis = json_decode($response->getContent(), true);
+            // Use the engine builder pattern
+            $response = $this->aiEngine
+                ->model('gpt-4o-mini')
+                ->withMaxTokens(500)
+                ->withTemperature(0.1)
+                ->generate($prompt);
+            
+            $content = $response->getContent();
+            
+            // Extract JSON from response (may be wrapped in markdown)
+            if (preg_match('/\{[\s\S]*\}/', $content, $matches)) {
+                $content = $matches[0];
+            }
+            
+            $analysis = json_decode($content, true);
             
             if (!$analysis) {
                 throw new \Exception('Failed to parse AI analysis');
+            }
+            
+            // Ensure needs_context is true for informational/continuation queries
+            // (AI sometimes returns false incorrectly)
+            if (in_array($analysis['query_type'] ?? '', ['informational', 'continuation', 'aggregate'])) {
+                $analysis['needs_context'] = true;
             }
             
             Log::channel('ai-engine')->info('Autonomous RAG analysis', [
