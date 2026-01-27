@@ -55,9 +55,9 @@ class AutonomousRAGAnalyzer
                 throw new \Exception('Failed to parse AI analysis');
             }
             
-            // Ensure needs_context is true for informational/continuation queries
+            // Ensure needs_context is true for queries that need data retrieval
             // (AI sometimes returns false incorrectly)
-            if (in_array($analysis['query_type'] ?? '', ['informational', 'continuation', 'aggregate'])) {
+            if (in_array($analysis['query_type'] ?? '', ['informational', 'continuation', 'aggregate', 'detail_request'])) {
                 $analysis['needs_context'] = true;
             }
             
@@ -110,15 +110,25 @@ Analyze the query and conversation context to determine:
 1. What is the user actually asking for? (consider context from previous messages)
 2. What should we search for? (generate semantic search terms)
 3. Which collections are relevant? (based on descriptions)
-4. Is this a continuation of a previous query? (if user says "more", "next", etc.)
+4. Is this a continuation/reference to previous results?
 
-IMPORTANT RULES:
-- If user says "more", "next", "continue" → They want more results from the PREVIOUS query
-- If user asks about something mentioned in previous responses → Search for that specific thing
-- If user's query is vague → Use conversation context to understand what they mean
-- Generate search terms that will actually match indexed content
-- Only select collections whose descriptions match the query intent
-- Be smart about synonyms and related terms
+CRITICAL RULES FOR REFERENCES:
+- If user types a NUMBER (1, 2, 3, #1, #2) → They want details about that NUMBERED ITEM from the previous response
+  → Extract the title/subject/name of that item from the assistant's previous message
+  → Use that exact title as the search query
+  → Example: Previous response showed "1. Subject: Check This mail" → User types "1" → Search for "Check This mail"
+  
+- If user says "tell me more", "more details", "expand on that" → They want more info about the LAST item discussed
+  → Extract the key identifier from the previous response
+  → Search for that specific item
+
+- If user says "more", "next", "continue" → They want MORE RESULTS (pagination), not details
+  → Use the same search terms as the previous query
+
+- Single word/short queries → ALWAYS check conversation context first
+  → "1" alone means item #1 from previous list
+  → "yes" might be confirmation
+  → "that one" refers to something specific in context
 
 RESPOND WITH JSON:
 {
@@ -126,16 +136,17 @@ RESPOND WITH JSON:
   "reasoning": "brief explanation of your decision",
   "search_queries": ["term1", "term2"],
   "collections": ["Full\\\\Namespace\\\\ClassName"],
-  "query_type": "informational|aggregate|continuation",
+  "query_type": "informational|aggregate|continuation|detail_request",
   "is_continuation": true/false,
-  "previous_query_reference": "what the user is referring to from history"
+  "is_detail_request": true/false,
+  "referenced_item": "the specific item name/title user is asking about"
 }
 
 Think step by step:
-1. What does the user want?
-2. Is this related to previous conversation?
-3. What terms will find relevant content?
-4. Which collections match this intent?
+1. Is this a numbered reference or short query? Check conversation history!
+2. What specific item is the user referring to?
+3. What exact search terms will find that item?
+4. Which collections contain this data?
 
 RESPOND WITH ONLY JSON:
 PROMPT;
