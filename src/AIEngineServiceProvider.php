@@ -680,6 +680,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\CreateQdrantIndexesCommand::class,
                 Console\Commands\TestIntentAnalysisCommand::class,
                 Console\Commands\TestDataCollectorCommand::class,
+                Console\Commands\ListAutonomousCollectorsCommand::class,
             ]);
 
             // Node Management Commands
