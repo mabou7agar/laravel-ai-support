@@ -375,7 +375,9 @@ class ChatService
 
         // Use node's collections if no specific collections were requested
         // This allows the child node to use its own auto-discovered collections
-        $collectionsToUse = !empty($ragCollections) ? $ragCollections : ($routing['collections'] ?? []);
+        $collectionsToUse = !empty($ragCollections) 
+            ? $ragCollections 
+            : ($routing['collections'] ?? $node->collections ?? []);
 
         $response = $router->forwardChat(
             $node,
