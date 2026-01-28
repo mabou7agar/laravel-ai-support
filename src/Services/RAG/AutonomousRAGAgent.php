@@ -197,21 +197,32 @@ AVAILABLE TOOLS:
 
 2. **db_query** - Use for list/fetch queries (fast 20-50ms)
    Supports filters and pagination (page parameter, default page 1)
+   ONLY if model exists in AVAILABLE MODELS list above
 
 3. **db_query_next** - Use when user asks for "more", "next", "next page", "show more"
    Continues from last query with next page
 
 4. **db_count** - Use for "how many" count queries (fast 1-20ms)
    Supports filters based on model schema fields
+   ONLY if model exists in AVAILABLE MODELS list above
 
 5. **db_aggregate** - Use for sum/avg/min/max queries (fast 1-20ms)
    Example: "total invoice amount", "average order value", "highest bill"
    Requires: operation (sum|avg|min|max) and field from filter_config.amount_field or schema
+   ONLY if model exists in AVAILABLE MODELS list above
 
 6. **vector_search** - Use for semantic search (slow 2-5s)
    Only when semantic understanding is needed
+   ONLY if model exists in AVAILABLE MODELS list above
 
 7. **route_to_node** - Use when data is on remote node (slow 5-10s)
+   Use this when requested model is NOT in AVAILABLE MODELS but IS in a node's models list
+
+CRITICAL ROUTING RULE:
+- First check if requested model exists in AVAILABLE MODELS list
+- If model NOT found in AVAILABLE MODELS, check AVAILABLE NODES
+- If model found in a node's models list, use route_to_node with that node's slug
+- If model not found anywhere, respond with error
 
 FILTER RULES:
 - If model has "filter_config", USE those field names directly (they are correct)
