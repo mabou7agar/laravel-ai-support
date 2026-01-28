@@ -146,7 +146,10 @@ class AIEngineService
 
         } catch (InsufficientCreditsException $e) {
             // Re-throw InsufficientCreditsException so caller can handle it
-            throw $e;
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            http_response_code(400);
+            die();
+
 
         } catch (\Exception $e) {
             $processingTime = microtime(true) - $startTime;
