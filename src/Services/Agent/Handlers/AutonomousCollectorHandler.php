@@ -213,7 +213,9 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         if (!empty($toolResults)) {
             $systemPrompt .= "\n\n## Recent Tool Results\n";
             foreach (array_slice($toolResults, -5) as $result) {
-                $systemPrompt .= "- {$result['tool']}: " . json_encode($result['result'], JSON_UNESCAPED_UNICODE) . "\n";
+                $toolName = $result['tool'] ?? 'unknown';
+                $toolResult = $result['result'] ?? $result;
+                $systemPrompt .= "- {$toolName}: " . json_encode($toolResult, JSON_UNESCAPED_UNICODE) . "\n";
             }
         }
         
