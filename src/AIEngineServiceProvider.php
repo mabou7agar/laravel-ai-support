@@ -245,6 +245,8 @@ class AIEngineServiceProvider extends ServiceProvider
             );
 
             // Register handlers (instantiated fresh each time orchestrator is created)
+            // AutonomousCollectorHandler MUST be first to handle active collector sessions
+            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ContinueWorkflowHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AnswerQuestionHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\SubWorkflowHandler::class));
@@ -724,6 +726,9 @@ class AIEngineServiceProvider extends ServiceProvider
         // Register event listeners
         $this->registerEventListeners();
 
+        // Discover and register AutonomousCollectors
+        $this->discoverAutonomousCollectors();
+
         // Register scheduled tasks
         $this->registerScheduledTasks();
     }
@@ -855,6 +860,41 @@ class AIEngineServiceProvider extends ServiceProvider
         // Register class-based components (if they exist)
         if (class_exists(\LaravelAIEngine\View\Components\AiChat::class)) {
             $compiler->component('ai-chat', \LaravelAIEngine\View\Components\AiChat::class);
+        }
+    }
+
+    /**
+     * Discover and register AutonomousCollectors from app directories
+     */
+    protected function discoverAutonomousCollectors(): void
+    {
+        try {
+            $discoveryService = $this->app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class);
+            $collectors = $discoveryService->discoverCollectors();
+            
+            foreach ($collectors as $name => $collectorData) {
+                // Get the actual config from the class
+                $className = $collectorData['class'];
+                if (class_exists($className) && method_exists($className, 'getConfig')) {
+                    $configInstance = $className::getConfig();
+                    \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::register($name, [
+                        'config' => $configInstance,
+                        'description' => $collectorData['description'] ?? '',
+                        'priority' => $collectorData['priority'] ?? 0,
+                    ]);
+                }
+            }
+            
+            if (count($collectors) > 0) {
+                \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('Discovered AutonomousCollectors', [
+                    'count' => count($collectors),
+                    'names' => array_keys($collectors),
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Failed to discover AutonomousCollectors', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
