@@ -114,12 +114,13 @@ class AutonomousCollectorRegistry
 
         $ai = app(\LaravelAIEngine\Services\AIEngineService::class);
         
-        // Build prompt
+        // Build prompt with collectors list
         $prompt = "User message: \"{$message}\"\n\n";
         $prompt .= "Available data collectors:\n";
         
         $index = 1;
         $indexMap = [];
+        $examples = [];
         foreach ($collectors as $name => $info) {
             $prompt .= "{$index}. {$info['goal']}";
             if (!empty($info['description'])) {
@@ -127,12 +128,14 @@ class AutonomousCollectorRegistry
             }
             $prompt .= "\n";
             $indexMap[$index] = $name;
+            // Build dynamic examples from collector names
+            $examples[] = "\"create {$name}\" → {$index}";
             $index++;
         }
         
-        // Get detection prompt from config (app can customize)
-        $detectionPrompt = config('ai-engine.autonomous_collector.detection_prompt') ?? static::getDefaultDetectionPrompt();
-        $prompt .= "\n" . str_replace('{count}', (string) count($collectors), $detectionPrompt);
+        // Build detection prompt dynamically
+        $detectionPrompt = static::buildDetectionPrompt($examples, count($collectors));
+        $prompt .= "\n" . $detectionPrompt;
 
         $response = $ai->generate(new AIRequest(
             prompt: $prompt,
@@ -157,23 +160,21 @@ class AutonomousCollectorRegistry
     }
 
     /**
-     * Get default detection prompt (can be overridden via config)
+     * Build detection prompt dynamically from discovered collectors
      */
-    protected static function getDefaultDetectionPrompt(): string
+    protected static function buildDetectionPrompt(array $examples, int $count): string
     {
+        $examplesText = implode("\n", array_map(fn($e) => "- {$e}", $examples));
+        
         return <<<PROMPT
 Which collector matches the user's CREATE intent? Reply with the number only.
 
-Rules:
-- "create invoice" → 3 (invoice)
-- "make bill" → 1 (bill)
-- "add customer" → 2 (customer)
-- "new product" → 4 (product)
-- "create vendor" → 5 (vendor)
+Examples:
+{$examplesText}
 
 Reply 0 if user is SEARCHING/LISTING/COUNTING (not creating).
 
-Number (1-{count}) or 0:
+Number (1-{$count}) or 0:
 PROMPT;
     }
 
