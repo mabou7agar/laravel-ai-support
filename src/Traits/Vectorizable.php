@@ -11,20 +11,49 @@ use LaravelAIEngine\DTOs\AIResponse;
  * All-in-one trait for vector search, RAG, and AI chat capabilities.
  * Combines functionality from: Vectorizable, HasVectorSearch, HasVectorChat, RAGgable
  *
+ * IMPORTANT: Models using this trait should implement VectorizableInterface
+ * to ensure all required methods are properly defined.
+ *
+ * Required methods to override for proper functionality:
+ * - getVectorContent(): Returns the text content to be embedded
+ * - getVectorMetadata(): Returns metadata for filtering in vector DB
+ *
+ * Optional but recommended to override:
+ * - toRAGContent(): Returns formatted content for RAG responses
+ * - shouldBeIndexed(): Whether this record should be indexed
+ * - getQdrantIndexes(): Custom Qdrant indexes for filtering
+ *
  * Usage:
  * ```php
- * class Document extends Model
+ * use LaravelAIEngine\Traits\Vectorizable;
+ * use LaravelAIEngine\Contracts\VectorizableInterface;
+ *
+ * class Document extends Model implements VectorizableInterface
  * {
  *     use Vectorizable;
  *
- *     protected $ragPriority = 80;
- *
- *     public function toVectorContent(): string
+ *     public function getVectorContent(): string
  *     {
- *         return $this->title . "\n\n" . $this->content;
+ *         return "{$this->title}\n\n{$this->content}";
+ *     }
+ *
+ *     public function getVectorMetadata(): array
+ *     {
+ *         return [
+ *             'user_id' => $this->user_id,
+ *             'category_id' => $this->category_id,
+ *             'status' => $this->status,
+ *         ];
+ *     }
+ *
+ *     public function toRAGContent(): string
+ *     {
+ *         return "**{$this->title}**\n{$this->content}";
  *     }
  * }
  * ```
+ *
+ * @see \LaravelAIEngine\Contracts\VectorizableInterface
  */
 trait Vectorizable
 {
@@ -1044,6 +1073,68 @@ PROMPT;
         }
 
         return true;
+    }
+
+    /**
+     * Format content for RAG (Retrieval Augmented Generation) display
+     * 
+     * Override this method for custom formatting.
+     * Default implementation returns the vector content.
+     * 
+     * @return string Formatted content for display
+     */
+    public function toRAGContent(): string
+    {
+        // Default: use vector content
+        // Models should override this for better formatting
+        return $this->getVectorContent();
+    }
+
+    /**
+     * Get custom Qdrant indexes for this model
+     * 
+     * Override this method to define which metadata fields should have
+     * indexes in Qdrant for efficient filtering.
+     * 
+     * @return array<string, string> Field name => index type ('keyword', 'integer', 'float', 'bool')
+     */
+    public function getQdrantIndexes(): array
+    {
+        // Default indexes based on common metadata fields
+        $indexes = [];
+        
+        // Add indexes for fields that exist in metadata
+        $metadata = $this->getVectorMetadata();
+        
+        if (isset($metadata['user_id'])) {
+            $indexes['user_id'] = is_numeric($metadata['user_id']) ? 'integer' : 'keyword';
+        }
+        
+        if (isset($metadata['tenant_id'])) {
+            $indexes['tenant_id'] = is_numeric($metadata['tenant_id']) ? 'integer' : 'keyword';
+        }
+        
+        if (isset($metadata['workspace_id'])) {
+            $indexes['workspace_id'] = is_numeric($metadata['workspace_id']) ? 'integer' : 'keyword';
+        }
+        
+        if (isset($metadata['status'])) {
+            $indexes['status'] = 'keyword';
+        }
+        
+        if (isset($metadata['type'])) {
+            $indexes['type'] = is_numeric($metadata['type']) ? 'integer' : 'keyword';
+        }
+        
+        if (isset($metadata['category_id'])) {
+            $indexes['category_id'] = 'integer';
+        }
+        
+        if (isset($metadata['is_public'])) {
+            $indexes['is_public'] = 'bool';
+        }
+        
+        return $indexes;
     }
 
     /**
