@@ -39,7 +39,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
 
         // Check if this is starting a new collector
         if ($action === 'start_autonomous_collector') {
-            return $this->handleStartCollector($message, $context);
+            return $this->handleStartCollector($message, $context, $options);
         }
 
         // Continuing existing collector
@@ -85,10 +85,15 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
     /**
      * Handle starting a new autonomous collector
      */
-    protected function handleStartCollector(string $message, UnifiedActionContext $context): AgentResponse
+    protected function handleStartCollector(string $message, UnifiedActionContext $context, array $options = []): AgentResponse
     {
-        // Try to find matching config from package registry
-        $match = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message);
+        // First check if match was already found by MessageAnalyzer (avoid duplicate AI call)
+        $match = $options['collector_match'] ?? null;
+        
+        // Fallback to finding config if not passed (shouldn't happen normally)
+        if (!$match) {
+            $match = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message);
+        }
         
         if ($match) {
             Log::channel('ai-engine')->info('Starting autonomous collector from registry', [

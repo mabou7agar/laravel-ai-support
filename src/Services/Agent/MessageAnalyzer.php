@@ -50,7 +50,8 @@ class MessageAnalyzer
         }
 
         // PRIORITY 2: Check for autonomous collector triggers
-        if (\LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message)) {
+        $collectorMatch = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message);
+        if ($collectorMatch) {
             Log::channel('ai-engine')->info('Autonomous collector trigger detected', [
                 'message' => substr($message, 0, 100),
             ]);
@@ -58,7 +59,8 @@ class MessageAnalyzer
                 'type' => 'autonomous_collector',
                 'action' => 'start_autonomous_collector',
                 'confidence' => 0.95,
-                'reasoning' => 'Message matches autonomous collector trigger'
+                'reasoning' => 'Message matches autonomous collector trigger',
+                'collector_match' => $collectorMatch, // Pass the match to avoid duplicate AI call
             ];
         }
 
