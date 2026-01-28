@@ -196,19 +196,22 @@ AVAILABLE TOOLS:
 1. **answer_from_context** - Use when answer is in conversation history (instant)
 
 2. **db_query** - Use for list/fetch queries (fast 20-50ms)
+   Supports filters and pagination (page parameter, default page 1)
+
+3. **db_query_next** - Use when user asks for "more", "next", "next page", "show more"
+   Continues from last query with next page
+
+4. **db_count** - Use for "how many" count queries (fast 1-20ms)
    Supports filters based on model schema fields
 
-3. **db_count** - Use for "how many" count queries (fast 1-20ms)
-   Supports filters based on model schema fields
-
-4. **db_aggregate** - Use for sum/avg/min/max queries (fast 1-20ms)
+5. **db_aggregate** - Use for sum/avg/min/max queries (fast 1-20ms)
    Example: "total invoice amount", "average order value", "highest bill"
    Requires: operation (sum|avg|min|max) and field from filter_config.amount_field or schema
 
-5. **vector_search** - Use for semantic search (slow 2-5s)
+6. **vector_search** - Use for semantic search (slow 2-5s)
    Only when semantic understanding is needed
 
-6. **route_to_node** - Use when data is on remote node (slow 5-10s)
+7. **route_to_node** - Use when data is on remote node (slow 5-10s)
 
 FILTER RULES:
 - If model has "filter_config", USE those field names directly (they are correct)
@@ -217,7 +220,7 @@ FILTER RULES:
 
 RESPOND WITH JSON ONLY:
 {
-  "tool": "answer_from_context|db_query|db_count|db_aggregate|vector_search|route_to_node",
+  "tool": "answer_from_context|db_query|db_query_next|db_count|db_aggregate|vector_search|route_to_node",
   "reasoning": "brief explanation",
   "parameters": {
     "model": "model name",
@@ -297,6 +300,9 @@ PROMPT;
             case 'db_count':
                 return $this->dbCount($params, $userId, $options);
                 
+            case 'db_query_next':
+                return $this->dbQueryNext($params, $userId, $options);
+                
             case 'db_aggregate':
                 return $this->dbAggregate($params, $userId, $options);
                 
@@ -333,10 +339,16 @@ PROMPT;
         ];
     }
 
+    /** @var int Items per page for pagination */
+    protected int $perPage = 10;
+    
+    /** @var array Last query state for pagination */
+    protected static array $lastQueryState = [];
+
     /**
-     * Tool: Direct DB query
+     * Tool: Direct DB query with pagination
      */
-    protected function dbQuery(array $params, $userId, array $options): array
+    protected function dbQuery(array $params, $userId, array $options, int $page = 1): array
     {
         $modelName = $params['model'] ?? null;
         if (!$modelName) {
@@ -370,9 +382,27 @@ PROMPT;
             $filters = $params['filters'] ?? [];
             $query = $this->applyFilters($query, $filters, $modelClass);
             
-            $items = $query->latest()->limit(10)->get();
+            // Get total count for pagination info
+            $totalCount = (clone $query)->count();
+            $totalPages = (int) ceil($totalCount / $this->perPage);
+            
+            // Apply pagination
+            $offset = ($page - 1) * $this->perPage;
+            $items = $query->latest()->skip($offset)->take($this->perPage)->get();
             
             if ($items->isEmpty()) {
+                if ($page > 1) {
+                    return [
+                        'success' => true,
+                        'response' => "No more {$modelName}s to show. You've seen all {$totalCount} results.",
+                        'tool' => 'db_query',
+                        'fast_path' => true,
+                        'count' => 0,
+                        'page' => $page,
+                        'total_pages' => $totalPages,
+                        'total_count' => $totalCount,
+                    ];
+                }
                 return [
                     'success' => true,
                     'response' => "No {$modelName}s found matching your criteria.",
@@ -382,10 +412,25 @@ PROMPT;
                 ];
             }
             
+            // Store query state for pagination
+            static::$lastQueryState = [
+                'model' => $modelName,
+                'model_class' => $modelClass,
+                'filters' => $filters,
+                'user_id' => $userId,
+                'options' => $options,
+                'page' => $page,
+                'total_pages' => $totalPages,
+                'total_count' => $totalCount,
+            ];
+            
             // Format response - use model's own formatting method
-            $response = "Here are your {$modelName}s:\n\n";
+            $startNum = $offset + 1;
+            $endNum = $offset + $items->count();
+            $response = "**{$modelName}s** (showing {$startNum}-{$endNum} of {$totalCount}):\n\n";
+            
             foreach ($items as $i => $item) {
-                $num = $i + 1;
+                $num = $offset + $i + 1;
                 
                 // Always prefer model's own formatting
                 if (method_exists($item, 'toRAGContent')) {
@@ -393,9 +438,13 @@ PROMPT;
                 } elseif (method_exists($item, '__toString')) {
                     $response .= "{$num}. " . $item->__toString() . "\n";
                 } else {
-                    // Last resort: show as JSON (let AI format it nicely)
                     $response .= "{$num}. " . json_encode($item->toArray()) . "\n";
                 }
+            }
+            
+            // Add pagination hint if there are more pages
+            if ($page < $totalPages) {
+                $response .= "\n---\n*Say \"show more\" or \"next\" to see more results.*";
             }
             
             return [
@@ -404,12 +453,55 @@ PROMPT;
                 'tool' => 'db_query',
                 'fast_path' => true,
                 'count' => $items->count(),
+                'page' => $page,
+                'total_pages' => $totalPages,
+                'total_count' => $totalCount,
+                'has_more' => $page < $totalPages,
             ];
             
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('db_query failed', ['error' => $e->getMessage()]);
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Tool: Get next page of results
+     */
+    protected function dbQueryNext(array $params, $userId, array $options): array
+    {
+        // Check if we have a previous query state
+        if (empty(static::$lastQueryState)) {
+            return [
+                'success' => false,
+                'error' => 'No previous query to continue. Please make a query first.',
+                'tool' => 'db_query_next',
+            ];
+        }
+        
+        $state = static::$lastQueryState;
+        $nextPage = ($state['page'] ?? 1) + 1;
+        
+        // Check if there are more pages
+        if ($nextPage > ($state['total_pages'] ?? 1)) {
+            return [
+                'success' => true,
+                'response' => "You've reached the end. All {$state['total_count']} {$state['model']}s have been shown.",
+                'tool' => 'db_query_next',
+                'fast_path' => true,
+                'count' => 0,
+                'page' => $state['page'],
+                'total_pages' => $state['total_pages'],
+            ];
+        }
+        
+        // Re-run the query with the next page
+        $queryParams = [
+            'model' => $state['model'],
+            'filters' => $state['filters'] ?? [],
+        ];
+        
+        return $this->dbQuery($queryParams, $state['user_id'], $state['options'], $nextPage);
     }
 
     /**
