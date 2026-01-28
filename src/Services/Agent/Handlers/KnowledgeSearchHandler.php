@@ -57,6 +57,12 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
             $ragCollections = $this->ragDiscovery->discover();
             Log::channel('ai-engine')->info('KnowledgeSearchHandler: Auto-discovered collections', [
                 'count' => count($ragCollections),
+                'collections' => array_map(fn($c) => class_basename($c), $ragCollections),
+            ]);
+        } else if (empty($ragCollections)) {
+            Log::channel('ai-engine')->warning('KnowledgeSearchHandler: No collections available and discovery service not bound', [
+                'message' => $message,
+                'session_id' => $context->sessionId,
             ]);
         }
 
