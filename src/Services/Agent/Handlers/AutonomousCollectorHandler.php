@@ -267,9 +267,13 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             $collectorState['conversation'] = $conversation;
             $context->set('autonomous_collector', $collectorState);
             
+            // Extract required inputs from AI response for UI form generation
+            $requiredInputs = $this->extractRequiredInputs($content, $config);
+            
             return AgentResponse::needsUserInput(
                 message: $content,
-                context: $context
+                context: $context,
+                requiredInputs: $requiredInputs
             );
             
         } catch (\Exception $e) {
@@ -580,6 +584,158 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         }
 
         return $message;
+    }
+
+    /**
+     * Extract required inputs from AI response for UI form generation
+     * 
+     * Analyzes the AI's response to detect what inputs are being requested
+     * and returns structured input definitions for the UI to render forms.
+     */
+    protected function extractRequiredInputs(string $content, AutonomousCollectorConfig $config): ?array
+    {
+        $inputs = [];
+        $contentLower = strtolower($content);
+        
+        // Check for confirmation requests (yes/no)
+        $confirmationPatterns = [
+            'is this correct',
+            'shall i proceed',
+            'would you like to',
+            'do you want to',
+            'proceed?',
+            '(yes/no)',
+        ];
+        
+        $isConfirmation = false;
+        foreach ($confirmationPatterns as $pattern) {
+            if (str_contains($contentLower, $pattern)) {
+                $isConfirmation = true;
+                break;
+            }
+        }
+        
+        if ($isConfirmation) {
+            $inputs[] = [
+                'name' => 'confirmation',
+                'type' => 'confirm',
+                'label' => 'Confirm',
+                'required' => true,
+                'options' => [
+                    ['value' => 'yes', 'label' => 'Yes'],
+                    ['value' => 'no', 'label' => 'No'],
+                ],
+            ];
+        }
+        
+        // Extract structured data from various formats
+        $extractedData = [];
+        
+        // Format 1: Markdown list items: - **Label:** Value or - **Label**: Value or **Label:** Value
+        if (preg_match_all('/[-•]?\s*\*\*([^*]+)\*\*:?\s*([^\n]+)/i', $content, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $label = trim($match[1]);
+                $value = trim($match[2]);
+                $key = strtolower(str_replace([' ', '-'], '_', $label));
+                $value = preg_replace('/\*\*$/', '', $value);
+                $value = trim($value, ' .,');
+                
+                if (!empty($value) && strlen($value) < 100) {
+                    $extractedData[$key] = ['label' => $label, 'value' => $value];
+                }
+            }
+        }
+        
+        // Format 2: Simple list items or plain lines: - Label: Value or Label: Value
+        if (preg_match_all('/^[-•]?\s*([A-Za-z][A-Za-z\s]{1,20}):\s*(.+?)(?:\s{2,}|$)/im', $content, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $label = trim($match[1]);
+                $value = trim($match[2]);
+                $key = strtolower(str_replace([' ', '-'], '_', $label));
+                $value = trim($value, ' .,*');
+                
+                // Skip if already captured, too long, or looks like a sentence
+                if (!isset($extractedData[$key]) && !empty($value) && strlen($value) < 50 && !str_contains($value, ' is ')) {
+                    $extractedData[$key] = ['label' => $label, 'value' => $value];
+                }
+            }
+        }
+        
+        // Check for category in extracted data or content
+        if (isset($extractedData['category'])) {
+            $inputs[] = [
+                'name' => 'category',
+                'type' => 'text',
+                'label' => 'Category',
+                'required' => false,
+                'default' => $extractedData['category']['value'],
+                'placeholder' => 'Enter category or keep suggested',
+            ];
+            unset($extractedData['category']);
+        }
+        
+        // Check for price in extracted data
+        if (isset($extractedData['price'])) {
+            $priceValue = preg_replace('/[^\d.]/', '', $extractedData['price']['value']);
+            $inputs[] = [
+                'name' => 'price',
+                'type' => 'number',
+                'label' => 'Price',
+                'required' => true,
+                'default' => $priceValue,
+                'placeholder' => 'Enter price',
+            ];
+            unset($extractedData['price']);
+        }
+        
+        // Check for email input requests
+        if (str_contains($contentLower, 'email') && (str_contains($contentLower, 'provide') || str_contains($contentLower, 'enter') || str_contains($contentLower, 'what is'))) {
+            $inputs[] = [
+                'name' => 'email',
+                'type' => 'email',
+                'label' => 'Email Address',
+                'required' => true,
+                'placeholder' => 'Enter email address',
+            ];
+        }
+        
+        // Check for account code input
+        if (str_contains($contentLower, 'account code') && (str_contains($contentLower, 'specify') || str_contains($contentLower, 'provide'))) {
+            $inputs[] = [
+                'name' => 'code',
+                'type' => 'text',
+                'label' => 'Account Code',
+                'required' => false,
+                'placeholder' => 'Enter account code (optional)',
+            ];
+        }
+        
+        // Check for selection from options (e.g., "use existing or create new")
+        if ((str_contains($contentLower, 'use this existing') || str_contains($contentLower, 'use existing')) 
+            && str_contains($contentLower, 'create new')) {
+            $inputs[] = [
+                'name' => 'selection',
+                'type' => 'select',
+                'label' => 'Choose an option',
+                'required' => true,
+                'options' => [
+                    ['value' => 'use_existing', 'label' => 'Use Existing'],
+                    ['value' => 'create_new', 'label' => 'Create New'],
+                ],
+            ];
+        }
+        
+        // Add remaining extracted data as readonly fields for display
+        foreach ($extractedData as $key => $data) {
+            $inputs[] = [
+                'name' => $key,
+                'type' => 'readonly',
+                'label' => $data['label'],
+                'value' => $data['value'],
+            ];
+        }
+        
+        return !empty($inputs) ? $inputs : null;
     }
 
     /**
