@@ -50,16 +50,37 @@ class AutonomousCollectorRegistry
      * 
      * AI analyzes the message against registered config goals/descriptions
      * to determine if any collector should handle it.
+     * 
+     * @param string $message User message
+     * @param int|null $userId User ID for permission checking
      */
-    public static function findConfigForMessage(string $message): ?array
+    public static function findConfigForMessage(string $message, ?int $userId = null): ?array
     {
         if (empty(static::$configs)) {
             return null;
         }
 
-        // Build context of available collectors for AI
+        // Build context of available collectors for AI (only those user has permission for)
         $collectorsContext = [];
         foreach (static::$configs as $name => $configData) {
+            // Check permissions using getAllowedOperations
+            $configClass = $configData['class'] ?? null;
+            if ($configClass && method_exists($configClass, 'getAllowedOperations')) {
+                $allowedOps = $configClass::getAllowedOperations($userId);
+                
+                // Determine required operation from collector name
+                $requiredOp = static::getRequiredOperation($name);
+                if (!in_array($requiredOp, $allowedOps)) {
+                    Log::channel('ai-engine')->debug('Skipping collector due to permissions', [
+                        'collector' => $name,
+                        'required_op' => $requiredOp,
+                        'allowed_ops' => $allowedOps,
+                        'user_id' => $userId,
+                    ]);
+                    continue; // Skip this collector - user doesn't have permission
+                }
+            }
+            
             $config = $configData['config'];
             if ($config instanceof \Closure) {
                 $config = $config();
@@ -69,6 +90,10 @@ class AutonomousCollectorRegistry
                 'goal' => $config->goal ?? '',
                 'description' => $configData['description'] ?? $config->description ?? '',
             ];
+        }
+        
+        if (empty($collectorsContext)) {
+            return null; // No collectors available for this user
         }
 
         // Use AI to determine if message matches any collector
@@ -101,6 +126,21 @@ class AutonomousCollectorRegistry
         }
         
         return null;
+    }
+    
+    /**
+     * Get required operation from collector name
+     */
+    protected static function getRequiredOperation(string $name): string
+    {
+        if (str_contains($name, '_delete')) {
+            return 'delete';
+        }
+        if (str_contains($name, '_update')) {
+            return 'update';
+        }
+        // Default is create for base collectors like 'invoice', 'bill', etc.
+        return 'create';
     }
 
     /**

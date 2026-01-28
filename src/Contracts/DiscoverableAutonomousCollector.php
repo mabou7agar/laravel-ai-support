@@ -78,4 +78,27 @@ interface DiscoverableAutonomousCollector
      * }
      */
     public static function getFilterConfig(): array;
+
+    /**
+     * Get allowed operations for a user
+     * Returns array of operations the user can perform: create, list, update, delete
+     * 
+     * @param int|null $userId User ID to check permissions for
+     * @return array<string> List of allowed operations
+     * 
+     * Example:
+     * ```php
+     * public static function getAllowedOperations(?int $userId): array
+     * {
+     *     if (!$userId) return ['list']; // Guest can only list
+     *     
+     *     $user = User::find($userId);
+     *     if ($user->hasRole('admin')) {
+     *         return ['create', 'list', 'update', 'delete'];
+     *     }
+     *     return ['create', 'list']; // Regular user
+     * }
+     * ```
+     */
+    public static function getAllowedOperations(?int $userId): array;
 }

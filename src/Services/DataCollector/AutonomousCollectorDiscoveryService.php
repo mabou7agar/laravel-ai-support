@@ -77,6 +77,7 @@ class AutonomousCollectorDiscoveryService
                         'priority' => $priority,
                         'model_class' => $modelClass,
                         'filter_config' => $filterConfig,
+                        'has_permissions' => method_exists($className, 'getAllowedOperations'),
                     ];
                     
                     Log::channel('ai-engine')->debug('Discovered autonomous collector', [
@@ -125,6 +126,7 @@ class AutonomousCollectorDiscoveryService
             AutonomousCollectorRegistry::register($name, [
                 'config' => fn() => $className::getConfig(),
                 'description' => $metadata['description'],
+                'class' => $className, // Include class for permission checking
             ]);
         }
         

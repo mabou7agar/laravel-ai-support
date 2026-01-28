@@ -49,8 +49,9 @@ class MessageAnalyzer
             return $this->analyzeInWorkflowContext($message, $context);
         }
 
-        // PRIORITY 2: Check for autonomous collector triggers
-        $collectorMatch = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message);
+        // PRIORITY 2: Check for autonomous collector triggers (with permission check)
+        $userId = $context->userId ?? null;
+        $collectorMatch = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message, $userId);
         if ($collectorMatch) {
             Log::channel('ai-engine')->info('Autonomous collector trigger detected', [
                 'message' => substr($message, 0, 100),
