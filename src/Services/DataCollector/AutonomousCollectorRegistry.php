@@ -162,10 +162,20 @@ class AutonomousCollectorRegistry
     protected static function getDefaultDetectionPrompt(): string
     {
         return <<<PROMPT
-Does the user want to CREATE/MAKE/ADD something that matches one of these collectors?
-- Only match if user clearly wants to CREATE something
-- Greetings or general questions → NO match
-- READ/SHOW/LIST requests → NO match (not CREATE)
+Does the user want to CREATE/MAKE/ADD a NEW item that matches one of these collectors?
+
+MATCH ONLY IF user explicitly wants to CREATE something NEW:
+- "create invoice for John" → MATCH (creating new invoice)
+- "make a bill" → MATCH (creating new bill)
+- "add new customer" → MATCH (creating new customer)
+
+DO NOT MATCH for these (respond with 0):
+- "invoices at 26-01-2026" → NO (searching/filtering existing data)
+- "show my invoices" → NO (listing existing data)
+- "list bills from January" → NO (searching existing data)
+- "how many invoices" → NO (counting existing data)
+- "find invoice #123" → NO (searching existing data)
+- Any query with dates, filters, or search terms → NO (searching, not creating)
 
 Respond with ONLY the number (1-{count}) or '0' if no match.
 PROMPT;

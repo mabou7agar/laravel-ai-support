@@ -112,10 +112,20 @@ class AutonomousRAGAgent
                 $hasVectorSearch = method_exists($instance, 'toVector') || 
                                   in_array('LaravelAIEngine\Traits\Vectorizable', class_uses_recursive($collection));
                 
+                // Get model schema for AI to understand available fields
+                $schema = method_exists($instance, 'getModelSchema') 
+                    ? $instance->getModelSchema() 
+                    : [];
+                
+                // Get filter config from AutonomousConfig class (not model)
+                $filterConfig = $this->getFilterConfigForModel($collection);
+                
                 $models[] = [
                     'name' => strtolower($name),
                     'class' => $collection,
                     'table' => $instance->getTable() ?? strtolower($name) . 's',
+                    'schema' => $schema, // AI uses this to decide filter fields
+                    'filter_config' => $filterConfig, // From AutonomousConfig class
                     'capabilities' => [
                         'db_query' => true, // All models support direct DB
                         'db_count' => true,
@@ -173,7 +183,7 @@ USER MESSAGE: "{$message}"
 CONVERSATION HISTORY:
 {$conversationSummary}
 
-AVAILABLE MODELS:
+AVAILABLE MODELS (with schema):
 {$modelsJson}
 
 AVAILABLE NODES (for routing):
@@ -183,48 +193,40 @@ IS MASTER NODE: {$isMaster}
 
 AVAILABLE TOOLS:
 
-1. **answer_from_context**
-   Use when: Answer is already in conversation history
-   Speed: Instant (0ms)
-   Example: User asks "1" after seeing a numbered list
+1. **answer_from_context** - Use when answer is in conversation history (instant)
 
-2. **db_query**
-   Use when: Simple list/fetch query, model supports db_query
-   Speed: Very fast (20-50ms)
-   Example: "list my invoices", "show my emails"
-   
-3. **db_count**
-   Use when: Count/aggregate query
-   Speed: Very fast (1-20ms)
-   Example: "how many invoices", "count my emails"
+2. **db_query** - Use for list/fetch queries (fast 20-50ms)
+   Supports filters based on model schema fields
 
-4. **vector_search**
-   Use when: Semantic search needed, model supports vector_search
-   Speed: Slow (2-5s)
-   Example: "find emails about marketing", "invoices from last month"
-   
-5. **route_to_node**
-   Use when: Data is on a remote node
-   Speed: Slow (5-10s)
-   Example: Query about model that exists on another node
+3. **db_count** - Use for count/aggregate queries (fast 1-20ms)
+   Supports filters based on model schema fields
 
-DECISION RULES:
-- Prefer faster tools when possible (answer_from_context > db_query > db_count > vector_search)
-- Use db_query for simple "list X" queries
-- Use db_count for "how many X" queries
-- Only use vector_search when semantic understanding is needed
-- Check model capabilities before choosing tool
-- If model doesn't support vector_search, use db_query instead
+4. **vector_search** - Use for semantic search (slow 2-5s)
+   Only when semantic understanding is needed
+
+5. **route_to_node** - Use when data is on remote node (slow 5-10s)
+
+FILTER RULES:
+- If model has "filter_config", USE those field names directly (they are correct)
+- If no filter_config, look at "schema" to find field names and types
+- Convert user date formats (DD-MM-YYYY) to YYYY-MM-DD
 
 RESPOND WITH JSON ONLY:
 {
   "tool": "answer_from_context|db_query|db_count|vector_search|route_to_node",
-  "reasoning": "brief explanation of why this tool is best",
+  "reasoning": "brief explanation",
   "parameters": {
-    "model": "model name (for db_query/db_count/vector_search)",
+    "model": "model name",
     "query": "search query (for vector_search)",
     "node": "node slug (for route_to_node)",
-    "answer": "direct answer (for answer_from_context)"
+    "answer": "direct answer (for answer_from_context)",
+    "filters": {
+      "date_field": "from filter_config.date_field or schema",
+      "date_value": "YYYY-MM-DD format",
+      "date_operator": "= | >= | <= | between",
+      "date_end": "YYYY-MM-DD for between",
+      "status": "status value"
+    }
   }
 }
 PROMPT;
@@ -337,24 +339,32 @@ PROMPT;
         
         try {
             $query = $modelClass::query();
+            $instance = new $modelClass;
+            $table = $instance->getTable();
             
-            // Apply user filter
+            // Get filter config from AutonomousConfig
+            $filterConfig = $this->getFilterConfigForModel($modelClass);
+            
+            // Apply user filter from config or scope
             if (method_exists($modelClass, 'scopeForUser')) {
                 $query->forUser($userId);
-            } else {
-                $instance = new $modelClass;
-                if (in_array('user_id', $instance->getFillable()) || 
-                    \Schema::hasColumn($instance->getTable(), 'user_id')) {
-                    $query->where('user_id', $userId);
+            } elseif (!empty($filterConfig['user_field'])) {
+                $userField = $filterConfig['user_field'];
+                if (\Schema::hasColumn($table, $userField)) {
+                    $query->where($userField, $userId);
                 }
             }
+            
+            // Apply filters from AI decision
+            $filters = $params['filters'] ?? [];
+            $query = $this->applyFilters($query, $filters, $modelClass);
             
             $items = $query->latest()->limit(10)->get();
             
             if ($items->isEmpty()) {
                 return [
                     'success' => true,
-                    'response' => "You don't have any {$modelName}s yet.",
+                    'response' => "No {$modelName}s found matching your criteria.",
                     'tool' => 'db_query',
                     'fast_path' => true,
                     'count' => 0,
@@ -408,17 +418,25 @@ PROMPT;
         
         try {
             $query = $modelClass::query();
+            $instance = new $modelClass;
+            $table = $instance->getTable();
             
-            // Apply user filter
+            // Get filter config from AutonomousConfig
+            $filterConfig = $this->getFilterConfigForModel($modelClass);
+            
+            // Apply user filter from config or scope
             if (method_exists($modelClass, 'scopeForUser')) {
                 $query->forUser($userId);
-            } else {
-                $instance = new $modelClass;
-                if (in_array('user_id', $instance->getFillable()) || 
-                    \Schema::hasColumn($instance->getTable(), 'user_id')) {
-                    $query->where('user_id', $userId);
+            } elseif (!empty($filterConfig['user_field'])) {
+                $userField = $filterConfig['user_field'];
+                if (\Schema::hasColumn($table, $userField)) {
+                    $query->where($userField, $userId);
                 }
             }
+            
+            // Apply filters from AI decision
+            $filters = $params['filters'] ?? [];
+            $query = $this->applyFilters($query, $filters, $modelClass);
             
             $count = $query->count();
             
@@ -588,5 +606,85 @@ PROMPT;
         }
         
         return $summary;
+    }
+
+    /**
+     * Apply filters to query based on AI decision
+     */
+    protected function applyFilters($query, array $filters, string $modelClass)
+    {
+        if (empty($filters)) {
+            return $query;
+        }
+
+        $instance = new $modelClass;
+        $table = $instance->getTable();
+
+        // Date filter
+        if (!empty($filters['date_field']) && !empty($filters['date_value'])) {
+            $dateField = $filters['date_field'];
+            $dateValue = $filters['date_value'];
+            $operator = $filters['date_operator'] ?? '=';
+            
+            // Verify field exists
+            if (\Schema::hasColumn($table, $dateField)) {
+                if ($operator === 'between' && !empty($filters['date_end'])) {
+                    $query->whereBetween($dateField, [$dateValue, $filters['date_end']]);
+                } else {
+                    $query->whereDate($dateField, $operator, $dateValue);
+                }
+                
+                Log::channel('ai-engine')->info('Applied date filter', [
+                    'field' => $dateField,
+                    'operator' => $operator,
+                    'value' => $dateValue,
+                    'end' => $filters['date_end'] ?? null,
+                ]);
+            }
+        }
+
+        // Status filter
+        if (!empty($filters['status'])) {
+            $statusField = 'status';
+            if (\Schema::hasColumn($table, $statusField)) {
+                $query->where($statusField, $filters['status']);
+            }
+        }
+
+        // Amount filters - use AI-provided field name or fallback
+        $amountField = $filters['amount_field'] ?? null;
+        
+        if (!empty($filters['amount_min'])) {
+            if ($amountField && \Schema::hasColumn($table, $amountField)) {
+                $query->where($amountField, '>=', $filters['amount_min']);
+            }
+        }
+        
+        if (!empty($filters['amount_max'])) {
+            if ($amountField && \Schema::hasColumn($table, $amountField)) {
+                $query->where($amountField, '<=', $filters['amount_max']);
+            }
+        }
+
+        return $query;
+    }
+
+    /**
+     * Get filter config for a model from AutonomousConfig classes
+     */
+    protected function getFilterConfigForModel(string $modelClass): array
+    {
+        // Get discovered collectors
+        $discoveryService = app(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class);
+        $collectors = $discoveryService->discoverCollectors();
+        
+        // Find collector that matches this model
+        foreach ($collectors as $name => $collector) {
+            if (($collector['model_class'] ?? null) === $modelClass) {
+                return $collector['filter_config'] ?? [];
+            }
+        }
+        
+        return [];
     }
 }

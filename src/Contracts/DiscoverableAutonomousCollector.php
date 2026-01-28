@@ -59,4 +59,23 @@ interface DiscoverableAutonomousCollector
      * Optional - default is 0
      */
     public static function getPriority(): int;
+
+    /**
+     * Get the model class this collector is for
+     * Used for RAG queries to know which model to filter
+     */
+    public static function getModelClass(): ?string;
+
+    /**
+     * Get filter configuration for database queries
+     * AI uses this to apply filters from user queries like "invoices at 26-01-2026"
+     * 
+     * @return array{
+     *   user_field?: string,    // Field for user ownership
+     *   date_field?: string,    // Primary date field
+     *   status_field?: string,  // Status field
+     *   amount_field?: string,  // Amount/total field
+     * }
+     */
+    public static function getFilterConfig(): array;
 }

@@ -64,11 +64,19 @@ class AutonomousCollectorDiscoveryService
                     $priority = method_exists($className, 'getPriority') 
                         ? $className::getPriority() 
                         : 0;
+                    $modelClass = method_exists($className, 'getModelClass') 
+                        ? $className::getModelClass() 
+                        : null;
+                    $filterConfig = method_exists($className, 'getFilterConfig') 
+                        ? $className::getFilterConfig() 
+                        : [];
                     
                     $collectors[$name] = [
                         'class' => $className,
                         'description' => $description,
                         'priority' => $priority,
+                        'model_class' => $modelClass,
+                        'filter_config' => $filterConfig,
                     ];
                     
                     Log::channel('ai-engine')->debug('Discovered autonomous collector', [

@@ -13,25 +13,20 @@ trait HasAIActions
     /**
      * Define expected format for AI data extraction
      * 
-     * Check if model implements AIConfigurable interface or has customInitializeAI static method
+     * Models should override this method to provide their AI configuration.
+     * Use $this->aiConfig() to build the configuration fluently.
      * 
      * @return array{required: array, optional: array, triggers?: array}
      */
-    public static function initializeAI(): array
+    public function initializeAI(): array
     {
         // Check if model implements AIConfigurable interface
-        if (is_subclass_of(static::class, \LaravelAIEngine\Contracts\AIConfigurable::class)) {
+        if ($this instanceof \LaravelAIEngine\Contracts\AIConfigurable) {
             return static::customInitializeAI();
         }
         
-        // Fallback: check if static method exists (for backward compatibility)
-        if (method_exists(static::class, 'customInitializeAI')) {
-            return static::customInitializeAI();
-        }
-        
-        // Default behavior
-        $model = new static();
-        $fillable = $model->getFillable();
+        // Default behavior - auto-generate from fillable
+        $fillable = $this->getFillable();
 
         return [
             'required' => array_slice($fillable, 0, min(2, count($fillable))),

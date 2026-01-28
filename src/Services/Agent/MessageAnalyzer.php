@@ -172,12 +172,13 @@ class MessageAnalyzer
             
             $prompt = "User message: \"{$message}\"\n\n";
             $prompt .= "What does the user want to DO? Respond with ONE word:\n\n";
-            $prompt .= "create - if they want to CREATE/MAKE/ADD/BUILD/GENERATE/SETUP/REGISTER something\n";
+            $prompt .= "create - if they want to CREATE/MAKE/ADD/BUILD/GENERATE/SETUP/REGISTER something NEW\n";
             $prompt .= "update - if they want to UPDATE/EDIT/MODIFY/CHANGE existing data\n";
             $prompt .= "delete - if they want to DELETE/REMOVE something\n";
-            $prompt .= "read - if they want to VIEW/SHOW/LIST/FIND/SEARCH/GET information\n";
-            $prompt .= "suggest - if the message CONTAINS structured data that could be processed by a workflow, but NO explicit command\n";
+            $prompt .= "read - if they want to VIEW/SHOW/LIST/FIND/SEARCH/GET/FILTER information (includes date filters like 'invoices at 26-01-2026')\n";
+            $prompt .= "suggest - if the message contains MULTIPLE items with quantities/prices that look like a transaction (e.g., '2 laptops at $500 each')\n";
             $prompt .= "none - if they're just CHATTING/GREETING/ASKING ABOUT CAPABILITIES\n\n";
+            $prompt .= "IMPORTANT: A query with a date filter (e.g., 'invoices at 26-01-2026', 'bills from January') is READ, not suggest!\n\n";
             
             if (!empty($workflowContext)) {
                 $prompt .= "Available workflows can process:\n{$workflowContext}\n";

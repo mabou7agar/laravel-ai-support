@@ -7,16 +7,19 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\RAG\IntelligentRAGService;
+use LaravelAIEngine\Services\RAG\AutonomousRAGAgent;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Searches knowledge base using RAG
- * No ChatService dependency - uses RAG and AI directly
+ * Uses AutonomousRAGAgent for intelligent routing with filter support
  */
 class KnowledgeSearchHandler implements MessageHandlerInterface
 {
+    protected ?AutonomousRAGAgent $autonomousAgent = null;
+
     public function __construct(
         protected AIEngineService $ai,
         protected IntelligentRAGService $rag,
@@ -25,6 +28,15 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         if ($this->ragDiscovery === null && app()->bound(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)) {
             $this->ragDiscovery = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
         }
+        
+        // Initialize AutonomousRAGAgent for intelligent routing
+        if (app()->bound(\LaravelAIEngine\Services\AIEngineManager::class)) {
+            $this->autonomousAgent = new AutonomousRAGAgent(
+                app(\LaravelAIEngine\Services\AIEngineManager::class),
+                $this->rag,
+                $this->ragDiscovery
+            );
+        }
     }
 
     public function handle(
@@ -32,31 +44,61 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         UnifiedActionContext $context,
         array $options = []
     ): AgentResponse {
-        Log::channel('ai-engine')->info('Searching knowledge base with RAG', [
+        Log::channel('ai-engine')->info('Searching knowledge base', [
             'query' => $message,
             'session_id' => $context->sessionId,
+            'using_autonomous_agent' => $this->autonomousAgent !== null,
         ]);
 
-        // Use IntelligentRAGService to process message with RAG
         $ragCollections = $options['rag_collections'] ?? [];
 
         // Auto-discover collections if not provided
-        // Skip auto-discovery on master node with routing - let routing handle it
-        $nodesEnabled = config('ai-engine.nodes.enabled', false);
-        $isMaster = config('ai-engine.nodes.is_master', true);
-        $searchMode = config('ai-engine.nodes.search_mode', 'routing');
-
         if (empty($ragCollections) && $this->ragDiscovery) {
-            if ($nodesEnabled && $isMaster && $searchMode === 'routing') {
-                Log::channel('ai-engine')->info('KnowledgeSearchHandler: Skipping auto-discovery (routing mode on master)');
-            } else {
-                $ragCollections = $this->ragDiscovery->discover();
-                Log::channel('ai-engine')->info('KnowledgeSearchHandler: Auto-discovered collections', [
-                    'count' => count($ragCollections),
-                ]);
-            }
+            $ragCollections = $this->ragDiscovery->discover();
+            Log::channel('ai-engine')->info('KnowledgeSearchHandler: Auto-discovered collections', [
+                'count' => count($ragCollections),
+            ]);
         }
 
+        // Use AutonomousRAGAgent for intelligent routing with filter support
+        if ($this->autonomousAgent) {
+            $conversationHistory = $context->conversationHistory ?? [];
+            
+            $result = $this->autonomousAgent->process(
+                $message,
+                $context->sessionId,
+                $context->userId,
+                $conversationHistory,
+                array_merge($options, ['rag_collections' => $ragCollections])
+            );
+            
+            if ($result['success'] ?? false) {
+                $responseText = $result['response'] ?? 'No results found.';
+                
+                Log::channel('ai-engine')->info('KnowledgeSearchHandler: AutonomousRAGAgent response', [
+                    'tool' => $result['tool'] ?? 'unknown',
+                    'fast_path' => $result['fast_path'] ?? false,
+                ]);
+                
+                $response = AgentResponse::conversational(
+                    message: $responseText,
+                    context: $context
+                );
+                
+                $context->metadata['tool_used'] = $result['tool'] ?? 'unknown';
+                $context->metadata['fast_path'] = $result['fast_path'] ?? false;
+                $context->addAssistantMessage($responseText);
+                
+                return $response;
+            }
+            
+            // Fall through to legacy RAG if autonomous agent fails
+            Log::channel('ai-engine')->warning('AutonomousRAGAgent failed, falling back to legacy RAG', [
+                'error' => $result['error'] ?? 'unknown',
+            ]);
+        }
+
+        // LEGACY PATH: Use IntelligentRAGService directly
         // FAST PATH: For aggregate queries, use smart aggregate directly
         if ($this->isAggregateQuery($message) && !empty($ragCollections)) {
             $aggregateData = $this->rag->getSmartAggregateData($ragCollections, $message, $context->userId);

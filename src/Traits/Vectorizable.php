@@ -642,6 +642,32 @@ trait Vectorizable
     }
 
     /**
+     * Get model schema for AI to understand available fields
+     * 
+     * Returns column names with their types so AI can intelligently
+     * decide which fields to use for filtering.
+     * 
+     * @return array<string, string> Column name => type
+     */
+    public function getModelSchema(): array
+    {
+        $table = $this->getTable();
+        $columns = \Schema::getColumnListing($table);
+        
+        $schema = [];
+        foreach ($columns as $column) {
+            try {
+                $type = \Schema::getColumnType($table, $column);
+                $schema[$column] = $type;
+            } catch (\Exception $e) {
+                $schema[$column] = 'unknown';
+            }
+        }
+        
+        return $schema;
+    }
+
+    /**
      * Auto-detect which fields should be vectorized using AI
      *
      * @return array
