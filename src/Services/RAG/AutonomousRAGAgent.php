@@ -198,13 +198,17 @@ AVAILABLE TOOLS:
 2. **db_query** - Use for list/fetch queries (fast 20-50ms)
    Supports filters based on model schema fields
 
-3. **db_count** - Use for count/aggregate queries (fast 1-20ms)
+3. **db_count** - Use for "how many" count queries (fast 1-20ms)
    Supports filters based on model schema fields
 
-4. **vector_search** - Use for semantic search (slow 2-5s)
+4. **db_aggregate** - Use for sum/avg/min/max queries (fast 1-20ms)
+   Example: "total invoice amount", "average order value", "highest bill"
+   Requires: operation (sum|avg|min|max) and field from filter_config.amount_field or schema
+
+5. **vector_search** - Use for semantic search (slow 2-5s)
    Only when semantic understanding is needed
 
-5. **route_to_node** - Use when data is on remote node (slow 5-10s)
+6. **route_to_node** - Use when data is on remote node (slow 5-10s)
 
 FILTER RULES:
 - If model has "filter_config", USE those field names directly (they are correct)
@@ -213,13 +217,17 @@ FILTER RULES:
 
 RESPOND WITH JSON ONLY:
 {
-  "tool": "answer_from_context|db_query|db_count|vector_search|route_to_node",
+  "tool": "answer_from_context|db_query|db_count|db_aggregate|vector_search|route_to_node",
   "reasoning": "brief explanation",
   "parameters": {
     "model": "model name",
     "query": "search query (for vector_search)",
     "node": "node slug (for route_to_node)",
     "answer": "direct answer (for answer_from_context)",
+    "aggregate": {
+      "operation": "sum|avg|min|max",
+      "field": "field name from filter_config.amount_field or schema"
+    },
     "filters": {
       "date_field": "from filter_config.date_field or schema",
       "date_value": "YYYY-MM-DD format",
@@ -288,6 +296,9 @@ PROMPT;
                 
             case 'db_count':
                 return $this->dbCount($params, $userId, $options);
+                
+            case 'db_aggregate':
+                return $this->dbAggregate($params, $userId, $options);
                 
             case 'vector_search':
                 return $this->vectorSearch($params, $message, $sessionId, $userId, $conversationHistory, $options);
@@ -450,6 +461,104 @@ PROMPT;
             
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('db_count failed', ['error' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Tool: DB aggregate (sum, avg, min, max)
+     */
+    protected function dbAggregate(array $params, $userId, array $options): array
+    {
+        $modelName = $params['model'] ?? null;
+        if (!$modelName) {
+            return ['success' => false, 'error' => 'No model specified'];
+        }
+        
+        $modelClass = $this->findModelClass($modelName, $options);
+        if (!$modelClass) {
+            return ['success' => false, 'error' => "Model {$modelName} not found"];
+        }
+        
+        $aggregate = $params['aggregate'] ?? [];
+        $operation = $aggregate['operation'] ?? 'sum';
+        $field = $aggregate['field'] ?? null;
+        
+        // Get filter config to find amount field if not specified
+        $filterConfig = $this->getFilterConfigForModel($modelClass);
+        if (!$field && !empty($filterConfig['amount_field'])) {
+            $field = $filterConfig['amount_field'];
+        }
+        
+        if (!$field) {
+            return ['success' => false, 'error' => 'No field specified for aggregation'];
+        }
+        
+        try {
+            $query = $modelClass::query();
+            $instance = new $modelClass;
+            $table = $instance->getTable();
+            
+            // Verify field exists
+            if (!\Schema::hasColumn($table, $field)) {
+                return ['success' => false, 'error' => "Field {$field} not found in {$modelName}"];
+            }
+            
+            // Apply user filter from config or scope
+            if (method_exists($modelClass, 'scopeForUser')) {
+                $query->forUser($userId);
+            } elseif (!empty($filterConfig['user_field'])) {
+                $userField = $filterConfig['user_field'];
+                if (\Schema::hasColumn($table, $userField)) {
+                    $query->where($userField, $userId);
+                }
+            }
+            
+            // Apply filters from AI decision
+            $filters = $params['filters'] ?? [];
+            $query = $this->applyFilters($query, $filters, $modelClass);
+            
+            // Execute aggregation
+            $validOperations = ['sum', 'avg', 'min', 'max'];
+            if (!in_array($operation, $validOperations)) {
+                $operation = 'sum';
+            }
+            
+            $result = $query->$operation($field);
+            $count = $query->count();
+            
+            // Format response based on operation
+            $operationLabels = [
+                'sum' => 'Total',
+                'avg' => 'Average',
+                'min' => 'Minimum',
+                'max' => 'Maximum',
+            ];
+            $label = $operationLabels[$operation] ?? 'Result';
+            
+            // Format number nicely
+            $formattedResult = is_numeric($result) ? number_format($result, 2) : $result;
+            
+            Log::channel('ai-engine')->info('Applied aggregation', [
+                'operation' => $operation,
+                'field' => $field,
+                'result' => $result,
+                'count' => $count,
+            ]);
+            
+            return [
+                'success' => true,
+                'response' => "**{$label} {$field}**: \${$formattedResult} (from {$count} {$modelName}s)",
+                'tool' => 'db_aggregate',
+                'fast_path' => true,
+                'result' => $result,
+                'count' => $count,
+                'operation' => $operation,
+                'field' => $field,
+            ];
+            
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('db_aggregate failed', ['error' => $e->getMessage()]);
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
