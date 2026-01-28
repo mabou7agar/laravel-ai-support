@@ -27,13 +27,13 @@ return [
     'error_handling' => [
         // Show detailed error messages to users (useful for debugging)
         'show_detailed_errors' => env('AI_ENGINE_SHOW_DETAILED_ERRORS', false),
-        
+
         // Show API quota/billing errors to users
         'show_quota_errors' => env('AI_ENGINE_SHOW_QUOTA_ERRORS', true),
-        
+
         // Fallback message when AI is unavailable
         'fallback_message' => env('AI_ENGINE_FALLBACK_MESSAGE', 'AI service is temporarily unavailable. Please try again later.'),
-        
+
         // User-friendly error messages for common errors
         'error_messages' => [
             'quota_exceeded' => 'AI service quota has been exceeded. Please contact support or try again later.',
@@ -114,13 +114,13 @@ return [
 
         // Additional custom context (free-form text)
         'additional_context' => env('AI_ENGINE_PROJECT_ADDITIONAL_CONTEXT', ''),
-        
+
         // Document Type Detection Rules (for messages >500 chars)
         // Used by intent analysis to suggest appropriate collections based on document content
         'document_type_detection' => [
             'enabled' => env('AI_ENGINE_DOCUMENT_TYPE_DETECTION', true),
             'min_length' => 500, // Minimum message length to trigger document analysis
-            
+
             // Detection rules for different document types
             'rules' => [
                 'bill' => [
@@ -477,7 +477,7 @@ return [
         'default_balance' => env('AI_DEFAULT_CREDITS', 100.0),
         'low_balance_threshold' => env('AI_LOW_BALANCE_THRESHOLD', 10.0),
         'currency' => env('AI_CREDITS_CURRENCY', 'MyCredits'),
-        
+
         // Credit Owner Model Configuration
         // Set this to your Tenant, Workspace, Organization, or User model
         // Examples:
@@ -486,12 +486,12 @@ return [
         //   - 'App\\Models\\Workspace' (workspace-based credits)
         //   - 'App\\Models\\Organization' (organization-based credits)
         'owner_model' => env('AI_CREDITS_OWNER_MODEL', 'App\\Models\\User'),
-        
+
         // ID Column Name
         // The column name used to identify the credit owner
         // Examples: 'id', 'tenant_id', 'workspace_id', 'organization_id'
         'owner_id_column' => env('AI_CREDITS_OWNER_ID_COLUMN', 'id'),
-        
+
         // Custom User ID Resolver (Multi-Tenant Support)
         // Specify a custom class to resolve the owner ID for credit management
         // This is useful for multi-tenant applications where credits are tied to
@@ -507,7 +507,7 @@ return [
         //
         // Set to null to use default auth()->id() behavior
         'user_id_resolver' => env('AI_USER_ID_RESOLVER', null),
-        
+
         // Custom Query Resolver (Advanced)
         // Specify a custom class to override how the owner model is queried
         // This allows you to add custom conditions, eager loading, or complex logic
@@ -529,7 +529,7 @@ return [
         //
         // Set to null to use default query: Model::where($column, $ownerId)->firstOrFail()
         'query_resolver' => env('AI_QUERY_RESOLVER', null),
-        
+
         // Custom Credit Lifecycle Handler (Advanced)
         // Specify a custom class to override credit management logic
         // This allows you to implement custom credit expiration, validation,
@@ -557,7 +557,7 @@ return [
         //
         // Set to null to use default credit management
         'lifecycle_handler' => env('AI_LIFECYCLE_HANDLER', null),
-        
+
         // Engine conversion rates: MyCredits to Engine Credits
         // Example: 'openai' => 2.0 means 100 MyCredits = 50 OpenAI credits
         'engine_rates' => [
@@ -861,31 +861,31 @@ return [
     'actions' => [
         'enabled' => env('AI_ACTIONS_ENABLED', true),
         'max_actions_per_response' => env('AI_ACTIONS_MAX_PER_RESPONSE', 10),
-        
+
         // AI-Driven Thresholds and Limits
         'thresholds' => [
             // Confidence threshold for auto-executing actions without confirmation
             'auto_execute_confidence' => env('AI_AUTO_EXECUTE_CONFIDENCE', 0.95),
-            
+
             // Conversation history limits
             'conversation_threshold' => env('AI_CONVERSATION_THRESHOLD', 21),
             'recent_messages_count' => env('AI_RECENT_MESSAGES_COUNT', 5),
-            
+
             // Token limits
             'max_tokens' => env('AI_MAX_TOKENS', 2000),
             'max_tokens_rag' => env('AI_MAX_TOKENS_RAG', 4000),
         ],
-        
+
         // Intent Analysis - AI-powered message analysis for smarter responses
         // Analyzes user intent (confirm, reject, modify, provide_data, question, new_request)
         // and enhances AI prompts with context for more intelligent responses
         'intent_analysis' => env('AI_INTENT_ANALYSIS_ENABLED', true),
-        
+
         // Intent Analysis Model - Use faster/cheaper model for simple intent classification
         // Options: 'gpt-3.5-turbo' (fastest/cheapest), 'gpt-4o-mini' (more accurate)
         // Intent analysis is a simple task, gpt-3.5-turbo is recommended for performance
         'intent_model' => env('AI_INTENT_MODEL', 'gpt-3.5-turbo'),
-        
+
         'validation' => [
             'strict_mode' => env('AI_ACTIONS_STRICT_VALIDATION', true),
             'allowed_domains' => env('AI_ACTIONS_ALLOWED_DOMAINS', ''),
@@ -949,7 +949,7 @@ return [
 
         // Batch processing
         'batch_size' => env('VECTOR_BATCH_SIZE', 100),
-        
+
         // Maximum models to hydrate from search results (prevents memory exhaustion)
         'max_hydrate_results' => env('VECTOR_MAX_HYDRATE_RESULTS', 50),
 
@@ -1139,6 +1139,11 @@ return [
         // Fallback threshold when no results found (0.0 = return anything, null = no fallback)
         'fallback_threshold' => env('INTELLIGENT_RAG_FALLBACK_THRESHOLD', 0.0),
 
+        // Autonomous mode: Single AI call decides everything (search, get_by_id, count, answer_from_context)
+        // AI chooses fastest method: db_query (50ms) vs vector_search (5s)
+        // Enabled by default for better performance
+        'autonomous_mode' => env('INTELLIGENT_RAG_AUTONOMOUS_MODE', true),
+
         // Model to use for query analysis (fast model recommended: gpt-4o-mini, gpt-4o)
         // GPT-5 models are slower due to reasoning overhead - not recommended for analysis
         'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'),
@@ -1174,22 +1179,22 @@ return [
         'jwt' => [
             // JWT secret for node authentication
             'secret' => env('AI_ENGINE_JWT_SECRET', env('APP_KEY')),
-            
+
             // JWT library to use: 'firebase' or 'tymon' (auto-detect if null)
             'library' => env('AI_ENGINE_JWT_LIBRARY', null),
-            
+
             // JWT algorithm (HS256, HS384, HS512, RS256, etc.)
             'algorithm' => env('AI_ENGINE_JWT_ALGORITHM', 'HS256'),
-            
+
             // Token TTL in seconds
             'ttl' => env('AI_ENGINE_JWT_TTL', 3600), // 1 hour
-            
+
             // Refresh token TTL in seconds
             'refresh_ttl' => env('AI_ENGINE_JWT_REFRESH_TTL', 86400), // 24 hours
-            
+
             // Issuer (iss claim)
             'issuer' => env('AI_ENGINE_JWT_ISSUER', env('APP_URL')),
-            
+
             // Audience (aud claim) - optional
             'audience' => env('AI_ENGINE_JWT_AUDIENCE', null),
         ],
@@ -1243,7 +1248,7 @@ return [
         // Node search mode: 'routing' (simple, route to single node) or 'federated' (search all nodes)
         // Routing is simpler and faster, federated is more comprehensive but complex
         'search_mode' => env('AI_ENGINE_NODE_SEARCH_MODE', 'routing'),
-        
+
         // Search result merging (only used in federated mode)
         'merge' => [
             'strategy' => env('AI_ENGINE_MERGE_STRATEGY', 'score'), // score, round_robin, node_priority, diversity, hybrid
@@ -1299,7 +1304,7 @@ return [
 
         // Number of recent messages to keep when history is long
         'recent_messages' => env('AI_CONVERSATION_RECENT_MESSAGES', 10),
-        
+
         // Maximum message length to store (truncate longer messages)
         'max_message_length' => env('AI_CONVERSATION_MAX_MESSAGE_LENGTH', 1000),
     ],
@@ -1319,19 +1324,19 @@ return [
         'max_step_executions' => env('AI_WORKFLOW_MAX_STEP_EXECUTIONS', 20), // Increased for testing
         'cache_enabled' => env('AI_WORKFLOW_CACHE_ENABLED', true),
         'cache_ttl' => env('AI_WORKFLOW_CACHE_TTL', 300), // 5 minutes
-        
+
         // Intent Analysis
         'intent' => [
             'max_actions' => env('AI_WORKFLOW_INTENT_MAX_ACTIONS', 10),
             'filter_relevance' => env('AI_WORKFLOW_INTENT_FILTER_RELEVANCE', true),
         ],
-        
+
         // Field Names (Configurable for different use cases)
         // These allow you to customize field names used throughout the workflow system
         'items_field_name' => env('AI_WORKFLOW_ITEMS_FIELD', 'items'),
         'name_field_name' => env('AI_WORKFLOW_NAME_FIELD', 'name'),
         'id_field_name' => env('AI_WORKFLOW_ID_FIELD', 'id'),
-        
+
         // System Fields (Fields that should not be merged between workflows)
         // Add any custom system fields your application uses
         'system_fields' => [
@@ -1343,12 +1348,12 @@ return [
             '_entity_states',
             'asking_for',
         ],
-        
+
         // Step Names (Configurable workflow control flow)
         'complete_step_name' => env('AI_WORKFLOW_COMPLETE_STEP', 'complete'),
         'error_step_name' => env('AI_WORKFLOW_ERROR_STEP', 'error'),
         'cancel_step_name' => env('AI_WORKFLOW_CANCEL_STEP', 'cancel'),
-        
+
         // Workflow State Keys to Clear on Restart
         // These keys are cleared when a workflow is restarted
         'clear_on_restart' => [
@@ -1363,7 +1368,7 @@ return [
             'asked_for_customer',
             'asked_for_products',
         ],
-        
+
         // Field Aliases (for modification handling)
         // When a field is updated, also update its aliases
         'field_aliases' => [
@@ -1373,7 +1378,7 @@ return [
             'quantity' => ['qty', 'amount'],
             'qty' => ['quantity', 'amount'],
         ],
-        
+
         // Array Field Name Mapping
         // Maps user-friendly names to actual field names in collected_data
         'array_field_mapping' => [
@@ -1394,30 +1399,6 @@ return [
     |
     */
     'auto_select_model' => env('AI_AUTO_SELECT_MODEL', false),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Autonomous Collector Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Configure the AI-driven autonomous data collector behavior.
-    |
-    */
-    'autonomous_collector' => [
-        // Enable auto-discovery of collectors implementing DiscoverableAutonomousCollector
-        'auto_discovery' => env('AI_AUTONOMOUS_COLLECTOR_AUTO_DISCOVERY', true),
-
-        // Additional directories to scan for discoverable collectors
-        // Default: app/AI/Configs and app/AI/Collectors are always scanned
-        'discovery_paths' => [
-            // app_path('Custom/Collectors'),
-        ],
-
-        // Custom detection prompt for AI to determine if a message should trigger a collector
-        // Use {count} placeholder for the number of available collectors
-        // Set to null to use the default prompt
-        'detection_prompt' => null,
-    ],
 
     /*
     |--------------------------------------------------------------------------

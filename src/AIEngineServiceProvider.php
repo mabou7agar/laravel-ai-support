@@ -190,18 +190,6 @@ class AIEngineServiceProvider extends ServiceProvider
             );
         });
 
-        // Autonomous Data Collector - AI-driven collection with tools
-        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorService::class, function ($app) {
-            return new \LaravelAIEngine\Services\DataCollector\AutonomousCollectorService(
-                $app->make(\LaravelAIEngine\Services\AIEngineService::class)
-            );
-        });
-
-        // Autonomous Collector Discovery Service
-        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class, function ($app) {
-            return new \LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService();
-        });
-
         $this->app->singleton(\LaravelAIEngine\Services\ModelResolver::class, function ($app) {
             return new \LaravelAIEngine\Services\ModelResolver();
         });
@@ -232,11 +220,12 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class);
         $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class);
 
-        // Register Agent Services (Intelligent Routing)
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\MessageAnalyzer::class, function ($app) {
-            return new \LaravelAIEngine\Services\Agent\MessageAnalyzer(
-                $app->make(\LaravelAIEngine\Services\IntentAnalysisService::class),
-                $app->make(\LaravelAIEngine\Services\AIEngineService::class)
+        // Autonomous RAG Agent - single AI call for all decisions
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGAgent::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\AutonomousRAGAgent(
+                $app->make(AIEngineManager::class),
+                $app->make(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class),
+                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
             );
         });
 
@@ -248,23 +237,14 @@ class AIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\Agent\WorkflowDiscoveryService();
         });
 
-        // Register AutonomousCollectorHandler
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler::class, function ($app) {
-            return new \LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler(
-                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorService::class)
-            );
-        });
-
         // Register AgentOrchestrator (handlers instantiated per-request)
         $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentOrchestrator::class, function ($app) {
             $orchestrator = new \LaravelAIEngine\Services\Agent\AgentOrchestrator(
                 $app->make(\LaravelAIEngine\Services\Agent\MessageAnalyzer::class),
                 $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class)
             );
-            
+
             // Register handlers (instantiated fresh each time orchestrator is created)
-            // AutonomousCollectorHandler first - highest priority for active collector sessions
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ContinueWorkflowHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AnswerQuestionHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\SubWorkflowHandler::class));
@@ -274,7 +254,7 @@ class AIEngineServiceProvider extends ServiceProvider
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\SuggestWorkflowHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\StartWorkflowHandler::class));
             $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ConversationalHandler::class));
-            
+
             return $orchestrator;
         });
     }
@@ -451,7 +431,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 $app->make(\LaravelAIEngine\Services\Node\SearchResultMerger::class)
             );
         });
-        
+
         // Node Router Service (simple routing alternative to federated search)
         $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRouterService::class, function ($app) {
             return new \LaravelAIEngine\Services\Node\NodeRouterService(
@@ -486,18 +466,18 @@ class AIEngineServiceProvider extends ServiceProvider
 
         // Action System (Unified)
         $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
-        
+
         $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class, function ($app) {
             return new \LaravelAIEngine\Services\Actions\ActionParameterExtractor();
         });
-        
+
         $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class, function ($app) {
             return new \LaravelAIEngine\Services\Actions\ActionExecutionPipeline(
                 $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
                 $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class)
             );
         });
-        
+
         $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionManager::class, function ($app) {
             return new \LaravelAIEngine\Services\Actions\ActionManager(
                 $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
@@ -521,8 +501,9 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function validateNodeConfiguration(): void
     {
-        // Check JWT secret
-        if (!config('ai-engine.nodes.jwt_secret')) {
+        // Check JWT secret - correct config path is nodes.jwt.secret
+        $jwtSecret = config('ai-engine.nodes.jwt.secret')?? config('ai-engine.nodes.jwt_secret');
+        if ($jwtSecret === null || $jwtSecret === '') {
             throw new \RuntimeException(
                 'AI_ENGINE_JWT_SECRET is required when nodes are enabled. ' .
                 'Set it in your .env file or disable nodes with AI_ENGINE_NODES_ENABLED=false'
@@ -680,7 +661,6 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\CreateQdrantIndexesCommand::class,
                 Console\Commands\TestIntentAnalysisCommand::class,
                 Console\Commands\TestDataCollectorCommand::class,
-                Console\Commands\ListAutonomousCollectorsCommand::class,
             ]);
 
             // Node Management Commands
@@ -746,23 +726,6 @@ class AIEngineServiceProvider extends ServiceProvider
 
         // Register scheduled tasks
         $this->registerScheduledTasks();
-
-        // Auto-discover autonomous collectors if enabled
-        if (config('ai-engine.autonomous_collector.auto_discovery', true)) {
-            $this->app->booted(function () {
-                try {
-                    $discoveryService = $this->app->make(
-                        \LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class
-                    );
-                    $discoveryService->registerDiscoveredCollectors();
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::channel('ai-engine')->warning(
-                        'Failed to auto-discover autonomous collectors',
-                        ['error' => $e->getMessage()]
-                    );
-                }
-            });
-        }
     }
 
     /**

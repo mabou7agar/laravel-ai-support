@@ -28,7 +28,6 @@ class IntelligentRAGService
     protected $nodeRegistry = null;
     protected $federatedSearch = null;
     protected $nodeRouter = null;
-    protected ?AutonomousRAGAnalyzer $autonomousAnalyzer = null;
 
     public function __construct(
         VectorSearchService $vectorSearch,
@@ -40,9 +39,6 @@ class IntelligentRAGService
         $this->conversationService = $conversationService;
         $this->config = config('ai-engine.intelligent_rag', []);
         $this->historyConfig = config('ai-engine.conversation_history', []);
-
-        // Initialize autonomous analyzer
-        $this->autonomousAnalyzer = new AutonomousRAGAnalyzer($aiEngine);
 
         // Lazy load node services if available
         if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
@@ -110,25 +106,25 @@ class IntelligentRAGService
             // Check if intelligent mode is enabled (default: true)
             $useIntelligent = $options['intelligent'] ?? true;
             $intentAnalysis = $options['intent_analysis'] ?? null;
-            
+
             // FAST PATH: For pure aggregate queries, skip analysis and go straight to aggregate
             $isPure = $this->isPureAggregateQuery($message);
             $hasCollections = !empty($availableCollections);
-            
+
             Log::info('RAG Fast path check', [
                 'isPureAggregateQuery' => $isPure,
                 'hasCollections' => $hasCollections,
                 'collections_count' => count($availableCollections),
             ]);
-            
+
             if ($isPure && $hasCollections) {
                 $aggregateData = $this->getSmartAggregateData($availableCollections, $message, $userId);
-                
+
                 Log::info('RAG Fast path aggregate data', [
                     'data_empty' => empty($aggregateData),
                     'keys' => array_keys($aggregateData),
                 ]);
-                
+
                 if (!empty($aggregateData)) {
                     Log::channel('ai-engine')->info('Fast path: Pure aggregate query - RETURNING', [
                         'message' => $message,
@@ -170,22 +166,7 @@ class IntelligentRAGService
                     'needs_context' => $analysis['needs_context'],
                     'search_queries' => $analysis['search_queries'] ?? [],
                     'collections' => $analysis['collections'] ?? [],
-                    'query_type' => $analysis['query_type'] ?? 'unknown',
                 ]);
-            }
-
-            // FAST PATH: If answer is already in conversation context, respond directly
-            if (($analysis['query_type'] ?? '') === 'already_answered' && !empty($analysis['answer_from_context'])) {
-                Log::channel('ai-engine')->info('Answer found in conversation context', [
-                    'answer' => $analysis['answer_from_context'],
-                ]);
-                
-                return $this->generateContextualResponse(
-                    $message,
-                    $analysis['answer_from_context'],
-                    $conversationHistory,
-                    $options
-                );
             }
 
             // Step 2: Handle aggregate queries (count, how many, etc.)
@@ -206,13 +187,13 @@ class IntelligentRAGService
                     $message,
                     $userId
                 );
-                
+
                 Log::channel('ai-engine')->info('Smart aggregate data retrieved', [
                     'user_id' => $userId,
                     'message' => $message,
                     'collections' => array_keys($aggregateData),
                 ]);
-                
+
                 // For pure aggregate queries (count/how many), skip context retrieval
                 // Just answer directly with the aggregate data
                 if ($this->isPureAggregateQuery($message) && !empty($aggregateData)) {
@@ -231,7 +212,6 @@ class IntelligentRAGService
                 // IMPORTANT: User-passed collections should be strictly respected
                 // AI can only suggest a SUBSET of what user passed, never expand beyond it
                 $suggestedCollections = $analysis['collections'] ?? [];
-                $validCollections = []; // Initialize for debug logging
 
                 // If user passed collections, validate AI suggestions against them
                 // If using auto-discovery (empty availableCollections), trust AI's selection
@@ -279,7 +259,7 @@ class IntelligentRAGService
                     Log::channel('ai-engine')->debug('Collection selection', [
                         'user_passed' => $availableCollections,
                         'ai_suggested' => $suggestedCollections,
-                        'valid_subset' => $validCollections,
+                        'valid_subset' => $validCollections ?? [],
                         'final_collections' => $collectionsToSearch,
                     ]);
                 }
@@ -563,20 +543,6 @@ class IntelligentRAGService
      */
     protected function analyzeQuery(string $query, array $conversationHistory = [], array $availableCollections = []): array
     {
-        // Use autonomous analyzer if available
-        if ($this->autonomousAnalyzer && config('ai-engine.intelligent_rag.use_autonomous_analyzer', true)) {
-            Log::channel('ai-engine')->debug('Using autonomous RAG analyzer', ['query' => $query]);
-            
-            $analysis = $this->autonomousAnalyzer->analyze($query, $conversationHistory, $availableCollections);
-            
-            // Cache the result
-            $cacheKey = 'rag_analysis_' . md5($query . implode(',', array_keys($availableCollections)));
-            cache()->put($cacheKey, $analysis, 300);
-            
-            return $analysis;
-        }
-
-        // Fallback to rule-based analysis
         // 1. HEURISTICS: Quick check for simple messages to skip AI analysis
         if ($this->shouldSkipAnalysis($query)) {
             Log::channel('ai-engine')->debug('Skipping RAG analysis due to heuristics', ['query' => $query]);
@@ -775,10 +741,6 @@ PROMPT;
             $conversationContext .= "2. If user uses numbered reference (#1, #2, option 3) → Extract item name from that number in previous response\n";
             $conversationContext .= "3. If user asks 'tell me more', 'details', 'info about that' → Look for item name in their message or previous context\n";
             $conversationContext .= "4. Keep the SAME collection as the previous search for follow-up queries\n";
-            $conversationContext .= "5. CONTINUATION QUERIES: If user says 'more', 'next', 'continue', 'show more' → Repeat the SAME search from previous query\n";
-            $conversationContext .= "   - Extract the search terms from the previous user query\n";
-            $conversationContext .= "   - Use the SAME collections from the previous search\n";
-            $conversationContext .= "   - Example: Previous query 'latest invoices' → User says 'more' → Search for 'invoices' with same collection\n";
         }
 
         $analysisPrompt = <<<PROMPT
@@ -1240,13 +1202,13 @@ PROMPT;
         // Check if nodes are enabled
         $nodesEnabled = config('ai-engine.nodes.enabled', false);
         $searchMode = config('ai-engine.nodes.search_mode', 'routing');
-        
+
         // Use routing mode (simple) or federated mode (complex)
         if ($nodesEnabled && $this->nodeRouter && $searchMode === 'routing') {
             // Simple routing: route to single node based on collections
             return $this->retrieveWithRouting($searchQueries, $collections, $maxResults, $threshold, $options, $userId);
         }
-        
+
         // Use federated search if available and enabled (legacy/complex mode)
         $useFederatedSearch = $this->federatedSearch && $nodesEnabled && $searchMode === 'federated';
 
@@ -1305,10 +1267,10 @@ PROMPT;
         // Use local search
         return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
     }
-    
+
     /**
      * Retrieve context using simple routing (route to single node)
-     * 
+     *
      * This is simpler and faster than federated search - routes the request
      * to the appropriate node based on collections instead of searching all nodes.
      */
@@ -1322,31 +1284,31 @@ PROMPT;
     ): Collection {
         // Determine which node should handle this request
         $routing = $this->nodeRouter->route(implode(' ', $searchQueries), $collections, $options);
-        
+
         Log::channel('ai-engine')->info('Node routing decision', [
             'is_local' => $routing['is_local'],
             'node' => $routing['node']?->slug ?? 'local',
             'reason' => $routing['reason'],
         ]);
-        
+
         // If local, use local search
         if ($routing['is_local']) {
             // Validate collections exist locally
             $validCollections = array_filter($collections, function ($collection) {
                 return class_exists($collection);
             });
-            
+
             if (empty($validCollections)) {
                 return collect();
             }
-            
+
             return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
         }
-        
+
         // Route to remote node
         $node = $routing['node'];
         $allResults = collect();
-        
+
         foreach ($searchQueries as $searchQuery) {
             $response = $this->nodeRouter->forwardSearch(
                 $node,
@@ -1356,7 +1318,7 @@ PROMPT;
                 array_merge($options, ['threshold' => $threshold]),
                 $userId
             );
-            
+
             if ($response['success'] && !empty($response['results'])) {
                 // Convert remote results to collection format
                 foreach ($response['results'] as $result) {
@@ -1379,14 +1341,14 @@ PROMPT;
                     'node' => $node->slug,
                     'error' => $response['error'] ?? 'Unknown error',
                 ]);
-                
+
                 $validCollections = array_filter($collections, fn($c) => class_exists($c));
                 if (!empty($validCollections)) {
                     return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
                 }
             }
         }
-        
+
         return $allResults->sortByDesc('vector_score')->take($maxResults);
     }
 
@@ -1590,7 +1552,7 @@ PROMPT;
                     // If vector search returned no results, optionally try database fallback
                     // Database fallback is disabled by default to prevent memory issues
                     $enableDbFallback = config('ai-engine.intelligent_rag.enable_database_fallback', false);
-                    
+
                     if ($enableDbFallback && ($results->isEmpty() || $results->count() === 0)) {
                         Log::channel('ai-engine')->info('Vector search returned no results, trying database fallback', [
                             'collection' => $collection,
@@ -1761,11 +1723,7 @@ PROMPT;
                 $prompt .= "- Answer directly with the numbers from the statistics\n";
                 $prompt .= "- Be helpful and offer to provide more details if needed\n\n";
             } else {
-                $prompt .= "NO MATCHING RESULTS FOUND IN USER'S DATA.\n\n";
-                $prompt .= "IMPORTANT: If user is asking about their data (emails, invoices, orders, etc.) and no results were found:\n";
-                $prompt .= "- Tell them they don't have any [data type] yet in a friendly way\n";
-                $prompt .= "- Suggest how they can get started (e.g., 'connect a mailbox', 'create an invoice')\n";
-                $prompt .= "- Do NOT say 'I don't have access' or 'I don't have information' - the system searched but found nothing for this user\n\n";
+                $prompt .= "NO KNOWLEDGE BASE RESULTS FOUND FOR THIS QUERY.\n\n";
             }
 
             // Add available collections info so AI knows what data sources exist
@@ -2753,7 +2711,7 @@ PROMPT;
 
         return false;
     }
-    
+
     /**
      * Check if query is a pure aggregate query (just wants count, no details)
      */
@@ -2761,56 +2719,13 @@ PROMPT;
     {
         $query = strtolower($query);
         $purePatterns = ['how many', 'count', 'total', 'number of'];
-        
+
         foreach ($purePatterns as $pattern) {
             if (str_contains($query, $pattern)) {
                 return true;
             }
         }
         return false;
-    }
-    
-    /**
-     * Generate a response when the answer is already in conversation context
-     */
-    protected function generateContextualResponse(
-        string $message,
-        string $answerFromContext,
-        array $conversationHistory,
-        array $options = []
-    ): AIResponse {
-        // Use AI to formulate a natural response based on the context answer
-        $prompt = <<<PROMPT
-The user asked: "{$message}"
-
-Based on our previous conversation, the answer is: {$answerFromContext}
-
-Please provide a natural, helpful response that answers their question using this information.
-Be concise and friendly.
-PROMPT;
-
-        try {
-            $response = $this->aiEngine
-                ->model($options['model'] ?? 'gpt-4o-mini')
-                ->withMaxTokens(200)
-                ->withTemperature(0.7)
-                ->generate($prompt);
-            
-            return new AIResponse(
-                content: $response->getContent(),
-                engine: \LaravelAIEngine\Enums\EngineEnum::OPENAI,
-                model: \LaravelAIEngine\Enums\EntityEnum::GPT_4O_MINI,
-                metadata: ['from_context' => true, 'answer_source' => 'conversation_history']
-            );
-        } catch (\Exception $e) {
-            // Fallback: return the answer directly
-            return new AIResponse(
-                content: "Based on our conversation, {$answerFromContext}.",
-                engine: \LaravelAIEngine\Enums\EngineEnum::OPENAI,
-                model: \LaravelAIEngine\Enums\EntityEnum::GPT_4O_MINI,
-                metadata: ['from_context' => true, 'fallback' => true]
-            );
-        }
     }
 
     /**
@@ -2824,7 +2739,7 @@ PROMPT;
             $count = $data['count'] ?? 0;
             $displayName = $data['display_name'] ?? $name;
             $filters = $data['filters_applied'] ?? [];
-            
+
             if ($count > 0) {
                 $filterStr = "";
                 if (!empty($filters['created_at'])) {
@@ -2838,11 +2753,11 @@ PROMPT;
                 $parts[] = "**{$count}** {$displayName}(s){$filterStr}";
             }
         }
-        
-        $response = !empty($parts) 
+
+        $response = !empty($parts)
             ? "Based on your data, there are:\n- " . implode("\n- ", $parts)
             : "No matching records found for your query.";
-        
+
         return new AIResponse(
             content: $response,
             engine: \LaravelAIEngine\Enums\EngineEnum::OPENAI,
@@ -2850,10 +2765,10 @@ PROMPT;
             metadata: ['aggregate_data' => $aggregateData, 'fast_path' => true]
         );
     }
-    
+
     /**
      * Smart aggregate: Use AI to extract filters from query, then hybrid vector+SQL
-     * 
+     *
      * @param array $collections Available collections
      * @param string $query User's natural language query
      * @param string|int|null $userId User ID for filtering
@@ -2863,39 +2778,39 @@ PROMPT;
     {
         // Ask AI to extract filters from the query
         $filters = $this->extractFiltersWithAI($query);
-        
+
         Log::channel('ai-engine')->info('Smart aggregate - AI extracted filters', [
             'query' => $query,
             'filters' => $filters,
         ]);
-        
+
         $aggregateData = [];
-        
+
         foreach ($collections as $collection) {
             if (!class_exists($collection)) {
                 continue;
             }
-            
+
             try {
                 $instance = new $collection();
                 $name = class_basename($collection);
-                $displayName = method_exists($instance, 'getRAGDisplayName') 
-                    ? $instance->getRAGDisplayName() 
+                $displayName = method_exists($instance, 'getRAGDisplayName')
+                    ? $instance->getRAGDisplayName()
                     : $name;
-                
+
                 // Build filters: user_id + AI-extracted filters
                 $queryFilters = $userId !== null ? ['user_id' => $userId] : [];
                 $queryFilters = array_merge($queryFilters, $filters);
-                
+
                 // Use hybrid vector+SQL count
                 $count = $this->vectorSearch->countWithFilters($collection, $queryFilters);
-                
+
                 $aggregateData[$name] = [
                     'count' => $count,
                     'display_name' => $displayName,
                     'filters_applied' => $filters,
                 ];
-                
+
             } catch (\Exception $e) {
                 Log::channel('ai-engine')->warning('Smart aggregate failed for collection', [
                     'collection' => $collection,
@@ -2903,20 +2818,20 @@ PROMPT;
                 ]);
             }
         }
-        
+
         return $aggregateData;
     }
-    
+
     /**
      * Extract date filters from query using pattern matching (fast, no AI call)
-     * 
+     *
      * @param string $query User's query
      * @return array Filters array for vector search
      */
     protected function extractFiltersWithAI(string $query): array
     {
         $queryLower = strtolower($query);
-        
+
         // Month + Year pattern (e.g., "January 2026", "jan 2026")
         $months = [
             'january' => 1, 'jan' => 1, 'february' => 2, 'feb' => 2,
@@ -2926,7 +2841,7 @@ PROMPT;
             'october' => 10, 'oct' => 10, 'november' => 11, 'nov' => 11,
             'december' => 12, 'dec' => 12,
         ];
-        
+
         foreach ($months as $name => $num) {
             if (preg_match("/{$name}\s+(\d{4})/i", $query, $m)) {
                 $year = $m[1];
@@ -2935,7 +2850,7 @@ PROMPT;
                 return ['created_at' => ['gte' => "{$year}-{$month}-01", 'lte' => "{$year}-{$month}-{$days}"]];
             }
         }
-        
+
         // Relative dates
         if (str_contains($queryLower, 'today')) {
             return ['created_at' => now()->format('Y-m-d')];
@@ -2955,7 +2870,7 @@ PROMPT;
         if (str_contains($queryLower, 'last month')) {
             return ['created_at' => ['gte' => now()->subMonth()->startOfMonth()->format('Y-m-d'), 'lte' => now()->subMonth()->endOfMonth()->format('Y-m-d')]];
         }
-        
+
         return [];
     }
 
@@ -3207,10 +3122,10 @@ PROMPT;
 
             // Use pre-analyzed message intent if provided, otherwise analyze
             $shouldApplyTextSearch = true;
-            
+
             if ($messageAnalysis !== null) {
                 // Use pre-analyzed intent (already analyzed by AgentOrchestrator/ChatService)
-                if (in_array($messageAnalysis['type'] ?? '', ['simple_answer', 'conversational']) && 
+                if (in_array($messageAnalysis['type'] ?? '', ['simple_answer', 'conversational']) &&
                     ($messageAnalysis['confidence'] ?? 0) > 0.7) {
                     $shouldApplyTextSearch = false;
                     \Log::info('fallbackDatabaseSearch: using pre-analyzed intent', [
@@ -3232,7 +3147,7 @@ PROMPT;
             // Get results ordered by most recent with strict limit
             // Use a hard limit to prevent memory issues even if maxResults is high
             $hardLimit = min($maxResults, config('ai-engine.intelligent_rag.database_fallback_limit', 20));
-            
+
             $results = $queryBuilder
                 ->orderBy('created_at', 'desc')
                 ->limit($hardLimit)
