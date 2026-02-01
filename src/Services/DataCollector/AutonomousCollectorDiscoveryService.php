@@ -6,6 +6,7 @@ use LaravelAIEngine\Contracts\DiscoverableAutonomousCollector;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
+use LaravelAIEngine\Services\Node\NodeHttpClient;
 
 /**
  * Discovers autonomous collectors implementing DiscoverableAutonomousCollector interface
@@ -15,13 +16,24 @@ use Illuminate\Support\Facades\File;
  */
 class AutonomousCollectorDiscoveryService
 {
+    protected $nodeRegistry = null;
+
+    public function __construct()
+    {
+        // Lazy load node registry if available
+        if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
+            $this->nodeRegistry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
+        }
+    }
+
     /**
-     * Discover all autonomous collectors by scanning directories
+     * Discover all autonomous collectors (local + remote)
      * 
      * @param bool $useCache Whether to use cached results
+     * @param bool $includeRemote Whether to include collectors from remote nodes
      * @return array Map of collector name => [config, description, priority]
      */
-    public function discoverCollectors(bool $useCache = true): array
+    public function discoverCollectors(bool $useCache = true, bool $includeRemote = true): array
     {
         $cacheKey = 'ai-engine:discovered-autonomous-collectors';
         
@@ -29,6 +41,38 @@ class AutonomousCollectorDiscoveryService
             return Cache::get($cacheKey);
         }
         
+        // Discover local collectors
+        $collectors = $this->discoverFromLocal();
+        
+        // Discover from remote nodes if enabled
+        if ($includeRemote && $this->nodeRegistry && config('ai-engine.nodes.enabled', false)) {
+            $remoteCollectors = $this->discoverFromNodes();
+            $collectors = array_merge($collectors, $remoteCollectors);
+        }
+        
+        // Sort by priority (higher first)
+        uasort($collectors, fn($a, $b) => $b['priority'] <=> $a['priority']);
+        
+        Log::channel('ai-engine')->info('Autonomous collector discovery completed', [
+            'total_collectors' => count($collectors),
+            'collectors' => array_keys($collectors),
+        ]);
+        
+        // Only cache if we found collectors (prevent caching empty results from early boot)
+        if (!empty($collectors)) {
+            Cache::put($cacheKey, $collectors, 300);
+        }
+        
+        return $collectors;
+    }
+
+    /**
+     * Discover collectors from local directories
+     * 
+     * @return array
+     */
+    protected function discoverFromLocal(): array
+    {
         $collectors = [];
         
         // Scan collector directories
@@ -78,9 +122,10 @@ class AutonomousCollectorDiscoveryService
                         'model_class' => $modelClass,
                         'filter_config' => $filterConfig,
                         'has_permissions' => method_exists($className, 'getAllowedOperations'),
+                        'source' => 'local',
                     ];
                     
-                    Log::channel('ai-engine')->debug('Discovered autonomous collector', [
+                    Log::channel('ai-engine')->debug('Discovered local autonomous collector', [
                         'name' => $name,
                         'class' => $className,
                         'description' => $description,
@@ -96,19 +141,57 @@ class AutonomousCollectorDiscoveryService
             }
         }
         
-        // Sort by priority (higher first)
-        uasort($collectors, fn($a, $b) => $b['priority'] <=> $a['priority']);
-        
-        Log::channel('ai-engine')->info('Autonomous collector discovery completed', [
-            'total_collectors' => count($collectors),
-            'collectors' => array_keys($collectors),
-        ]);
-        
-        // Only cache if we found collectors (prevent caching empty results from early boot)
-        if (!empty($collectors)) {
-            Cache::put($cacheKey, $collectors, 300);
+        return $collectors;
+    }
+
+    /**
+     * Discover collectors from remote nodes
+     *
+     * @return array
+     */
+    protected function discoverFromNodes(): array
+    {
+        $collectors = [];
+
+        try {
+            $nodes = $this->nodeRegistry->getActiveNodes();
+
+            foreach ($nodes as $node) {
+                try {
+                    $response = NodeHttpClient::makeAuthenticated($node)
+                        ->get($node->getApiUrl('autonomous-collectors'));
+
+                    if ($response->successful()) {
+                        $data = $response->json();
+                        foreach ($data['collectors'] ?? [] as $collectorName => $collectorData) {
+                            // Add node information to remote collectors
+                            $collectors[$collectorName] = array_merge($collectorData, [
+                                'source' => 'remote',
+                                'node_id' => $node->id,
+                                'node_slug' => $node->slug,
+                                'node_name' => $node->name,
+                            ]);
+                            
+                            Log::channel('ai-engine')->debug('Discovered remote autonomous collector', [
+                                'name' => $collectorName,
+                                'node' => $node->slug,
+                                'description' => $collectorData['description'] ?? '',
+                            ]);
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::channel('ai-engine')->debug('Failed to get collectors from node', [
+                        'node' => $node->slug,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->warning('Failed to discover collectors from nodes', [
+                'error' => $e->getMessage(),
+            ]);
         }
-        
+
         return $collectors;
     }
 
