@@ -31,7 +31,24 @@ class MessageAnalyzer
      */
     public function analyze(string $message, UnifiedActionContext $context): array
     {
-        // PRIORITY 0: Check active autonomous collector
+        // PRIORITY 0: Check if session is already routed to a remote node
+        $routedNode = $context->get('routed_to_node');
+        if ($routedNode && isset($routedNode['node_id'])) {
+            Log::channel('ai-engine')->info('Session already routed to remote node', [
+                'session_id' => $context->sessionId,
+                'node' => $routedNode['node_name'] ?? 'Unknown',
+            ]);
+            return [
+                'type' => 'remote_routing',
+                'action' => 'route_to_remote_node',
+                'confidence' => 0.99,
+                'reasoning' => 'Continuing session on remote node',
+                'target_node' => $routedNode,
+                'collector_name' => $routedNode['collector_name'] ?? null,
+            ];
+        }
+
+        // PRIORITY 1: Check active autonomous collector
         if ($context->get('autonomous_collector')) {
             Log::channel('ai-engine')->info('Active autonomous collector detected', [
                 'session_id' => $context->sessionId,
@@ -44,12 +61,12 @@ class MessageAnalyzer
             ];
         }
 
-        // PRIORITY 1: Check active workflow context
+        // PRIORITY 2: Check active workflow context
         if ($context->currentWorkflow) {
             return $this->analyzeInWorkflowContext($message, $context);
         }
 
-        // PRIORITY 2: Check for autonomous collector triggers (with permission check)
+        // PRIORITY 3: Check for autonomous collector triggers (with permission check)
         $userId = $context->userId ?? null;
         $collectorMatch = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message, $userId);
         if ($collectorMatch) {
@@ -65,7 +82,15 @@ class MessageAnalyzer
             ];
         }
 
-        // PRIORITY 3: Use AI to intelligently route the message
+        // PRIORITY 3: Check if remote nodes can handle this request
+        if (config('ai-engine.nodes.enabled', false)) {
+            $remoteRouting = $this->checkRemoteNodeCapabilities($message, $context);
+            if ($remoteRouting) {
+                return $remoteRouting;
+            }
+        }
+
+        // PRIORITY 4: Use AI to intelligently route the message
         return $this->analyzeForWorkflow($message, $context);
     }
 
@@ -386,5 +411,153 @@ class MessageAnalyzer
         } catch (\Exception $e) {
             return '';
         }
+    }
+
+    /**
+     * Check if remote nodes can handle this request based on their capabilities
+     * Reads directly from AINode model - no API calls needed
+     * Detects BOTH create operations (autonomous collectors) AND query operations (list, show, search)
+     */
+    protected function checkRemoteNodeCapabilities(string $message, UnifiedActionContext $context): ?array
+    {
+        try {
+            // Get active nodes with their autonomous_collectors from database
+            $registry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
+            $nodes = $registry->getActiveNodes();
+            
+            if ($nodes->isEmpty()) {
+                return null;
+            }
+
+            // Build capabilities context from node data
+            // Include both collectors (for create) and entity types (for queries)
+            $capabilitiesContext = [];
+            $nodesByEntity = [];
+            
+            foreach ($nodes as $node) {
+                $nodeCollectors = $node->autonomous_collectors ?? [];
+                
+                if (!is_array($nodeCollectors) || empty($nodeCollectors)) {
+                    continue;
+                }
+                
+                foreach ($nodeCollectors as $collectorData) {
+                    if (!is_array($collectorData)) {
+                        continue;
+                    }
+                    
+                    $collectorName = $collectorData['name'] ?? null;
+                    if (!$collectorName) {
+                        continue;
+                    }
+                    
+                    // Store for create operations
+                    $capabilitiesContext[$collectorName] = [
+                        'goal' => $collectorData['goal'] ?? $collectorData['description'] ?? '',
+                        'description' => $collectorData['description'] ?? $collectorData['goal'] ?? '',
+                        'node_name' => $node->name,
+                        'node_id' => $node->id,
+                        'node_slug' => $node->slug,
+                    ];
+                    
+                    // Track which node handles which entity type (for queries)
+                    $nodesByEntity[$collectorName] = [
+                        'node_id' => $node->id,
+                        'node_slug' => $node->slug,
+                        'node_name' => $node->name,
+                    ];
+                }
+            }
+            
+            if (empty($capabilitiesContext)) {
+                return null;
+            }
+
+            // Use AI to determine if message should be routed to a remote node
+            $match = $this->detectRemoteNodeMatch($message, $capabilitiesContext, array_keys($nodesByEntity));
+            
+            if ($match) {
+                $nodeData = $nodesByEntity[$match] ?? $capabilitiesContext[$match] ?? null;
+                
+                if ($nodeData) {
+                    Log::channel('ai-engine')->info('Remote node capability detected during analysis', [
+                        'entity' => $match,
+                        'node' => $nodeData['node_name'],
+                    ]);
+
+                    return [
+                        'type' => 'remote_routing',
+                        'action' => 'route_to_remote_node',
+                        'confidence' => 0.95,
+                        'reasoning' => 'Remote node can handle this request',
+                        'target_node' => [
+                            'node_id' => $nodeData['node_id'],
+                            'node_slug' => $nodeData['node_slug'],
+                            'node_name' => $nodeData['node_name'],
+                        ],
+                        'collector_name' => $match,
+                    ];
+                }
+            }
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('Failed to check remote node capabilities', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Use AI to detect if message should be routed to a remote node
+     * Handles both create operations AND query operations (list, show, search, etc.)
+     */
+    protected function detectRemoteNodeMatch(string $message, array $capabilities, array $entityTypes): ?string
+    {
+        if (empty($capabilities) && empty($entityTypes)) {
+            return null;
+        }
+
+        // Build context showing what each entity type can do
+        $entitiesText = '';
+        foreach ($capabilities as $name => $data) {
+            $goal = $data['goal'] ?? $data['description'] ?? '';
+            $node = $data['node_name'] ?? 'Unknown';
+            $entitiesText .= "- {$name}: Can create, list, show, search, update {$name}s (on {$node})\n";
+        }
+
+        $prompt = "Given this user message: \"{$message}\"\n\n";
+        $prompt .= "Available remote data types:\n{$entitiesText}\n";
+        $prompt .= "Does the message relate to ANY of these data types (create, list, show, search, update, delete, etc.)?\n";
+        $prompt .= "Reply with ONLY the data type name if yes, or 'none' if no match.";
+
+        try {
+            $response = $this->aiEngine->generateText(
+                new AIRequest(
+                    prompt: $prompt,
+                    engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                    model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o-mini'),
+                    temperature: 0.1,
+                    maxTokens: 50
+                )
+            );
+
+            $result = strtolower(trim($response->getContent()));
+            
+            // Check if result matches any entity type
+            if ($result !== 'none') {
+                foreach ($entityTypes as $entity) {
+                    if ($result === strtolower($entity) || str_contains($result, strtolower($entity))) {
+                        return $entity;
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('AI detection failed for remote node match', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return null;
     }
 }

@@ -114,6 +114,32 @@ class NodeApiController extends Controller
     }
     
     /**
+     * Autonomous collectors discovery endpoint
+     * Returns all available autonomous collectors on this node
+     */
+    public function autonomousCollectors()
+    {
+        try {
+            $discoveryService = app(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class);
+            
+            // Get local collectors only (no remote, no cache for fresh results)
+            $collectors = $discoveryService->discoverCollectors(useCache: false, includeRemote: false);
+            
+            return response()->json([
+                'collectors' => $collectors,
+                'count' => count($collectors),
+                'timestamp' => now()->toIso8601String(),
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to discover autonomous collectors',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Collections discovery endpoint
      * Returns all available Vectorizable and HasAIActions models on this node
      */
@@ -495,6 +521,7 @@ class NodeApiController extends Controller
     /**
      * Chat endpoint - forward entire chat/workflow to this node
      * This allows the master node to delegate chat handling to child nodes
+     * User authentication: Token passed via X-User-Token header or body is used for CheckAuth
      */
     public function chat(Request $request)
     {
@@ -502,12 +529,57 @@ class NodeApiController extends Controller
             'message' => 'required|string',
             'session_id' => 'required|string',
             'user_id' => 'nullable',
+            'token' => 'nullable|string', // User token passed from middleware for CheckAuth
             'options' => 'array',
         ]);
         
         $startTime = microtime(true);
         
         try {
+            // Get user token from header or body for CheckAuth authentication
+            $userToken = $request->header('X-User-Token') ?? $validated['token'] ?? null;
+            
+            \Log::channel('ai-engine')->info('NodeApiController: Attempting CheckAuth', [
+                'session_id' => $validated['session_id'],
+                'has_user_token' => !empty($userToken),
+                'token_preview' => $userToken ? substr($userToken, 0, 20) . '...' : null,
+                'checkauth_exists' => class_exists('\App\Http\Middleware\CheckAuth'),
+            ]);
+            
+            // If token provided and CheckAuth middleware exists, authenticate the user
+            if ($userToken && !empty($userToken) && class_exists('\App\Http\Middleware\CheckAuth')) {
+                // Set the token on the request for CheckAuth
+                $request->headers->set('Authorization', 'Bearer ' . $userToken);
+                $request->server->set('HTTP_AUTHORIZATION', 'Bearer ' . $userToken);
+                
+                // Run CheckAuth to authenticate the user
+                try {
+                    $checkAuth = app(\App\Http\Middleware\CheckAuth::class);
+                    $checkAuth->handle($request, function($req) {});
+                    
+                    \Log::channel('ai-engine')->info('NodeApiController: CheckAuth completed', [
+                        'auth_check' => \Illuminate\Support\Facades\Auth::check(),
+                        'auth_id' => \Illuminate\Support\Facades\Auth::id(),
+                    ]);
+                } catch (\Exception $e) {
+                    \Log::channel('ai-engine')->warning('NodeApiController: CheckAuth failed', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            
+            // Use authenticated user from CheckAuth if available, otherwise fall back to passed user_id
+            $userId = \Illuminate\Support\Facades\Auth::check() 
+                ? \Illuminate\Support\Facades\Auth::id() 
+                : $validated['user_id'];
+            
+            \Log::channel('ai-engine')->info('NodeApiController: Chat request', [
+                'session_id' => $validated['session_id'],
+                'auth_user_id' => \Illuminate\Support\Facades\Auth::id(),
+                'passed_user_id' => $validated['user_id'],
+                'using_user_id' => $userId,
+            ]);
+            
             // Start accumulating credits for this request (child node tracks but doesn't deduct)
             \LaravelAIEngine\Services\CreditManager::startAccumulating();
             
@@ -525,7 +597,7 @@ class NodeApiController extends Controller
                 useActions: $options['use_actions'] ?? true,
                 useIntelligentRAG: $options['use_intelligent_rag'] ?? true,
                 ragCollections: $options['rag_collections'] ?? [],
-                userId: $validated['user_id'],
+                userId: $userId,
                 searchInstructions: $options['search_instructions'] ?? null,
                 conversationHistory: $options['conversation_history'] ?? [] // Pass history from middleware
             );

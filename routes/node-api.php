@@ -10,6 +10,7 @@ Route::prefix('api/ai-engine')->group(function () {
     // Public endpoints
     Route::get('health', [NodeApiController::class, 'health']);
     Route::get('collections', [NodeApiController::class, 'collections']);
+    Route::get('autonomous-collectors', [NodeApiController::class, 'autonomousCollectors']);
     Route::post('register', [NodeApiController::class, 'register']);
     
     // Dashboard endpoints (public for monitoring)

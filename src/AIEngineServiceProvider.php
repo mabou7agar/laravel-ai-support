@@ -874,9 +874,16 @@ class AIEngineServiceProvider extends ServiceProvider
             $collectors = $discoveryService->discoverCollectors();
             
             foreach ($collectors as $name => $collectorData) {
-                // Get the actual config from the class
-                $className = $collectorData['class'];
-                if (class_exists($className) && method_exists($className, 'getConfig')) {
+                $className = $collectorData['class'] ?? null;
+                $source = $collectorData['source'] ?? 'local';
+                
+                // Skip remote collectors - they should be routed directly to nodes
+                if ($source === 'remote') {
+                    continue;
+                }
+                
+                // Register local collectors only
+                if ($className && class_exists($className) && method_exists($className, 'getConfig')) {
                     $configInstance = $className::getConfig();
                     \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::register($name, [
                         'config' => $configInstance,

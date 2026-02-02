@@ -108,7 +108,7 @@ class ChatService
             'rag_collections' => $ragCollections,
             'search_instructions' => $searchInstructions,
             'conversation_history' => $conversationHistory,
-            'is_forwarded' => $this->isForwardedRequest(),
+            'is_forwarded' => $this->isForwardedRequest(), // Prevent infinite forwarding loops
         ];
 
         $agentResponse = $orchestrator->process($message, $sessionId, $userId, $options);
