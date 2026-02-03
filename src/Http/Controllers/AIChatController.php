@@ -67,10 +67,11 @@ class AIChatController extends Controller
 
         // Check for custom guard configuration (supports multiple)
         $customGuard = config('ai-engine.chat.auth_guard');
+
         if ($customGuard) {
             // Support comma-separated guard list
             $guards = array_map('trim', explode(',', $customGuard));
-            
+
             // Build middleware string: auth:guard1,guard2,guard3
             $guardString = implode(',', $guards);
             $this->middleware("auth:{$guardString}")->except($except);
@@ -80,16 +81,18 @@ class AIChatController extends Controller
         // Auto-detect available guards
         $guards = config('auth.guards', []);
 
-        // Check if Sanctum is available
-        if (isset($guards['sanctum'])) {
-            $this->middleware('auth:sanctum')->except($except);
-            return;
-        }
+
 
         // Check if JWT is available
         if (isset($guards['jwt']) || isset($guards['api'])) {
             $guard = isset($guards['jwt']) ? 'jwt' : 'api';
             $this->middleware("auth:{$guard}")->except($except);
+            return;
+        }
+
+        // Check if Sanctum is available
+        if (isset($guards['sanctum'])) {
+            $this->middleware('auth:sanctum')->except($except);
             return;
         }
 
@@ -121,7 +124,7 @@ class AIChatController extends Controller
     public function sendMessage(SendMessageRequest $request): JsonResponse
     {
         \Log::debug('AIChatController: sendMessage called', ['session_id' => $request->input('session_id')]);
-        
+
         try {
             $dto = $request->toDTO();
             \Log::debug('AIChatController: DTO created', ['user_id' => $dto->userId]);
@@ -137,7 +140,7 @@ class AIChatController extends Controller
                 taskType: $request->input('task_type', 'default'),
                 autoSelect: $request->input('auto_select_model', false)
             );
-            
+
             $engine = $modelSelection['engine'];
             $model = $modelSelection['model'];
 
@@ -430,36 +433,36 @@ class AIChatController extends Controller
                 sessionId: $sessionId,
                 generator: function() use ($engine, $model, $message, $messages, $conversationId, $sessionId, $userId) {
                     $fullResponse = '';
-                    
+
                     // Use EngineBuilder for proper streaming
                     $builder = Engine::engine($engine)
                         ->model($model)
                         ->withTemperature(0.7)
                         ->withMaxTokens(1000);
-                    
+
                     // Add conversation context
                     if (!empty($messages)) {
                         $builder->withMessages($messages);
                     }
-                    
+
                     // Stream the response
                     foreach ($builder->generateStream($message) as $chunk) {
                         $fullResponse .= $chunk;
                         yield $chunk;
                     }
-                    
+
                     // Save to conversation history after streaming completes
                     if ($conversationId) {
                         try {
                             $conversationManager = app(\LaravelAIEngine\Services\ConversationManager::class);
-                            
+
                             // Save user message
                             $conversationManager->addUserMessage(
                                 $conversationId,
                                 $message,
                                 ['user_id' => $userId]
                             );
-                            
+
                             // Save assistant message
                             $conversation = $conversationManager->getConversation($conversationId);
                             if ($conversation) {
@@ -491,7 +494,7 @@ class AIChatController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -845,7 +848,7 @@ class AIChatController extends Controller
 
     /**
      * Stream workflow status updates via Server-Sent Events (SSE)
-     * 
+     *
      * This endpoint provides real-time updates for async workflow processing.
      * The frontend can connect to this stream after dispatching a workflow job.
      */
@@ -857,11 +860,11 @@ class AIChatController extends Controller
             header('Cache-Control: no-cache');
             header('Connection: keep-alive');
             header('X-Accel-Buffering: no'); // Disable nginx buffering
-            
+
             $lastStatus = null;
             $maxAttempts = 120; // 2 minutes max (1 second intervals)
             $attempts = 0;
-            
+
             // Send initial connection message
             echo "data: " . json_encode([
                 'status' => 'connected',
@@ -869,28 +872,28 @@ class AIChatController extends Controller
             ]) . "\n\n";
             ob_flush();
             flush();
-            
+
             while ($attempts < $maxAttempts) {
                 $status = Cache::get("workflow:{$jobId}");
-                
+
                 if ($status && json_encode($status) !== json_encode($lastStatus)) {
                     // Send update to client
                     echo "data: " . json_encode($status) . "\n\n";
-                    
+
                     ob_flush();
                     flush();
-                    
+
                     $lastStatus = $status;
-                    
+
                     // Stop if completed or failed
                     if (in_array($status['status'] ?? '', ['completed', 'failed'])) {
                         break;
                     }
                 }
-                
+
                 sleep(1);
                 $attempts++;
-                
+
                 // Send heartbeat every 10 seconds to keep connection alive
                 if ($attempts % 10 === 0) {
                     echo ": heartbeat\n\n";
@@ -898,7 +901,7 @@ class AIChatController extends Controller
                     flush();
                 }
             }
-            
+
             // Timeout
             if ($attempts >= $maxAttempts) {
                 echo "data: " . json_encode([
@@ -921,14 +924,14 @@ class AIChatController extends Controller
     public function getWorkflowStatus(string $jobId): JsonResponse
     {
         $status = Cache::get("workflow:{$jobId}");
-        
+
         if (!$status) {
             return response()->json([
                 'success' => false,
                 'error' => 'Workflow not found or expired'
             ], 404);
         }
-        
+
         return response()->json([
             'success' => true,
             'data' => $status,

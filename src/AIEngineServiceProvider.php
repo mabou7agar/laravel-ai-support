@@ -132,9 +132,9 @@ class AIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\AIEngineService($app->make(CreditManager::class));
         });
 
-        $this->app->singleton(\LaravelAIEngine\Services\BrandVoiceManager::class, function ($app) {
-            return new \LaravelAIEngine\Services\BrandVoiceManager();
-        });
+        // Removed: BrandVoiceManager (unused - 639 lines)
+        // Removed: ContentModerationService (unused - 294 lines)
+        // Removed: DuplicateDetectionService (test-only)
 
         $this->app->singleton(\LaravelAIEngine\Services\WebhookManager::class, function ($app) {
             return new \LaravelAIEngine\Services\WebhookManager();
@@ -142,10 +142,6 @@ class AIEngineServiceProvider extends ServiceProvider
 
         $this->app->singleton(\LaravelAIEngine\Services\TemplateManager::class, function ($app) {
             return new \LaravelAIEngine\Services\TemplateManager();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\ContentModerationService::class, function ($app) {
-            return new \LaravelAIEngine\Services\ContentModerationService();
         });
 
         $this->app->singleton(\LaravelAIEngine\Services\JobStatusTracker::class, function ($app) {
@@ -170,10 +166,6 @@ class AIEngineServiceProvider extends ServiceProvider
 
         $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\DuplicateDetectionService::class, function ($app) {
-            return new \LaravelAIEngine\Services\DuplicateDetectionService();
         });
 
         $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class, function ($app) {
@@ -396,23 +388,16 @@ class AIEngineServiceProvider extends ServiceProvider
         // Validate node configuration
         $this->validateNodeConfiguration();
 
-        // Connection Pool Service
-        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeConnectionPool::class);
+        // Removed: NodeConnectionPool (redundant)
+        // Removed: NodeCacheService (over-engineered)
+        // Removed: LoadBalancerService (unnecessary)
+        // Removed: SearchResultMerger (over-complex)
 
-        // Auth Service
+        // Auth Service (kept for API authentication)
         $this->app->singleton(\LaravelAIEngine\Services\Node\NodeAuthService::class);
 
-        // Circuit Breaker
+        // Circuit Breaker (kept for health monitoring)
         $this->app->singleton(\LaravelAIEngine\Services\Node\CircuitBreakerService::class);
-
-        // Cache Service
-        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeCacheService::class);
-
-        // Load Balancer
-        $this->app->singleton(\LaravelAIEngine\Services\Node\LoadBalancerService::class);
-
-        // Search Result Merger
-        $this->app->singleton(\LaravelAIEngine\Services\Node\SearchResultMerger::class);
 
         // Registry Service
         $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRegistryService::class, function ($app) {
@@ -422,19 +407,20 @@ class AIEngineServiceProvider extends ServiceProvider
             );
         });
 
-        // Federated Search Service
-        $this->app->singleton(\LaravelAIEngine\Services\Node\FederatedSearchService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Node\FederatedSearchService(
-                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
-                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
-                $app->make(\LaravelAIEngine\Services\Node\NodeCacheService::class),
-                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
-                $app->make(\LaravelAIEngine\Services\Node\LoadBalancerService::class),
-                $app->make(\LaravelAIEngine\Services\Node\SearchResultMerger::class)
+        // Removed: FederatedSearchService (replaced with UnifiedRAGSearchService)
+        // Removed: LoadBalancerService (unnecessary complexity)
+        // Removed: NodeConnectionPool (redundant)
+        // Removed: NodeCacheService (over-engineered)
+        // Removed: SearchResultMerger (over-engineered)
+        
+        // New: Unified RAG Search Service (simple, fast, reliable)
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService(
+                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class)
             );
         });
 
-        // Node Router Service (simple routing alternative to federated search)
+        // Node Router Service (kept for backward compatibility)
         $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRouterService::class, function ($app) {
             return new \LaravelAIEngine\Services\Node\NodeRouterService(
                 $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),

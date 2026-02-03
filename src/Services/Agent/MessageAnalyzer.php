@@ -8,6 +8,7 @@ use LaravelAIEngine\Services\IntentAnalysisService;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Agent\WorkflowDiscoveryService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Intelligent message analyzer that determines routing
@@ -421,7 +422,6 @@ class MessageAnalyzer
     protected function checkRemoteNodeCapabilities(string $message, UnifiedActionContext $context): ?array
     {
         try {
-            // Get active nodes with their autonomous_collectors from database
             $registry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
             $nodes = $registry->getActiveNodes();
             
@@ -429,43 +429,91 @@ class MessageAnalyzer
                 return null;
             }
 
-            // Build capabilities context from node data
-            // Include both collectors (for create) and entity types (for queries)
             $capabilitiesContext = [];
             $nodesByEntity = [];
             
             foreach ($nodes as $node) {
                 $nodeCollectors = $node->autonomous_collectors ?? [];
                 
-                if (!is_array($nodeCollectors) || empty($nodeCollectors)) {
-                    continue;
+                if (is_array($nodeCollectors)) {
+                    foreach ($nodeCollectors as $collectorData) {
+                        if (!is_array($collectorData)) {
+                            continue;
+                        }
+                        
+                        $collectorName = $collectorData['name'] ?? null;
+                        if (!$collectorName) {
+                            continue;
+                        }
+                        
+                        $description = $collectorData['goal'] ?? $collectorData['description'] ?? 'Autonomous collector';
+                        $this->registerRemoteCapability(
+                            $capabilitiesContext,
+                            $nodesByEntity,
+                            $node,
+                            $collectorName,
+                            $description,
+                            'collector'
+                        );
+                    }
                 }
                 
-                foreach ($nodeCollectors as $collectorData) {
-                    if (!is_array($collectorData)) {
-                        continue;
+                $dataTypes = $node->data_types ?? [];
+                if (is_array($dataTypes)) {
+                    foreach ($dataTypes as $type) {
+                        if (!is_string($type) || $type === '') {
+                            continue;
+                        }
+                        $label = str_replace('_', ' ', $type);
+                        $description = "Handles {$label} data and queries";
+                        $this->registerRemoteCapability(
+                            $capabilitiesContext,
+                            $nodesByEntity,
+                            $node,
+                            $label,
+                            $description,
+                            'data_type'
+                        );
                     }
-                    
-                    $collectorName = $collectorData['name'] ?? null;
-                    if (!$collectorName) {
-                        continue;
+                }
+
+                $keywords = $node->keywords ?? [];
+                if (is_array($keywords)) {
+                    foreach ($keywords as $keyword) {
+                        if (!is_string($keyword) || strlen($keyword) < 3) {
+                            continue;
+                        }
+                        $description = 'Relevant keyword from node metadata';
+                        $this->registerRemoteCapability(
+                            $capabilitiesContext,
+                            $nodesByEntity,
+                            $node,
+                            $keyword,
+                            $description,
+                            'keyword'
+                        );
                     }
-                    
-                    // Store for create operations
-                    $capabilitiesContext[$collectorName] = [
-                        'goal' => $collectorData['goal'] ?? $collectorData['description'] ?? '',
-                        'description' => $collectorData['description'] ?? $collectorData['goal'] ?? '',
-                        'node_name' => $node->name,
-                        'node_id' => $node->id,
-                        'node_slug' => $node->slug,
-                    ];
-                    
-                    // Track which node handles which entity type (for queries)
-                    $nodesByEntity[$collectorName] = [
-                        'node_id' => $node->id,
-                        'node_slug' => $node->slug,
-                        'node_name' => $node->name,
-                    ];
+                }
+
+                $workflows = $node->workflows ?? [];
+                if (is_array($workflows)) {
+                    foreach ($workflows as $workflowClass) {
+                        if (!is_string($workflowClass)) {
+                            continue;
+                        }
+                        $entity = $this->extractEntityFromWorkflowClass($workflowClass);
+                        if ($entity) {
+                            $description = 'Workflow available: ' . class_basename($workflowClass);
+                            $this->registerRemoteCapability(
+                                $capabilitiesContext,
+                                $nodesByEntity,
+                                $node,
+                                $entity,
+                                $description,
+                                'workflow'
+                            );
+                        }
+                    }
                 }
             }
             
@@ -473,16 +521,16 @@ class MessageAnalyzer
                 return null;
             }
 
-            // Use AI to determine if message should be routed to a remote node
-            $match = $this->detectRemoteNodeMatch($message, $capabilitiesContext, array_keys($nodesByEntity));
+            $match = $this->detectRemoteNodeMatch($message, $capabilitiesContext, $nodesByEntity);
             
             if ($match) {
-                $nodeData = $nodesByEntity[$match] ?? $capabilitiesContext[$match] ?? null;
+                $nodeData = $nodesByEntity[$match] ?? null;
                 
                 if ($nodeData) {
                     Log::channel('ai-engine')->info('Remote node capability detected during analysis', [
-                        'entity' => $match,
+                        'entity' => $nodeData['label'] ?? $match,
                         'node' => $nodeData['node_name'],
+                        'source' => $nodeData['source'] ?? 'metadata',
                     ]);
 
                     return [
@@ -494,8 +542,9 @@ class MessageAnalyzer
                             'node_id' => $nodeData['node_id'],
                             'node_slug' => $nodeData['node_slug'],
                             'node_name' => $nodeData['node_name'],
+                            'capability_source' => $nodeData['source'] ?? null,
                         ],
-                        'collector_name' => $match,
+                        'collector_name' => $capabilitiesContext[$match]['label'] ?? $match,
                     ];
                 }
             }
@@ -512,18 +561,20 @@ class MessageAnalyzer
      * Use AI to detect if message should be routed to a remote node
      * Handles both create operations AND query operations (list, show, search, etc.)
      */
-    protected function detectRemoteNodeMatch(string $message, array $capabilities, array $entityTypes): ?string
+    protected function detectRemoteNodeMatch(string $message, array $capabilities, array $entityCatalog): ?string
     {
-        if (empty($capabilities) && empty($entityTypes)) {
+        if (empty($capabilities) && empty($entityCatalog)) {
             return null;
         }
 
         // Build context showing what each entity type can do
         $entitiesText = '';
-        foreach ($capabilities as $name => $data) {
+        foreach ($capabilities as $key => $data) {
+            $label = $data['label'] ?? $key;
             $goal = $data['goal'] ?? $data['description'] ?? '';
             $node = $data['node_name'] ?? 'Unknown';
-            $entitiesText .= "- {$name}: Can create, list, show, search, update {$name}s (on {$node})\n";
+            $source = $data['source'] ?? 'metadata';
+            $entitiesText .= "- {$label}: {$goal} (node {$node}, via {$source})\n";
         }
 
         $prompt = "Given this user message: \"{$message}\"\n\n";
@@ -543,12 +594,19 @@ class MessageAnalyzer
             );
 
             $result = strtolower(trim($response->getContent()));
+            $result = preg_replace('/[^a-z0-9_\\s]/', '', $result);
             
-            // Check if result matches any entity type
             if ($result !== 'none') {
-                foreach ($entityTypes as $entity) {
-                    if ($result === strtolower($entity) || str_contains($result, strtolower($entity))) {
-                        return $entity;
+                foreach ($entityCatalog as $key => $metadata) {
+                    $aliases = $metadata['aliases'] ?? [];
+                    $aliases[] = $metadata['label'] ?? $key;
+                    $aliases[] = $key;
+                    $aliases = array_filter(array_unique(array_map(fn($alias) => strtolower($alias), $aliases)));
+                    
+                    foreach ($aliases as $alias) {
+                        if ($alias && ($result === $alias || str_contains($result, $alias))) {
+                            return $key;
+                        }
                     }
                 }
             }
@@ -559,5 +617,88 @@ class MessageAnalyzer
         }
 
         return null;
+    }
+
+    protected function registerRemoteCapability(
+        array &$capabilitiesContext,
+        array &$nodesByEntity,
+        $node,
+        string $entityName,
+        string $description,
+        string $source
+    ): void {
+        $normalized = $this->normalizeEntityKey($entityName);
+        if ($normalized === '') {
+            return;
+        }
+
+        $priority = $this->getCapabilityPriority($source);
+        if (isset($capabilitiesContext[$normalized]) && ($capabilitiesContext[$normalized]['priority'] ?? 0) >= $priority) {
+            return;
+        }
+
+        $label = trim($entityName);
+        $aliases = array_filter(array_unique([
+            $label,
+            Str::singular($label),
+            Str::plural($label),
+            str_replace('_', ' ', $normalized),
+        ]));
+
+        $capabilitiesContext[$normalized] = [
+            'label' => $label,
+            'goal' => $description,
+            'description' => $description,
+            'node_name' => $node->name,
+            'node_id' => $node->id,
+            'node_slug' => $node->slug,
+            'source' => $source,
+            'priority' => $priority,
+            'aliases' => $aliases,
+        ];
+
+        $nodesByEntity[$normalized] = [
+            'node_id' => $node->id,
+            'node_slug' => $node->slug,
+            'node_name' => $node->name,
+            'source' => $source,
+            'label' => $label,
+            'aliases' => $aliases,
+        ];
+    }
+
+    protected function normalizeEntityKey(string $name): string
+    {
+        $normalized = trim(strtolower($name));
+        if ($normalized === '') {
+            return '';
+        }
+        $normalized = str_replace(['-', '/'], ' ', $normalized);
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        return str_replace(' ', '_', $normalized);
+    }
+
+    protected function getCapabilityPriority(string $source): int
+    {
+        return match ($source) {
+            'collector' => 4,
+            'workflow' => 3,
+            'data_type' => 2,
+            'keyword' => 1,
+            default => 0,
+        };
+    }
+
+    protected function extractEntityFromWorkflowClass(string $workflowClass): ?string
+    {
+        $basename = class_basename($workflowClass);
+        $entity = preg_replace('/(Declarative|Workflow|Create|Update|Delete|Manage)/i', '', $basename);
+        $entity = trim($entity);
+        if ($entity === '') {
+            return null;
+        }
+
+        $entity = Str::snake($entity, ' ');
+        return str_replace('_', ' ', $entity);
     }
 }

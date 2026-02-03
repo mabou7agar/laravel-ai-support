@@ -44,8 +44,10 @@ class IntelligentRAGService
         if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
             $this->nodeRegistry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
         }
-        if (class_exists(\LaravelAIEngine\Services\Node\FederatedSearchService::class)) {
-            $this->federatedSearch = app(\LaravelAIEngine\Services\Node\FederatedSearchService::class);
+        // Removed: FederatedSearchService (replaced with UnifiedRAGSearchService)
+        // Use UnifiedRAGSearchService for cross-project search
+        if (class_exists(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class)) {
+            $this->federatedSearch = app(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class);
         }
         if (class_exists(\LaravelAIEngine\Services\Node\NodeRouterService::class)) {
             $this->nodeRouter = app(\LaravelAIEngine\Services\Node\NodeRouterService::class);

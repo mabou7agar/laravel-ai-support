@@ -11,9 +11,9 @@ use Illuminate\Support\Str;
 class AINode extends Model
 {
     use SoftDeletes;
-    
+
     protected $table = 'ai_nodes';
-    
+
     protected $fillable = [
         'name',
         'slug',
@@ -39,7 +39,7 @@ class AINode extends Model
         'weight',
         'active_connections',
     ];
-    
+
     protected $casts = [
         'capabilities' => 'array',
         'domains' => 'array',
@@ -56,99 +56,99 @@ class AINode extends Model
         'weight' => 'integer',
         'active_connections' => 'integer',
     ];
-    
+
     protected $hidden = [
         'api_key',
         'refresh_token',
     ];
-    
+
     protected $appends = [
         'is_healthy',
         'status_color',
     ];
-    
+
     /**
      * Boot the model
      */
     protected static function boot()
     {
         parent::boot();
-        
+
         static::creating(function ($node) {
             // Auto-generate slug if not provided
             if (empty($node->slug)) {
                 $node->slug = Str::slug($node->name);
             }
-            
+
             // Auto-generate API key if not provided
             if (empty($node->api_key)) {
                 $node->api_key = Str::random(64);
             }
         });
     }
-    
+
     // ==================== Scopes ====================
-    
+
     public function scopeActive($query)
     {
         return $query->where('status', 'active');
     }
-    
+
     public function scopeChild($query)
     {
         return $query->where('type', 'child');
     }
-    
+
     public function scopeMaster($query)
     {
         return $query->where('type', 'master');
     }
-    
+
     public function scopeHealthy($query)
     {
-        return $query->where('ping_failures', '<', 3)
-                     ->where('last_ping_at', '>=', now()->subMinutes(10));
+        //return $query->where('ping_failures', '<', 3)
+        //             ->where('last_ping_at', '>=', now()->subMinutes(10));
     }
-    
+
     public function scopeWithCapability($query, string $capability)
     {
         return $query->whereJsonContains('capabilities', $capability);
     }
-    
+
     public function scopeFastestFirst($query)
     {
         return $query->orderBy('avg_response_time', 'asc');
     }
-    
+
     public function scopeByWeight($query)
     {
         return $query->orderBy('weight', 'desc');
     }
-    
+
     // ==================== Relationships ====================
-    
+
     public function requests(): HasMany
     {
         return $this->hasMany(AINodeRequest::class, 'node_id');
     }
-    
+
     public function circuitBreaker(): HasOne
     {
         return $this->hasOne(AINodeCircuitBreaker::class, 'node_id');
     }
-    
+
     // ==================== Helper Methods ====================
-    
+
     /**
      * Check if node is healthy
      */
     public function isHealthy(): bool
     {
-        return $this->status === 'active' 
+        return $this->status === 'active'
             && $this->ping_failures < 3
             && $this->last_ping_at?->gt(now()->subMinutes(10));
     }
-    
+
     /**
      * Check if node has a specific capability
      */
@@ -156,7 +156,7 @@ class AINode extends Model
     {
         return in_array($capability, $this->capabilities ?? []);
     }
-    
+
     /**
      * Get full API URL for an endpoint
      */
@@ -172,13 +172,13 @@ class AINode extends Model
             'search' => '/api/ai-engine/search',
             'execute' => '/api/ai-engine/execute',
         ];
-        
+
         // Use mapped endpoint if available, otherwise construct URL
         $path = $endpointMap[$endpoint] ?? '/api/ai-engine/' . ltrim($endpoint, '/');
-        
+
         return rtrim($this->url, '/') . $path;
     }
-    
+
     /**
      * Record ping result
      */
@@ -193,13 +193,13 @@ class AINode extends Model
             ]);
         } else {
             $this->increment('ping_failures');
-            
+
             if ($this->ping_failures >= 3) {
                 $this->update(['status' => 'error']);
             }
         }
     }
-    
+
     /**
      * Calculate average response time (exponential moving average)
      */
@@ -208,11 +208,11 @@ class AINode extends Model
         if (!$this->avg_response_time) {
             return $newResponseTime;
         }
-        
+
         // EMA with alpha = 0.3 (30% weight to new value)
         return (int) (0.3 * $newResponseTime + 0.7 * $this->avg_response_time);
     }
-    
+
     /**
      * Increment active connections
      */
@@ -220,7 +220,7 @@ class AINode extends Model
     {
         $this->increment('active_connections');
     }
-    
+
     /**
      * Decrement active connections
      */
@@ -228,7 +228,7 @@ class AINode extends Model
     {
         $this->decrement('active_connections');
     }
-    
+
     /**
      * Get recent success rate (last hour)
      */
@@ -237,19 +237,19 @@ class AINode extends Model
         $total = $this->requests()
             ->where('created_at', '>=', now()->subHour())
             ->count();
-        
+
         if ($total === 0) {
             return 100.0;
         }
-        
+
         $successful = $this->requests()
             ->where('created_at', '>=', now()->subHour())
             ->where('status', 'success')
             ->count();
-        
+
         return round(($successful / $total) * 100, 2);
     }
-    
+
     /**
      * Get load score for load balancing
      */
@@ -258,12 +258,12 @@ class AINode extends Model
         $responseTime = $this->avg_response_time ?? 100;
         $connections = $this->active_connections ?? 0;
         $weight = $this->weight ?? 1;
-        
+
         // Lower score = better (less loaded)
         // Formula: (response_time * connections) / weight
         return ($responseTime * ($connections + 1)) / $weight;
     }
-    
+
     /**
      * Get AI-friendly node information for context-aware selection
      */
@@ -282,7 +282,7 @@ class AINode extends Model
             'avg_response_time' => $this->avg_response_time,
         ];
     }
-    
+
     /**
      * Check if node matches query context
      */
@@ -294,10 +294,10 @@ class AINode extends Model
             $this->data_types ?? [],
             [$this->name, $this->slug]
         );
-        
+
         $nodeKeywords = array_map('strtolower', $nodeKeywords);
         $searchKeywords = array_map('strtolower', $keywords);
-        
+
         foreach ($searchKeywords as $keyword) {
             foreach ($nodeKeywords as $nodeKeyword) {
                 if (str_contains($nodeKeyword, $keyword) || str_contains($keyword, $nodeKeyword)) {
@@ -305,17 +305,17 @@ class AINode extends Model
                 }
             }
         }
-        
+
         return false;
     }
-    
+
     // ==================== Accessors ====================
-    
+
     public function getIsHealthyAttribute(): bool
     {
         return $this->isHealthy();
     }
-    
+
     public function getStatusColorAttribute(): string
     {
         return match($this->status) {
@@ -326,7 +326,7 @@ class AINode extends Model
             default => 'gray',
         };
     }
-    
+
     /**
      * Get domains from metadata
      */
@@ -334,7 +334,7 @@ class AINode extends Model
     {
         return $this->metadata['domains'] ?? [];
     }
-    
+
     /**
      * Get data types from metadata
      */
@@ -342,7 +342,7 @@ class AINode extends Model
     {
         return $this->metadata['data_types'] ?? [];
     }
-    
+
     /**
      * Get keywords from metadata
      */
@@ -350,7 +350,7 @@ class AINode extends Model
     {
         return $this->metadata['keywords'] ?? [];
     }
-    
+
     /**
      * Get topics from metadata
      */
@@ -358,7 +358,7 @@ class AINode extends Model
     {
         return $this->metadata['topics'] ?? [];
     }
-    
+
     /**
      * Check if node matches domain
      */
@@ -367,7 +367,7 @@ class AINode extends Model
         $domains = $this->getDomains();
         return in_array(strtolower($domain), array_map('strtolower', $domains));
     }
-    
+
     /**
      * Check if node matches keyword
      */
@@ -376,9 +376,9 @@ class AINode extends Model
         $keywords = $this->getKeywords();
         return in_array(strtolower($keyword), array_map('strtolower', $keywords));
     }
-    
+
     // ==================== Rate Limiting ====================
-    
+
     /**
      * Check if node is rate limited
      */
@@ -387,17 +387,17 @@ class AINode extends Model
         if (!config('ai-engine.nodes.rate_limit.enabled', true)) {
             return false;
         }
-        
+
         if (!config('ai-engine.nodes.rate_limit.per_node', true)) {
             return false; // Global rate limiting handled elsewhere
         }
-        
+
         $key = "node_rate_limit:{$this->id}";
         $limit = config('ai-engine.nodes.rate_limit.max_attempts', 60);
-        
+
         return \Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, $limit);
     }
-    
+
     /**
      * Increment rate limit counter
      */
@@ -406,13 +406,13 @@ class AINode extends Model
         if (!config('ai-engine.nodes.rate_limit.per_node', true)) {
             return;
         }
-        
+
         $key = "node_rate_limit:{$this->id}";
         $decay = config('ai-engine.nodes.rate_limit.decay_minutes', 1);
-        
+
         \Illuminate\Support\Facades\RateLimiter::hit($key, $decay * 60);
     }
-    
+
     /**
      * Get remaining rate limit attempts
      */
@@ -421,13 +421,13 @@ class AINode extends Model
         if (!config('ai-engine.nodes.rate_limit.per_node', true)) {
             return PHP_INT_MAX;
         }
-        
+
         $key = "node_rate_limit:{$this->id}";
         $limit = config('ai-engine.nodes.rate_limit.max_attempts', 60);
-        
+
         return \Illuminate\Support\Facades\RateLimiter::remaining($key, $limit);
     }
-    
+
     /**
      * Clear rate limit for node
      */

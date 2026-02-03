@@ -125,11 +125,16 @@ class ChatService
         }
 
         // Convert AgentResponse to AIResponse
+        $contextMetadata = array_merge(
+            $agentResponse->context->toArray(),
+            $agentResponse->metadata ?? []
+        );
+
         return new AIResponse(
             content: $agentResponse->message,
             engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
             model: \LaravelAIEngine\Enums\EntityEnum::from($model),
-            metadata: array_merge($agentResponse->context->toArray(), [
+            metadata: array_merge($contextMetadata, [
                 'workflow_active' => !$agentResponse->isComplete,
                 'workflow_class' => $agentResponse->context->currentWorkflow,
                 'workflow_data' => $agentResponse->data ?? [],

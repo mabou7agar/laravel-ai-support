@@ -18,7 +18,7 @@ class NodeApiController extends Controller
         // Auto-discover node metadata
         $discovery = new \LaravelAIEngine\Services\Node\NodeMetadataDiscovery();
         $metadata = $discovery->discover();
-        
+
         // Get autonomous collectors from registry
         $autonomousCollectors = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::getCollectorGoals();
 
@@ -64,7 +64,7 @@ class NodeApiController extends Controller
             }
 
             $reflection = new \ReflectionClass($modelClass);
-            
+
             if (!$reflection->hasMethod('executeAI')) {
                 return response()->json([
                     'success' => false,
@@ -112,7 +112,7 @@ class NodeApiController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Autonomous collectors discovery endpoint
      * Returns all available autonomous collectors on this node
@@ -121,16 +121,16 @@ class NodeApiController extends Controller
     {
         try {
             $discoveryService = app(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class);
-            
+
             // Get local collectors only (no remote, no cache for fresh results)
             $collectors = $discoveryService->discoverCollectors(useCache: false, includeRemote: false);
-            
+
             return response()->json([
                 'collectors' => $collectors,
                 'count' => count($collectors),
                 'timestamp' => now()->toIso8601String(),
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to discover autonomous collectors',
@@ -149,13 +149,13 @@ class NodeApiController extends Controller
             $discoveryService = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
             // Get local collections only (no federated, no cache for fresh results)
             $classNames = $discoveryService->discover(useCache: false, includeFederated: false);
-            
+
             // Also discover models with HasAIActions trait
             $aiActionModels = $this->discoverAIActionModels();
-            
+
             // Merge both lists (remove duplicates)
             $classNames = array_unique(array_merge($classNames, $aiActionModels));
-            
+
             // Format as detailed collection info with RAG descriptions
             $collections = [];
             foreach ($classNames as $className) {
@@ -164,10 +164,10 @@ class NodeApiController extends Controller
                     $description = '';
                     $displayName = $name;
                     $table = 'unknown';
-                    
+
                     // Use reflection to check if methods are static
                     $reflection = new \ReflectionClass($className);
-                    
+
                     if ($reflection->hasMethod('getRAGDescription')) {
                         $method = $reflection->getMethod('getRAGDescription');
                         if ($method->isStatic()) {
@@ -182,7 +182,7 @@ class NodeApiController extends Controller
                             }
                         }
                     }
-                    
+
                     if ($reflection->hasMethod('getRAGDisplayName')) {
                         $method = $reflection->getMethod('getRAGDisplayName');
                         if ($method->isStatic()) {
@@ -199,7 +199,7 @@ class NodeApiController extends Controller
                             }
                         }
                     }
-                    
+
                     // Get table name
                     try {
                         if (!isset($instance)) {
@@ -209,7 +209,7 @@ class NodeApiController extends Controller
                     } catch (\Exception $e) {
                         // Couldn't instantiate, use default
                     }
-                    
+
                     // Check for AI action methods
                     $methods = [];
                     if ($reflection->hasMethod('executeAI')) {
@@ -218,7 +218,7 @@ class NodeApiController extends Controller
                     if ($reflection->hasMethod('initializeAI')) {
                         $methods[] = 'initializeAI';
                     }
-                    
+
                     // Get format from initializeAI if available
                     $format = null;
                     if ($reflection->hasMethod('initializeAI')) {
@@ -237,7 +237,7 @@ class NodeApiController extends Controller
                             // Ignore errors
                         }
                     }
-                    
+
                     $collections[] = [
                         'class' => $className,
                         'name' => $name,
@@ -259,13 +259,13 @@ class NodeApiController extends Controller
                     ];
                 }
             }
-            
+
             return response()->json([
                 'collections' => $collections,
                 'count' => count($collections),
                 'timestamp' => now()->toIso8601String(),
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to discover collections',
@@ -273,7 +273,7 @@ class NodeApiController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Discover models with HasAIActions trait
      */
@@ -281,7 +281,7 @@ class NodeApiController extends Controller
     {
         $models = [];
         $paths = config('ai-engine.intelligent_rag.discovery_paths', [app_path('Models')]);
-        
+
         // Expand glob patterns
         $expandedPaths = [];
         foreach ($paths as $path) {
@@ -292,36 +292,36 @@ class NodeApiController extends Controller
                 $expandedPaths[] = $path;
             }
         }
-        
+
         foreach ($expandedPaths as $path) {
             if (!is_dir($path)) {
                 continue;
             }
-            
+
             $files = new \RecursiveIteratorIterator(
                 new \RecursiveDirectoryIterator($path)
             );
-            
+
             foreach ($files as $file) {
                 if ($file->isDir() || $file->getExtension() !== 'php') {
                     continue;
                 }
-                
+
                 $content = file_get_contents($file->getPathname());
-                
+
                 // Extract namespace
                 if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatch)) {
                     $namespace = $nsMatch[1];
-                    
+
                     // Extract class name
                     if (preg_match('/class\s+(\w+)/', $content, $classMatch)) {
                         $className = $namespace . '\\' . $classMatch[1];
-                        
+
                         // Check if class uses HasAIActions trait
                         if (class_exists($className)) {
                             $reflection = new \ReflectionClass($className);
                             $traits = $reflection->getTraitNames();
-                            
+
                             if (in_array('LaravelAIEngine\\Traits\\HasAIActions', $traits)) {
                                 $models[] = $className;
                             }
@@ -330,10 +330,10 @@ class NodeApiController extends Controller
                 }
             }
         }
-        
+
         return $models;
     }
-    
+
     /**
      * Search endpoint (for remote nodes to call)
      */
@@ -344,20 +344,20 @@ class NodeApiController extends Controller
             'limit' => 'integer|min:1|max:100',
             'options' => 'array',
         ]);
-        
+
         $startTime = microtime(true);
-        
+
         try {
             $collections = $validated['options']['collections'] ?? [];
             $userId = $validated['options']['user_id'] ?? null;
             $filters = $validated['options']['filters'] ?? [];
             $results = [];
-            
+
             foreach ($collections as $collection) {
                 if (!class_exists($collection)) {
                     continue;
                 }
-                
+
                 // Use the model's vectorSearch trait method directly
                 // This works regardless of whether VectorSearchService is registered
                 $searchResults = $collection::vectorSearch(
@@ -367,20 +367,20 @@ class NodeApiController extends Controller
                     filters: $filters,
                     userId: $userId
                 );
-                
+
                 \Log::info('NodeApiController: vectorSearch returned', [
                     'collection' => $collection,
                     'count' => count($searchResults),
                     'is_collection' => $searchResults instanceof \Illuminate\Support\Collection,
                     'first_item_class' => $searchResults->first() ? get_class($searchResults->first()) : null,
                 ]);
-                
+
                 foreach ($searchResults as $result) {
                     \Log::info('NodeApiController: Adding result with metadata', [
                         'id' => $result->id,
                         'collection' => $collection,
                     ]);
-                    
+
                     $results[] = [
                         'id' => $result->id ?? null,
                         'content' => $this->extractContent($result),
@@ -405,29 +405,29 @@ class NodeApiController extends Controller
                     ];
                 }
             }
-            
+
             $duration = (microtime(true) - $startTime) * 1000;
-            
+
             \Log::info('NodeApiController: About to return response', [
                 'results_count' => count($results),
                 'results_ids' => array_column($results, 'id'),
                 'results_sample' => array_slice($results, 0, 1),
             ]);
-            
+
             $responseData = [
                 'results' => $results,
                 'count' => count($results),
                 'duration_ms' => round($duration, 2),
             ];
-            
+
             \Log::info('NodeApiController: Response data prepared', [
                 'response_count' => $responseData['count'],
                 'response_results_count' => count($responseData['results']),
                 'response_json_preview' => substr(json_encode($responseData), 0, 500),
             ]);
-            
+
             return response()->json($responseData);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Search failed',
@@ -435,7 +435,7 @@ class NodeApiController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Aggregate data endpoint
      * Returns counts and stats for specified collections
@@ -447,26 +447,26 @@ class NodeApiController extends Controller
             'collections.*' => 'string',
             'user_id' => 'nullable|integer',
         ]);
-        
+
         $startTime = microtime(true);
-        
+
         try {
             $collections = $validated['collections'];
             $userId = $validated['user_id'] ?? null;
             $aggregateData = [];
-            
+
             $vectorSearch = app(VectorSearchService::class);
-            
+
             foreach ($collections as $collection) {
                 if (!class_exists($collection)) {
                     continue;
                 }
-                
+
                 try {
                     $instance = new $collection();
                     $displayName = class_basename($collection);
                     $description = '';
-                    
+
                     // Get display name and description
                     if (method_exists($instance, 'getRAGDisplayName')) {
                         $displayName = $instance->getRAGDisplayName();
@@ -474,16 +474,16 @@ class NodeApiController extends Controller
                     if (method_exists($instance, 'getRAGDescription')) {
                         $description = $instance->getRAGDescription();
                     }
-                    
+
                     // Build filters for vector database query
                     $filters = [];
                     if ($userId !== null) {
                         $filters['user_id'] = $userId;
                     }
-                    
+
                     // Get count from vector database
                     $vectorCount = $vectorSearch->getIndexedCountWithFilters($collection, $filters);
-                    
+
                     $aggregateData[$collection] = [
                         'count' => $vectorCount,
                         'indexed_count' => $vectorCount,
@@ -491,7 +491,7 @@ class NodeApiController extends Controller
                         'description' => $description,
                         'source' => 'vector_database',
                     ];
-                    
+
                 } catch (\Exception $e) {
                     \Log::warning('Failed to get aggregate for collection', [
                         'collection' => $collection,
@@ -499,16 +499,16 @@ class NodeApiController extends Controller
                     ]);
                 }
             }
-            
+
             $duration = (microtime(true) - $startTime) * 1000;
-            
+
             return response()->json([
                 'success' => true,
                 'aggregate_data' => $aggregateData,
                 'count' => count($aggregateData),
                 'duration_ms' => round($duration, 2),
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -517,7 +517,7 @@ class NodeApiController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Chat endpoint - forward entire chat/workflow to this node
      * This allows the master node to delegate chat handling to child nodes
@@ -532,62 +532,41 @@ class NodeApiController extends Controller
             'token' => 'nullable|string', // User token passed from middleware for CheckAuth
             'options' => 'array',
         ]);
-        
+
         $startTime = microtime(true);
-        
+
         try {
             // Get user token from header or body for CheckAuth authentication
             $userToken = $request->header('X-User-Token') ?? $validated['token'] ?? null;
-            
+
             \Log::channel('ai-engine')->info('NodeApiController: Attempting CheckAuth', [
                 'session_id' => $validated['session_id'],
                 'has_user_token' => !empty($userToken),
                 'token_preview' => $userToken ? substr($userToken, 0, 20) . '...' : null,
                 'checkauth_exists' => class_exists('\App\Http\Middleware\CheckAuth'),
             ]);
-            
-            // If token provided and CheckAuth middleware exists, authenticate the user
-            if ($userToken && !empty($userToken) && class_exists('\App\Http\Middleware\CheckAuth')) {
-                // Set the token on the request for CheckAuth
-                $request->headers->set('Authorization', 'Bearer ' . $userToken);
-                $request->server->set('HTTP_AUTHORIZATION', 'Bearer ' . $userToken);
-                
-                // Run CheckAuth to authenticate the user
-                try {
-                    $checkAuth = app(\App\Http\Middleware\CheckAuth::class);
-                    $checkAuth->handle($request, function($req) {});
-                    
-                    \Log::channel('ai-engine')->info('NodeApiController: CheckAuth completed', [
-                        'auth_check' => \Illuminate\Support\Facades\Auth::check(),
-                        'auth_id' => \Illuminate\Support\Facades\Auth::id(),
-                    ]);
-                } catch (\Exception $e) {
-                    \Log::channel('ai-engine')->warning('NodeApiController: CheckAuth failed', [
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
-            
+
+
             // Use authenticated user from CheckAuth if available, otherwise fall back to passed user_id
-            $userId = \Illuminate\Support\Facades\Auth::check() 
-                ? \Illuminate\Support\Facades\Auth::id() 
+            $userId = \Illuminate\Support\Facades\Auth::check()
+                ? \Illuminate\Support\Facades\Auth::id()
                 : $validated['user_id'];
-            
+
             \Log::channel('ai-engine')->info('NodeApiController: Chat request', [
                 'session_id' => $validated['session_id'],
                 'auth_user_id' => \Illuminate\Support\Facades\Auth::id(),
                 'passed_user_id' => $validated['user_id'],
                 'using_user_id' => $userId,
             ]);
-            
+
             // Start accumulating credits for this request (child node tracks but doesn't deduct)
             \LaravelAIEngine\Services\CreditManager::startAccumulating();
-            
+
             // Get ChatService to process the message
             $chatService = app(\LaravelAIEngine\Services\ChatService::class);
-            
+
             $options = $validated['options'] ?? [];
-            
+
             $response = $chatService->processMessage(
                 message: $validated['message'],
                 sessionId: $validated['session_id'],
@@ -601,15 +580,15 @@ class NodeApiController extends Controller
                 searchInstructions: $options['search_instructions'] ?? null,
                 conversationHistory: $options['conversation_history'] ?? [] // Pass history from middleware
             );
-            
+
             $duration = (microtime(true) - $startTime) * 1000;
-            
+
             \Log::channel('ai-engine')->info('NodeApiController: Chat processed', [
                 'session_id' => $validated['session_id'],
                 'user_id' => $validated['user_id'],
                 'duration_ms' => round($duration, 2),
             ]);
-            
+
             // Only return essential metadata to reduce response size and memory usage
             $fullMetadata = $response->getMetadata();
             $essentialMetadata = [
@@ -619,10 +598,10 @@ class NodeApiController extends Controller
                 'current_step' => $fullMetadata['current_step'] ?? null,
                 'agent_strategy' => $fullMetadata['agent_strategy'] ?? null,
             ];
-            
+
             // Get total accumulated credits from all AI calls during this request
             $creditsUsed = \LaravelAIEngine\Services\CreditManager::stopAccumulating();
-            
+
             return response()->json([
                 'success' => true,
                 'response' => $response->getContent(),
@@ -630,16 +609,16 @@ class NodeApiController extends Controller
                 'credits_used' => $creditsUsed,
                 'duration_ms' => round($duration, 2),
             ]);
-            
+
         } catch (\Exception $e) {
             // Stop accumulating credits on error (cleanup)
             \LaravelAIEngine\Services\CreditManager::stopAccumulating();
-            
+
             \Log::channel('ai-engine')->error('NodeApiController: Chat failed', [
                 'session_id' => $validated['session_id'],
                 'error' => $e->getMessage(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'error' => 'Chat processing failed',
@@ -647,7 +626,7 @@ class NodeApiController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Action execution endpoint
      */
@@ -657,7 +636,7 @@ class NodeApiController extends Controller
             'action' => 'required|string',
             'params' => 'array',
         ]);
-        
+
         try {
             // Execute action based on type
             $result = match($validated['action']) {
@@ -667,13 +646,13 @@ class NodeApiController extends Controller
                 'sync' => $this->handleSyncAction($validated['params']),
                 default => throw new \Exception("Unknown action: {$validated['action']}"),
             };
-            
+
             return response()->json([
                 'success' => true,
                 'action' => $validated['action'],
                 'result' => $result,
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -681,7 +660,7 @@ class NodeApiController extends Controller
             ], 400);
         }
     }
-    
+
     /**
      * Node registration endpoint
      */
@@ -694,11 +673,11 @@ class NodeApiController extends Controller
             'metadata' => 'array',
             'version' => 'string',
         ]);
-        
+
         try {
             $node = $registry->register($validated);
             $authResponse = $authService->generateAuthResponse($node);
-            
+
             return response()->json([
                 'success' => true,
                 'node' => [
@@ -708,7 +687,7 @@ class NodeApiController extends Controller
                 ],
                 'auth' => $authResponse,
             ], 201);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -716,21 +695,21 @@ class NodeApiController extends Controller
             ], 400);
         }
     }
-    
+
     /**
      * Node status endpoint
      */
     public function status(Request $request, NodeRegistryService $registry)
     {
         $node = $request->attributes->get('node');
-        
+
         if (!$node) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
-        
+
         return response()->json($registry->getHealthReport($node));
     }
-    
+
     /**
      * Refresh token endpoint
      */
@@ -739,54 +718,54 @@ class NodeApiController extends Controller
         $validated = $request->validate([
             'refresh_token' => 'required|string',
         ]);
-        
+
         $result = $authService->refreshAccessToken($validated['refresh_token']);
-        
+
         if (!$result) {
             return response()->json([
                 'error' => 'Invalid refresh token',
             ], 401);
         }
-        
+
         return response()->json($result);
     }
-    
+
     // Action handlers
     protected function handleIndexAction(array $params): array
     {
         return ['message' => 'Index action executed', 'params' => $params];
     }
-    
+
     protected function handleDeleteAction(array $params): array
     {
         return ['message' => 'Delete action executed', 'params' => $params];
     }
-    
+
     protected function handleUpdateAction(array $params): array
     {
         return ['message' => 'Update action executed', 'params' => $params];
     }
-    
+
     protected function handleSyncAction(array $params): array
     {
         return ['message' => 'Sync action executed', 'params' => $params];
     }
-    
+
     protected function extractContent($model): string
     {
         if (method_exists($model, 'getVectorContent')) {
             return $model->getVectorContent();
         }
-        
+
         $fields = ['content', 'body', 'description', 'text', 'title', 'name'];
         $content = [];
-        
+
         foreach ($fields as $field) {
             if (isset($model->$field)) {
                 $content[] = $model->$field;
             }
         }
-        
+
         return implode(' ', $content);
     }
 }

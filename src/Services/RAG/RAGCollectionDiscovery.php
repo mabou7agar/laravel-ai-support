@@ -42,12 +42,12 @@ class RAGCollectionDiscovery
     public function discover(bool $useCache = true, bool $includeFederated = true): array
     {
         // Check cache first
-        if ($useCache) {
-            $cached = Cache::get($this->cacheKey);
-            if ($cached !== null) {
-                return $cached;
-            }
-        }
+        //if ($useCache) {
+        //    $cached = Cache::get($this->cacheKey);
+        //    if ($cached !== null) {
+        //        return $cached;
+        //    }
+        //}
 
         // Get from config first
         $configCollections = config('ai-engine.intelligent_rag.default_collections', []);
@@ -89,22 +89,10 @@ class RAGCollectionDiscovery
             $nodes = $this->nodeRegistry->getActiveNodes();
 
             foreach ($nodes as $node) {
-                try {
-                    $response = NodeHttpClient::makeAuthenticated($node)
-                        ->get($node->getApiUrl('collections'));
 
-                    if ($response->successful()) {
-                        $data = $response->json();
-                        foreach ($data['collections'] ?? [] as $collection) {
-                            $collections[] = $collection['class'];
+                        foreach ($node->collections ?? [] as $collection) {
+                            $collections[] = $collection;
                         }
-                    }
-                } catch (\Exception $e) {
-                    Log::debug('Failed to get collections from node', [
-                        'node' => $node->slug,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
             }
         } catch (\Exception $e) {
             Log::warning('Failed to discover collections from nodes', [
@@ -159,12 +147,12 @@ class RAGCollectionDiscovery
 
                                 if (!isset($allCollections[$className])) {
                                     $description = $collection['description'] ?? '';
-                                    
+
                                     // If no description provided, generate a default one with a warning
                                     if (empty($description)) {
                                         $name = $collection['name'];
                                         $description = "Search through {$name} collection";
-                                        
+
                                         Log::warning('Remote RAG collection missing description - using auto-generated description', [
                                             'class' => $className,
                                             'node' => $node->name,
@@ -172,7 +160,7 @@ class RAGCollectionDiscovery
                                             'recommendation' => "Add getRAGDescription() method to {$className} on remote node for better AI selection",
                                         ]);
                                     }
-                                    
+
                                     $allCollections[$className] = [
                                         'class' => $className,
                                         'name' => $collection['name'],
@@ -256,7 +244,7 @@ class RAGCollectionDiscovery
         // If no description provided, generate a default one with a warning
         if (empty($description)) {
             $description = "Search through {$name} collection";
-            
+
             Log::warning('RAG collection missing description - using auto-generated description', [
                 'class' => $className,
                 'auto_description' => $description,
@@ -450,7 +438,7 @@ class RAGCollectionDiscovery
         $uses = class_uses_recursive($className);
 
         // Check for both Vectorizable and VectorizableWithMedia traits
-        return isset($uses['LaravelAIEngine\Traits\Vectorizable']) 
+        return isset($uses['LaravelAIEngine\Traits\Vectorizable'])
             || isset($uses['LaravelAIEngine\Traits\VectorizableWithMedia']);
     }
 

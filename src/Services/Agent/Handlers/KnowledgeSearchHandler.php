@@ -28,7 +28,7 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         if ($this->ragDiscovery === null && app()->bound(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)) {
             $this->ragDiscovery = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
         }
-        
+
         // Initialize AutonomousRAGAgent for intelligent routing
         if (app()->bound(\LaravelAIEngine\Services\AIEngineManager::class)) {
             $this->autonomousAgent = new AutonomousRAGAgent(
@@ -47,6 +47,7 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         Log::channel('ai-engine')->info('Searching knowledge base', [
             'query' => $message,
             'session_id' => $context->sessionId,
+            'user_id' => $context->userId,
             'using_autonomous_agent' => $this->autonomousAgent !== null,
         ]);
 
@@ -69,7 +70,7 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         // Use AutonomousRAGAgent for intelligent routing with filter support
         if ($this->autonomousAgent) {
             $conversationHistory = $context->conversationHistory ?? [];
-            
+
             $result = $this->autonomousAgent->process(
                 $message,
                 $context->sessionId,
@@ -77,27 +78,27 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
                 $conversationHistory,
                 array_merge($options, ['rag_collections' => $ragCollections])
             );
-            
+
             if ($result['success'] ?? false) {
                 $responseText = $result['response'] ?? 'No results found.';
-                
+
                 Log::channel('ai-engine')->info('KnowledgeSearchHandler: AutonomousRAGAgent response', [
                     'tool' => $result['tool'] ?? 'unknown',
                     'fast_path' => $result['fast_path'] ?? false,
                 ]);
-                
+
                 $response = AgentResponse::conversational(
                     message: $responseText,
                     context: $context
                 );
-                
+
                 $context->metadata['tool_used'] = $result['tool'] ?? 'unknown';
                 $context->metadata['fast_path'] = $result['fast_path'] ?? false;
                 $context->addAssistantMessage($responseText);
-                
+
                 return $response;
             }
-            
+
             // Fall through to legacy RAG if autonomous agent fails
             Log::channel('ai-engine')->warning('AutonomousRAGAgent failed, falling back to legacy RAG', [
                 'error' => $result['error'] ?? 'unknown',

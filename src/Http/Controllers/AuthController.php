@@ -7,12 +7,13 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class AuthController extends Controller
 {
     /**
      * Generate authentication token for demo purposes
-     * 
+     *
      * @param Request $request
      * @return JsonResponse
      */
@@ -44,7 +45,7 @@ class AuthController extends Controller
             // Check if Sanctum is available
             if (method_exists($user, 'createToken')) {
                 // Use Sanctum to create token
-                $token = $user->createToken('ai-demo-token')->plainTextToken;
+                $token = \Tymon\JWTAuth\Facades\JWTAuth::fromUser($user);
             } else {
                 // Fallback: Generate a simple token
                 $token = base64_encode($user->id . ':' . now()->timestamp . ':' . Hash::make($user->id));
@@ -69,15 +70,15 @@ class AuthController extends Controller
 
     /**
      * Create a demo user for testing
-     * 
+     *
      * @param string $userId
      * @return User
      */
     protected function createDemoUser(string $userId): User
     {
         // Check if User model has required fields
-        $email = filter_var($userId, FILTER_VALIDATE_EMAIL) 
-            ? $userId 
+        $email = filter_var($userId, FILTER_VALIDATE_EMAIL)
+            ? $userId
             : "demo_{$userId}@example.com";
 
         try {
@@ -92,18 +93,18 @@ class AuthController extends Controller
         } catch (\Exception $e) {
             // If creation fails, try to find any user
             $user = User::first();
-            
+
             if (!$user) {
                 throw new \Exception('No users available and cannot create demo user');
             }
-            
+
             return $user;
         }
     }
 
     /**
      * Validate token (optional endpoint)
-     * 
+     *
      * @param Request $request
      * @return JsonResponse
      */
@@ -130,7 +131,7 @@ class AuthController extends Controller
 
     /**
      * Logout and revoke token
-     * 
+     *
      * @param Request $request
      * @return JsonResponse
      */

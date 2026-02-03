@@ -127,7 +127,13 @@ class NodeAuthMiddleware
      */
     protected function extractToken(Request $request): ?string
     {
-        // Try Authorization header first (Bearer token)
+        // Try X-Node-Token header first (preferred for node authentication)
+        $nodeToken = $request->header('X-Node-Token');
+        if ($nodeToken) {
+            return $nodeToken;
+        }
+        
+        // Try Authorization header as fallback (Bearer token) for backward compatibility
         $authHeader = $request->header('Authorization');
         
         if ($authHeader && str_starts_with($authHeader, 'Bearer ')) {
