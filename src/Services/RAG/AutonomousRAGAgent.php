@@ -49,7 +49,8 @@ class AutonomousRAGAgent
         $context = $this->buildAIContext($message, $conversationHistory, $userId, $options);
 
         // Single AI call to decide what to do
-        $decision = $this->getAIDecision($message, $context);
+        $model = $options['model'] ?? 'gpt-4o-mini';
+            $decision = $this->getAIDecision($message, $context, $model);
 
         Log::channel('ai-engine')->info('AutonomousRAGAgent: AI decision', [
             'session_id' => $sessionId,
@@ -169,7 +170,7 @@ class AutonomousRAGAgent
     /**
      * Let AI decide which tool to use and how
      */
-    protected function getAIDecision(string $message, array $context): array
+    protected function getAIDecision(string $message, array $context, string $model = 'gpt-4o-mini'): array
     {
         $conversationSummary = $context['conversation'];
         $modelsJson = json_encode($context['models'], JSON_PRETTY_PRINT);
@@ -256,19 +257,40 @@ PROMPT;
 
         try {
             $response = $this->ai
-                ->model('gpt-4o-mini')
+                ->model($model)
                 ->withTemperature(0.1)
                 ->withMaxTokens(500)
                 ->generate($prompt);
 
             $content = trim($response->getContent());
 
-            // Parse JSON
+            // Clean up common AI response formats (code blocks, etc.)
+            $content = preg_replace('/^```(?:json)?\s*/m', '', $content);
+            $content = preg_replace('/\s*```$/m', '', $content);
+
+            // Try to parse as direct JSON first
+            $decision = json_decode($content, true);
+            if ($decision && isset($decision['tool'])) {
+                return $decision;
+            }
+
+            // Try regex extraction if direct JSON fails
             if (preg_match('/\{[\s\S]*\}/m', $content, $matches)) {
                 $decision = json_decode($matches[0], true);
                 if ($decision && isset($decision['tool'])) {
                     return $decision;
                 }
+            }
+
+            Log::channel('ai-engine')->info('AI DECISION PARSING FAILED', ['content' => $content]);
+
+            // Fallback: try to extract key info from content
+            if (stripos($content, 'db_aggregate') !== false || stripos($content, 'sum') !== false) {
+                return [
+                    'tool' => 'db_aggregate',
+                    'reasoning' => 'AI suggested aggregate operation from content',
+                    'parameters' => ['model' => 'invoice', 'aggregate' => ['operation' => 'sum', 'field' => 'amount']],
+                ];
             }
 
             // Fallback
