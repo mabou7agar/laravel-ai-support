@@ -106,8 +106,12 @@ class AINode extends Model
 
     public function scopeHealthy($query)
     {
-        //return $query->where('ping_failures', '<', 3)
-        //             ->where('last_ping_at', '>=', now()->subMinutes(10));
+        if (!app()->environment('production')) {
+            return $query;
+        }
+
+        return $query->where('ping_failures', '<', 3)
+            ->where('last_ping_at', '>=', now()->subMinutes(10));
     }
 
     public function scopeWithCapability($query, string $capability)
@@ -144,6 +148,9 @@ class AINode extends Model
      */
     public function isHealthy(): bool
     {
+        if( !app()->environment('production')){
+            return true;
+        }
         return $this->status === 'active'
             && $this->ping_failures < 3
             && $this->last_ping_at?->gt(now()->subMinutes(10));

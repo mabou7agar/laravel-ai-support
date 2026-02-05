@@ -193,12 +193,12 @@ class AgentOrchestrator
                     // ALWAYS store the last remote node for follow-up context detection
                     // This allows follow-up questions like "total amount" after "total invoices"
                     $context->set('last_remote_node', $routedNodePayload);
-                    
+
                     // Also store the last discussed entity for context
                     if (!empty($analysis['collector_name'])) {
                         $context->set('last_discussed_entity', $analysis['collector_name']);
                     }
-                    
+
                     Log::channel('ai-engine')->info('Stored last remote node context for follow-ups', [
                         'node' => $node->name,
                         'entity' => $analysis['collector_name'] ?? 'N/A',

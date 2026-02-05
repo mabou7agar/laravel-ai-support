@@ -229,28 +229,18 @@ class AIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\Agent\WorkflowDiscoveryService();
         });
 
-        // Register AgentOrchestrator (handlers instantiated per-request)
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentOrchestrator::class, function ($app) {
-            $orchestrator = new \LaravelAIEngine\Services\Agent\AgentOrchestrator(
-                $app->make(\LaravelAIEngine\Services\Agent\MessageAnalyzer::class),
-                $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class)
+        // Register MinimalAIOrchestrator - AI-driven orchestration
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\MinimalAIOrchestrator::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\MinimalAIOrchestrator(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class),
+                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)
             );
-
-            // Register handlers (instantiated fresh each time orchestrator is created)
-            // AutonomousCollectorHandler MUST be first to handle active collector sessions
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ContinueWorkflowHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\AnswerQuestionHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\SubWorkflowHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\CancelWorkflowHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\DirectAnswerHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\KnowledgeSearchHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\SuggestWorkflowHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\StartWorkflowHandler::class));
-            $orchestrator->registerHandler($app->make(\LaravelAIEngine\Services\Agent\Handlers\ConversationalHandler::class));
-
-            return $orchestrator;
         });
+
+        // Deprecated: AgentOrchestrator moved to Legacy folder
+        // Use MinimalAIOrchestrator instead for AI-driven orchestration
     }
 
     /**
@@ -412,7 +402,7 @@ class AIEngineServiceProvider extends ServiceProvider
         // Removed: NodeConnectionPool (redundant)
         // Removed: NodeCacheService (over-engineered)
         // Removed: SearchResultMerger (over-engineered)
-        
+
         // New: Unified RAG Search Service (simple, fast, reliable)
         $this->app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService(
@@ -857,28 +847,30 @@ class AIEngineServiceProvider extends ServiceProvider
     {
         try {
             $discoveryService = $this->app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class);
-            $collectors = $discoveryService->discoverCollectors();
-            
+            $collectors = $discoveryService->discoverCollectors(useCache: true, includeRemote: true);
+
             foreach ($collectors as $name => $collectorData) {
                 $className = $collectorData['class'] ?? null;
                 $source = $collectorData['source'] ?? 'local';
-                
-                // Skip remote collectors - they should be routed directly to nodes
-                if ($source === 'remote') {
-                    continue;
+                $config = $collectorData['config'] ?? null;
+
+                // For local collectors, instantiate the config
+                if ($source === 'local' && $className && class_exists($className) && method_exists($className, 'getConfig')) {
+                    $config = $className::getConfig();
                 }
-                
-                // Register local collectors only
-                if ($className && class_exists($className) && method_exists($className, 'getConfig')) {
-                    $configInstance = $className::getConfig();
+
+                // Register both local and remote collectors
+                // Remote collectors will be handled by the orchestrator routing to nodes
+                if ($config) {
                     \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::register($name, [
-                        'config' => $configInstance,
+                        'config' => $config,
                         'description' => $collectorData['description'] ?? '',
                         'priority' => $collectorData['priority'] ?? 0,
+                        'source' => $source,
                     ]);
                 }
             }
-            
+
             if (count($collectors) > 0) {
                 \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('Discovered AutonomousCollectors', [
                     'count' => count($collectors),

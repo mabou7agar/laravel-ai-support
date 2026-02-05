@@ -11,18 +11,19 @@ class ChatService
 {
     public function __construct(
         protected ConversationService $conversationService,
-        protected ?\LaravelAIEngine\Services\Agent\AgentOrchestrator $agentOrchestrator = null
+        protected ?\LaravelAIEngine\Services\Agent\MinimalAIOrchestrator $orchestrator = null
     ) {}
 
     /**
-     * Lazy load AgentOrchestrator
+     * Lazy load MinimalAIOrchestrator
      */
-    protected function getAgentOrchestrator(): ?\LaravelAIEngine\Services\Agent\AgentOrchestrator
+    protected function getOrchestrator(): \LaravelAIEngine\Services\Agent\MinimalAIOrchestrator
     {
-        if ($this->agentOrchestrator === null && app()->bound(\LaravelAIEngine\Services\Agent\AgentOrchestrator::class)) {
-            $this->agentOrchestrator = app(\LaravelAIEngine\Services\Agent\AgentOrchestrator::class);
+        if ($this->orchestrator === null) {
+            $this->orchestrator = app(\LaravelAIEngine\Services\Agent\MinimalAIOrchestrator::class);
         }
-        return $this->agentOrchestrator;
+        
+        return $this->orchestrator;
     }
 
     /**
@@ -87,13 +88,10 @@ class ChatService
             Log::warning('Failed to fire AISessionStarted event: ' . $e->getMessage());
         }
 
-        // Delegate ALL decisions to AgentOrchestrator (routing, fast path, tool selection)
-        $orchestrator = $this->getAgentOrchestrator();
-        if (!$orchestrator) {
-            throw new \RuntimeException('AgentOrchestrator not available');
-        }
+        // Delegate ALL decisions to MinimalAIOrchestrator (AI-driven)
+        $orchestrator = $this->getOrchestrator();
 
-        Log::channel('ai-engine')->info('ChatService delegating to AgentOrchestrator', [
+        Log::channel('ai-engine')->info('ChatService delegating to MinimalAIOrchestrator', [
             'session_id' => $sessionId,
             'user_id' => $userId,
         ]);
@@ -130,11 +128,21 @@ class ChatService
             $agentResponse->metadata ?? []
         );
 
+        // Extract entity_ids from last_entity_list for node routing
+        $entityTracking = [];
+        if (isset($agentResponse->context->metadata['last_entity_list'])) {
+            $lastList = $agentResponse->context->metadata['last_entity_list'];
+            $entityTracking = [
+                'entity_ids' => $lastList['entity_ids'] ?? null,
+                'entity_type' => $lastList['entity_type'] ?? null,
+            ];
+        }
+
         return new AIResponse(
             content: $agentResponse->message,
             engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
             model: \LaravelAIEngine\Enums\EntityEnum::from($model),
-            metadata: array_merge($contextMetadata, [
+            metadata: array_merge($contextMetadata, $entityTracking, [
                 'workflow_active' => !$agentResponse->isComplete,
                 'workflow_class' => $agentResponse->context->currentWorkflow,
                 'workflow_data' => $agentResponse->data ?? [],

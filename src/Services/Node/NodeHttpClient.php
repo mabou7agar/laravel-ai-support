@@ -66,7 +66,7 @@ class NodeHttpClient
     public static function makeForHealthCheck(\LaravelAIEngine\Models\AINode $node): PendingRequest
     {
         return static::makeAuthenticated($node, false, 300)
-            ->timeout(5); // Shorter timeout for health checks
+            ->timeout(20); // Shorter timeout for health checks
     }
 
     /**

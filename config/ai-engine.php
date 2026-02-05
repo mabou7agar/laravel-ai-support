@@ -18,6 +18,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Orchestration Model
+    |--------------------------------------------------------------------------
+    |
+    | The AI model used by MinimalAIOrchestrator for routing decisions.
+    | This should be a fast, cost-effective model since it's called frequently.
+    |
+    */
+    'orchestration_model' => env('AI_ORCHESTRATION_MODEL', 'gpt-4o-mini'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Error Handling
     |--------------------------------------------------------------------------
     |

@@ -185,6 +185,24 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             );
         }
         
+        // Detect if user is asking an unrelated query (e.g., "list invoices" during invoice creation)
+        // This prevents the collector from staying active when user wants to do something else
+        if ($this->isUnrelatedQuery($message, $config)) {
+            Log::channel('ai-engine')->info('Unrelated query detected - exiting collector', [
+                'message' => $message,
+                'collector' => $config->name,
+            ]);
+            
+            $context->forget('autonomous_collector');
+            
+            // Return a special response that tells the orchestrator to re-route this message
+            return AgentResponse::failure(
+                message: 'exit_and_reroute',
+                context: $context,
+                data: ['reroute_message' => $message]
+            );
+        }
+        
         // Process through AI with tools
         $aiResponse = $this->generateAIResponse($message, $config, $collectorState, $context);
         
@@ -518,6 +536,53 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
     {
         $message = strtolower(trim($message));
         return in_array($message, ['cancel', 'stop', 'quit', 'exit', 'nevermind', 'never mind']);
+    }
+
+    /**
+     * Check if message is an unrelated query that should exit the collector
+     */
+    protected function isUnrelatedQuery(string $message, AutonomousCollectorConfig $config): bool
+    {
+        $messageLower = strtolower(trim($message));
+        
+        // Common query patterns that indicate user wants to do something else
+        $queryPatterns = [
+            'list ',
+            'show ',
+            'get ',
+            'find ',
+            'search ',
+            'display ',
+            'view ',
+            'what are ',
+            'how many ',
+            'count ',
+        ];
+        
+        foreach ($queryPatterns as $pattern) {
+            if (str_starts_with($messageLower, $pattern)) {
+                // Check if the query is about the same entity we're collecting
+                // e.g., "list invoices" during invoice creation should exit
+                // but "list products" during invoice creation might be relevant
+                $collectorName = $config->name;
+                
+                // If query mentions the same entity type, it's likely unrelated
+                // (user wants to see existing items, not continue creating)
+                if (str_contains($messageLower, $collectorName)) {
+                    return true;
+                }
+                
+                // Also exit for clearly unrelated entities
+                $unrelatedEntities = ['invoice', 'bill', 'customer', 'vendor', 'product', 'order', 'payment'];
+                foreach ($unrelatedEntities as $entity) {
+                    if ($entity !== $collectorName && str_contains($messageLower, $entity)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
     }
 
     public function canHandle(string $action): bool

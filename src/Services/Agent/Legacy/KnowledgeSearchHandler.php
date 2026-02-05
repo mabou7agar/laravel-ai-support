@@ -44,11 +44,56 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         UnifiedActionContext $context,
         array $options = []
     ): AgentResponse {
+        // Provide context about previous list to AI for intelligent selection detection
+        // The AI will determine if this is a selection and construct the appropriate query
+        if (isset($context->metadata['last_entity_list'])) {
+            $options['last_entity_list'] = $context->metadata['last_entity_list'];
+            
+            Log::channel('ai-engine')->info('Found last_entity_list in context metadata', [
+                'entity_type' => $context->metadata['last_entity_list']['entity_type'] ?? 'unknown',
+                'node' => $context->metadata['last_entity_list']['node'] ?? null,
+                'count' => count($context->metadata['last_entity_list']['entity_ids'] ?? []),
+            ]);
+        } else {
+            Log::channel('ai-engine')->info('No last_entity_list in context metadata', [
+                'session_id' => $context->sessionId,
+                'metadata_keys' => array_keys($context->metadata ?? []),
+            ]);
+        }
+
+        // Check if this is a follow-up question with context
+        $isFollowUp = $options['is_follow_up'] ?? false;
+        $contextEntity = $options['context_entity'] ?? null;
+        $conversationContext = $options['conversation_context'] ?? null;
+        // If it's a follow-up, enhance the message with context
+        $enhancedMessage = $message;
+        if ($isFollowUp) {
+            // Build enhanced message with context entity and/or conversation context
+            if ($contextEntity) {
+                $enhancedMessage = "Regarding {$contextEntity}: {$message}";
+            }
+
+            // If we have conversation context, append it as additional context for RAG
+            if ($conversationContext) {
+                $enhancedMessage = "{$conversationContext}\nCurrent question: {$enhancedMessage}";
+            }
+
+            Log::channel('ai-engine')->info('Enhanced follow-up query with context', [
+                'original' => $message,
+                'enhanced' => substr($enhancedMessage, 0, 200) . (strlen($enhancedMessage) > 200 ? '...' : ''),
+                'context_entity' => $contextEntity,
+                'has_conversation_context' => !empty($conversationContext),
+            ]);
+        }
+
         Log::channel('ai-engine')->info('Searching knowledge base', [
-            'query' => $message,
+            'query' => $enhancedMessage,
+            'original_query' => $message,
             'session_id' => $context->sessionId,
             'user_id' => $context->userId,
             'using_autonomous_agent' => $this->autonomousAgent !== null,
+            'is_follow_up' => $isFollowUp,
+            'context_entity' => $contextEntity,
         ]);
 
         $ragCollections = $options['rag_collections'] ?? [];
@@ -71,12 +116,23 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
         if ($this->autonomousAgent) {
             $conversationHistory = $context->conversationHistory ?? [];
 
+            $agentOptions = array_merge($options, [
+                'rag_collections' => $ragCollections,
+                'context_entity' => $contextEntity,
+                'is_follow_up' => $isFollowUp,
+            ]);
+            
+            Log::channel('ai-engine')->info('Passing options to AutonomousRAGAgent', [
+                'has_last_entity_list' => isset($agentOptions['last_entity_list']),
+                'last_entity_list_node' => $agentOptions['last_entity_list']['node'] ?? null,
+            ]);
+            
             $result = $this->autonomousAgent->process(
-                $message,
+                $enhancedMessage, // Use enhanced message with context for follow-ups
                 $context->sessionId,
                 $context->userId,
                 $conversationHistory,
-                array_merge($options, ['rag_collections' => $ragCollections])
+                $agentOptions
             );
 
             if ($result['success'] ?? false) {
@@ -87,14 +143,55 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
                     'fast_path' => $result['fast_path'] ?? false,
                 ]);
 
+                // Store metadata BEFORE creating response to ensure it's saved
+                $context->metadata['tool_used'] = $result['tool'] ?? 'unknown';
+                $context->metadata['fast_path'] = $result['fast_path'] ?? false;
+                
+                Log::channel('ai-engine')->info('AutonomousRAGAgent result keys', [
+                    'keys' => array_keys($result),
+                    'has_entity_ids' => isset($result['entity_ids']),
+                    'has_node' => isset($result['node']),
+                    'tool' => $result['tool'] ?? 'unknown',
+                    'metadata_keys' => isset($result['metadata']) ? array_keys($result['metadata']) : [],
+                ]);
+
+                // Store entity IDs and data for follow-up selections
+                if (isset($result['entity_ids']) && !empty($result['entity_ids'])) {
+                    $context->metadata['last_entity_list'] = [
+                        'entity_type' => $result['entity_type'] ?? 'item',
+                        'entity_ids' => $result['entity_ids'],
+                        'entity_data' => $result['entity_data'] ?? [], // Full entity data for selection
+                        'node' => $result['node'] ?? null,
+                        'timestamp' => now()->timestamp,
+                    ];
+
+                    Log::channel('ai-engine')->info('Stored entity list for follow-up selections', [
+                        'entity_type' => $result['entity_type'] ?? 'item',
+                        'count' => count($result['entity_ids']),
+                        'entity_ids' => $result['entity_ids'],
+                        'has_entity_data' => !empty($result['entity_data']),
+                    ]);
+                }
+
+                $context->addAssistantMessage($responseText);
+
                 $response = AgentResponse::conversational(
                     message: $responseText,
                     context: $context
                 );
 
-                $context->metadata['tool_used'] = $result['tool'] ?? 'unknown';
-                $context->metadata['fast_path'] = $result['fast_path'] ?? false;
-                $context->addAssistantMessage($responseText);
+                // Add suggested actions if provided by the tool
+                if (isset($result['suggested_actions']) && is_array($result['suggested_actions'])) {
+                    foreach ($result['suggested_actions'] as $action) {
+                        $response->addAction([
+                            'type' => 'quick_reply',
+                            'label' => $action['label'] ?? 'Action',
+                            'data' => [
+                                'reply' => $action['description'] ?? $action['label'] ?? 'Perform action',
+                            ],
+                        ]);
+                    }
+                }
 
                 return $response;
             }
@@ -107,14 +204,15 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
 
         // LEGACY PATH: Use IntelligentRAGService directly
         // FAST PATH: For aggregate queries, use smart aggregate directly
-        if ($this->isAggregateQuery($message) && !empty($ragCollections)) {
-            $aggregateData = $this->rag->getSmartAggregateData($ragCollections, $message, $context->userId);
+        if ($this->isAggregateQuery($enhancedMessage) && !empty($ragCollections)) {
+            $aggregateData = $this->rag->getSmartAggregateData($ragCollections, $enhancedMessage, $context->userId);
 
             if (!empty($aggregateData)) {
                 $responseText = $this->formatAggregateResponse($aggregateData);
 
                 Log::channel('ai-engine')->info('KnowledgeSearchHandler: Fast aggregate path', [
                     'collections' => array_keys($aggregateData),
+                    'is_follow_up' => $isFollowUp,
                 ]);
 
                 $response = AgentResponse::conversational(
@@ -123,6 +221,7 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
                 );
                 $context->metadata['fast_path'] = true;
                 $context->metadata['aggregate_data'] = $aggregateData;
+                $context->metadata['is_follow_up'] = $isFollowUp;
                 $context->addAssistantMessage($responseText);
                 return $response;
             }
@@ -135,10 +234,12 @@ class KnowledgeSearchHandler implements MessageHandlerInterface
             'model' => $options['model'] ?? 'gpt-4o-mini',
             'max_tokens' => 1000,
             'search_instructions' => $options['search_instructions'] ?? null,
+            'context_entity' => $contextEntity,
+            'is_follow_up' => $isFollowUp,
         ];
 
         $aiResponse = $this->rag->processMessage(
-            $message,
+            $enhancedMessage, // Use enhanced message with context
             $context->sessionId,
             $ragCollections,
             $conversationHistory,

@@ -38,7 +38,7 @@ class AIEngineManager
     public function engine(string $engine): EngineBuilder
     {
         $engineEnum = EngineEnum::fromSlug($engine);
-        
+
         return new EngineBuilder(
             $engineEnum,
             $this,
@@ -56,7 +56,7 @@ class AIEngineManager
     {
         $entityEnum = EntityEnum::fromSlug($model);
         $engineEnum = $entityEnum->engine();
-        
+
         return $this->engine($engineEnum->value)->model($model);
     }
 
@@ -109,7 +109,7 @@ class AIEngineManager
 
         if (!isset($this->drivers[$driverKey])) {
             $driverClass = $engine->driverClass();
-            
+
             if (!class_exists($driverClass)) {
                 throw new EngineNotSupportedException("Engine driver {$driverClass} not found");
             }
@@ -145,7 +145,7 @@ class AIEngineManager
 
             // Get driver and process request
             $driver = $this->getEngineDriver($request->engine);
-            
+
             $response = match ($request->getContentType()) {
                 'text' => $driver->generateText($request),
                 'image' => $driver->generateImage($request),
@@ -177,7 +177,7 @@ class AIEngineManager
 
         } catch (\Exception $e) {
             $latency = (microtime(true) - $startTime) * 1000;
-            
+
             $errorResponse = AIResponse::error(
                 $e->getMessage(),
                 $request->engine,
@@ -198,13 +198,13 @@ class AIEngineManager
         try {
             // Check rate limits and credits (same as regular request)
             $this->rateLimitManager->checkRateLimit($request->engine, $request->userId);
-            
+
             if ($this->shouldProcessCredits() && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
                 throw new \LaravelAIEngine\Exceptions\InsufficientCreditsException();
             }
 
             $driver = $this->getEngineDriver($request->engine);
-            
+
             if (!$driver->supports('streaming')) {
                 throw new \InvalidArgumentException("Engine {$request->engine->value} does not support streaming");
             }
@@ -268,7 +268,7 @@ class AIEngineManager
         foreach ($operations as $operation) {
             $engine = EngineEnum::fromSlug($operation['engine']);
             $model = EntityEnum::fromSlug($operation['model']);
-            
+
             $request = AIRequest::make(
                 $operation['prompt'] ?? '',
                 $engine,
@@ -312,8 +312,8 @@ class AIEngineManager
     private function isModelEnabled(EntityEnum $model): bool
     {
         $engineConfig = config("ai-engine.engines.{$model->engine()->value}");
-        return $engineConfig && 
-               isset($engineConfig['models'][$model->value]) && 
+        return $engineConfig &&
+               isset($engineConfig['models'][$model->value]) &&
                ($engineConfig['models'][$model->value]['enabled'] ?? false);
     }
 
@@ -323,7 +323,7 @@ class AIEngineManager
     private function getEngineConfig(EngineEnum $engine): array
     {
         $config = config("ai-engine.engines.{$engine->value}", []);
-        
+
         if (empty($config)) {
             throw new EngineNotSupportedException("Engine {$engine->value} is not configured");
         }
@@ -358,11 +358,11 @@ class AIEngineManager
         if (!$this->memoryManager) {
             $this->memoryManager = $this->app->make(MemoryManager::class);
         }
-        
+
         if ($driver) {
             $this->memoryManager->driver($driver);
         }
-        
+
         return $this->memoryManager;
     }
 
@@ -398,7 +398,7 @@ class AIEngineManager
         if (!$this->actionManager) {
             $this->actionManager = $this->app->make(ActionManager::class);
         }
-        
+
         return $this->actionManager->executeAction($action, $payload);
     }
 
@@ -426,7 +426,7 @@ class AIEngineManager
         if (!$this->actionManager) {
             $this->actionManager = $this->app->make(ActionManager::class);
         }
-        
+
         return $this->actionManager->getSupportedActionTypes();
     }
 
@@ -438,7 +438,7 @@ class AIEngineManager
         if (!$this->actionManager) {
             $this->actionManager = $this->app->make(ActionManager::class);
         }
-        
+
         return $this->actionManager->validateAction($action, $payload);
     }
 
@@ -452,7 +452,7 @@ class AIEngineManager
                 ? $this->app->make(WebSocketManager::class)
                 : null;
         }
-        
+
         if ($this->webSocketManager) {
             $this->webSocketManager->streamResponse($sessionId, $generator, $options);
         } else {
@@ -473,7 +473,7 @@ class AIEngineManager
                 ? $this->app->make(WebSocketManager::class)
                 : null;
         }
-        
+
         if ($this->webSocketManager) {
             $this->webSocketManager->streamWithActions($sessionId, $generator, $actions, $options);
         }
@@ -487,7 +487,7 @@ class AIEngineManager
         if (!$this->webSocketManager) {
             return [];
         }
-        
+
         return $this->webSocketManager->getStats();
     }
 

@@ -597,6 +597,9 @@ class NodeApiController extends Controller
                 'workflow_completed' => $fullMetadata['workflow_completed'] ?? false,
                 'current_step' => $fullMetadata['current_step'] ?? null,
                 'agent_strategy' => $fullMetadata['agent_strategy'] ?? null,
+                // Include entity tracking for follow-up selections from master node
+                'entity_ids' => $fullMetadata['entity_ids'] ?? null,
+                'entity_type' => $fullMetadata['entity_type'] ?? null,
             ];
 
             // Get total accumulated credits from all AI calls during this request

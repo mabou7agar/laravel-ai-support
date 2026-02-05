@@ -29,7 +29,7 @@ class SendMessageDTO
             'memory' => $this->memory,
             'actions' => $this->actions,
             'streaming' => $this->streaming,
-            'user_id' => $this->userId,
+            'user_id' => auth()->user()->id ?? $this->userId,
             'intelligent_rag' => $this->intelligentRag,
             'force_rag' => $this->forceRag,
             'rag_collections' => $this->ragCollections,
