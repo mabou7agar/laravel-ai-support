@@ -52,6 +52,7 @@ class AIEngineService
     {
         $startTime = microtime(true);
         $requestId = uniqid('ai_req_');
+        $originalEngine = $request->engine;
 
         // Auto-detect authenticated user if userId not provided
         // IMPORTANT: withUserId returns a NEW immutable request, so we must reassign
@@ -75,110 +76,181 @@ class AIEngineService
             ]);
         }
 
-        try {
-            // Check credits before processing (if enabled)
-            // Credits are only managed on the master node to avoid double-deduction
-            $creditsEnabled = config('ai-engine.credits.enabled', false) && $this->shouldProcessCredits();
+        // Check credits before processing (if enabled)
+        // Credits are only managed on the master node to avoid double-deduction
+        $creditsEnabled = config('ai-engine.credits.enabled', false) && $this->shouldProcessCredits();
 
-            if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
-                throw new InsufficientCreditsException('Insufficient credits for this request');
-            }
+        if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
+            throw new InsufficientCreditsException('Insufficient credits for this request');
+        }
 
-            // Dispatch request started event
-            Event::dispatch(new AIRequestStarted(
-                request: $request,
-                requestId: $requestId,
-                metadata: $request->metadata
-            ));
+        // Dispatch request started event
+        Event::dispatch(new AIRequestStarted(
+            request: $request,
+            requestId: $requestId,
+            metadata: $request->metadata
+        ));
 
-            // Get the appropriate driver
-            $driver = $this->getDriver($request->engine);
+        // Try primary engine and failover engines
+        $response = $this->generateWithFailover($request, $requestId, $debugMode);
 
-            // Validate the request
-            $driver->validateRequest($request);
+        // Calculate credits for this request (always, for accumulation)
+        $creditsUsed = $this->creditManager->calculateCredits($request);
 
-            // Generate the response
-            $response = $driver->generate($request);
+        // Always accumulate credits (for cross-node tracking)
+        CreditManager::accumulate($creditsUsed);
 
-            // Calculate credits for this request (always, for accumulation)
-            $creditsUsed = $this->creditManager->calculateCredits($request);
-            
-            // Always accumulate credits (for cross-node tracking)
-            CreditManager::accumulate($creditsUsed);
-            
-            // Deduct credits if enabled on this node (master only)
-            if ($creditsEnabled && $response->success && $request->userId) {
-                $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
-            }
-            
-            // Add credits to response for tracking
-            if ($response->success) {
-                $response = $response->withUsage(
-                    tokensUsed: $response->tokensUsed,
-                    creditsUsed: $creditsUsed
-                );
-            }
+        // Deduct credits if enabled on this node (master only)
+        if ($creditsEnabled && $response->success && $request->userId) {
+            $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
+        }
 
-            $processingTime = microtime(true) - $startTime;
-
-            // Debug mode: Log response and timing
-            if ($debugMode) {
-                \Log::channel('ai-engine')->info('✅ AI Response Debug', [
-                    'request_id' => $requestId,
-                    'execution_time' => round($processingTime, 3) . 's',
-                    'response_length' => strlen($response->getContent()),
-                    'response_preview' => substr($response->getContent(), 0, 200),
-                    'success' => $response->success,
-                    'tokens_used' => $response->metadata['usage'] ?? null,
-                ]);
-            }
-
-            // Dispatch request completed event
-            Event::dispatch(new AIRequestCompleted(
-                request: $request,
-                response: $response,
-                requestId: $requestId,
-                executionTime: $processingTime,
-                metadata: array_merge($request->metadata, $response->metadata)
-            ));
-
-            return $response;
-
-        } catch (InsufficientCreditsException $e) {
-            // Re-throw InsufficientCreditsException so caller can handle it
-            throw $e;
-
-        } catch (\Exception $e) {
-            $processingTime = microtime(true) - $startTime;
-
-            // Create error response
-            $errorResponse = new AIResponse(
-                content: '',
-                engine: $request->engine,
-                model: $request->model,
-                metadata: [],
-                success: false,
-                error: $e->getMessage()
-            );
-
-            // Dispatch error event
-            Event::dispatch(new AIRequestCompleted(
-                request: $request,
-                response: $errorResponse,
-                requestId: $requestId,
-                executionTime: $processingTime,
-                metadata: $request->metadata
-            ));
-
-            return new AIResponse(
-                content: '',
-                engine: $request->engine,
-                model: $request->model,
-                metadata: [],
-                success: false,
-                error: $e->getMessage()
+        // Add credits to response for tracking
+        if ($response->success) {
+            $response = $response->withUsage(
+                tokensUsed: $response->tokensUsed,
+                creditsUsed: $creditsUsed
             );
         }
+
+        $processingTime = microtime(true) - $startTime;
+
+        // Debug mode: Log response and timing
+        if ($debugMode) {
+            \Log::channel('ai-engine')->info('✅ AI Response Debug', [
+                'request_id' => $requestId,
+                'execution_time' => round($processingTime, 3) . 's',
+                'response_length' => strlen($response->getContent()),
+                'response_preview' => substr($response->getContent(), 0, 200),
+                'success' => $response->success,
+                'tokens_used' => $response->metadata['usage'] ?? null,
+                'failover_used' => $response->engine !== $originalEngine,
+            ]);
+        }
+
+        // Dispatch request completed event
+        Event::dispatch(new AIRequestCompleted(
+            request: $request,
+            response: $response,
+            requestId: $requestId,
+            executionTime: $processingTime,
+            metadata: array_merge($request->metadata, $response->metadata)
+        ));
+
+        return $response;
+    }
+
+    /**
+     * Generate AI content with automatic failover to alternative engines
+     */
+    protected function generateWithFailover(AIRequest $request, string $requestId, bool $debugMode): AIResponse
+    {
+        $originalEngine = $request->engine;
+        $lastException = null;
+        $attemptedEngines = [];
+
+        // Get failover engines from config
+        $fallbackEngines = config("ai-engine.error_handling.fallback_engines.{$originalEngine->value}", []);
+        $enginesToTry = array_merge([$originalEngine->value], $fallbackEngines);
+
+        foreach ($enginesToTry as $engineName) {
+            try {
+                $engine = EngineEnum::from($engineName);
+                $attemptedEngines[] = $engineName;
+
+                // Update request with new engine if different from original
+                if ($engine !== $originalEngine) {
+                    if ($debugMode) {
+                        \Log::channel('ai-engine')->info('🔄 Attempting failover', [
+                            'request_id' => $requestId,
+                            'from_engine' => $originalEngine->value,
+                            'to_engine' => $engine->value,
+                        ]);
+                    }
+
+                    // Create new request with failover engine
+                    $request = new AIRequest(
+                        prompt:       $request->prompt,
+                        engine:       $engine,
+                        model:        $request->model,
+                        parameters:   $request->parameters,
+                        userId:       $request->userId,
+                        systemPrompt: $request->systemPrompt,
+                        maxTokens:    $request->maxTokens,
+                        temperature:  $request->temperature,
+                        metadata:     array_merge($request->metadata, [
+                            'failover_from' => $originalEngine->value,
+                            'failover_to' => $engine->value,
+                        ])
+                    );
+                }
+
+                // Get the appropriate driver
+                $driver = $this->getDriver($request->engine);
+
+                // Validate the request
+                $driver->validateRequest($request);
+
+                // Generate the response
+                $response = $driver->generate($request);
+
+                // If successful, return the response
+                if ($response->success) {
+                    if ($engine !== $originalEngine && $debugMode) {
+                        \Log::channel('ai-engine')->info('✅ Failover successful', [
+                            'request_id' => $requestId,
+                            'original_engine' => $originalEngine->value,
+                            'successful_engine' => $engine->value,
+                        ]);
+                    }
+                    return $response;
+                }
+
+                // If response indicates failure, try next engine
+                $lastException = new \Exception($response->error ?? 'Unknown error');
+
+            } catch (InsufficientCreditsException $e) {
+                // Re-throw InsufficientCreditsException immediately - don't failover
+                throw $e;
+
+            } catch (\Exception $e) {
+                $lastException = $e;
+
+                if ($debugMode) {
+                    \Log::channel('ai-engine')->warning('❌ Engine failed', [
+                        'request_id' => $requestId,
+                        'engine' => $engineName,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                // Continue to next engine
+                continue;
+            }
+        }
+
+        // All engines failed, return error response
+        $errorMessage = $lastException ? $lastException->getMessage() : 'All engines failed';
+
+        if ($debugMode) {
+            \Log::channel('ai-engine')->error('❌ All failover attempts exhausted', [
+                'request_id' => $requestId,
+                'attempted_engines' => $attemptedEngines,
+                'error' => $errorMessage,
+            ]);
+        }
+
+        return new AIResponse(
+            content:  '',
+            engine:   $originalEngine,
+            model:    $request->model,
+            metadata: [
+                'attempted_engines' => $attemptedEngines,
+                'failover_exhausted' => true,
+            ],
+            error:    $errorMessage,
+            success:  false
+        );
     }
 
     /**
@@ -231,6 +303,8 @@ class AIEngineService
      */
     public function stream(AIRequest $request): \Generator
     {
+        $originalEngine = $request->engine;
+
         // Auto-detect authenticated user if userId not provided
         if (!$request->userId && auth()->check()) {
             $request = $request->withUserId($this->resolveUserId());
@@ -243,19 +317,67 @@ class AIEngineService
             throw new InsufficientCreditsException('Insufficient credits for this request');
         }
 
-        // Get the appropriate driver
-        $driver = $this->getDriver($request->engine);
+        // Get failover engines from config
+        $fallbackEngines = config("ai-engine.error_handling.fallback_engines.{$originalEngine->value}", []);
+        $enginesToTry = array_merge([$originalEngine->value], $fallbackEngines);
+        $lastException = null;
 
-        // Validate the request
-        $driver->validateRequest($request);
+        foreach ($enginesToTry as $engineName) {
+            try {
+                $engine = EngineEnum::from($engineName);
 
-        // Stream the response
-        yield from $driver->stream($request);
+                // Update request with new engine if different from original
+                if ($engine !== $originalEngine) {
+                    $request = new AIRequest(
+                        prompt: $request->prompt,
+                        engine: $engine,
+                        model: $request->model,
+                        systemPrompt: $request->systemPrompt,
+                        temperature: $request->temperature,
+                        maxTokens: $request->maxTokens,
+                        userId: $request->userId,
+                        parameters: $request->parameters,
+                        metadata: array_merge($request->metadata, [
+                            'failover_from' => $originalEngine->value,
+                            'failover_to' => $engine->value,
+                        ])
+                    );
+                }
 
-        // Deduct credits after streaming (if enabled)
-        if ($creditsEnabled && $request->userId) {
-            $this->creditManager->deductCredits($request->userId, $request);
+                // Get the appropriate driver
+                $driver = $this->getDriver($request->engine);
+
+                // Validate the request
+                $driver->validateRequest($request);
+
+                // Stream the response
+                yield from $driver->stream($request);
+
+                // Deduct credits after streaming (if enabled)
+                if ($creditsEnabled && $request->userId) {
+                    $this->creditManager->deductCredits($request->userId, $request);
+                }
+
+                // If we got here, streaming was successful
+                return;
+
+            } catch (InsufficientCreditsException $e) {
+                // Re-throw InsufficientCreditsException immediately - don't failover
+                throw $e;
+
+            } catch (\Exception $e) {
+                $lastException = $e;
+                // Continue to next engine
+                continue;
+            }
         }
+
+        // All engines failed
+        if ($lastException) {
+            throw $lastException;
+        }
+
+        throw new \Exception('All failover engines failed for streaming request');
     }
 
     /**

@@ -224,11 +224,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
              );
 
         } catch (\Exception $e) {
-            return AIResponse::error(
-                'OpenAI image generation error: ' . $e->getMessage(),
-                $request->getEngine(),
-                $request->getModel()
-            );
+            throw new \RuntimeException('OpenAI image generation error: ' . $e->getMessage(), 0, $e);
         }
     }
 
@@ -260,11 +256,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
             );
 
         } catch (\Exception $e) {
-            return AIResponse::error(
-                'OpenAI audio transcription error: ' . $e->getMessage(),
-                $request->getEngine(),
-                $request->getModel()
-            );
+            throw new \RuntimeException('OpenAI audio transcription error: ' . $e->getMessage(), 0, $e);
         }
     }
 
@@ -295,11 +287,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
             ]);
 
         } catch (\Exception $e) {
-            return AIResponse::error(
-                'OpenAI embeddings error: ' . $e->getMessage(),
-                $request->getEngine(),
-                $request->getModel()
-            );
+            throw new \RuntimeException('OpenAI embeddings error: ' . $e->getMessage(), 0, $e);
         }
     }
 

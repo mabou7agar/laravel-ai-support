@@ -310,6 +310,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
      * @param AIRequest $request
      * @param string $context Additional context (e.g., 'text generation', 'image generation')
      * @return AIResponse
+     * @throws \Exception Re-throws the exception to allow failover mechanism to catch it
      */
     protected function handleApiError(\Exception $exception, AIRequest $request, string $context = 'API request'): AIResponse
     {
@@ -325,11 +326,9 @@ abstract class BaseEngineDriver implements EngineDriverInterface
             'trace' => config('app.debug') ? $exception->getTraceAsString() : null,
         ]);
 
-        return AIResponse::error(
-            $errorMessage,
-            $request->getEngine(),
-            $request->getModel()
-        );
+        // Re-throw the exception so failover mechanism can catch it
+        // This allows AIEngineService to try alternative engines
+        throw new \RuntimeException($errorMessage, 0, $exception);
     }
 
     /**

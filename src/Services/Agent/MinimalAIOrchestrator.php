@@ -522,45 +522,67 @@ PROMPT;
             'message' => substr($message, 0, 100),
         ]);
         
-        // Since collectors may be in remote nodes, we need to route the request there
-        // Check if this collector exists in any remote node's autonomous_collectors
-        $nodeRegistry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
-        $activeNodes = $nodeRegistry->getActiveNodes();
+        // Get discovered collectors from discovery service (works on all nodes, not just master)
+        // Discovery service caches collector metadata including node information
+        $discoveryService = app(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class);
+        $discoveredCollectors = $discoveryService->discoverCollectors(useCache: true, includeRemote: true);
         
-        // Find the node that has this specific collector
-        foreach ($activeNodes as $node) {
-            $autonomousCollectors = $node['autonomous_collectors'] ?? [];
+        // Check if this collector exists and if it's from a remote node
+        if (isset($discoveredCollectors[$collectorName])) {
+            $collectorInfo = $discoveredCollectors[$collectorName];
             
-            // Check if this node has the requested collector
-            // Collectors are stored as array of objects with 'name' field
-            if (is_array($autonomousCollectors)) {
-                foreach ($autonomousCollectors as $collector) {
-                    if (isset($collector['name']) && $collector['name'] === $collectorName) {
-                        // Route to node that has this collector
-                        Log::channel('ai-engine')->info('Routing collector request to node', [
-                            'collector_name' => $collectorName,
-                            'node' => $node['slug'],
-                            'collector_goal' => $collector['goal'] ?? '',
-                        ]);
-                        
-                        return $this->executeRouteToNode(
-                            ['resource_name' => $node['slug']],
-                            $message,
-                            $context,
-                            $options
-                        );
-                    }
+            // If collector is from a remote node, route to that node
+            if (($collectorInfo['source'] ?? 'local') === 'remote' && !empty($collectorInfo['node_slug'])) {
+                Log::channel('ai-engine')->info('Routing collector request to node', [
+                    'collector_name' => $collectorName,
+                    'node' => $collectorInfo['node_slug'],
+                    'node_name' => $collectorInfo['node_name'] ?? '',
+                ]);
+                
+                return $this->executeRouteToNode(
+                    ['resource_name' => $collectorInfo['node_slug']],
+                    $message,
+                    $context,
+                    $options
+                );
+            }
+            
+            // Collector is local - try to instantiate it from the class
+            if (!empty($collectorInfo['class']) && class_exists($collectorInfo['class'])) {
+                $configClass = $collectorInfo['class'];
+                
+                // Create config instance
+                if (method_exists($configClass, 'create')) {
+                    $config = $configClass::create();
+                } else {
+                    $config = new $configClass();
                 }
+                
+                Log::channel('ai-engine')->info('Starting local autonomous collector', [
+                    'collector_name' => $collectorName,
+                    'class' => $configClass,
+                ]);
+                
+                $handler = app(\LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler::class);
+                
+                return $handler->handle($message, $context, array_merge($options, [
+                    'action' => 'start_autonomous_collector',
+                    'collector_match' => [
+                        'name' => $collectorName,
+                        'config' => $config,
+                        'description' => $collectorInfo['description'] ?? '',
+                    ],
+                ]));
             }
         }
         
-        // If no remote node found, try local registry
+        // Collector not found in discovery
         $match = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message);
         
         if (!$match) {
-            Log::channel('ai-engine')->error('Collector not found and no remote node available', [
+            Log::channel('ai-engine')->error('Collector not found', [
                 'collector_name' => $collectorName,
-                'available_nodes' => $activeNodes->pluck('slug')->toArray(),
+                'discovered_collectors' => array_keys($discoveredCollectors),
             ]);
             
             return AgentResponse::failure(

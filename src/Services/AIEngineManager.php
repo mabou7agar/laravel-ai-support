@@ -122,72 +122,136 @@ class AIEngineManager
     }
 
     /**
-     * Process AI request
+     * Process AI request with automatic failover
      */
     public function processRequest(AIRequest $request): AIResponse
     {
         $startTime = microtime(true);
+        $originalEngine = $request->engine;
 
-        try {
-            // Check rate limits
-            $this->rateLimitManager->checkRateLimit($request->engine, $request->userId);
+        // Check rate limits
+        $this->rateLimitManager->checkRateLimit($request->engine, $request->userId);
 
-            // Check credits (only on master node to avoid double-deduction)
-            if ($this->shouldProcessCredits() && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
-                throw new \LaravelAIEngine\Exceptions\InsufficientCreditsException();
-            }
-
-            // Check cache
-            if ($cachedResponse = $this->cacheManager->get($request)) {
-                $this->analyticsManager->recordCacheHit($request);
-                return $cachedResponse->markAsCached();
-            }
-
-            // Get driver and process request
-            $driver = $this->getEngineDriver($request->engine);
-
-            $response = match ($request->getContentType()) {
-                'text' => $driver->generateText($request),
-                'image' => $driver->generateImage($request),
-                'video' => $driver->generateVideo($request),
-                'audio' => $driver->generateAudio($request),
-                default => throw new \InvalidArgumentException("Unsupported content type: {$request->getContentType()}")
-            };
-
-            // Calculate latency
-            $latency = (microtime(true) - $startTime) * 1000; // Convert to milliseconds
-            $response = $response->withUsage(latency: $latency);
-
-            // Deduct credits (only on master node to avoid double-deduction)
-            if ($this->shouldProcessCredits() && $request->userId && $response->isSuccess()) {
-                $creditsUsed = $response->creditsUsed ?? $this->creditManager->calculateCredits($request);
-                $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
-                $response = $response->withUsage(creditsUsed: $creditsUsed);
-            }
-
-            // Cache response
-            if ($response->isSuccess()) {
-                $this->cacheManager->put($request, $response);
-            }
-
-            // Record analytics
-            $this->analyticsManager->recordRequest($request, $response);
-
-            return $response;
-
-        } catch (\Exception $e) {
-            $latency = (microtime(true) - $startTime) * 1000;
-
-            $errorResponse = AIResponse::error(
-                $e->getMessage(),
-                $request->engine,
-                $request->model
-            )->withUsage(latency: $latency);
-
-            $this->analyticsManager->recordError($request, $e);
-
-            return $errorResponse;
+        // Check credits (only on master node to avoid double-deduction)
+        if ($this->shouldProcessCredits() && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
+            throw new \LaravelAIEngine\Exceptions\InsufficientCreditsException();
         }
+
+        // Check cache
+        if ($cachedResponse = $this->cacheManager->get($request)) {
+            $this->analyticsManager->recordCacheHit($request);
+            return $cachedResponse->markAsCached();
+        }
+
+        // Try primary engine and failover engines
+        $response = $this->processRequestWithFailover($request, $originalEngine);
+
+        // Calculate latency
+        $latency = (microtime(true) - $startTime) * 1000; // Convert to milliseconds
+        $response = $response->withUsage(latency: $latency);
+
+        // Deduct credits (only on master node to avoid double-deduction)
+        if ($this->shouldProcessCredits() && $request->userId && $response->isSuccess()) {
+            $creditsUsed = $response->creditsUsed ?? $this->creditManager->calculateCredits($request);
+            $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
+            $response = $response->withUsage(creditsUsed: $creditsUsed);
+        }
+
+        // Cache response
+        if ($response->isSuccess()) {
+            $this->cacheManager->put($request, $response);
+        }
+
+        // Record analytics
+        $this->analyticsManager->recordRequest($request, $response);
+
+        return $response;
+    }
+
+    /**
+     * Process request with automatic failover to alternative engines
+     */
+    protected function processRequestWithFailover(AIRequest $request, EngineEnum $originalEngine): AIResponse
+    {
+        $lastException = null;
+        $attemptedEngines = [];
+
+        // Get failover engines from config
+        $fallbackEngines = config("ai-engine.error_handling.fallback_engines.{$originalEngine->value}", []);
+        $enginesToTry = array_merge([$originalEngine->value], $fallbackEngines);
+
+        foreach ($enginesToTry as $engineName) {
+            try {
+                $engine = EngineEnum::from($engineName);
+                $attemptedEngines[] = $engineName;
+
+                // Update request with new engine if different from original
+                if ($engine !== $originalEngine) {
+                    $request = new AIRequest(
+                        prompt: $request->getPrompt(),
+                        engine: $engine,
+                        model: $request->getModel(),
+                        parameters: $request->getParameters(),
+                        userId: $request->getUserId(),
+                        conversationId: $request->getConversationId(),
+                        context: $request->getContext(),
+                        files: $request->getFiles(),
+                        stream: $request->isStream(),
+                        systemPrompt: $request->getSystemPrompt(),
+                        messages: $request->getMessages(),
+                        maxTokens: $request->getMaxTokens(),
+                        temperature: $request->getTemperature(),
+                        seed: $request->getSeed(),
+                        metadata: array_merge($request->getMetadata(), [
+                            'failover_from' => $originalEngine->value,
+                            'failover_to' => $engine->value,
+                        ]),
+                        functions: $request->getFunctions(),
+                        functionCall: $request->getFunctionCall()
+                    );
+                }
+
+                // Get driver and process request
+                $driver = $this->getEngineDriver($request->engine);
+
+                $response = match ($request->getContentType()) {
+                    'text' => $driver->generateText($request),
+                    'image' => $driver->generateImage($request),
+                    'video' => $driver->generateVideo($request),
+                    'audio' => $driver->generateAudio($request),
+                    default => throw new \InvalidArgumentException("Unsupported content type: {$request->getContentType()}")
+                };
+
+                // If successful, return the response
+                if ($response->isSuccess()) {
+                    return $response;
+                }
+
+                // If response indicates failure, try next engine
+                $lastException = new \Exception($response->getError() ?? 'Unknown error');
+
+            } catch (\LaravelAIEngine\Exceptions\InsufficientCreditsException $e) {
+                // Re-throw InsufficientCreditsException immediately - don't failover
+                throw $e;
+
+            } catch (\Exception $e) {
+                $lastException = $e;
+                // Continue to next engine
+                continue;
+            }
+        }
+
+        // All engines failed, return error response
+        $errorMessage = $lastException ? $lastException->getMessage() : 'All engines failed';
+
+        return AIResponse::error(
+            $errorMessage,
+            $originalEngine,
+            $request->getModel()
+        )->withMetadata([
+            'attempted_engines' => $attemptedEngines,
+            'failover_exhausted' => true,
+        ]);
     }
 
     /**
