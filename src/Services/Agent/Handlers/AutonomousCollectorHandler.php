@@ -227,6 +227,20 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         // Build system prompt
         $systemPrompt = $config->buildSystemPrompt();
         
+        // Add prior conversation context from before collector started
+        // This allows the collector to see what was discussed earlier (e.g., which invoice was shown)
+        $priorHistory = $context->getConversationHistory();
+        if (!empty($priorHistory)) {
+            $systemPrompt .= "\n\n## Prior Conversation Context\n";
+            $systemPrompt .= "The following conversation happened before this task started:\n";
+            foreach (array_slice($priorHistory, -10) as $msg) {
+                $role = ucfirst($msg['role'] ?? 'unknown');
+                $content = $msg['content'] ?? '';
+                $systemPrompt .= "**{$role}:** " . substr($content, 0, 500) . "\n";
+            }
+            $systemPrompt .= "\nUse this context to understand what the user is referring to (e.g., invoice IDs, customer names, etc.).\n";
+        }
+        
         // Add tool results context
         if (!empty($toolResults)) {
             $systemPrompt .= "\n\n## Recent Tool Results\n";
