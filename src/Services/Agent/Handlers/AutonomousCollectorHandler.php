@@ -229,7 +229,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         
         // Add prior conversation context from before collector started
         // This allows the collector to see what was discussed earlier (e.g., which invoice was shown)
-        $priorHistory = $context->getConversationHistory();
+        $priorHistory = $context->conversationHistory;
         if (!empty($priorHistory)) {
             $systemPrompt .= "\n\n## Prior Conversation Context\n";
             $systemPrompt .= "The following conversation happened before this task started:\n";
