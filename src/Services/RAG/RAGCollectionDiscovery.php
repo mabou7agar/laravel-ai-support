@@ -23,7 +23,7 @@ class RAGCollectionDiscovery
 
     public function __construct()
     {
-        $this->cacheTtl = config('ai-engine.intelligent_rag.discovery_cache_ttl', 3600);
+        $this->cacheTtl = config('ai-engine.intelligent_rag.discovery_cache_ttl', 3600); // Default 1 hour
         $this->autoDiscover = config('ai-engine.intelligent_rag.auto_discover', true);
 
         // Lazy load node registry if available
@@ -42,12 +42,12 @@ class RAGCollectionDiscovery
     public function discover(bool $useCache = true, bool $includeFederated = true): array
     {
         // Check cache first
-        //if ($useCache) {
-        //    $cached = Cache::get($this->cacheKey);
-        //    if ($cached !== null) {
-        //        return $cached;
-        //    }
-        //}
+        if ($useCache) {
+            $cached = Cache::get($this->cacheKey);
+            if ($cached !== null) {
+                return $cached;
+            }
+        }
 
         // Get from config first
         $configCollections = config('ai-engine.intelligent_rag.default_collections', []);
@@ -67,7 +67,19 @@ class RAGCollectionDiscovery
         // Discover from remote nodes if enabled
         if ($includeFederated && $this->nodeRegistry && config('ai-engine.nodes.enabled', false)) {
             $federatedCollections = $this->discoverFromNodes();
-            $collections = array_unique(array_merge($collections, $federatedCollections));
+            $collections = array_merge($collections, $federatedCollections);
+            
+            // Deduplicate based on class name (handle both string and array formats)
+            $seen = [];
+            $collections = array_filter($collections, function($item) use (&$seen) {
+                $key = is_array($item) ? ($item['class'] ?? $item['name']) : $item;
+                if (isset($seen[$key])) {
+                    return false;
+                }
+                $seen[$key] = true;
+                return true;
+            });
+            $collections = array_values($collections); // Re-index
         }
 
         // Cache results
@@ -489,6 +501,8 @@ class RAGCollectionDiscovery
     public function clearCache(): void
     {
         Cache::forget($this->cacheKey);
+        Cache::forget('ai_engine:rag_collections_with_descriptions');
+        Log::info('RAG collection discovery cache cleared');
     }
 
     /**

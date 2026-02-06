@@ -54,8 +54,13 @@ class NodeMetadataDiscovery
         
         // Extract entity types from models
         foreach ($models as $model) {
-            $className = class_basename($model);
-            $entities[] = strtolower(Str::snake($className));
+            // Handle new format (array with metadata) or legacy format (class string)
+            if (is_array($model)) {
+                $entities[] = $model['name']; // Already lowercase from discovery
+            } else {
+                $className = class_basename($model);
+                $entities[] = strtolower(Str::snake($className));
+            }
         }
         
         $entities = array_values(array_unique($entities));
@@ -71,7 +76,13 @@ class NodeMetadataDiscovery
         
         // Add search capability if vectorizable models exist
         if (!empty($models)) {
-            $searchableEntities = array_map(fn($m) => strtolower(class_basename($m)), $models);
+            $searchableEntities = array_map(function($m) {
+                // Handle new format (array with metadata) or legacy format (class string)
+                if (is_array($m)) {
+                    return $m['name'];
+                }
+                return strtolower(class_basename($m));
+            }, $models);
             $parts[] = "Supports semantic search across " . $this->formatList($searchableEntities);
         }
         
@@ -135,7 +146,8 @@ class NodeMetadataDiscovery
         ];
         
         foreach ($models as $model) {
-            $modelName = strtolower(class_basename($model));
+            // Handle new format (array with metadata) or legacy format (class string)
+            $modelName = is_array($model) ? $model['name'] : strtolower(class_basename($model));
             if (isset($domainMap[$modelName])) {
                 $domains = array_merge($domains, $domainMap[$modelName]);
             }
@@ -156,8 +168,13 @@ class NodeMetadataDiscovery
         $models = $this->discoverCollections();
         
         foreach ($models as $model) {
-            $modelName = class_basename($model);
-            $dataTypes[] = strtolower(Str::snake($modelName));
+            // Handle new format (array with metadata) or legacy format (class string)
+            if (is_array($model)) {
+                $dataTypes[] = $model['name'];
+            } else {
+                $modelName = class_basename($model);
+                $dataTypes[] = strtolower(Str::snake($modelName));
+            }
         }
         
         return array_values(array_unique(array_merge(
@@ -176,9 +193,15 @@ class NodeMetadataDiscovery
         // Add model names
         $models = $this->discoverCollections();
         foreach ($models as $model) {
-            $modelName = class_basename($model);
-            $keywords[] = strtolower($modelName);
-            $keywords[] = strtolower(Str::plural($modelName));
+            // Handle new format (array with metadata) or legacy format (class string)
+            if (is_array($model)) {
+                $keywords[] = $model['name'];
+                $keywords[] = strtolower(Str::plural($model['name']));
+            } else {
+                $modelName = class_basename($model);
+                $keywords[] = strtolower($modelName);
+                $keywords[] = strtolower(Str::plural($modelName));
+            }
         }
         
         // Add workflow action keywords
@@ -199,31 +222,104 @@ class NodeMetadataDiscovery
     }
 
     /**
-     * Discover vectorizable model collections
+     * Discover vectorizable model collections with metadata
+     * Returns array of collection info for node advertisement
      */
     protected function discoverCollections(): array
     {
         $collections = [];
-        $modelsPath = app_path('Models');
         
-        if (!File::exists($modelsPath)) {
-            return config('ai-engine.nodes.collections', []);
-        }
+        // Get paths from config (supports modular architecture)
+        $discoveryPaths = config('ai-engine.intelligent_rag.discovery_paths', [
+            app_path('Models'),
+        ]);
         
-        $files = File::allFiles($modelsPath);
-        
-        foreach ($files as $file) {
-            $className = $this->getClassFromFile($file->getPathname());
+        foreach ($discoveryPaths as $pathPattern) {
+            // Support glob patterns like 'modules/*/Models'
+            $paths = glob($pathPattern);
+            if (empty($paths)) {
+                $paths = [$pathPattern]; // Not a glob, use as-is
+            }
             
-            if ($className && $this->isVectorizable($className)) {
-                $collections[] = $className;
+            foreach ($paths as $modelsPath) {
+                if (!File::exists($modelsPath)) {
+                    continue;
+                }
+                
+                $files = File::allFiles($modelsPath);
+                
+                foreach ($files as $file) {
+                    $className = $this->getClassFromFile($file->getPathname());
+                    
+                    if ($className && $this->isVectorizable($className)) {
+                        try {
+                            $instance = new $className;
+                            $modelName = class_basename($className);
+                            
+                            // Get description from model if available
+                            $description = method_exists($instance, 'getModelDescription')
+                                ? $instance->getModelDescription()
+                                : "Model for {$modelName} data";
+                            
+                            // Get table name
+                            $table = method_exists($instance, 'getTable')
+                                ? $instance->getTable()
+                                : strtolower(Str::snake(Str::plural($modelName)));
+                            
+                            // Check for CRUD tools
+                            $hasTools = $this->hasModelTools($className);
+                            
+                            $collections[] = [
+                                'name' => strtolower($modelName),
+                                'class' => $className,
+                                'table' => $table,
+                                'description' => $description,
+                                'capabilities' => [
+                                    'db_query' => true,
+                                    'db_count' => true,
+                                    'vector_search' => true,
+                                    'crud' => $hasTools,
+                                ],
+                            ];
+                        } catch (\Exception $e) {
+                            // Skip models that can't be instantiated
+                            continue;
+                        }
+                    }
+                }
             }
         }
         
-        return array_values(array_unique(array_merge(
-            $collections,
-            config('ai-engine.nodes.collections', [])
-        )));
+        return $collections;
+    }
+    
+    /**
+     * Check if model has CRUD tools via AutonomousModelConfig
+     */
+    protected function hasModelTools(string $modelClass): bool
+    {
+        $modelName = class_basename($modelClass);
+        $namespace = substr($modelClass, 0, strrpos($modelClass, '\\'));
+        $baseNamespace = substr($namespace, 0, strpos($namespace, '\\'));
+        
+        $possibleConfigs = [
+            "{$baseNamespace}\\AI\\Configs\\{$modelName}ModelConfig",
+            "App\\AI\\Configs\\{$modelName}ModelConfig",
+        ];
+        
+        foreach ($possibleConfigs as $configClass) {
+            if (class_exists($configClass) && 
+                is_subclass_of($configClass, \LaravelAIEngine\Contracts\AutonomousModelConfig::class)) {
+                try {
+                    $tools = $configClass::getTools();
+                    return !empty($tools);
+                } catch (\Exception $e) {
+                    continue;
+                }
+            }
+        }
+        
+        return false;
     }
 
     /**

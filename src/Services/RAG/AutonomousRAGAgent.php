@@ -44,7 +44,7 @@ class AutonomousRAGAgent
         array $conversationHistory = [],
         array $options = []
     ): array {
-        Log::channel('ai-engine')->info('Autonomus RAG User ID:'.$userId);
+        Log::channel('ai-engine')->info('Autonomus RAG User ID:' . $userId);
         $startTime = microtime(true);
 
         // Build context for AI with available tools and models
@@ -114,13 +114,13 @@ class AutonomousRAGAgent
         try {
             // Build AIRequest with function calling
             $request = new \LaravelAIEngine\DTOs\AIRequest(
-                prompt:       $message,
-                engine:       \LaravelAIEngine\Enums\EngineEnum::from('openai'),
-                model:        \LaravelAIEngine\Enums\EntityEnum::from($model),
-                userId:       $userId,
-                messages:     $messages,
-                metadata:     ['session_id' => $sessionId],
-                functions:    $functions,
+                prompt: $message,
+                engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
+                model: \LaravelAIEngine\Enums\EntityEnum::from($model),
+                userId: $userId,
+                messages: $messages,
+                metadata: ['session_id' => $sessionId],
+                functions: $functions,
                 functionCall: ['name' => 'auto']
             );
 
@@ -327,6 +327,32 @@ class AutonomousRAGAgent
         $models = [];
 
         foreach ($collections as $collection) {
+            // Handle new format (array with metadata) or legacy format (class string)
+            if (is_array($collection)) {
+                // New format: already has metadata from NodeMetadataDiscovery
+                $collectionClass = $collection['class'];
+                $isLocal = class_exists($collectionClass);
+
+                $models[] = [
+                    'name' => $collection['name'],
+                    'class' => $collectionClass,
+                    'table' => $collection['table'] ?? $collection['name'] . 's',
+                    'description' => $collection['description'] ?? "Model for {$collection['name']} data",
+                    'location' => $isLocal ? 'local' : 'remote',
+                    'capabilities' => $collection['capabilities'] ?? [
+                        'db_query' => true,
+                        'db_count' => true,
+                        'vector_search' => false,
+                        'crud' => false,
+                    ],
+                    'schema' => [],
+                    'filter_config' => [],
+                    'tools' => [],
+                ];
+                continue;
+            }
+
+            // Legacy format: class string - need to instantiate and discover
             if (!class_exists($collection)) {
                 continue;
             }
@@ -337,7 +363,7 @@ class AutonomousRAGAgent
 
                 // Check capabilities
                 $hasVectorSearch = method_exists($instance, 'toVector') ||
-                                  in_array('LaravelAIEngine\Traits\Vectorizable', class_uses_recursive($collection));
+                    in_array('LaravelAIEngine\Traits\Vectorizable', class_uses_recursive($collection));
 
                 // Get model schema for AI to understand available fields
                 $schema = method_exists($instance, 'getModelSchema')
@@ -349,6 +375,11 @@ class AutonomousRAGAgent
 
                 // Get CRUD tools from AutonomousModelConfig if available
                 $tools = $this->getToolsForModel($collection);
+
+                // Get description from model if available, otherwise use generic
+                $description = method_exists($instance, 'getModelDescription')
+                    ? $instance->getModelDescription()
+                    : "Model for {$name} data";
 
                 $models[] = [
                     'name' => strtolower($name),
@@ -363,7 +394,7 @@ class AutonomousRAGAgent
                         'vector_search' => $hasVectorSearch, // Only if vectorized
                         'crud' => !empty($tools), // Has CRUD tools
                     ],
-                    'description' => "Model for {$name} data",
+                    'description' => $description,
                 ];
             } catch (\Exception $e) {
                 Log::channel('ai-engine')->warning('Failed to inspect model', [
@@ -388,11 +419,40 @@ class AutonomousRAGAgent
         $nodes = AINode::active()->healthy()->child()->get();
 
         return $nodes->map(function ($node) {
+            // Use rich collection metadata if available (new format)
+            // Otherwise fall back to class names (legacy format)
+            $collections = $node->collections ?? [];
+
+            if (!empty($collections) && is_array($collections)) {
+                $firstItem = reset($collections);
+
+                // Check if it's the new format (array with metadata)
+                if (is_array($firstItem) && isset($firstItem['name'])) {
+                    $models = collect($collections)->map(function ($c) {
+                        return [
+                            'name' => $c['name'],
+                            'description' => $c['description'] ?? "Model for {$c['name']} data",
+                            'capabilities' => $c['capabilities'] ?? [],
+                        ];
+                    })->toArray();
+                } else {
+                    // Legacy format: just class names
+                    $models = collect($collections)->map(fn($c) => [
+                        'name' => strtolower(class_basename($c)),
+                        'description' => "Model for " . class_basename($c) . " data",
+                        'capabilities' => [],
+                    ])->toArray();
+                }
+            } else {
+                $models = [];
+            }
+
             return [
                 'slug' => $node->slug,
                 'name' => $node->name,
                 'description' => $node->description,
-                'models' => collect($node->collections)->map(fn($c) => strtolower(class_basename($c)))->toArray(),
+                'models' => $models,
+                'collections' => $collections, // Keep original for backward compatibility
             ];
         })->toArray();
     }
@@ -403,9 +463,26 @@ class AutonomousRAGAgent
     protected function getAIDecision(string $message, array $context, string $model = 'gpt-4o-mini'): array
     {
         $conversationSummary = $context['conversation'];
-        $modelsJson = json_encode($context['models'], JSON_PRETTY_PRINT);
-        $nodesJson = json_encode($context['nodes'], JSON_PRETTY_PRINT);
-        $isMaster = $context['is_master'] ? 'YES' : 'NO';
+        
+        // Optimize model info - summarize instead of full dump
+        $modelsInfo = collect($context['models'])->map(function($m) {
+            return [
+                'name' => $m['name'],
+                'description' => $m['description'] ?? "Model for {$m['name']} data",
+                'table' => $m['table'] ?? $m['name'] . 's',
+                'capabilities' => $m['capabilities'] ?? [],
+                'key_fields' => !empty($m['schema']) ? array_keys($m['schema']) : [],
+                'tools' => !empty($m['tools']) ? array_keys($m['tools']) : [],
+                'location' => $m['location'] ?? 'local'
+            ];
+        })->toArray();
+        $modelsJson = json_encode($modelsInfo, JSON_PRETTY_PRINT);
+        
+        // Include available nodes for routing
+        $nodesJson = '';
+        if (!empty($context['nodes'])) {
+            $nodesJson = "\nAvailable Remote Nodes:\n" . json_encode($context['nodes'], JSON_PRETTY_PRINT) . "\n";
+        }
 
         // Add last entity list context if available
         $lastListContext = '';
@@ -420,122 +497,45 @@ class AutonomousRAGAgent
         }
 
         $prompt = <<<PROMPT
-You are an intelligent query router. Analyze the user's request and choose the BEST tool to handle it.
+You are an intelligent data retrieval orchestrator. Select the best tool to execute the user's request.
 
-USER MESSAGE: "{$message}"
+USER REQUEST: {$message}
 
-CONVERSATION HISTORY:
+CONTEXT:
 {$conversationSummary}
 {$lastListContext}
-AVAILABLE MODELS (with schema):
-{$modelsJson}
 
-AVAILABLE NODES (for routing):
+Available Models:
+{$modelsJson}
 {$nodesJson}
 
-IS MASTER NODE: {$isMaster}
+CRITICAL - Item Selection by Position:
+When user says "show #2", "second one", "details for #2":
+1. Find item at position 2 in PREVIOUS RESULTS (NOT position 1!)
+2. Extract its ID field (look for: id, invoice_id, email_id, uuid)
+3. Use that ACTUAL ID in filters
 
-TOOL SELECTION PRIORITY (choose the FASTEST appropriate tool):
+Example: "#2" with results [Invoice #218 (id:218), Invoice #217 (id:217)]
+→ {"tool": "db_query", "parameters": {"model": "invoice", "filters": {"id": "217"}, "limit": 1}}
 
-1. **answer_from_context** - Use ONLY when:
-   - Simple clarification or follow-up question about previous response
-   - Explaining what was just shown
-   - NEVER use for ANY data queries (list, show, get, find, search)
-   - NEVER use when user asks for invoices, customers, products, or any model data
-   - NEVER use when a specific ID is mentioned or requested
-   - NEVER use when user says "list", "show", "get", "find", "search"
-   - NEVER use when user wants to update, change, modify, create, or delete anything
+TOOLS:
+- answer_from_context: Answer from data already visible
+- vector_search: Semantic search (check model capabilities)
+- db_query: Fetch/filter records by ID or criteria
+- db_query_next: Next page ("more", "continue")
+- db_count: Count records
+- db_aggregate: Sum/average/total
+- model_tool: Execute specific model tool (verify tool exists)
+- exit_to_orchestrator: Multi-model operations only
 
-2. **db_query** - Use for ALL data list/fetch queries (fast 20-50ms)
-   Supports filters and pagination (page parameter, default page 1)
-   ONLY if model exists in AVAILABLE MODELS list above
-   
-   ALWAYS use db_query when user asks to:
-   - "list invoices" → ALWAYS fetch fresh from DB
-   - "show invoices" → ALWAYS fetch fresh from DB
-   - "get invoices" → ALWAYS fetch fresh from DB
-   - Even if data exists in conversation history, ALWAYS fetch fresh
-   
-   CRITICAL: When fetching details for a specific ID (e.g., "Show full details for invoice with ID 217"):
-   - ALWAYS use db_query with "id" filter - NEVER use answer_from_context
-   - Add filter: "id" => the specific ID
-   - This will fetch the FULL record with ALL relationships and item details
-   - The model's toRAGContent() method will format it with complete information
-   - Even if the ID was mentioned in conversation history, ALWAYS fetch fresh from DB
-
-3. **db_query_next** - Use when user asks for "more", "next", "next page", "show more"
-   Continues from last query with next page
-
-4. **db_count** - Use for "how many" count queries (fast 1-20ms)
-   Supports filters based on model schema fields
-   ONLY if model exists in AVAILABLE MODELS list above
-
-5. **db_aggregate** - Use for sum/avg/min/max queries (fast 1-20ms)
-   Example: "total invoice amount", "average order value", "highest bill"
-   Requires: operation (sum|avg|min|max) and field from filter_config.amount_field or schema
-   ONLY if model exists in AVAILABLE MODELS list above
-
-6. **vector_search** - Use for semantic search (slow 2-5s)
-   Only when semantic understanding is needed
-   ONLY if model exists in AVAILABLE MODELS list above
-
-7. **model_tool** - Use for CRUD operations (create, update, delete) (fast 50-200ms)
-   Check if model has "tools" in AVAILABLE MODELS
-   Use when user wants to create, update, delete, or perform actions on records
-   Each tool has description and parameters - follow them carefully
-   Tools with requires_confirmation=true need user confirmation first
-
-8. **route_to_node** - Use when data is on remote node (slow 5-10s)
-   Use this when requested model is NOT in AVAILABLE MODELS but IS in a node's models list
-
-CRITICAL ROUTING RULE (ALWAYS FOLLOW THIS ORDER):
-1. Check if requested model exists in AVAILABLE MODELS list
-2. If model EXISTS in AVAILABLE MODELS:
-   - Use db_query, db_count, db_aggregate, or model_tool (depending on request)
-3. If model NOT in AVAILABLE MODELS:
-   - Check AVAILABLE NODES for the model
-   - If found in a node's models list, use route_to_node with that node's slug
-   - NEVER use db_query for a model that doesn't exist locally
-4. If model not found anywhere, respond with error
-
-EXAMPLE:
-- User asks for "invoice details"
-- Check: Is "invoice" in AVAILABLE MODELS? NO
-- Check: Is "invoice" in any node's models? YES (node: inbusiness-node)
-- Action: Use route_to_node with node="inbusiness-node"
-- WRONG: Using db_query when model not in AVAILABLE MODELS
-
-FILTER RULES:
-- If model has "filter_config", USE those field names directly (they are correct)
-- If no filter_config, look at "schema" to find field names and types
-- Convert user date formats (DD-MM-YYYY) to YYYY-MM-DD
-- When fetching by ID, add "id" to filters object
-
-RESPOND WITH JSON ONLY:
+RESPONSE (JSON only):
 {
-  "tool": "answer_from_context|db_query|db_query_next|db_count|db_aggregate|vector_search|model_tool|route_to_node",
+  "tool": "tool_name",
   "reasoning": "brief explanation",
   "parameters": {
-    "model": "model name",
-    "query": "search query (for vector_search)",
-    "node": "node slug (for route_to_node)",
-    "answer": "direct answer (for answer_from_context)",
-    "tool_name": "tool name from model's tools (for model_tool)",
-    "tool_params": {
-      "parameter_name": "value matching tool's parameter requirements"
-    },
-    "aggregate": {
-      "operation": "sum|avg|min|max",
-      "field": "field name from filter_config.amount_field or schema"
-    },
-    "filters": {
-      "id": "specific ID when fetching single record",
-      "date_field": "from filter_config.date_field or schema",
-      "date_value": "YYYY-MM-DD format",
-      "date_operator": "= | >= | <= | between",
-      "date_end": "YYYY-MM-DD for between",
-      "status": "status value"
-    }
+    "model": "model_name",
+    "filters": {"id": "actual_id_value"},
+    "limit": 1
   }
 }
 PROMPT;
@@ -544,7 +544,7 @@ PROMPT;
             $response = $this->ai
                 ->model($model)
                 ->withTemperature(0.1)
-                ->withMaxTokens(500)
+                ->withMaxTokens(1000)
                 ->generate($prompt);
 
             $content = trim($response->getContent());
@@ -569,20 +569,35 @@ PROMPT;
 
             Log::channel('ai-engine')->info('AI DECISION PARSING FAILED', ['content' => $content]);
 
-            // Fallback: try to extract key info from content
-            if (stripos($content, 'db_aggregate') !== false || stripos($content, 'sum') !== false) {
+            // Fallback: try to infer from message
+            $messageLower = strtolower($message);
+            $detectedModel = null;
+            
+            // Try to detect model from message
+            foreach ($context['models'] as $model) {
+                if (stripos($messageLower, $model['name']) !== false) {
+                    $detectedModel = $model['name'];
+                    break;
+                }
+            }
+            
+            // Check for aggregate keywords
+            if (stripos($content, 'db_aggregate') !== false || 
+                stripos($messageLower, 'sum') !== false || 
+                stripos($messageLower, 'total') !== false ||
+                stripos($messageLower, 'average') !== false) {
                 return [
                     'tool' => 'db_aggregate',
                     'reasoning' => 'AI suggested aggregate operation from content',
-                    'parameters' => ['model' => 'invoice', 'aggregate' => ['operation' => 'sum', 'field' => 'amount']],
+                    'parameters' => ['model' => $detectedModel ?? 'invoice', 'aggregate' => ['operation' => 'sum', 'field' => 'amount']],
                 ];
             }
 
-            // Fallback
+            // Fallback to db_query
             return [
                 'tool' => 'db_query',
-                'reasoning' => 'Could not parse AI decision, defaulting to db_query',
-                'parameters' => [],
+                'reasoning' => 'Could not parse AI decision, inferred from message',
+                'parameters' => ['model' => $detectedModel ?? 'unknown'],
             ];
 
         } catch (\Exception $e) {
@@ -614,25 +629,46 @@ PROMPT;
                 return $this->answerFromContext($params, $conversationHistory);
 
             case 'db_query':
-                return $this->dbQuery($params, $userId, $options);
+                $result = $this->dbQuery($params, $userId, $options);
+                // If model not available locally, try to route to node that has it
+                if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
+                    return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
+                }
+                return $result;
 
             case 'db_count':
-                return $this->dbCount($params, $userId, $options);
+                $result = $this->dbCount($params, $userId, $options);
+                if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
+                    return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
+                }
+                return $result;
 
             case 'db_query_next':
                 return $this->dbQueryNext($params, $userId, $options);
 
             case 'db_aggregate':
-                return $this->dbAggregate($params, $userId, $options);
+                $result = $this->dbAggregate($params, $userId, $options);
+                if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
+                    return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
+                }
+                return $result;
 
             case 'vector_search':
                 return $this->vectorSearch($params, $message, $sessionId, $userId, $conversationHistory, $options);
 
             case 'model_tool':
-                return $this->executeModelTool($params, $userId, $options);
+                // Pass message and conversation history for parameter extraction
+                $params['message'] = $message;
+                $params['conversation_history'] = $conversationHistory;
+                $result = $this->executeModelTool($params, $userId, $options);
+                // If model not available locally, try to route to node that has it
+                if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
+                    return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
+                }
+                return $result;
 
-            case 'route_to_node':
-                return $this->routeToNode($params, $message, $sessionId, $userId, $conversationHistory, $options);
+            case 'exit_to_orchestrator':
+                return $this->exitToOrchestrator($params, $message);
 
             default:
                 return $this->dbQuery($params, $userId, $options);
@@ -682,6 +718,19 @@ PROMPT;
             return ['success' => false, 'error' => "Model {$modelName} not found"];
         }
 
+        // Check if model exists locally - if not, it's a remote-only model
+        if (!class_exists($modelClass)) {
+            Log::channel('ai-engine')->info('Model not found locally, should route to remote node', [
+                'model' => $modelName,
+                'model_class' => $modelClass,
+            ]);
+            return [
+                'success' => false,
+                'error' => "Model {$modelName} not available locally",
+                'should_route_to_node' => true,
+            ];
+        }
+
         try {
             $query = $modelClass::query();
             $instance = new $modelClass;
@@ -711,8 +760,8 @@ PROMPT;
 
             // Apply filters from AI decision
             $filters = $params['filters'] ?? [];
-            Log::info('dbQuery: '.$query->latest()->skip(0)->take($this->perPage)->toSql());
-            Log::info('dbQuery: '.json_encode($query->latest()->skip(0)->take($this->perPage)->getBindings()));
+            Log::info('dbQuery: ' . $query->latest()->skip(0)->take($this->perPage)->toSql());
+            Log::info('dbQuery: ' . json_encode($query->latest()->skip(0)->take($this->perPage)->getBindings()));
 
             $query = $this->applyFilters($query, $filters, $modelClass);
 
@@ -722,9 +771,9 @@ PROMPT;
 
             // Apply pagination
             $offset = ($page - 1) * $this->perPage;
-            Log::info('dbQuery: '.$query->latest()->skip($offset)->take($this->perPage)->toSql());
-            Log::info('dbQuery: '.json_encode($filters));
-            Log::info('dbQuery: '.json_encode($query->latest()->skip($offset)->take($this->perPage)->getBindings()));
+            Log::info('dbQuery: ' . $query->latest()->skip($offset)->take($this->perPage)->toSql());
+            Log::info('dbQuery: ' . json_encode($filters));
+            Log::info('dbQuery: ' . json_encode($query->latest()->skip($offset)->take($this->perPage)->getBindings()));
             $items = $query->latest()->skip($offset)->take($this->perPage)->get();
 
             if ($items->isEmpty()) {
@@ -998,9 +1047,9 @@ PROMPT;
                 if ($count === 0) {
                     $result = 0;
                 } else {
-                    $values = $records->map(function($record) use ($methodName) {
+                    $values = $records->map(function ($record) use ($methodName) {
                         return $record->$methodName();
-                    })->filter(function($value) {
+                    })->filter(function ($value) {
                         return is_numeric($value);
                     });
 
@@ -1085,8 +1134,19 @@ PROMPT;
         $modelName = $params['model'] ?? null;
         $toolName = $params['tool_name'] ?? null;
         $toolParams = $params['tool_params'] ?? [];
+        $message = $params['message'] ?? '';
+        $conversationHistory = $params['conversation_history'] ?? [];
+
+        Log::channel('ai-engine')->info('AutonomousRAGAgent: executeModelTool called', [
+            'model' => $modelName,
+            'tool_name' => $toolName,
+            'tool_params' => $toolParams,
+            'message' => $message,
+            'user_id' => $userId,
+        ]);
 
         if (!$modelName || !$toolName) {
+            Log::channel('ai-engine')->error('AutonomousRAGAgent: Missing model or tool_name');
             return ['success' => false, 'error' => 'Model and tool_name required'];
         }
 
@@ -1094,6 +1154,20 @@ PROMPT;
         $modelClass = $this->findModelClass($modelName, $options);
         if (!$modelClass) {
             return ['success' => false, 'error' => "Model {$modelName} not found"];
+        }
+
+        // Check if model exists locally - if not, it's a remote-only model
+        if (!class_exists($modelClass)) {
+            Log::channel('ai-engine')->info('Model tool - model not found locally, should route to remote node', [
+                'model' => $modelName,
+                'tool' => $toolName,
+                'model_class' => $modelClass,
+            ]);
+            return [
+                'success' => false,
+                'error' => "Model {$modelName} not available locally",
+                'should_route_to_node' => true,
+            ];
         }
 
         // Find config class
@@ -1106,14 +1180,30 @@ PROMPT;
             // Get all tools
             $tools = $configClass::getTools();
 
+            Log::channel('ai-engine')->info('AutonomousRAGAgent: Found config tools', [
+                'config' => class_basename($configClass),
+                'available_tools' => array_keys($tools),
+                'looking_for' => $toolName,
+            ]);
+
             if (!isset($tools[$toolName])) {
+                Log::channel('ai-engine')->error('AutonomousRAGAgent: Tool not found', [
+                    'tool_name' => $toolName,
+                    'available_tools' => array_keys($tools),
+                ]);
                 return ['success' => false, 'error' => "Tool {$toolName} not found for {$modelName}"];
             }
+
+            Log::channel('ai-engine')->info('AutonomousRAGAgent: FOUND TOOL', [
+                'tool_name' => $toolName,
+                'model' => $modelName,
+            ]);
 
             $tool = $tools[$toolName];
             $handler = $tool['handler'] ?? null;
 
             if (!$handler || !is_callable($handler)) {
+                Log::channel('ai-engine')->error('AutonomousRAGAgent: Tool has no callable handler');
                 return ['success' => false, 'error' => "Tool {$toolName} has no handler"];
             }
 
@@ -1133,14 +1223,35 @@ PROMPT;
                 return ['success' => false, 'error' => 'Permission denied: delete'];
             }
 
+            // Extract parameters from conversation context if not provided using handler
+            $toolSchema = $tool['parameters'] ?? [];
+            $extractedParams = \LaravelAIEngine\Services\Agent\Handlers\ToolParameterExtractor::extract(
+                $message,
+                $conversationHistory,
+                $toolSchema,
+                $modelName,
+                static::$lastQueryState
+            );
+            
+            // Merge extracted params with provided params (provided params take precedence)
+            $finalParams = array_merge($extractedParams, $toolParams);
+            
             // Execute tool handler
-            Log::channel('ai-engine')->info('Executing model tool', [
+            Log::channel('ai-engine')->info('AutonomousRAGAgent: Executing tool handler', [
                 'model' => $modelName,
                 'tool' => $toolName,
                 'user_id' => $userId,
+                'extracted_params' => $extractedParams,
+                'provided_params' => $toolParams,
+                'final_params' => $finalParams,
             ]);
 
-            $result = $handler($toolParams);
+            $result = $handler($finalParams);
+            
+            Log::channel('ai-engine')->info('AutonomousRAGAgent: Tool handler executed', [
+                'tool_name' => $toolName,
+                'result' => $result,
+            ]);
 
             // Format response
             if (is_array($result)) {
@@ -1241,6 +1352,56 @@ PROMPT;
     }
 
     /**
+     * Route to node that has the requested model
+     */
+    protected function routeToNodeForModel(
+        array $params,
+        string $message,
+        string $sessionId,
+        $userId,
+        array $conversationHistory,
+        array $options
+    ): array {
+        $modelName = $params['model'] ?? null;
+        if (!$modelName) {
+            return ['success' => false, 'error' => 'No model specified'];
+        }
+
+        // Find which node has this model
+        $nodes = $this->getAvailableNodes($options);
+        $targetNode = null;
+
+        foreach ($nodes as $nodeInfo) {
+            $models = $nodeInfo['models'] ?? [];
+            foreach ($models as $model) {
+                if (strtolower($model['name']) === strtolower($modelName)) {
+                    $targetNode = $nodeInfo['slug'];
+                    break 2;
+                }
+            }
+        }
+
+        if (!$targetNode) {
+            return ['success' => false, 'error' => "No node found with model {$modelName}"];
+        }
+
+        Log::channel('ai-engine')->info('Routing to node for model', [
+            'model' => $modelName,
+            'node' => $targetNode,
+        ]);
+
+        // Route to the node with the model
+        return $this->routeToNode(
+            ['node' => $targetNode],
+            $message,
+            $sessionId,
+            $userId,
+            $conversationHistory,
+            $options
+        );
+    }
+
+    /**
      * Tool: Route to node
      */
     protected function routeToNode(
@@ -1265,13 +1426,13 @@ PROMPT;
             // Extract user token and forwardable headers for authentication
             $userToken = request()->bearerToken() ?? request()->header('X-User-Token');
             $forwardHeaders = \LaravelAIEngine\Services\Node\NodeHttpClient::extractForwardableHeaders();
-            
+
             // Merge authentication headers
             $headers = array_merge($forwardHeaders, [
                 'X-Forwarded-From-Node' => config('app.name'),
                 'X-User-Token' => $userToken,
             ]);
-            
+
             $router = app(\LaravelAIEngine\Services\Node\NodeRouterService::class);
 
             $response = $router->forwardChat(
@@ -1345,12 +1506,31 @@ PROMPT;
         }
 
         foreach ($collections as $collection) {
-            $baseName = strtolower(class_basename($collection));
-            if ($baseName === $modelName ||
-                $baseName === $modelName . 's' ||
-                $baseName . 's' === $modelName ||
-                str_contains($baseName, $modelName)) {
-                return $collection;
+            // Handle new format (array with metadata) or legacy format (class string)
+            if (is_array($collection)) {
+                // New format: check 'name' field
+                $collectionName = $collection['name'] ?? '';
+                $collectionClass = $collection['class'] ?? '';
+
+                if (
+                    $collectionName === $modelName ||
+                    $collectionName === $modelName . 's' ||
+                    $collectionName . 's' === $modelName ||
+                    str_contains($collectionName, $modelName)
+                ) {
+                    return $collectionClass;
+                }
+            } else {
+                // Legacy format: class string
+                $baseName = strtolower(class_basename($collection));
+                if (
+                    $baseName === $modelName ||
+                    $baseName === $modelName . 's' ||
+                    $baseName . 's' === $modelName ||
+                    str_contains($baseName, $modelName)
+                ) {
+                    return $collection;
+                }
             }
         }
 
@@ -1380,8 +1560,10 @@ PROMPT;
                 $className = basename($file, '.php');
                 $fullClass = "App\\AI\\Configs\\{$className}";
 
-                if (class_exists($fullClass) &&
-                    is_subclass_of($fullClass, \LaravelAIEngine\Contracts\AutonomousModelConfig::class)) {
+                if (
+                    class_exists($fullClass) &&
+                    is_subclass_of($fullClass, \LaravelAIEngine\Contracts\AutonomousModelConfig::class)
+                ) {
 
                     try {
                         $configModelName = strtolower($fullClass::getName());
@@ -1586,6 +1768,22 @@ PROMPT;
         }
 
         return [];
+    }
+
+    /**
+     * Tool: Exit to orchestrator for CRUD operations
+     * Returns control to the orchestrator which will start the appropriate autonomous collector
+     */
+    protected function exitToOrchestrator(array $params, string $originalMessage): array
+    {
+        $message = $params['message'] ?? $originalMessage;
+
+        return [
+            'success' => true,
+            'exit_to_orchestrator' => true,
+            'message' => $message,
+            'tool' => 'exit_to_orchestrator',
+        ];
     }
 
 }

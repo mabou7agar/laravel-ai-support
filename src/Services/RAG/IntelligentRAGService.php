@@ -86,6 +86,19 @@ class IntelligentRAGService
         $userId = null
     ): AIResponse {
         try {
+            // Normalize collections: extract class strings from array format
+            $normalizedCollections = [];
+            foreach ($availableCollections as $collection) {
+                if (is_array($collection)) {
+                    // New format: extract class
+                    $normalizedCollections[] = $collection['class'] ?? '';
+                } else {
+                    // Legacy format: already a class string
+                    $normalizedCollections[] = $collection;
+                }
+            }
+            $availableCollections = array_filter($normalizedCollections); // Remove empty strings
+            
             // Load conversation history
             if (empty($conversationHistory)) {
                 $conversationHistory = $this->loadConversationHistory($sessionId);
@@ -616,33 +629,53 @@ class IntelligentRAGService
         // If no federated discovery or availableCollections provided, use local collections
         if (empty($collectionsInfo) && !empty($availableCollections)) {
             $collectionsInfo = "\n\nAvailable knowledge sources (READ DESCRIPTIONS CAREFULLY):\n";
+            
+            // Normalize collections to class strings for AI analysis
+            $normalizedCollections = [];
+            
             foreach ($availableCollections as $collection) {
-                $name = class_basename($collection);
-                $description = '';
+                // Handle new format (array with metadata) or legacy format (class string)
+                if (is_array($collection)) {
+                    $name = $collection['name'] ?? 'unknown';
+                    $description = $collection['description'] ?? '';
+                    $collectionClass = $collection['class'] ?? '';
+                } else {
+                    $name = class_basename($collection);
+                    $description = '';
+                    $collectionClass = $collection;
 
-                // Try to get RAG description from the model
-                if (class_exists($collection)) {
-                    try {
-                        $instance = new $collection();
+                    // Try to get RAG description from the model
+                    if (class_exists($collection)) {
+                        try {
+                            $instance = new $collection();
 
-                        if (method_exists($instance, 'getRAGDescription')) {
-                            $description = $instance->getRAGDescription();
+                            if (method_exists($instance, 'getRAGDescription')) {
+                                $description = $instance->getRAGDescription();
+                            }
+
+                            if (method_exists($instance, 'getRAGDisplayName')) {
+                                $name = $instance->getRAGDisplayName();
+                            }
+                        } catch (\Exception $e) {
+                            // Silently ignore if we can't instantiate
                         }
-
-                        if (method_exists($instance, 'getRAGDisplayName')) {
-                            $name = $instance->getRAGDisplayName();
-                        }
-                    } catch (\Exception $e) {
-                        // Silently ignore if we can't instantiate
                     }
                 }
 
+                // Store normalized class name for later use
+                if (!empty($collectionClass)) {
+                    $normalizedCollections[] = $collectionClass;
+                }
+
                 if (!empty($description)) {
-                    $collectionsInfo .= "- **{$name}**: {$description}\n  → Use class: {$collection}\n";
+                    $collectionsInfo .= "- **{$name}**: {$description}\n  → Use class: {$collectionClass}\n";
                 } else {
-                    $collectionsInfo .= "- **{$name}**\n  → Use class: {$collection}\n";
+                    $collectionsInfo .= "- **{$name}**\n  → Use class: {$collectionClass}\n";
                 }
             }
+            
+            // Replace availableCollections with normalized class strings for AI analysis
+            $availableCollections = $normalizedCollections;
         }
 
         $systemPrompt = <<<PROMPT
@@ -1539,28 +1572,45 @@ PROMPT;
                 $prompt .= "- Answer directly with the numbers from the statistics\n";
                 $prompt .= "- Be helpful and offer to provide more details if needed\n\n";
             } else {
-                $prompt .= "NO KNOWLEDGE BASE RESULTS FOUND FOR THIS QUERY.\n\n";
+                $prompt .= "NO RESULTS FOUND IN DATABASE.\n\n";
+                $prompt .= "CRITICAL INSTRUCTIONS:\n";
+                $prompt .= "- The search returned ZERO results from the database\n";
+                $prompt .= "- This means the user does NOT have any matching data\n";
+                $prompt .= "- You MUST respond with a clear 'No results found' message\n";
+                $prompt .= "- DO NOT provide general information, tips, or explanations\n";
+                $prompt .= "- DO NOT make up data or suggest what they might have\n";
+                $prompt .= "- Simply state: 'No [items] found matching your criteria.'\n\n";
+                $prompt .= "EXAMPLES:\n";
+                $prompt .= "- Query: 'emails from AWS' → Response: 'No emails found from AWS.'\n";
+                $prompt .= "- Query: 'invoices for project X' → Response: 'No invoices found for project X.'\n";
+                $prompt .= "- Query: 'messages about budget' → Response: 'No messages found about budget.'\n\n";
             }
 
             // Add available collections info so AI knows what data sources exist
             $availableCollections = $options['available_collections'] ?? [];
             if (!empty($availableCollections)) {
-                $prompt .= "AVAILABLE DATA SOURCES IN KNOWLEDGE BASE:\n";
+                $prompt .= "AVAILABLE DATA SOURCES (for reference only):\n";
                 foreach ($availableCollections as $collection) {
-                    $name = class_basename($collection);
-                    $description = '';
+                    // Handle new format (array with metadata) or legacy format (class string)
+                    if (is_array($collection)) {
+                        $name = $collection['name'] ?? 'unknown';
+                        $description = $collection['description'] ?? '';
+                    } else {
+                        $name = class_basename($collection);
+                        $description = '';
 
-                    if (class_exists($collection)) {
-                        try {
-                            $instance = new $collection();
-                            if (method_exists($instance, 'getRAGDescription')) {
-                                $description = $instance->getRAGDescription();
+                        if (class_exists($collection)) {
+                            try {
+                                $instance = new $collection();
+                                if (method_exists($instance, 'getRAGDescription')) {
+                                    $description = $instance->getRAGDescription();
+                                }
+                                if (method_exists($instance, 'getRAGDisplayName')) {
+                                    $name = $instance->getRAGDisplayName();
+                                }
+                            } catch (\Exception $e) {
+                                // Silently ignore
                             }
-                            if (method_exists($instance, 'getRAGDisplayName')) {
-                                $name = $instance->getRAGDisplayName();
-                            }
-                        } catch (\Exception $e) {
-                            // Silently ignore
                         }
                     }
 
@@ -1571,20 +1621,7 @@ PROMPT;
                     }
                 }
                 $prompt .= "\n";
-                $prompt .= "NOTE: The search didn't find matching results, but these data sources exist.\n";
-                $prompt .= "For aggregate queries (counts, summaries), suggest the user try a more specific search.\n\n";
             }
-
-            $prompt .= "CHECK CONVERSATION HISTORY FIRST:\n";
-            $prompt .= "- If this is a follow-up (e.g., 'reply to this mail', 'tell me more'), answer using conversation history\n";
-            $prompt .= "- If asking about something we just discussed, answer from that context\n\n";
-            $prompt .= "ONLY say 'I don't have information' if:\n";
-            $prompt .= "- It's a completely NEW topic not in our conversation\n";
-            $prompt .= "- It requires general knowledge (e.g., 'what can I eat')\n\n";
-            $prompt .= "FOR EMAIL REPLIES - Extract from conversation:\n";
-            $prompt .= "- Sender name (from_name) → Use for greeting (e.g., 'Hi John,' not 'Hi [Recipient's Name],')\n";
-            $prompt .= "- Email subject → Use for 'Re: [subject]'\n";
-            $prompt .= "- User's name is Mohamed → Use for signature\n";
             $prompt .= "- NEVER use placeholders - always use actual information from context\n";
         }
 
@@ -1696,9 +1733,16 @@ PROMPT;
 
         $content = '';
 
-        if (method_exists($model, 'getVectorContent')) {
+        // Priority 1: Use toRAGContent for properly formatted display
+        if (method_exists($model, 'toRAGContent')) {
+            $content = $model->toRAGContent();
+        }
+        // Priority 2: Use getVectorContent for search content
+        elseif (method_exists($model, 'getVectorContent')) {
             $content = $model->getVectorContent();
-        } else {
+        }
+        // Priority 3: Extract from common fields
+        else {
             $fields = ['content', 'body', 'description', 'text', 'title', 'name'];
             $parts = [];
 
@@ -2374,13 +2418,16 @@ PROMPT;
         $aggregateData = [];
 
         foreach ($collections as $collection) {
-            if (!class_exists($collection)) {
+            // Handle new format (array with metadata) or legacy format (class string)
+            $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
+            
+            if (!class_exists($collectionClass)) {
                 continue;
             }
 
             try {
-                $instance = new $collection();
-                $name = class_basename($collection);
+                $instance = new $collectionClass();
+                $name = is_array($collection) ? ($collection['name'] ?? class_basename($collectionClass)) : class_basename($collectionClass);
                 $displayName = $name;
                 $description = '';
 
@@ -2399,7 +2446,7 @@ PROMPT;
                 }
 
                 // Get count from vector database using VectorSearchService
-                $vectorCount = $this->vectorSearch->getIndexedCountWithFilters($collection, $filters);
+                $vectorCount = $this->vectorSearch->getIndexedCountWithFilters($collectionClass, $filters);
 
                 // Get additional stats if available
                 $stats = [
@@ -2603,13 +2650,16 @@ PROMPT;
         $aggregateData = [];
 
         foreach ($collections as $collection) {
-            if (!class_exists($collection)) {
+            // Handle new format (array with metadata) or legacy format (class string)
+            $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
+            
+            if (!class_exists($collectionClass)) {
                 continue;
             }
 
             try {
-                $instance = new $collection();
-                $name = class_basename($collection);
+                $instance = new $collectionClass();
+                $name = is_array($collection) ? ($collection['name'] ?? class_basename($collectionClass)) : class_basename($collectionClass);
                 $displayName = method_exists($instance, 'getRAGDisplayName')
                     ? $instance->getRAGDisplayName()
                     : $name;
@@ -2773,16 +2823,19 @@ PROMPT;
         $instructions = [];
 
         foreach ($collections as $collection) {
-            if (!class_exists($collection)) {
+            // Handle new format (array with metadata) or legacy format (class string)
+            $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
+            
+            if (!class_exists($collectionClass)) {
                 continue;
             }
 
             try {
                 // Check if model has getRagSearchInstructions method
-                if (method_exists($collection, 'getRagSearchInstructions')) {
-                    $modelInstructions = $collection::getRagSearchInstructions();
+                if (method_exists($collectionClass, 'getRagSearchInstructions')) {
+                    $modelInstructions = $collectionClass::getRagSearchInstructions();
                     if (!empty($modelInstructions)) {
-                        $modelName = class_basename($collection);
+                        $modelName = is_array($collection) ? ($collection['name'] ?? class_basename($collectionClass)) : class_basename($collectionClass);
                         $instructions[] = "For {$modelName}: {$modelInstructions}";
                     }
                 }

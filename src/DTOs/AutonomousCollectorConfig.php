@@ -105,6 +105,24 @@ class AutonomousCollectorConfig
         public readonly array $context = [],
         
         /**
+         * Entity resolvers for user-friendly confirmation display
+         * Maps field names (e.g., 'customer_id') to closures that fetch entity details
+         * 
+         * Example:
+         * [
+         *     'customer_id' => fn($id) => [
+         *         'Name' => Customer::find($id)?->name,
+         *         'Email' => Customer::find($id)?->email,
+         *     ],
+         *     'invoice_id' => fn($id) => [
+         *         'Invoice Number' => Invoice::find($id)?->invoice_id,
+         *         'Total' => '$' . Invoice::find($id)?->getTotal(),
+         *     ],
+         * ]
+         */
+        public readonly array $entityResolvers = [],
+        
+        /**
          * Maximum conversation turns before forcing completion
          */
         public readonly int $maxTurns = 20,
@@ -295,6 +313,17 @@ class AutonomousCollectorConfig
             
             if (is_array($rules) && isset($rules['type']) && $rules['type'] === 'array') {
                 // Array type validation
+                // Skip validation if field is nullable and value is null
+                $isNullable = isset($rules['nullable']) && $rules['nullable'];
+                $isRequired = isset($rules['required']) && $rules['required'];
+                
+                if ($value === null) {
+                    if ($isRequired && !$isNullable) {
+                        $errors[] = "{$currentPath} is required";
+                    }
+                    continue;
+                }
+                
                 if (!is_array($value)) {
                     $errors[] = "{$currentPath} must be an array";
                     continue;

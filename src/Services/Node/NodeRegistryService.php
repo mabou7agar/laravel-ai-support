@@ -287,25 +287,45 @@ class NodeRegistryService
         }
         
         foreach ($collections as $collection) {
-            // Exact match
-            if ($collection === $modelClass) {
-                return true;
-            }
-            
-            // Check by class basename (e.g., "Email" matches "App\Models\Email")
-            if (class_basename($collection) === class_basename($modelClass)) {
-                return true;
-            }
-            
-            // Check by collection name variations
-            $modelBasename = strtolower(class_basename($modelClass));
-            $collectionLower = strtolower($collection);
-            
-            // Singular/plural matching
-            if ($collectionLower === $modelBasename || 
-                $collectionLower === $modelBasename . 's' ||
-                $collectionLower . 's' === $modelBasename) {
-                return true;
+            // Handle new format (array with metadata) or legacy format (class string)
+            if (is_array($collection)) {
+                $collectionClass = $collection['class'] ?? '';
+                $collectionName = $collection['name'] ?? '';
+                
+                // Exact class match
+                if ($collectionClass === $modelClass) {
+                    return true;
+                }
+                
+                // Name match
+                $modelBasename = strtolower(class_basename($modelClass));
+                if (strtolower($collectionName) === $modelBasename ||
+                    strtolower($collectionName) === $modelBasename . 's' ||
+                    strtolower($collectionName) . 's' === $modelBasename) {
+                    return true;
+                }
+            } else {
+                // Legacy format: class string
+                // Exact match
+                if ($collection === $modelClass) {
+                    return true;
+                }
+                
+                // Check by class basename (e.g., "Email" matches "App\Models\Email")
+                if (class_basename($collection) === class_basename($modelClass)) {
+                    return true;
+                }
+                
+                // Check by collection name variations
+                $modelBasename = strtolower(class_basename($modelClass));
+                $collectionLower = strtolower($collection);
+                
+                // Singular/plural matching
+                if ($collectionLower === $modelBasename || 
+                    $collectionLower === $modelBasename . 's' ||
+                    $collectionLower . 's' === $modelBasename) {
+                    return true;
+                }
             }
         }
         

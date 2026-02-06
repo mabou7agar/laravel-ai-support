@@ -207,12 +207,12 @@ class AutonomousCollectorRegistry
         $examplesText = implode("\n", array_map(fn($e) => "- {$e}", $examples));
         
         return <<<PROMPT
-Which collector matches the user's CREATE intent? Reply with the number only.
+Which collector matches the user's intent (CREATE, UPDATE, or DELETE)? Reply with the number only.
 
 Examples:
 {$examplesText}
 
-Reply 0 if user is SEARCHING/LISTING/COUNTING (not creating).
+Reply 0 if user is SEARCHING/LISTING/COUNTING (not creating/updating/deleting).
 
 Number (1-{$count}) or 0:
 PROMPT;

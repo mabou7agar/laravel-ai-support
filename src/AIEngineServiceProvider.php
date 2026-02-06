@@ -20,6 +20,7 @@ use LaravelAIEngine\Services\Analytics\AnalyticsManager as NewAnalyticsManager;
 use LaravelAIEngine\Services\Analytics\Metrics\MetricsCollector;
 use LaravelAIEngine\Services\Analytics\Drivers\DatabaseAnalyticsDriver;
 use LaravelAIEngine\Services\Analytics\Drivers\RedisAnalyticsDriver;
+use LaravelAIEngine\Services\DiscoveryCacheWarmer;
 
 class AIEngineServiceProvider extends ServiceProvider
 {
@@ -121,6 +122,14 @@ class AIEngineServiceProvider extends ServiceProvider
         // ConversationManager - no constructor dependencies (RAG service is lazy-loaded)
         $this->app->singleton(ConversationManager::class, function ($app) {
             return new ConversationManager();
+        });
+
+        // Discovery Cache Warmer
+        $this->app->singleton(DiscoveryCacheWarmer::class, function ($app) {
+            return new DiscoveryCacheWarmer(
+                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class),
+                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
+            );
         });
 
         $this->app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, function ($app) {
@@ -640,6 +649,8 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\TestIntentAnalysisCommand::class,
                 Console\Commands\TestDataCollectorCommand::class,
                 Console\Commands\ListAutonomousCollectorsCommand::class,
+                Console\Commands\ClearDiscoveryCacheCommand::class,
+                Console\Commands\WarmDiscoveryCacheCommand::class,
             ]);
 
             // Node Management Commands
