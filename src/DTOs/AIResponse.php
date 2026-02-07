@@ -305,6 +305,32 @@ class AIResponse
     }
 
     /**
+     * Add or merge metadata
+     */
+    public function withMetadata(array $metadata): self
+    {
+        return new self(
+            content: $this->content,
+            engine: $this->engine,
+            model: $this->model,
+            metadata: array_merge($this->metadata, $metadata),
+            tokensUsed: $this->tokensUsed,
+            creditsUsed: $this->creditsUsed,
+            latency: $this->latency,
+            requestId: $this->requestId,
+            usage: $this->usage,
+            cached: $this->cached,
+            finishReason: $this->finishReason,
+            files: $this->files,
+            actions: $this->actions,
+            error: $this->error,
+            success: $this->success,
+            conversationId: $this->conversationId,
+            functionCall: $this->functionCall
+        );
+    }
+
+    /**
      * Check if the response was successful
      */
     public function isSuccessful(): bool
@@ -387,14 +413,14 @@ class AIResponse
     /**
      * Get the interactive actions
      */
-    
+
 
     /**
      * Get actions of a specific type
      */
     public function getActionsByType(string $type): array
     {
-        return array_filter($this->actions, function($action) use ($type) {
+        return array_filter($this->actions, function ($action) use ($type) {
             if (is_array($action)) {
                 return ($action['type'] ?? null) === $type;
             }
@@ -455,7 +481,7 @@ class AIResponse
         if ($this->creditsUsed !== null) {
             return $this->creditsUsed;
         }
-        
+
         return $this->usage['total_cost'] ?? 0;
     }
 
@@ -467,7 +493,7 @@ class AIResponse
         if ($this->tokensUsed !== null) {
             return $this->tokensUsed;
         }
-        
+
         return $this->usage['tokens'] ?? 0;
     }
 
@@ -553,9 +579,9 @@ class AIResponse
         return $this->metadata;
     }
 
-    
 
-    
+
+
 
     public function getLatency(): ?float
     {

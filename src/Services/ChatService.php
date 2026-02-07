@@ -22,7 +22,7 @@ class ChatService
         if ($this->orchestrator === null) {
             $this->orchestrator = app(\LaravelAIEngine\Services\Agent\MinimalAIOrchestrator::class);
         }
-        
+
         return $this->orchestrator;
     }
 
@@ -68,7 +68,7 @@ class ChatService
                 $engine,
                 $model
             );
-            
+
             // Use passed conversation history if available, otherwise load from DB
             if (empty($conversationHistory)) {
                 $conversationHistory = $this->conversationService->getConversationHistory($sessionId);

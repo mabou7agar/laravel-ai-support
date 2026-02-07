@@ -21,7 +21,8 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
 {
     public function __construct(
         protected AutonomousCollectorService $collectorService
-    ) {}
+    ) {
+    }
 
     public function handle(
         string $message,
@@ -337,10 +338,11 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
 
             // Convert models to arrays
             if ($result instanceof \Illuminate\Support\Collection) {
-                $result = $result->map(fn($item) =>
+                $result = $result->map(
+                    fn($item) =>
                     $item instanceof \Illuminate\Database\Eloquent\Model
-                        ? $item->toArray()
-                        : $item
+                    ? $item->toArray()
+                    : $item
                 )->toArray();
             } elseif ($result instanceof \Illuminate\Database\Eloquent\Model) {
                 $result = $result->toArray();
@@ -434,7 +436,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
 
             return AgentResponse::needsUserInput(
                 message: $confirmMessage,
-                data:    ['collected_data' => $finalOutput, 'requires_confirmation' => true],
+                data: ['collected_data' => $finalOutput, 'requires_confirmation' => true],
                 context: $context
             );
         }
@@ -497,8 +499,15 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             }
 
             // Categorize fields
-            if (str_ends_with($key, '_id') && isset($entityDetails[$key])) {
-                $entities[$key] = $entityDetails[$key];
+            if (str_ends_with($key, '_id')) {
+                // Check if we have entity details for this ID
+                if (isset($entityDetails[$key])) {
+                    $entities[$key] = $entityDetails[$key];
+                } else {
+                    // No entity resolver - still show ID but in a better format
+                    $entityType = str_replace('_id', '', $key);
+                    $entities[$key] = ['ID' => $value]; // Will show as "Customer: ID: 73"
+                }
             } elseif (is_array($value) && isset($value[0])) {
                 $items[$key] = $value;
             } else {
@@ -571,7 +580,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             if (str_ends_with($key, '_id') && isset($entityResolvers[$key])) {
                 try {
                     $resolver = $entityResolvers[$key];
-                    
+
                     // Call the resolver to get entity details
                     if (is_callable($resolver)) {
                         $entityData = $resolver($value);
@@ -608,7 +617,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
      */
     protected function getEntityIcon(string $entityType): string
     {
-        return match($entityType) {
+        return match ($entityType) {
             'customer', 'customer_user' => '👤',
             'invoice' => '📄',
             'product' => '📦',
@@ -912,8 +921,10 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         }
 
         // Check for selection from options (e.g., "use existing or create new")
-        if ((str_contains($contentLower, 'use this existing') || str_contains($contentLower, 'use existing'))
-            && str_contains($contentLower, 'create new')) {
+        if (
+            (str_contains($contentLower, 'use this existing') || str_contains($contentLower, 'use existing'))
+            && str_contains($contentLower, 'create new')
+        ) {
             $inputs[] = [
                 'name' => 'selection',
                 'type' => 'select',

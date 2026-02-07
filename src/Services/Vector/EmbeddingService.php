@@ -27,7 +27,7 @@ class EmbeddingService
         $this->cacheEnabled = config('ai-engine.vector.cache_embeddings', true);
         $this->cacheTtl = config('ai-engine.vector.cache_ttl', 86400); // 24 hours
     }
-    
+
     /**
      * Get dimensions for the embedding model
      * Uses config value if set, otherwise defaults to model's max
@@ -40,16 +40,16 @@ class EmbeddingService
             'text-embedding-3-small' => 1536,
             'text-embedding-ada-002' => 1536,
         ];
-        
+
         $maxForModel = $modelMaxDimensions[$model] ?? 1536;
-        
+
         // Use config if explicitly set, otherwise use model's max
         $configDimensions = config('ai-engine.vector.embedding_dimensions');
-        
+
         if ($configDimensions === null) {
             return $maxForModel;
         }
-        
+
         // If config exceeds model max, use max
         if ((int) $configDimensions > $maxForModel) {
             Log::info("Embedding dimensions capped to model max", [
@@ -59,7 +59,7 @@ class EmbeddingService
             ]);
             return $maxForModel;
         }
-        
+
         return (int) $configDimensions;
     }
 
@@ -76,63 +76,199 @@ class EmbeddingService
         if ($this->cacheEnabled) {
             $cacheKey = $this->getCacheKey($text);
             $cached = Cache::get($cacheKey);
-            
+
             if ($cached) {
                 Log::debug('Embedding cache hit', ['text_length' => strlen($text)]);
                 return $cached;
             }
         }
 
-        try {
-            $params = [
-                'model' => $this->model,
-                'input' => $text,
-            ];
-            
-            // Only include dimensions if model supports custom dimensions
-            // text-embedding-ada-002 doesn't support dimensions parameter
-            if ($this->model !== 'text-embedding-ada-002') {
-                $params['dimensions'] = $this->dimensions;
+        // Try OpenAI first, then fallback to Gemini, then OpenRouter if quota exceeded
+        $providers = [
+            'openai' => fn() => $this->embedWithOpenAI($text, $userId),
+            'openrouter' => fn() => $this->embedWithOpenRouter($text, $userId),
+            'gemini' => fn() => $this->embedWithGemini($text, $userId),
+        ];
+
+        $lastException = null;
+
+        foreach ($providers as $provider => $embedFn) {
+            try {
+                Log::debug("Trying embedding with {$provider}", [
+                    'text_length' => strlen($text),
+                ]);
+
+                $embedding = $embedFn();
+
+                // Cache the result
+                if ($this->cacheEnabled) {
+                    Cache::put($this->getCacheKey($text), $embedding, $this->cacheTtl);
+                }
+
+                if ($provider !== 'openai') {
+                    Log::warning("Embedding succeeded with fallback provider", [
+                        'provider' => $provider,
+                        'text_length' => strlen($text),
+                    ]);
+                }
+
+                return $embedding;
+
+            } catch (\Exception $e) {
+                $lastException = $e;
+                $errorMessage = $e->getMessage();
+
+                // Check if it's a quota error
+                $isQuotaError = str_contains($errorMessage, 'quota') ||
+                    str_contains($errorMessage, 'insufficient_quota');
+
+                Log::warning("Embedding failed with {$provider}", [
+                    'error' => $errorMessage,
+                    'is_quota_error' => $isQuotaError,
+                    'text_length' => strlen($text),
+                ]);
+
+                // If it's not a quota error, don't try other providers
+                if (!$isQuotaError) {
+                    break;
+                }
+
+                // Continue to next provider
             }
-            
-            Log::debug('Creating embedding', [
-                'model' => $this->model,
-                'dimensions' => $this->dimensions,
-                'text_length' => strlen($text),
-            ]);
-            
-            $response = $this->client->embeddings()->create($params);
-
-            $embedding = $response->embeddings[0]->embedding;
-            
-            // Get tokens used
-            $tokensUsed = $response->usage->totalTokens ?? $this->estimateTokens($text);
-            
-            // Track credits (only if userId is provided)
-            // TODO: Fix credit tracking for embeddings - currently disabled due to DTO mismatch
-            // if ($userId) {
-            //     $this->creditManager->deductCredits($userId, $request, $tokensUsed / 1000);
-            // }
-
-            // Cache the result
-            if ($this->cacheEnabled) {
-                Cache::put($this->getCacheKey($text), $embedding, $this->cacheTtl);
-            }
-
-            Log::info('Embedding generated', [
-                'text_length' => strlen($text),
-                'tokens_used' => $tokensUsed,
-                'model' => $this->model,
-            ]);
-
-            return $embedding;
-        } catch (\Exception $e) {
-            Log::error('Embedding generation failed', [
-                'error' => $e->getMessage(),
-                'text_length' => strlen($text),
-            ]);
-            throw $e;
         }
+
+        // All providers failed
+        Log::error('Embedding generation failed with all providers', [
+            'error' => $lastException?->getMessage(),
+            'text_length' => strlen($text),
+        ]);
+        throw $lastException ?? new \Exception('Embedding generation failed');
+    }
+
+    /**
+     * Generate embedding using OpenAI
+     */
+    protected function embedWithOpenAI(string $text, ?string $userId = null): array
+    {
+        $params = [
+            'model' => $this->model,
+            'input' => $text,
+        ];
+
+        // Only include dimensions if model supports custom dimensions
+        if ($this->model !== 'text-embedding-ada-002') {
+            $params['dimensions'] = $this->dimensions;
+        }
+
+        $response = $this->client->embeddings()->create($params);
+        $embedding = $response->embeddings[0]->embedding;
+
+        // Get tokens used
+        $tokensUsed = $response->usage->totalTokens ?? $this->estimateTokens($text);
+
+        Log::info('Embedding generated with OpenAI', [
+            'text_length' => strlen($text),
+            'tokens_used' => $tokensUsed,
+            'model' => $this->model,
+        ]);
+
+        return $embedding;
+    }
+
+    /**
+     * Generate embedding using Gemini (fallback)
+     */
+    protected function embedWithGemini(string $text, ?string $userId = null): array
+    {
+        $apiKey = config('ai-engine.gemini.api_key') ?? config('services.gemini.api_key');
+
+        if (!$apiKey) {
+            throw new \Exception('Gemini API key not configured');
+        }
+
+        $model = 'text-embedding-004';
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:embedContent?key={$apiKey}";
+
+        $response = \Illuminate\Support\Facades\Http::post($url, [
+            'model' => "models/{$model}",
+            'content' => [
+                'parts' => [
+                    ['text' => $text]
+                ]
+            ],
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception("Gemini embedding failed: " . $response->body());
+        }
+
+        $data = $response->json();
+        $embedding = $data['embedding']['values'] ?? null;
+
+        if (!$embedding) {
+            throw new \Exception('No embedding returned from Gemini');
+        }
+
+        Log::info('Embedding generated with Gemini (fallback)', [
+            'text_length' => strlen($text),
+            'model' => $model,
+            'dimensions' => count($embedding),
+        ]);
+
+        return $embedding;
+    }
+
+    /**
+     * Generate embedding using OpenRouter (fallback)
+     */
+    protected function embedWithOpenRouter(string $text, ?string $userId = null): array
+    {
+        $apiKey = config('ai-engine.engines.openrouter.api_key') ?? env('OPENROUTER_API_KEY');
+        if (!$apiKey) {
+            throw new \Exception('OpenRouter API key not configured');
+        }
+
+
+        // Determine model based on configured dimensions
+        // Vector indexer defaults to text-embedding-3-large (3072 dimensions)
+        $dimensions = config('vector-indexer.openai.embedding_dimensions', 3072);
+
+        // Map dimensions to appropriate OpenAI model on OpenRouter
+        $model = match ($dimensions) {
+            3072 => 'openai/text-embedding-3-large',
+            1536 => 'openai/text-embedding-3-small',
+            default => 'openai/text-embedding-3-small', // Fallback
+        };
+
+        $url = 'https://openrouter.ai/api/v1/embeddings';
+
+        $response = \Illuminate\Support\Facades\Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'HTTP-Referer' => config('app.url'),
+            'X-Title' => config('app.name'),
+        ])->post($url, [
+                    'model' => $model,
+                    'input' => $text,
+                ]);
+
+        if (!$response->successful()) {
+            throw new \Exception("OpenRouter embedding failed: " . $response->body());
+        }
+
+        $data = $response->json();
+        $embedding = $data['data'][0]['embedding'] ?? null;
+
+        if (!$embedding) {
+            throw new \Exception('No embedding returned from OpenRouter');
+        }
+
+        Log::info('Embedding generated with OpenRouter (fallback)', [
+            'text_length' => strlen($text),
+            'model' => $model,
+            'dimensions' => count($embedding),
+        ]);
+
+        return $embedding;
     }
 
     /**
@@ -153,7 +289,7 @@ class EmbeddingService
             foreach ($texts as $index => $text) {
                 $cacheKey = $this->getCacheKey($text);
                 $cached = Cache::get($cacheKey);
-                
+
                 if ($cached) {
                     $embeddings[$index] = $cached;
                 } else {

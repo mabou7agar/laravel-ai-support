@@ -47,6 +47,21 @@ class AutonomousRAGAgent
         Log::channel('ai-engine')->info('Autonomus RAG User ID:' . $userId);
         $startTime = microtime(true);
 
+        // Load query state from cache to get last entity list for context
+        if ($sessionId && !isset($options['last_entity_list'])) {
+            $queryState = Cache::get("rag_query_state:{$sessionId}");
+            if ($queryState) {
+                $options['last_entity_list'] = [
+                    'entity_type' => $queryState['model'] ?? 'item',
+                    'entity_data' => $queryState['entity_data'] ?? [],
+                    'entity_ids' => $queryState['entity_ids'] ?? [],
+                    'start_position' => $queryState['start_position'] ?? 1,
+                    'end_position' => $queryState['end_position'] ?? count($queryState['entity_ids'] ?? []),
+                    'current_page' => $queryState['current_page'] ?? 1,
+                ];
+            }
+        }
+
         // Build context for AI with available tools and models
         $context = $this->buildAIContext($message, $conversationHistory, $userId, $options);
 
@@ -463,9 +478,9 @@ class AutonomousRAGAgent
     protected function getAIDecision(string $message, array $context, string $model = 'gpt-4o-mini'): array
     {
         $conversationSummary = $context['conversation'];
-        
+
         // Optimize model info - summarize instead of full dump
-        $modelsInfo = collect($context['models'])->map(function($m) {
+        $modelsInfo = collect($context['models'])->map(function ($m) {
             return [
                 'name' => $m['name'],
                 'description' => $m['description'] ?? "Model for {$m['name']} data",
@@ -477,7 +492,7 @@ class AutonomousRAGAgent
             ];
         })->toArray();
         $modelsJson = json_encode($modelsInfo, JSON_PRETTY_PRINT);
-        
+
         // Include available nodes for routing
         $nodesJson = '';
         if (!empty($context['nodes'])) {
@@ -489,15 +504,25 @@ class AutonomousRAGAgent
         if (!empty($context['last_entity_list'])) {
             $entityType = $context['last_entity_list']['entity_type'] ?? 'item';
             $entityData = $context['last_entity_list']['entity_data'] ?? [];
+            $entityIds = $context['last_entity_list']['entity_ids'] ?? [];
+            $startPosition = $context['last_entity_list']['start_position'] ?? 1;
+            $endPosition = $context['last_entity_list']['end_position'] ?? count($entityIds);
 
             if (!empty($entityData)) {
-                $lastListContext = "\nPREVIOUS RESULTS ({$entityType}):\n";
-                $lastListContext .= json_encode($entityData, JSON_PRETTY_PRINT) . "\n";
+                $lastListContext = "\nCURRENTLY VISIBLE {$entityType}s (positions {$startPosition}-{$endPosition}):\n";
+
+                // Include entity IDs mapping for position-based selection
+                if (!empty($entityIds)) {
+                    $lastListContext .= "ENTITY IDS (current page): " . json_encode($entityIds) . "\n";
+                    $lastListContext .= "POSITIONS: {$startPosition} to {$endPosition}\n\n";
+                }
+
+                //  $lastListContext .= json_encode($entityData, JSON_PRETTY_PRINT) . "\n";
             }
         }
 
         $prompt = <<<PROMPT
-You are an intelligent data retrieval orchestrator. Select the best tool to execute the user's request.
+You are a data retrieval agent. Select the best tool for the user's request.
 
 USER REQUEST: {$message}
 
@@ -507,40 +532,94 @@ CONTEXT:
 
 Available Models:
 {$modelsJson}
+
+You have multiple nodes you should select the node depends on model node or use local one
+Available Nodes:
 {$nodesJson}
 
-CRITICAL - Item Selection by Position:
-When user says "show #2", "second one", "details for #2":
-1. Find item at position 2 in PREVIOUS RESULTS (NOT position 1!)
-2. Extract its ID field (look for: id, invoice_id, email_id, uuid)
-3. Use that ACTUAL ID in filters
-
-Example: "#2" with results [Invoice #218 (id:218), Invoice #217 (id:217)]
-→ {"tool": "db_query", "parameters": {"model": "invoice", "filters": {"id": "217"}, "limit": 1}}
-
 TOOLS:
-- answer_from_context: Answer from data already visible
-- vector_search: Semantic search (check model capabilities)
-- db_query: Fetch/filter records by ID or criteria
-- db_query_next: Next page ("more", "continue")
+- db_query: List or fetch records with exact filters (use for "list X", "show X", "get X", "details of X")
+- db_query_next: Get next page ("more", "next", "continue")
+- vector_search: Semantic/conceptual search (use for "important emails", "urgent messages", "emails about project X", etc.)
 - db_count: Count records
-- db_aggregate: Sum/average/total
-- model_tool: Execute specific model tool (verify tool exists)
-- exit_to_orchestrator: Multi-model operations only
+- db_aggregate: Sum/average calculations
+- answer_from_context: ONLY for simple questions about already visible data (counts, summaries). NEVER use for detail requests.
+- model_tool: Execute a model tool (send_email, reply_to_email, etc.)
+- exit_to_orchestrator: Multi-model operations
 
-RESPONSE (JSON only):
+IMPORTANT RULES:
+1. When user refers to a SPECIFIC item (e.g., "show invoice #123", "the 4th invoice", "invoice 5", "details of the second one"), ALWAYS use db_query with ID filter to fetch fresh complete data
+2. When user asks for a LIST (e.g., "list invoices"), use db_query
+3. When user asks for SEMANTIC/CONCEPTUAL search (e.g., "important emails", "urgent messages", "emails about the meeting"), use vector_search
+4. ONLY use answer_from_context for simple aggregate questions like "how many total?", "which ones are flagged?", etc. about data already shown
+5. If unsure whether user wants details or just a simple answer, prefer db_query to fetch complete data
+
+RESPONSE FORMAT (JSON only):
 {
-  "tool": "tool_name",
-  "reasoning": "brief explanation",
+  "tool": "db_query",
+  "reasoning": "User wants to list emails",
   "parameters": {
-    "model": "model_name",
-    "filters": {"id": "actual_id_value"},
-    "limit": 1
+    "model": "emailcache",
+    "limit": 10
+  }
+}
+
+EXAMPLE for fetching details by position:
+{
+  "tool": "db_query",
+  "reasoning": "User wants the 4th invoice - use entity_ids from context to get ID, then fetch full details",
+  "parameters": {
+    "model": "invoice",
+    "filters": {"id": "[use 4th ID from ENTITY IDS in context]"}
+  }
+}
+
+EXAMPLE for fetching details by ID:
+{
+  "tool": "db_query",
+  "reasoning": "User wants full details of invoice #5",
+  "parameters": {
+    "model": "invoice",
+    "filters": {"id": 5}
+  }
+}
+
+EXAMPLE for answer_from_context (ONLY for simple questions):
+{
+  "tool": "answer_from_context",
+  "reasoning": "User asked a simple count question about visible data",
+  "parameters": {
+    "answer": "Based on the visible emails, you have 3 unread messages."
+  }
+}
+
+EXAMPLE for vector_search (semantic queries):
+{
+  "tool": "vector_search",
+  "reasoning": "User wants emails matching semantic concept 'important'",
+  "parameters": {
+    "model": "emailcache",
+    "query": "important urgent priority",
+    "limit": 10
+  }
+}
+
+EXAMPLE for model_tool:
+{
+  "tool": "model_tool",
+  "reasoning": "User wants to mark invoice as paid",
+  "parameters": {
+    "model": "invoice",
+    "tool_name": "mark_as_paid",
+    "tool_params": {"invoice_id": 217},
+    "message": "make as paid"
   }
 }
 PROMPT;
 
         try {
+            Log::channel('ai-engine')->info('RAG Agent Prompt', ['prompt' => $prompt]);
+
             $response = $this->ai
                 ->model($model)
                 ->withTemperature(0.1)
@@ -548,6 +627,8 @@ PROMPT;
                 ->generate($prompt);
 
             $content = trim($response->getContent());
+
+            Log::channel('ai-engine')->info('RAG Agent Response', ['content' => $content]);
 
             // Clean up common AI response formats (code blocks, etc.)
             $content = preg_replace('/^```(?:json)?\s*/m', '', $content);
@@ -572,20 +653,25 @@ PROMPT;
             // Fallback: try to infer from message
             $messageLower = strtolower($message);
             $detectedModel = null;
-            
-            // Try to detect model from message
-            foreach ($context['models'] as $model) {
-                if (stripos($messageLower, $model['name']) !== false) {
-                    $detectedModel = $model['name'];
-                    break;
+
+
+            if (!$detectedModel) {
+                // Try to detect model from registered models
+                foreach ($context['models'] as $model) {
+                    if (stripos($messageLower, $model['name']) !== false) {
+                        $detectedModel = $model['name'];
+                        break;
+                    }
                 }
             }
-            
+
             // Check for aggregate keywords
-            if (stripos($content, 'db_aggregate') !== false || 
-                stripos($messageLower, 'sum') !== false || 
+            if (
+                stripos($content, 'db_aggregate') !== false ||
+                stripos($messageLower, 'sum') !== false ||
                 stripos($messageLower, 'total') !== false ||
-                stripos($messageLower, 'average') !== false) {
+                stripos($messageLower, 'average') !== false
+            ) {
                 return [
                     'tool' => 'db_aggregate',
                     'reasoning' => 'AI suggested aggregate operation from content',
@@ -624,6 +710,14 @@ PROMPT;
         $tool = $decision['tool'] ?? 'db_query';
         $params = $decision['parameters'] ?? [];
 
+        // Ensure session_id is in options for pagination state persistence
+        $options['session_id'] = $sessionId;
+
+        Log::channel('ai-engine')->info('Execute tool : ' . $tool, [
+            'session_id' => $sessionId,
+            'tool' => $tool,
+        ]);
+
         switch ($tool) {
             case 'answer_from_context':
                 return $this->answerFromContext($params, $conversationHistory);
@@ -644,7 +738,9 @@ PROMPT;
                 return $result;
 
             case 'db_query_next':
-                return $this->dbQueryNext($params, $userId, $options);
+                $response = $this->dbQueryNext($params, $userId, $options);
+                Log::channel('ai-engine')->info('dbQueryNext : ' . json_encode($response));
+                return $response;
 
             case 'db_aggregate':
                 $result = $this->dbAggregate($params, $userId, $options);
@@ -681,7 +777,7 @@ PROMPT;
     protected function answerFromContext(array $params, array $conversationHistory): array
     {
         $answer = $params['answer'] ?? null;
-
+        Log::channel('ai-engine')->info('Answer from context', ['answer' => $answer]);
         if ($answer) {
             return [
                 'success' => true,
@@ -700,15 +796,14 @@ PROMPT;
     /** @var int Items per page for pagination */
     protected int $perPage = 10;
 
-    /** @var array Last query state for pagination */
-    protected static array $lastQueryState = [];
-
     /**
      * Tool: Direct DB query with pagination
      */
     protected function dbQuery(array $params, $userId, array $options, int $page = 1): array
     {
         $modelName = $params['model'] ?? null;
+        $sessionId = $options['session_id'] ?? null;
+
         if (!$modelName) {
             return ['success' => false, 'error' => 'No model specified'];
         }
@@ -798,17 +893,53 @@ PROMPT;
                 ];
             }
 
-            // Store query state for pagination
-            static::$lastQueryState = [
-                'model' => $modelName,
-                'model_class' => $modelClass,
-                'filters' => $filters,
-                'user_id' => $userId,
-                'options' => $options,
-                'page' => $page,
-                'total_pages' => $totalPages,
-                'total_count' => $totalCount,
-            ];
+            // Store query state for pagination in cache (persists across requests)
+            if ($sessionId) {
+                // Calculate position range for current page
+                $startPosition = $offset + 1;
+                $endPosition = $offset + $items->count();
+
+                // Extract entity IDs and create display data
+                $entityIds = $items->pluck('id')->toArray();
+                $entityData = $items->map(function ($item, $index) use ($startPosition) {
+                    $position = $startPosition + $index;
+                    $summary = method_exists($item, 'toRAGSummary')
+                        ? $item->toRAGSummary()
+                        : (string) $item;
+
+                    return [
+                        'position' => $position,
+                        'id' => $item->id,
+                        'summary' => $summary,
+                    ];
+                })->toArray();
+
+                $queryState = [
+                    'model' => $modelName,
+                    'model_class' => $modelClass,
+                    'filters' => $filters,
+                    'user_id' => $userId,
+                    'options' => $options,
+                    'page' => $page,
+                    'total_pages' => $totalPages,
+                    'total_count' => $totalCount,
+                    'entity_ids' => $entityIds,
+                    'entity_data' => $entityData,
+                    'start_position' => $startPosition,
+                    'end_position' => $endPosition,
+                    'current_page' => $page,
+                ];
+                Cache::put("rag_query_state:{$sessionId}", $queryState, now()->addMinutes(30));
+
+                Log::channel('ai-engine')->info('Stored query state for pagination', [
+                    'session_id' => $sessionId,
+                    'model' => $modelName,
+                    'page' => $page,
+                    'total_pages' => $totalPages,
+                    'positions' => "{$startPosition}-{$endPosition}",
+                    'entity_ids' => $entityIds,
+                ]);
+            }
 
             // Format response - use model's own formatting method
             $isSingleRecord = $totalCount === 1 && !empty($filters['id']);
@@ -864,7 +995,8 @@ PROMPT;
             ];
 
         } catch (\Exception $e) {
-            Log::channel('ai-engine')->error('db_query failed', ['error' => $e->getMessage()]);
+
+            Log::channel('ai-engine')->error('db_query failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -874,8 +1006,27 @@ PROMPT;
      */
     protected function dbQueryNext(array $params, $userId, array $options): array
     {
-        // Check if we have a previous query state
-        if (empty(static::$lastQueryState)) {
+        $sessionId = $options['session_id'] ?? null;
+
+        Log::channel('ai-engine')->info('dbQueryNext: Attempting to retrieve query state', [
+            'session_id' => $sessionId,
+        ]);
+
+        // Retrieve query state from cache
+        if (!$sessionId) {
+            return [
+                'success' => false,
+                'error' => 'No session ID provided for pagination.',
+                'tool' => 'db_query_next',
+            ];
+        }
+
+        $state = Cache::get("rag_query_state:{$sessionId}");
+
+        if (empty($state)) {
+            Log::channel('ai-engine')->warning('dbQueryNext: No query state found in cache', [
+                'session_id' => $sessionId,
+            ]);
             return [
                 'success' => false,
                 'error' => 'No previous query to continue. Please make a query first.',
@@ -883,7 +1034,12 @@ PROMPT;
             ];
         }
 
-        $state = static::$lastQueryState;
+        Log::channel('ai-engine')->info('dbQueryNext: Retrieved query state', [
+            'session_id' => $sessionId,
+            'current_page' => $state['page'] ?? 1,
+            'total_pages' => $state['total_pages'] ?? 0,
+        ]);
+
         $nextPage = ($state['page'] ?? 1) + 1;
 
         // Check if there are more pages
@@ -898,14 +1054,15 @@ PROMPT;
                 'total_pages' => $state['total_pages'],
             ];
         }
-
+        Log::channel('ai-engine')->info('dbQueryNext 2');
         // Re-run the query with the next page
         $queryParams = [
             'model' => $state['model'],
             'filters' => $state['filters'] ?? [],
         ];
-
+        Log::channel('ai-engine')->info('dbQueryNext 3');
         return $this->dbQuery($queryParams, $state['user_id'], $state['options'], $nextPage);
+
     }
 
     /**
@@ -1150,6 +1307,25 @@ PROMPT;
             return ['success' => false, 'error' => 'Model and tool_name required'];
         }
 
+        // Check if the data was fetched from a remote node
+        // If so, route the tool execution to that node
+        $sessionId = $options['session_id'] ?? null;
+        if ($sessionId) {
+            $queryState = Cache::get("rag_query_state:{$sessionId}");
+            if ($queryState && isset($queryState['from_node'])) {
+                Log::channel('ai-engine')->info('Model tool - data from remote node, routing tool execution there', [
+                    'model' => $modelName,
+                    'tool' => $toolName,
+                    'node' => $queryState['from_node'],
+                ]);
+                return [
+                    'success' => false,
+                    'error' => "Model {$modelName} data is on remote node",
+                    'should_route_to_node' => true,
+                ];
+            }
+        }
+
         // Find model class
         $modelClass = $this->findModelClass($modelName, $options);
         if (!$modelClass) {
@@ -1225,17 +1401,22 @@ PROMPT;
 
             // Extract parameters from conversation context if not provided using handler
             $toolSchema = $tool['parameters'] ?? [];
+
+            // Retrieve query state from cache for numeric selections
+            $sessionId = $options['session_id'] ?? null;
+            $queryState = $sessionId ? Cache::get("rag_query_state:{$sessionId}") : null;
+
             $extractedParams = \LaravelAIEngine\Services\Agent\Handlers\ToolParameterExtractor::extract(
                 $message,
                 $conversationHistory,
                 $toolSchema,
                 $modelName,
-                static::$lastQueryState
+                $queryState
             );
-            
+
             // Merge extracted params with provided params (provided params take precedence)
             $finalParams = array_merge($extractedParams, $toolParams);
-            
+
             // Execute tool handler
             Log::channel('ai-engine')->info('AutonomousRAGAgent: Executing tool handler', [
                 'model' => $modelName,
@@ -1247,7 +1428,7 @@ PROMPT;
             ]);
 
             $result = $handler($finalParams);
-            
+
             Log::channel('ai-engine')->info('AutonomousRAGAgent: Tool handler executed', [
                 'tool_name' => $toolName,
                 'result' => $result,
@@ -1331,11 +1512,13 @@ PROMPT;
             $response = $this->ragService->processMessage(
                 $query,
                 $sessionId,
-                array_merge($options, [
+                $collections, // availableCollections (3rd arg)
+                $conversationHistory, // conversationHistory (4th arg)
+                array_merge($options, [ // options (5th arg)
                     'user_id' => $userId,
-                    'conversation_history' => $conversationHistory,
                     'rag_collections' => $collections,
-                ])
+                ]),
+                $userId // userId (6th arg)
             );
 
             return [
@@ -1368,7 +1551,7 @@ PROMPT;
         }
 
         // Find which node has this model
-        $nodes = $this->getAvailableNodes($options);
+        $nodes = $this->getAvailableNodes();
         $targetNode = null;
 
         foreach ($nodes as $nodeInfo) {

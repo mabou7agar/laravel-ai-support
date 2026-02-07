@@ -98,7 +98,7 @@ class IntelligentRAGService
                 }
             }
             $availableCollections = array_filter($normalizedCollections); // Remove empty strings
-            
+
             // Load conversation history
             if (empty($conversationHistory)) {
                 $conversationHistory = $this->loadConversationHistory($sessionId);
@@ -171,7 +171,7 @@ class IntelligentRAGService
                 ]);
             } else {
                 $analysis = $useIntelligent
-                    ? $this->analyzeQuery($message, $conversationHistory, $availableCollections)
+                    ? $this->analyzeQuery($message, $conversationHistory, $availableCollections, $sessionId)
                     : ['needs_context' => true, 'search_queries' => [$message], 'collections' => $availableCollections];
             }
 
@@ -353,6 +353,12 @@ class IntelligentRAGService
                         ]);
                     }
                 }
+
+                // Cache the retrieved context for follow-up selection queries (e.g. "1")
+                if ($context->isNotEmpty()) {
+                    $cacheKey = 'rag_context_' . $sessionId;
+                    cache()->put($cacheKey, $context, now()->addMinutes(30));
+                }
             }
 
             // Step 4: Build enhanced prompt with context and aggregate data
@@ -378,6 +384,36 @@ class IntelligentRAGService
                 $response->getMetadata(),
                 ['session_id' => $sessionId]
             );
+
+            // Populating Entity IDs for Agent Context
+            if ($context->isNotEmpty()) {
+                $entityIds = $context->pluck('id')->filter()->values()->toArray();
+
+                // Determine entity type from first item
+                $firstItem = $context->first();
+                $entityType = 'item';
+                if (isset($firstItem->to_addresses) || isset($firstItem->from_address)) {
+                    $entityType = 'email';
+                } elseif (isset($firstItem->class)) {
+                    $entityType = strtolower(class_basename($firstItem->class));
+                }
+
+                // Add to metadata for Agent to consume
+                $metadata['entity_ids'] = $entityIds;
+                $metadata['entity_type'] = $entityType;
+                $metadata['last_entity_list'] = [
+                    'entity_ids' => $entityIds,
+                    'entity_type' => $entityType,
+                    'start_position' => 1,
+                    'end_position' => count($entityIds)
+                ];
+
+                Log::channel('ai-engine')->info('RAG Entity IDs extracted', [
+                    'count' => count($entityIds),
+                    'type' => $entityType,
+                    'ids' => array_slice($entityIds, 0, 5)
+                ]);
+            }
 
             if ($context->isNotEmpty()) {
                 $response = $this->enrichResponseWithSources($response, $context);
@@ -556,7 +592,7 @@ class IntelligentRAGService
      * - What should we search for?
      * - Which collections are relevant?
      */
-    protected function analyzeQuery(string $query, array $conversationHistory = [], array $availableCollections = []): array
+    protected function analyzeQuery(string $query, array $conversationHistory = [], array $availableCollections = [], ?string $sessionId = null): array
     {
         // 1. HEURISTICS: Quick check for simple messages to skip AI analysis
         if ($this->shouldSkipAnalysis($query)) {
@@ -569,6 +605,43 @@ class IntelligentRAGService
                 'query_type' => 'conversational',
                 'needs_aggregate' => false,
             ];
+        }
+
+        // 1.5 SELECTION: Check for numbered selection (e.g. "1", "#2", "first one")
+        // This relies on the context being cached from the previous turn
+        if (preg_match('/^#?(\d+)$/', trim($query), $matches)) {
+            $index = (int) $matches[1] - 1; // 0-based index
+            // Use passed session ID or fallback to request/default
+            $sessionId = $sessionId ?? request()->input('session_id', 'default');
+            $cacheKey = 'rag_context_' . $sessionId;
+
+
+
+            if ($cachedContext = cache()->get($cacheKey)) {
+                if ($item = $cachedContext->slice($index, 1)->first()) {
+                    Log::channel('ai-engine')->info('RAG Selection Detected', [
+                        'query' => $query,
+                        'index' => $index,
+                        'item_id' => $item->id ?? 'unknown',
+                        'item_subject' => $item->subject ?? $item->title ?? 'unknown'
+                    ]);
+
+                    // Rewrite the query to be the subject of the selected item
+                    // This ensures RAG finds it again (and potentially related chunks)
+                    $subject = $item->subject ?? $item->title ?? $item->name ?? null;
+
+                    if ($subject) {
+                        return [
+                            'needs_context' => true,
+                            'reasoning' => "User selected item #{$matches[1]} from previous results: {$subject}",
+                            'search_queries' => [$subject], // Search for the subject!
+                            'collections' => $availableCollections,
+                            'query_type' => 'informational',
+                            'needs_aggregate' => false,
+                        ];
+                    }
+                }
+            }
         }
 
         // 2. CACHING: Check if we analyzed this exact query recently
@@ -629,10 +702,10 @@ class IntelligentRAGService
         // If no federated discovery or availableCollections provided, use local collections
         if (empty($collectionsInfo) && !empty($availableCollections)) {
             $collectionsInfo = "\n\nAvailable knowledge sources (READ DESCRIPTIONS CAREFULLY):\n";
-            
+
             // Normalize collections to class strings for AI analysis
             $normalizedCollections = [];
-            
+
             foreach ($availableCollections as $collection) {
                 // Handle new format (array with metadata) or legacy format (class string)
                 if (is_array($collection)) {
@@ -673,7 +746,7 @@ class IntelligentRAGService
                     $collectionsInfo .= "- **{$name}**\n  → Use class: {$collectionClass}\n";
                 }
             }
-            
+
             // Replace availableCollections with normalized class strings for AI analysis
             $availableCollections = $normalizedCollections;
         }
@@ -1142,16 +1215,41 @@ PROMPT;
 
         // If local, use local search
         if ($routing['is_local']) {
-            // Validate collections exist locally
+            // Log what collections we received
+            Log::channel('ai-engine')->debug('Collections before validation', [
+                'collections' => $collections,
+                'count' => count($collections),
+            ]);
+
+            // Validate collections exist locally and are Models
             $validCollections = array_filter($collections, function ($collection) {
-                return class_exists($collection);
+                $exists = class_exists($collection);
+                $isModel = $exists && is_subclass_of($collection, \Illuminate\Database\Eloquent\Model::class);
+
+                if (!$exists || !$isModel) {
+                    Log::channel('ai-engine')->warning('Filtering out invalid collection', [
+                        'collection' => $collection,
+                        'class_exists' => $exists,
+                        'is_model' => $isModel,
+                    ]);
+                    return false;
+                }
+                return true;
             });
 
+            Log::channel('ai-engine')->debug('Collections after validation', [
+                'valid_collections' => $validCollections,
+                'count' => count($validCollections),
+            ]);
+
             if (empty($validCollections)) {
+                Log::channel('ai-engine')->warning('No valid collections after filtering');
                 return collect();
             }
 
-            return $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
+            $results = $this->retrieveFromLocalSearch($searchQueries, $validCollections, $maxResults, $threshold, $userId);
+
+            return $results;
         }
 
         // Route to remote node
@@ -1375,8 +1473,30 @@ PROMPT;
             ]);
         }
 
+        // Filter out invalid collections (e.g., engine names like 'openai')
+        $validCollections = array_filter($collections, function ($collection) {
+            // Must be a string, valid class, AND an Eloquent Model
+            if (!is_string($collection) || !class_exists($collection) || !is_subclass_of($collection, \Illuminate\Database\Eloquent\Model::class)) {
+                Log::channel('ai-engine')->warning('Invalid collection filtered out', [
+                    'collection' => $collection,
+                    'is_string' => is_string($collection),
+                    'class_exists' => is_string($collection) ? class_exists($collection) : false,
+                    'is_model' => (is_string($collection) && class_exists($collection)) ? is_subclass_of($collection, \Illuminate\Database\Eloquent\Model::class) : false,
+                ]);
+                return false;
+            }
+            return true;
+        });
+
+        if (empty($validCollections)) {
+            Log::channel('ai-engine')->warning('No valid collections for vector search', [
+                'original_collections' => $collections,
+            ]);
+            return collect();
+        }
+
         foreach ($searchQueries as $searchQuery) {
-            foreach ($collections as $collection) {
+            foreach ($validCollections as $collection) {
                 try {
                     // SECURITY: Pass userId for multi-tenant access control
                     $results = $this->vectorSearch->search(
@@ -1517,6 +1637,24 @@ PROMPT;
         // Collect search instructions from models and merge with API-level instructions
         $modelInstructions = null;
         $availableCollections = $options['available_collections'] ?? [];
+
+        // Auto-discover collections if none provided
+        if (empty($availableCollections)) {
+            try {
+                $discoveryService = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
+                $availableCollections = $discoveryService->discover(useCache: true, includeFederated: false);
+
+                Log::channel('ai-engine')->debug('Auto-discovered RAG collections', [
+                    'count' => count($availableCollections),
+                    'collections' => $availableCollections,
+                ]);
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Failed to auto-discover RAG collections', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         if (!empty($availableCollections)) {
             $modelInstructions = $this->collectModelSearchInstructions($availableCollections);
         }
@@ -1685,10 +1823,11 @@ PROMPT;
         // Add recipient information
         if (isset($item->to_addresses) && is_array($item->to_addresses)) {
             $toList = array_map(function ($addr) {
-                if (isset($addr['name']) && $addr['name']) {
-                    return "{$addr['name']} <{$addr['email']}>";
+                $email = $addr['email'] ?? $addr['address'] ?? '';
+                if (isset($addr['name']) && $addr['name'] && $email) {
+                    return "{$addr['name']} <{$email}>";
                 }
-                return $addr['email'] ?? '';
+                return $email;
             }, array_slice($item->to_addresses, 0, 3));
 
             if (!empty($toList)) {
@@ -1743,7 +1882,7 @@ PROMPT;
         }
         // Priority 3: Extract from common fields
         else {
-            $fields = ['content', 'body', 'description', 'text', 'title', 'name'];
+            $fields = ['content', 'body_text', 'text_preview', 'body', 'description', 'text', 'title', 'name', 'subject'];
             $parts = [];
 
             foreach ($fields as $field) {
@@ -1754,6 +1893,12 @@ PROMPT;
 
             $content = implode(' ', $parts);
         }
+
+        // Clean content: decode entities, strip tags, normalize whitespace
+        $content = html_entity_decode($content);
+        $content = strip_tags($content);
+        $content = preg_replace('/\s+/', ' ', $content);
+        $content = trim($content);
 
         // Truncate if too long to prevent slow API calls
         if (strlen($content) > $maxLength) {
@@ -2016,6 +2161,7 @@ PROMPT;
         $projectContext = $this->buildProjectContextSection();
 
         $basePrompt = "You are an intelligent knowledge base assistant with access to a curated knowledge base powered by vector search.";
+        $basePrompt .= "\nCURRENT DATE AND TIME: " . now()->format('l, F j, Y g:i A') . "\n";
 
         // Inject project context if available
         if (!empty($projectContext)) {
@@ -2420,7 +2566,7 @@ PROMPT;
         foreach ($collections as $collection) {
             // Handle new format (array with metadata) or legacy format (class string)
             $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
-            
+
             if (!class_exists($collectionClass)) {
                 continue;
             }
@@ -2652,7 +2798,7 @@ PROMPT;
         foreach ($collections as $collection) {
             // Handle new format (array with metadata) or legacy format (class string)
             $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
-            
+
             if (!class_exists($collectionClass)) {
                 continue;
             }
@@ -2700,18 +2846,35 @@ PROMPT;
 
         // Month + Year pattern (e.g., "January 2026", "jan 2026")
         $months = [
-            'january' => 1, 'jan' => 1, 'february' => 2, 'feb' => 2,
-            'march' => 3, 'mar' => 3, 'april' => 4, 'apr' => 4,
-            'may' => 5, 'june' => 6, 'jun' => 6, 'july' => 7, 'jul' => 7,
-            'august' => 8, 'aug' => 8, 'september' => 9, 'sep' => 9,
-            'october' => 10, 'oct' => 10, 'november' => 11, 'nov' => 11,
-            'december' => 12, 'dec' => 12,
+            'january' => 1,
+            'jan' => 1,
+            'february' => 2,
+            'feb' => 2,
+            'march' => 3,
+            'mar' => 3,
+            'april' => 4,
+            'apr' => 4,
+            'may' => 5,
+            'june' => 6,
+            'jun' => 6,
+            'july' => 7,
+            'jul' => 7,
+            'august' => 8,
+            'aug' => 8,
+            'september' => 9,
+            'sep' => 9,
+            'october' => 10,
+            'oct' => 10,
+            'november' => 11,
+            'nov' => 11,
+            'december' => 12,
+            'dec' => 12,
         ];
 
         foreach ($months as $name => $num) {
             if (preg_match("/{$name}\s+(\d{4})/i", $query, $m)) {
                 $year = $m[1];
-                $days = cal_days_in_month(CAL_GREGORIAN, $num, (int)$year);
+                $days = cal_days_in_month(CAL_GREGORIAN, $num, (int) $year);
                 $month = str_pad($num, 2, '0', STR_PAD_LEFT);
                 return ['created_at' => ['gte' => "{$year}-{$month}-01", 'lte' => "{$year}-{$month}-{$days}"]];
             }
@@ -2825,7 +2988,7 @@ PROMPT;
         foreach ($collections as $collection) {
             // Handle new format (array with metadata) or legacy format (class string)
             $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
-            
+
             if (!class_exists($collectionClass)) {
                 continue;
             }
@@ -2994,8 +3157,10 @@ PROMPT;
 
             if ($messageAnalysis !== null) {
                 // Use pre-analyzed intent (already analyzed by AgentOrchestrator/ChatService)
-                if (in_array($messageAnalysis['type'] ?? '', ['simple_answer', 'conversational']) &&
-                    ($messageAnalysis['confidence'] ?? 0) > 0.7) {
+                if (
+                    in_array($messageAnalysis['type'] ?? '', ['simple_answer', 'conversational']) &&
+                    ($messageAnalysis['confidence'] ?? 0) > 0.7
+                ) {
                     $shouldApplyTextSearch = false;
                     \Log::info('fallbackDatabaseSearch: using pre-analyzed intent', [
                         'query' => $query,

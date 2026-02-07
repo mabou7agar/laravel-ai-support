@@ -454,15 +454,15 @@ PROMPT;
         try {
             // Extract headers from options if provided (from MinimalAIOrchestrator)
             $customHeaders = $options['headers'] ?? [];
-            
+
             // Default headers
             $defaultHeaders = [
                 'X-Forwarded-From-Node' => config('app.name', 'master'),
             ];
-            
+
             // Merge custom headers with defaults (custom headers take precedence)
             $headers = array_merge($defaultHeaders, $customHeaders);
-            
+
             $response = NodeHttpClient::makeAuthenticated($node)
                 ->withHeaders($headers)
                 ->post($node->getApiUrl('chat'), [

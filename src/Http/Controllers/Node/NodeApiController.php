@@ -552,6 +552,16 @@ class NodeApiController extends Controller
                 ? \Illuminate\Support\Facades\Auth::id()
                 : $validated['user_id'];
 
+            // Debug: Log why user_id might be null
+            if (!$userId) {
+                \Log::channel('ai-engine')->warning('NodeApiController: user_id is null', [
+                    'auth_check' => \Illuminate\Support\Facades\Auth::check(),
+                    'auth_id' => \Illuminate\Support\Facades\Auth::id(),
+                    'passed_user_id' => $validated['user_id'],
+                    'has_user_token' => !empty($userToken),
+                ]);
+            }
+
             \Log::channel('ai-engine')->info('NodeApiController: Chat request', [
                 'session_id' => $validated['session_id'],
                 'auth_user_id' => \Illuminate\Support\Facades\Auth::id(),
@@ -620,12 +630,14 @@ class NodeApiController extends Controller
             \Log::channel('ai-engine')->error('NodeApiController: Chat failed', [
                 'session_id' => $validated['session_id'],
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'error' => 'Chat processing failed',
                 'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ], 500);
         }
     }
@@ -642,7 +654,7 @@ class NodeApiController extends Controller
 
         try {
             // Execute action based on type
-            $result = match($validated['action']) {
+            $result = match ($validated['action']) {
                 'index' => $this->handleIndexAction($validated['params']),
                 'delete' => $this->handleDeleteAction($validated['params']),
                 'update' => $this->handleUpdateAction($validated['params']),
