@@ -71,7 +71,7 @@ class ChatService
 
             // Use passed conversation history if available, otherwise load from DB
             if (empty($conversationHistory)) {
-                $conversationHistory = $this->conversationService->getConversationHistory($sessionId);
+                $conversationHistory = $this->conversationService->getConversationHistory($sessionId, 50, $userId);
             }
         }
 

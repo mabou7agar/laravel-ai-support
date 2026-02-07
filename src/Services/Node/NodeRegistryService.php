@@ -14,7 +14,7 @@ class NodeRegistryService
         protected CircuitBreakerService $circuitBreaker,
         protected NodeAuthService $authService
     ) {}
-    
+
     /**
      * Register a new node
      */
@@ -32,50 +32,53 @@ class NodeRegistryService
             'status' => 'active',
             'weight' => $data['weight'] ?? 1,
         ]);
-        
+
         // Ping the node to verify connectivity
         $this->ping($node);
-        
+
         // Clear cache
         $this->clearCache();
-        
+
         Log::channel('ai-engine')->info('Node registered', [
             'node_id' => $node->id,
             'name' => $node->name,
             'url' => $node->url,
             'type' => $node->type,
         ]);
-        
+
         return $node;
     }
-    
+
     /**
      * Unregister a node
      */
     public function unregister(AINode $node): bool
     {
         $deleted = $node->delete();
-        
+
         $this->clearCache();
-        
+
         Log::channel('ai-engine')->info('Node unregistered', [
             'node_id' => $node->id,
             'name' => $node->name,
         ]);
-        
+
         return $deleted;
     }
-    
+
     /**
      * Get all active nodes
      */
     public function getActiveNodes(): Collection
     {
+        if(app()->environment('local')) {
+            return AINode::get();
+        }
         return Cache::remember('ai_nodes_active', 300, function () {
             return AINode::active()->healthy()->get();
         });
     }
-    
+
     /**
      * Get all nodes (including inactive)
      */
@@ -83,7 +86,7 @@ class NodeRegistryService
     {
         return AINode::all();
     }
-    
+
     /**
      * Get node by slug
      */
@@ -91,7 +94,7 @@ class NodeRegistryService
     {
         return AINode::where('slug', $slug)->first();
     }
-    
+
     /**
      * Get node by ID
      */
@@ -99,7 +102,7 @@ class NodeRegistryService
     {
         return AINode::find($id);
     }
-    
+
     /**
      * Ping a node to check health
      */
@@ -113,20 +116,20 @@ class NodeRegistryService
             ]);
             return false;
         }
-        
+
         try {
             $startTime = microtime(true);
-            
+
             $response = NodeHttpClient::makeForHealthCheck($node)
                 ->get($node->getApiUrl('health'));
-            
+
             $duration = (int) ((microtime(true) - $startTime) * 1000);
-            
+
             $success = $response->successful();
-            
+
             // Record ping result
             $node->recordPing($success, $duration);
-            
+
             if ($success) {
                 // Update node metadata from response (auto-discovered from child)
                 $data = $response->json();
@@ -134,7 +137,7 @@ class NodeRegistryService
                     'version' => $data['version'] ?? $node->version,
                     'capabilities' => $data['capabilities'] ?? $node->capabilities,
                 ];
-                
+
                 // Sync auto-discovered metadata if provided
                 if (!empty($data['description'])) {
                     $updateData['description'] = $data['description'];
@@ -157,17 +160,17 @@ class NodeRegistryService
                 if (!empty($data['autonomous_collectors'])) {
                     $updateData['autonomous_collectors'] = $data['autonomous_collectors'];
                 }
-                
+
                 $node->update($updateData);
-                
+
                 Log::channel('ai-engine')->debug('Node metadata synced', [
                     'node_slug' => $node->slug,
                     'synced_fields' => array_keys($updateData),
                 ]);
-                
+
                 // Record success in circuit breaker
                 $this->circuitBreaker->recordSuccess($node);
-                
+
                 Log::channel('ai-engine')->debug('Node ping successful', [
                     'node_id' => $node->id,
                     'node_slug' => $node->slug,
@@ -176,19 +179,19 @@ class NodeRegistryService
             } else {
                 // Record failure in circuit breaker
                 $this->circuitBreaker->recordFailure($node);
-                
+
                 Log::channel('ai-engine')->warning('Node ping failed', [
                     'node_id' => $node->id,
                     'node_slug' => $node->slug,
                     'status_code' => $response->status(),
                 ]);
             }
-            
+
             return $success;
         } catch (\Exception $e) {
             $node->recordPing(false);
             $this->circuitBreaker->recordFailure($node);
-            
+
             Log::channel('ai-engine')->error('Node ping exception', [
                 'node_id' => $node->id,
                 'node_slug' => $node->slug,
@@ -199,18 +202,18 @@ class NodeRegistryService
                 'error_class' => get_class($e),
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null,
             ]);
-            
+
             return false;
         }
     }
-    
+
     /**
      * Ping all nodes
      */
     public function pingAll(): array
     {
         $results = [];
-        
+
         foreach (AINode::all() as $node) {
             $results[$node->slug] = [
                 'success' => $this->ping($node),
@@ -218,10 +221,10 @@ class NodeRegistryService
                 'is_healthy' => $node->isHealthy(),
             ];
         }
-        
+
         return $results;
     }
-    
+
     /**
      * Get node statistics
      */
@@ -240,7 +243,7 @@ class NodeRegistryService
             'avg_response_time' => AINode::active()->avg('avg_response_time'),
         ];
     }
-    
+
     /**
      * Get nodes with capability
      */
@@ -251,52 +254,52 @@ class NodeRegistryService
             ->withCapability($capability)
             ->get();
     }
-    
+
     /**
      * Find node that owns a specific collection/model class
-     * 
+     *
      * @param string $modelClass The model class or collection name
      * @return AINode|null The node that owns this collection, or null if local
      */
     public function findNodeForCollection(string $modelClass): ?AINode
     {
         $cacheKey = 'node_for_collection:' . md5($modelClass);
-        
+
         return Cache::remember($cacheKey, 300, function () use ($modelClass) {
             $nodes = $this->getActiveNodes();
-            
+
             foreach ($nodes as $node) {
                 if ($this->nodeOwnsCollection($node, $modelClass)) {
                     return $node;
                 }
             }
-            
+
             return null;
         });
     }
-    
+
     /**
      * Check if a node owns a specific collection
      */
     public function nodeOwnsCollection(AINode $node, string $modelClass): bool
     {
         $collections = $node->collections ?? [];
-        
+
         if (empty($collections)) {
             return false;
         }
-        
+
         foreach ($collections as $collection) {
             // Handle new format (array with metadata) or legacy format (class string)
             if (is_array($collection)) {
                 $collectionClass = $collection['class'] ?? '';
                 $collectionName = $collection['name'] ?? '';
-                
+
                 // Exact class match
                 if ($collectionClass === $modelClass) {
                     return true;
                 }
-                
+
                 // Name match
                 $modelBasename = strtolower(class_basename($modelClass));
                 if (strtolower($collectionName) === $modelBasename ||
@@ -310,35 +313,35 @@ class NodeRegistryService
                 if ($collection === $modelClass) {
                     return true;
                 }
-                
+
                 // Check by class basename (e.g., "Email" matches "App\Models\Email")
                 if (class_basename($collection) === class_basename($modelClass)) {
                     return true;
                 }
-                
+
                 // Check by collection name variations
                 $modelBasename = strtolower(class_basename($modelClass));
                 $collectionLower = strtolower($collection);
-                
+
                 // Singular/plural matching
-                if ($collectionLower === $modelBasename || 
+                if ($collectionLower === $modelBasename ||
                     $collectionLower === $modelBasename . 's' ||
                     $collectionLower . 's' === $modelBasename) {
                     return true;
                 }
             }
         }
-        
+
         return false;
     }
-    
+
     /**
      * Get all collections across all nodes
      */
     public function getAllCollections(): array
     {
         $collections = [];
-        
+
         foreach ($this->getActiveNodes() as $node) {
             $nodeCollections = $node->collections ?? [];
             foreach ($nodeCollections as $collection) {
@@ -349,26 +352,26 @@ class NodeRegistryService
                 ];
             }
         }
-        
+
         return $collections;
     }
-    
+
     /**
      * Update node status
      */
     public function updateStatus(AINode $node, string $status): void
     {
         $node->update(['status' => $status]);
-        
+
         $this->clearCache();
-        
+
         Log::channel('ai-engine')->info('Node status updated', [
             'node_id' => $node->id,
             'node_slug' => $node->slug,
             'status' => $status,
         ]);
     }
-    
+
     /**
      * Clear node cache
      */
@@ -376,7 +379,7 @@ class NodeRegistryService
     {
         Cache::forget('ai_nodes_active');
     }
-    
+
     /**
      * Get node health report
      */

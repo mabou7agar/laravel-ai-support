@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Services\RAG;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\Models\AINode;
@@ -31,7 +32,9 @@ class AutonomousRAGAgent
     ) {
         $this->ai = $ai;
         $this->ragService = $ragService;
-        $this->discovery = $discovery ?? (app()->bound(RAGCollectionDiscovery::class) ? app(RAGCollectionDiscovery::class) : null);
+        $this->discovery = $discovery ?? (app()->bound(RAGCollectionDiscovery::class) ? app(
+            RAGCollectionDiscovery::class
+        ) : null);
     }
 
     /**
@@ -71,7 +74,15 @@ class AutonomousRAGAgent
 
         if ($useOpenAIFunctions) {
             // Use OpenAI function calling - AI has direct access to all tools
-            return $this->processWithFunctionCalling($message, $sessionId, $userId, $conversationHistory, $context, $options, $model);
+            return $this->processWithFunctionCalling(
+                $message,
+                $sessionId,
+                $userId,
+                $conversationHistory,
+                $context,
+                $options,
+                $model
+            );
         } else {
             // Use prompt-based routing for other providers
             $decision = $this->getAIDecision($message, $context, $model);
@@ -158,7 +169,14 @@ class AutonomousRAGAgent
                 ]);
 
                 // Execute the function
-                return $this->executeFunction($functionName, $functionArgs, $userId, $sessionId, $conversationHistory, $options);
+                return $this->executeFunction(
+                    $functionName,
+                    $functionArgs,
+                    $userId,
+                    $sessionId,
+                    $conversationHistory,
+                    $options
+                );
             }
 
             // No function call - return AI response
@@ -168,7 +186,6 @@ class AutonomousRAGAgent
                 'tool' => 'direct_response',
                 'fast_path' => true,
             ];
-
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Function calling failed', [
                 'error' => $e->getMessage(),
@@ -177,6 +194,7 @@ class AutonomousRAGAgent
 
             // Fallback to prompt-based routing
             $decision = $this->getAIDecision($message, $context, $model);
+
             return $this->executeTool($decision, $message, $sessionId, $userId, $conversationHistory, $options);
         }
     }
@@ -263,6 +281,13 @@ class AutonomousRAGAgent
             $systemPrompt .= "\n\nPrevious results ({$entityType}):\n" . json_encode($entityData, JSON_PRETTY_PRINT);
         }
 
+        if (!empty($context['selected_entity']) && is_array($context['selected_entity'])) {
+            $systemPrompt .= "\n\nCurrent selected entity:\n" . json_encode(
+                $context['selected_entity'],
+                JSON_PRETTY_PRINT
+            );
+        }
+
         $messages[] = ['role' => 'system', 'content' => $systemPrompt];
 
         // Add conversation history
@@ -324,6 +349,7 @@ class AutonomousRAGAgent
             'user_id' => $userId,
             'is_master' => config('ai-engine.nodes.is_master', true),
             'last_entity_list' => $options['last_entity_list'] ?? null,
+            'selected_entity' => $options['selected_entity'] ?? null,
         ];
     }
 
@@ -427,11 +453,23 @@ class AutonomousRAGAgent
      */
     protected function getAvailableNodes(): array
     {
-        if (!config('ai-engine.nodes.enabled', false)) {
-            return [];
+        $nodes = collect();
+
+        // Prefer registry discovery; it works in local/dev even when health filters are relaxed.
+        if (app()->bound(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
+            try {
+                $nodes = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class)->getActiveNodes();
+            } catch (\Throwable $e) {
+                Log::channel('ai-engine')->warning('Failed loading nodes from NodeRegistryService', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
-        $nodes = AINode::active()->healthy()->child()->get();
+        // Fallback to direct DB query if registry returns nothing.
+        if ($nodes->isEmpty()) {
+            $nodes = AINode::active()->healthy()->get();
+        }
 
         return $nodes->map(function ($node) {
             // Use rich collection metadata if available (new format)
@@ -516,9 +554,16 @@ class AutonomousRAGAgent
                     $lastListContext .= "ENTITY IDS (current page): " . json_encode($entityIds) . "\n";
                     $lastListContext .= "POSITIONS: {$startPosition} to {$endPosition}\n\n";
                 }
-
                 //  $lastListContext .= json_encode($entityData, JSON_PRETTY_PRINT) . "\n";
             }
+        }
+
+        $selectedEntityContext = '';
+        if (!empty($context['selected_entity']) && is_array($context['selected_entity'])) {
+            $selectedEntityContext = "\nCURRENT SELECTED ENTITY:\n" . json_encode(
+                $context['selected_entity'],
+                JSON_PRETTY_PRINT
+            ) . "\n";
         }
 
         $prompt = <<<PROMPT
@@ -529,6 +574,7 @@ USER REQUEST: {$message}
 CONTEXT:
 {$conversationSummary}
 {$lastListContext}
+{$selectedEntityContext}
 
 Available Models:
 {$modelsJson}
@@ -544,15 +590,26 @@ TOOLS:
 - db_count: Count records
 - db_aggregate: Sum/average calculations
 - answer_from_context: ONLY for simple questions about already visible data (counts, summaries). NEVER use for detail requests.
-- model_tool: Execute a model tool (send_email, reply_to_email, etc.)
+- model_tool: Execute a model tool (send_email, etc.)
 - exit_to_orchestrator: Multi-model operations
 
+NEVER USE MODEL TOOL IN CASE USER NEEDS RESPOND DEPENDS ON CONTEXT
+ - EXAMPLE : user asks about context "should i reply on this" ai should check the context and reply depend on it ( correct )
+ - EXAMPLE : user asks about context "reply on this message" ai should check the context and show suggest to the reply ( correct )
+ - EXAMPLE : user asks about context "suggest reply" ai should use the tool ( incorrect )
+ 
+  
+
 IMPORTANT RULES:
-1. When user refers to a SPECIFIC item (e.g., "show invoice #123", "the 4th invoice", "invoice 5", "details of the second one"), ALWAYS use db_query with ID filter to fetch fresh complete data
+1. When user refers to a SPECIFIC item (e.g., "show invoice #123", "the 4th invoice", "invoice 5", "details of the second one"), ALWAYS use vector_search and fallback to db_query with ID filter to fetch fresh complete data
 2. When user asks for a LIST (e.g., "list invoices"), use db_query
 3. When user asks for SEMANTIC/CONCEPTUAL search (e.g., "important emails", "urgent messages", "emails about the meeting"), use vector_search
 4. ONLY use answer_from_context for simple aggregate questions like "how many total?", "which ones are flagged?", etc. about data already shown
 5. If unsure whether user wants details or just a simple answer, prefer db_query to fetch complete data
+6. If CURRENT SELECTED ENTITY exists and user asks a follow-up (details/action/draft) about "it/this/that", reuse its ID and model context without asking user to repeat identifiers
+7- If user asks for enhancements/suggestions answer conversational with suggestions
+8- DONT EXECUTE TOOL UNTIL USER CONFIRM THAT ALSO CONSIDER THAT USER MAY ONLY WANNA ENHANCE LAST MESSAGE OR GET INFO DEPEND ON IT
+9- ONLY CONSIDER USE DB INSTEAD OF VECTOR IF USER WANNA LIST OR NOT ASKING ABOUT CONTEXT OTHERWISE PRIORITY TO RAG
 
 RESPONSE FORMAT (JSON only):
 {
@@ -675,7 +732,10 @@ PROMPT;
                 return [
                     'tool' => 'db_aggregate',
                     'reasoning' => 'AI suggested aggregate operation from content',
-                    'parameters' => ['model' => $detectedModel ?? 'invoice', 'aggregate' => ['operation' => 'sum', 'field' => 'amount']],
+                    'parameters' => [
+                        'model' => $detectedModel ?? 'invoice',
+                        'aggregate' => ['operation' => 'sum', 'field' => 'amount']
+                    ],
                 ];
             }
 
@@ -685,9 +745,9 @@ PROMPT;
                 'reasoning' => 'Could not parse AI decision, inferred from message',
                 'parameters' => ['model' => $detectedModel ?? 'unknown'],
             ];
-
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('AI decision failed', ['error' => $e->getMessage()]);
+
             return [
                 'tool' => 'db_query',
                 'reasoning' => 'AI decision failed: ' . $e->getMessage(),
@@ -726,27 +786,52 @@ PROMPT;
                 $result = $this->dbQuery($params, $userId, $options);
                 // If model not available locally, try to route to node that has it
                 if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
-                    return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
+                    return $this->routeToNodeForModel(
+                        $params,
+                        $message,
+                        $sessionId,
+                        $userId,
+                        $conversationHistory,
+                        $options
+                    );
                 }
+
                 return $result;
 
             case 'db_count':
                 $result = $this->dbCount($params, $userId, $options);
                 if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
-                    return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
+                    return $this->routeToNodeForModel(
+                        $params,
+                        $message,
+                        $sessionId,
+                        $userId,
+                        $conversationHistory,
+                        $options
+                    );
                 }
+
                 return $result;
 
             case 'db_query_next':
                 $response = $this->dbQueryNext($params, $userId, $options);
                 Log::channel('ai-engine')->info('dbQueryNext : ' . json_encode($response));
+
                 return $response;
 
             case 'db_aggregate':
                 $result = $this->dbAggregate($params, $userId, $options);
                 if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
-                    return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
+                    return $this->routeToNodeForModel(
+                        $params,
+                        $message,
+                        $sessionId,
+                        $userId,
+                        $conversationHistory,
+                        $options
+                    );
                 }
+
                 return $result;
 
             case 'vector_search':
@@ -759,8 +844,16 @@ PROMPT;
                 $result = $this->executeModelTool($params, $userId, $options);
                 // If model not available locally, try to route to node that has it
                 if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
-                    return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
+                    return $this->routeToNodeForModel(
+                        $params,
+                        $message,
+                        $sessionId,
+                        $userId,
+                        $conversationHistory,
+                        $options
+                    );
                 }
+
                 return $result;
 
             case 'exit_to_orchestrator':
@@ -819,6 +912,7 @@ PROMPT;
                 'model' => $modelName,
                 'model_class' => $modelClass,
             ]);
+
             return [
                 'success' => false,
                 'error' => "Model {$modelName} not available locally",
@@ -858,7 +952,7 @@ PROMPT;
             Log::info('dbQuery: ' . $query->latest()->skip(0)->take($this->perPage)->toSql());
             Log::info('dbQuery: ' . json_encode($query->latest()->skip(0)->take($this->perPage)->getBindings()));
 
-            $query = $this->applyFilters($query, $filters, $modelClass);
+            $query = $this->applyFilters($query, $filters, $modelClass, $options);
 
             // Get total count for pagination info
             $totalCount = (clone $query)->count();
@@ -884,6 +978,7 @@ PROMPT;
                         'total_count' => $totalCount,
                     ];
                 }
+
                 return [
                     'success' => true,
                     'response' => "No {$modelName}s found matching your criteria.",
@@ -993,10 +1088,12 @@ PROMPT;
                 'entity_type' => $modelName,
                 'items' => $items->toArray(), // Store full items for reference
             ];
-
         } catch (\Exception $e) {
+            Log::channel('ai-engine')->error(
+                'db_query failed',
+                ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]
+            );
 
-            Log::channel('ai-engine')->error('db_query failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1027,6 +1124,7 @@ PROMPT;
             Log::channel('ai-engine')->warning('dbQueryNext: No query state found in cache', [
                 'session_id' => $sessionId,
             ]);
+
             return [
                 'success' => false,
                 'error' => 'No previous query to continue. Please make a query first.',
@@ -1061,8 +1159,8 @@ PROMPT;
             'filters' => $state['filters'] ?? [],
         ];
         Log::channel('ai-engine')->info('dbQueryNext 3');
-        return $this->dbQuery($queryParams, $state['user_id'], $state['options'], $nextPage);
 
+        return $this->dbQuery($queryParams, $state['user_id'], $state['options'], $nextPage);
     }
 
     /**
@@ -1100,7 +1198,7 @@ PROMPT;
 
             // Apply filters from AI decision
             $filters = $params['filters'] ?? [];
-            $query = $this->applyFilters($query, $filters, $modelClass);
+            $query = $this->applyFilters($query, $filters, $modelClass, $options);
 
             $count = $query->count();
 
@@ -1111,9 +1209,9 @@ PROMPT;
                 'fast_path' => true,
                 'count' => $count,
             ];
-
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('db_count failed', ['error' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1170,7 +1268,7 @@ PROMPT;
 
             // Apply filters from AI decision
             $filters = $params['filters'] ?? [];
-            $query = $this->applyFilters($query, $filters, $modelClass);
+            $query = $this->applyFilters($query, $filters, $modelClass, $options);
 
             // Check if field exists in database or is a model method
             $isDbField = \Schema::hasColumn($table, $field);
@@ -1276,9 +1374,9 @@ PROMPT;
                 'field' => $field,
                 'calculation_method' => $calculationMethod,
             ];
-
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('db_aggregate failed', ['error' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1304,11 +1402,10 @@ PROMPT;
 
         if (!$modelName || !$toolName) {
             Log::channel('ai-engine')->error('AutonomousRAGAgent: Missing model or tool_name');
+
             return ['success' => false, 'error' => 'Model and tool_name required'];
         }
 
-        // Check if the data was fetched from a remote node
-        // If so, route the tool execution to that node
         $sessionId = $options['session_id'] ?? null;
         if ($sessionId) {
             $queryState = Cache::get("rag_query_state:{$sessionId}");
@@ -1318,6 +1415,7 @@ PROMPT;
                     'tool' => $toolName,
                     'node' => $queryState['from_node'],
                 ]);
+
                 return [
                     'success' => false,
                     'error' => "Model {$modelName} data is on remote node",
@@ -1326,19 +1424,18 @@ PROMPT;
             }
         }
 
-        // Find model class
         $modelClass = $this->findModelClass($modelName, $options);
         if (!$modelClass) {
             return ['success' => false, 'error' => "Model {$modelName} not found"];
         }
 
-        // Check if model exists locally - if not, it's a remote-only model
         if (!class_exists($modelClass)) {
             Log::channel('ai-engine')->info('Model tool - model not found locally, should route to remote node', [
                 'model' => $modelName,
                 'tool' => $toolName,
                 'model_class' => $modelClass,
             ]);
+
             return [
                 'success' => false,
                 'error' => "Model {$modelName} not available locally",
@@ -1346,14 +1443,12 @@ PROMPT;
             ];
         }
 
-        // Find config class
         $configClass = $this->findModelConfigClass($modelClass);
         if (!$configClass) {
             return ['success' => false, 'error' => "No config found for {$modelName}"];
         }
 
         try {
-            // Get all tools
             $tools = $configClass::getTools();
 
             Log::channel('ai-engine')->info('AutonomousRAGAgent: Found config tools', [
@@ -1367,6 +1462,7 @@ PROMPT;
                     'tool_name' => $toolName,
                     'available_tools' => array_keys($tools),
                 ]);
+
                 return ['success' => false, 'error' => "Tool {$toolName} not found for {$modelName}"];
             }
 
@@ -1377,13 +1473,14 @@ PROMPT;
 
             $tool = $tools[$toolName];
             $handler = $tool['handler'] ?? null;
+            $requiresConfirmation = (bool) ($tool['requires_confirmation'] ?? false);
 
             if (!$handler || !is_callable($handler)) {
                 Log::channel('ai-engine')->error('AutonomousRAGAgent: Tool has no callable handler');
+
                 return ['success' => false, 'error' => "Tool {$toolName} has no handler"];
             }
 
-            // Check permissions
             $allowedOps = $configClass::getAllowedOperations($userId);
             $requiresCreate = stripos($toolName, 'create') !== false;
             $requiresUpdate = stripos($toolName, 'update') !== false;
@@ -1399,11 +1496,7 @@ PROMPT;
                 return ['success' => false, 'error' => 'Permission denied: delete'];
             }
 
-            // Extract parameters from conversation context if not provided using handler
             $toolSchema = $tool['parameters'] ?? [];
-
-            // Retrieve query state from cache for numeric selections
-            $sessionId = $options['session_id'] ?? null;
             $queryState = $sessionId ? Cache::get("rag_query_state:{$sessionId}") : null;
 
             $extractedParams = \LaravelAIEngine\Services\Agent\Handlers\ToolParameterExtractor::extract(
@@ -1414,10 +1507,22 @@ PROMPT;
                 $queryState
             );
 
-            // Merge extracted params with provided params (provided params take precedence)
             $finalParams = array_merge($extractedParams, $toolParams);
 
-            // Execute tool handler
+            $selectedEntity = $options['selected_entity']
+                ?? $options['selected_entity_context']
+                ?? ($context->metadata['selected_entity_context'] ?? null);
+            if ($selectedEntity && !empty($selectedEntity['entity_data'])) {
+                $finalParams['entity_data'] = $selectedEntity['entity_data'];
+
+                Log::channel('ai-engine')->info('AutonomousRAGAgent: Added entity data to tool params', [
+                    'tool_name' => $toolName,
+                    'entity_type' => $selectedEntity['entity_type'] ?? 'unknown',
+                    'has_entity_data' => true,
+                ]);
+            }
+
+
             Log::channel('ai-engine')->info('AutonomousRAGAgent: Executing tool handler', [
                 'model' => $modelName,
                 'tool' => $toolName,
@@ -1434,7 +1539,6 @@ PROMPT;
                 'result' => $result,
             ]);
 
-            // Format response
             if (is_array($result)) {
                 $success = $result['success'] ?? true;
                 $message = $result['message'] ?? ($success ? 'Operation completed' : 'Operation failed');
@@ -1448,7 +1552,6 @@ PROMPT;
                     'data' => $result,
                 ];
 
-                // Include suggested actions if provided by the tool
                 if (isset($result['suggested_actions']) && is_array($result['suggested_actions'])) {
                     $response['suggested_actions'] = $result['suggested_actions'];
                 }
@@ -1464,7 +1567,6 @@ PROMPT;
                 'fast_path' => true,
                 'result' => $result,
             ];
-
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Model tool execution failed', [
                 'model' => $modelName,
@@ -1527,9 +1629,9 @@ PROMPT;
                 'tool' => 'vector_search',
                 'metadata' => $response->getMetadata(),
             ];
-
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('vector_search failed', ['error' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1550,6 +1652,8 @@ PROMPT;
             return ['success' => false, 'error' => 'No model specified'];
         }
 
+        $modelClass = $this->findModelClass($modelName, $options);
+
         // Find which node has this model
         $nodes = $this->getAvailableNodes();
         $targetNode = null;
@@ -1557,19 +1661,65 @@ PROMPT;
         foreach ($nodes as $nodeInfo) {
             $models = $nodeInfo['models'] ?? [];
             foreach ($models as $model) {
-                if (strtolower($model['name']) === strtolower($modelName)) {
+                $candidateNames = array_filter([
+                    strtolower((string) ($model['name'] ?? '')),
+                    strtolower(
+                        (string) class_basename((string) ($model['class'] ?? ''))
+                    ),
+                ]);
+
+                $normalizedRequested = strtolower($modelName);
+                $isMatch = in_array($normalizedRequested, $candidateNames, true) ||
+                    in_array($normalizedRequested . 's', $candidateNames, true) ||
+                    in_array(rtrim($normalizedRequested, 's'), $candidateNames, true);
+
+                if ($isMatch) {
                     $targetNode = $nodeInfo['slug'];
                     break 2;
                 }
             }
         }
 
+        // Fallback: use registry ownership lookup by model class/name.
+        if (!$targetNode && app()->bound(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
+            try {
+                $registry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
+
+                if ($modelClass) {
+                    $node = $registry->findNodeForCollection($modelClass);
+                    if ($node) {
+                        $targetNode = $node->slug;
+                    }
+                }
+
+                if (!$targetNode) {
+                    $node = $registry->findNodeForCollection($modelName);
+                    if ($node) {
+                        $targetNode = $node->slug;
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::channel('ai-engine')->warning('Node registry fallback lookup failed', [
+                    'model' => $modelName,
+                    'model_class' => $modelClass,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         if (!$targetNode) {
+            Log::channel('ai-engine')->warning('No node found for model routing', [
+                'model' => $modelName,
+                'model_class' => $modelClass,
+                'available_nodes' => array_map(fn($n) => $n['slug'] ?? 'unknown', $nodes),
+            ]);
+
             return ['success' => false, 'error' => "No node found with model {$modelName}"];
         }
 
         Log::channel('ai-engine')->info('Routing to node for model', [
             'model' => $modelName,
+            'model_class' => $modelClass,
             'node' => $targetNode,
         ]);
 
@@ -1601,8 +1751,18 @@ PROMPT;
         }
 
         $node = AINode::where('slug', $nodeSlug)->first();
-        if (!$node || !$node->isHealthy()) {
+        if (!$node) {
             return ['success' => false, 'error' => "Node {$nodeSlug} not available"];
+        }
+
+        if (!$node->isHealthy() && !app()->environment('local')) {
+            return ['success' => false, 'error' => "Node {$nodeSlug} not available"];
+        }
+
+        if (!$node->isHealthy() && app()->environment('local')) {
+            Log::channel('ai-engine')->warning('Routing to node despite unhealthy status in local environment', [
+                'node' => $nodeSlug,
+            ]);
         }
 
         try {
@@ -1653,9 +1813,9 @@ PROMPT;
             }
 
             return ['success' => false, 'error' => $response['error'] ?? 'Routing failed'];
-
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('route_to_node failed', ['error' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1677,6 +1837,7 @@ PROMPT;
                 'config_class' => $configClass,
                 'model_class' => $modelClass,
             ]);
+
             return $modelClass;
         }
 
@@ -1747,7 +1908,6 @@ PROMPT;
                     class_exists($fullClass) &&
                     is_subclass_of($fullClass, \LaravelAIEngine\Contracts\AutonomousModelConfig::class)
                 ) {
-
                     try {
                         $configModelName = strtolower($fullClass::getName());
                         if ($configModelName === $modelName) {
@@ -1789,7 +1949,7 @@ PROMPT;
     /**
      * Apply filters to query based on AI decision
      */
-    protected function applyFilters($query, array $filters, string $modelClass)
+    protected function applyFilters($query, array $filters, string $modelClass, array $options = [])
     {
         if (empty($filters)) {
             return $query;
@@ -1800,11 +1960,20 @@ PROMPT;
 
         // ID filter - for fetching specific record
         if (!empty($filters['id'])) {
-            $query->where('id', $filters['id']);
+            $resolvedId = $this->resolveIdFilterValue($filters['id'], $options);
+            if ($resolvedId !== null) {
+                $query->where('id', $resolvedId);
 
-            Log::channel('ai-engine')->info('Applied ID filter', [
-                'id' => $filters['id'],
-            ]);
+                Log::channel('ai-engine')->info('Applied ID filter', [
+                    'id' => $resolvedId,
+                    'raw_id' => $filters['id'],
+                ]);
+            } else {
+                Log::channel('ai-engine')->warning('Could not resolve ID filter value, skipping ID filter', [
+                    'raw_id' => $filters['id'],
+                    'session_id' => $options['session_id'] ?? null,
+                ]);
+            }
 
             return $query; // When filtering by ID, ignore other filters
         }
@@ -1859,6 +2028,117 @@ PROMPT;
     }
 
     /**
+     * Resolve AI-generated ID filter values.
+     * Supports raw numeric IDs, ordinals ("2nd"), and placeholders
+     * like "[use 2nd ID from ENTITY IDS in context]".
+     */
+    protected function resolveIdFilterValue($rawId, array $options): ?int
+    {
+        if (is_int($rawId)) {
+            return $rawId > 0 ? $rawId : null;
+        }
+
+        if (is_numeric($rawId)) {
+            $id = (int) $rawId;
+
+            return $id > 0 ? $id : null;
+        }
+
+        if (!is_string($rawId) || trim($rawId) === '') {
+            return null;
+        }
+
+        $text = strtolower(trim($rawId));
+
+        // Extract explicit numeric ID if present (e.g., "id 25", "#25", "invoice 25")
+        if (preg_match('/(?:^|[^\d])(\d{1,10})(?:$|[^\d])/', $text, $m)) {
+            $maybeId = (int) $m[1];
+
+            // If this looks like an ordinal placeholder, resolve from entity list instead.
+            if (str_contains($text, 'entity ids') || preg_match('/\b(st|nd|rd|th)\b/', $text)) {
+                $resolvedFromPosition = $this->resolveIdFromPosition((int) $m[1], $options);
+                if ($resolvedFromPosition !== null) {
+                    return $resolvedFromPosition;
+                }
+            }
+
+            if ($maybeId > 0) {
+                return $maybeId;
+            }
+        }
+
+        // Resolve ordinal words ("first", "second", ...)
+        $wordToOrdinal = [
+            'first' => 1,
+            'second' => 2,
+            'third' => 3,
+            'fourth' => 4,
+            'fifth' => 5,
+            'sixth' => 6,
+            'seventh' => 7,
+            'eighth' => 8,
+            'ninth' => 9,
+            'tenth' => 10,
+        ];
+        foreach ($wordToOrdinal as $word => $ordinal) {
+            if (str_contains($text, $word)) {
+                $resolved = $this->resolveIdFromPosition($ordinal, $options);
+                if ($resolved !== null) {
+                    return $resolved;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a 1-based position from current visible entity IDs.
+     */
+    protected function resolveIdFromPosition(int $position, array $options): ?int
+    {
+        if ($position <= 0) {
+            return null;
+        }
+
+        $entityIds = [];
+        $startPosition = 1;
+
+        if (!empty($options['last_entity_list']) && is_array($options['last_entity_list'])) {
+            $entityIds = $options['last_entity_list']['entity_ids'] ?? [];
+            $startPosition = (int) ($options['last_entity_list']['start_position'] ?? 1);
+        }
+
+        if (empty($entityIds) && !empty($options['session_id'])) {
+            $queryState = Cache::get("rag_query_state:{$options['session_id']}");
+            if (is_array($queryState)) {
+                $entityIds = $queryState['entity_ids'] ?? [];
+                $startPosition = (int) ($queryState['start_position'] ?? 1);
+            }
+        }
+
+        if (empty($entityIds)) {
+            return null;
+        }
+
+        // Support absolute positions (e.g., position 12 with start_position 11)
+        if ($position >= $startPosition) {
+            $absoluteIndex = $position - $startPosition;
+            if (isset($entityIds[$absoluteIndex])) {
+                return (int) $entityIds[$absoluteIndex];
+            }
+        }
+
+        // Also support relative positions within current page (1-based)
+        $relativeIndex = $position - 1;
+        if (isset($entityIds[$relativeIndex])) {
+            return (int) $entityIds[$relativeIndex];
+        }
+
+        return null;
+    }
+
+    /**
      * Get CRUD tools for a model from AutonomousModelConfig classes
      */
     protected function getToolsForModel(string $modelClass): array
@@ -1890,6 +2170,7 @@ PROMPT;
                 'model' => $modelClass,
                 'error' => $e->getMessage(),
             ]);
+
             return [];
         }
     }
@@ -1968,5 +2249,4 @@ PROMPT;
             'tool' => 'exit_to_orchestrator',
         ];
     }
-
 }

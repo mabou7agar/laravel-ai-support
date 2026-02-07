@@ -18,7 +18,8 @@ class AgentResponse
         public bool $isComplete = false,
         public ?string $nextStep = null,
         public ?array $requiredInputs = null
-    ) {}
+    ) {
+    }
 
     public static function success(
         string $message,
@@ -71,13 +72,15 @@ class AgentResponse
 
     public static function conversational(
         string $message,
-        ?UnifiedActionContext $context = null
+        ?UnifiedActionContext $context = null,
+        ?array $metadata = null
     ): self {
         return new self(
             success: true,
             message: $message,
             strategy: 'conversational',
             context: $context,
+            metadata: $metadata,
             isComplete: true
         );
     }
@@ -102,7 +105,7 @@ class AgentResponse
         ?UnifiedActionContext $context = null
     ): self {
         $isComplete = in_array($state->status ?? '', ['completed', 'cancelled']);
-        
+
         return new self(
             success: true,
             message: $state->message ?? 'Data collection in progress',

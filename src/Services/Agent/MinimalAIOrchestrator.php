@@ -119,6 +119,12 @@ class MinimalAIOrchestrator
             );
         }
 
+        // RULE 2b: Check for positional reference to previous list
+        if ($this->detectPositionalReference($message, $context)) {
+            Log::channel('ai-engine')->info('Detected positional reference to previous list');
+            return $this->handlePositionalReference($message, $context, $options);
+        }
+
         // RULE 2: No active session? Ask AI everything
         return $this->askAI($message, $context, $options);
     }
@@ -279,26 +285,17 @@ PROMPT;
             return $this->askAI($message, $context, $options);
         }
 
-        $node = $this->nodeRegistry->getNode($nodeSlug);
+        $node = $this->resolveNodeForRouting($nodeSlug);
 
         if (!$node) {
+            Log::channel('ai-engine')->warning('Unable to continue routed session: node not found', [
+                'requested_node' => $nodeSlug,
+                'session_id' => $context->sessionId,
+            ]);
             $context->forget('routed_to_node');
             return $this->askAI($message, $context, $options);
         }
-        // Extract user token and forwardable headers for authentication
-        $userToken = request()->bearerToken();
-        $forwardHeaders = \LaravelAIEngine\Services\Node\NodeHttpClient::extractForwardableHeaders();
-
-        // Merge authentication headers
-        $headers = array_merge($forwardHeaders, [
-            'X-Forwarded-From-Node' => config('app.name'),
-            'X-User-Token' => $userToken,
-        ]);
-
-        // Add headers to options for forwarding
-        $options['headers'] = $headers;
-        $options['user_token'] = $userToken;
-
+        $options = $this->buildNodeForwardOptions($options);
 
         $router = app(\LaravelAIEngine\Services\Node\NodeRouterService::class);
         $response = $router->forwardChat($node, $message, $context->sessionId, $options, $context->userId);
@@ -310,14 +307,27 @@ PROMPT;
                 context: $context
             );
 
-            $context->addAssistantMessage($response['response']);
+            $this->appendAssistantMessageIfNew($context, $response['response']);
             $this->contextManager->save($context);
 
             return $agentResponse;
         }
 
-        $context->forget('routed_to_node');
-        return $this->askAI($message, $context, $options);
+        Log::channel('ai-engine')->warning('Continue routed session failed', [
+            'node' => $node->slug,
+            'error' => $response['error'] ?? 'Unknown error',
+            'session_id' => $context->sessionId,
+        ]);
+
+        $failureMessage = $this->formatNodeRoutingFailureMessage($node->slug, $node->url, $response['error'] ?? null);
+        $this->appendAssistantMessageIfNew($context, $failureMessage);
+        $this->contextManager->save($context);
+
+        return AgentResponse::failure(
+            message: $failureMessage,
+            data: $response,
+            context: $context
+        );
     }
 
     protected function askAI(
@@ -372,7 +382,18 @@ PROMPT;
 
             $response = $this->execute($decision, $message, $context, $options);
 
-            $context->addAssistantMessage($response->message);
+            // Extract entity metadata from response if available
+            $metadata = [];
+            if (!empty($response->metadata['entity_ids'])) {
+                $metadata['entity_ids'] = $response->metadata['entity_ids'];
+                $metadata['entity_type'] = $response->metadata['entity_type'] ?? 'item';
+
+                // Clear stale selected_entity_context when new entity list is returned
+                unset($context->metadata['selected_entity_context']);
+                Log::channel('ai-engine')->info('Cleared stale selected_entity_context due to new entity list');
+            }
+
+            $this->appendAssistantMessageIfNew($context, $response->message, $metadata);
             $this->contextManager->save($context);
 
             return $response;
@@ -382,7 +403,23 @@ PROMPT;
                 'error' => $e->getMessage(),
             ]);
 
-            return $this->executeSearchRAG($message, $context, $options);
+            $response = $this->executeSearchRAG($message, $context, $options);
+
+            // Extract entity metadata from RAG response
+            $metadata = [];
+            if (!empty($response->metadata['entity_ids'])) {
+                $metadata['entity_ids'] = $response->metadata['entity_ids'];
+                $metadata['entity_type'] = $response->metadata['entity_type'] ?? 'item';
+
+                // Clear stale selected_entity_context when new entity list is returned
+                unset($context->metadata['selected_entity_context']);
+                Log::channel('ai-engine')->info('Cleared stale selected_entity_context due to new entity list (RAG fallback)');
+            }
+
+            $this->appendAssistantMessageIfNew($context, $response->message, $metadata);
+            $this->contextManager->save($context);
+
+            return $response;
         }
     }
 
@@ -574,10 +611,14 @@ PROMPT;
         $discovery = new \LaravelAIEngine\Services\Node\NodeMetadataDiscovery();
         $localNodeMeta = $discovery->discover();
         $localNodeMeta['slug'] = 'local';
+        $selectedEntityContext = $this->formatSelectedEntityContext($context);
 
         // Get user profile information
         $userId = $context->userId;
         $userProfile = $this->getUserProfile($userId);
+
+        // Get entity metadata from last assistant message
+        $entityContext = $this->formatEntityMetadata($context);
 
         return <<<PROMPT
 You are an AI orchestrator. Decide what to do with this message.
@@ -587,6 +628,11 @@ USER PROFILE:
 
 CONVERSATION HISTORY:
 {$history}
+
+{$entityContext}
+
+SELECTED ENTITY CONTEXT:
+{$selectedEntityContext}
 
 PAUSED SESSIONS: {$this->formatPausedSessions($pausedSessions)}
 
@@ -610,7 +656,10 @@ AVAILABLE RESOURCES:
 USER: "{$message}"
 
 Analyze the conversation history and user's message. If the conversation context shows the user is working with a specific entity or the assistant's last response came from a remote node, continue routing to that same node for follow-up questions.
-DEPENDS ON NODES DOMAIN YOU SHOULD DECIDE TO ROUTE using ( route_to_node action )
+If SELECTED ENTITY CONTEXT is present, preserve that context and avoid asking the user to repeat IDs.
+If ENTITY CONTEXT is present and user refers to positions (1, 2, first, second, etc.), use the entity IDs from that context.
+For follow-up requests about the selected entity (details, actions, drafts, updates), pick the action/tool that can use that selected entity directly.
+DEPENDS ON NODES DOMAIN YOU SHOULD DECIDE TO ROUTE using ( route_to_node action ) AND NEVER ROUTE IN CASE NODE IS "local"
 Choose the most appropriate action:
 - start_collector: When user wants to create, update, or delete data
 - search_rag: When user wants to view, list, search, or get information from LOCAL models (emails)
@@ -619,6 +668,8 @@ Choose the most appropriate action:
 - resume_session: When user says "back" or "resume"
 
 Match the user's intent to available collectors based on their goals.
+NEVER USE TOOL IF a USER WANTs to ENHANCMENT INTO LAST CONVERSATION OR TO SUGGEST THINGS
+USE VECTOR IF YOU WANT to REPLY DEPENDS ON UNDERSTANDING
 
 RESPOND WITH EXACTLY THIS FORMAT:
 ACTION: <start_collector|use_tool|route_to_node|resume_session|pause_and_handle|search_rag|conversational>
@@ -659,6 +710,68 @@ PROMPT;
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Provide compact selected-entity context for AI routing (model-agnostic).
+     */
+    protected function formatSelectedEntityContext(UnifiedActionContext $context): string
+    {
+        $selected = $this->getSelectedEntityContext($context);
+        if (!$selected) {
+            return "(none)";
+        }
+
+        return json_encode($selected, JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Get selected entity context from metadata, when available.
+     */
+    protected function getSelectedEntityContext(UnifiedActionContext $context): ?array
+    {
+        $selected = $context->metadata['selected_entity_context'] ?? null;
+        if (is_array($selected) && !empty($selected['entity_id'])) {
+            return $selected;
+        }
+
+        $legacy = $context->metadata['last_selected_option'] ?? null;
+        if (is_array($legacy) && !empty($legacy['entity_id'])) {
+            return [
+                'entity_id' => (int) $legacy['entity_id'],
+                'entity_type' => $legacy['entity_type'] ?? null,
+                'model_class' => $legacy['model_class'] ?? null,
+                'source_node' => $legacy['source_node'] ?? null,
+                'selected_via' => 'numbered_option',
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Format entity metadata from last assistant message for AI prompt
+     */
+    protected function formatEntityMetadata(UnifiedActionContext $context): string
+    {
+        // Get last assistant message
+        $messages = array_reverse($context->conversationHistory);
+        foreach ($messages as $msg) {
+            if ($msg['role'] === 'assistant' && !empty($msg['metadata']['entity_ids'])) {
+                $entityIds = $msg['metadata']['entity_ids'];
+                $entityType = $msg['metadata']['entity_type'] ?? 'item';
+
+                // Format as compact list
+                $formatted = "ENTITY CONTEXT (from last response):\n";
+                $formatted .= "Type: {$entityType}\n";
+                $formatted .= "IDs: " . json_encode($entityIds) . "\n";
+                $formatted .= "Note: If user refers to positions (1, 2, first, etc.), map to these IDs in order.\n";
+
+                return $formatted;
+            }
+        }
+
+        return "";
     }
 
     protected function formatPausedSessions(array $sessions): string
@@ -832,6 +945,9 @@ PROMPT;
                     ]);
                     $tool = $tools[$toolName];
                     $handler = $tool['handler'] ?? null;
+                    $modelName = method_exists($configClass, 'getName')
+                        ? $configClass::getName()
+                        : null;
 
                     if (!$handler || !is_callable($handler)) {
                         continue;
@@ -858,13 +974,22 @@ PROMPT;
                             $message,
                             $context,
                             $tool['parameters'] ?? [],
-                            $modelName ?? null
+                            $modelName
                         );
                     }
+
+                    $selectedEntity = $this->getSelectedEntityContext($context);
+                    $params = $this->bindSelectedEntityToToolParams(
+                        $toolName,
+                        $params,
+                        $selectedEntity,
+                        $tool['parameters'] ?? []
+                    );
 
                     Log::channel('ai-engine')->info('Executing tool handler', [
                         'tool_name' => $toolName,
                         'params' => $params,
+                        'selected_entity_id' => $selectedEntity['entity_id'] ?? null,
                     ]);
 
                     // Execute the tool
@@ -1065,38 +1190,42 @@ PROMPT;
         UnifiedActionContext $context,
         array $options
     ): AgentResponse {
-        $nodeSlug = $decision['resource_name'];
-
-        if (!$nodeSlug) {
+        $requestedResource = trim((string) ($decision['resource_name'] ?? ''));
+        if ($requestedResource === '' || $requestedResource === 'local') {
+            Log::channel('ai-engine')->warning('route_to_node decision without resource_name, falling back to RAG', [
+                'message' => substr($message, 0, 120),
+                'session_id' => $context->sessionId,
+            ]);
             return $this->executeSearchRAG($message, $context, $options);
         }
 
-        $node = $this->nodeRegistry->getNode($nodeSlug);
-
+        $node = $this->resolveNodeForRouting($requestedResource);
         if (!$node) {
-            return $this->executeSearchRAG($message, $context, $options);
+            Log::channel('ai-engine')->warning('route_to_node could not resolve target node', [
+                'resource_name' => $requestedResource,
+                'session_id' => $context->sessionId,
+            ]);
+
+            return AgentResponse::failure(
+                message: "I couldn't find a remote node matching '{$requestedResource}'.",
+                context: $context
+            );
         }
 
-        // Extract user token and forwardable headers for authentication
-        $userToken = request()->bearerToken();
-        $forwardHeaders = \LaravelAIEngine\Services\Node\NodeHttpClient::extractForwardableHeaders();
-
-        // Merge authentication headers
-        $headers = array_merge($forwardHeaders, [
-            'X-Forwarded-From-Node' => config('app.name'),
-            'X-User-Token' => $userToken,
+        Log::channel('ai-engine')->info('Routing message to remote node', [
+            'requested_resource' => $requestedResource,
+            'resolved_node' => $node->slug,
+            'session_id' => $context->sessionId,
         ]);
 
-        // Add headers to options for forwarding
-        $options['headers'] = $headers;
-        $options['user_token'] = $userToken;
+        $options = $this->buildNodeForwardOptions($options);
 
         $router = app(\LaravelAIEngine\Services\Node\NodeRouterService::class);
         $response = $router->forwardChat($node, $message, $context->sessionId, $options, $context->userId);
 
         if ($response['success']) {
             $context->set('routed_to_node', [
-                'node_slug' => $nodeSlug,
+                'node_slug' => $node->slug,
                 'node_name' => $node->name,
             ]);
 
@@ -1107,7 +1236,91 @@ PROMPT;
             );
         }
 
-        return $this->executeSearchRAG($message, $context, $options);
+        Log::channel('ai-engine')->warning('route_to_node failed; skipping local fallback to avoid mixed-domain results', [
+            'requested_resource' => $requestedResource,
+            'resolved_node' => $node->slug,
+            'node_url' => $node->url,
+            'error' => $response['error'] ?? 'Unknown error',
+            'session_id' => $context->sessionId,
+        ]);
+
+        return AgentResponse::failure(
+            message: $this->formatNodeRoutingFailureMessage($node->slug, $node->url, $response['error'] ?? null),
+            data: $response,
+            context: $context
+        );
+    }
+
+    /**
+     * Build consistent forwarding headers/options for node requests.
+     */
+    protected function buildNodeForwardOptions(array $options): array
+    {
+        $userToken = request()->bearerToken();
+        $forwardHeaders = \LaravelAIEngine\Services\Node\NodeHttpClient::extractForwardableHeaders();
+
+        $options['headers'] = array_merge($forwardHeaders, [
+            'X-Forwarded-From-Node' => config('app.name'),
+            'X-User-Token' => $userToken,
+        ]);
+        $options['user_token'] = $userToken;
+
+        return $options;
+    }
+
+    /**
+     * Resolve a route target to a node using slug/name/collection ownership matching.
+     */
+    protected function resolveNodeForRouting(string $resourceName): ?\LaravelAIEngine\Models\AINode
+    {
+        $resourceName = trim($resourceName);
+        if ($resourceName === '') {
+            return null;
+        }
+
+        $node = $this->nodeRegistry->getNode($resourceName);
+        if ($node) {
+            return $node;
+        }
+
+        $normalized = strtolower(preg_replace('/[^a-z0-9]/', '', $resourceName));
+        $nodes = $this->nodeRegistry->getAllNodes();
+
+        $matchedNode = $nodes->first(function ($candidate) use ($normalized) {
+            $slug = strtolower(preg_replace('/[^a-z0-9]/', '', (string) $candidate->slug));
+            $name = strtolower(preg_replace('/[^a-z0-9]/', '', (string) $candidate->name));
+            return $slug === $normalized || $name === $normalized;
+        });
+        if ($matchedNode) {
+            return $matchedNode;
+        }
+
+        $matchedByCollection = $this->nodeRegistry->findNodeForCollection($resourceName);
+        if ($matchedByCollection) {
+            return $matchedByCollection;
+        }
+
+        $singular = rtrim($resourceName, 's');
+        if ($singular !== $resourceName) {
+            $matchedByCollection = $this->nodeRegistry->findNodeForCollection($singular);
+            if ($matchedByCollection) {
+                return $matchedByCollection;
+            }
+        }
+
+        return null;
+    }
+
+    protected function formatNodeRoutingFailureMessage(string $nodeSlug, ?string $nodeUrl, ?string $error = null): string
+    {
+        $summary = $error ? preg_replace('/\s+/', ' ', trim($error)) : 'unknown routing error';
+        if (is_string($summary) && strlen($summary) > 220) {
+            $summary = substr($summary, 0, 220) . '...';
+        }
+
+        $nodeLocation = $nodeUrl ? " at {$nodeUrl}" : '';
+
+        return "I couldn't reach remote node '{$nodeSlug}'{$nodeLocation} ({$summary}). I did not run a local fallback query to avoid mixed-domain results. Please verify the node is running and try again.";
     }
 
     protected function executeSearchRAG(
@@ -1124,6 +1337,11 @@ PROMPT;
             'message' => substr($message, 0, 100),
             'session_id' => $context->sessionId,
         ]);
+
+        $selectedEntity = $this->getSelectedEntityContext($context);
+        if ($selectedEntity) {
+            $options['selected_entity'] = $selectedEntity;
+        }
 
         $result = $ragAgent->process(
             $message,
@@ -1154,12 +1372,27 @@ PROMPT;
             // Store metadata
             $context->metadata['tool_used'] = $result['tool'] ?? 'unknown';
             $context->metadata['fast_path'] = $result['fast_path'] ?? false;
+            if (!empty($result['metadata']) && is_array($result['metadata'])) {
+                $context->metadata['rag_last_metadata'] = $result['metadata'];
+            }
+            if (!empty($result['suggested_actions']) && is_array($result['suggested_actions'])) {
+                $context->metadata['suggested_actions'] = array_values($result['suggested_actions']);
+            } else {
+                unset($context->metadata['suggested_actions']);
+            }
+            $this->captureSelectionStateFromResult($result, $context);
 
-            $context->addAssistantMessage($responseText);
+            // Extract entity metadata for conversation history
+            $messageMetadata = [];
+            if (!empty($result['metadata']['entity_ids'])) {
+                $messageMetadata['entity_ids'] = $result['metadata']['entity_ids'];
+                $messageMetadata['entity_type'] = $result['metadata']['entity_type'] ?? 'item';
+            }
 
             return AgentResponse::conversational(
                 message: $responseText,
-                context: $context
+                context: $context,
+                metadata: $messageMetadata
             );
         }
 
@@ -1209,12 +1442,30 @@ PROMPT;
         ));
 
         $responseText = $aiResponse->getContent();
-        $context->addAssistantMessage($responseText);
 
         return AgentResponse::conversational(
             message: $responseText,
             context: $context
         );
+    }
+
+    /**
+     * Avoid duplicate assistant messages when nested orchestration/fallback paths return the same text.
+     */
+    protected function appendAssistantMessageIfNew(UnifiedActionContext $context, string $message, array $metadata = []): void
+    {
+        $history = $context->conversationHistory ?? [];
+        $lastMessage = !empty($history) ? end($history) : null;
+
+        if (
+            is_array($lastMessage) &&
+            ($lastMessage['role'] ?? null) === 'assistant' &&
+            ($lastMessage['content'] ?? null) === $message
+        ) {
+            return;
+        }
+
+        $context->addAssistantMessage($message, $metadata);
     }
 
     /**
@@ -1259,6 +1510,221 @@ PROMPT;
     }
 
     /**
+     * Detect if user is making a positional reference to a previous list
+     */
+    protected function detectPositionalReference(string $message, UnifiedActionContext $context): bool
+    {
+        // Check if message contains positional words/patterns
+        $positionalPattern = '/\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|the\s+\d+|number\s+\d+|\d+)\s*(one|email|invoice|item|entry)?\b/i';
+        if (!preg_match($positionalPattern, $message)) {
+            return false;
+        }
+
+        // Check if we have entity context in last assistant message
+        $messages = array_reverse($context->conversationHistory);
+        foreach ($messages as $msg) {
+            if ($msg['role'] === 'assistant' && !empty($msg['metadata']['entity_ids'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Handle positional reference by fetching full entity details
+     */
+    protected function handlePositionalReference(
+        string $message,
+        UnifiedActionContext $context,
+        array $options
+    ): AgentResponse {
+        // 1. Extract position from message
+        $position = $this->extractPosition($message);
+        if ($position === null) {
+            return AgentResponse::conversational(
+                message: "I couldn't understand which item you're referring to. Could you be more specific?",
+                context: $context
+            );
+        }
+
+        // 2. Get entity ID from conversation metadata
+        $entityData = $this->getEntityFromPosition($position, $context);
+        if (!$entityData) {
+            return AgentResponse::conversational(
+                message: "I couldn't find item #{$position} in the previous list. Please check the number and try again.",
+                context: $context
+            );
+        }
+
+        Log::channel('ai-engine')->info('Resolved positional reference', [
+            'position' => $position,
+            'entity_id' => $entityData['id'],
+            'entity_type' => $entityData['type'],
+        ]);
+
+        // 3. Fetch full entity details
+        $fullEntity = $this->fetchEntityDetails(
+            $entityData['id'],
+            $entityData['type'],
+            $context
+        );
+
+        if (!$fullEntity) {
+            return AgentResponse::conversational(
+                message: "I found the {$entityData['type']} but couldn't retrieve its details. Please try again.",
+                context: $context
+            );
+        }
+
+        // 4. Store in selected_entity_context for tools to use
+        $context->metadata['selected_entity_context'] = [
+            'entity_id' => $entityData['id'],
+            'entity_type' => $entityData['type'],
+            'entity_data' => $fullEntity,
+            'selected_via' => 'positional_reference',
+            'position' => $position,
+            'suggested_action_content' => null, // Will be populated by AI if it suggests an action
+        ];
+
+        Log::channel('ai-engine')->info('Enriched context with entity details', [
+            'entity_id' => $entityData['id'],
+            'has_data' => !empty($fullEntity),
+        ]);
+
+        // Save context to persist entity data across conversation turns
+        $this->contextManager->save($context);
+
+        // 5. Re-process message with enriched context
+        return $this->askAI($message, $context, $options);
+    }
+
+    /**
+     * Extract position number from message
+     */
+    protected function extractPosition(string $message): ?int
+    {
+        // Try to match ordinal words
+        $ordinals = [
+            'first' => 1,
+            'second' => 2,
+            'third' => 3,
+            'fourth' => 4,
+            'fifth' => 5,
+            '1st' => 1,
+            '2nd' => 2,
+            '3rd' => 3,
+            '4th' => 4,
+            '5th' => 5,
+        ];
+
+        foreach ($ordinals as $word => $position) {
+            if (preg_match('/\b' . preg_quote($word, '/') . '\b/i', $message)) {
+                return $position;
+            }
+        }
+
+        // Try to match numbers
+        if (preg_match('/\b(?:the\s+|number\s+)?(\d+)\b/i', $message, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Get entity ID and type from position in conversation metadata
+     */
+    protected function getEntityFromPosition(int $position, UnifiedActionContext $context): ?array
+    {
+        // Find last assistant message with entity_ids
+        $messages = array_reverse($context->conversationHistory);
+        foreach ($messages as $msg) {
+            if ($msg['role'] === 'assistant' && !empty($msg['metadata']['entity_ids'])) {
+                $entityIds = $msg['metadata']['entity_ids'];
+                $entityType = $msg['metadata']['entity_type'] ?? 'item';
+
+                // Position is 1-indexed, array is 0-indexed
+                $index = $position - 1;
+                if (isset($entityIds[$index])) {
+                    return [
+                        'id' => $entityIds[$index],
+                        'type' => $entityType,
+                    ];
+                }
+
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Fetch full entity details from RAG or DB
+     */
+    protected function fetchEntityDetails(int $entityId, string $entityType, UnifiedActionContext $context): ?array
+    {
+        try {
+            // Map entity type to model class
+            $modelClass = $this->getModelClassForEntityType($entityType);
+            if (!$modelClass || !class_exists($modelClass)) {
+                Log::channel('ai-engine')->warning('Unknown entity type for fetch', [
+                    'entity_type' => $entityType,
+                ]);
+                return null;
+            }
+
+            // Fetch from database
+            $entity = $modelClass::find($entityId);
+            if (!$entity) {
+                Log::channel('ai-engine')->warning('Entity not found in database', [
+                    'entity_id' => $entityId,
+                    'entity_type' => $entityType,
+                    'model_class' => $modelClass,
+                ]);
+                return null;
+            }
+
+            // Convert to array with all attributes
+            $entityData = $entity->toArray();
+
+            Log::channel('ai-engine')->info('Successfully fetched entity from database', [
+                'entity_id' => $entityId,
+                'entity_type' => $entityType,
+                'has_keys' => array_keys($entityData),
+            ]);
+
+            return $entityData;
+
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->error('Error fetching entity details', [
+                'entity_id' => $entityId,
+                'entity_type' => $entityType,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Map entity type to model class
+     */
+    protected function getModelClassForEntityType(string $entityType): ?string
+    {
+        $mapping = [
+            'email' => \LaravelAIEngine\Models\EmailCache::class,
+            'invoice' => \App\Models\Invoice::class,
+            'customer' => \App\Models\Customer::class,
+            'product' => \App\Models\Product::class,
+            // Add more mappings as needed
+        ];
+
+        return $mapping[strtolower($entityType)] ?? null;
+    }
+
+    /**
      * Handle option selection from previous message
      */
     protected function handleOptionSelection(
@@ -1283,143 +1749,473 @@ PROMPT;
             'last_message_preview' => substr($lastAssistantMessage, 0, 200),
         ]);
 
-        // Check if it's about email reply
-        if (
-            str_contains(strtolower($lastAssistantMessage), 'reply') &&
-            str_contains(strtolower($lastAssistantMessage), 'email')
-        ) {
-            return $this->handleEmailReplyOption($optionNumber, $context, $options);
+        // Resolve hidden option metadata first (deterministic selection by ID)
+        $selectionResponse = $this->handleStoredSelectionOption($optionNumber, $context, $options);
+        if ($selectionResponse) {
+            return $selectionResponse;
         }
 
-        // Add more context handlers here as needed
-        // For now, return null to fall through to normal processing
         return null;
     }
 
     /**
-     * Handle email reply option selection
+     * Resolve numeric selection from hidden metadata (IDs + model metadata)
      */
-    protected function handleEmailReplyOption(
+    protected function handleStoredSelectionOption(
         int $optionNumber,
         UnifiedActionContext $context,
         array $options
-    ): AgentResponse {
-        // Get email context from conversation history
-        $history = $context->conversationHistory ?? [];
-        $emailSubject = '';
-        $emailFrom = '';
-        $emailId = null;
-        $emailPreview = '';
-
-        // Look for email details in recent messages
-        foreach (array_reverse($history) as $msg) {
-            $content = $msg['content'] ?? '';
-
-            // Extract email metadata
-            if (preg_match('/\*\*Subject:\*\*\s*(.+)/i', $content, $matches)) {
-                $emailSubject = trim($matches[1]);
-            }
-            if (preg_match('/\*\*From:\*\*\s*(.+)/i', $content, $matches)) {
-                $emailFrom = trim($matches[1]);
-            }
-            if (preg_match('/\*\*Preview:\*\*\s*(.+)/i', $content, $matches)) {
-                $emailPreview = trim(strip_tags($matches[1]));
-            }
-
-            // Try to extract email ID from entity_ids in last_entity_list
-            if ($emailSubject && $emailFrom) {
-                break;
-            }
+    ): ?AgentResponse {
+        $selection = $this->resolveSelectionOption($optionNumber, $context);
+        if (!$selection) {
+            return null;
         }
 
-        // Get email ID from last query state
-        $lastEntityList = $context->metadata['last_entity_list'] ?? [];
-        if (!empty($lastEntityList['entity_ids'])) {
-            // Use the first/only email ID from the list
-            $emailId = $lastEntityList['entity_ids'][0] ?? null;
-        }
-
-        // If no email ID found, try to get from session cache
-        if (!$emailId) {
-            $sessionId = $context->sessionId;
-            $queryState = Cache::get("rag_query_state:{$sessionId}");
-            if ($queryState && !empty($queryState['entity_ids'])) {
-                $emailId = $queryState['entity_ids'][0] ?? null;
-            }
-        }
-
-        // Use AI to generate contextual reply based on option number
-        $optionDescriptions = [
-            1 => "confirm and acknowledge the email positively",
-            2 => "inquire about additional details or ask clarifying questions",
-            3 => "report a concern or issue that needs to be addressed",
-        ];
-
-        $optionIntent = $optionDescriptions[$optionNumber] ?? $optionDescriptions[1];
-
-        // Generate reply using AI
-        $aiEngine = app(AIEngineService::class);
-        $prompt = <<<PROMPT
-Generate a professional email reply to {$optionIntent}.
-
-Email context:
-From: {$emailFrom}
-Subject: {$emailSubject}
-Preview: {$emailPreview}
-
-Write a concise, professional reply (2-3 sentences) that addresses the intent.
-PROMPT;
-
-        try {
-            $aiResponse = $aiEngine->generate(new AIRequest(
-                prompt: $prompt,
-                engine: EngineEnum::from('openrouter'),
-                model: EntityEnum::from('gpt-4o-mini'),
-                maxTokens: 150,
-                temperature: 0.7,
-            ));
-
-            $replyBody = trim($aiResponse->getContent());
-        } catch (\Exception $e) {
-            // Fallback to simple template if AI fails
-            $replyBody = "Thank you for your email regarding {$emailSubject}. " .
-                ($optionNumber == 2 ? "Could you please provide more details?" :
-                    ($optionNumber == 3 ? "I'd like to discuss this further." :
-                        "I appreciate the notification."));
-        }
-
-        $response = "Based on your selection, here's a suggested reply:\n\n\"{$replyBody}\"\n\nWould you like me to send this reply?";
-
-        Log::channel('ai-engine')->info('Generated email reply suggestion', [
+        Log::channel('ai-engine')->info('Resolved option from hidden selection map', [
             'option_number' => $optionNumber,
-            'email_id' => $emailId,
-            'email_subject' => $emailSubject,
+            'entity_id' => $selection['entity_id'] ?? null,
+            'entity_type' => $selection['entity_type'] ?? null,
+            'model_class' => $selection['model_class'] ?? null,
+            'source_node' => $selection['source_node'] ?? null,
         ]);
 
-        // Add suggested action for sending the reply
-        $suggestedActions = [];
-
-        if ($emailId) {
-            $suggestedActions[] = [
-                'label' => 'Send This Reply',
-                'tool' => 'reply_to_email',
-                'description' => 'Send the suggested reply to this email',
-                'params' => [
-                    'email_id' => $emailId,
-                    'body' => $replyBody,
-                    'reply_all' => false,
-                ]
-            ];
-        } else {
-            Log::channel('ai-engine')->warning('Could not find email_id for reply action');
+        $entityId = $selection['entity_id'] ?? null;
+        $modelClass = $selection['model_class'] ?? null;
+        if ($entityId) {
+            // Any previous quick-actions are now stale because user selected a new entity.
+            unset($context->metadata['suggested_actions']);
         }
 
-        $context->addAssistantMessage($response);
-        $context->metadata['suggested_actions'] = $suggestedActions;
+        // Fast path: query local model directly by hidden ID (no extra AI routing)
+        if ($entityId && $modelClass && class_exists($modelClass)) {
+            try {
+                $query = $modelClass::query();
 
-        return AgentResponse::conversational(
-            message: $response,
-            context: $context
-        );
+                if ($context->userId !== null && method_exists($modelClass, 'scopeForUser')) {
+                    $query->forUser($context->userId);
+                } elseif ($context->userId !== null) {
+                    $instance = new $modelClass();
+                    $table = $instance->getTable();
+                    if (\Illuminate\Support\Facades\Schema::hasColumn($table, 'user_id')) {
+                        $query->where('user_id', $context->userId);
+                    }
+                }
+
+                $record = $query->find($entityId);
+                if ($record) {
+                    $detail = $this->formatSelectedRecordDetails($record);
+
+                    $responseText = "**Selected option {$optionNumber}**\n\n{$detail}";
+                    $context->metadata['last_selected_option'] = [
+                        'option' => $optionNumber,
+                        'entity_id' => $entityId,
+                        'entity_type' => $selection['entity_type'] ?? class_basename($modelClass),
+                        'model_class' => $modelClass,
+                        'source_node' => $selection['source_node'] ?? null,
+                    ];
+                    $context->metadata['selected_entity_context'] = [
+                        'entity_id' => (int) $entityId,
+                        'entity_type' => $selection['entity_type'] ?? class_basename($modelClass),
+                        'model_class' => $modelClass,
+                        'source_node' => $selection['source_node'] ?? null,
+                        'selected_via' => 'numbered_option',
+                        'detail_excerpt' => substr(trim(strip_tags($detail)), 0, 800),
+                        'selected_at' => now()->toIso8601String(),
+                        // 'entity_data' => $record->toArray(), // Add full entity data
+                    ];
+                    $this->appendAssistantMessageIfNew($context, $responseText);
+
+                    return AgentResponse::conversational(
+                        message: $responseText,
+                        context: $context
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::channel('ai-engine')->warning('Failed to resolve selected option from local model', [
+                    'option_number' => $optionNumber,
+                    'model_class' => $modelClass,
+                    'entity_id' => $entityId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // If the selected option belongs to a remote node AND we don't have a local model class, route to remote
+        // Skip this if we already tried a local model (even if it failed) to avoid incorrect remote routing
+        if (!empty($selection['source_node']) && $entityId && empty($modelClass)) {
+            $context->metadata['selected_entity_context'] = [
+                'entity_id' => (int) $entityId,
+                'entity_type' => $selection['entity_type'] ?? 'record',
+                'model_class' => $selection['model_class'] ?? null,
+                'source_node' => $selection['source_node'],
+                'selected_via' => 'numbered_option',
+                'selected_at' => now()->toIso8601String(),
+            ];
+            $entityType = $selection['entity_type'] ?? 'record';
+            $lookupMessage = "show details for {$entityType} id {$entityId}";
+            $response = $this->executeRouteToNode(
+                ['resource_name' => $selection['source_node']],
+                $lookupMessage,
+                $context,
+                $options
+            );
+            $this->appendAssistantMessageIfNew($context, $response->message);
+            return $response;
+        }
+
+        // Fallback: keep AI involved, but provide explicit hidden ID hint
+        if ($entityId) {
+            $context->metadata['selected_entity_context'] = [
+                'entity_id' => (int) $entityId,
+                'entity_type' => $selection['entity_type'] ?? 'item',
+                'model_class' => $selection['model_class'] ?? null,
+                'source_node' => $selection['source_node'] ?? null,
+                'selected_via' => 'numbered_option',
+                'selected_at' => now()->toIso8601String(),
+            ];
+            $entityType = $selection['entity_type'] ?? 'item';
+            $response = $this->executeSearchRAG(
+                "show full details for {$entityType} id {$entityId}",
+                $context,
+                $options
+            );
+            $this->appendAssistantMessageIfNew($context, $response->message);
+            return $response;
+        }
+
+        return null;
     }
+
+    /**
+     * Ensure tool params target the currently selected entity when available.
+     */
+    protected function bindSelectedEntityToToolParams(
+        string $toolName,
+        array $params,
+        ?array $selectedEntity,
+        array $toolSchema = []
+    ): array {
+        if (!$selectedEntity || empty($selectedEntity['entity_id'])) {
+            return $params;
+        }
+
+        $selectedId = (int) $selectedEntity['entity_id'];
+        if ($selectedId <= 0) {
+            return $params;
+        }
+
+        $singleIdKey = $this->findSingleEntityIdParamKey($toolSchema);
+        if ($singleIdKey && ($params[$singleIdKey] ?? null) !== $selectedId) {
+            Log::channel('ai-engine')->info('Overriding tool entity id from selected context', [
+                'tool_name' => $toolName,
+                'param_key' => $singleIdKey,
+                'old_value' => $params[$singleIdKey] ?? null,
+                'selected_entity_id' => $selectedId,
+            ]);
+            $params[$singleIdKey] = $selectedId;
+        }
+
+        if (isset($toolSchema['email_ids'])) {
+            $existing = $params['email_ids'] ?? [];
+            if (!is_array($existing) || $existing !== [$selectedId]) {
+                $params['email_ids'] = [$selectedId];
+            }
+        }
+
+        // Pass suggested action content if available (for action confirmation)
+        if (!empty($selectedEntity['suggested_action_content'])) {
+            $params['suggested_action_content'] = $selectedEntity['suggested_action_content'];
+
+            Log::channel('ai-engine')->info('Added suggested action content to tool params', [
+                'tool_name' => $toolName,
+                'has_suggested_content' => true,
+            ]);
+        }
+
+        // Pass full entity data if available (for tools that need complete entity)
+        if (!empty($selectedEntity['entity_data'])) {
+            $params['entity_data'] = $selectedEntity['entity_data'];
+
+            Log::channel('ai-engine')->info('Added full entity data to tool params', [
+                'tool_name' => $toolName,
+                'entity_id' => $selectedId,
+                'has_entity_data' => true,
+                'entity_keys' => array_keys($selectedEntity['entity_data']),
+            ]);
+        }
+
+        return $params;
+    }
+
+    /**
+     * Detect primary entity id parameter from tool schema.
+     */
+    protected function findSingleEntityIdParamKey(array $toolSchema): ?string
+    {
+        if (empty($toolSchema)) {
+            return null;
+        }
+
+        $excludedKeys = ['user_id', 'mailbox_id', 'session_id', 'node_id'];
+        $candidates = [];
+
+        foreach (array_keys($toolSchema) as $key) {
+            if (!is_string($key)) {
+                continue;
+            }
+
+            if (in_array($key, $excludedKeys, true)) {
+                continue;
+            }
+
+            if ($key === 'id' || str_ends_with($key, '_id')) {
+                $candidates[] = $key;
+            }
+        }
+
+        if (count($candidates) === 1) {
+            return $candidates[0];
+        }
+
+        if (in_array('email_id', $candidates, true)) {
+            return 'email_id';
+        }
+
+        if (in_array('id', $candidates, true)) {
+            return 'id';
+        }
+
+        return null;
+    }
+
+    /**
+     * Build richer details for selected items instead of returning list-level summaries.
+     */
+    protected function formatSelectedRecordDetails(object $record): string
+    {
+        if (method_exists($record, 'toRAGDetail')) {
+            return (string) $record->toRAGDetail();
+        }
+
+        if (method_exists($record, 'toRAGContent')) {
+            return (string) $record->toRAGContent();
+        }
+
+        if (method_exists($record, '__toString')) {
+            return (string) $record;
+        }
+
+        if (!method_exists($record, 'toArray')) {
+            return (string) json_encode($record, JSON_PRETTY_PRINT);
+        }
+
+        $data = $record->toArray();
+        $detailFields = ['body_text', 'content', 'description', 'notes', 'message', 'text'];
+        foreach ($detailFields as $field) {
+            if (!empty($data[$field]) && is_string($data[$field])) {
+                $clean = trim((string) preg_replace('/\s+/', ' ', strip_tags($data[$field])));
+                if ($clean !== '') {
+                    $data[$field] = strlen($clean) > 1800 ? substr($clean, 0, 1800) . '...' : $clean;
+                    break;
+                }
+            }
+        }
+
+        return (string) json_encode($data, JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Resolve a numbered option from hidden selection metadata or cached query state
+     */
+    protected function resolveSelectionOption(int $optionNumber, UnifiedActionContext $context): ?array
+    {
+        $selectionMap = $context->metadata['selection_map'] ?? null;
+        if (is_array($selectionMap)) {
+            $expiresAt = $selectionMap['expires_at'] ?? null;
+            if ($expiresAt && strtotime($expiresAt) < time()) {
+                unset($context->metadata['selection_map']);
+            } else {
+                $options = $selectionMap['options'] ?? [];
+                $option = $options[(string) $optionNumber] ?? $options[$optionNumber] ?? null;
+                if (is_array($option) && !empty($option['entity_id'])) {
+                    return $option;
+                }
+            }
+        }
+
+        // Fallback to query state cache when no explicit selection map is available
+        $queryState = Cache::get("rag_query_state:{$context->sessionId}");
+        if (!is_array($queryState) || empty($queryState['entity_ids'])) {
+            return null;
+        }
+
+        $startPosition = (int) ($queryState['start_position'] ?? 1);
+        $index = $optionNumber - $startPosition;
+        if ($index < 0 || $index >= count($queryState['entity_ids'])) {
+            return null;
+        }
+
+        $entityId = $queryState['entity_ids'][$index] ?? null;
+        if (!$entityId) {
+            return null;
+        }
+
+        return [
+            'number' => $optionNumber,
+            'entity_id' => $entityId,
+            'entity_type' => $queryState['model'] ?? null,
+            'model_class' => $queryState['model_class'] ?? null,
+            'source_node' => null,
+            'label' => null,
+        ];
+    }
+
+    /**
+     * Build hidden option -> entity map from RAG metadata so numeric picks stay stable.
+     */
+    protected function captureSelectionStateFromResult(array $result, UnifiedActionContext $context): void
+    {
+        $metadata = (isset($result['metadata']) && is_array($result['metadata']))
+            ? $result['metadata']
+            : [];
+        $sources = (isset($metadata['sources']) && is_array($metadata['sources']))
+            ? $metadata['sources']
+            : [];
+        $numberedOptions = (isset($metadata['numbered_options']) && is_array($metadata['numbered_options']))
+            ? $metadata['numbered_options']
+            : [];
+
+        $queryState = Cache::get("rag_query_state:{$context->sessionId}");
+        if (!is_array($queryState)) {
+            $queryState = [];
+        }
+
+        $entityIds = $result['entity_ids'] ?? $metadata['entity_ids'] ?? $queryState['entity_ids'] ?? [];
+        $entityType = $result['entity_type'] ?? $metadata['entity_type'] ?? $queryState['model'] ?? null;
+        $defaultModelClass = $queryState['model_class'] ?? null;
+        $defaultSourceNode = null;
+
+        foreach ($sources as $sourceItem) {
+            if (!is_array($sourceItem)) {
+                continue;
+            }
+
+            if (!$defaultModelClass) {
+                $candidateClass = $sourceItem['model_class'] ?? null;
+                if (!empty($candidateClass) && $candidateClass !== 'Unknown') {
+                    $defaultModelClass = $candidateClass;
+                }
+            }
+
+            if (!$defaultSourceNode && !empty($sourceItem['source_node'])) {
+                $defaultSourceNode = $sourceItem['source_node'];
+            }
+        }
+
+        if (!empty($entityIds)) {
+            $context->metadata['last_entity_list'] = [
+                'entity_ids' => array_values($entityIds),
+                'entity_type' => $entityType,
+                'start_position' => $queryState['start_position'] ?? 1,
+                'end_position' => $queryState['end_position'] ?? count($entityIds),
+                'entity_data' => $queryState['entity_data'] ?? [],
+            ];
+        }
+
+        $mapOptions = [];
+
+        foreach (array_values(array_slice($numberedOptions, 0, 20)) as $idx => $option) {
+            $number = isset($option['number']) && is_numeric($option['number'])
+                ? (int) $option['number']
+                : (isset($option['value']) && is_numeric($option['value']) ? (int) $option['value'] : null);
+
+            if (!$number) {
+                continue;
+            }
+
+            $sourceIndex = isset($option['source_index']) && is_numeric($option['source_index'])
+                ? (int) $option['source_index']
+                : null;
+            $source = ($sourceIndex !== null && isset($sources[$sourceIndex]) && is_array($sources[$sourceIndex]))
+                ? $sources[$sourceIndex]
+                : [];
+
+            $entityId = $source['model_id'] ?? $source['id'] ?? null;
+            if ($entityId === null && isset($entityIds[$idx])) {
+                $entityId = $entityIds[$idx];
+            }
+
+            $modelClass = $source['model_class'] ?? $defaultModelClass;
+            $sourceNode = $source['source_node'] ?? $defaultSourceNode;
+
+            $mapOptions[(string) $number] = [
+                'number' => $number,
+                'entity_id' => $entityId,
+                'entity_type' => $source['model_type'] ?? $entityType,
+                'model_class' => $modelClass,
+                'source_node' => $sourceNode,
+                'label' => $option['text'] ?? null,
+            ];
+        }
+
+        // If options exist but AI output omitted source mapping, align options with extracted entity IDs by display order.
+        if (!empty($mapOptions) && !empty($entityIds)) {
+            $orderedOptionNumbers = array_keys($mapOptions);
+            sort($orderedOptionNumbers, SORT_NUMERIC);
+
+            $hasValidEntityId = false;
+            foreach ($orderedOptionNumbers as $optionNumberKey) {
+                if (!empty($mapOptions[(string) $optionNumberKey]['entity_id'])) {
+                    $hasValidEntityId = true;
+                    break;
+                }
+            }
+
+            if (!$hasValidEntityId) {
+                foreach ($orderedOptionNumbers as $idx => $optionNumberKey) {
+                    if (!isset($entityIds[$idx])) {
+                        continue;
+                    }
+                    $mapOptions[(string) $optionNumberKey]['entity_id'] = $entityIds[$idx];
+                    $mapOptions[(string) $optionNumberKey]['model_class'] = $mapOptions[(string) $optionNumberKey]['model_class'] ?? $defaultModelClass;
+                    $mapOptions[(string) $optionNumberKey]['source_node'] = $mapOptions[(string) $optionNumberKey]['source_node'] ?? $defaultSourceNode;
+                }
+            }
+        }
+
+        // Fallback for list responses without numbered_options metadata
+        if (empty($mapOptions) && !empty($entityIds)) {
+            $start = (int) ($queryState['start_position'] ?? 1);
+            foreach (array_slice(array_values($entityIds), 0, 20) as $idx => $entityId) {
+                $number = $start + $idx;
+                $mapOptions[(string) $number] = [
+                    'number' => $number,
+                    'entity_id' => $entityId,
+                    'entity_type' => $entityType,
+                    'model_class' => $defaultModelClass,
+                    'source_node' => $defaultSourceNode,
+                    'label' => null,
+                ];
+            }
+        }
+
+        if (!empty($mapOptions)) {
+            $context->metadata['selection_map'] = [
+                'created_at' => now()->toIso8601String(),
+                'expires_at' => now()->addMinutes(20)->toIso8601String(),
+                'options' => $mapOptions,
+            ];
+
+            Log::channel('ai-engine')->debug('Stored hidden selection map', [
+                'session_id' => $context->sessionId,
+                'option_count' => count($mapOptions),
+                'keys' => array_keys($mapOptions),
+            ]);
+            return;
+        }
+
+        // Clear stale map if current response doesn't provide selectable items
+        unset($context->metadata['selection_map']);
+    }
+
 }
