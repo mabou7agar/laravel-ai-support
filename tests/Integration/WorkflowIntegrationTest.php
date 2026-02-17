@@ -2,9 +2,8 @@
 
 namespace LaravelAIEngine\Tests\Integration;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
-use Tests\TestCase;
+use LaravelAIEngine\Tests\TestCase;
 
 /**
  * Integration Test for Workflow Features
@@ -20,14 +19,20 @@ use Tests\TestCase;
  */
 class WorkflowIntegrationTest extends TestCase
 {
-    use RefreshDatabase, WithFaker;
+    use WithFaker;
     
-    protected string $baseUrl = '/api/ai-chat/send';
+    protected string $apiEndpoint = '/api/ai-chat/send';
     protected string $sessionId;
     
     protected function setUp(): void
     {
         parent::setUp();
+
+        // These integration tests require a full Laravel host app with AI chat routes
+        if (!env('AI_ENGINE_INTEGRATION_TESTS')) {
+            $this->markTestSkipped('WorkflowIntegrationTest requires AI_ENGINE_INTEGRATION_TESTS=true and a full host app');
+        }
+
         $this->sessionId = 'test-integration-' . uniqid();
     }
     
@@ -39,7 +44,7 @@ class WorkflowIntegrationTest extends TestCase
     public function it_creates_invoice_with_correct_price_display()
     {
         // Step 1: Create invoice with new customer and product
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'create invoice for John Smith with 2 Laptops',
             'session_id' => $this->sessionId,
             'memory' => true,
@@ -59,7 +64,7 @@ class WorkflowIntegrationTest extends TestCase
         $this->assertStringContainsString("create", strtolower($response->json('response')));
         
         // Step 2: Confirm customer creation
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'yes',
             'session_id' => $this->sessionId,
             'memory' => true,
@@ -72,7 +77,7 @@ class WorkflowIntegrationTest extends TestCase
         $this->assertStringContainsString("email", strtolower($response->json('response')));
         
         // Step 3: Provide email
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'john@example.com',
             'session_id' => $this->sessionId,
             'memory' => true,
@@ -135,7 +140,7 @@ class WorkflowIntegrationTest extends TestCase
                 $message = 'continue';
             }
             
-            $response = $this->postJson($this->baseUrl, [
+            $response = $this->postJson($this->apiEndpoint, [
                 'message' => $message,
                 'session_id' => $this->sessionId,
                 'memory' => true,
@@ -156,7 +161,7 @@ class WorkflowIntegrationTest extends TestCase
     public function it_asks_for_category_name_not_id()
     {
         // Create invoice with product that needs category
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'create invoice for Jane Doe with 1 Soccer Ball',
             'session_id' => $this->sessionId . '-category',
             'memory' => true,
@@ -197,7 +202,7 @@ class WorkflowIntegrationTest extends TestCase
                 $message = 'yes';
             }
             
-            $response = $this->postJson($this->baseUrl, [
+            $response = $this->postJson($this->apiEndpoint, [
                 'message' => $message,
                 'session_id' => $this->sessionId . '-category',
                 'memory' => true,
@@ -218,7 +223,7 @@ class WorkflowIntegrationTest extends TestCase
     public function it_handles_email_validation_naturally()
     {
         // Start invoice creation
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'create invoice for Bob Wilson with 1 Mouse',
             'session_id' => $this->sessionId . '-validation',
             'memory' => true,
@@ -228,7 +233,7 @@ class WorkflowIntegrationTest extends TestCase
         $response->assertStatus(200);
         
         // Confirm customer creation
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'yes',
             'session_id' => $this->sessionId . '-validation',
             'memory' => true,
@@ -241,7 +246,7 @@ class WorkflowIntegrationTest extends TestCase
         $this->assertStringContainsString('email', strtolower($response->json('response')));
         
         // Provide invalid email
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'bob@invalid',
             'session_id' => $this->sessionId . '-validation',
             'memory' => true,
@@ -255,7 +260,7 @@ class WorkflowIntegrationTest extends TestCase
         $this->assertTrue($response->json('success'));
         
         // Provide valid email
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'bob@example.com',
             'session_id' => $this->sessionId . '-validation',
             'memory' => true,
@@ -277,7 +282,7 @@ class WorkflowIntegrationTest extends TestCase
         $this->createTestProduct('Test Laptop', 1299.99);
         
         // Create invoice with existing product
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'create invoice for Alice Brown with 1 Test Laptop',
             'session_id' => $this->sessionId . '-existing',
             'memory' => true,
@@ -314,7 +319,7 @@ class WorkflowIntegrationTest extends TestCase
                 $message = 'continue';
             }
             
-            $response = $this->postJson($this->baseUrl, [
+            $response = $this->postJson($this->apiEndpoint, [
                 'message' => $message,
                 'session_id' => $this->sessionId . '-existing',
                 'memory' => true,
@@ -332,7 +337,7 @@ class WorkflowIntegrationTest extends TestCase
      */
     public function it_displays_multiple_products_with_correct_prices()
     {
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'create invoice for Mike Johnson with 2 Laptops and 3 Mice',
             'session_id' => $this->sessionId . '-multiple',
             'memory' => true,
@@ -391,7 +396,7 @@ class WorkflowIntegrationTest extends TestCase
                 $message = 'continue';
             }
             
-            $response = $this->postJson($this->baseUrl, [
+            $response = $this->postJson($this->apiEndpoint, [
                 'message' => $message,
                 'session_id' => $this->sessionId . '-multiple',
                 'memory' => true,
@@ -409,7 +414,7 @@ class WorkflowIntegrationTest extends TestCase
      */
     public function it_completes_workflow_without_errors()
     {
-        $response = $this->postJson($this->baseUrl, [
+        $response = $this->postJson($this->apiEndpoint, [
             'message' => 'create invoice for Sarah Davis with 1 Keyboard',
             'session_id' => $this->sessionId . '-complete',
             'memory' => true,
@@ -455,7 +460,7 @@ class WorkflowIntegrationTest extends TestCase
                 $message = 'continue';
             }
             
-            $response = $this->postJson($this->baseUrl, [
+            $response = $this->postJson($this->apiEndpoint, [
                 'message' => $message,
                 'session_id' => $this->sessionId . '-complete',
                 'memory' => true,

@@ -79,13 +79,13 @@ class HandlesRateLimitingTest extends UnitTestCase
         $this->mockRateLimitManager
             ->shouldReceive('checkRateLimit')
             ->once()
-            ->with($engine, $userId)
+            ->with(Mockery::type(EngineEnum::class), $userId)
             ->andReturn(true);
 
         $this->mockRateLimitManager
             ->shouldReceive('getRemainingRequests')
             ->once()
-            ->with($engine, $userId)
+            ->with(Mockery::type(EngineEnum::class), $userId)
             ->andReturn(50);
 
         $this->mockStatusTracker
@@ -97,7 +97,7 @@ class HandlesRateLimitingTest extends UnitTestCase
             ]);
 
         // Act & Assert - Should not throw exception
-        $this->testJob->testCheckRateLimit($engine->value, $userId, $jobId);
+        $this->testJob->testCheckRateLimit($engine, $userId, $jobId);
         $this->assertFalse($this->testJob->released);
     }
 
@@ -111,7 +111,7 @@ class HandlesRateLimitingTest extends UnitTestCase
         $this->mockRateLimitManager
             ->shouldReceive('checkRateLimit')
             ->once()
-            ->with($engine, $userId)
+            ->with(Mockery::type(EngineEnum::class), $userId)
             ->andThrow(new RateLimitExceededException('Rate limit exceeded'));
 
         $this->mockStatusTracker
@@ -126,7 +126,7 @@ class HandlesRateLimitingTest extends UnitTestCase
             }));
 
         // Act
-        $this->testJob->testCheckRateLimit($engine->value, $userId, $jobId);
+        $this->testJob->testCheckRateLimit($engine, $userId, $jobId);
 
         // Assert
         $this->assertTrue($this->testJob->released);
@@ -144,7 +144,7 @@ class HandlesRateLimitingTest extends UnitTestCase
         ]]);
 
         // Act
-        $delay = $this->testJob->testCalculateRateLimitDelay($engine->value);
+        $delay = $this->testJob->testCalculateRateLimitDelay($engine);
 
         // Assert
         $this->assertGreaterThanOrEqual(120, $delay); // 2 minutes base
@@ -158,7 +158,7 @@ class HandlesRateLimitingTest extends UnitTestCase
         config(['ai-engine.rate_limiting.per_engine.openai' => null]);
 
         // Act
-        $delay = $this->testJob->testCalculateRateLimitDelay($engine->value);
+        $delay = $this->testJob->testCalculateRateLimitDelay($engine);
 
         // Assert
         $this->assertGreaterThanOrEqual(60, $delay); // Default 1 minute base
@@ -196,7 +196,7 @@ class HandlesRateLimitingTest extends UnitTestCase
         $this->mockRateLimitManager
             ->shouldReceive('getRemainingRequests')
             ->times(3)
-            ->with($engine, 'test-user-123')
+            ->with(Mockery::type(EngineEnum::class), 'test-user-123')
             ->andReturn(2, 1, 0); // First 2 can process, 3rd cannot
 
         $this->mockStatusTracker
@@ -211,7 +211,7 @@ class HandlesRateLimitingTest extends UnitTestCase
             }));
 
         // Act
-        $result = $this->testJob->testHandleBatchRateLimit($engine->value, $requests, $jobId);
+        $result = $this->testJob->testHandleBatchRateLimit($engine, $requests, $jobId);
 
         // Assert
         $this->assertCount(2, $result['processable']);
@@ -231,7 +231,7 @@ class HandlesRateLimitingTest extends UnitTestCase
         $this->mockRateLimitManager
             ->shouldReceive('getRemainingRequests')
             ->once()
-            ->with($engine, 'test-user-123')
+            ->with(Mockery::type(EngineEnum::class), 'test-user-123')
             ->andThrow(new RateLimitExceededException('Rate limit exceeded'));
 
         $this->mockStatusTracker
@@ -246,7 +246,7 @@ class HandlesRateLimitingTest extends UnitTestCase
             }));
 
         // Act
-        $result = $this->testJob->testHandleBatchRateLimit($engine->value, $requests, $jobId);
+        $result = $this->testJob->testHandleBatchRateLimit($engine, $requests, $jobId);
 
         // Assert
         $this->assertCount(0, $result['processable']);

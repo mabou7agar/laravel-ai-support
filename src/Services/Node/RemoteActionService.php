@@ -12,7 +12,7 @@ class RemoteActionService
     public function __construct(
         protected NodeRegistryService $registry,
         protected CircuitBreakerService $circuitBreaker,
-        protected NodeAuthService $authService
+        protected NodeForwarder $forwarder
     ) {}
     
     /**
@@ -35,7 +35,7 @@ class RemoteActionService
             throw new \Exception("Node is unavailable (circuit breaker open): {$nodeSlug}");
         }
         
-        return $this->sendAction($node, $action, $params);
+        return $this->forwarder->forwardAction($node, $action, $params);
     }
     
     /**
@@ -65,112 +65,17 @@ class RemoteActionService
     }
     
     /**
-     * Execute action on multiple nodes (parallel)
+     * Execute action on multiple nodes (parallel via sequential NodeForwarder calls).
+     *
+     * True HTTP-level parallelism is not used here because NodeForwarder
+     * handles retry/circuit-breaker per call. For high-throughput scenarios,
+     * consider Laravel's HTTP pool at the NodeForwarder level.
      */
     protected function executeParallel(Collection $nodes, string $action, array $params): array
     {
-        $promises = [];
-        $traceId = \Str::random(16);
-        
-        foreach ($nodes as $node) {
-            // Check circuit breaker
-            if ($this->circuitBreaker->isOpen($node)) {
-                Log::channel('ai-engine')->debug('Skipping node - circuit breaker open', [
-                    'node_slug' => $node->slug,
-                    'action' => $action,
-                ]);
-                continue;
-            }
-            
-            $node->incrementConnections();
-            
-            $promises[$node->slug] = [
-                'node' => $node,
-                'promise' => NodeHttpClient::makeForAction($node, $traceId)
-                    ->post($node->getApiUrl('actions'), [
-                        'action' => $action,
-                        'params' => $params,
-                    ])
-            ];
-        }
-        
-        // Wait for all responses
-        $responses = [];
-        foreach ($promises as $slug => $data) {
-            try {
-                $response = $data['promise']->wait();
-                $responses[$slug] = [
-                    'node' => $data['node'],
-                    'response' => $response,
-                ];
-            } catch (\Exception $e) {
-                $responses[$slug] = [
-                    'node' => $data['node'],
-                    'error' => $e,
-                ];
-            }
-        }
-        
-        // Process responses
-        $results = [];
-        $successCount = 0;
-        $failureCount = 0;
-        
-        foreach ($responses as $slug => $data) {
-            $node = $data['node'];
-            $node->decrementConnections();
-            
-            if (isset($data['error'])) {
-                $this->circuitBreaker->recordFailure($node);
-                
-                $results[$slug] = [
-                    'node' => $slug,
-                    'node_name' => $node->name,
-                    'success' => false,
-                    'error' => $data['error']->getMessage(),
-                ];
-                
-                $failureCount++;
-                continue;
-            }
-            
-            $response = $data['response'];
-            
-            if ($response->successful()) {
-                $this->circuitBreaker->recordSuccess($node);
-                
-                $results[$slug] = [
-                    'node' => $slug,
-                    'node_name' => $node->name,
-                    'success' => true,
-                    'status_code' => $response->status(),
-                    'data' => $response->json(),
-                ];
-                
-                $successCount++;
-            } else {
-                $this->circuitBreaker->recordFailure($node);
-                
-                $results[$slug] = [
-                    'node' => $slug,
-                    'node_name' => $node->name,
-                    'success' => false,
-                    'status_code' => $response->status(),
-                    'error' => $response->body(),
-                ];
-                
-                $failureCount++;
-            }
-        }
-        
-        return [
-            'success' => $failureCount === 0,
-            'action' => $action,
-            'nodes_executed' => count($results),
-            'success_count' => $successCount,
-            'failure_count' => $failureCount,
-            'results' => $results,
-        ];
+        // Delegate to sequential — NodeForwarder already handles retry/CB per call.
+        // True async can be added inside NodeForwarder later without changing this API.
+        return $this->executeSequential($nodes, $action, $params);
     }
     
     /**
@@ -181,35 +86,29 @@ class RemoteActionService
         $results = [];
         $successCount = 0;
         $failureCount = 0;
-        
+
         foreach ($nodes as $node) {
             if (!$node->hasCapability('actions')) {
                 continue;
             }
-            
-            // Check circuit breaker
-            if ($this->circuitBreaker->isOpen($node)) {
-                Log::channel('ai-engine')->debug('Skipping node - circuit breaker open', [
+
+            if (!$this->forwarder->isAvailable($node)) {
+                Log::channel('ai-engine')->debug('Skipping node - unavailable', [
                     'node_slug' => $node->slug,
                 ]);
                 continue;
             }
-            
-            try {
-                $result = $this->sendAction($node, $action, $params);
-                $results[$node->slug] = array_merge($result, ['success' => true]);
+
+            $result = $this->forwarder->forwardAction($node, $action, $params);
+            $results[$node->slug] = $result;
+
+            if ($result['success'] ?? false) {
                 $successCount++;
-            } catch (\Exception $e) {
-                $results[$node->slug] = [
-                    'node' => $node->slug,
-                    'node_name' => $node->name,
-                    'success' => false,
-                    'error' => $e->getMessage(),
-                ];
+            } else {
                 $failureCount++;
             }
         }
-        
+
         return [
             'success' => $failureCount === 0,
             'action' => $action,
@@ -220,46 +119,6 @@ class RemoteActionService
         ];
     }
     
-    /**
-     * Send action to node
-     */
-    protected function sendAction(AINode $node, string $action, array $params): array
-    {
-        $startTime = microtime(true);
-        
-        // Format payload for ActionExecutionController
-        // Controller expects: action_type, data, session_id, user_id
-        $response = NodeHttpClient::makeForAction($node)
-            ->post($node->getApiUrl('actions'), [
-                'action_type' => $action,
-                'data' => $params,
-                'session_id' => $params['session_id'] ?? null,
-                'user_id' => $params['user_id'] ?? null,
-            ]);
-        
-        $duration = (int) ((microtime(true) - $startTime) * 1000);
-        
-        if (!$response->successful()) {
-            $this->circuitBreaker->recordFailure($node);
-            throw new \Exception("Action failed on node {$node->slug}: " . $response->body());
-        }
-        
-        $this->circuitBreaker->recordSuccess($node);
-        
-        Log::channel('ai-engine')->info('Action executed successfully', [
-            'node' => $node->slug,
-            'action' => $action,
-            'duration_ms' => $duration,
-        ]);
-        
-        return [
-            'node' => $node->slug,
-            'node_name' => $node->name,
-            'status_code' => $response->status(),
-            'data' => $response->json(),
-            'duration_ms' => $duration,
-        ];
-    }
     
     /**
      * Execute transaction across nodes (all-or-nothing)
@@ -269,46 +128,56 @@ class RemoteActionService
         $results = [];
         $rollbacks = [];
         $executedNodes = [];
-        
+
         try {
-            // Execute all actions
             foreach ($actions as $nodeSlug => $actionData) {
-                $result = $this->executeOn($nodeSlug, $actionData['action'], $actionData['params']);
+                $node = $this->registry->getNode($nodeSlug);
+                if (!$node) {
+                    throw new \Exception("Node not found: {$nodeSlug}");
+                }
+
+                $result = $this->forwarder->forwardAction($node, $actionData['action'], $actionData['params']);
+
+                if (!($result['success'] ?? false)) {
+                    throw new \Exception("Action failed on node {$nodeSlug}: " . ($result['error'] ?? 'unknown'));
+                }
+
                 $results[$nodeSlug] = $result;
                 $executedNodes[] = $nodeSlug;
-                
-                // Store rollback action if provided
+
                 if (isset($actionData['rollback'])) {
                     $rollbacks[$nodeSlug] = $actionData['rollback'];
                 }
             }
-            
+
             Log::channel('ai-engine')->info('Transaction completed successfully', [
                 'nodes' => $executedNodes,
                 'action_count' => count($actions),
             ]);
-            
+
             return [
                 'success' => true,
                 'nodes_executed' => $executedNodes,
                 'results' => $results,
             ];
-            
+
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Transaction failed, rolling back', [
                 'error' => $e->getMessage(),
                 'executed_nodes' => $executedNodes,
             ]);
-            
-            // Rollback all successful actions
+
             foreach ($rollbacks as $nodeSlug => $rollbackAction) {
                 if (!in_array($nodeSlug, $executedNodes)) {
                     continue;
                 }
-                
+
                 try {
-                    $this->executeOn($nodeSlug, $rollbackAction['action'], $rollbackAction['params']);
-                    
+                    $rollbackNode = $this->registry->getNode($nodeSlug);
+                    if ($rollbackNode) {
+                        $this->forwarder->forwardAction($rollbackNode, $rollbackAction['action'], $rollbackAction['params']);
+                    }
+
                     Log::channel('ai-engine')->info('Rollback successful', [
                         'node' => $nodeSlug,
                     ]);
@@ -319,7 +188,7 @@ class RemoteActionService
                     ]);
                 }
             }
-            
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),

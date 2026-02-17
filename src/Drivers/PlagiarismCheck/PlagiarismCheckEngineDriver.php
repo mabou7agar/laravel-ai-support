@@ -147,7 +147,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::PLAGIARISM_CHECK->value,
+                'engine' => EngineEnum::PLAGIARISM_CHECK,
                 'check_type' => $request->getParameters()['check_type'] ?? 'basic',
                 'language' => $request->getParameters()['language'] ?? 'en',
                 'similarity_threshold' => $request->getParameters()['similarity_threshold'] ?? 15,
@@ -224,19 +224,19 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     public function getAvailableModels(): array
     {
         return [
-            EntityEnum::PLAGIARISM_BASIC->value => [
+            EntityEnum::PLAGIARISM_BASIC => [
                 'name' => 'Basic Plagiarism Check',
                 'description' => 'Basic similarity detection against web sources',
                 'features' => ['web_sources', 'basic_similarity'],
                 'max_words' => 5000,
             ],
-            EntityEnum::PLAGIARISM_ADVANCED->value => [
+            EntityEnum::PLAGIARISM_ADVANCED => [
                 'name' => 'Advanced Plagiarism Check',
                 'description' => 'Advanced detection with paraphrasing and multiple sources',
                 'features' => ['web_sources', 'academic_sources', 'paraphrasing_detection', 'citations'],
                 'max_words' => 25000,
             ],
-            EntityEnum::PLAGIARISM_ACADEMIC->value => [
+            EntityEnum::PLAGIARISM_ACADEMIC => [
                 'name' => 'Academic Plagiarism Check',
                 'description' => 'Comprehensive academic integrity checking with AI detection',
                 'features' => ['all_sources', 'ai_detection', 'paraphrasing_detection', 'citations', 'academic_formatting'],

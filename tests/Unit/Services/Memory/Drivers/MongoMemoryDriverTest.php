@@ -22,6 +22,10 @@ class MongoMemoryDriverTest extends TestCase
     {
         parent::setUp();
 
+        if (!class_exists(Client::class)) {
+            $this->markTestSkipped('MongoDB extension not installed');
+        }
+
         // Mock MongoDB components
         $this->mockClient = Mockery::mock(Client::class);
         $this->mockDatabase = Mockery::mock(Database::class);

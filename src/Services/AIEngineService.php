@@ -259,8 +259,8 @@ class AIEngineService
     public function generateWithConversation(
         string $message,
         string $conversationId,
-        EngineEnum $engine,
-        EntityEnum $model,
+        EngineEnum|string $engine,
+        EntityEnum|string $model,
         ?string $userId = null,
         array $parameters = []
     ): AIResponse {

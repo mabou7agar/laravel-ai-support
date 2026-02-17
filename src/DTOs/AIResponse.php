@@ -30,8 +30,8 @@ class AIResponse
 
     public function __construct(
         string $content,
-        EngineEnum $engine,
-        EntityEnum $model,
+        EngineEnum|string $engine,
+        EntityEnum|string $model,
         array $metadata = [],
         ?int $tokensUsed = null,
         ?float $creditsUsed = null,
@@ -48,8 +48,8 @@ class AIResponse
         ?array $functionCall = null
     ) {
         $this->content = $content;
-        $this->engine = $engine;
-        $this->model = $model;
+        $this->engine = is_string($engine) ? EngineEnum::from($engine) : $engine;
+        $this->model = is_string($model) ? EntityEnum::from($model) : $model;
         $this->functionCall = $functionCall;
         $this->metadata = $metadata;
         $this->tokensUsed = $tokensUsed;
@@ -71,8 +71,8 @@ class AIResponse
      */
     public static function success(
         string $content,
-        EngineEnum $engine,
-        EntityEnum $model,
+        EngineEnum|string $engine,
+        EntityEnum|string $model,
         array $metadata = [],
         array $actions = []
     ): self {
@@ -91,8 +91,8 @@ class AIResponse
      */
     public static function error(
         string $error,
-        EngineEnum $engine,
-        EntityEnum $model,
+        EngineEnum|string $engine,
+        EntityEnum|string $model,
         array $metadata = []
     ): self {
         return new self(
@@ -542,20 +542,21 @@ class AIResponse
     public static function fromArray(array $data): self
     {
         return new self(
-            $data['content'] ?? '',
-            $data['engine'] ?? null,
-            $data['model'] ?? null,
-            $data['metadata'] ?? [],
-            $data['tokensUsed'] ?? null,
-            $data['creditsUsed'] ?? null,
-            $data['latency'] ?? null,
-            $data['requestId'] ?? null,
-            $data['usage'] ?? [],
-            $data['cached'] ?? false,
-            $data['finishReason'] ?? null,
-            $data['files'] ?? [],
-            $data['error'] ?? null,
-            $data['success'] ?? true
+            content: $data['content'] ?? '',
+            engine: $data['engine'] ?? 'openai',
+            model: $data['model'] ?? 'gpt-4o-mini',
+            metadata: $data['metadata'] ?? [],
+            tokensUsed: $data['tokensUsed'] ?? null,
+            creditsUsed: $data['creditsUsed'] ?? null,
+            latency: $data['latency'] ?? null,
+            requestId: $data['requestId'] ?? null,
+            usage: $data['usage'] ?? [],
+            cached: $data['cached'] ?? false,
+            finishReason: $data['finishReason'] ?? null,
+            files: $data['files'] ?? [],
+            actions: $data['actions'] ?? [],
+            error: $data['error'] ?? null,
+            success: $data['success'] ?? true
         );
     }
 

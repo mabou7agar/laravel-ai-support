@@ -58,7 +58,7 @@ class OpenAIEngineDriverTest extends TestCase
 
     public function test_get_engine_returns_openai()
     {
-        $this->assertEquals(EngineEnum::OPENAI, $this->driver->getEngine());
+        $this->assertEquals(EngineEnum::OPENAI, $this->driver->getEngine()->value);
     }
 
     public function test_generate_text_with_gpt4o()
@@ -74,8 +74,8 @@ class OpenAIEngineDriverTest extends TestCase
         // Test that the request is properly constructed
         $this->assertInstanceOf(AIRequest::class, $request);
         $this->assertEquals('Test prompt', $request->prompt);
-        $this->assertEquals(EngineEnum::OPENAI, $request->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $request->model);
+        $this->assertEquals(EngineEnum::OPENAI, $request->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $request->model->value);
         $this->assertEquals('test-user', $request->userId);
         $this->assertEquals(0.7, $request->parameters['temperature']);
 
@@ -100,8 +100,8 @@ class OpenAIEngineDriverTest extends TestCase
         // Test that the request is properly constructed for image generation
         $this->assertInstanceOf(AIRequest::class, $request);
         $this->assertEquals('A beautiful sunset', $request->prompt);
-        $this->assertEquals(EngineEnum::OPENAI, $request->engine);
-        $this->assertEquals(EntityEnum::DALL_E_3, $request->model);
+        $this->assertEquals(EngineEnum::OPENAI, $request->engine->value);
+        $this->assertEquals(EntityEnum::DALL_E_3, $request->model->value);
         $this->assertEquals('test-user', $request->userId);
         $this->assertEquals('1024x1024', $request->parameters['size']);
         
@@ -124,8 +124,8 @@ class OpenAIEngineDriverTest extends TestCase
 
         // Test that the request is properly constructed for audio processing
         $this->assertInstanceOf(AIRequest::class, $request);
-        $this->assertEquals(EngineEnum::OPENAI, $request->engine);
-        $this->assertEquals(EntityEnum::WHISPER_1, $request->model);
+        $this->assertEquals(EngineEnum::OPENAI, $request->engine->value);
+        $this->assertEquals(EntityEnum::WHISPER_1, $request->model->value);
         $this->assertArrayHasKey('audio_file', $request->parameters);
 
         // This test verifies audio request infrastructure without requiring actual API calls

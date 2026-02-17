@@ -32,8 +32,8 @@ class AIRequest
 
     public function __construct(
         string $prompt,
-        ?EngineEnum $engine = null,
-        ?EntityEnum $model = null,
+        EngineEnum|string|null $engine = null,
+        EntityEnum|string|null $model = null,
         array $parameters = [],
         ?string $userId = null,
         ?string $conversationId = null,
@@ -55,11 +55,15 @@ class AIRequest
         if ($engine === null) {
             $defaultEngine = config('ai-engine.default_engine', 'openai');
             $engine = EngineEnum::from($defaultEngine);
+        } elseif (is_string($engine)) {
+            $engine = EngineEnum::from($engine);
         }
         
         if ($model === null) {
             $defaultModel = config('ai-engine.default_model', 'gpt-4o-mini');
             $model = EntityEnum::from($defaultModel);
+        } elseif (is_string($model)) {
+            $model = EntityEnum::from($model);
         }
         
         $this->engine = $engine;
@@ -177,8 +181,8 @@ class AIRequest
      */
     public static function make(
         string $prompt,
-        EngineEnum $engine,
-        EntityEnum $model,
+        EngineEnum|string $engine,
+        EntityEnum|string $model,
         array $parameters = []
     ): self {
         return new self(
@@ -195,20 +199,23 @@ class AIRequest
     public function forUser(string $userId): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $userId,
-            $this->context,
-            $this->files,
-            $this->stream,
-            $this->systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -218,20 +225,23 @@ class AIRequest
     public function withStreaming(bool $stream = true): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            $this->context,
-            $this->files,
-            $stream,
-            $this->systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -241,20 +251,23 @@ class AIRequest
     public function withContext(array $context): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            array_merge($this->context, $context),
-            $this->files,
-            $this->stream,
-            $this->systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: array_merge($this->context, $context),
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -264,20 +277,23 @@ class AIRequest
     public function withFiles(array $files): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            $this->context,
-            array_merge($this->files, $files),
-            $this->stream,
-            $this->systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: array_merge($this->files, $files),
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -287,21 +303,23 @@ class AIRequest
     public function withSystemPrompt(string $systemPrompt): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            $this->conversationId,
-            $this->context,
-            $this->files,
-            $this->stream,
-            $systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -335,20 +353,23 @@ class AIRequest
     public function withParameters(array $parameters): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            array_merge($this->parameters, $parameters),
-            $this->userId,
-            $this->context,
-            $this->files,
-            $this->stream,
-            $this->systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: array_merge($this->parameters, $parameters),
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -358,20 +379,23 @@ class AIRequest
     public function withMaxTokens(int $maxTokens): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            $this->context,
-            $this->files,
-            $this->stream,
-            $this->systemPrompt,
-            $this->messages,
-            $maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -381,20 +405,23 @@ class AIRequest
     public function withTemperature(float $temperature): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            $this->context,
-            $this->files,
-            $this->stream,
-            $this->systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -404,20 +431,23 @@ class AIRequest
     public function withSeed(int $seed): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            $this->context,
-            $this->files,
-            $this->stream,
-            $this->systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $this->temperature,
-            $seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 

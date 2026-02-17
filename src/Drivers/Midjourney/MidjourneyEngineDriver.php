@@ -81,7 +81,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::MIDJOURNEY->value,
+                'engine' => EngineEnum::MIDJOURNEY,
                 'version' => $version,
                 'job_id' => $jobId,
                 'images' => $images,
@@ -328,7 +328,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
                 'features' => ['artistic_style', 'creative_interpretation'],
                 'max_resolution' => '1024x1024',
             ],
-            EntityEnum::MIDJOURNEY_NIJI->value => [
+            EntityEnum::MIDJOURNEY_NIJI => [
                 'name' => 'Midjourney Niji',
                 'description' => 'Anime and illustration focused model',
                 'features' => ['anime_style', 'illustration', 'character_design'],

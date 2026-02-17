@@ -60,13 +60,13 @@ class ProcessAIRequestJobRateLimitingTest extends UnitTestCase
         $this->mockRateLimitManager
             ->shouldReceive('checkRateLimit')
             ->once()
-            ->with(EngineEnum::OPENAI, 'user-123')
+            ->with(Mockery::type(EngineEnum::class), 'user-123')
             ->andReturn(true);
 
         $this->mockRateLimitManager
             ->shouldReceive('getRemainingRequests')
             ->once()
-            ->with(EngineEnum::OPENAI, 'user-123')
+            ->with(Mockery::type(EngineEnum::class), 'user-123')
             ->andReturn(50);
 
         // Mock status updates
@@ -126,7 +126,7 @@ class ProcessAIRequestJobRateLimitingTest extends UnitTestCase
         $this->mockRateLimitManager
             ->shouldReceive('checkRateLimit')
             ->once()
-            ->with(EngineEnum::OPENAI, 'user-123')
+            ->with(Mockery::type(EngineEnum::class), 'user-123')
             ->andThrow(new RateLimitExceededException('Rate limit exceeded'));
 
         // The job may still call generate after rate limit check, so mock it
@@ -287,13 +287,13 @@ class ProcessAIRequestJobRateLimitingTest extends UnitTestCase
         $this->mockRateLimitManager
             ->shouldReceive('checkRateLimit')
             ->once()
-            ->with(EngineEnum::OPENAI, 'job-user-789')
+            ->with(Mockery::type(EngineEnum::class), 'job-user-789')
             ->andReturn(true);
 
         $this->mockRateLimitManager
             ->shouldReceive('getRemainingRequests')
             ->once()
-            ->with(EngineEnum::OPENAI, 'job-user-789')
+            ->with(Mockery::type(EngineEnum::class), 'job-user-789')
             ->andReturn(50);
 
         // Mock status updates

@@ -4,11 +4,14 @@ namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Events\AISessionStarted;
+use LaravelAIEngine\Services\Agent\AgentResponseConverter;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
 class ChatService
 {
+    protected ?AgentResponseConverter $responseConverter = null;
+
     public function __construct(
         protected ConversationService $conversationService,
         protected ?\LaravelAIEngine\Services\Agent\MinimalAIOrchestrator $orchestrator = null
@@ -24,6 +27,22 @@ class ChatService
         }
 
         return $this->orchestrator;
+    }
+
+    /**
+     * Lazy load AgentResponseConverter
+     */
+    protected function getResponseConverter(): AgentResponseConverter
+    {
+        if ($this->responseConverter === null) {
+            try {
+                $this->responseConverter = app(AgentResponseConverter::class);
+            } catch (\Throwable $e) {
+                $this->responseConverter = new AgentResponseConverter();
+            }
+        }
+
+        return $this->responseConverter;
     }
 
     /**
@@ -51,7 +70,7 @@ class ChatService
         array $ragCollections = [],
         $userId = null,
         ?string $searchInstructions = null,
-        array $conversationHistory = [] // Passed from middleware for context-aware responses
+        array $conversationHistory = []
     ): AIResponse {
         Log::channel('ai-engine')->info('ChatService::processMessage called', [
             'message' => substr($message, 0, 100),
@@ -59,23 +78,77 @@ class ChatService
             'user_id' => $userId,
         ]);
 
-        // Load conversation history if memory is enabled
-        $conversationId = null;
-        if ($useMemory) {
-            $conversationId = $this->conversationService->getOrCreateConversation(
-                $sessionId,
-                $userId,
-                $engine,
-                $model
-            );
+        // 1. Load conversation context
+        $conversationId = $this->resolveConversation(
+            $sessionId, $userId, $engine, $model, $useMemory, $conversationHistory
+        );
 
-            // Use passed conversation history if available, otherwise load from DB
-            if (empty($conversationHistory)) {
-                $conversationHistory = $this->conversationService->getConversationHistory($sessionId, 50, $userId);
-            }
+        // 2. Fire session started event
+        $this->fireSessionEvent($sessionId, $userId, $engine, $model, $useMemory, $useActions, $useIntelligentRAG);
+
+        // 3. Delegate to orchestrator
+        $options = [
+            'engine' => $engine,
+            'model' => $model,
+            'use_memory' => $useMemory,
+            'use_actions' => $useActions,
+            'use_intelligent_rag' => $useIntelligentRAG,
+            'rag_collections' => $ragCollections,
+            'search_instructions' => $searchInstructions,
+            'conversation_history' => $conversationHistory,
+            'is_forwarded' => $this->isForwardedRequest(),
+        ];
+
+        $agentResponse = $this->getOrchestrator()->process($message, $sessionId, $userId, $options);
+
+        // 4. Track workflow session state
+        $this->trackWorkflowSession($sessionId, $agentResponse);
+
+        // 5. Convert AgentResponse → AIResponse
+        return $this->getResponseConverter()->convert(
+            $agentResponse, $engine, $model, $conversationId
+        );
+    }
+
+    /**
+     * Resolve conversation ID and load history if memory is enabled.
+     * Populates $conversationHistory by reference when loading from DB.
+     */
+    protected function resolveConversation(
+        string $sessionId,
+        $userId,
+        string $engine,
+        string $model,
+        bool $useMemory,
+        array &$conversationHistory
+    ): ?string {
+        if (!$useMemory) {
+            return null;
         }
 
-        // Fire session started event
+        $conversationId = $this->conversationService->getOrCreateConversation(
+            $sessionId, $userId, $engine, $model
+        );
+
+        if (empty($conversationHistory)) {
+            $conversationHistory = $this->conversationService->getConversationHistory($sessionId, 50, $userId);
+        }
+
+        return $conversationId;
+    }
+
+    /**
+     * Fire the AISessionStarted event (non-critical).
+     */
+    protected function fireSessionEvent(
+        string $sessionId,
+        $userId,
+        string $engine,
+        string $model,
+        bool $useMemory,
+        bool $useActions,
+        bool $useIntelligentRAG
+    ): void {
         try {
             event(new AISessionStarted(
                 sessionId: $sessionId,
@@ -87,31 +160,13 @@ class ChatService
         } catch (\Exception $e) {
             Log::warning('Failed to fire AISessionStarted event: ' . $e->getMessage());
         }
+    }
 
-        // Delegate ALL decisions to MinimalAIOrchestrator (AI-driven)
-        $orchestrator = $this->getOrchestrator();
-
-        Log::channel('ai-engine')->info('ChatService delegating to MinimalAIOrchestrator', [
-            'session_id' => $sessionId,
-            'user_id' => $userId,
-        ]);
-
-        // Pass all context to orchestrator for AI-driven decisions
-        $options = [
-            'engine' => $engine,
-            'model' => $model,
-            'use_memory' => $useMemory,
-            'use_actions' => $useActions,
-            'use_intelligent_rag' => $useIntelligentRAG,
-            'rag_collections' => $ragCollections,
-            'search_instructions' => $searchInstructions,
-            'conversation_history' => $conversationHistory,
-            'is_forwarded' => $this->isForwardedRequest(), // Prevent infinite forwarding loops
-        ];
-
-        $agentResponse = $orchestrator->process($message, $sessionId, $userId, $options);
-
-        // Handle workflow session tracking
+    /**
+     * Track workflow session state in cache for cross-request continuity.
+     */
+    protected function trackWorkflowSession(string $sessionId, \LaravelAIEngine\DTOs\AgentResponse $agentResponse): void
+    {
         if (!empty($agentResponse->context->currentWorkflow)) {
             Cache::put(
                 "session_node:{$sessionId}",
@@ -121,46 +176,14 @@ class ChatService
         } else {
             Cache::forget("session_node:{$sessionId}");
         }
-
-        // Convert AgentResponse to AIResponse
-        $contextMetadata = array_merge(
-            $agentResponse->context->toArray(),
-            $agentResponse->metadata ?? []
-        );
-
-        // Extract entity_ids from last_entity_list for node routing
-        $entityTracking = [];
-        if (isset($agentResponse->context->metadata['last_entity_list'])) {
-            $lastList = $agentResponse->context->metadata['last_entity_list'];
-            $entityTracking = [
-                'entity_ids' => $lastList['entity_ids'] ?? null,
-                'entity_type' => $lastList['entity_type'] ?? null,
-            ];
-        }
-
-        return new AIResponse(
-            content: $agentResponse->message,
-            engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
-            model: \LaravelAIEngine\Enums\EntityEnum::from($model),
-            metadata: array_merge($contextMetadata, $entityTracking, [
-                'workflow_active' => !$agentResponse->isComplete,
-                'workflow_class' => $agentResponse->context->currentWorkflow,
-                'workflow_data' => $agentResponse->data ?? [],
-                'workflow_completed' => $agentResponse->isComplete,
-                'agent_strategy' => $agentResponse->strategy,
-            ]),
-            success: $agentResponse->success,
-            conversationId: $conversationId
-        );
     }
 
     /**
-     * Check if this request was forwarded from another node
-     * Prevents infinite forwarding loops
+     * Check if this request was forwarded from another node.
+     * Prevents infinite forwarding loops.
      */
     protected function isForwardedRequest(): bool
     {
-        // Check for forwarded header or context flag
         $request = request();
         if ($request && $request->hasHeader('X-Forwarded-From-Node')) {
             return true;

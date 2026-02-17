@@ -21,14 +21,14 @@ class ProcessLongRunningAITaskJobTest extends TestCase
 
         $request = AIRequest::make(
             'Generate video from image',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $response = AIResponse::success(
             'Video generated successfully',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $mockService = Mockery::mock(AIEngineService::class);
@@ -58,8 +58,8 @@ class ProcessLongRunningAITaskJobTest extends TestCase
 
         $request = AIRequest::make(
             'Generate video from image',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $mockService = Mockery::mock(AIEngineService::class);
@@ -90,14 +90,14 @@ class ProcessLongRunningAITaskJobTest extends TestCase
 
         $request = AIRequest::make(
             'Process large document',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $response = AIResponse::success(
             'Document processed',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $mockService = Mockery::mock(AIEngineService::class);
@@ -125,8 +125,8 @@ class ProcessLongRunningAITaskJobTest extends TestCase
     {
         $request = AIRequest::make(
             'Generate video',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $job = new ProcessLongRunningAITaskJob($request, 'video_generation');
@@ -146,8 +146,8 @@ class ProcessLongRunningAITaskJobTest extends TestCase
 
         $request = AIRequest::make(
             'Test task',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $job = new ProcessLongRunningAITaskJob($request, 'video_generation', 'long_task_123');
@@ -160,8 +160,8 @@ class ProcessLongRunningAITaskJobTest extends TestCase
     {
         $request = AIRequest::make(
             'Test task',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $job = new ProcessLongRunningAITaskJob($request, 'video_generation');
@@ -177,14 +177,14 @@ class ProcessLongRunningAITaskJobTest extends TestCase
 
         $request = AIRequest::make(
             'Test task with callbacks',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $response = AIResponse::success(
             'Task completed',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $mockService = Mockery::mock(AIEngineService::class);

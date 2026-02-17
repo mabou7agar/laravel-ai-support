@@ -42,13 +42,11 @@ class GenericEntityResolver
 {
     protected $ai;
     protected $intelligentService;
-    protected $aiEnhanced;
 
     public function __construct(AIEngineService $ai, IntelligentEntityService $intelligentService)
     {
         $this->ai = $ai;
         $this->intelligentService = $intelligentService;
-        $this->aiEnhanced = app(\LaravelAIEngine\Services\AIEnhancedWorkflowService::class);
     }
 
     /**

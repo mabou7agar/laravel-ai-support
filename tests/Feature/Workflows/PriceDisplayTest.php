@@ -21,6 +21,11 @@ class PriceDisplayTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        if (!class_exists(GenericEntityResolver::class)) {
+            $this->markTestSkipped('GenericEntityResolver class not available');
+        }
+
         $this->resolver = app(GenericEntityResolver::class);
     }
     
@@ -35,7 +40,7 @@ class PriceDisplayTest extends TestCase
         $productModel = $this->createMockProductModel();
         
         // Create context with subflow completion state
-        $context = new UnifiedActionContext('test-session');
+        $context = new UnifiedActionContext('test-session', 'test-user-1');
         $context->set('products_missing', [
             ['name' => 'Test Product', 'quantity' => 2]
         ]);
@@ -123,7 +128,7 @@ class PriceDisplayTest extends TestCase
         // Assertions
         $this->assertStringContainsString('Laptop × 2 @ $999.99 = $1999.98', $message);
         $this->assertStringContainsString('Mouse × 3 @ $29.99 = $89.97', $message);
-        $this->assertStringContainsString('Total: $2089.95', $message);
+        $this->assertStringContainsString('**Total:** $2089.95', $message);
         $this->assertStringNotContainsString('$0', $message);
     }
     

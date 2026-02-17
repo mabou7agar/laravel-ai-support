@@ -19,9 +19,9 @@ class BatchProcessAIRequestsJobTest extends TestCase
         Queue::fake();
 
         $requests = [
-            AIRequest::make('Test prompt 1', EngineEnum::OPENAI, EntityEnum::GPT_4O),
-            AIRequest::make('Test prompt 2', EngineEnum::OPENAI, EntityEnum::GPT_4O),
-            AIRequest::make('Test prompt 3', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test prompt 1', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
+            AIRequest::make('Test prompt 2', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
+            AIRequest::make('Test prompt 3', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $mockTracker = Mockery::mock(JobStatusTracker::class);
@@ -40,9 +40,9 @@ class BatchProcessAIRequestsJobTest extends TestCase
     public function test_job_handles_invalid_request_in_batch()
     {
         $requests = [
-            AIRequest::make('Test prompt 1', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test prompt 1', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
             'invalid_request', // This should cause an error
-            AIRequest::make('Test prompt 3', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test prompt 3', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $mockTracker = Mockery::mock(JobStatusTracker::class);
@@ -60,9 +60,9 @@ class BatchProcessAIRequestsJobTest extends TestCase
     public function test_job_stops_on_error_when_configured()
     {
         $requests = [
-            AIRequest::make('Test prompt 1', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test prompt 1', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
             'invalid_request',
-            AIRequest::make('Test prompt 3', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test prompt 3', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $mockTracker = Mockery::mock(JobStatusTracker::class);
@@ -83,9 +83,9 @@ class BatchProcessAIRequestsJobTest extends TestCase
 
         // Use all valid requests since the job validates requests first
         $requests = [
-            AIRequest::make('Test prompt 1', EngineEnum::OPENAI, EntityEnum::GPT_4O),
-            AIRequest::make('Test prompt 2', EngineEnum::OPENAI, EntityEnum::GPT_4O),
-            AIRequest::make('Test prompt 3', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test prompt 1', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
+            AIRequest::make('Test prompt 2', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
+            AIRequest::make('Test prompt 3', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $mockTracker = Mockery::mock(JobStatusTracker::class);
@@ -108,7 +108,7 @@ class BatchProcessAIRequestsJobTest extends TestCase
             ->with('batch_123', 'failed', Mockery::type('array'));
 
         $requests = [
-            AIRequest::make('Test prompt', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test prompt', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $job = new BatchProcessAIRequestsJob($requests, 'batch_123');
@@ -120,7 +120,7 @@ class BatchProcessAIRequestsJobTest extends TestCase
     public function test_job_has_correct_configuration()
     {
         $requests = [
-            AIRequest::make('Test prompt', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test prompt', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $job = new BatchProcessAIRequestsJob($requests, 'batch_123');

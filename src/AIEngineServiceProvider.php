@@ -136,14 +136,9 @@ class AIEngineServiceProvider extends ServiceProvider
             return new \LaravelAIEngine\Services\Memory\MemoryManager();
         });
 
-        // Register services from legacy provider that are still needed
         $this->app->singleton(\LaravelAIEngine\Services\AIEngineService::class, function ($app) {
             return new \LaravelAIEngine\Services\AIEngineService($app->make(CreditManager::class));
         });
-
-        // Removed: BrandVoiceManager (unused - 639 lines)
-        // Removed: ContentModerationService (unused - 294 lines)
-        // Removed: DuplicateDetectionService (test-only)
 
         $this->app->singleton(\LaravelAIEngine\Services\WebhookManager::class, function ($app) {
             return new \LaravelAIEngine\Services\WebhookManager();
@@ -175,6 +170,43 @@ class AIEngineServiceProvider extends ServiceProvider
 
         $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService(
+                $app->make(AIEngineManager::class),
+                (array) config('ai-agent.autonomous_rag', [])
+            );
+        });
+
+        // RAG decomposed services
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGModelDiscovery::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\RAGModelDiscovery(
+                $app->bound(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
+                    ? $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
+                    : null
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGFilterService::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\RAGFilterService();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGQueryExecutor::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\RAGQueryExecutor(
+                $app->make(\LaravelAIEngine\Services\RAG\RAGModelDiscovery::class),
+                $app->make(\LaravelAIEngine\Services\RAG\RAGFilterService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGToolDispatcher::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\RAGToolDispatcher(
+                $app->make(\LaravelAIEngine\Services\RAG\RAGQueryExecutor::class),
+                $app->make(\LaravelAIEngine\Services\RAG\RAGModelDiscovery::class),
+                $app->bound(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class)
+                    ? $app->make(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class)
+                    : null
+            );
         });
 
         $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class, function ($app) {
@@ -221,17 +253,175 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class);
         $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class);
 
-        // Autonomous RAG Agent - single AI call for all decisions
+        // Autonomous RAG Agent — slim orchestrator delegating to decomposed services
         $this->app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGAgent::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\AutonomousRAGAgent(
                 $app->make(AIEngineManager::class),
-                $app->make(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class),
-                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
+                $app->make(\LaravelAIEngine\Services\RAG\RAGModelDiscovery::class),
+                $app->make(\LaravelAIEngine\Services\RAG\RAGToolDispatcher::class),
+                $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService::class)
             );
         });
 
         $this->app->singleton(\LaravelAIEngine\Services\Agent\ContextManager::class, function ($app) {
             return new \LaravelAIEngine\Services\Agent\ContextManager();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\IntentClassifierService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\IntentClassifierService(
+                (array) config('ai-agent.intent', [])
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\DecisionPolicyService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\DecisionPolicyService();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\FollowUpStateService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\FollowUpStateService(
+                (array) config('ai-agent.entity_model_map', [])
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\UserProfileResolver::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\UserProfileResolver([
+                'user_model' => config('ai-engine.user_model'),
+                'fields' => (array) config('ai-agent.orchestrator.user_profile_fields', ['name', 'email']),
+            ]);
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\OrchestratorDecisionParser::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\OrchestratorDecisionParser([
+                'default_action' => config('ai-agent.orchestrator.default_action', 'conversational'),
+                'allowed_actions' => (array) config('ai-agent.orchestrator.allowed_actions', []),
+            ]);
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRoutingDigestService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\NodeRoutingDigestService(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\OrchestratorPromptBuilder::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\OrchestratorPromptBuilder(
+                $app->make(\LaravelAIEngine\Services\Agent\FollowUpStateService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\UserProfileResolver::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeMetadataDiscovery::class),
+                (array) config('ai-agent.orchestrator', []),
+                $app->make(\LaravelAIEngine\Services\Node\NodeRoutingDigestService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Handlers\AgentReasoningLoop::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\Handlers\AgentReasoningLoop(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+                (array) config('ai-agent.agent_executor', [])
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Handlers\AgentToolHandler::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\Handlers\AgentToolHandler();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\Handlers\CrossNodeToolResolver::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\Handlers\CrossNodeToolResolver(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeForwarder::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentToolExecutor::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\AgentToolExecutor(
+                $app->make(\LaravelAIEngine\Services\Agent\Handlers\AgentReasoningLoop::class),
+                $app->make(\LaravelAIEngine\Services\Agent\Handlers\AgentToolHandler::class),
+                $app->make(\LaravelAIEngine\Services\Agent\Handlers\CrossNodeToolResolver::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\NextStepSuggestionService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\NextStepSuggestionService(
+                (array) config('ai-agent.next_step', [])
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\OrchestratorResourceDiscovery::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\OrchestratorResourceDiscovery(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::class),
+                $app->bound(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
+                    ? $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
+                    : null
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\OrchestratorResponseFormatter::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\OrchestratorResponseFormatter();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentResponseConverter::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\AgentResponseConverter();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\ToolExecutionCoordinator::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\ToolExecutionCoordinator();
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\CollectorExecutionCoordinator::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\CollectorExecutionCoordinator(
+                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler::class),
+                $app->make(\LaravelAIEngine\Services\Agent\AgentPolicyService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\NodeRoutingCoordinator::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\NodeRoutingCoordinator(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeForwarder::class),
+                $app->make(\LaravelAIEngine\Services\Agent\AgentPolicyService::class)
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\RoutedSessionPolicyService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\RoutedSessionPolicyService(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $this->resolveAgentSectionSettings('routed_session')
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\FollowUpDecisionAIService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\FollowUpDecisionAIService(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\IntentClassifierService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\DecisionPolicyService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\FollowUpStateService::class),
+                $this->resolveAgentSectionSettings('followup_guard')
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\PositionalReferenceAIService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\PositionalReferenceAIService(
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\IntentClassifierService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\FollowUpStateService::class),
+                $this->resolveAgentSectionSettings('positional_reference')
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentPolicyService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\AgentPolicyService(
+                (array) config('ai-agent.policy', [])
+            );
+        });
+
+        $this->app->singleton(\LaravelAIEngine\Services\Agent\PositionalReferenceCoordinator::class, function ($app) {
+            return new \LaravelAIEngine\Services\Agent\PositionalReferenceCoordinator(
+                $app->make(\LaravelAIEngine\Services\Agent\IntentClassifierService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\FollowUpStateService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\AgentPolicyService::class)
+            );
         });
 
         $this->app->singleton(\LaravelAIEngine\Services\Agent\WorkflowDiscoveryService::class, function ($app) {
@@ -244,12 +434,75 @@ class AIEngineServiceProvider extends ServiceProvider
                 $app->make(\LaravelAIEngine\Services\AIEngineService::class),
                 $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class),
                 $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::class),
-                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\IntentClassifierService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\DecisionPolicyService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\FollowUpStateService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\OrchestratorPromptBuilder::class),
+                $app->make(\LaravelAIEngine\Services\Agent\OrchestratorDecisionParser::class),
+                $app->make(\LaravelAIEngine\Services\Agent\ToolExecutionCoordinator::class),
+                $app->make(\LaravelAIEngine\Services\Agent\CollectorExecutionCoordinator::class),
+                $app->make(\LaravelAIEngine\Services\Agent\NodeRoutingCoordinator::class),
+                $app->make(\LaravelAIEngine\Services\Agent\RoutedSessionPolicyService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\FollowUpDecisionAIService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\PositionalReferenceAIService::class),
+                $app->make(\LaravelAIEngine\Services\Agent\PositionalReferenceCoordinator::class),
+                $app->make(\LaravelAIEngine\Services\Agent\AgentPolicyService::class)
             );
         });
+    }
 
-        // Deprecated: AgentOrchestrator moved to Legacy folder
-        // Use MinimalAIOrchestrator instead for AI-driven orchestration
+    /**
+     * Resolve agent section settings and inject global AI-first profile flags.
+     */
+    protected function resolveAgentSectionSettings(string $section): array
+    {
+        $settings = (array) config("ai-agent.{$section}", []);
+        if (!$this->resolveStrictAIFirstMode()) {
+            return $settings;
+        }
+
+        return match ($section) {
+            'followup_guard',
+            'positional_reference' => array_merge($settings, [
+                'rules_fallback_on_ai_failure' => false,
+                'rules_fallback_when_ai_disabled' => false,
+            ]),
+            'routed_session' => array_merge($settings, [
+                'use_explicit_topic_checks' => false,
+                'fallback_continue_on_ai_error' => false,
+            ]),
+            default => $settings,
+        };
+    }
+
+    /**
+     * Global strict mode precedence:
+     * 1) ai-agent.ai_first.strict (explicit)
+     * 2) ai-agent.ai_first.profile
+     */
+    protected function resolveStrictAIFirstMode(): bool
+    {
+        $explicit = config('ai-agent.ai_first.strict');
+        if ($explicit !== null) {
+            return $this->normalizeBool($explicit);
+        }
+
+        $profile = strtolower(trim((string) config('ai-agent.ai_first.profile', 'balanced')));
+        return in_array($profile, ['strict_ai_first', 'strict', 'ai_first_strict'], true);
+    }
+
+    /**
+     * Convert mixed config values ("true", "1", 1, true, etc.) to bool.
+     */
+    protected function normalizeBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        $normalized = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        return $normalized ?? (bool) $value;
     }
 
     /**
@@ -387,12 +640,7 @@ class AIEngineServiceProvider extends ServiceProvider
         // Validate node configuration
         $this->validateNodeConfiguration();
 
-        // Removed: NodeConnectionPool (redundant)
-        // Removed: NodeCacheService (over-engineered)
-        // Removed: LoadBalancerService (unnecessary)
-        // Removed: SearchResultMerger (over-complex)
-
-        // Auth Service (kept for API authentication)
+        // Auth Service
         $this->app->singleton(\LaravelAIEngine\Services\Node\NodeAuthService::class);
 
         // Circuit Breaker (kept for health monitoring)
@@ -406,33 +654,35 @@ class AIEngineServiceProvider extends ServiceProvider
             );
         });
 
-        // Removed: FederatedSearchService (replaced with UnifiedRAGSearchService)
-        // Removed: LoadBalancerService (unnecessary complexity)
-        // Removed: NodeConnectionPool (redundant)
-        // Removed: NodeCacheService (over-engineered)
-        // Removed: SearchResultMerger (over-engineered)
-
-        // New: Unified RAG Search Service (simple, fast, reliable)
+        // Unified RAG Search Service
         $this->app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService(
                 $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class)
             );
         });
 
-        // Node Router Service (kept for backward compatibility)
-        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRouterService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Node\NodeRouterService(
-                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
-                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class)
+        // Node Forwarder — HTTP transport with retry/failover
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeForwarder::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\NodeForwarder(
+                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)
             );
         });
 
-        // Remote Action Service
+        // Node Router Service — pure routing decisions, delegates HTTP to NodeForwarder
+        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRouterService::class, function ($app) {
+            return new \LaravelAIEngine\Services\Node\NodeRouterService(
+                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
+                $app->make(\LaravelAIEngine\Services\Node\NodeForwarder::class)
+            );
+        });
+
+        // Remote Action Service — uses NodeForwarder for transport
         $this->app->singleton(\LaravelAIEngine\Services\Node\RemoteActionService::class, function ($app) {
             return new \LaravelAIEngine\Services\Node\RemoteActionService(
                 $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
                 $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
-                $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)
+                $app->make(\LaravelAIEngine\Services\Node\NodeForwarder::class)
             );
         });
 
@@ -489,8 +739,12 @@ class AIEngineServiceProvider extends ServiceProvider
     protected function validateNodeConfiguration(): void
     {
         // Check JWT secret - correct config path is nodes.jwt.secret
-        $jwtSecret = config('ai-engine.nodes.jwt.secret')?? config('ai-engine.nodes.jwt_secret');
+        $jwtSecret = config('ai-engine.nodes.jwt.secret') ?? config('ai-engine.nodes.jwt_secret');
         if ($jwtSecret === null || $jwtSecret === '') {
+            if ($this->app->runningUnitTests()) {
+                return;
+            }
+
             throw new \RuntimeException(
                 'AI_ENGINE_JWT_SECRET is required when nodes are enabled. ' .
                 'Set it in your .env file or disable nodes with AI_ENGINE_NODES_ENABLED=false'

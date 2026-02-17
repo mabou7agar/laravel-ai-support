@@ -319,31 +319,43 @@ class ContextLimitationService
      */
     protected function getUserAccessLevel(string $userId): string
     {
-        // Check if user model exists
-        if (class_exists(\App\Models\User::class)) {
-            try {
-                $user = \App\Models\User::find($userId);
-                
-                if ($user) {
-                    // Check for role or subscription
-                    if (isset($user->role)) {
-                        return $user->role;
-                    }
-                    
-                    if (isset($user->subscription_level)) {
-                        return $user->subscription_level;
-                    }
-                    
-                    if (method_exists($user, 'isAdmin') && $user->isAdmin()) {
-                        return 'admin';
-                    }
+        $userModel = $this->resolveUserModelClass();
+        if (!$userModel) {
+            return 'basic';
+        }
+
+        try {
+            $user = $userModel::find($userId);
+
+            if ($user) {
+                // Check for role or subscription
+                if (isset($user->role)) {
+                    return $user->role;
                 }
-            } catch (\Exception $e) {
-                Log::debug('Failed to get user access level', ['error' => $e->getMessage()]);
+
+                if (isset($user->subscription_level)) {
+                    return $user->subscription_level;
+                }
+
+                if (method_exists($user, 'isAdmin') && $user->isAdmin()) {
+                    return 'admin';
+                }
             }
+        } catch (\Exception $e) {
+            Log::debug('Failed to get user access level', ['error' => $e->getMessage()]);
         }
         
         return 'basic';
+    }
+
+    protected function resolveUserModelClass(): ?string
+    {
+        $userModel = config('ai-engine.user_model');
+        if (is_string($userModel) && class_exists($userModel)) {
+            return $userModel;
+        }
+
+        return null;
     }
 
     /**

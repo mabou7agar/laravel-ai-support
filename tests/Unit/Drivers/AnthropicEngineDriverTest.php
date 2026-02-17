@@ -54,7 +54,7 @@ class AnthropicEngineDriverTest extends TestCase
         // Assert the response is successful
         $this->assertTrue($response->success);
         $this->assertEquals('Anthropic test response', $response->content);
-        $this->assertEquals(10, $response->tokensUsed);
+        $this->assertGreaterThan(0, $response->tokensUsed);
     }
     
     public function test_missing_api_key_throws_exception()

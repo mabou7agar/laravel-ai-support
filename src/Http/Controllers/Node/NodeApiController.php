@@ -610,6 +610,10 @@ class NodeApiController extends Controller
                 // Include entity tracking for follow-up selections from master node
                 'entity_ids' => $fullMetadata['entity_ids'] ?? null,
                 'entity_type' => $fullMetadata['entity_type'] ?? null,
+                // Include entity data summaries so master node can provide rich follow-up context
+                'entity_data' => $fullMetadata['last_entity_list']['entity_data'] ?? null,
+                'start_position' => $fullMetadata['last_entity_list']['start_position'] ?? null,
+                'end_position' => $fullMetadata['last_entity_list']['end_position'] ?? null,
             ];
 
             // Get total accumulated credits from all AI calls during this request

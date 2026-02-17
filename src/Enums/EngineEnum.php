@@ -329,6 +329,17 @@ class EngineEnum
     }
 
     /**
+     * Try to create engine from value, returns null if invalid
+     */
+    public static function tryFrom(string $value): ?self
+    {
+        if (!in_array($value, self::all())) {
+            return null;
+        }
+        return new self($value);
+    }
+
+    /**
      * Create engine from slug (alias for from)
      */
     public static function fromSlug(string $slug): self

@@ -15,7 +15,7 @@ class ActionRegistryTest extends ActionTestCase
         parent::setUp();
         
         // Clear registry for clean tests
-        $this->actionRegistry->clear();
+        $this->actionRegistry->clearCache();
     }
     
     /**

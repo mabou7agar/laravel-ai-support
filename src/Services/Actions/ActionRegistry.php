@@ -99,6 +99,50 @@ class ActionRegistry
     }
 
     /**
+     * Check if action exists by ID
+     */
+    public function has(string $id): bool
+    {
+        return isset($this->actions[$id]);
+    }
+
+    /**
+     * Register multiple action definitions at once
+     */
+    public function registerBatch(array $definitions): void
+    {
+        foreach ($definitions as $definition) {
+            $this->register($definition);
+        }
+    }
+
+    /**
+     * Unregister an action by ID
+     */
+    public function unregister(string $id): void
+    {
+        unset($this->actions[$id]);
+    }
+
+    /**
+     * Discover actions from model classes
+     */
+    public function discoverFromModels(array $modelClasses): array
+    {
+        $discovered = [];
+        foreach ($modelClasses as $modelClass) {
+            if (class_exists($modelClass) && method_exists($modelClass, 'getActionDefinitions')) {
+                $definitions = $modelClass::getActionDefinitions();
+                foreach ($definitions as $definition) {
+                    $this->register($definition);
+                    $discovered[] = $definition;
+                }
+            }
+        }
+        return $discovered;
+    }
+
+    /**
      * Find actions by trigger
      */
     public function findByTrigger(string $keyword): array

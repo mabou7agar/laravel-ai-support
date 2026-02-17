@@ -21,6 +21,10 @@ class FriendlyNameTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        if (!class_exists(IntelligentPromptGenerator::class)) {
+            $this->markTestSkipped('IntelligentPromptGenerator class not available');
+        }
         
         // Mock AI service for testing
         $this->mockAIService();
@@ -35,7 +39,7 @@ class FriendlyNameTest extends TestCase
      */
     public function it_uses_friendly_name_in_prompt_generation()
     {
-        $context = new UnifiedActionContext('test-session');
+        $context = new UnifiedActionContext('test-session', 'test-user-1');
         $context->set('collected_data', ['name' => 'Soccer Ball']);
         
         $fieldDefinitions = [
@@ -68,7 +72,7 @@ class FriendlyNameTest extends TestCase
      */
     public function it_uses_custom_prompt_when_provided()
     {
-        $context = new UnifiedActionContext('test-session');
+        $context = new UnifiedActionContext('test-session', 'test-user-1');
         
         $fieldDefinitions = [
             'category_id' => [
@@ -102,7 +106,7 @@ class FriendlyNameTest extends TestCase
      */
     public function it_includes_validation_hints_in_prompt()
     {
-        $context = new UnifiedActionContext('test-session');
+        $context = new UnifiedActionContext('test-session', 'test-user-1');
         
         $fieldDefinitions = [
             'email' => [
@@ -151,7 +155,7 @@ class FriendlyNameTest extends TestCase
      */
     public function it_includes_examples_in_prompt()
     {
-        $context = new UnifiedActionContext('test-session');
+        $context = new UnifiedActionContext('test-session', 'test-user-1');
         
         $fieldDefinitions = [
             'category_id' => [
@@ -182,7 +186,7 @@ class FriendlyNameTest extends TestCase
      */
     public function it_falls_back_to_field_name_when_no_friendly_name()
     {
-        $context = new UnifiedActionContext('test-session');
+        $context = new UnifiedActionContext('test-session', 'test-user-1');
         
         $fieldDefinitions = [
             'email' => [

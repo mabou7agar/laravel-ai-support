@@ -2,6 +2,7 @@
 
 namespace LaravelAIEngine\Services\Node;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use ReflectionClass;
@@ -12,10 +13,24 @@ use ReflectionClass;
  */
 class NodeMetadataDiscovery
 {
+    protected const CACHE_KEY = 'node_local_metadata';
+
     /**
-     * Discover all node metadata
+     * Discover all node metadata (cached to avoid filesystem scanning every message).
      */
     public function discover(): array
+    {
+        $ttl = max(1, (int) config('ai-engine.nodes.local_metadata_cache_ttl_minutes', 30));
+
+        return Cache::remember(self::CACHE_KEY, now()->addMinutes($ttl), function () {
+            return $this->discoverFresh();
+        });
+    }
+
+    /**
+     * Force a fresh discovery (bypasses cache).
+     */
+    public function discoverFresh(): array
     {
         return [
             'description' => $this->generateDescription(),
@@ -26,6 +41,15 @@ class NodeMetadataDiscovery
             'collections' => $this->discoverCollections(),
             'workflows' => $this->discoverWorkflows(),
         ];
+    }
+
+    /**
+     * Invalidate the cached metadata (call after deploy or config change).
+     */
+    public function refresh(): array
+    {
+        Cache::forget(self::CACHE_KEY);
+        return $this->discover();
     }
 
     /**
@@ -128,8 +152,9 @@ class NodeMetadataDiscovery
         $domains = [];
         $models = $this->discoverCollections();
         
-        // Map common model names to domains
-        $domainMap = [
+        // Domain map: model name → business domains.
+        // Merge config overrides with sensible defaults.
+        $defaultDomainMap = [
             'invoice' => ['business', 'finance', 'accounting'],
             'bill' => ['business', 'finance', 'accounting'],
             'payment' => ['business', 'finance'],
@@ -144,6 +169,10 @@ class NodeMetadataDiscovery
             'patient' => ['healthcare', 'medical'],
             'appointment' => ['scheduling', 'business'],
         ];
+        $domainMap = array_merge(
+            $defaultDomainMap,
+            (array) config('ai-engine.nodes.domain_map', [])
+        );
         
         foreach ($models as $model) {
             // Handle new format (array with metadata) or legacy format (class string)
@@ -222,74 +251,63 @@ class NodeMetadataDiscovery
     }
 
     /**
-     * Discover vectorizable model collections with metadata
-     * Returns array of collection info for node advertisement
+     * Discover vectorizable model collections with metadata.
+     * Delegates to RAGCollectionDiscovery for the actual model list,
+     * then enriches each entry with metadata for node advertisement.
      */
     protected function discoverCollections(): array
     {
         $collections = [];
-        
-        // Get paths from config (supports modular architecture)
-        $discoveryPaths = config('ai-engine.intelligent_rag.discovery_paths', [
-            app_path('Models'),
-        ]);
-        
-        foreach ($discoveryPaths as $pathPattern) {
-            // Support glob patterns like 'modules/*/Models'
-            $paths = glob($pathPattern);
-            if (empty($paths)) {
-                $paths = [$pathPattern]; // Not a glob, use as-is
+
+        try {
+            $discovery = app(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class);
+            $modelClasses = $discovery->discover(useCache: true, includeFederated: false);
+        } catch (\Exception $e) {
+            $modelClasses = [];
+        }
+
+        foreach ($modelClasses as $className) {
+            // RAGCollectionDiscovery may return class strings or arrays
+            if (is_array($className)) {
+                $collections[] = $className;
+                continue;
             }
-            
-            foreach ($paths as $modelsPath) {
-                if (!File::exists($modelsPath)) {
-                    continue;
-                }
-                
-                $files = File::allFiles($modelsPath);
-                
-                foreach ($files as $file) {
-                    $className = $this->getClassFromFile($file->getPathname());
-                    
-                    if ($className && $this->isVectorizable($className)) {
-                        try {
-                            $instance = new $className;
-                            $modelName = class_basename($className);
-                            
-                            // Get description from model if available
-                            $description = method_exists($instance, 'getModelDescription')
-                                ? $instance->getModelDescription()
-                                : "Model for {$modelName} data";
-                            
-                            // Get table name
-                            $table = method_exists($instance, 'getTable')
-                                ? $instance->getTable()
-                                : strtolower(Str::snake(Str::plural($modelName)));
-                            
-                            // Check for CRUD tools
-                            $hasTools = $this->hasModelTools($className);
-                            
-                            $collections[] = [
-                                'name' => strtolower($modelName),
-                                'class' => $className,
-                                'table' => $table,
-                                'description' => $description,
-                                'capabilities' => [
-                                    'db_query' => true,
-                                    'db_count' => true,
-                                    'vector_search' => true,
-                                    'crud' => $hasTools,
-                                ],
-                            ];
-                        } catch (\Exception $e) {
-                            // Skip models that can't be instantiated
-                            continue;
-                        }
-                    }
-                }
+
+            if (!class_exists($className)) {
+                continue;
+            }
+
+            try {
+                $instance = new $className;
+                $modelName = class_basename($className);
+
+                $description = method_exists($instance, 'getModelDescription')
+                    ? $instance->getModelDescription()
+                    : "Model for {$modelName} data";
+
+                $table = method_exists($instance, 'getTable')
+                    ? $instance->getTable()
+                    : strtolower(Str::snake(Str::plural($modelName)));
+
+                $hasTools = $this->hasModelTools($className);
+
+                $collections[] = [
+                    'name' => strtolower($modelName),
+                    'class' => $className,
+                    'table' => $table,
+                    'description' => $description,
+                    'capabilities' => [
+                        'db_query' => true,
+                        'db_count' => true,
+                        'vector_search' => true,
+                        'crud' => $hasTools,
+                    ],
+                ];
+            } catch (\Exception $e) {
+                continue;
             }
         }
-        
+
         return $collections;
     }
     
@@ -393,26 +411,6 @@ class NodeMetadataDiscovery
         }
         
         return $namespaceMatch[1] . '\\' . $classMatch[1];
-    }
-
-    /**
-     * Check if class is vectorizable
-     */
-    protected function isVectorizable(string $className): bool
-    {
-        if (!class_exists($className)) {
-            return false;
-        }
-        
-        try {
-            $reflection = new ReflectionClass($className);
-            $traits = $reflection->getTraitNames();
-            
-            return in_array('LaravelAIEngine\Traits\Vectorizable', $traits) ||
-                   in_array('LaravelAIEngine\Traits\HasVectorSearch', $traits);
-        } catch (\Exception $e) {
-            return false;
-        }
     }
 
     /**

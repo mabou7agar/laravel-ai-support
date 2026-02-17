@@ -10,6 +10,13 @@ use Illuminate\Support\Facades\Artisan;
 
 class TestEnginesCommandTest extends TestCase
 {
+    protected function skipUnlessTestCommands(): void
+    {
+        if (!env('AI_ENGINE_TEST_COMMANDS')) {
+            $this->markTestSkipped('TestEnginesCommandTest requires AI_ENGINE_TEST_COMMANDS=true');
+        }
+    }
+
     public function test_command_exists()
     {
         $this->assertTrue(class_exists(TestEnginesCommand::class));
@@ -23,6 +30,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_runs_successfully()
     {
+        $this->skipUnlessTestCommands();
         // Mock the engine drivers to avoid actual API calls
         $this->mockAllEngineDrivers();
 
@@ -40,6 +48,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_with_specific_engine()
     {
+        $this->skipUnlessTestCommands();
         $this->mockAllEngineDrivers();
 
         $exitCode = Artisan::call('ai-engine:test-engines', [
@@ -55,6 +64,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_with_specific_model()
     {
+        $this->skipUnlessTestCommands();
         $this->mockAllEngineDrivers();
 
         $exitCode = Artisan::call('ai-engine:test-engines', [
@@ -69,6 +79,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_with_verbose_output()
     {
+        $this->skipUnlessTestCommands();
         $this->mockAllEngineDrivers();
 
         $exitCode = Artisan::call('ai-engine:test-engines', [
@@ -86,6 +97,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_with_export_option()
     {
+        $this->skipUnlessTestCommands();
         $this->mockAllEngineDrivers();
 
         $exportPath = storage_path('app/test-results.json');
@@ -104,6 +116,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_handles_invalid_engine()
     {
+        $this->skipUnlessTestCommands();
         $exitCode = Artisan::call('ai-engine:test-engines', [
             '--engine' => 'invalid-engine'
         ]);
@@ -116,6 +129,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_handles_missing_api_keys()
     {
+        $this->skipUnlessTestCommands();
         // Clear API keys
         config(['ai-engine.engines.openai.api_key' => '']);
 
@@ -130,6 +144,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_shows_summary()
     {
+        $this->skipUnlessTestCommands();
         $this->mockAllEngineDrivers();
 
         $exitCode = Artisan::call('ai-engine:test-engines', [

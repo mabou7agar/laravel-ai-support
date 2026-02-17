@@ -33,8 +33,8 @@ class QueuedAIProcessorTest extends TestCase
 
         $request = AIRequest::make(
             'Test prompt',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $this->mockTracker->shouldReceive('updateStatus')
@@ -53,8 +53,8 @@ class QueuedAIProcessorTest extends TestCase
 
         $request = AIRequest::make(
             'Test prompt',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $callbackUrl = 'https://example.com/callback';
@@ -77,8 +77,8 @@ class QueuedAIProcessorTest extends TestCase
 
         $request = AIRequest::make(
             'Test prompt',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $this->mockTracker->shouldReceive('updateStatus')
@@ -96,8 +96,8 @@ class QueuedAIProcessorTest extends TestCase
 
         $request = AIRequest::make(
             'Generate video',
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            EngineEnum::from(EngineEnum::OPENAI),
+            EntityEnum::from(EntityEnum::GPT_4O)
         );
 
         $this->mockTracker->shouldReceive('updateStatus')
@@ -120,8 +120,8 @@ class QueuedAIProcessorTest extends TestCase
         Queue::fake();
 
         $requests = [
-            AIRequest::make('Test 1', EngineEnum::OPENAI, EntityEnum::GPT_4O),
-            AIRequest::make('Test 2', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test 1', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
+            AIRequest::make('Test 2', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $this->mockTracker->shouldReceive('updateStatus')
@@ -139,7 +139,7 @@ class QueuedAIProcessorTest extends TestCase
         Queue::fake();
 
         $requests = [
-            AIRequest::make('Test 1', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test 1', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $this->mockTracker->shouldReceive('updateStatus')
@@ -259,9 +259,9 @@ class QueuedAIProcessorTest extends TestCase
         Queue::fake();
 
         $requests = [
-            AIRequest::make('Test 1', EngineEnum::OPENAI, EntityEnum::GPT_4O),
-            AIRequest::make('Test 2', EngineEnum::OPENAI, EntityEnum::GPT_4O),
-            AIRequest::make('Test 3', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test 1', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
+            AIRequest::make('Test 2', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
+            AIRequest::make('Test 3', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $this->mockTracker->shouldReceive('updateStatus')
@@ -280,9 +280,9 @@ class QueuedAIProcessorTest extends TestCase
     public function test_queue_multiple_requests_throws_exception_for_invalid_request()
     {
         $requests = [
-            AIRequest::make('Test 1', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test 1', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
             'invalid_request',
-            AIRequest::make('Test 3', EngineEnum::OPENAI, EntityEnum::GPT_4O),
+            AIRequest::make('Test 3', EngineEnum::from(EngineEnum::OPENAI), EntityEnum::from(EntityEnum::GPT_4O)),
         ];
 
         $this->mockTracker->shouldReceive('updateStatus')

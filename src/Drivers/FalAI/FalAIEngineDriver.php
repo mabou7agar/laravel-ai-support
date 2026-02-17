@@ -110,7 +110,7 @@ class FalAIEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::FAL_AI->value,
+                'engine' => EngineEnum::FAL_AI,
                 'parameters' => $payload,
                 'images' => $images,
             ]
@@ -168,7 +168,7 @@ class FalAIEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::FAL_AI->value,
+                'engine' => EngineEnum::FAL_AI,
                 'parameters' => $payload,
                 'video' => $videoData,
             ]
@@ -235,25 +235,25 @@ class FalAIEngineDriver implements EngineDriverInterface
     {
         return [
             // Image Generation Models
-            EntityEnum::FAL_FLUX_PRO->value => [
+            EntityEnum::FAL_FLUX_PRO => [
                 'name' => 'FLUX.1 Pro',
                 'type' => 'image',
                 'description' => 'State-of-the-art image generation model',
                 'max_resolution' => '2048x2048',
             ],
-            EntityEnum::FAL_FLUX_DEV->value => [
+            EntityEnum::FAL_FLUX_DEV => [
                 'name' => 'FLUX.1 Dev',
                 'type' => 'image',
                 'description' => 'High-quality image generation for development',
                 'max_resolution' => '1024x1024',
             ],
-            EntityEnum::FAL_FLUX_SCHNELL->value => [
+            EntityEnum::FAL_FLUX_SCHNELL => [
                 'name' => 'FLUX.1 Schnell',
                 'type' => 'image',
                 'description' => 'Fast image generation model',
                 'max_resolution' => '1024x1024',
             ],
-            EntityEnum::FAL_SDXL->value => [
+            EntityEnum::FAL_SDXL => [
                 'name' => 'Stable Diffusion XL',
                 'type' => 'image',
                 'description' => 'High-resolution image generation',
@@ -267,19 +267,19 @@ class FalAIEngineDriver implements EngineDriverInterface
             ],
 
             // Video Generation Models
-            EntityEnum::FAL_STABLE_VIDEO->value => [
+            EntityEnum::FAL_STABLE_VIDEO => [
                 'name' => 'Stable Video Diffusion',
                 'type' => 'video',
                 'description' => 'Image-to-video generation',
                 'max_duration' => 10,
             ],
-            EntityEnum::FAL_ANIMATEDIFF->value => [
+            EntityEnum::FAL_ANIMATEDIFF => [
                 'name' => 'AnimateDiff Lightning',
                 'type' => 'video',
                 'description' => 'Fast video generation',
                 'max_duration' => 5,
             ],
-            EntityEnum::FAL_LUMA_DREAM->value => [
+            EntityEnum::FAL_LUMA_DREAM => [
                 'name' => 'Luma AI Dream Machine',
                 'type' => 'video',
                 'description' => 'Advanced video generation',
@@ -349,5 +349,14 @@ class FalAIEngineDriver implements EngineDriverInterface
         } catch (\Exception $e) {
             return false;
         }
+    }
+
+    public function generateJsonAnalysis(
+        string $prompt,
+        string $systemPrompt,
+        ?string $model = null,
+        int $maxTokens = 300
+    ): string {
+        throw new AIEngineException('FalAI does not support JSON analysis generation');
     }
 }

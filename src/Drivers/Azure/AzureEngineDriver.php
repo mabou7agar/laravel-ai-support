@@ -105,7 +105,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'text_to_speech',
                 'audio' => $audioData,
             ]
@@ -145,7 +145,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'speech_to_text',
                 'transcription' => $transcriptionData,
             ]
@@ -191,7 +191,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'translator',
                 'translation' => $translationData,
             ]
@@ -241,7 +241,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'text_analytics',
                 'analysis' => $analysisData,
             ]
@@ -294,7 +294,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->entity->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'computer_vision',
                 'vision' => $visionData,
             ]
@@ -344,31 +344,31 @@ class AzureEngineDriver implements EngineDriverInterface
     public function getAvailableModels(): array
     {
         return [
-            EntityEnum::AZURE_TTS->value => [
+            EntityEnum::AZURE_TTS => [
                 'name' => 'Azure Text-to-Speech',
                 'description' => 'Neural text-to-speech with natural voices',
                 'features' => ['neural_voices', 'ssml_support', 'multiple_languages'],
                 'supported_languages' => 75,
             ],
-            EntityEnum::AZURE_STT->value => [
+            EntityEnum::AZURE_STT => [
                 'name' => 'Azure Speech-to-Text',
                 'description' => 'Accurate speech recognition and transcription',
                 'features' => ['real_time', 'batch_processing', 'custom_models'],
                 'supported_languages' => 85,
             ],
-            EntityEnum::AZURE_TRANSLATOR->value => [
+            EntityEnum::AZURE_TRANSLATOR => [
                 'name' => 'Azure Translator',
                 'description' => 'Real-time text translation',
                 'features' => ['90_languages', 'auto_detect', 'custom_models'],
                 'supported_languages' => 90,
             ],
-            EntityEnum::AZURE_TEXT_ANALYTICS->value => [
+            EntityEnum::AZURE_TEXT_ANALYTICS => [
                 'name' => 'Azure Text Analytics',
                 'description' => 'Sentiment analysis, key phrase extraction, entity recognition',
                 'features' => ['sentiment', 'key_phrases', 'entities', 'language_detection'],
                 'supported_languages' => 50,
             ],
-            EntityEnum::AZURE_COMPUTER_VISION->value => [
+            EntityEnum::AZURE_COMPUTER_VISION => [
                 'name' => 'Azure Computer Vision',
                 'description' => 'Image analysis and object detection',
                 'features' => ['object_detection', 'ocr', 'face_detection', 'image_description'],

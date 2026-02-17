@@ -48,6 +48,7 @@ class ConversationManager
                 'temperature' => 0.7,
                 'auto_title' => true,
             ], $settings),
+            'is_active' => true,
             'last_activity_at' => now(),
         ]);
     }
@@ -420,14 +421,12 @@ class ConversationManager
             return [];
         }
 
-        $messages = $conversation->messages();
-
         return [
-            'total_messages' => $messages->count(),
-            'user_messages' => $messages->where('role', 'user')->count(),
-            'assistant_messages' => $messages->where('role', 'assistant')->count(),
-            'total_tokens' => $messages->sum('tokens_used'),
-            'total_credits' => $messages->sum('credits_used'),
+            'total_messages' => $conversation->messages()->count(),
+            'user_messages' => $conversation->messages()->where('role', 'user')->count(),
+            'assistant_messages' => $conversation->messages()->where('role', 'assistant')->count(),
+            'total_tokens' => $conversation->messages()->sum('tokens_used'),
+            'total_credits' => $conversation->messages()->sum('credits_used'),
             'created_at' => $conversation->created_at,
             'last_activity' => $conversation->last_activity_at,
         ];

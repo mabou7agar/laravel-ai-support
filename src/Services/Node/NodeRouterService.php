@@ -7,28 +7,27 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Models\AINode;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Cache;
 
 /**
- * Simple Node Router Service
+ * Node Router Service — Pure Routing Decision Layer
  *
- * Routes requests to the appropriate node based on query intent,
- * instead of searching all nodes in parallel (federated search).
+ * Decides WHICH node should handle a request. Does NOT perform HTTP
+ * forwarding — that responsibility belongs to NodeForwarder.
  *
- * Flow: Query → Analyze Intent → Find Node → Forward Request → Return Response
+ * Decision strategies (evaluated in order):
+ *  1. Collection ownership — if collections are specified, find the owning node
+ *  2. AI intent analysis  — LLM picks the best node from descriptions/capabilities
+ *  3. Keyword scoring      — fallback heuristic using NodeNameMatcher
+ *
+ * HTTP forwarding methods (forwardChat, forwardSearch) are kept as thin
+ * delegates to NodeForwarder for backward compatibility.
  */
 class NodeRouterService
 {
-    protected NodeRegistryService $registry;
-    protected CircuitBreakerService $circuitBreaker;
-
     public function __construct(
-        NodeRegistryService $registry,
-        CircuitBreakerService $circuitBreaker
+        protected NodeRegistryService $registry,
+        protected NodeForwarder $forwarder
     ) {
-        $this->registry = $registry;
-        $this->circuitBreaker = $circuitBreaker;
     }
 
     /**
@@ -55,13 +54,11 @@ class NodeRouterService
      */
     protected function routeByCollections(array $collections): array
     {
-        // Check if any collection belongs to a remote node
         foreach ($collections as $collection) {
             $node = $this->registry->findNodeForCollection($collection);
 
             if ($node && $node->type === 'child') {
-                // Check if node is healthy
-                if (!$this->isNodeAvailable($node)) {
+                if (!$this->forwarder->isAvailable($node)) {
                     Log::channel('ai-engine')->warning('Node for collection is unavailable, falling back to local', [
                         'collection' => $collection,
                         'node' => $node->slug,
@@ -78,7 +75,6 @@ class NodeRouterService
             }
         }
 
-        // All collections are local or no remote node found
         return [
             'node' => null,
             'is_local' => true,
@@ -117,7 +113,7 @@ class NodeRouterService
         }
 
         // Check if node is available
-        if (!$this->isNodeAvailable($selectedNode['node'])) {
+        if (!$this->forwarder->isAvailable($selectedNode['node'])) {
             return [
                 'node' => null,
                 'is_local' => true,
@@ -264,17 +260,17 @@ PROMPT;
     }
 
     /**
-     * Fallback: keyword-based node selection
+     * Fallback: keyword-based node selection using NodeNameMatcher.
      */
     protected function keywordBasedSelection(string $query, $nodes): ?array
     {
-        $queryLower = strtolower($query);
+        $minScore = (int) config('ai-engine.nodes.routing.min_keyword_score', 10);
         $scores = [];
 
         foreach ($nodes as $node) {
-            $score = $this->scoreNodeForQuery($node, $queryLower);
+            $score = $this->scoreNodeForQuery($node, $query);
 
-            if ($score > 0) {
+            if ($score >= $minScore) {
                 $scores[$node->id] = [
                     'node' => $node,
                     'score' => $score,
@@ -296,73 +292,56 @@ PROMPT;
     }
 
     /**
-     * Score how well a node matches a query (used as fallback)
+     * Score how well a node matches a query using NodeNameMatcher.
+     *
+     * Weights: collection match (15) > keyword (10) > data_type (8) > domain (5)
      */
-    protected function scoreNodeForQuery(AINode $node, string $queryLower): int
+    public function scoreNodeForQuery(AINode $node, string $query): int
     {
+        $queryLower = strtolower($query);
         $score = 0;
 
-        // Check keywords
-        $keywords = $node->keywords ?? [];
-        foreach ($keywords as $keyword) {
-            if (str_contains($queryLower, strtolower($keyword))) {
-                $score += 10;
-            }
-        }
+        // Collection names (strongest signal)
+        foreach ($node->collections ?? [] as $collection) {
+            $name = is_array($collection)
+                ? ($collection['name'] ?? '')
+                : strtolower(class_basename($collection));
 
-        // Check domains
-        $domains = $node->domains ?? [];
-        foreach ($domains as $domain) {
-            if (str_contains($queryLower, strtolower($domain))) {
-                $score += 5;
-            }
-        }
-
-        // Check collection names
-        $collections = $node->collections ?? [];
-        foreach ($collections as $collection) {
-            $collectionName = strtolower(class_basename($collection));
-            if (str_contains($queryLower, $collectionName)) {
+            if (NodeNameMatcher::contains($queryLower, strtolower($name))) {
                 $score += 15;
             }
         }
 
-        // Check data types
-        $dataTypes = $node->data_types ?? [];
-        foreach ($dataTypes as $dataType) {
-            if (str_contains($queryLower, strtolower($dataType))) {
+        // Keywords
+        foreach ($node->keywords ?? [] as $keyword) {
+            if (NodeNameMatcher::contains($queryLower, strtolower((string) $keyword))) {
+                $score += 10;
+            }
+        }
+
+        // Data types
+        foreach ($node->data_types ?? [] as $dataType) {
+            if (NodeNameMatcher::contains($queryLower, strtolower((string) $dataType))) {
                 $score += 8;
+            }
+        }
+
+        // Domains
+        foreach ($node->domains ?? [] as $domain) {
+            if (NodeNameMatcher::contains($queryLower, strtolower((string) $domain))) {
+                $score += 5;
             }
         }
 
         return $score;
     }
 
-    /**
-     * Check if a node is available for requests
-     */
-    protected function isNodeAvailable(AINode $node): bool
-    {
-        // Check circuit breaker
-        if ($this->circuitBreaker->isOpen($node)) {
-            return false;
-        }
-
-        // Check if node is healthy
-        if (!$node->isHealthy()) {
-            return false;
-        }
-
-        // Check rate limiting
-        if ($node->isRateLimited()) {
-            return false;
-        }
-
-        return true;
-    }
+    // ──────────────────────────────────────────────
+    //  Backward-compatible delegates to NodeForwarder
+    // ──────────────────────────────────────────────
 
     /**
-     * Forward a search request to a specific node
+     * @deprecated Use NodeForwarder::forwardSearch() directly.
      */
     public function forwardSearch(
         AINode $node,
@@ -372,75 +351,11 @@ PROMPT;
         array $options = [],
         $userId = null
     ): array {
-        $startTime = microtime(true);
-
-        try {
-            $response = NodeHttpClient::makeForSearch($node)
-                ->post($node->getApiUrl('search'), [
-                    'query' => $query,
-                    'limit' => $limit,
-                    'options' => array_merge($options, [
-                        'collections' => $collections,
-                        'user_id' => $userId,
-                    ]),
-                ]);
-
-            $duration = (int) ((microtime(true) - $startTime) * 1000);
-
-            if ($response->successful()) {
-                $this->circuitBreaker->recordSuccess($node);
-                $data = $response->json();
-
-                Log::channel('ai-engine')->info('Routed search successful', [
-                    'node' => $node->slug,
-                    'query' => substr($query, 0, 50),
-                    'results_count' => count($data['results'] ?? []),
-                    'duration_ms' => $duration,
-                ]);
-
-                return [
-                    'success' => true,
-                    'node' => $node->slug,
-                    'node_name' => $node->name,
-                    'results' => $data['results'] ?? [],
-                    'count' => count($data['results'] ?? []),
-                    'duration_ms' => $duration,
-                ];
-            }
-
-            $this->circuitBreaker->recordFailure($node);
-
-            Log::channel('ai-engine')->warning('Routed search failed', [
-                'node' => $node->slug,
-                'status' => $response->status(),
-            ]);
-
-            return [
-                'success' => false,
-                'node' => $node->slug,
-                'error' => 'HTTP ' . $response->status(),
-                'results' => [],
-            ];
-
-        } catch (\Exception $e) {
-            $this->circuitBreaker->recordFailure($node);
-
-            Log::channel('ai-engine')->error('Routed search exception', [
-                'node' => $node->slug,
-                'error' => $e->getMessage(),
-            ]);
-
-            return [
-                'success' => false,
-                'node' => $node->slug,
-                'error' => $e->getMessage(),
-                'results' => [],
-            ];
-        }
+        return $this->forwarder->forwardSearch($node, $query, $collections, $limit, $options, $userId);
     }
 
     /**
-     * Forward a chat/RAG request to a specific node
+     * @deprecated Use NodeForwarder::forwardChat() directly.
      */
     public function forwardChat(
         AINode $node,
@@ -449,72 +364,15 @@ PROMPT;
         array $options = [],
         $userId = null
     ): array {
-        $startTime = microtime(true);
-
-        try {
-            // Extract headers from options if provided (from MinimalAIOrchestrator)
-            $customHeaders = $options['headers'] ?? [];
-
-            // Default headers
-            $defaultHeaders = [
-                'X-Forwarded-From-Node' => config('app.name', 'master'),
-            ];
-
-            // Merge custom headers with defaults (custom headers take precedence)
-            $headers = array_merge($defaultHeaders, $customHeaders);
-
-            $response = NodeHttpClient::makeAuthenticated($node)
-                ->withHeaders($headers)
-                ->post($node->getApiUrl('chat'), [
-                    'message' => $message,
-                    'session_id' => $sessionId,
-                    'user_id' => $userId,
-                    'options' => $options,
-                ]);
-
-            $duration = (int) ((microtime(true) - $startTime) * 1000);
-
-            if ($response->successful()) {
-                $this->circuitBreaker->recordSuccess($node);
-                $data = $response->json();
-
-                Log::channel('ai-engine')->info('Routed chat successful', [
-                    'node' => $node->slug,
-                    'duration_ms' => $duration,
-                ]);
-
-                return [
-                    'success' => true,
-                    'node' => $node->slug,
-                    'node_name' => $node->name,
-                    'response' => $data['response'] ?? '',
-                    'metadata' => $data['metadata'] ?? [],
-                    'credits_used' => $data['credits_used'] ?? 0,
-                    'duration_ms' => $duration,
-                ];
-            }
-
-            $this->circuitBreaker->recordFailure($node);
-
-            return [
-                'success' => false,
-                'node' => $node->slug,
-                'error' => 'HTTP ' . $response->status(),
-            ];
-
-        } catch (\Exception $e) {
-            $this->circuitBreaker->recordFailure($node);
-
-            return [
-                'success' => false,
-                'node' => $node->slug,
-                'error' => $e->getMessage(),
-            ];
-        }
+        return $this->forwarder->forwardChat($node, $message, $sessionId, $options, $userId);
     }
 
+    // ──────────────────────────────────────────────
+    //  Debugging / explain
+    // ──────────────────────────────────────────────
+
     /**
-     * Get routing decision for logging/debugging
+     * Get routing decision with per-node scores for logging/debugging.
      */
     public function explainRouting(string $query, array $collections = []): array
     {
@@ -523,12 +381,11 @@ PROMPT;
         $nodes = AINode::active()->child()->get();
         $nodeScores = [];
 
-        $queryLower = strtolower($query);
         foreach ($nodes as $node) {
             $nodeScores[$node->slug] = [
                 'name' => $node->name,
-                'score' => $this->scoreNodeForQuery($node, $queryLower),
-                'available' => $this->isNodeAvailable($node),
+                'score' => $this->scoreNodeForQuery($node, $query),
+                'available' => $this->forwarder->isAvailable($node),
                 'collections' => $node->collections ?? [],
                 'keywords' => $node->keywords ?? [],
             ];

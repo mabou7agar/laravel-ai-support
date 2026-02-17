@@ -257,7 +257,7 @@ class ButtonActionHandler implements ActionHandlerInterface
      */
     public function supports(string $actionType): bool
     {
-        return $actionType === ActionTypeEnum::BUTTON->value;
+        return $actionType === ActionTypeEnum::BUTTON;
     }
 
     /**

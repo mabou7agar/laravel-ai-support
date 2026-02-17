@@ -168,6 +168,18 @@ class NodeRegistryService
                     'synced_fields' => array_keys($updateData),
                 ]);
 
+                // Refresh the routing digest for this node (cached, token-efficient)
+                try {
+                    $node->refresh(); // Reload updated attributes
+                    app(NodeRoutingDigestService::class)->refreshNodeDigest($node);
+                } catch (\Throwable $e) {
+                    // Non-critical — digest will regenerate on next cache miss
+                    Log::channel('ai-engine')->debug('Routing digest refresh skipped', [
+                        'node_slug' => $node->slug,
+                        'reason' => $e->getMessage(),
+                    ]);
+                }
+
                 // Record success in circuit breaker
                 $this->circuitBreaker->recordSuccess($node);
 
@@ -279,7 +291,9 @@ class NodeRegistryService
     }
 
     /**
-     * Check if a node owns a specific collection
+     * Check if a node owns a specific collection.
+     *
+     * Uses NodeNameMatcher for consistent singular/plural/fuzzy matching.
      */
     public function nodeOwnsCollection(AINode $node, string $modelClass): bool
     {
@@ -290,43 +304,27 @@ class NodeRegistryService
         }
 
         foreach ($collections as $collection) {
-            // Handle new format (array with metadata) or legacy format (class string)
             if (is_array($collection)) {
                 $collectionClass = $collection['class'] ?? '';
                 $collectionName = $collection['name'] ?? '';
 
                 // Exact class match
-                if ($collectionClass === $modelClass) {
+                if ($collectionClass !== '' && $collectionClass === $modelClass) {
                     return true;
                 }
 
-                // Name match
-                $modelBasename = strtolower(class_basename($modelClass));
-                if (strtolower($collectionName) === $modelBasename ||
-                    strtolower($collectionName) === $modelBasename . 's' ||
-                    strtolower($collectionName) . 's' === $modelBasename) {
+                // Name match via NodeNameMatcher (handles singular/plural)
+                if ($collectionName !== '' && NodeNameMatcher::matchesClass($modelClass, $collectionName)) {
                     return true;
                 }
             } else {
                 // Legacy format: class string
-                // Exact match
                 if ($collection === $modelClass) {
                     return true;
                 }
 
-                // Check by class basename (e.g., "Email" matches "App\Models\Email")
-                if (class_basename($collection) === class_basename($modelClass)) {
-                    return true;
-                }
-
-                // Check by collection name variations
-                $modelBasename = strtolower(class_basename($modelClass));
-                $collectionLower = strtolower($collection);
-
-                // Singular/plural matching
-                if ($collectionLower === $modelBasename ||
-                    $collectionLower === $modelBasename . 's' ||
-                    $collectionLower . 's' === $modelBasename) {
+                // Class basename + singular/plural via NodeNameMatcher
+                if (NodeNameMatcher::matchesClass($modelClass, $collection)) {
                     return true;
                 }
             }

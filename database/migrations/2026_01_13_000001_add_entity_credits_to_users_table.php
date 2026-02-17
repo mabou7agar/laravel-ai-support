@@ -11,10 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (!Schema::hasTable('users')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
-            // Single credit balance for all AI engines
-            $table->decimal('my_credits', 10, 2)->default(0)->after('updated_at');
-            $table->boolean('has_unlimited_credits')->default(false)->after('my_credits');
+            if (!Schema::hasColumn('users', 'my_credits')) {
+                $table->decimal('my_credits', 10, 2)->default(0);
+            }
+            if (!Schema::hasColumn('users', 'has_unlimited_credits')) {
+                $table->boolean('has_unlimited_credits')->default(false);
+            }
         });
     }
 

@@ -13,6 +13,10 @@ class WebSocketManagerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        if (!interface_exists('Ratchet\MessageComponentInterface')) {
+            $this->markTestSkipped('Ratchet dependency not installed');
+        }
         
         $this->webSocketManager = new WebSocketManager();
     }

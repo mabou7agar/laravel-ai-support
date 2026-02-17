@@ -22,7 +22,7 @@ class InteractiveAction
 
     public function __construct(
         string $id,
-        ActionTypeEnum $type,
+        ActionTypeEnum|string $type,
         string $label,
         ?string $description = null,
         array $data = [],
@@ -37,7 +37,7 @@ class InteractiveAction
     
     ) {
         $this->id = $id;
-        $this->type = $type;
+        $this->type = is_string($type) ? ActionTypeEnum::from($type) : $type;
         $this->label = $label;
         $this->description = $description;
         $this->data = $data;
@@ -108,16 +108,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::FORM,
-            $label,
-            $description,
-            [
+            id: $id,
+            type: ActionTypeEnum::FORM,
+            label: $label,
+            description: $description,
+            data: [
                 'fields' => $fields,
                 'method' => 'POST'
             ],
-            $style,
-            $validation
+            style: $style,
+            validation: $validation
         );
     }
 
@@ -182,13 +182,13 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::CONFIRM,
-            $label,
-            $description,
-            $data,
-            $style,
-            $confirmMessage
+            id: $id,
+            type: ActionTypeEnum::CONFIRM,
+            label: $label,
+            description: $description,
+            data: $data,
+            style: $style,
+            confirmMessage: $confirmMessage
         );
     }
 
@@ -227,16 +227,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::CARD,
-            $title,
-            [
+            id: $id,
+            type: ActionTypeEnum::CARD,
+            label: $title,
+            data: [
                 'title' => $title,
                 'content' => $content,
                 'image_url' => $imageUrl,
                 'actions' => $actions
             ],
-            $style
+            style: $style
         );
     }
 

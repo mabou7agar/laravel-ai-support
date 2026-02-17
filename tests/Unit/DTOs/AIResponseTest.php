@@ -21,8 +21,8 @@ class AIResponseTest extends TestCase
         );
 
         $this->assertEquals('Generated content', $response->content);
-        $this->assertEquals(EngineEnum::OPENAI, $response->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $response->model);
+        $this->assertEquals(EngineEnum::OPENAI, $response->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $response->model->value);
         $this->assertEquals(['test' => 'data'], $response->metadata);
         $this->assertEquals(100, $response->tokensUsed);
         $this->assertEquals(0.5, $response->creditsUsed);
@@ -160,8 +160,8 @@ class AIResponseTest extends TestCase
 
         $this->assertIsArray($array);
         $this->assertEquals('Generated content', $array['content']);
-        $this->assertEquals(EngineEnum::OPENAI, $array['engine']);
-        $this->assertEquals(EntityEnum::GPT_4O, $array['model']);
+        $this->assertEquals(EngineEnum::OPENAI, $array['engine'] instanceof EngineEnum ? $array['engine']->value : $array['engine']);
+        $this->assertEquals(EntityEnum::GPT_4O, $array['model'] instanceof EntityEnum ? $array['model']->value : $array['model']);
         $this->assertEquals(['tokens' => 100, 'total_cost' => 0.5], $array['usage']);
         $this->assertEquals(['model' => 'gpt-4o'], $array['metadata']);
         $this->assertTrue($array['success']);
@@ -178,7 +178,7 @@ class AIResponseTest extends TestCase
             metadata: ['model' => 'gpt-4o']
         );
 
-        $json = json_encode($response);
+        $json = $response->toJson();
         $decoded = json_decode($json, true);
 
         $this->assertEquals('Generated content', $decoded['content']);
@@ -202,8 +202,8 @@ class AIResponseTest extends TestCase
         $response = AIResponse::fromArray($data);
 
         $this->assertEquals('Generated content', $response->content);
-        $this->assertEquals(EngineEnum::OPENAI, $response->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $response->model);
+        $this->assertEquals(EngineEnum::OPENAI, $response->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $response->model->value);
         $this->assertEquals(['tokens' => 100, 'total_cost' => 0.5], $response->usage);
         $this->assertEquals(['model' => 'gpt-4o'], $response->metadata);
         $this->assertTrue($response->success);
