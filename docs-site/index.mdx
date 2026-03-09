@@ -1,0 +1,50 @@
+---
+title: Laravel AI Engine
+description: Deep product overview and how to navigate this documentation.
+---
+
+Laravel AI Engine is a Laravel package for AI orchestration with deterministic execution.
+
+It combines:
+
+- agent orchestration
+- structured tool execution
+- guided and autonomous data collection flows
+- RAG retrieval over your Laravel models
+- node federation across many Laravel apps
+
+## What Is Different In This Package
+
+1. **Deterministic execution first**: business operations happen through declared tools/config, not free-form model guessing.
+2. **Multi-app federation**: master node routes to child nodes by ownership metadata.
+3. **Production hardening**: health gates, migration guards, and explicit infrastructure checks.
+4. **Policy learning loop**: improves prompt policy behavior from feedback events (not model weight fine-tuning).
+
+## Recommended Reading Order
+
+1. `Quickstart`
+2. `Concepts`
+3. `Single App Setup`
+4. `Model Config and Tools`
+5. `Direct Generation Recipes`
+6. `Entity List Preview UX`
+7. `Data Collectors`
+8. `RAG Indexing`
+9. `Chat Flow Examples`
+10. `Copy-Paste Playbooks`
+11. `Federation` + `Multi-App Federation`
+12. `Testing Playbook` + `Troubleshooting`
+
+## Compatibility
+
+- PHP: `^8.1`
+- Laravel: `8.x | 9.x | 10.x | 11.x | 12.x`
+- Package: `m-tech-stack/laravel-ai-engine`
+
+## Current Architecture Snapshot (March 2026)
+
+- modular orchestrator services (`IntentRouter`, `AgentPlanner`, execution + response finalization services)
+- autonomous RAG split by responsibility (decision, context/state, execution, policy)
+- manifest/ownership-based node routing
+- standardized API envelope (`success`, `message`, `data`, `error`, `meta`)
+- localization and locale-aware prompt resources

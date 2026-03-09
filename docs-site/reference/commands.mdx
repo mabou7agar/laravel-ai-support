@@ -1,0 +1,78 @@
+---
+title: Commands
+description: Operational command reference with practical usage patterns.
+---
+
+## Diagnostics
+
+```bash
+php artisan ai-engine:test-package
+php artisan ai-engine:test-engines
+php artisan ai-engine:infra-health
+php artisan ai-engine:system-health
+```
+
+## Real Conversation Validation
+
+```bash
+php artisan ai-engine:test-real-agent --script=minimal --json
+php artisan ai-engine:test-real-agent --script=followup --report-feedback --json
+php artisan ai-engine:test-real-agent --message="list invoices" --message="what is status of first one" --json
+```
+
+## Data Collector
+
+```bash
+php artisan ai:test-data-collector --preset=course --engine=openai --model=gpt-4o
+php artisan ai-engine:autonomous-collectors --discover
+php artisan ai-engine:autonomous-collectors --discover --nodes
+php artisan ai-engine:clear-discovery-cache --warm
+php artisan ai-engine:warm-discovery-cache --force
+```
+
+## Federation Operations
+
+```bash
+php artisan ai-engine:node-list
+php artisan ai-engine:node-ping --all
+php artisan ai-engine:node-update inbusiness --url="https://dash.test"
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix --autofix-strict
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
+```
+
+Safe workflow:
+
+1. run `nodes-sync` without `--apply` (dry-run plan)
+2. optionally run with `--autofix`
+3. apply with `--apply --prune --ping --force` once plan is clean
+
+## Vector and RAG
+
+```bash
+php artisan ai-engine:list-models
+php artisan ai-engine:analyze-model "App\\Models\\Invoice"
+php artisan ai-engine:vector-index "App\\Models\\Invoice" --with-relationships
+php artisan ai-engine:vector-search "overdue invoices"
+php artisan ai-engine:vector-status
+```
+
+## Decision Policy Loop
+
+```bash
+php artisan ai-engine:decision-feedback:report
+php artisan ai-engine:decision-policy:evaluate --window-hours=48
+php artisan ai-engine:decision-policy:create v2 --activate
+php artisan ai-engine:decision-policy:activate 2
+```
+
+## Project Bootstrap
+
+```bash
+php artisan ai-engine:init
+php artisan ai-engine:scaffold agent Invoice --model="App\\Models\\Invoice"
+php artisan ai-engine:scaffold collector Invoice
+php artisan ai-engine:scaffold tool LookupCustomer
+```

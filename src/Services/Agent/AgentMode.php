@@ -71,7 +71,7 @@ class AgentMode
         if (!$context->currentWorkflow) {
             Log::channel('ai-engine')->error('❌ No workflow set in context');
             return AgentResponse::failure(
-                message: 'Workflow not initialized',
+                message: $this->runtimeText('ai-engine::runtime.agent.workflow_not_initialized', 'Workflow not initialized'),
                 context: $context
             );
         }
@@ -124,7 +124,10 @@ class AgentMode
                 $context->get('crud_identifier'),
                 $context
             ),
-            default => ActionResult::failure(error: 'Unknown CRUD operation')
+            default => ActionResult::failure(error: $this->runtimeText(
+                'ai-engine::runtime.agent.unknown_crud_operation',
+                'Unknown CRUD operation'
+            ))
         };
         
         return AgentResponse::fromActionResult($result, $context);
@@ -149,7 +152,10 @@ class AgentMode
                 $crudOperation['identifier'],
                 $context
             ),
-            default => ActionResult::failure(error: 'Unknown CRUD operation')
+            default => ActionResult::failure(error: $this->runtimeText(
+                'ai-engine::runtime.agent.unknown_crud_operation',
+                'Unknown CRUD operation'
+            ))
         };
         
         return AgentResponse::fromActionResult($result, $context);
@@ -164,7 +170,10 @@ class AgentMode
         // Check for infinite loop protection
         if (!$this->checkInfiniteLoopProtection($context)) {
             return AgentResponse::failure(
-                message: 'Workflow appears to be stuck. Please try again or contact support.',
+                message: $this->runtimeText(
+                    'ai-engine::runtime.agent.workflow_stuck',
+                    'Workflow appears to be stuck. Please try again or contact support.'
+                ),
                 context: $context
             );
         }
@@ -174,7 +183,7 @@ class AgentMode
         
         if (!$workflow) {
             return AgentResponse::failure(
-                message: 'Workflow not found',
+                message: $this->runtimeText('ai-engine::runtime.agent.workflow_not_found', 'Workflow not found'),
                 context: $context
             );
         }
@@ -226,7 +235,7 @@ class AgentMode
             ]);
             
             return AgentResponse::failure(
-                message: 'No valid step to execute',
+                message: $this->runtimeText('ai-engine::runtime.agent.no_valid_step', 'No valid step to execute'),
                 context: $context
             );
         }
@@ -396,7 +405,11 @@ class AgentMode
             ]);
 
             return ActionResult::failure(
-                error: "Step execution failed: {$e->getMessage()}",
+                error: $this->runtimeText(
+                    'ai-engine::runtime.agent.step_execution_failed',
+                    'Step execution failed: :error',
+                    ['error' => $e->getMessage()]
+                ),
                 metadata: [
                     'step' => $step->getName(),
                     'exception' => get_class($e),
@@ -417,7 +430,10 @@ class AgentMode
             $context->persist();
             
             return AgentResponse::failure(
-                message: "Workflow cancelled. How can I help you?",
+                message: $this->runtimeText(
+                    'ai-engine::runtime.agent.workflow_cancelled_help',
+                    'Workflow cancelled. How can I help you?'
+                ),
                 data: $cancelResult->data,
                 context: $context
             );
@@ -759,7 +775,10 @@ class AgentMode
             ]);
 
             return AgentResponse::failure(
-                message: 'Workflow configuration error: next step not found',
+                message: $this->runtimeText(
+                    'ai-engine::runtime.agent.workflow_next_step_not_found',
+                    'Workflow configuration error: next step not found'
+                ),
                 context: $context
             );
         }
@@ -771,7 +790,10 @@ class AgentMode
         // If current result needs user input, return that response
         if ($needsUserInput) {
             return AgentResponse::needsUserInput(
-                message: $result->message ?? 'Please provide additional information',
+                message: $result->message ?? $this->runtimeText(
+                    'ai-engine::runtime.agent.provide_additional_info',
+                    'Please provide additional information'
+                ),
                 data: $result->data,
                 actions: $result->metadata['actions'] ?? null,
                 context: $context,
@@ -782,7 +804,10 @@ class AgentMode
         // Check if next step requires user input
         if ($nextStep->doesRequireUserInput()) {
             return AgentResponse::needsUserInput(
-                message: $result->message ?? 'Please provide additional information',
+                message: $result->message ?? $this->runtimeText(
+                    'ai-engine::runtime.agent.provide_additional_info',
+                    'Please provide additional information'
+                ),
                 data: $result->data,
                 actions: $result->metadata['actions'] ?? null,
                 context: $context,
@@ -1051,5 +1076,15 @@ class AgentMode
         }
         
         return $parentData;
+    }
+
+    protected function runtimeText(string $key, string $fallback): string
+    {
+        $text = trans($key);
+        if (!is_string($text) || $text === $key) {
+            return $fallback;
+        }
+
+        return $text;
     }
 }

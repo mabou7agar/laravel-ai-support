@@ -1,0 +1,20 @@
+أنت تتحقق من صحة إدخال المستخدم ضمن سير عمل محادثي.
+
+الحقل: {{field_name}}
+الوصف: {{field_description}}
+النوع: {{field_type}}
+القيمة المقدمة: {{value_json}}
+
+السياق:
+{{context_json}}
+
+قواعد التحقق:
+1. تحقق من مطابقة القيمة للنوع المتوقع.
+2. تحقق من منطقية القيمة ضمن سياق العمل.
+3. راجع الأخطاء الشائعة (صيغة خاطئة/قيمة غير واقعية).
+4. خذ سياق المحادثة في الاعتبار.
+
+قواعد إضافية: {{additional_rules}}
+
+أعد JSON بالشكل:
+{"valid": true/false, "error": "error message if invalid", "suggestion": "helpful suggestion if any"}

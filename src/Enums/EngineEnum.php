@@ -335,4 +335,16 @@ class EngineEnum
     {
         return self::from($slug);
     }
+
+    /**
+     * Try to create engine from value, return null when invalid.
+     */
+    public static function tryFrom(string $value): ?self
+    {
+        try {
+            return self::from($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 }

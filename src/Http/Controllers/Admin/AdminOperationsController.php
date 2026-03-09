@@ -1,0 +1,699 @@
+<?php
+
+namespace LaravelAIEngine\Http\Controllers\Admin;
+
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
+use Illuminate\View\View;
+use LaravelAIEngine\Models\AINode;
+use LaravelAIEngine\Models\AIPromptPolicyVersion;
+use LaravelAIEngine\Services\Node\NodeBulkSyncService;
+use LaravelAIEngine\Services\Node\NodeRegistryService;
+use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
+use LaravelAIEngine\Services\RAG\AutonomousRAGPromptPolicyService;
+use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
+
+class AdminOperationsController extends Controller
+{
+    public function nodes(NodeRegistryService $registry): View
+    {
+        $tableExists = Schema::hasTable('ai_nodes');
+
+        $stats = $tableExists
+            ? $registry->getStatistics()
+            : [
+                'total' => 0,
+                'active' => 0,
+                'inactive' => 0,
+                'error' => 0,
+                'healthy' => 0,
+                'by_type' => [],
+                'avg_response_time' => null,
+            ];
+
+        $nodes = $tableExists
+            ? AINode::query()->orderByDesc('updated_at')->limit(100)->get()
+            : collect();
+
+        return view('ai-engine::admin.nodes', [
+            'table_exists' => $tableExists,
+            'stats' => $stats,
+            'nodes' => $nodes,
+            'default_capabilities' => config('ai-engine.nodes.capabilities', ['search', 'actions', 'rag']),
+            'is_master_node' => $this->isMasterNode(),
+            'default_autofix_strict' => $this->defaultAutofixStrict(),
+        ]);
+    }
+
+    public function registerNode(Request $request, NodeRegistryService $registry): RedirectResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'slug' => ['nullable', 'string', 'max:120', 'alpha_dash', Rule::unique('ai_nodes', 'slug')],
+            'type' => 'required|string|in:master,child',
+            'url' => 'required|url|max:2048',
+            'description' => 'nullable|string|max:1000',
+            'capabilities' => 'nullable|string|max:2000',
+            'weight' => 'nullable|integer|min:1|max:1000',
+            'status' => 'nullable|string|in:active,inactive,error',
+            'api_key' => 'nullable|string|max:255',
+        ]);
+
+        $node = $registry->register([
+            'name' => $validated['name'],
+            'slug' => $validated['slug'] ?? null,
+            'type' => $validated['type'],
+            'url' => $validated['url'],
+            'description' => $validated['description'] ?? null,
+            'capabilities' => $this->parseCsvList(
+                $validated['capabilities'] ?? null,
+                (array) config('ai-engine.nodes.capabilities', ['search', 'actions', 'rag'])
+            ),
+            'weight' => (int) ($validated['weight'] ?? 1),
+            'api_key' => $this->normalizeNullableString($validated['api_key'] ?? null),
+        ]);
+
+        $postCreateStatus = (string) ($validated['status'] ?? '');
+        if ($postCreateStatus !== '' && $postCreateStatus !== 'active') {
+            $registry->updateStatus($node, $postCreateStatus);
+            $node->refresh();
+        }
+
+        return back()->with('status', 'Node `' . $node->slug . '` registered.');
+    }
+
+    public function updateNode(Request $request, NodeRegistryService $registry): RedirectResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        $nodeId = (int) $request->input('node_id');
+        $node = AINode::query()->find($nodeId);
+
+        if (!$node) {
+            return back()->withErrors(['nodes' => 'Node not found.']);
+        }
+
+        $validated = $request->validate([
+            'node_id' => 'required|integer|min:1',
+            'name' => 'required|string|max:255',
+            'slug' => [
+                'required',
+                'string',
+                'max:120',
+                'alpha_dash',
+                Rule::unique('ai_nodes', 'slug')->ignore($node->id),
+            ],
+            'type' => 'required|string|in:master,child',
+            'url' => 'required|url|max:2048',
+            'description' => 'nullable|string|max:1000',
+            'capabilities' => 'nullable|string|max:2000',
+            'weight' => 'nullable|integer|min:1|max:1000',
+            'api_key' => 'nullable|string|max:255',
+            'status' => 'required|string|in:active,inactive,error',
+        ]);
+
+        $node->fill([
+            'name' => $validated['name'],
+            'slug' => $validated['slug'],
+            'type' => $validated['type'],
+            'url' => $validated['url'],
+            'description' => $validated['description'] ?? null,
+            'capabilities' => $this->parseCsvList(
+                $validated['capabilities'] ?? null,
+                (array) ($node->capabilities ?? config('ai-engine.nodes.capabilities', ['search', 'actions', 'rag']))
+            ),
+            'weight' => (int) ($validated['weight'] ?? 1),
+        ]);
+
+        $apiKey = $this->normalizeNullableString($validated['api_key'] ?? null);
+        if ($apiKey !== null) {
+            $node->api_key = $apiKey;
+        }
+
+        if ($node->isDirty()) {
+            $node->save();
+        }
+
+        if ($node->status !== $validated['status']) {
+            $registry->updateStatus($node, (string) $validated['status']);
+        }
+
+        return back()->with('status', 'Node `' . $node->slug . '` updated.');
+    }
+
+    public function updateNodeStatus(Request $request, NodeRegistryService $registry): RedirectResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        $validated = $request->validate([
+            'node_id' => 'required|integer|min:1',
+            'status' => 'required|string|in:active,inactive,error',
+        ]);
+
+        $node = AINode::query()->find((int) $validated['node_id']);
+        if (!$node) {
+            return back()->withErrors(['nodes' => 'Node not found.']);
+        }
+
+        $registry->updateStatus($node, (string) $validated['status']);
+
+        return back()->with('status', 'Node `' . $node->slug . '` status set to `' . $validated['status'] . '`.');
+    }
+
+    public function pingNode(Request $request, NodeRegistryService $registry): RedirectResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        $validated = $request->validate([
+            'node_id' => 'required|integer|min:1',
+        ]);
+
+        $node = AINode::query()->find((int) $validated['node_id']);
+        if (!$node) {
+            return back()->withErrors(['nodes' => 'Node not found.']);
+        }
+
+        $success = $registry->ping($node);
+        $node->refresh();
+
+        return back()->with('status', $success
+            ? ('Ping succeeded for `' . $node->slug . '`.')
+            : ('Ping failed for `' . $node->slug . '`.')
+        );
+    }
+
+    public function pingAllNodes(NodeRegistryService $registry): RedirectResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        $results = $registry->pingAll();
+        $successCount = count(array_filter($results, static fn (array $item): bool => (bool) ($item['success'] ?? false)));
+        $total = count($results);
+
+        return back()->with('status', 'Pinged ' . $total . ' node(s): ' . $successCount . ' healthy, ' . ($total - $successCount) . ' failed.');
+    }
+
+    public function deleteNode(Request $request, NodeRegistryService $registry): RedirectResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        $validated = $request->validate([
+            'node_id' => 'required|integer|min:1',
+        ]);
+
+        $node = AINode::query()->find((int) $validated['node_id']);
+        if (!$node) {
+            return back()->withErrors(['nodes' => 'Node not found.']);
+        }
+
+        $slug = $node->slug;
+        $registry->unregister($node);
+
+        return back()->with('status', 'Node `' . $slug . '` removed.');
+    }
+
+    public function bulkSyncTemplate(NodeBulkSyncService $bulkSync): JsonResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return response()->json([
+                'error' => '`ai_nodes` table is missing. Run package migrations first.',
+            ], 422);
+        }
+
+        if (!$this->isMasterNode()) {
+            return response()->json([
+                'error' => 'Bulk sync is only available on master node apps.',
+            ], 403);
+        }
+
+        return response()->json(
+            $bulkSync->templatePayload(),
+            200,
+            ['Content-Disposition' => 'attachment; filename="ai-engine-nodes-template.json"']
+        );
+    }
+
+    public function bulkSyncExport(NodeBulkSyncService $bulkSync): JsonResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return response()->json([
+                'error' => '`ai_nodes` table is missing. Run package migrations first.',
+            ], 422);
+        }
+
+        if (!$this->isMasterNode()) {
+            return response()->json([
+                'error' => 'Bulk sync is only available on master node apps.',
+            ], 403);
+        }
+
+        return response()->json(
+            $bulkSync->exportCurrentNodesPayload(),
+            200,
+            ['Content-Disposition' => 'attachment; filename="ai-engine-nodes-export.json"']
+        );
+    }
+
+    public function previewBulkSync(Request $request, NodeBulkSyncService $bulkSync): RedirectResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        if (!$this->isMasterNode()) {
+            return back()->withErrors(['nodes' => 'Bulk sync is only available on master node apps.']);
+        }
+
+        $validated = $request->validate([
+            'payload' => 'nullable|string|max:500000',
+            'payload_file' => 'nullable|file|mimes:json,txt|max:1024',
+        ]);
+
+        $payload = $this->resolveBulkSyncPayload($request, $validated);
+        if ($payload === null) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'Provide JSON payload text or upload a JSON file.']);
+        }
+
+        try {
+            $normalized = $bulkSync->normalizeDefinitionsWithDiagnostics(
+                $bulkSync->loadDefinitionsFromJsonPayload($payload)
+            );
+        } catch (\Throwable $e) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'Failed to parse JSON payload: ' . $e->getMessage()]);
+        }
+
+        $definitions = (array) ($normalized['definitions'] ?? []);
+        $invalid = (array) ($normalized['invalid'] ?? []);
+
+        if ($definitions === [] && $invalid === []) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'No valid node definitions were found in payload.']);
+        }
+
+        $plan = $bulkSync->buildPlan($definitions);
+        $plan['invalid'] = $invalid;
+        $preview = $this->buildBulkSyncPreviewPayload($bulkSync, $plan);
+        $status = ($definitions === [] && $invalid !== [])
+            ? 'Bulk sync dry-run found invalid rows only. Fix issues below before applying.'
+            : 'Bulk sync dry-run prepared. Review the plan below before applying.';
+
+        return back()
+            ->withInput()
+            ->with('status', $status)
+            ->with('bulk_sync_preview', $preview);
+    }
+
+    public function autoFixBulkSync(Request $request, NodeBulkSyncService $bulkSync): RedirectResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        if (!$this->isMasterNode()) {
+            return back()->withErrors(['nodes' => 'Bulk sync is only available on master node apps.']);
+        }
+
+        $validated = $request->validate([
+            'payload' => 'nullable|string|max:500000',
+            'payload_file' => 'nullable|file|mimes:json,txt|max:1024',
+            'autofix_strict' => 'nullable|boolean',
+            'prune' => 'nullable|boolean',
+            'ping' => 'nullable|boolean',
+        ]);
+
+        $payload = $this->resolveBulkSyncPayload($request, $validated);
+        if ($payload === null) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'Provide JSON payload text or upload a JSON file.']);
+        }
+
+        try {
+            $raw = $bulkSync->loadDefinitionsFromJsonPayload($payload);
+            $strict = $this->resolveAutofixStrict($request, $validated);
+            $fixed = $bulkSync->autoFixPayload($raw, $strict);
+            $normalized = $bulkSync->normalizeDefinitionsWithDiagnostics((array) ($fixed['payload'] ?? []));
+        } catch (\Throwable $e) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'Failed to auto-fix payload: ' . $e->getMessage()]);
+        }
+
+        $definitions = (array) ($normalized['definitions'] ?? []);
+        $invalid = (array) ($normalized['invalid'] ?? []);
+        $plan = $bulkSync->buildPlan($definitions);
+        $plan['invalid'] = $invalid;
+
+        $fixedPayload = json_encode($fixed['payload'] ?? ['nodes' => []], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if (!is_string($fixedPayload)) {
+            $fixedPayload = '{}';
+        }
+
+        $status = 'Auto-fix (' . (string) ($fixed['mode'] ?? 'smart') . ') applied with ' . count((array) ($fixed['changes'] ?? [])) . ' change(s).';
+        if (!empty($invalid)) {
+            $status .= ' Some rows are still invalid; review issues below.';
+        }
+
+        return back()
+            ->withInput([
+                'payload' => $fixedPayload,
+                'autofix_strict' => $strict,
+                'prune' => $request->boolean('prune'),
+                'ping' => $request->boolean('ping'),
+            ])
+            ->with('status', $status)
+            ->with('bulk_sync_preview', $this->buildBulkSyncPreviewPayload($bulkSync, $plan))
+            ->with('bulk_sync_autofix', [
+                'mode' => (string) ($fixed['mode'] ?? 'smart'),
+                'total_changes' => count((array) ($fixed['changes'] ?? [])),
+                'changes' => array_slice((array) ($fixed['changes'] ?? []), 0, 50),
+            ]);
+    }
+
+    public function autoFixBulkSyncDownload(Request $request, NodeBulkSyncService $bulkSync): JsonResponse
+    {
+        if (!Schema::hasTable('ai_nodes')) {
+            return response()->json([
+                'error' => '`ai_nodes` table is missing. Run package migrations first.',
+            ], 422);
+        }
+
+        if (!$this->isMasterNode()) {
+            return response()->json([
+                'error' => 'Bulk sync is only available on master node apps.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'payload' => 'nullable|string|max:500000',
+            'payload_file' => 'nullable|file|mimes:json,txt|max:1024',
+            'autofix_strict' => 'nullable|boolean',
+        ]);
+
+        $payload = $this->resolveBulkSyncPayload($request, $validated);
+        if ($payload === null) {
+            return response()->json([
+                'error' => 'Provide JSON payload text or upload a JSON file.',
+            ], 422);
+        }
+
+        try {
+            $raw = $bulkSync->loadDefinitionsFromJsonPayload($payload);
+            $strict = $this->resolveAutofixStrict($request, $validated);
+            $fixed = $bulkSync->autoFixPayload($raw, $strict);
+            $fixedPayload = (array) ($fixed['payload'] ?? ['nodes' => []]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to auto-fix payload: ' . $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json(
+            $fixedPayload,
+            200,
+            [
+                'Content-Disposition' => 'attachment; filename="ai-engine-nodes-autofixed.json"',
+                'X-AI-Engine-Autofix-Changes' => (string) count((array) ($fixed['changes'] ?? [])),
+                'X-AI-Engine-Autofix-Mode' => (string) ($fixed['mode'] ?? 'smart'),
+            ]
+        );
+    }
+
+    public function applyBulkSync(
+        Request $request,
+        NodeBulkSyncService $bulkSync,
+        NodeRegistryService $registry
+    ): RedirectResponse {
+        if (!Schema::hasTable('ai_nodes')) {
+            return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
+        }
+
+        if (!$this->isMasterNode()) {
+            return back()->withErrors(['nodes' => 'Bulk sync is only available on master node apps.']);
+        }
+
+        $validated = $request->validate([
+            'payload' => 'nullable|string|max:500000',
+            'payload_file' => 'nullable|file|mimes:json,txt|max:1024',
+            'prune' => 'nullable|boolean',
+            'ping' => 'nullable|boolean',
+        ]);
+
+        $payload = $this->resolveBulkSyncPayload($request, $validated);
+        if ($payload === null) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'Provide JSON payload text or upload a JSON file.']);
+        }
+
+        try {
+            $normalized = $bulkSync->normalizeDefinitionsWithDiagnostics(
+                $bulkSync->loadDefinitionsFromJsonPayload($payload)
+            );
+        } catch (\Throwable $e) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'Failed to parse JSON payload: ' . $e->getMessage()]);
+        }
+
+        $definitions = (array) ($normalized['definitions'] ?? []);
+        $invalid = (array) ($normalized['invalid'] ?? []);
+
+        if ($definitions === [] && $invalid === []) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'No valid node definitions were found in payload.']);
+        }
+
+        $plan = $bulkSync->buildPlan($definitions);
+        $plan['invalid'] = $invalid;
+
+        if ($invalid !== []) {
+            return back()
+                ->withInput()
+                ->withErrors(['nodes' => 'Bulk sync payload contains invalid rows. Run dry-run and fix invalid rows first.'])
+                ->with('bulk_sync_preview', $this->buildBulkSyncPreviewPayload($bulkSync, $plan));
+        }
+
+        $applied = $bulkSync->applyPlan($plan, (bool) ($validated['prune'] ?? false));
+        $pingResults = [];
+
+        if ((bool) ($validated['ping'] ?? false)) {
+            $pingResults = $bulkSync->pingTouchedNodes((array) ($applied['touched_slugs'] ?? []), $registry);
+        }
+
+        return back()
+            ->withInput()
+            ->with('status', 'Bulk sync applied: created ' . ($applied['created'] ?? 0) . ', updated ' . ($applied['updated'] ?? 0) . ', deactivated ' . ($applied['deactivated'] ?? 0) . '.')
+            ->with('bulk_sync_applied', [
+                'summary' => $applied,
+                'ping' => $pingResults,
+            ]);
+    }
+
+    public function health(InfrastructureHealthService $healthService): View
+    {
+        $report = $healthService->evaluate();
+
+        return view('ai-engine::admin.health', [
+            'report' => $report,
+        ]);
+    }
+
+    public function policies(AutonomousRAGPromptPolicyService $policyService): View
+    {
+        $storeAvailable = $policyService->storeAvailable();
+        $policies = $storeAvailable
+            ? AIPromptPolicyVersion::query()->orderByDesc('created_at')->limit(100)->get()
+            : collect();
+
+        return view('ai-engine::admin.policies', [
+            'store_available' => $storeAvailable,
+            'default_policy_key' => config('ai-engine.intelligent_rag.decision.policy_store.default_key', 'decision'),
+            'policies' => $policies,
+        ]);
+    }
+
+    public function createPolicy(
+        Request $request,
+        AutonomousRAGPromptPolicyService $policyService,
+        AutonomousRAGPolicy $policyConfig
+    ): RedirectResponse {
+        $validated = $request->validate([
+            'policy_key' => 'nullable|string|max:100',
+            'name' => 'nullable|string|max:255',
+            'template' => 'required|string|min:10',
+            'status' => 'required|string|in:draft,active,canary,shadow',
+            'rollout_percentage' => 'nullable|integer|min:0|max:100',
+            'tenant_id' => 'nullable|string|max:120',
+            'app_id' => 'nullable|string|max:120',
+            'domain' => 'nullable|string|max:120',
+            'locale' => 'nullable|string|max:40',
+        ]);
+
+        if (!$policyService->storeAvailable()) {
+            return back()->withErrors(['policy' => 'Policy store is unavailable.']);
+        }
+
+        $targetContext = array_filter([
+            'tenant_id' => trim((string) ($validated['tenant_id'] ?? '')),
+            'app_id' => trim((string) ($validated['app_id'] ?? '')),
+            'domain' => trim((string) ($validated['domain'] ?? '')),
+            'locale' => trim((string) ($validated['locale'] ?? '')),
+        ], static fn (string $value): bool => $value !== '');
+
+        $created = $policyService->createVersion((string) $validated['template'], [
+            'policy_key' => trim((string) ($validated['policy_key'] ?? '')) ?: $policyConfig->decisionPolicyDefaultKey(),
+            'name' => trim((string) ($validated['name'] ?? '')) ?: null,
+            'status' => (string) $validated['status'],
+            'rollout_percentage' => (int) ($validated['rollout_percentage'] ?? 0),
+            'target_context' => $targetContext,
+            'metadata' => ['created_via' => 'admin_ui'],
+        ]);
+
+        if (!$created) {
+            return back()->withErrors(['policy' => 'Failed to create policy version.'])->withInput();
+        }
+
+        return back()->with('status', 'Created policy #' . $created->id . ' v' . $created->version . ' (' . $created->status . ').');
+    }
+
+    public function activatePolicy(Request $request, AutonomousRAGPromptPolicyService $policyService): RedirectResponse
+    {
+        $validated = $request->validate([
+            'policy_id' => 'required|integer|min:1',
+            'status' => 'required|string|in:active,canary,shadow',
+        ]);
+
+        if (!$policyService->storeAvailable()) {
+            return back()->withErrors(['policy' => 'Policy store is unavailable.']);
+        }
+
+        $activated = $policyService->activate((int) $validated['policy_id'], (string) $validated['status']);
+
+        if (!$activated) {
+            return back()->withErrors(['policy' => 'Failed to activate policy.']);
+        }
+
+        return back()->with('status', 'Policy #' . $activated->id . ' activated as ' . $activated->status . '.');
+    }
+
+    protected function parseCsvList(?string $value, array $default = []): array
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return array_values(array_unique(array_filter(array_map(
+                static fn ($item): string => trim((string) $item),
+                $default
+            ))));
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn (string $item): string => trim($item),
+            explode(',', $value)
+        ))));
+    }
+
+    protected function normalizeNullableString(?string $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    protected function isMasterNode(): bool
+    {
+        return (bool) config('ai-engine.nodes.is_master', true);
+    }
+
+    protected function resolveBulkSyncPayload(Request $request, array $validated): ?string
+    {
+        $payload = trim((string) ($validated['payload'] ?? ''));
+        if ($payload !== '') {
+            return $payload;
+        }
+
+        if ($request->hasFile('payload_file')) {
+            $uploaded = $request->file('payload_file');
+            if ($uploaded && $uploaded->isValid()) {
+                $content = file_get_contents($uploaded->getRealPath());
+                if (is_string($content) && trim($content) !== '') {
+                    return $content;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    protected function buildBulkSyncPreviewPayload(NodeBulkSyncService $bulkSync, array $plan): array
+    {
+        return [
+            'summary' => $bulkSync->summarizePlan($plan, 'admin_payload'),
+            'create_slugs' => array_values(array_map(
+                static fn (array $row): string => (string) ($row['slug'] ?? ''),
+                (array) ($plan['create'] ?? [])
+            )),
+            'update_rows' => array_values(array_map(
+                static fn (array $row): array => [
+                    'slug' => (string) ($row['slug'] ?? ''),
+                    'fields' => array_keys((array) ($row['changes'] ?? [])),
+                ],
+                (array) ($plan['update'] ?? [])
+            )),
+            'unchanged_slugs' => array_values(array_map(
+                static fn (array $row): string => (string) ($row['slug'] ?? ''),
+                (array) ($plan['unchanged'] ?? [])
+            )),
+            'invalid_rows' => array_values(array_map(
+                static fn (array $row): array => [
+                    'row' => (string) ($row['row'] ?? ''),
+                    'slug' => (string) ($row['slug'] ?? ''),
+                    'reason' => (string) ($row['reason'] ?? 'Unknown'),
+                    'suggestion' => (string) ($row['suggestion'] ?? ''),
+                ],
+                (array) ($plan['invalid'] ?? [])
+            )),
+        ];
+    }
+
+    protected function defaultAutofixStrict(): bool
+    {
+        return strtolower((string) config('ai-engine.nodes.bulk_sync.autofix_mode', 'smart')) === 'strict';
+    }
+
+    protected function resolveAutofixStrict(Request $request, array $validated): bool
+    {
+        if ($request->has('autofix_strict') || array_key_exists('autofix_strict', $validated)) {
+            return (bool) ($validated['autofix_strict'] ?? false);
+        }
+
+        return $this->defaultAutofixStrict();
+    }
+}

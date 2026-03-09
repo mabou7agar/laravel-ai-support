@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Services;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -21,10 +22,12 @@ use Illuminate\Support\Facades\Log;
 class AIEnhancedWorkflowService
 {
     protected $ai;
+    protected ?LocaleResourceService $localeResources = null;
 
-    public function __construct(AIEngineService $ai)
+    public function __construct(AIEngineService $ai, ?LocaleResourceService $localeResources = null)
     {
         $this->ai = $ai;
+        $this->localeResources = $localeResources;
     }
 
     /**
@@ -37,28 +40,27 @@ class AIEnhancedWorkflowService
         array $context = []
     ): array {
         try {
-            $prompt = "You are validating user input for a conversational workflow.\n\n";
-            $prompt .= "FIELD: {$fieldName}\n";
-            $prompt .= "DESCRIPTION: " . ($fieldDefinition['description'] ?? 'N/A') . "\n";
-            $prompt .= "TYPE: " . ($fieldDefinition['type'] ?? 'string') . "\n";
-            $prompt .= "VALUE PROVIDED: " . json_encode($value) . "\n\n";
-
-            if (!empty($context)) {
-                $prompt .= "CONTEXT:\n" . json_encode($context, JSON_PRETTY_PRINT) . "\n\n";
-            }
-
-            $prompt .= "VALIDATION RULES:\n";
-            $prompt .= "1. Check if value matches the expected type\n";
-            $prompt .= "2. Check if value makes sense in the business context\n";
-            $prompt .= "3. Check for common mistakes (typos, wrong format, unrealistic values)\n";
-            $prompt .= "4. Consider the conversation context\n\n";
-
-            if (!empty($fieldDefinition['validation'])) {
-                $prompt .= "ADDITIONAL RULES: " . $fieldDefinition['validation'] . "\n\n";
-            }
-
-            $prompt .= "Respond with JSON:\n";
-            $prompt .= '{"valid": true/false, "error": "error message if invalid", "suggestion": "helpful suggestion if any"}';
+            $contextJson = !empty($context) ? json_encode($context, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : '';
+            $prompt = $this->renderPromptTemplate(
+                'ai_enhanced_workflow/validate_field',
+                [
+                    'field_name' => $fieldName,
+                    'field_description' => (string) ($fieldDefinition['description']
+                        ?? $this->runtimeText('ai-engine::runtime.ai_enhanced_workflow.not_available')),
+                    'field_type' => (string) ($fieldDefinition['type'] ?? 'string'),
+                    'value_json' => json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'context_json' => $contextJson,
+                    'additional_rules' => (string) ($fieldDefinition['validation'] ?? ''),
+                ],
+                $this->runtimeText(
+                    'ai-engine::runtime.ai_enhanced_workflow.prompts.validate_field',
+                    [
+                        'field_name' => $fieldName,
+                        'field_type' => (string) ($fieldDefinition['type'] ?? 'string'),
+                        'value_json' => json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    ]
+                )
+            );
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -103,22 +105,25 @@ class AIEnhancedWorkflowService
                 return $data;
             })->toArray();
 
-            $prompt = "You are finding matching entities based on a user's natural language query.\n\n";
-            $prompt .= "USER QUERY: \"{$userQuery}\"\n\n";
-            $prompt .= "AVAILABLE ENTITIES:\n" . json_encode($samples, JSON_PRETTY_PRINT) . "\n\n";
-
-            if (!empty($conversationContext)) {
-                $prompt .= "CONVERSATION CONTEXT:\n" . json_encode($conversationContext, JSON_PRETTY_PRINT) . "\n\n";
-            }
-
-            $prompt .= "INSTRUCTIONS:\n";
-            $prompt .= "1. Find entities that match the user's query\n";
-            $prompt .= "2. Consider semantic similarity, not just exact matches\n";
-            $prompt .= "3. Understand context and references (\"the one we discussed\", \"last customer\", etc.)\n";
-            $prompt .= "4. Return up to {$limit} best matches\n";
-            $prompt .= "5. Include confidence score (0-1) for each match\n\n";
-            $prompt .= "Respond with JSON array:\n";
-            $prompt .= '[{"id": 123, "confidence": 0.95, "reason": "why this matches"}]';
+            $prompt = $this->renderPromptTemplate(
+                'ai_enhanced_workflow/find_matching_entity',
+                [
+                    'user_query' => $userQuery,
+                    'samples_json' => json_encode($samples, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                    'conversation_context_json' => !empty($conversationContext)
+                        ? json_encode($conversationContext, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                        : '',
+                    'limit' => (string) $limit,
+                ],
+                $this->runtimeText(
+                    'ai-engine::runtime.ai_enhanced_workflow.prompts.find_matching_entity',
+                    [
+                        'user_query' => $userQuery,
+                        'samples_json' => json_encode($samples, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        'limit' => (string) $limit,
+                    ]
+                )
+            );
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -150,20 +155,22 @@ class AIEnhancedWorkflowService
         string $entityType
     ): array {
         try {
-            $prompt = "You are detecting if a new record is a duplicate of existing records.\n\n";
-            $prompt .= "NEW RECORD:\n" . json_encode($newData, JSON_PRETTY_PRINT) . "\n\n";
-            $prompt .= "EXISTING RECORDS:\n" . json_encode($existingRecords, JSON_PRETTY_PRINT) . "\n\n";
-            $prompt .= "ENTITY TYPE: {$entityType}\n\n";
-            $prompt .= "INSTRUCTIONS:\n";
-            $prompt .= "1. Check if the new record is a duplicate of any existing record\n";
-            $prompt .= "2. Consider semantic similarity, not just exact matches\n";
-            $prompt .= "3. Account for typos, abbreviations, different formats\n";
-            $prompt .= "4. Examples:\n";
-            $prompt .= "   - 'John Smith' vs 'J. Smith' → likely duplicate\n";
-            $prompt .= "   - 'john@test.com' vs 'john@test.com' → exact duplicate\n";
-            $prompt .= "   - 'Macbook Pro M4' vs 'MacBook Pro M4 Max' → similar but NOT duplicate\n\n";
-            $prompt .= "Respond with JSON:\n";
-            $prompt .= '{"is_duplicate": true/false, "matching_id": 123, "confidence": 0.95, "reason": "explanation"}';
+            $prompt = $this->renderPromptTemplate(
+                'ai_enhanced_workflow/detect_duplicate',
+                [
+                    'new_data_json' => json_encode($newData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                    'existing_records_json' => json_encode($existingRecords, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                    'entity_type' => $entityType,
+                ],
+                $this->runtimeText(
+                    'ai-engine::runtime.ai_enhanced_workflow.prompts.detect_duplicate',
+                    [
+                        'new_data_json' => json_encode($newData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        'existing_records_json' => json_encode($existingRecords, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        'entity_type' => $entityType,
+                    ]
+                )
+            );
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -196,36 +203,26 @@ class AIEnhancedWorkflowService
         array $collectedData = []
     ): string {
         try {
-            $prompt = "You are generating a natural, conversational prompt to ask the user for information.\n\n";
-            $prompt .= "FIELD TO COLLECT: {$fieldName}\n";
-            $prompt .= "DESCRIPTION: " . ($fieldDefinition['description'] ?? 'N/A') . "\n";
-            $prompt .= "TYPE: " . ($fieldDefinition['type'] ?? 'string') . "\n";
-            $prompt .= "REQUIRED: " . ($fieldDefinition['required'] ? 'yes' : 'no') . "\n\n";
-
-            if (!empty($collectedData)) {
-                $prompt .= "ALREADY COLLECTED:\n" . json_encode($collectedData, JSON_PRETTY_PRINT) . "\n\n";
-            }
-
-            if (!empty($conversationHistory)) {
-                $recentHistory = array_slice($conversationHistory, -3);
-                $prompt .= "RECENT CONVERSATION:\n";
-                foreach ($recentHistory as $msg) {
-                    $prompt .= "{$msg['role']}: {$msg['content']}\n";
-                }
-                $prompt .= "\n";
-            }
-
-            $prompt .= "INSTRUCTIONS:\n";
-            $prompt .= "1. Generate a natural, friendly prompt\n";
-            $prompt .= "2. Match the conversation tone and style\n";
-            $prompt .= "3. Be concise but clear\n";
-            $prompt .= "4. If optional, mention it's optional\n";
-            $prompt .= "5. Provide context if helpful\n\n";
-            $prompt .= "Examples:\n";
-            $prompt .= "- 'Great! Now, what's the customer's name?'\n";
-            $prompt .= "- 'What price should we set for this product?'\n";
-            $prompt .= "- 'Would you like to add a phone number? (optional)'\n\n";
-            $prompt .= "Return ONLY the prompt text, no JSON, no explanation.";
+            $prompt = $this->renderPromptTemplate(
+                'ai_enhanced_workflow/generate_field_prompt',
+                [
+                    'field_name' => $fieldName,
+                    'field_description' => (string) ($fieldDefinition['description']
+                        ?? $this->runtimeText('ai-engine::runtime.ai_enhanced_workflow.not_available')),
+                    'field_type' => (string) ($fieldDefinition['type'] ?? 'string'),
+                    'required' => ($fieldDefinition['required'] ?? false)
+                        ? $this->runtimeText('ai-engine::runtime.ai_enhanced_workflow.required_label')
+                        : $this->runtimeText('ai-engine::runtime.ai_enhanced_workflow.optional_label'),
+                    'collected_data_json' => !empty($collectedData)
+                        ? json_encode($collectedData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                        : '',
+                    'recent_history_text' => $this->recentHistoryText($conversationHistory),
+                ],
+                $this->runtimeText(
+                    'ai-engine::runtime.ai_enhanced_workflow.prompts.generate_field_prompt',
+                    ['field_name' => $fieldName]
+                )
+            );
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -242,7 +239,11 @@ class AIEnhancedWorkflowService
         }
 
         // Fallback
-        return $fieldDefinition['prompt'] ?? "What is the {$fieldName}?";
+        return $fieldDefinition['prompt']
+            ?? $this->runtimeText(
+                'ai-engine::runtime.ai_enhanced_workflow.default_field_prompt',
+                ['field_name' => $fieldName]
+            );
     }
 
     /**
@@ -255,26 +256,21 @@ class AIEnhancedWorkflowService
         array $context = []
     ): string {
         try {
-            $prompt = "You are generating a helpful, friendly error message for a user.\n\n";
-            $prompt .= "FIELD: {$fieldName}\n";
-            $prompt .= "USER PROVIDED: " . json_encode($value) . "\n";
-            $prompt .= "VALIDATION ERROR: {$validationError}\n\n";
-
-            if (!empty($context)) {
-                $prompt .= "CONTEXT:\n" . json_encode($context, JSON_PRETTY_PRINT) . "\n\n";
-            }
-
-            $prompt .= "INSTRUCTIONS:\n";
-            $prompt .= "1. Generate a friendly, helpful error message\n";
-            $prompt .= "2. Explain what's wrong in simple terms\n";
-            $prompt .= "3. Suggest how to fix it if possible\n";
-            $prompt .= "4. Be conversational, not robotic\n";
-            $prompt .= "5. Keep it concise\n\n";
-            $prompt .= "Examples:\n";
-            $prompt .= "- 'Hmm, that doesn't look like a valid email. Could you double-check it?'\n";
-            $prompt .= "- 'The price seems a bit high. Did you mean $50 instead of $5000?'\n";
-            $prompt .= "- 'Oops! The name field can't be empty. What's the customer's name?'\n\n";
-            $prompt .= "Return ONLY the error message, no JSON, no explanation.";
+            $prompt = $this->renderPromptTemplate(
+                'ai_enhanced_workflow/generate_error_message',
+                [
+                    'field_name' => $fieldName,
+                    'value_json' => json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'validation_error' => $validationError,
+                    'context_json' => !empty($context)
+                        ? json_encode($context, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                        : '',
+                ],
+                $this->runtimeText(
+                    'ai-engine::runtime.ai_enhanced_workflow.prompts.generate_error_message',
+                    ['field_name' => $fieldName, 'validation_error' => $validationError]
+                )
+            );
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -291,7 +287,10 @@ class AIEnhancedWorkflowService
         }
 
         // Fallback
-        return "The {$fieldName} field has an error: {$validationError}";
+        return $this->runtimeText(
+            'ai-engine::runtime.ai_enhanced_workflow.default_error_message',
+            ['field_name' => $fieldName, 'validation_error' => $validationError]
+        );
     }
 
     /**
@@ -303,28 +302,20 @@ class AIEnhancedWorkflowService
         array $sampleData = []
     ): string {
         try {
-            $prompt = "You are inferring the data type of a field based on its name, description, and sample data.\n\n";
-            $prompt .= "FIELD NAME: {$fieldName}\n";
-
-            if ($description) {
-                $prompt .= "DESCRIPTION: {$description}\n";
-            }
-
-            if (!empty($sampleData)) {
-                $prompt .= "SAMPLE DATA: " . json_encode($sampleData) . "\n";
-            }
-
-            $prompt .= "\nAVAILABLE TYPES:\n";
-            $prompt .= "- string: text, names, descriptions\n";
-            $prompt .= "- integer: whole numbers, counts, IDs\n";
-            $prompt .= "- number: decimals, prices, measurements\n";
-            $prompt .= "- email: email addresses\n";
-            $prompt .= "- phone: phone numbers\n";
-            $prompt .= "- date: dates\n";
-            $prompt .= "- boolean: yes/no, true/false\n";
-            $prompt .= "- array: lists, multiple items\n";
-            $prompt .= "- url: web addresses\n\n";
-            $prompt .= "Return ONLY the type name, nothing else.";
+            $prompt = $this->renderPromptTemplate(
+                'ai_enhanced_workflow/infer_field_type',
+                [
+                    'field_name' => $fieldName,
+                    'description' => $description ?? '',
+                    'sample_data_json' => !empty($sampleData)
+                        ? json_encode($sampleData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                        : '',
+                ],
+                $this->runtimeText(
+                    'ai-engine::runtime.ai_enhanced_workflow.prompts.infer_field_type',
+                    ['field_name' => $fieldName]
+                )
+            );
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -360,33 +351,23 @@ class AIEnhancedWorkflowService
         array $conversationHistory = []
     ): array {
         try {
-            $prompt = "You are determining what information is still needed to complete a task.\n\n";
-            $prompt .= "GOAL: {$goal}\n\n";
-            $prompt .= "COLLECTED DATA:\n" . json_encode($collectedData, JSON_PRETTY_PRINT) . "\n\n";
-            $prompt .= "AVAILABLE FIELDS:\n";
-            foreach ($fieldDefinitions as $name => $def) {
-                $required = $def['required'] ?? false;
-                $desc = $def['description'] ?? '';
-                $prompt .= "- {$name}" . ($required ? ' (required)' : ' (optional)') . ": {$desc}\n";
-            }
-            $prompt .= "\n";
-
-            if (!empty($conversationHistory)) {
-                $prompt .= "CONVERSATION CONTEXT:\n";
-                $recentHistory = array_slice($conversationHistory, -3);
-                foreach ($recentHistory as $msg) {
-                    $prompt .= "{$msg['role']}: {$msg['content']}\n";
-                }
-                $prompt .= "\n";
-            }
-
-            $prompt .= "INSTRUCTIONS:\n";
-            $prompt .= "1. Determine what required fields are still missing\n";
-            $prompt .= "2. Consider if we have enough information to proceed\n";
-            $prompt .= "3. Optional fields can be skipped if we have the essentials\n";
-            $prompt .= "4. Return fields in order of importance\n\n";
-            $prompt .= "Respond with JSON array of field names:\n";
-            $prompt .= '["field1", "field2"]';
+            $prompt = $this->renderPromptTemplate(
+                'ai_enhanced_workflow/missing_fields',
+                [
+                    'goal' => $goal,
+                    'collected_data_json' => json_encode($collectedData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                    'fields_list' => $this->fieldDefinitionsList($fieldDefinitions),
+                    'recent_history_text' => $this->recentHistoryText($conversationHistory),
+                ],
+                $this->runtimeText(
+                    'ai-engine::runtime.ai_enhanced_workflow.prompts.missing_fields',
+                    [
+                        'goal' => $goal,
+                        'collected_data_json' => json_encode($collectedData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        'fields_list' => $this->fieldDefinitionsList($fieldDefinitions),
+                    ]
+                )
+            );
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -414,5 +395,92 @@ class AIEnhancedWorkflowService
             }
         }
         return $missing;
+    }
+
+    protected function renderPromptTemplate(string $template, array $replace, string $fallback): string
+    {
+        $rendered = $this->locale()->renderPromptTemplate($template, $replace, $this->localeCode());
+        return $rendered !== '' ? $rendered : $fallback;
+    }
+
+    protected function localeCode(): string
+    {
+        return $this->locale()->resolveLocale(app()->getLocale());
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
+    }
+
+    protected function recentHistoryText(array $conversationHistory): string
+    {
+        if ($conversationHistory === []) {
+            return '';
+        }
+
+        $lines = [];
+        foreach (array_slice($conversationHistory, -3) as $msg) {
+            $lines[] = ($msg['role'] ?? 'user') . ': ' . ($msg['content'] ?? '');
+        }
+
+        return implode("\n", $lines);
+    }
+
+    protected function fieldDefinitionsList(array $fieldDefinitions): string
+    {
+        $requiredSuffix = $this->runtimeText(
+            'ai-engine::runtime.ai_enhanced_workflow.required_suffix'
+        );
+        $optionalSuffix = $this->runtimeText(
+            'ai-engine::runtime.ai_enhanced_workflow.optional_suffix'
+        );
+
+        $lines = [];
+        foreach ($fieldDefinitions as $name => $def) {
+            $required = (bool) ($def['required'] ?? false);
+            $desc = $def['description'] ?? '';
+            $lines[] = "- {$name}" . ($required ? " {$requiredSuffix}" : " {$optionalSuffix}") . ": {$desc}";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    protected function runtimeText(
+        string $key,
+        string $fallback = '',
+        array $replace = []
+    ): string
+    {
+        $locale = $this->localeCode();
+        $translated = $this->locale()->translation($key, $replace, $locale);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        $fallbackLocale = $this->locale()->resolveLocale(
+            (string) (config('ai-engine.localization.fallback_locale') ?: config('app.fallback_locale') ?: app()->getLocale())
+        );
+        if ($fallbackLocale !== $locale) {
+            $translated = $this->locale()->translation($key, $replace, $fallbackLocale);
+            if ($translated !== '') {
+                return $translated;
+            }
+        }
+
+        if ($fallback === '') {
+            return '';
+        }
+
+        $fallbackReplace = [];
+        foreach ($replace as $name => $value) {
+            $fallbackReplace[':' . $name] = (string) $value;
+        }
+
+        return strtr($fallback, $fallbackReplace);
     }
 }

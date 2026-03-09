@@ -50,6 +50,14 @@ class SchemaAnalyzer
             ];
         }
     }
+
+    /**
+     * Backward-compatible alias used by older commands.
+     */
+    public function analyzeModel(string $modelClass): array
+    {
+        return $this->analyze($modelClass);
+    }
     
     /**
      * Get text fields from table
@@ -249,7 +257,7 @@ class SchemaAnalyzer
         
         foreach ($modelClasses as $modelClass) {
             try {
-                $results[$modelClass] = $this->analyzeModel($modelClass);
+                $results[$modelClass] = $this->analyze($modelClass);
             } catch (\Exception $e) {
                 $results[$modelClass] = [
                     'error' => $e->getMessage(),

@@ -20,8 +20,8 @@ class AIRequestTest extends TestCase
         );
 
         $this->assertEquals('Test prompt', $request->prompt);
-        $this->assertEquals(EngineEnum::OPENAI, $request->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $request->model);
+        $this->assertEquals(EngineEnum::OPENAI, $request->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $request->model->value);
         $this->assertEquals(['temperature' => 0.7], $request->parameters);
         $this->assertEquals('user-123', $request->userId);
     }
@@ -67,8 +67,8 @@ class AIRequestTest extends TestCase
         );
 
         $this->assertEquals('Test prompt', $request->prompt);
-        $this->assertEquals(EngineEnum::OPENAI, $request->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $request->model);
+        $this->assertEquals(EngineEnum::OPENAI, $request->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $request->model->value);
         $this->assertEquals(['temperature' => 0.7], $request->parameters);
         $this->assertEquals('user-123', $request->userId);
         $this->assertEquals(['key' => 'value'], $request->context);
@@ -92,8 +92,8 @@ class AIRequestTest extends TestCase
         );
 
         $this->assertEquals('Test prompt', $request->prompt);
-        $this->assertEquals(EngineEnum::OPENAI, $request->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $request->model);
+        $this->assertEquals(EngineEnum::OPENAI, $request->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $request->model->value);
         $this->assertEquals(['temperature' => 0.7], $request->parameters);
     }
 

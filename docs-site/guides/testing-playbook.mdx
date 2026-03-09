@@ -1,0 +1,44 @@
+---
+title: Testing Playbook
+description: What to test before shipping changes.
+---
+
+## 1) Unit/Feature Package Tests
+
+```bash
+vendor/bin/phpunit tests/Feature/Node tests/Unit/Services/Node
+vendor/bin/phpunit tests/Unit/Services/Agent tests/Unit/Services/RAG
+```
+
+## 2) Node Runtime Checks
+
+```bash
+php artisan ai-engine:test-nodes --quick
+php artisan ai-engine:node-ping --all
+php artisan ai-engine:node-list
+```
+
+## 3) Real Agent Flows
+
+```bash
+php artisan ai-engine:test-real-agent --script=minimal --json
+php artisan ai-engine:test-real-agent --script=followup --json
+php artisan ai-engine:test-real-agent --message="list invoices" --message="what is status of first one" --json
+```
+
+## 4) Infrastructure Checks
+
+```bash
+php artisan ai-engine:infra-health
+```
+
+## 5) Regression Focus
+
+Always verify:
+
+- follow-up questions do not force unnecessary re-listing
+- list previews use model `toRAGListPreview()` when available
+- remote routing works and returns standard envelope
+- collectors complete and execute tools once data is complete
+- authenticated "my profile" questions resolve from injected user context
+- locale-aware responses stay consistent across local and remote node calls

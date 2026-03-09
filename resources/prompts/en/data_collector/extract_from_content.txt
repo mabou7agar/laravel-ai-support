@@ -1,0 +1,13 @@
+Analyze the following content and extract the required information.
+
+Content:
+{{content}}
+
+Required fields:
+{{fields_json}}
+
+Return the extracted data in JSON format only. If you cannot find a value for a field, leave it empty.
+Do not add any additional text, only JSON.
+
+Example format:
+{"field_name": "extracted_value", "another_field": "another_value"}

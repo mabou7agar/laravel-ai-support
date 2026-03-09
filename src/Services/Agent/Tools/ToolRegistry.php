@@ -3,6 +3,7 @@
 namespace LaravelAIEngine\Services\Agent\Tools;
 
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\Services\Agent\AgentManifestService;
 
 class ToolRegistry
 {
@@ -41,6 +42,15 @@ class ToolRegistry
     public function discoverFromConfig(): void
     {
         $toolClasses = config('ai-agent.tools', []);
+        try {
+            $manifestTools = app(AgentManifestService::class)->tools();
+            if (!empty($manifestTools)) {
+                // Manifest entries override legacy config entries.
+                $toolClasses = array_merge($toolClasses, $manifestTools);
+            }
+        } catch (\Throwable) {
+            // Ignore manifest loading failures and keep legacy config path.
+        }
         
         foreach ($toolClasses as $name => $class) {
             if (class_exists($class)) {

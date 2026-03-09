@@ -4,11 +4,9 @@ namespace LaravelAIEngine\Console\Commands\Node;
 
 use Illuminate\Console\Command;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
-use LaravelAIEngine\Services\Node\FederatedSearchService;
 use LaravelAIEngine\Services\Node\RemoteActionService;
 use LaravelAIEngine\Services\Node\CircuitBreakerService;
-use LaravelAIEngine\Services\Node\LoadBalancerService;
-use LaravelAIEngine\Services\Node\NodeCacheService;
+use LaravelAIEngine\Services\Node\NodeRouterService;
 use LaravelAIEngine\Models\AINode;
 
 class TestNodeSystemCommand extends Command
@@ -25,11 +23,9 @@ class TestNodeSystemCommand extends Command
     
     public function handle(
         NodeRegistryService $registry,
-        FederatedSearchService $federatedSearch,
         RemoteActionService $remoteAction,
         CircuitBreakerService $circuitBreaker,
-        LoadBalancerService $loadBalancer,
-        NodeCacheService $cache
+        NodeRouterService $nodeRouter
     ) {
         $this->info('🧪 Testing Master-Node System');
         $this->newLine();
@@ -73,10 +69,9 @@ class TestNodeSystemCommand extends Command
             $services = [
                 \LaravelAIEngine\Services\Node\NodeAuthService::class,
                 \LaravelAIEngine\Services\Node\CircuitBreakerService::class,
-                \LaravelAIEngine\Services\Node\NodeCacheService::class,
-                \LaravelAIEngine\Services\Node\LoadBalancerService::class,
                 \LaravelAIEngine\Services\Node\NodeRegistryService::class,
-                \LaravelAIEngine\Services\Node\FederatedSearchService::class,
+                \LaravelAIEngine\Services\Node\NodeRouterService::class,
+                \LaravelAIEngine\Services\Node\NodeOwnershipResolver::class,
                 \LaravelAIEngine\Services\Node\RemoteActionService::class,
             ];
             
@@ -101,31 +96,33 @@ class TestNodeSystemCommand extends Command
             return "Open circuits: {$circuits->count()}";
         }, $detailed);
         
-        // Test 6: Load Balancer
-        $this->test('Load Balancer Service', function() use ($loadBalancer) {
-            $nodes = AINode::active()->get();
-            if ($nodes->isEmpty()) {
-                return 'No nodes to test (OK)';
+        // Test 6: Node Router
+        $this->test('Node Router Service', function() use ($nodeRouter) {
+            $route = $nodeRouter->route('ping', []);
+
+            if (!is_array($route) || !array_key_exists('is_local', $route) || !array_key_exists('reason', $route)) {
+                throw new \Exception('Node router returned unexpected response shape');
             }
-            
-            $selected = $loadBalancer->selectNodes($nodes, 1, 'response_time');
-            return "Selected {$selected->count()} node(s)";
+
+            return $route['is_local']
+                ? 'Router defaults to local when no ownership is found'
+                : 'Router resolved a remote owner';
         }, $detailed);
         
-        // Test 7: Cache Service
-        $this->test('Cache Service', function() use ($cache) {
-            $stats = $cache->getStatistics();
-            return "Cache entries: {$stats['total_entries']}, Hits: {$stats['total_hits']}";
+        // Test 7: Registry Query
+        $this->test('Registry Query', function() use ($registry) {
+            $active = $registry->getActiveNodes();
+            return "Active nodes visible: {$active->count()}";
         }, $detailed);
         
         // Test 8: API Routes
         $this->test('API Routes', function() {
             $routes = [
                 'api/ai-engine/health',
-                'api/ai-engine/register',
+                'api/ai-engine/manifest',
                 'api/ai-engine/search',
-                'api/ai-engine/actions',
-                'api/ai-engine/status',
+                'api/ai-engine/chat',
+                'api/ai-engine/tools/execute',
             ];
             
             $registered = collect(\Route::getRoutes())->map(fn($route) => $route->uri());
@@ -168,6 +165,7 @@ class TestNodeSystemCommand extends Command
                 'ai-engine:node-list',
                 'ai-engine:node-ping',
                 'ai-engine:node-stats',
+                'ai-engine:nodes-sync',
             ];
             
             $registered = collect(\Artisan::all())->keys();
@@ -236,7 +234,7 @@ class TestNodeSystemCommand extends Command
             }, $detailed);
             
             // Test 13: Federated Search (if nodes exist)
-            $this->test('Federated Search', function() use ($federatedSearch) {
+            $this->test('Federated Search', function() {
                 $nodes = AINode::active()->count();
                 
                 if ($nodes === 0) {

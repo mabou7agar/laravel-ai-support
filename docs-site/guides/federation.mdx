@@ -1,0 +1,41 @@
+---
+title: Federation
+description: Deterministic node routing architecture and contracts.
+---
+
+## Federation Contract
+
+Child nodes expose:
+
+- `GET /api/ai-engine/health`
+- `GET /api/ai-engine/manifest`
+- `POST /api/ai-engine/search`
+- `POST /api/ai-engine/chat`
+- `POST /api/ai-engine/tools/execute`
+
+## Routing Principles
+
+- ownership metadata decides where work runs
+- master node plans, child nodes execute owned operations
+- no AI-guess-based node selection
+
+## Required Node Security
+
+- JWT-based node auth
+- explicit node registration/sync
+- health-based availability checks
+
+## Safe Node Management Commands
+
+```bash
+php artisan ai-engine:node-list
+php artisan ai-engine:node-ping --all
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
+```
+
+## Why This Pattern Scales
+
+- predictable ownership
+- low ambiguity in multi-app deployments
+- easier debugging when a domain lives in one app

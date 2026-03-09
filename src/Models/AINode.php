@@ -171,13 +171,16 @@ class AINode extends Model
     {
         // Map endpoint aliases to actual package routes
         $endpointMap = [
-            'actions' => '/api/v1/actions/execute',
-            'actions/execute' => '/api/v1/actions/execute',
+            'actions' => '/api/ai-engine/tools/execute',
+            'actions/execute' => '/api/ai-engine/tools/execute',
+            'tools/execute' => '/api/ai-engine/tools/execute',
             'model-actions' => '/api/v1/modules/discover',
             'chat' => '/api/ai-engine/chat',
             'ping' => '/api/ai-engine/health',
+            'health' => '/api/ai-engine/health',
+            'manifest' => '/api/ai-engine/manifest',
             'search' => '/api/ai-engine/search',
-            'execute' => '/api/ai-engine/execute',
+            'execute' => '/api/ai-engine/tools/execute',
         ];
 
         // Use mapped endpoint if available, otherwise construct URL

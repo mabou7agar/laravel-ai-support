@@ -149,6 +149,7 @@ class NodeHttpClient
             'X-Request-Id',
             'X-Trace-Id',
             'X-Correlation-Id',
+            'X-Locale',
             'X-User-Id',
             'X-Tenant-Id',
             'X-Workspace-Id',

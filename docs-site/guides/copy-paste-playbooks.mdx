@@ -1,0 +1,266 @@
+---
+title: Copy-Paste Playbooks
+description: End-to-end request and response examples you can run directly.
+---
+
+These playbooks are designed for quick validation in local/dev/staging with minimal edits.
+
+## Prerequisites
+
+Set a base URL and optional auth token:
+
+```bash
+export AI_BASE_URL="https://middleware.test"
+export AI_TOKEN="your_jwt_or_sanctum_token"
+```
+
+Reusable headers:
+
+```bash
+AUTH_HEADER="Authorization: Bearer ${AI_TOKEN}"
+JSON_HEADER="Content-Type: application/json"
+```
+
+If auth is not required in your app, drop `${AUTH_HEADER}` from curl commands.
+
+## Playbook 1: Chat List + Follow-Up (No Re-List Loop)
+
+### Step 1: ask for list
+
+```bash
+curl -sS "${AI_BASE_URL}/api/v1/rag/chat" \
+  -H "${JSON_HEADER}" \
+  -H "${AUTH_HEADER}" \
+  -d '{
+    "message":"list invoices",
+    "session_id":"pb-list-1001",
+    "engine":"openai",
+    "model":"gpt-4o-mini",
+    "memory":true,
+    "actions":true,
+    "use_intelligent_rag":true
+  }'
+```
+
+Expected envelope shape:
+
+```json
+{
+  "success": true,
+  "message": "Request completed.",
+  "data": {
+    "response": "1. Invoice #...",
+    "has_options": true,
+    "numbered_options": []
+  },
+  "error": null,
+  "meta": {
+    "status_code": 200,
+    "schema": "ai-engine.v1"
+  }
+}
+```
+
+### Step 2: follow-up on listed result
+
+```bash
+curl -sS "${AI_BASE_URL}/api/v1/rag/chat" \
+  -H "${JSON_HEADER}" \
+  -H "${AUTH_HEADER}" \
+  -d '{
+    "message":"what is the status of the first one?",
+    "session_id":"pb-list-1001",
+    "engine":"openai",
+    "model":"gpt-4o-mini",
+    "memory":true,
+    "actions":true,
+    "use_intelligent_rag":true
+  }'
+```
+
+Expected behavior:
+
+- answer uses session/selected-entity context
+- no unnecessary full list rerun
+
+## Playbook 2: Locale + Authenticated User Context
+
+Use Arabic query with explicit locale:
+
+```bash
+curl -sS "${AI_BASE_URL}/api/v1/rag/chat" \
+  -H "${JSON_HEADER}" \
+  -H "${AUTH_HEADER}" \
+  -H "Accept-Language: ar" \
+  -H "X-Locale: ar" \
+  -d '{
+    "message":"ما اسمي؟",
+    "session_id":"pb-userctx-2001",
+    "memory":true,
+    "actions":false,
+    "use_intelligent_rag":true
+  }'
+```
+
+Expected behavior:
+
+- when `AI_ENGINE_INJECT_USER_CONTEXT=true` and user is authenticated, AI can answer personal basics (name/email/role)
+- response language follows resolved locale
+
+## Playbook 3: Guided Data Collector (Full Flow)
+
+### Step 1: start collector
+
+```bash
+curl -sS "${AI_BASE_URL}/api/v1/data-collector/start" \
+  -H "${JSON_HEADER}" \
+  -H "${AUTH_HEADER}" \
+  -d '{
+    "config_name":"invoice_create",
+    "session_id":"pb-dc-3001"
+  }'
+```
+
+### Step 2: send user input
+
+```bash
+curl -sS "${AI_BASE_URL}/api/v1/data-collector/message" \
+  -H "${JSON_HEADER}" \
+  -H "${AUTH_HEADER}" \
+  -d '{
+    "session_id":"pb-dc-3001",
+    "message":"Customer is ACME, issue date is 2026-03-09"
+  }'
+```
+
+### Step 3: inspect status/data
+
+```bash
+curl -sS "${AI_BASE_URL}/api/v1/data-collector/status/pb-dc-3001" -H "${AUTH_HEADER}"
+curl -sS "${AI_BASE_URL}/api/v1/data-collector/data/pb-dc-3001" -H "${AUTH_HEADER}"
+```
+
+Expected behavior:
+
+- status transitions: `collecting` -> `confirming` -> `completed`
+- response includes `progress`, `remaining_fields`, and confirmation summary
+
+## Playbook 4: Autonomous Collector (Tool-Driven)
+
+### Step 1: start autonomous flow
+
+```bash
+curl -sS "${AI_BASE_URL}/api/v1/autonomous-collector/start" \
+  -H "${JSON_HEADER}" \
+  -H "${AUTH_HEADER}" \
+  -d '{
+    "config_name":"invoice",
+    "session_id":"pb-ac-4001",
+    "initial_message":"Create invoice for ACME with 2 Macbook Pro items"
+  }'
+```
+
+### Step 2: continue and confirm
+
+```bash
+curl -sS "${AI_BASE_URL}/api/v1/autonomous-collector/message" \
+  -H "${JSON_HEADER}" \
+  -H "${AUTH_HEADER}" \
+  -d '{
+    "session_id":"pb-ac-4001",
+    "message":"yes, proceed"
+  }'
+
+curl -sS "${AI_BASE_URL}/api/v1/autonomous-collector/confirm" \
+  -H "${JSON_HEADER}" \
+  -H "${AUTH_HEADER}" \
+  -d '{
+    "session_id":"pb-ac-4001"
+  }'
+```
+
+Expected behavior:
+
+- autonomous tool calls appear in `tool_results`
+- final mutation happens only after confirmation when required
+
+## Playbook 5: Federation (Master + Child)
+
+### Step 1: validate nodes
+
+```bash
+php artisan ai-engine:node-list
+php artisan ai-engine:node-ping --all
+```
+
+### Step 2: safe bulk sync
+
+```bash
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+```
+
+### Step 3: run cross-node scenario
+
+```bash
+php artisan ai-engine:test-real-agent \
+  --message="list invoices" \
+  --message="show details of the first one" \
+  --json
+```
+
+Expected behavior:
+
+- ownership resolver picks local vs remote executor
+- response envelope remains stable regardless of route destination
+
+## Playbook 6: Policy Learning (Prompt-Level)
+
+```bash
+php artisan ai-engine:decision-feedback:report
+php artisan ai-engine:decision-policy:evaluate --window-hours=48
+php artisan ai-engine:decision-policy:create v2 --activate
+php artisan ai-engine:test-real-agent --script=followup --report-feedback --json
+```
+
+Expected behavior:
+
+- policy versions persisted in `ai_prompt_policy_versions`
+- feedback events persisted in `ai_prompt_feedback_events`
+- canary tests improve decision quality before broad rollout
+
+## Playbook 7: Clean List Preview UX
+
+Implement model hooks:
+
+```php
+public function toAISummarySource(): string
+{
+    return "Invoice #{$this->invoice_id} | {$this->status} | Total {$this->total}";
+}
+
+public function toRAGListPreview(?string $locale = null): string
+{
+    return "Invoice #{$this->invoice_id} | {$this->status} | Total {$this->total}\n"
+        . "Customer: {$this->customer?->name}\n"
+        . "Dates: {$this->issue_date} -> {$this->due_date}";
+}
+```
+
+After deploy/update:
+
+```bash
+php artisan optimize:clear
+```
+
+Expected behavior:
+
+- list output uses `toRAGListPreview()` when present
+- output is compact and scan-friendly
+
+## Notes
+
+- app-facing chat path: `/api/v1/rag/chat`
+- internal node federation contract path: `/api/ai-engine/*`
+- if `AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY=true`, legacy keys may still appear at top level alongside standard envelope keys

@@ -4,23 +4,76 @@
     'theme' => 'light',
     'height' => '500px',
     'apiEndpoint' => '/api/v1/data-collector',
+    'collectorMode' => 'guided',   // guided | autonomous
     'engine' => 'openai',
     'model' => 'gpt-4o',
     'showProgress' => true,
     'showFieldList' => true,
     'autoStart' => true,
-    'language' => 'en',
+    'language' => app()->getLocale(),
     // Inline config (optional - if not provided, configName is used to fetch from server)
     'inlineConfig' => null,       // Pass inline config array if needed
 ])
 
 @php
+    $normalizedLanguage = strtolower(str_replace('_', '-', (string) $language));
+    $languageBase = explode('-', $normalizedLanguage)[0] ?? 'en';
+
     // Only pass minimal inline config if provided, otherwise use configName reference
     $configData = $inlineConfig ? [
         'name' => $inlineConfig['name'] ?? $configName,
         'fields' => $inlineConfig['fields'] ?? [],
     ] : null;
 
+    $supportedLocales = config('ai-engine.localization.supported_locales', ['en', 'ar']);
+    if (!is_array($supportedLocales) || empty($supportedLocales)) {
+        $supportedLocales = ['en'];
+    }
+
+    $translationCatalog = [];
+    foreach ($supportedLocales as $supportedLocale) {
+        $localeCode = strtolower(str_replace('_', '-', (string) $supportedLocale));
+        if ($localeCode === '') {
+            continue;
+        }
+
+        $uiLines = trans('ai-engine::data_collector.ui', [], $localeCode);
+        if (is_array($uiLines)) {
+            $translationCatalog[$localeCode] = $uiLines;
+            $baseCode = explode('-', $localeCode)[0] ?? $localeCode;
+            if (!isset($translationCatalog[$baseCode])) {
+                $translationCatalog[$baseCode] = $uiLines;
+            }
+        }
+    }
+
+    $translationCatalog['en'] = is_array($translationCatalog['en'] ?? null)
+        ? $translationCatalog['en']
+        : [
+            'loading' => 'Loading...',
+            'ready' => 'Ready',
+            'cancel' => 'Cancel',
+        ];
+
+    $resolvedLanguage = isset($translationCatalog[$normalizedLanguage])
+        ? $normalizedLanguage
+        : (isset($translationCatalog[$languageBase]) ? $languageBase : 'en');
+
+    $rtlLocales = config('ai-engine.localization.rtl_locales', ['ar']);
+    $normalizedRtlLocales = array_values(array_map(
+        static fn ($locale): string => strtolower(str_replace('_', '-', (string) $locale)),
+        is_array($rtlLocales) ? $rtlLocales : ['ar']
+    ));
+
+    $dcTranslate = function (string $key, array $replace = []) use ($resolvedLanguage): string {
+        $line = trans("ai-engine::data_collector.ui.{$key}", $replace, $resolvedLanguage);
+
+        if (!is_string($line) || $line === "ai-engine::data_collector.ui.{$key}") {
+            $line = trans("ai-engine::data_collector.ui.{$key}", $replace, 'en');
+        }
+
+        return is_string($line) ? $line : $key;
+    };
 @endphp
 
 
@@ -31,19 +84,20 @@
     data-session-id="{{ $sessionId }}"
     data-config-name="{{ $configName }}"
     data-api-endpoint="{{ $apiEndpoint }}"
+    data-collector-mode="{{ $collectorMode }}"
     data-engine="{{ $engine }}"
     data-model="{{ $model }}"
     data-auto-start="{{ $autoStart ? 'true' : 'false' }}"
     data-inline-config="{{ $configData ? json_encode($configData) : '' }}"
-    data-language="{{ $language }}">
+    data-language="{{ $resolvedLanguage }}">
     <!-- Header (title/description loaded from API) -->
     <div class="dc-header">
         <div class="dc-title-section">
-            <h3 class="dc-title" id="title-{{ $sessionId }}">Loading...</h3>
+            <h3 class="dc-title" id="title-{{ $sessionId }}">{{ $dcTranslate('loading') }}</h3>
             <p class="dc-description" id="description-{{ $sessionId }}" style="display: none;"></p>
         </div>
         <div class="dc-header-actions">
-            <button class="dc-action-btn dc-cancel-btn" id="cancel-{{ $sessionId }}" title="Cancel">
+            <button class="dc-action-btn dc-cancel-btn" id="cancel-{{ $sessionId }}" title="{{ $dcTranslate('cancel') }}">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -59,8 +113,8 @@
             <div class="dc-progress-fill" id="progress-fill-{{ $sessionId }}" style="width: 0%"></div>
         </div>
         <div class="dc-progress-info">
-            <span class="dc-progress-text" id="progress-text-{{ $sessionId }}">0% complete</span>
-            <span class="dc-field-counter" id="field-counter-{{ $sessionId }}">0 of 0 fields</span>
+            <span class="dc-progress-text" id="progress-text-{{ $sessionId }}">0% {{ $dcTranslate('progress_complete') }}</span>
+            <span class="dc-field-counter" id="field-counter-{{ $sessionId }}">{{ $dcTranslate('counter', ['collected' => 0, 'total' => 0]) }}</span>
         </div>
     </div>
     @endif
@@ -69,7 +123,7 @@
     @if($showFieldList)
     <div class="dc-fields-section" id="fields-section-{{ $sessionId }}">
         <button class="dc-fields-toggle" id="fields-toggle-{{ $sessionId }}">
-            <span>Fields</span>
+            <span>{{ $dcTranslate('fields') }}</span>
             <svg class="dc-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
@@ -119,7 +173,7 @@
             <button 
                 id="file-btn-{{ $sessionId }}"
                 class="dc-file-btn"
-                title="Upload PDF or text file to auto-fill"
+                title="{{ $dcTranslate('upload_hint') }}"
             >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
@@ -128,7 +182,7 @@
             <textarea
                     id="input-{{ $sessionId }}"
                     class="dc-input"
-                    placeholder="{{ $language === 'ar' ? 'اكتب ردك...' : 'Type your response...' }}"
+                    placeholder="{{ $dcTranslate('input_placeholder') }}"
                     rows="1"
                     maxlength="2000"
             ></textarea>
@@ -145,7 +199,7 @@
         </div>
         <div class="dc-input-footer">
             <span class="dc-status" id="status-{{ $sessionId }}">
-    {{ $language === 'ar' ? 'جاهز' : 'Ready' }}
+    {{ $dcTranslate('ready') }}
 </span>
             <span class="dc-char-count"><span id="char-count-{{ $sessionId }}">0</span>/2000</span>
         </div>
@@ -157,7 +211,7 @@
         <div class="dc-modal-content">
             <div class="dc-modal-header">
                 <h4>
-                    {{ $language === 'ar' ? 'تأكيد معلوماتك' : 'Confirm Your Information' }}
+                    {{ $dcTranslate('confirm_information') }}
                 </h4>
             </div>
 
@@ -167,11 +221,11 @@
 
             <div class="dc-modal-footer">
                 <button class="dc-btn dc-btn-secondary" id="confirm-modify-{{ $sessionId }}">
-                    {{ $language === 'ar' ? 'تعديل' : 'Modify' }}
+                    {{ $dcTranslate('modify') }}
                 </button>
 
                 <button class="dc-btn dc-btn-primary" id="confirm-submit-{{ $sessionId }}">
-                    {{ $language === 'ar' ? 'تأكيد وإرسال' : 'Confirm & Submit' }}
+                    {{ $dcTranslate('confirm_submit') }}
                 </button>
             </div>
         </div>
@@ -188,9 +242,9 @@
                     <polyline points="22 4 12 14.01 9 11.01"></polyline>
                 </svg>
             </div>
-            <h4>Success!</h4>
-            <p id="success-message-{{ $sessionId }}">Your information has been submitted successfully.</p>
-            <button class="dc-btn dc-btn-primary" id="success-close-{{ $sessionId }}">Close</button>
+            <h4>{{ $dcTranslate('success_title') }}</h4>
+            <p id="success-message-{{ $sessionId }}">{{ $dcTranslate('success_message') }}</p>
+            <button class="dc-btn dc-btn-primary" id="success-close-{{ $sessionId }}">{{ $dcTranslate('close') }}</button>
         </div>
     </div>
 </div>
@@ -1055,15 +1109,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const sessionId = container.dataset.sessionId;
     const configName = container.dataset.configName;
     const apiEndpoint = container.dataset.apiEndpoint;
+    const collectorMode = (container.dataset.collectorMode || '').toLowerCase();
+    const isAutonomousMode = collectorMode === 'autonomous' || apiEndpoint.includes('/autonomous-collector');
     const engine = container.dataset.engine;
     const model = container.dataset.model;
     const autoStart = container.dataset.autoStart === 'true';
     const inlineConfig = container.dataset.inlineConfig ? JSON.parse(container.dataset.inlineConfig) : null;
     const language = container.dataset.language || 'en';
+    const translations = @json($translationCatalog);
+    const rtlLocales = @json($normalizedRtlLocales);
     
     let currentState = null;
     let fields = [];
     let config = {};  // Will be populated from API response
+    let currentLang = language;
     
     // Initialize
     if (autoStart) {
@@ -1094,9 +1153,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     if (confirmSubmitBtn) {
-        confirmSubmitBtn.addEventListener('click', () => {
+        confirmSubmitBtn.addEventListener('click', async () => {
             hideModal(confirmModal);
-            sendMessage('yes');
+            if (isAutonomousMode) {
+                await confirmSession();
+            } else {
+                sendMessage('yes');
+            }
         });
     }
     
@@ -1118,24 +1181,34 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     async function startSession() {
-        updateStatus('Starting...');
+        updateStatus(t('status_starting'));
         showTyping();
         
         try {
-            // Use /start-custom if inline config is provided, otherwise use /start with config_name
-            const hasInlineConfig = inlineConfig && inlineConfig.fields && Object.keys(inlineConfig.fields).length > 0;
+            const hasInlineConfig = !isAutonomousMode
+                && inlineConfig
+                && inlineConfig.fields
+                && Object.keys(inlineConfig.fields).length > 0;
+
             const endpoint = hasInlineConfig ? `${apiEndpoint}/start-custom` : `${apiEndpoint}/start`;
-            
-            const requestBody = hasInlineConfig ? {
-                session_id: sessionId,
-                name: inlineConfig.name || configName || 'inline_config',
-                fields: inlineConfig.fields,
-                language: language,
-            } : {
-                session_id: sessionId,
-                config_name: configName,
-                language: language,
-            };
+
+            const requestBody = isAutonomousMode
+                ? {
+                    session_id: sessionId,
+                    config_name: configName,
+                    initial_message: '',
+                    language: language,
+                }
+                : (hasInlineConfig ? {
+                    session_id: sessionId,
+                    name: inlineConfig.name || configName || 'inline_config',
+                    fields: inlineConfig.fields,
+                    language: language,
+                } : {
+                    session_id: sessionId,
+                    config_name: configName,
+                    language: language,
+                });
             
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -1146,7 +1219,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: JSON.stringify(requestBody)
             });
             
-            const data = await response.json();
+            const data = normalizeApiPayload(await response.json());
             hideTyping();
             
             if (data.success) {
@@ -1165,16 +1238,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 addMessage('assistant', data.message);
                 showQuickActions(data);
             } else {
-                addMessage('assistant', data.message || 'Failed to start session.');
-                if (titleEl) titleEl.textContent = 'Error';
+                addMessage('assistant', data.message || t('start_failed'));
+                if (titleEl) titleEl.textContent = t('error_title');
             }
             
-            updateStatus('{{ $language === 'ar' ? 'جاهز' : 'Ready' }}');
+            updateStatus(t('status_ready'));
         } catch (error) {
             hideTyping();
-            addMessage('assistant', 'Failed to connect. Please try again.');
-            updateStatus('Error');
-            if (titleEl) titleEl.textContent = 'Connection Error';
+            addMessage('assistant', t('connect_failed'));
+            updateStatus(t('status_error'));
+            if (titleEl) titleEl.textContent = t('status_connection_error');
             console.error('Start session error:', error);
         }
     }
@@ -1184,7 +1257,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Update title
         if (titleEl) {
-            titleEl.textContent = configData.title || data.config_name || configName || 'Data Collection';
+            titleEl.textContent = configData.title || data.config_name || configName || (isAutonomousMode ? t('ready') : t('data_collection_title'));
         }
         
         // Update description
@@ -1211,7 +1284,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         showTyping();
         hideQuickActions();
-        updateStatus('Processing...');
+        updateStatus(t('status_processing'));
         
         try {
             const response = await fetch(`${apiEndpoint}/message`, {
@@ -1229,13 +1302,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             });
             
-            const data = await response.json();
+            const data = normalizeApiPayload(await response.json());
             hideTyping();
             
             currentState = data;
             updateUI(data);
             
-            if (data.requires_confirmation && data.summary) {
+            if (data.requires_confirmation && (data.summary || data.collected_data || data.data)) {
                 showConfirmationModal(data);
             } else if (data.is_complete) {
                 showSuccessModal(data);
@@ -1246,20 +1319,59 @@ document.addEventListener('DOMContentLoaded', function() {
                 setTimeout(scrollToBottom, 50);
             }
             
-            updateStatus('Ready');
+            updateStatus(t('status_ready'));
         } catch (error) {
             hideTyping();
-            addMessage('assistant', 'Failed to process your message. Please try again.');
-            updateStatus('Error');
+            addMessage('assistant', t('process_failed'));
+            updateStatus(t('status_error'));
             console.error('Send message error:', error);
+        }
+    }
+
+    async function confirmSession() {
+        showTyping();
+        hideQuickActions();
+        updateStatus(t('status_processing'));
+
+        try {
+            const response = await fetch(`${apiEndpoint}/confirm`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify({
+                    session_id: sessionId
+                })
+            });
+
+            const data = normalizeApiPayload(await response.json());
+            hideTyping();
+
+            currentState = data;
+            updateUI(data);
+
+            if (data.is_complete) {
+                showSuccessModal(data);
+            } else {
+                addMessage('assistant', data.message || t('process_failed'));
+                showQuickActions(data);
+            }
+
+            updateStatus(t('status_ready'));
+        } catch (error) {
+            hideTyping();
+            addMessage('assistant', t('process_failed'));
+            updateStatus(t('status_error'));
+            console.error('Confirm session error:', error);
         }
     }
     
     async function cancelSession() {
-        if (!confirm('Are you sure you want to cancel?')) return;
+        if (!confirm(t('cancel_confirm'))) return;
         
         try {
-            await fetch(`${apiEndpoint}/cancel`, {
+            const response = await fetch(`${apiEndpoint}/cancel`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1267,9 +1379,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify({ session_id: sessionId })
             });
-            
-            addMessage('assistant', 'Data collection cancelled.');
-            updateStatus('Cancelled');
+
+            const data = normalizeApiPayload(await response.json());
+            addMessage('assistant', data.message || t('collection_cancelled'));
+            updateStatus(t('status_cancelled'));
         } catch (error) {
             console.error('Cancel error:', error);
         }
@@ -1282,25 +1395,19 @@ document.addEventListener('DOMContentLoaded', function() {
         // Validate file type
         const allowedTypes = ['application/pdf', 'text/plain', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
         if (!allowedTypes.includes(file.type) && !file.name.match(/\.(pdf|txt|doc|docx)$/i)) {
-            addMessage('assistant', currentLang === 'ar' 
-                ? 'يرجى تحميل ملف PDF أو نص فقط.' 
-                : 'Please upload a PDF or text file only.');
+            addMessage('assistant', t('upload_pdf_only'));
             return;
         }
         
         // Validate file size (max 10MB)
         if (file.size > 10 * 1024 * 1024) {
-            addMessage('assistant', currentLang === 'ar' 
-                ? 'حجم الملف كبير جداً. الحد الأقصى 10 ميجابايت.' 
-                : 'File is too large. Maximum size is 10MB.');
+            addMessage('assistant', t('file_too_large'));
             return;
         }
         
         fileBtn.classList.add('loading');
-        updateStatus(currentLang === 'ar' ? 'جاري تحليل الملف...' : 'Analyzing file...');
-        addMessage('user', currentLang === 'ar' 
-            ? `📎 تم تحميل: ${file.name}` 
-            : `📎 Uploaded: ${file.name}`);
+        updateStatus(t('status_analyzing_file'));
+        addMessage('user', t('uploaded_file', { name: file.name }));
         showTyping();
         
         try {
@@ -1323,15 +1430,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: formData
             });
             
-            const data = await response.json();
+            const data = normalizeApiPayload(await response.json());
             hideTyping();
             fileBtn.classList.remove('loading');
             
             if (data.success && data.extracted_data) {
                 // Show extracted data summary
-                const summaryMsg = currentLang === 'ar' 
-                    ? `✅ تم استخراج البيانات من الملف:\n\n${formatExtractedData(data.extracted_data)}\n\nهل تريد استخدام هذه البيانات؟`
-                    : `✅ Extracted data from file:\n\n${formatExtractedData(data.extracted_data)}\n\nWould you like to use this data?`;
+                const summaryMsg = t('extracted_summary', {
+                    data: formatExtractedData(data.extracted_data),
+                });
                 
                 addMessage('assistant', summaryMsg);
                 
@@ -1341,19 +1448,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Show confirm/modify buttons
                 showFileDataActions();
             } else {
-                addMessage('assistant', data.message || (currentLang === 'ar' 
-                    ? 'لم نتمكن من استخراج البيانات من الملف.' 
-                    : 'Could not extract data from the file.'));
+                addMessage('assistant', data.message || t('extract_failed'));
             }
             
-            updateStatus('Ready');
+            updateStatus(t('status_ready'));
         } catch (error) {
             hideTyping();
             fileBtn.classList.remove('loading');
-            addMessage('assistant', currentLang === 'ar' 
-                ? 'فشل في تحليل الملف. يرجى المحاولة مرة أخرى.' 
-                : 'Failed to analyze file. Please try again.');
-            updateStatus('Error');
+            addMessage('assistant', t('analyze_failed'));
+            updateStatus(t('status_error'));
             console.error('File upload error:', error);
         }
         
@@ -1369,15 +1472,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 formatted += `• **${label}**: ${value}\n`;
             }
         }
-        return formatted || (currentLang === 'ar' ? 'لا توجد بيانات' : 'No data');
+        return formatted || t('no_data');
     }
     
     function showFileDataActions() {
         const html = `
             <div class="dc-action-group">
-                <button class="dc-quick-btn primary" data-action="use-file-data">${currentLang === 'ar' ? '✓ استخدام البيانات' : '✓ Use Data'}</button>
-                <button class="dc-quick-btn secondary" data-action="modify-file-data">${currentLang === 'ar' ? '✎ تعديل' : '✎ Modify'}</button>
-                <button class="dc-quick-btn danger" data-action="discard-file-data">${currentLang === 'ar' ? '✕ تجاهل' : '✕ Discard'}</button>
+                <button class="dc-quick-btn primary" data-action="use-file-data">${t('use_data')}</button>
+                <button class="dc-quick-btn secondary" data-action="modify-file-data">${t('modify')}</button>
+                <button class="dc-quick-btn danger" data-action="discard-file-data">${t('discard')}</button>
             </div>
         `;
         quickActionsContainer.innerHTML = html;
@@ -1396,7 +1499,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         hideQuickActions();
         showTyping();
-        updateStatus(currentLang === 'ar' ? 'جاري تطبيق البيانات...' : 'Applying data...');
+        updateStatus(t('status_applying_data'));
         
         try {
             const response = await fetch(`${apiEndpoint}/apply-extracted`, {
@@ -1412,7 +1515,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             });
             
-            const data = await response.json();
+            const data = normalizeApiPayload(await response.json());
             hideTyping();
             
             if (data.success) {
@@ -1424,14 +1527,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     showQuickActions(data);
                 }
             } else {
-                addMessage('assistant', data.message || 'Failed to apply data.');
+                addMessage('assistant', data.message || t('applying_failed'));
             }
             
-            updateStatus('Ready');
+            updateStatus(t('status_ready'));
         } catch (error) {
             hideTyping();
-            addMessage('assistant', 'Failed to apply extracted data.');
-            updateStatus('Error');
+            addMessage('assistant', t('apply_extracted_failed'));
+            updateStatus(t('status_error'));
             console.error('Apply extracted data error:', error);
         }
         
@@ -1440,9 +1543,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function modifyExtractedData() {
         hideQuickActions();
-        addMessage('assistant', currentLang === 'ar' 
-            ? 'حسناً، دعنا نراجع البيانات معاً. سأسألك عن كل حقل.' 
-            : 'Okay, let\'s review the data together. I\'ll ask you about each field.');
+        addMessage('assistant', t('review_together'));
         window.extractedFileData = null;
         // Continue with normal flow
         showQuickActions(currentState || {});
@@ -1450,9 +1551,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function discardExtractedData() {
         hideQuickActions();
-        addMessage('assistant', currentLang === 'ar' 
-            ? 'تم تجاهل البيانات المستخرجة. يمكنك الاستمرار في إدخال البيانات يدوياً.' 
-            : 'Extracted data discarded. You can continue entering data manually.');
+        addMessage('assistant', t('extracted_discarded'));
         window.extractedFileData = null;
         showQuickActions(currentState || {});
     }
@@ -1465,7 +1564,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const progress = meta.progress ?? data.progress;
         if (progressFill && progress !== undefined) {
             progressFill.style.width = `${progress}%`;
-            const completeText = currentLang === 'ar' ? 'مكتمل' : 'complete';
+            const completeText = t('progress_complete');
             progressText.textContent = `${Math.round(progress)}% ${completeText}`;
         }
         
@@ -1476,11 +1575,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (fieldCounter && totalFields > 0) {
             const collected = collectedFields.length || (progress === 100 ? totalFields : 0);
-            if (currentLang === 'ar') {
-                fieldCounter.textContent = `${collected} من ${totalFields} حقول`;
-            } else {
-                fieldCounter.textContent = `${collected} of ${totalFields} fields`;
-            }
+            fieldCounter.textContent = t('counter', { collected, total: totalFields });
         }
         
         // Update fields list
@@ -1675,7 +1770,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Build HTML with grouped actions
         let html = '';
-        const isRtlLang = currentLang === 'ar';
+        const isRtlLang = isRtlLocale(currentLang);
         
         if (optionActions.length > 0) {
             html += `<div class="dc-action-group${isRtlLang ? ' rtl' : ''}">`;
@@ -1731,7 +1826,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Get data from root level or metadata
         const meta = data.metadata || {};
-        const collectedData = data.data || meta.data || {};
+        const collectedData = data.collected_data || data.data || meta.collected_data || meta.data || {};
         const actionSummary = data.action_summary || meta.action_summary || meta.config?.action_summary;
         const configActionSummary = meta.config?.action_summary;
         
@@ -1754,7 +1849,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Show action summary (dynamic from AI or static from config)
         const summaryToShow = actionSummary || configActionSummary;
         if (summaryToShow) {
-            const whatWillHappen = currentLang === 'ar' ? 'ما سيحدث:' : 'What will happen:';
+            const whatWillHappen = t('what_will_happen');
             html += `<div class="dc-action-preview"><strong>${whatWillHappen}</strong><br>${formatMessage(summaryToShow)}</div>`;
         }
         
@@ -1786,7 +1881,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const avatarDiv = document.createElement('div');
         avatarDiv.className = 'dc-message-avatar';
-        avatarDiv.innerHTML = `<div class="dc-avatar-${role}">${role === 'user' ? 'You' : 'AI'}</div>`;
+        avatarDiv.innerHTML = `<div class="dc-avatar-${role}">${role === 'user' ? t('avatar_user') : t('avatar_ai')}</div>`;
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'dc-message-content';
@@ -1824,56 +1919,91 @@ document.addEventListener('DOMContentLoaded', function() {
         return rtlRegex.test(text);
     }
     
-    // Current detected language (initialized from prop)
-    let currentLang = language;
-    
-    // Translations for UI elements
-    const translations = {
-        en: {
-            confirm: '✓ Confirm',
-            modify: '✎ Modify',
-            cancel: '✕ Cancel',
-            skip: 'Skip →',
-            choose: 'Choose:',
-            beginner: 'Beginner',
-            intermediate: 'Intermediate',
-            advanced: 'Advanced',
-            yes: 'Yes',
-            no: 'No'
-        },
-        ar: {
-            confirm: '✓ تأكيد',
-            modify: '✎ تعديل',
-            cancel: '✕ إلغاء',
-            skip: '← تخطي',
-            choose: 'اختر:',
-            beginner: 'مبتدئ',
-            intermediate: 'متوسط',
-            advanced: 'متقدم',
-            yes: 'نعم',
-            no: 'لا'
-        }
-    };
-    
     function detectLanguage(text) {
-        // Detect Arabic
-        if (/[\u0600-\u06FF]/.test(text)) {
+        if (/[\u0600-\u06FF]/.test(text) && translations['ar']) {
             return 'ar';
         }
-        return 'en';
+        return currentLang;
     }
     
-    function t(key) {
-        return translations[currentLang]?.[key] || translations['en'][key] || key;
+    function t(key, replacements = {}) {
+        const normalized = normalizeLocale(currentLang);
+        const exact = translations[normalized];
+        const base = translations[baseLocale(normalized)];
+        const english = translations['en'] || {};
+        const fallback = Object.values(translations)[0] || {};
+        let value = exact?.[key] ?? base?.[key] ?? english[key] ?? fallback[key] ?? key;
+
+        if (typeof value !== 'string') {
+            return key;
+        }
+
+        Object.entries(replacements).forEach(([replaceKey, replaceValue]) => {
+            value = value.replace(new RegExp(`:${replaceKey}`, 'g'), String(replaceValue));
+        });
+
+        return value;
     }
     
     function translateOption(option) {
         const lowerOption = option.toLowerCase();
-        if (translations[currentLang]?.[lowerOption]) {
-            return translations[currentLang][lowerOption];
+        const localized = t(lowerOption);
+        if (localized !== lowerOption) {
+            return localized;
         }
         // Capitalize first letter for display
         return option.charAt(0).toUpperCase() + option.slice(1);
+    }
+
+    function normalizeLocale(locale) {
+        return String(locale || '').trim().toLowerCase().replace('_', '-');
+    }
+
+    function baseLocale(locale) {
+        const normalized = normalizeLocale(locale);
+        return normalized.split('-')[0] || normalized;
+    }
+
+    function isRtlLocale(locale) {
+        const normalized = normalizeLocale(locale);
+        const base = baseLocale(normalized);
+        return rtlLocales.includes(normalized) || rtlLocales.includes(base);
+    }
+
+    function normalizeApiPayload(raw) {
+        if (!raw || typeof raw !== 'object') {
+            return {
+                success: false,
+                message: t('process_failed')
+            };
+        }
+
+        const hasEnvelope = Object.prototype.hasOwnProperty.call(raw, 'success')
+            && Object.prototype.hasOwnProperty.call(raw, 'data');
+
+        if (!hasEnvelope) {
+            return raw;
+        }
+
+        const dataPayload = raw.data && typeof raw.data === 'object' ? raw.data : {};
+        const normalized = {
+            ...dataPayload,
+            success: typeof raw.success === 'boolean'
+                ? raw.success
+                : (typeof dataPayload.success === 'boolean' ? dataPayload.success : true),
+            message: raw.message || dataPayload.message || '',
+            error: dataPayload.error || raw.error || null,
+        };
+
+        if (!normalized.metadata) {
+            normalized.metadata = dataPayload.metadata || raw.metadata || null;
+        }
+
+        if (!normalized.meta && raw.meta) {
+            normalized.meta = raw.meta;
+        }
+
+        return normalized;
     }
     
     function showTyping() {

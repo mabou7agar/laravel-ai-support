@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Events\AISessionStarted;
+use LaravelAIEngine\Services\Agent\AgentOrchestrator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
@@ -11,20 +12,8 @@ class ChatService
 {
     public function __construct(
         protected ConversationService $conversationService,
-        protected ?\LaravelAIEngine\Services\Agent\MinimalAIOrchestrator $orchestrator = null
+        protected AgentOrchestrator $orchestrator
     ) {}
-
-    /**
-     * Lazy load MinimalAIOrchestrator
-     */
-    protected function getOrchestrator(): \LaravelAIEngine\Services\Agent\MinimalAIOrchestrator
-    {
-        if ($this->orchestrator === null) {
-            $this->orchestrator = app(\LaravelAIEngine\Services\Agent\MinimalAIOrchestrator::class);
-        }
-
-        return $this->orchestrator;
-    }
 
     /**
      * Process a chat message and generate AI response
@@ -51,9 +40,10 @@ class ChatService
         array $ragCollections = [],
         $userId = null,
         ?string $searchInstructions = null,
-        array $conversationHistory = [] // Passed from middleware for context-aware responses
+        array $conversationHistory = [], // Passed from middleware for context-aware responses
+        array $extraOptions = []
     ): AIResponse {
-        Log::channel('ai-engine')->info('ChatService::processMessage called', [
+        Log::channel('ai-engine')->debug('ChatService::processMessage called', [
             'message' => substr($message, 0, 100),
             'session_id' => $sessionId,
             'user_id' => $userId,
@@ -88,10 +78,8 @@ class ChatService
             Log::warning('Failed to fire AISessionStarted event: ' . $e->getMessage());
         }
 
-        // Delegate ALL decisions to MinimalAIOrchestrator (AI-driven)
-        $orchestrator = $this->getOrchestrator();
-
-        Log::channel('ai-engine')->info('ChatService delegating to MinimalAIOrchestrator', [
+        // Delegate ALL decisions to AgentOrchestrator (AI-driven)
+        Log::channel('ai-engine')->debug('ChatService delegating to AgentOrchestrator', [
             'session_id' => $sessionId,
             'user_id' => $userId,
         ]);
@@ -108,8 +96,11 @@ class ChatService
             'conversation_history' => $conversationHistory,
             'is_forwarded' => $this->isForwardedRequest(), // Prevent infinite forwarding loops
         ];
+        if (!empty($extraOptions)) {
+            $options = array_merge($options, $extraOptions);
+        }
 
-        $agentResponse = $orchestrator->process($message, $sessionId, $userId, $options);
+        $agentResponse = $this->orchestrator->process($message, $sessionId, $userId, $options);
 
         // Handle workflow session tracking
         if (!empty($agentResponse->context->currentWorkflow)) {

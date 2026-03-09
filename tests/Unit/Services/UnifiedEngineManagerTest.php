@@ -61,8 +61,8 @@ class UnifiedEngineManagerTest extends TestCase
             ->with(
                 Mockery::on(function($request) use ($messages) {
                     return $request->messages === $messages &&
-                           $request->engine === EngineEnum::OPENAI &&
-                           $request->entity === EntityEnum::GPT_4O;
+                           $request->engine->value === EngineEnum::OPENAI &&
+                           $request->model->value === EntityEnum::GPT_4O;
                 })
             )
             ->once()
@@ -96,8 +96,8 @@ class UnifiedEngineManagerTest extends TestCase
             ->with(
                 Mockery::on(function($request) use ($messages, $options) {
                     return $request->messages === $messages &&
-                           $request->engine === EngineEnum::ANTHROPIC &&
-                           $request->entity === EntityEnum::CLAUDE_3_5_SONNET &&
+                           $request->engine->value === EngineEnum::ANTHROPIC &&
+                           $request->model->value === EntityEnum::CLAUDE_3_5_SONNET &&
                            $request->temperature === 0.8 &&
                            $request->maxTokens === 1000 &&
                            $request->user === 'user-123';
@@ -126,8 +126,8 @@ class UnifiedEngineManagerTest extends TestCase
             ->with(
                 Mockery::on(function($request) use ($messages) {
                     return $request->messages === $messages &&
-                           $request->engine === EngineEnum::OPENAI &&
-                           $request->entity === EntityEnum::GPT_4O;
+                           $request->engine->value === EngineEnum::OPENAI &&
+                           $request->model->value === EntityEnum::GPT_4O;
                 })
             )
             ->once()
@@ -182,7 +182,7 @@ class UnifiedEngineManagerTest extends TestCase
 
         $this->memoryManager
             ->shouldReceive('getContext')
-            ->with('conv-123', 50)
+            ->with('conv-123')
             ->once()
             ->andReturn($contextMessages);
 

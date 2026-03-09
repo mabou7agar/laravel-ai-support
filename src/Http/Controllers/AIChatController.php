@@ -160,7 +160,7 @@ class AIChatController extends Controller
             }
 
             // Process message through ChatService (thin wrapper around AgentOrchestrator)
-            // AgentOrchestrator handles all routing, RAG decisions, and workflow detection
+            // AgentOrchestrator handles routing, RAG decisions, and workflow detection
             $response = $this->chatService->processMessage(
                 message: $dto->message,
                 sessionId: $dto->sessionId,

@@ -3,6 +3,7 @@
 namespace LaravelAIEngine\DTOs;
 
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 class AgentResponse
 {
@@ -216,7 +217,7 @@ class AgentResponse
     }
 
     /**
-     * Create a confirmation response with yes/no options
+     * Create a confirmation response with approve/reject options
      */
     public static function needsConfirmation(
         string $message,
@@ -224,20 +225,26 @@ class AgentResponse
         ?UnifiedActionContext $context = null,
         ?string $nextStep = null
     ): self {
+        $confirmLabel = self::translate('ai-engine::runtime.common.confirm_label', 'Confirm');
+        $yesLabel = self::translate('ai-engine::runtime.common.yes_label', 'Yes');
+        $noLabel = self::translate('ai-engine::runtime.common.no_label', 'No');
+        $yesValue = self::lexicon('intent.confirm', ['yes'])[0] ?? 'yes';
+        $noValue = self::lexicon('intent.reject', ['no'])[0] ?? 'no';
+
         return self::needsInputs(
             message: $message,
             inputs: [
                 [
                     'name' => 'confirmed',
                     'type' => 'confirm',
-                    'label' => 'Confirm',
+                    'label' => $confirmLabel,
                     'required' => true,
                 ],
             ],
             data: $data,
             actions: [
-                ['type' => 'button', 'label' => 'Yes', 'value' => 'yes'],
-                ['type' => 'button', 'label' => 'No', 'value' => 'no'],
+                ['type' => 'button', 'label' => $yesLabel, 'value' => $yesValue],
+                ['type' => 'button', 'label' => $noLabel, 'value' => $noValue],
             ],
             context: $context,
             nextStep: $nextStep
@@ -254,13 +261,15 @@ class AgentResponse
         ?UnifiedActionContext $context = null,
         ?string $nextStep = null
     ): self {
+        $selectLabel = self::translate('ai-engine::runtime.common.select_option', 'Select an option');
+
         return self::needsInputs(
             message: $message,
             inputs: [
                 [
                     'name' => 'selection',
                     'type' => 'select',
-                    'label' => 'Select an option',
+                    'label' => $selectLabel,
                     'required' => true,
                     'options' => $options,
                 ],
@@ -274,5 +283,24 @@ class AgentResponse
             context: $context,
             nextStep: $nextStep
         );
+    }
+
+    protected static function translate(string $key, string $fallback): string
+    {
+        try {
+            $translated = app(LocaleResourceService::class)->translation($key);
+            return $translated !== '' ? $translated : $fallback;
+        } catch (\Throwable) {
+            return $fallback;
+        }
+    }
+
+    protected static function lexicon(string $key, array $fallback = []): array
+    {
+        try {
+            return app(LocaleResourceService::class)->lexicon($key, default: $fallback);
+        } catch (\Throwable) {
+            return $fallback;
+        }
     }
 }

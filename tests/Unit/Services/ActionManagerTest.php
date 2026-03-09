@@ -128,7 +128,7 @@ class ActionManagerTest extends TestCase
 
         $this->assertInstanceOf(InteractiveAction::class, $action);
         $this->assertEquals('test', $action->id);
-        $this->assertEquals(ActionTypeEnum::BUTTON, $action->type);
+        $this->assertEquals(ActionTypeEnum::BUTTON, $action->type->value);
         $this->assertEquals('Test Button', $action->label);
     }
 

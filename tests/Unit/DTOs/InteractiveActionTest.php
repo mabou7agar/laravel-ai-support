@@ -13,7 +13,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::button('btn1', 'Click Me', ['test' => 'data']);
 
         $this->assertEquals('btn1', $action->id);
-        $this->assertEquals(ActionTypeEnum::BUTTON, $action->type);
+        $this->assertEquals(ActionTypeEnum::BUTTON, $action->type->value);
         $this->assertEquals('Click Me', $action->label);
         $this->assertEquals(['test' => 'data'], $action->data);
     }
@@ -23,7 +23,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::link('link1', 'Visit Site', 'https://example.com', 'External link', true);
 
         $this->assertEquals('link1', $action->id);
-        $this->assertEquals(ActionTypeEnum::LINK, $action->type);
+        $this->assertEquals(ActionTypeEnum::LINK, $action->type->value);
         $this->assertEquals('Visit Site', $action->label);
         $this->assertEquals('https://example.com', $action->data['url']);
         $this->assertTrue($action->data['external']);
@@ -40,7 +40,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::form('form1', 'Contact Form', $fields);
 
         $this->assertEquals('form1', $action->id);
-        $this->assertEquals(ActionTypeEnum::FORM, $action->type);
+        $this->assertEquals(ActionTypeEnum::FORM, $action->type->value);
         $this->assertEquals('Contact Form', $action->label);
         $this->assertEquals($fields, $action->data['fields']);
         $this->assertEquals('POST', $action->data['method']);
@@ -51,7 +51,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::quickReply('reply1', 'Yes', 'I agree with this');
 
         $this->assertEquals('reply1', $action->id);
-        $this->assertEquals(ActionTypeEnum::QUICK_REPLY, $action->type);
+        $this->assertEquals(ActionTypeEnum::QUICK_REPLY, $action->type->value);
         $this->assertEquals('Yes', $action->label);
         $this->assertEquals('I agree with this', $action->data['message']);
         $this->assertTrue($action->data['auto_send']);
@@ -62,7 +62,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::fileUpload('upload1', 'Upload Image', ['image/*'], 5242880, false);
 
         $this->assertEquals('upload1', $action->id);
-        $this->assertEquals(ActionTypeEnum::FILE_UPLOAD, $action->type);
+        $this->assertEquals(ActionTypeEnum::FILE_UPLOAD, $action->type->value);
         $this->assertEquals('Upload Image', $action->label);
         $this->assertEquals(['image/*'], $action->data['allowed_types']);
         $this->assertEquals(5242880, $action->data['max_size']);
@@ -74,7 +74,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::confirm('confirm1', 'Delete', 'Are you sure?', ['id' => 123]);
 
         $this->assertEquals('confirm1', $action->id);
-        $this->assertEquals(ActionTypeEnum::CONFIRM, $action->type);
+        $this->assertEquals(ActionTypeEnum::CONFIRM, $action->type->value);
         $this->assertEquals('Delete', $action->label);
         $this->assertEquals('Are you sure?', $action->confirmMessage);
         $this->assertEquals(['id' => 123], $action->data);
@@ -90,7 +90,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::menu('menu1', 'Select Option', $options);
 
         $this->assertEquals('menu1', $action->id);
-        $this->assertEquals(ActionTypeEnum::MENU, $action->type);
+        $this->assertEquals(ActionTypeEnum::MENU, $action->type->value);
         $this->assertEquals('Select Option', $action->label);
         $this->assertEquals($options, $action->data['options']);
         $this->assertFalse($action->data['multiple']);
@@ -106,7 +106,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::card('card1', 'Product Card', 'Description', 'image.jpg', $actions);
 
         $this->assertEquals('card1', $action->id);
-        $this->assertEquals(ActionTypeEnum::CARD, $action->type);
+        $this->assertEquals(ActionTypeEnum::CARD, $action->type->value);
         $this->assertEquals('Product Card', $action->label);
         $this->assertEquals('Product Card', $action->data['title']);
         $this->assertEquals('Description', $action->data['content']);
@@ -175,7 +175,7 @@ class InteractiveActionTest extends TestCase
         $action = InteractiveAction::fromArray($data);
 
         $this->assertEquals('btn1', $action->id);
-        $this->assertEquals(ActionTypeEnum::BUTTON, $action->type);
+        $this->assertEquals(ActionTypeEnum::BUTTON, $action->type->value);
         $this->assertEquals('Click Me', $action->label);
         $this->assertEquals('Test button', $action->description);
         $this->assertEquals(['test' => 'data'], $action->data);

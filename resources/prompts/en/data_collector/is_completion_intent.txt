@@ -1,0 +1,7 @@
+Analyze whether the user indicates they are done with modifications and ready to complete.
+
+User message: "{{message}}"
+
+Respond with only one token:
+- {{yes}} if they are done/finished/ready.
+- {{no}} if they want to continue modifying.

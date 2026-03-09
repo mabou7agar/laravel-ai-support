@@ -6,6 +6,7 @@ use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -16,8 +17,12 @@ use Illuminate\Support\Facades\Log;
 class ActionParameterExtractor
 {
     protected ?AIEngineService $aiService = null;
-    
-    public function __construct() {}
+    protected ?LocaleResourceService $localeResources = null;
+
+    public function __construct(?LocaleResourceService $localeResources = null)
+    {
+        $this->localeResources = $localeResources;
+    }
     
     /**
      * Lazy load AIEngineService to prevent circular dependency
@@ -62,6 +67,10 @@ class ActionParameterExtractor
         if ($extracted === null) {
             $extracted = $this->extractWithPrompt($message, $actionDefinition, $conversationContext);
         }
+
+        // Deterministic fallback for common fields when AI extraction is unavailable.
+        $heuristic = $this->extractHeuristically($message, $actionDefinition, $context);
+        $extracted = array_merge($heuristic, $extracted ?? []);
         
         // Smart merge: Move standalone fields into array structures where appropriate
         $extracted = $this->smartMergeParameters($extracted, $actionDefinition);
@@ -104,10 +113,17 @@ class ActionParameterExtractor
             $functionSchema = $modelClass::getFunctionSchema();
             
             $aiRequest = (new AIRequest(
-                prompt: "Extract data from: {$message}\n\nContext:\n{$context}",
+                prompt: $this->runtimeText(
+                    'ai-engine::runtime.action_parameter_extractor.function_call_prompt',
+                    '',
+                    ['message' => $message, 'context' => $context]
+                ),
                 engine: EngineEnum::from('openai'),
                 model: EntityEnum::from('gpt-4o-mini'),
-                systemPrompt: 'You are a data extraction assistant. Use the provided function to extract structured data.',
+                systemPrompt: $this->runtimeText(
+                    'ai-engine::runtime.action_parameter_extractor.function_call_system_prompt',
+                    ''
+                ),
                 maxTokens: 500
             ))->withFunctions([$functionSchema], ['name' => $functionSchema['name']]);
             
@@ -141,22 +157,23 @@ class ActionParameterExtractor
         array $actionDefinition,
         string $context
     ): array {
-        if (!$this->aiService) {
-            return [];
-        }
-        
         $prompt = $this->buildExtractionPrompt($message, $actionDefinition, $context);
         
         try {
+            $aiService = $this->getAIService();
+
             $aiRequest = new AIRequest(
                 prompt: $prompt,
                 engine: EngineEnum::from('openai'),
                 model: EntityEnum::from('gpt-4o-mini'),
-                systemPrompt: 'You are a data extraction assistant. Extract structured data and return it as JSON. CRITICAL: Extract ONLY values that are explicitly stated in the user\'s message. NEVER generate, infer, or substitute values from your training data or examples.',
+                systemPrompt: $this->runtimeText(
+                    'ai-engine::runtime.action_parameter_extractor.prompt_system_prompt',
+                    ''
+                ),
                 maxTokens: 800
             );
             
-            $response = $this->getAIService()->generate($aiRequest);
+            $response = $aiService->generate($aiRequest);
             $content = $response->getContent();
             
             // Extract JSON from response
@@ -201,76 +218,146 @@ class ActionParameterExtractor
         $modelName = $actionDefinition['label'] ?? 'item';
         $parameters = $actionDefinition['parameters'] ?? [];
         $fields = $parameters['fields'] ?? [];
-        
-        $prompt = "Extract data from the user's message for creating a {$modelName}.\n\n";
-        $prompt .= "Message: \"{$message}\"\n\n";
-        
-        if (!empty($context)) {
-            $prompt .= "Conversation Context:\n{$context}\n\n";
-        }
-        
-        // Add field descriptions
-        if (!empty($fields)) {
-            $prompt .= "Available fields with descriptions:\n";
-            foreach ($fields as $fieldName => $fieldInfo) {
-                $description = is_array($fieldInfo) ? ($fieldInfo['description'] ?? $fieldName) : $fieldInfo;
-                $type = is_array($fieldInfo) ? ($fieldInfo['type'] ?? 'string') : 'string';
-                $required = is_array($fieldInfo) ? ($fieldInfo['required'] ?? false) : false;
-                $requiredLabel = $required ? ' (REQUIRED)' : ' (optional)';
-                
-                $prompt .= "- {$fieldName} ({$type}){$requiredLabel}: {$description}\n";
-                
-                // Add item structure details for array fields
-                if ($type === 'array' && isset($fieldInfo['item_structure'])) {
-                    $prompt .= "  Structure for each {$fieldName} item:\n";
-                    foreach ($fieldInfo['item_structure'] as $itemField => $itemFieldInfo) {
-                        $itemDesc = is_array($itemFieldInfo) ? ($itemFieldInfo['description'] ?? $itemField) : $itemFieldInfo;
-                        $itemType = is_array($itemFieldInfo) ? ($itemFieldInfo['type'] ?? 'string') : 'string';
-                        $itemRequired = is_array($itemFieldInfo) ? ($itemFieldInfo['required'] ?? false) : false;
-                        $itemReqLabel = $itemRequired ? ' (required)' : ' (optional)';
-                        $prompt .= "    * {$itemField} ({$itemType}){$itemReqLabel}: {$itemDesc}\n";
-                    }
-                    
-                    // Add examples if available
-                    if (isset($fieldInfo['examples']) && !empty($fieldInfo['examples'])) {
-                        $prompt .= "  Example {$fieldName}:\n";
-                        $prompt .= "    " . json_encode($fieldInfo['examples'][0], JSON_UNESCAPED_SLASHES) . "\n";
-                    }
-                }
-            }
-            $prompt .= "\n";
-        } else {
+
+        $fieldsBlock = $this->buildFieldsBlock($fields);
+        $fallbackFieldsLine = '';
+        if ($fieldsBlock === '') {
             $allFields = array_merge(
                 $actionDefinition['required_params'] ?? [],
                 $actionDefinition['optional_params'] ?? []
             );
-            if (!empty($allFields)) {
-                $prompt .= "Fields to extract: " . implode(', ', $allFields) . "\n\n";
+            if ($allFields !== []) {
+                $fallbackFieldsLine = $this->runtimeText(
+                    'ai-engine::runtime.action_parameter_extractor.fields_to_extract_line',
+                    '',
+                    ['fields' => implode(', ', $allFields)]
+                );
             }
         }
-        
-        // Add extraction hints
+
         $extractionHints = $parameters['extraction_hints'] ?? [];
-        if (!empty($extractionHints)) {
-            $prompt .= "Extraction Guidelines:\n";
-            foreach ($extractionHints as $field => $hints) {
-                $prompt .= "- {$field}: {$hints}\n";
-            }
-            $prompt .= "\n";
+        $extractionHintsBlock = $this->buildExtractionHintsBlock($extractionHints);
+
+        return $this->renderPromptTemplate(
+            'action_parameter_extractor/extraction_prompt',
+            [
+                'model_name' => (string) $modelName,
+                'message' => $message,
+                'conversation_context' => $context,
+                'fields_block' => $fieldsBlock,
+                'fallback_fields_line' => $fallbackFieldsLine,
+                'extraction_hints_block' => $extractionHintsBlock,
+            ],
+            $this->runtimeText(
+                'ai-engine::runtime.action_parameter_extractor.prompt_fallback',
+                '',
+                ['model_name' => (string) $modelName, 'message' => $message]
+            )
+        );
+    }
+
+    protected function buildFieldsBlock(array $fields): string
+    {
+        if ($fields === []) {
+            return '';
         }
-        
-        $prompt .= "CRITICAL INSTRUCTIONS:\n";
-        $prompt .= "- Extract ONLY values explicitly stated in the user's message\n";
-        $prompt .= "- NEVER generate, infer, or substitute values from your training data\n";
-        $prompt .= "- If a value is not in the message, omit that field from the JSON\n";
-        $prompt .= "- Use the EXACT names, values, and details the user provided\n";
-        $prompt .= "- For array fields (like 'items'), extract ALL mentioned items into an array\n";
-        $prompt .= "- When user mentions products/items with details (name, price, quantity), create proper array structure\n";
-        $prompt .= "- Example: 'Product Google Pixel quantity 50 price 500' → {\"items\": [{\"item\": \"Google Pixel\", \"quantity\": 50, \"price\": 500}]}\n\n";
-        $prompt .= "Return ONLY a JSON object with the extracted fields.\n";
-        $prompt .= "Example format: {\"field1\": \"value1\", \"field2\": \"value2\"}";
-        
-        return $prompt;
+
+        $requiredLabel = $this->runtimeText('ai-engine::runtime.action_parameter_extractor.required_label');
+        $optionalLabel = $this->runtimeText('ai-engine::runtime.action_parameter_extractor.optional_label');
+        $itemStructureHeader = $this->runtimeText('ai-engine::runtime.action_parameter_extractor.item_structure_header');
+        $exampleHeader = $this->runtimeText('ai-engine::runtime.action_parameter_extractor.example_header');
+
+        $lines = [];
+        foreach ($fields as $fieldName => $fieldInfo) {
+            $description = is_array($fieldInfo) ? ($fieldInfo['description'] ?? $fieldName) : $fieldInfo;
+            $type = is_array($fieldInfo) ? ($fieldInfo['type'] ?? 'string') : 'string';
+            $required = is_array($fieldInfo) ? ($fieldInfo['required'] ?? false) : false;
+            $requiredSuffix = $required ? " {$requiredLabel}" : " {$optionalLabel}";
+
+            $lines[] = "- {$fieldName} ({$type}){$requiredSuffix}: {$description}";
+
+            if ($type === 'array' && isset($fieldInfo['item_structure']) && is_array($fieldInfo['item_structure'])) {
+                $lines[] = "  {$itemStructureHeader} {$fieldName}:";
+                foreach ($fieldInfo['item_structure'] as $itemField => $itemFieldInfo) {
+                    $itemDesc = is_array($itemFieldInfo) ? ($itemFieldInfo['description'] ?? $itemField) : $itemFieldInfo;
+                    $itemType = is_array($itemFieldInfo) ? ($itemFieldInfo['type'] ?? 'string') : 'string';
+                    $itemRequired = is_array($itemFieldInfo) ? ($itemFieldInfo['required'] ?? false) : false;
+                    $itemReqSuffix = $itemRequired ? " {$requiredLabel}" : " {$optionalLabel}";
+                    $lines[] = "    * {$itemField} ({$itemType}){$itemReqSuffix}: {$itemDesc}";
+                }
+
+                if (isset($fieldInfo['examples']) && is_array($fieldInfo['examples']) && !empty($fieldInfo['examples'])) {
+                    $lines[] = "  {$exampleHeader} {$fieldName}:";
+                    $lines[] = '    ' . json_encode($fieldInfo['examples'][0], JSON_UNESCAPED_SLASHES);
+                }
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    protected function buildExtractionHintsBlock(array $extractionHints): string
+    {
+        if ($extractionHints === []) {
+            return '';
+        }
+
+        $lines = [];
+        foreach ($extractionHints as $field => $hints) {
+            $lines[] = "- {$field}: {$hints}";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    protected function renderPromptTemplate(string $template, array $replace, string $fallback): string
+    {
+        $rendered = $this->locale()->renderPromptTemplate($template, $replace, $this->localeCode());
+        return $rendered !== '' ? $rendered : $fallback;
+    }
+
+    protected function runtimeText(string $key, string $fallback = '', array $replace = []): string
+    {
+        $locale = $this->localeCode();
+        $translated = $this->locale()->translation($key, $replace, $locale);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        $fallbackLocale = $this->locale()->resolveLocale(
+            (string) (config('ai-engine.localization.fallback_locale') ?: config('app.fallback_locale') ?: app()->getLocale())
+        );
+        if ($fallbackLocale !== $locale) {
+            $translated = $this->locale()->translation($key, $replace, $fallbackLocale);
+            if ($translated !== '') {
+                return $translated;
+            }
+        }
+
+        if ($fallback === '') {
+            return '';
+        }
+
+        $fallbackReplace = [];
+        foreach ($replace as $name => $value) {
+            $fallbackReplace[':' . $name] = (string) $value;
+        }
+
+        return strtr($fallback, $fallbackReplace);
+    }
+
+    protected function localeCode(): string
+    {
+        return $this->locale()->resolveLocale(app()->getLocale());
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
     
     /**
@@ -343,6 +430,86 @@ class ActionParameterExtractor
         }
         
         return $contextStr;
+    }
+
+    protected function extractHeuristically(string $message, array $actionDefinition, array $context): array
+    {
+        $fields = array_values(array_unique(array_merge(
+            $actionDefinition['required_params'] ?? [],
+            $actionDefinition['optional_params'] ?? []
+        )));
+
+        if (empty($fields)) {
+            return [];
+        }
+
+        $data = [];
+        $history = $context['conversation_history'] ?? [];
+
+        foreach ($fields as $field) {
+            $fieldKey = strtolower((string) $field);
+
+            if (!isset($data[$field]) && str_contains($fieldKey, 'price')) {
+                $price = $this->extractPriceValue($message);
+                if ($price === null) {
+                    foreach (array_reverse($history) as $msg) {
+                        $price = $this->extractPriceValue((string) ($msg['content'] ?? ''));
+                        if ($price !== null) {
+                            break;
+                        }
+                    }
+                }
+                if ($price !== null) {
+                    $data[$field] = $price;
+                }
+            }
+
+            if (!isset($data[$field]) && str_contains($fieldKey, 'name')) {
+                $name = $this->extractNameValue($message);
+                if ($name === null) {
+                    foreach (array_reverse($history) as $msg) {
+                        if (($msg['role'] ?? 'user') !== 'user') {
+                            continue;
+                        }
+                        $name = $this->extractNameValue((string) ($msg['content'] ?? ''));
+                        if ($name !== null) {
+                            break;
+                        }
+                    }
+                }
+                if ($name !== null) {
+                    $data[$field] = $name;
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    protected function extractPriceValue(string $text): ?float
+    {
+        if (preg_match('/(?:\\$|usd\\s*)\\s*(\\d+(?:\\.\\d+)?)/i', $text, $matches)) {
+            return (float) $matches[1];
+        }
+
+        if (preg_match('/\\bfor\\s+(\\d+(?:\\.\\d+)?)\\b/i', $text, $matches)) {
+            return (float) $matches[1];
+        }
+
+        return null;
+    }
+
+    protected function extractNameValue(string $text): ?string
+    {
+        if (preg_match('/\\b(?:called|named)\\s+([\\w\\-\\s]+?)(?:\\s+for\\b|\\s+at\\b|[\\.,!?]|$)/i', $text, $matches)) {
+            return trim($matches[1]);
+        }
+
+        if (preg_match('/\\b(?:an|a)\\s+([\\w\\-\\s]{2,})$/i', trim($text), $matches)) {
+            return trim($matches[1]);
+        }
+
+        return null;
     }
     
     /**
@@ -557,6 +724,10 @@ class ActionParameterExtractor
             (($extractedCount - $requiredExtracted) / ($totalFields - $requiredCount)) : 0.0;
         
         $confidence = ($requiredScore * $requiredWeight) + ($optionalScore * $optionalWeight);
+
+        if ($requiredCount > 0 && $requiredExtracted === $requiredCount) {
+            $confidence = max($confidence, 0.8);
+        }
         
         return round($confidence, 2);
     }

@@ -62,12 +62,12 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::BUTTON,
-            $label,
-            $description,
-            $data,
-            $style
+            id: $id,
+            type: ActionTypeEnum::from(ActionTypeEnum::BUTTON),
+            label: $label,
+            description: $description,
+            data: $data,
+            style: $style
         );
     }
 
@@ -83,16 +83,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::LINK,
-            $label,
-            $description,
-            [
+            id: $id,
+            type: ActionTypeEnum::from(ActionTypeEnum::LINK),
+            label: $label,
+            description: $description,
+            data: [
                 'url' => $url,
                 'external' => $external,
                 'target' => $external ? '_blank' : '_self'
             ],
-            $style
+            style: $style
         );
     }
 
@@ -108,16 +108,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::FORM,
-            $label,
-            $description,
-            [
+            id: $id,
+            type: ActionTypeEnum::from(ActionTypeEnum::FORM),
+            label: $label,
+            description: $description,
+            data: [
                 'fields' => $fields,
                 'method' => 'POST'
             ],
-            $style,
-            $validation
+            style: $style,
+            validation: $validation
         );
     }
 
@@ -132,15 +132,15 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::from(ActionTypeEnum::QUICK_REPLY),
-            $label,
-            $description,
-            [
+            id: $id,
+            type: ActionTypeEnum::from(ActionTypeEnum::QUICK_REPLY),
+            label: $label,
+            description: $description,
+            data: [
                 'message' => $message,
                 'auto_send' => true
             ],
-            $style
+            style: $style
         );
     }
 
@@ -157,16 +157,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::FILE_UPLOAD,
-            $label,
-            $description,
-            [
+            id: $id,
+            type: ActionTypeEnum::from(ActionTypeEnum::FILE_UPLOAD),
+            label: $label,
+            description: $description,
+            data: [
                 'allowed_types' => $allowedTypes,
                 'max_size' => $maxSize,
                 'multiple' => $multiple
             ],
-            $style
+            style: $style
         );
     }
 
@@ -182,13 +182,13 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::CONFIRM,
-            $label,
-            $description,
-            $data,
-            $style,
-            $confirmMessage
+            id: $id,
+            type: ActionTypeEnum::from(ActionTypeEnum::CONFIRM),
+            label: $label,
+            description: $description,
+            data: $data,
+            style: $style,
+            confirmMessage: $confirmMessage
         );
     }
 
@@ -203,15 +203,15 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::MENU,
-            $label,
-            $description,
-            [
+            id: $id,
+            type: ActionTypeEnum::from(ActionTypeEnum::MENU),
+            label: $label,
+            description: $description,
+            data: [
                 'options' => $options,
                 'multiple' => false
             ],
-            $style
+            style: $style
         );
     }
 
@@ -227,16 +227,16 @@ class InteractiveAction
         array $style = []
     ): self {
         return new self(
-            $id,
-            ActionTypeEnum::CARD,
-            $title,
-            [
+            id: $id,
+            type: ActionTypeEnum::from(ActionTypeEnum::CARD),
+            label: $title,
+            data: [
                 'title' => $title,
                 'content' => $content,
                 'image_url' => $imageUrl,
                 'actions' => $actions
             ],
-            $style
+            style: $style
         );
     }
 

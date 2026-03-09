@@ -3,8 +3,9 @@
 namespace LaravelAIEngine\Tests;
 
 use Orchestra\Testbench\TestCase as Orchestra;
-use LaravelAIEngine\LaravelAIEngineServiceProvider;
+use LaravelAIEngine\AIEngineServiceProvider;
 use LaravelAIEngine\Tests\Models\User;
+use LaravelAIEngine\Tests\Support\Stubs\Product as ProductStub;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 
@@ -16,6 +17,10 @@ abstract class TestCase extends Orchestra
     {
         parent::setUp();
 
+        if (!class_exists(\App\Models\Product::class)) {
+            class_alias(ProductStub::class, \App\Models\Product::class);
+        }
+
         $this->setUpConfig();
         $this->setUpDatabase();
     }
@@ -23,7 +28,7 @@ abstract class TestCase extends Orchestra
     protected function getPackageProviders($app): array
     {
         return [
-            LaravelAIEngineServiceProvider::class,
+            AIEngineServiceProvider::class,
         ];
     }
 
@@ -39,9 +44,11 @@ abstract class TestCase extends Orchestra
 
         // Set up cache for testing
         $app['config']->set('cache.default', 'array');
-        
+
         // Set up queue for testing
         $app['config']->set('queue.default', 'sync');
+        $app['config']->set('ai-engine.nodes.enabled', false);
+        $app['config']->set('ai-engine.nodes.jwt.secret', 'test-jwt-secret');
     }
 
     protected function setUpConfig(): void
@@ -51,6 +58,10 @@ abstract class TestCase extends Orchestra
         Config::set('ai-engine.credits.default_balance', 100.0);
         Config::set('ai-engine.cache.enabled', true);
         Config::set('ai-engine.webhooks.enabled', false);
+        Config::set('ai-engine.nodes.enabled', false);
+        Config::set('ai-engine.nodes.jwt.secret', 'test-jwt-secret');
+        Config::set('ai-engine.infrastructure.startup_health_gate.enabled', false);
+        Config::set('ai-engine.infrastructure.qdrant_self_check.enabled', false);
         Config::set('ai-engine.user_model', User::class);
         
         // Set test API keys

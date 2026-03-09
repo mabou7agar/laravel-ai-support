@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\AuthController;
+use LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware;
+use LaravelAIEngine\Http\Middleware\StandardizeApiResponseMiddleware;
 
 /*
 |--------------------------------------------------------------------------
@@ -13,7 +15,7 @@ use LaravelAIEngine\Http\Controllers\AuthController;
 |
 */
 
-Route::prefix('api/auth')->group(function () {
+Route::prefix('api/auth')->middleware([SetRequestLocaleMiddleware::class, StandardizeApiResponseMiddleware::class])->group(function () {
     // Generate token (public)
     Route::post('/token', [AuthController::class, 'generateToken'])
         ->name('ai-engine.auth.token');

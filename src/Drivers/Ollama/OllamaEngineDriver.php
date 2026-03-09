@@ -113,7 +113,7 @@ class OllamaEngineDriver extends BaseEngineDriver
     /**
      * Generate embeddings using Ollama
      */
-    protected function generateEmbeddings(AIRequest $request): AIResponse
+    public function generateEmbeddings(AIRequest $request): AIResponse
     {
         try {
             $payload = [
@@ -153,7 +153,7 @@ class OllamaEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::OLLAMA);
+        return $this->getEngineEnum();
     }
 
     /**
@@ -336,9 +336,9 @@ class OllamaEngineDriver extends BaseEngineDriver
     /**
      * Get API key (Ollama doesn't require one by default)
      */
-    protected function getApiKey(): ?string
+    protected function getApiKey(): string
     {
-        return $this->config['api_key'] ?? null;
+        return (string) ($this->config['api_key'] ?? '');
     }
 
     /**
@@ -399,5 +399,15 @@ class OllamaEngineDriver extends BaseEngineDriver
             // Use default localhost
             $this->config['base_url'] = 'http://localhost:11434';
         }
+    }
+
+    protected function getEngineEnum(): EngineEnum
+    {
+        return new EngineEnum(EngineEnum::OLLAMA);
+    }
+
+    protected function getDefaultModel(): EntityEnum
+    {
+        return new EntityEnum(EntityEnum::OLLAMA_LLAMA3);
     }
 }

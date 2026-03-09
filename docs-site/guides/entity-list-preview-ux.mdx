@@ -1,0 +1,77 @@
+---
+title: Entity List Preview UX
+description: Build clean, scan-friendly list responses without hardcoded formatting logic.
+---
+
+## Why This Exists
+
+By default, list responses can become noisy when they fall back to full model content.  
+To keep chat output clean, model-level preview hooks are supported.
+
+## Rendering Priority
+
+When the agent returns multiple rows for a model query, rendering order is:
+
+1. `toRAGListPreview(?string $locale = null)` (best for user-facing list cards)
+2. summary service output from `toAISummarySource()`
+3. `toRAGContent()`
+4. `__toString()` / JSON fallback
+
+This gives you strict control over list readability while keeping fallback behavior safe.
+
+## Recommended Model Methods
+
+Implement both methods on high-traffic models:
+
+```php
+public function toAISummarySource(): string
+{
+    return "Invoice #{$this->invoice_id} | {$this->status} | Total {$this->total}";
+}
+
+public function toRAGListPreview(?string $locale = null): string
+{
+    return "Invoice #{$this->invoice_id} | {$this->status} | Total {$this->total}\n"
+        . "Customer: {$this->customer?->name}\n"
+        . "Dates: {$this->issue_date} -> {$this->due_date}";
+}
+```
+
+## Output Pattern That Scans Well
+
+Use 3-4 short lines per item:
+
+- identity + status + total
+- primary relation (customer/user/vendor)
+- key dates
+- optional item summary/count
+
+Avoid long sentence paragraphs in list previews.
+
+## Common "Summary Not Visible" Causes
+
+- model does not implement `toRAGListPreview()`
+- cached old package/config after upgrade
+- list rendering disabled via config
+
+After upgrade:
+
+```bash
+php artisan optimize:clear
+```
+
+## Related Config
+
+Entity summary settings:
+
+```env
+AI_ENGINE_ENTITY_SUMMARIES_ENABLED=true
+AI_ENGINE_ENTITY_SUMMARIES_USE_IN_LIST=true
+AI_ENGINE_ENTITY_SUMMARIES_DEFAULT_LOCALE=en
+AI_ENGINE_ENTITY_SUMMARIES_TTL_MINUTES=10080
+```
+
+## Best Practice
+
+Keep preview formatting on the model/domain side, not hardcoded in global orchestrator logic.  
+This keeps the package generic while allowing each app to define UX per entity.

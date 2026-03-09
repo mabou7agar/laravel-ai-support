@@ -608,7 +608,7 @@ class AIEngineManager
         array $parameters = [],
         ?string $userId = null
     ): AIRequest {
-        $engineEnum = EngineEnum::fromSlug($engine ?? config('ai-engine.default_engine', 'openai'));
+        $engineEnum = EngineEnum::fromSlug($engine ?? config('ai-engine.default', config('ai-engine.default_engine', 'openai')));
         $modelEnum = EntityEnum::fromSlug($model ?? config('ai-engine.default_model', 'gpt-4o'));
 
         $params = $parameters;

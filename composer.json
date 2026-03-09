@@ -1,6 +1,6 @@
 {
     "name": "m-tech-stack/laravel-ai-engine",
-    "description": "Laravel AI Engine with RAG (Retrieval-Augmented Generation), clickable option cards, source citations, and embeddable chat widget. Supports OpenAI, Anthropic, Google Gemini, and more.",
+    "description": "Laravel AI agent engine for orchestration, structured tools, RAG, and deterministic node federation across Laravel apps.",
     "type": "library",
     "license": "MIT",
     "keywords": [
@@ -14,20 +14,14 @@
         "rag",
         "retrieval-augmented-generation",
         "vector-search",
+        "agent",
+        "orchestration",
+        "tool-execution",
+        "node-federation",
         "openai",
         "anthropic",
         "gemini",
-        "gpt-4",
-        "claude",
-        "chat",
-        "chatbot",
-        "option-cards",
-        "source-citations",
-        "embeddable-widget",
-        "blade-component",
-        "streaming",
-        "websocket",
-        "real-time"
+        "chat"
     ],
     "authors": [
         {

@@ -1,0 +1,72 @@
+---
+title: Configuration
+description: Minimal config that gives stable production behavior.
+---
+
+## Principle
+
+Set only what you need. Keep defaults unless you have a concrete reason.
+
+## Baseline Production Profile
+
+```env
+AI_ENGINE_DEFAULT=openai
+AI_ENGINE_DEFAULT_MODEL=gpt-4o
+AI_ORCHESTRATION_MODEL=gpt-4o-mini
+
+AI_ENGINE_STANDARDIZE_API_RESPONSES=true
+AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY=true
+
+AI_ENGINE_LOCALIZATION_ENABLED=true
+AI_ENGINE_SUPPORTED_LOCALES=en,ar
+AI_ENGINE_FALLBACK_LOCALE=en
+AI_ENGINE_INJECT_USER_CONTEXT=true
+
+AI_ENGINE_REMOTE_NODE_MIGRATION_GUARD=true
+AI_ENGINE_QDRANT_SELF_CHECK_ENABLED=true
+AI_ENGINE_STARTUP_HEALTH_GATE_ENABLED=true
+```
+
+## Multi-App Federation Profile
+
+```env
+AI_ENGINE_NODES_ENABLED=true
+AI_ENGINE_IS_MASTER=true
+AI_ENGINE_NODE_JWT_SECRET=shared_secret
+```
+
+For child apps:
+
+```env
+AI_ENGINE_NODES_ENABLED=true
+AI_ENGINE_IS_MASTER=false
+AI_ENGINE_MASTER_URL=https://ai.test
+AI_ENGINE_NODE_JWT_SECRET=shared_secret
+```
+
+## Admin Profile
+
+```env
+AI_ENGINE_ENABLE_ADMIN_UI=true
+AI_ENGINE_ADMIN_PREFIX=ai-engine/admin
+AI_ENGINE_ADMIN_ALLOWED_USER_IDS=1
+AI_ENGINE_ADMIN_ALLOWED_EMAILS=admin@example.com
+AI_ENGINE_ADMIN_ALLOWED_IPS=127.0.0.1,::1
+```
+
+## Config Refresh After Changes
+
+```bash
+php artisan optimize:clear
+```
+
+## Keep Config Minimal
+
+You usually do **not** need to override most options.
+
+Only set env values when you need to change behavior from defaults, especially for:
+
+- provider/model selection
+- federation mode (master vs child)
+- admin access restrictions
+- API envelope compatibility during migration

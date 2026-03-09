@@ -11,7 +11,7 @@ class UnifiedActionContext
 
     public function __construct(
         public string $sessionId,
-        public $userId,
+        public $userId = null,
         public array $conversationHistory = [],
         public ?array $pendingAction = null,
         public ?array $dataCollectorState = null,

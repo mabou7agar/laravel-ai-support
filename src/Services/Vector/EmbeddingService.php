@@ -15,6 +15,7 @@ class EmbeddingService
     protected int $dimensions;
     protected bool $cacheEnabled;
     protected int $cacheTtl;
+    protected bool $useFakeEmbeddings;
 
     public function __construct(
         OpenAIClient $client,
@@ -26,6 +27,10 @@ class EmbeddingService
         $this->dimensions = $this->getDimensionsForModel($this->model);
         $this->cacheEnabled = config('ai-engine.vector.cache_embeddings', true);
         $this->cacheTtl = config('ai-engine.vector.cache_ttl', 86400); // 24 hours
+        $this->useFakeEmbeddings = (bool) config(
+            'ai-engine.vector.testing.use_fake_embeddings',
+            env('AI_ENGINE_USE_FAKE_EMBEDDINGS', false)
+        );
     }
 
     /**
@@ -70,6 +75,10 @@ class EmbeddingService
     {
         if (empty(trim($text))) {
             throw new \InvalidArgumentException('Text cannot be empty');
+        }
+
+        if ($this->useFakeEmbeddings) {
+            return $this->buildDeterministicEmbedding($text);
         }
 
         // Check cache
@@ -388,6 +397,47 @@ class EmbeddingService
     public function getDimensions(): int
     {
         return $this->dimensions;
+    }
+
+    /**
+     * Build deterministic local embeddings for offline testing.
+     * This keeps vector dimensions stable without external API calls.
+     */
+    protected function buildDeterministicEmbedding(string $text): array
+    {
+        $vector = array_fill(0, $this->dimensions, 0.0);
+        $tokens = preg_split('/[^a-z0-9]+/i', strtolower($text)) ?: [];
+
+        foreach ($tokens as $token) {
+            if ($token === '') {
+                continue;
+            }
+
+            // Hashing trick: same tokens map to same dimensions across documents/queries.
+            $hash = (int) sprintf('%u', crc32($token));
+            $index = $hash % $this->dimensions;
+            $sign = ((int) hexdec(substr(sha1($token), 0, 2)) % 2 === 0) ? 1.0 : -1.0;
+            $vector[$index] += $sign;
+        }
+
+        // Tiny deterministic bias to avoid all-zero vectors on empty/noisy input.
+        if (array_sum(array_map('abs', $vector)) === 0.0) {
+            $seed = hash('sha256', $text);
+            for ($i = 0; $i < min(16, $this->dimensions); $i++) {
+                $chunk = substr(hash('sha256', $seed . ':' . $i), 0, 8);
+                $vector[$i] = (hexdec($chunk) / 0xFFFFFFFF) * 2 - 1;
+            }
+        }
+
+        // L2 normalize for cosine distance compatibility.
+        $norm = sqrt(array_sum(array_map(static fn (float $x): float => $x * $x, $vector)));
+        if ($norm > 0.0) {
+            foreach ($vector as $i => $value) {
+                $vector[$i] = $value / $norm;
+            }
+        }
+
+        return $vector;
     }
 
     /**

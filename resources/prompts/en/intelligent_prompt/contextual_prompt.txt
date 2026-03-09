@@ -1,0 +1,8 @@
+CONTEXT:
+- User Intent: {{intent}}
+- Message: "{{message}}"
+- Currently asking for: '{{asking_for}}'
+- Already collected: {{collected_keys}}
+
+RULES:
+{{intent_rules}}

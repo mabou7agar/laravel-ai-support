@@ -1,0 +1,208 @@
+---
+title: Troubleshooting
+description: Fast diagnosis for common production issues.
+---
+
+## 1) Admin UI returns 404
+
+Check:
+
+- `AI_ENGINE_ENABLE_ADMIN_UI=true`
+- route prefix value
+- cache cleared (`php artisan optimize:clear`)
+
+## 2) Child node commands blocked as master-only
+
+Expected for child apps.
+
+`ai-engine:node-*` registry commands should run on master only.
+
+## 3) Follow-up answers keep re-listing results
+
+Check:
+
+- selected entity/session context persistence
+- decision policy feedback reports
+- over-aggressive fallback behavior
+
+Run:
+
+```bash
+php artisan ai-engine:decision-feedback:report --json
+```
+
+## 4) Remote routing fails
+
+Check:
+
+- master/child JWT secret match
+- child health endpoint reachable
+- node status active
+- node URL is the real child URL (not stale localhost port)
+
+Run:
+
+```bash
+php artisan ai-engine:node-ping --all
+php artisan ai-engine:node-list
+php artisan ai-engine:node-update inbusiness --url="https://dash.test"
+```
+
+## 5) RAG search quality poor
+
+Check:
+
+- model indexing freshness
+- embedding model consistency
+- noisy fields included in vectors
+
+Run:
+
+```bash
+php artisan ai-engine:vector-status
+php artisan ai-engine:vector-index "App\\Models\\Invoice" --with-relationships
+```
+
+## 6) Arabic request returns English fallback text
+
+Check:
+
+- `AI_ENGINE_DETECT_LOCALE_FROM_MESSAGE=true`
+- localization middleware is enabled
+- `X-Locale` is forwarded to child nodes
+
+Quick verify:
+
+```bash
+curl https://middleware.test/ai-demo/chat/send \
+  -H "Accept-Language: en-US,en;q=0.9,ar;q=0.8" \
+  -H "Content-Type: application/json" \
+  --data '{"message":"هل يوجد ادي فواتير","session_id":"test"}'
+```
+
+Expected: Arabic message for translated fallback errors.
+
+## 7) "Invoices" query resolves to bill (or wrong model)
+
+Check:
+
+- locale lexicon aliases under `entities.aliases` for both models
+- ambiguous terms are not duplicated across conflicting models
+- user placeholder tokens are in `user.current_placeholders`
+- `INTELLIGENT_RAG_DECISION_LANGUAGE_MODE` is set correctly (`hybrid` or `strict` for stronger deterministic routing)
+
+After lexicon changes:
+
+```bash
+php artisan optimize:clear
+```
+
+Then retest with a fresh `session_id`.
+
+## 8) "I found the invoice but couldn't retrieve its details"
+
+Root cause is usually stale runtime code (PHP-FPM still serving old class opcode) or missing selected context.
+
+Check:
+
+- package is symlinked (`composer path repository`, not stale vendor copy)
+- positional follow-up stores `selected_entity_context`
+- hidden `selection_map` exists for the session
+
+Run:
+
+```bash
+php artisan optimize:clear
+brew services restart php@8.2
+```
+
+Then retest:
+
+1. list invoices
+2. ask `more info about 1`
+
+Expected: details for invoice `#1`, not a generic failure.
+
+## 9) Follow-up detail query returns "couldn't complete data lookup"
+
+This can happen when AI selects `answer_from_context` without an explicit answer payload.
+
+Current behavior:
+
+- engine auto-falls back to selected-entity `db_query` (`model + id`)
+- if model is remote-only, it routes to the owning node
+
+If still failing, verify node reachability and auth headers:
+
+```bash
+php artisan ai-engine:node-ping --all
+```
+
+## 10) List responses are too verbose (want compact summaries)
+
+Enable polymorphic summary cache:
+
+```env
+AI_ENGINE_ENTITY_SUMMARIES_ENABLED=true
+AI_ENGINE_ENTITY_SUMMARIES_USE_IN_LIST=true
+```
+
+Then run migrations and clear cache:
+
+```bash
+php artisan migrate
+php artisan optimize:clear
+```
+
+For best UX, implement model hooks:
+
+- `toAISummarySource()` for compact cached summary text
+- `toRAGListPreview()` for multi-line list card layout
+
+## 11) Routed node loses context on clarification replies
+
+Symptom:
+
+- you confirm an action on a remote node
+- then reply with a clarification (for example product details)
+- orchestrator drops remote routing and answers conversationally
+
+Fix in latest package:
+
+- routed node sessions now stay sticky for likely answers to the last assistant question
+- context-shift prompt now defaults to `RELATED` when uncertain
+- remote pending workflow state is tracked in context (`remote_pending_action`, `pending_action`) so clarifications resume the same create flow
+
+If behavior still looks old:
+
+```bash
+php artisan optimize:clear
+```
+
+and ensure the consumer app is using the local updated package path.
+
+## 12) Customer search misses existing records in invoice collector
+
+Symptom:
+
+- `find_customer` says no match even though customer exists
+- often happens in multi-workspace setups
+
+Cause:
+
+- collector tool workspace context can be stale when config is cached
+
+Fix:
+
+- resolve workspace at tool execution time (not only at config build time)
+- add fallback lookup across default workspace/global scope
+- normalize query input before search
+
+## 13) Confirmation summary is too technical (IDs/null fields)
+
+Fix in latest package:
+
+- summary now hides empty fields (`null`, empty strings)
+- hides redundant `*_user_id` when main entity is already present
+- uses friendly item formatting (`Name × Qty @ Unit = Total`)
+- enriches entity labels from resolver/tool results when available

@@ -276,16 +276,10 @@ class JobStatusTracker
      */
     private function hasJobStatusTable(): bool
     {
-        static $hasTable = null;
-        
-        if ($hasTable === null) {
-            try {
-                $hasTable = DB::getSchemaBuilder()->hasTable('ai_job_statuses');
-            } catch (\Exception $e) {
-                $hasTable = false;
-            }
+        try {
+            return DB::getSchemaBuilder()->hasTable('ai_job_statuses');
+        } catch (\Exception $e) {
+            return false;
         }
-        
-        return $hasTable;
     }
 }

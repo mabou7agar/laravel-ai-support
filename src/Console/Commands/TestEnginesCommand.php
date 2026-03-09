@@ -36,7 +36,7 @@ class TestEnginesCommand extends Command
         if ($engineFilter) {
             try {
                 $engines = [EngineEnum::from($engineFilter)];
-            } catch (\ValueError $e) {
+            } catch (\Throwable $e) {
                 $this->error("❌ Invalid engine: {$engineFilter}");
                 $this->line("Available engines: " . implode(', ', array_map(fn($e) => $e->value, EngineEnum::cases())));
                 return self::FAILURE;
@@ -117,10 +117,16 @@ class TestEnginesCommand extends Command
 
     private function getModelsForEngine(EngineEnum $engine, ?string $modelFilter, bool $quick = false): array
     {
-        $allModels = array_filter(EntityEnum::cases(), fn($model) => $model->engine() === $engine);
+        $allModels = array_values(array_filter(
+            EntityEnum::cases(),
+            fn (EntityEnum $model) => $model->engine()->value === $engine->value
+        ));
 
         if ($modelFilter) {
-            $allModels = array_filter($allModels, fn($model) => $model->value === $modelFilter);
+            $allModels = array_values(array_filter(
+                $allModels,
+                fn (EntityEnum $model) => $model->value === $modelFilter
+            ));
         }
 
         // Limit models for quick testing

@@ -1,0 +1,13 @@
+Classify this message into exactly one category.
+Message: "{{message}}"
+{{context_block}}
+
+Categories:
+- confirmation: user agrees/confirms/approves
+- rejection: user disagrees/cancels/rejects
+- modification: user wants to change/update something
+- data: user is providing data/information
+- question: user is asking a question
+- other: none of the above
+
+Respond with ONLY the category name.

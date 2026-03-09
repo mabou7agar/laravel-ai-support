@@ -75,7 +75,7 @@ class QuickReplyActionHandler implements ActionHandlerInterface
      */
     public function supports(string $actionType): bool
     {
-        return $actionType === ActionTypeEnum::QUICK_REPLY->value;
+        return $actionType === ActionTypeEnum::QUICK_REPLY;
     }
 
     /**

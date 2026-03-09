@@ -1,0 +1,84 @@
+---
+title: Quickstart
+description: 15-minute setup and first successful AI flow.
+---
+
+## 1) Install
+
+```bash
+composer require m-tech-stack/laravel-ai-engine
+php artisan vendor:publish --tag=ai-engine-config
+php artisan vendor:publish --tag=ai-engine-migrations
+php artisan migrate
+```
+
+## 2) Minimal Environment
+
+```env
+AI_ENGINE_DEFAULT=openai
+AI_ENGINE_DEFAULT_MODEL=gpt-4o
+AI_ORCHESTRATION_MODEL=gpt-4o-mini
+OPENAI_API_KEY=your_key
+
+AI_ENGINE_NODES_ENABLED=true
+AI_ENGINE_IS_MASTER=true
+AI_ENGINE_NODE_JWT_SECRET=change_me
+```
+
+## 3) Basic Health Checks
+
+```bash
+php artisan ai-engine:test-package
+php artisan ai-engine:test-nodes --quick
+php artisan ai-engine:infra-health
+```
+
+Expected: all checks pass.
+
+## 4) First Real Conversation Test
+
+```bash
+php artisan ai-engine:test-real-agent --script=minimal --json
+```
+
+Expected:
+
+- `successful_turns` > 0
+- no fatal errors
+- standard response envelope in payload
+
+## 5) Initialize Agent Workspace (Recommended)
+
+```bash
+php artisan ai-engine:init
+php artisan ai-engine:scaffold agent Invoice --model="App\\Models\\Invoice"
+```
+
+## 6) Enable Admin UI (Optional but Useful)
+
+```env
+AI_ENGINE_ENABLE_ADMIN_UI=true
+AI_ENGINE_ADMIN_PREFIX=ai-engine/admin
+AI_ENGINE_ADMIN_ALLOWED_USER_IDS=1
+AI_ENGINE_ADMIN_ALLOWED_IPS=127.0.0.1,::1
+```
+
+Then open `/ai-engine/admin`.
+
+## 7) If You Already Published Config Before
+
+```bash
+php artisan vendor:publish --tag=ai-engine-config --force
+php artisan optimize:clear
+```
+
+This prevents stale old defaults from blocking new behavior.
+
+## 8) Run Real HTTP Scenarios
+
+Use `guides/copy-paste-playbooks` to run end-to-end curl tests for:
+
+- list + follow-up continuity
+- localized/authenticated prompts
+- guided and autonomous collectors
+- federation and policy loop smoke checks

@@ -20,7 +20,8 @@ class AnalyticsManagerTest extends TestCase
     {
         parent::setUp();
         
-        $this->mockMetricsCollector = Mockery::mock(MetricsCollector::class);
+        $this->mockMetricsCollector = Mockery::mock(MetricsCollector::class)
+            ->shouldAllowMockingProtectedMethods();
         $this->mockDatabaseDriver = Mockery::mock(DatabaseAnalyticsDriver::class);
         $this->mockRedisDriver = Mockery::mock(RedisAnalyticsDriver::class);
         

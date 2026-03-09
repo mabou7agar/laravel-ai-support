@@ -1,0 +1,13 @@
+استخرج الحقول التي يريد المستخدم تحديثها من رسالته.
+
+رسالة المستخدم: "{{user_message}}"
+نوع الكيان: {{entity}}
+القيم الحالية:
+{{current_values_json}}
+
+أمثلة:
+- "change the price to 150" -> {"price": 150, "sale_price": 150}
+- "update the name to XYZ" -> {"name": "XYZ"}
+- "set quantity to 50" -> {"quantity": 50}
+
+أعد كائن JSON بالحقول المطلوب تحديثها، أو {} إذا لم تكن واضحة.

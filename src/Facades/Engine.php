@@ -43,6 +43,10 @@ class Engine extends Facade
      */
     protected static function getFacadeAccessor(): string
     {
+        if (function_exists('app') && app()->bound('unified-engine')) {
+            return 'unified-engine';
+        }
+
         return AIEngineManager::class;
     }
 }

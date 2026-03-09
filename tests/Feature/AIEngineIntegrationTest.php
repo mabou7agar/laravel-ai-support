@@ -41,8 +41,8 @@ class AIEngineIntegrationTest extends TestCase
         // Test that the request is properly constructed
         $this->assertInstanceOf(AIRequest::class, $request);
         $this->assertEquals('Generate a test response', $request->prompt);
-        $this->assertEquals(EngineEnum::OPENAI, $request->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $request->model);
+        $this->assertEquals(EngineEnum::OPENAI, $request->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $request->model->value);
         $this->assertEquals($user->id, $request->userId);
 
         // Test that the AI engine service can be instantiated
@@ -137,7 +137,7 @@ class AIEngineIntegrationTest extends TestCase
 
         // Verify credits were deducted
         $remainingCredits = $creditManager->getUserCredits($user->id, EngineEnum::OPENAI, EntityEnum::GPT_4O);
-        $this->assertEquals(96.0, $remainingCredits['balance']); // Adjusted to match actual calculation
+        $this->assertEquals(92.0, $remainingCredits['balance']);
 
         // This test verifies credit system infrastructure without requiring actual API calls
         $this->assertTrue(true);

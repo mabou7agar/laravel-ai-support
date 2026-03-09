@@ -100,6 +100,7 @@ class MongoMemoryDriverTest extends TestCase
             ->andReturn(null);
 
         $this->driver->addMessage($conversationId, 'user', 'Hello', ['test' => 'data']);
+        $this->addToAssertionCount(1);
     }
 
     public function test_add_message_to_new_conversation()
@@ -117,7 +118,7 @@ class MongoMemoryDriverTest extends TestCase
             ->once()
             ->with(
                 ['conversation_id' => $conversationId],
-                Mockery::on(function ($update) {
+                Mockery::on(function ($update) use ($conversationId) {
                     return isset($update['$setOnInsert']['conversation_id'])
                         && $update['$setOnInsert']['conversation_id'] === $conversationId;
                 }),
@@ -136,6 +137,7 @@ class MongoMemoryDriverTest extends TestCase
             ->andReturn(null);
 
         $this->driver->addMessage($conversationId, 'assistant', 'Hi there!');
+        $this->addToAssertionCount(1);
     }
 
     public function test_get_messages()
@@ -259,6 +261,7 @@ class MongoMemoryDriverTest extends TestCase
             ->andReturn(null);
 
         $this->driver->clearConversation($conversationId);
+        $this->addToAssertionCount(1);
     }
 
     public function test_delete_conversation()

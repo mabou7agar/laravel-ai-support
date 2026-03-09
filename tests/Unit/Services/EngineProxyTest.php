@@ -200,7 +200,15 @@ class EngineProxyTest extends TestCase
 
         $this->manager
             ->shouldReceive('send')
-            ->twice()
+            ->with(
+                $messages,
+                [
+                    'engine' => 'openai',
+                    'model' => 'gpt-4o',
+                    'temperature' => 0.7,
+                ]
+            )
+            ->once()
             ->andReturn($response);
 
         // First call with configured options
@@ -218,6 +226,7 @@ class EngineProxyTest extends TestCase
             ->andReturn($response);
 
         $this->proxy->send($messages);
+        $this->addToAssertionCount(1);
     }
 
     protected function tearDown(): void

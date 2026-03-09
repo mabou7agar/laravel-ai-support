@@ -123,7 +123,7 @@ class PriceDisplayTest extends TestCase
         // Assertions
         $this->assertStringContainsString('Laptop × 2 @ $999.99 = $1999.98', $message);
         $this->assertStringContainsString('Mouse × 3 @ $29.99 = $89.97', $message);
-        $this->assertStringContainsString('Total: $2089.95', $message);
+        $this->assertStringContainsString('**Total:** $2089.95', $message);
         $this->assertStringNotContainsString('$0', $message);
     }
     

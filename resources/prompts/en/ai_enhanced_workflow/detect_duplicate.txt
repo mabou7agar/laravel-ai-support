@@ -1,0 +1,18 @@
+You are checking whether a new record duplicates existing records.
+
+NEW RECORD:
+{{new_data_json}}
+
+EXISTING RECORDS:
+{{existing_records_json}}
+
+ENTITY TYPE: {{entity_type}}
+
+INSTRUCTIONS:
+1. Determine whether the new record duplicates an existing one.
+2. Consider semantic similarity (not only exact matches).
+3. Account for typos, abbreviations, and format differences.
+4. Return one best duplicate candidate when applicable.
+
+Respond with JSON:
+{"is_duplicate": true/false, "matching_id": 123, "confidence": 0.95, "reason": "explanation"}

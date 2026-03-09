@@ -150,11 +150,11 @@ class RAGCollectionDiscovery
                 foreach ($nodes as $node) {
                     try {
                         $response = NodeHttpClient::makeAuthenticated($node)
-                            ->get($node->getApiUrl('collections'));
+                            ->get($node->getApiUrl('manifest'));
 
                         if ($response->successful()) {
                             $data = $response->json();
-                            foreach ($data['collections'] ?? [] as $collection) {
+                            foreach (($data['collections'] ?? []) as $collection) {
                                 $className = $collection['class'];
 
                                 if (!isset($allCollections[$className])) {

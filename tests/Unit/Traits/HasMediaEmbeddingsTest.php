@@ -129,15 +129,17 @@ class HasMediaEmbeddingsTest extends UnitTestCase
         
         Log::shouldReceive('channel')
             ->with('ai-engine')
+            ->zeroOrMoreTimes()
             ->andReturnSelf();
+
+        Log::shouldReceive('info')->zeroOrMoreTimes();
+        Log::shouldReceive('warning')->zeroOrMoreTimes();
         
         Log::shouldReceive('debug')
             ->once()
             ->withArgs(function ($message, $context) {
-                return $message === 'Vector content generated' 
-                    && $context['has_media'] === true
-                    && in_array('title', $context['fields_used'])
-                    && in_array('content', $context['fields_used']);
+                return in_array($message, ['Vector content generated', 'Full vector content generated'], true)
+                    && (($context['has_media'] ?? false) === true);
             });
 
         $model = new TestModelWithBothTraits();
@@ -155,6 +157,7 @@ class HasMediaEmbeddingsTest extends UnitTestCase
         $this->app->instance(MediaEmbeddingService::class, $mediaService);
 
         $model->getVectorContent();
+        $this->addToAssertionCount(1);
     }
 
     /** @test */

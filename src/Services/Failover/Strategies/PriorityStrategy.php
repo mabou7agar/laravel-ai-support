@@ -11,6 +11,29 @@ use LaravelAIEngine\Services\Failover\Contracts\FailoverStrategyInterface;
 class PriorityStrategy implements FailoverStrategyInterface
 {
     /**
+     * Backward-compatible entrypoint used by older tests/services.
+     */
+    public function orderProviders(array $providers, array $healthData = []): array
+    {
+        // Legacy input format: ['openai' => ['priority' => 2], ...]
+        if (!array_is_list($providers)) {
+            $legacy = [];
+            foreach ($providers as $provider => $config) {
+                $legacy[] = [
+                    'provider' => (string) $provider,
+                    'priority' => (int) (($config['priority'] ?? 50)),
+                ];
+            }
+
+            usort($legacy, fn (array $a, array $b) => $a['priority'] <=> $b['priority']);
+
+            return array_column($legacy, 'provider');
+        }
+
+        return $this->getProviderOrder($providers, $healthData);
+    }
+
+    /**
      * Get ordered list of providers based on priority and health
      */
     public function getProviderOrder(array $providers, array $healthData): array

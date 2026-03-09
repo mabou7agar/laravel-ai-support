@@ -35,8 +35,8 @@ class CreditManagerTest extends TestCase
 
         $credits = $this->creditManager->calculateCredits($request);
         
-        // Should be word count (10) * credit index (2.0 for GPT-4O)
-        $this->assertEquals(20.0, $credits);
+        // Includes engine conversion rate in addition to model credit index.
+        $this->assertEquals(40.0, $credits);
     }
 
     public function test_calculate_credits_for_image_generation()
@@ -51,8 +51,8 @@ class CreditManagerTest extends TestCase
 
         $credits = $this->creditManager->calculateCredits($request);
         
-        // Should be image count (2) * credit index (5.0 for DALL-E 3)
-        $this->assertEquals(10.0, $credits);
+        // Includes engine conversion rate in addition to model credit index.
+        $this->assertEquals(20.0, $credits);
     }
 
     public function test_has_credits_with_sufficient_balance()

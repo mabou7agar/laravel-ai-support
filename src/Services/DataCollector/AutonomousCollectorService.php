@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Services\DataCollector;
 use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -36,7 +37,7 @@ use Illuminate\Support\Facades\Log;
  * );
  * 
  * $response = $service->start($sessionId, $config, "Create invoice with 2 products");
- * $response = $service->process($sessionId, "For customer Mohamed");
+ * $response = $service->process($sessionId, "For customer ACME Corp");
  * ```
  */
 class AutonomousCollectorService
@@ -45,7 +46,8 @@ class AutonomousCollectorService
     protected int $cacheTtl = 3600;
 
     public function __construct(
-        protected AIEngineService $ai
+        protected AIEngineService $ai,
+        protected ?LocaleResourceService $localeResources = null
     ) {}
 
     /**
@@ -56,6 +58,8 @@ class AutonomousCollectorService
         AutonomousCollectorConfig $config,
         string $initialMessage = ''
     ): AutonomousCollectorResponse {
+        $this->registerRuntimeConfig($config);
+
         // Initialize session state
         $state = [
             'session_id' => $sessionId,
@@ -111,13 +115,23 @@ class AutonomousCollectorService
         if (!$state) {
             return new AutonomousCollectorResponse(
                 success: false,
-                message: 'No active session found.',
+                message: $this->locale()->translation('ai-engine::runtime.data_collector.api.active_session_not_found')
+                    ?: 'No active session found.',
                 status: 'error',
             );
         }
 
-        // Reconstruct config
-        $config = $this->deserializeConfig($state['config']);
+        // Reconstruct config with tool-handler restoration when possible
+        $config = $this->resolveConfigForSession($state);
+        if (!$config) {
+            return new AutonomousCollectorResponse(
+                success: false,
+                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.config_not_found')
+                    ?: 'Collector configuration is unavailable for this session. Re-register the config and start a new session.',
+                status: 'error',
+                error: 'collector_config_unavailable',
+            );
+        }
         
         // Add user message
         $state['conversation'][] = [
@@ -133,7 +147,8 @@ class AutonomousCollectorService
             
             return new AutonomousCollectorResponse(
                 success: true,
-                message: 'Collection cancelled.',
+                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.cancelled')
+                    ?: 'Collection cancelled.',
                 status: 'cancelled',
                 isCancelled: true,
             );
@@ -205,7 +220,10 @@ class AutonomousCollectorService
 
             return new AutonomousCollectorResponse(
                 success: false,
-                message: "I encountered an error. Let's try again. " . $e->getMessage(),
+                message: $this->locale()->translation(
+                    'ai-engine::runtime.autonomous_collector.processing_error',
+                    ['error' => $e->getMessage()]
+                ) ?: "I encountered an error. Let's try again. {$e->getMessage()}",
                 status: 'error',
             );
         }
@@ -225,11 +243,16 @@ class AutonomousCollectorService
         $fullPrompt = $userPrompt;
         
         if (!empty($tools)) {
-            $fullPrompt .= "\n\n---\nIf you need to use a tool, respond with:\n";
-            $fullPrompt .= "```tool\n{\"tool\": \"tool_name\", \"arguments\": {...}}\n```\n";
-            $fullPrompt .= "Otherwise, respond naturally to the user.\n";
-            $fullPrompt .= "When you have all required information, output the final data as:\n";
-            $fullPrompt .= "```json\n{...final output...}\n```";
+            $toolProtocol = $this->locale()->renderPromptTemplate('autonomous_collector/tool_protocol');
+            if ($toolProtocol === '') {
+                $toolProtocol = "If you need to use a tool, respond with:\n";
+                $toolProtocol .= "```tool\n{\"tool\": \"tool_name\", \"arguments\": {...}}\n```\n";
+                $toolProtocol .= "Otherwise, respond naturally to the user.\n";
+                $toolProtocol .= "When you have all required information, output the final data as:\n";
+                $toolProtocol .= "```json\n{...final output...}\n```";
+            }
+
+            $fullPrompt .= "\n\n---\n" . $toolProtocol;
         }
 
         $response = $this->ai->generate(
@@ -320,7 +343,10 @@ class AutonomousCollectorService
         $state['tool_results'] = array_merge($state['tool_results'] ?? [], $toolResults);
         
         // Add tool results to conversation as system message
-        $toolResultMessage = "Tool results:\n";
+        $toolResultMessage = ($this->locale()->translation('ai-engine::runtime.autonomous_collector.tool_results_header')
+            ?: 'Tool results:') . "\n";
+        $toolErrorPrefix = $this->locale()->translation('ai-engine::runtime.autonomous_collector.tool_result_error_prefix')
+            ?: 'Error';
         foreach ($toolResults as $tr) {
             if ($tr['success']) {
                 $resultStr = is_array($tr['result']) 
@@ -328,7 +354,7 @@ class AutonomousCollectorService
                     : (string) $tr['result'];
                 $toolResultMessage .= "- {$tr['tool']}: " . substr($resultStr, 0, 500) . "\n";
             } else {
-                $toolResultMessage .= "- {$tr['tool']}: Error - {$tr['error']}\n";
+                $toolResultMessage .= "- {$tr['tool']}: {$toolErrorPrefix} - {$tr['error']}\n";
             }
         }
         
@@ -378,7 +404,10 @@ class AutonomousCollectorService
             // Ask AI to fix the output
             $state['conversation'][] = [
                 'role' => 'system',
-                'content' => "Output validation failed: " . implode(', ', $errors) . ". Please collect the missing information.",
+                'content' => $this->locale()->translation(
+                    'ai-engine::runtime.autonomous_collector.output_validation_failed',
+                    ['errors' => implode(', ', $errors)]
+                ) ?: ("Output validation failed: " . implode(', ', $errors) . ". Please collect the missing information."),
             ];
             $this->saveState($sessionId, $state);
             
@@ -396,9 +425,15 @@ class AutonomousCollectorService
         if ($config->confirmBeforeComplete) {
             // Add confirmation request
             $summary = $this->generateSummary($finalOutput);
-            $confirmMessage = $cleanMessage ?: "I've collected all the information.";
+            $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
+            $noToken = $this->locale()->lexicon('intent.reject', default: ['no'])[0] ?? 'no';
+            $confirmMessage = $cleanMessage ?: ($this->locale()->translation('ai-engine::runtime.autonomous_collector.collected_all_info')
+                ?: "I've collected all the information.");
             $confirmMessage .= "\n\n**Summary:**\n" . $summary;
-            $confirmMessage .= "\n\nShall I proceed? (yes/no)";
+            $confirmMessage .= "\n\n" . ($this->locale()->translation(
+                'ai-engine::runtime.autonomous_collector.confirm_type_hint',
+                ['yes' => $yesToken, 'no' => $noToken]
+            ) ?: "Shall I proceed? ({$yesToken}/{$noToken})");
             
             $state['conversation'][] = [
                 'role' => 'assistant',
@@ -443,7 +478,8 @@ class AutonomousCollectorService
             
             return new AutonomousCollectorResponse(
                 success: true,
-                message: 'Successfully completed!',
+                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.completed')
+                    ?: 'Successfully completed!',
                 status: 'completed',
                 collectedData: $data,
                 isComplete: true,
@@ -458,7 +494,10 @@ class AutonomousCollectorService
             
             return new AutonomousCollectorResponse(
                 success: false,
-                message: "Failed to complete: {$e->getMessage()}",
+                message: $this->locale()->translation(
+                    'ai-engine::runtime.autonomous_collector.completion_failed',
+                    ['error' => $e->getMessage()]
+                ) ?: "Failed to complete: {$e->getMessage()}",
                 status: 'error',
                 collectedData: $data,
             );
@@ -475,7 +514,8 @@ class AutonomousCollectorService
         if (!$state || $state['status'] !== 'confirming') {
             return new AutonomousCollectorResponse(
                 success: false,
-                message: 'No pending confirmation.',
+                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.no_active_session')
+                    ?: 'No pending confirmation.',
                 status: 'error',
             );
         }
@@ -489,7 +529,15 @@ class AutonomousCollectorService
      */
     protected function generateGreeting(AutonomousCollectorConfig $config): string
     {
-        return "Hello! I'll help you {$config->goal}. What would you like to do?";
+        $greeting = $this->locale()->translation(
+            'ai-engine::runtime.autonomous_collector.greeting',
+            ['goal' => $config->goal]
+        );
+        if ($greeting === '') {
+            return "Hello! I'll help you {$config->goal}.";
+        }
+
+        return $greeting;
     }
 
     /**
@@ -551,8 +599,16 @@ class AutonomousCollectorService
      */
     protected function isCancellation(string $message): bool
     {
-        $message = strtolower(trim($message));
-        return in_array($message, ['cancel', 'stop', 'quit', 'exit', 'nevermind', 'never mind']);
+        return $this->locale()->isLexiconMatch(strtolower(trim($message)), 'intent.cancel');
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 
     /**
@@ -619,6 +675,8 @@ class AutonomousCollectorService
             'context' => $config->context,
             'max_turns' => $config->maxTurns,
             'name' => $config->name,
+            'has_tools' => !empty($config->tools),
+            'tool_names' => array_values(array_keys($config->tools)),
             // Tools with closures need special handling - store tool metadata only
             'tools_meta' => array_map(fn($t) => [
                 'description' => $t['description'] ?? '',
@@ -647,6 +705,75 @@ class AutonomousCollectorService
         );
     }
 
+    protected function resolveConfigForSession(array $state): ?AutonomousCollectorConfig
+    {
+        $serialized = $state['config'] ?? null;
+        if (!is_array($serialized)) {
+            return null;
+        }
+
+        $configName = $this->normalizeConfigName($serialized['name'] ?? null);
+        if ($configName !== null) {
+            $registered = $this->getRegisteredConfig($configName);
+            if ($registered instanceof AutonomousCollectorConfig) {
+                return $registered;
+            }
+
+            $fromRegistry = AutonomousCollectorRegistry::getConfig($configName);
+            if ($fromRegistry instanceof AutonomousCollectorConfig) {
+                $this->registerConfigAs($configName, $fromRegistry);
+                return $fromRegistry;
+            }
+        }
+
+        $deserialized = $this->deserializeConfig($serialized);
+        $expectsTools = (bool) ($serialized['has_tools'] ?? false);
+        if ($expectsTools && empty($deserialized->tools)) {
+            Log::warning('Autonomous collector tools unavailable after session restore', [
+                'session_id' => $state['session_id'] ?? null,
+                'config_name' => $configName,
+                'tool_names' => $serialized['tool_names'] ?? [],
+            ]);
+            return null;
+        }
+
+        return $deserialized;
+    }
+
+    protected function registerRuntimeConfig(AutonomousCollectorConfig $config): void
+    {
+        $configName = $this->normalizeConfigName($config->name);
+        if ($configName === null) {
+            if (!empty($config->tools)) {
+                Log::warning('Starting autonomous collector with tools but without a stable config name', [
+                    'goal' => $config->goal,
+                    'tools' => array_values(array_keys($config->tools)),
+                ]);
+            }
+            return;
+        }
+
+        $this->registerConfigAs($configName, $config);
+
+        if (!AutonomousCollectorRegistry::has($configName)) {
+            AutonomousCollectorRegistry::register($configName, [
+                'config' => $config,
+                'goal' => $config->goal,
+                'description' => $config->description,
+            ]);
+        }
+    }
+
+    protected function normalizeConfigName(mixed $name): ?string
+    {
+        if (!is_string($name)) {
+            return null;
+        }
+
+        $normalized = trim($name);
+        return $normalized !== '' ? $normalized : null;
+    }
+
     /**
      * Register config with tools for session restoration
      */
@@ -654,9 +781,20 @@ class AutonomousCollectorService
 
     public function registerConfig(AutonomousCollectorConfig $config): void
     {
-        if ($config->name) {
-            $this->registeredConfigs[$config->name] = $config;
+        $name = trim((string) ($config->name ?? ''));
+        if ($name !== '') {
+            $this->registerConfigAs($name, $config);
         }
+    }
+
+    public function registerConfigAs(string $name, AutonomousCollectorConfig $config): void
+    {
+        $normalized = trim($name);
+        if ($normalized === '') {
+            return;
+        }
+
+        $this->registeredConfigs[$normalized] = $config;
     }
 
     public function getRegisteredConfig(string $name): ?AutonomousCollectorConfig

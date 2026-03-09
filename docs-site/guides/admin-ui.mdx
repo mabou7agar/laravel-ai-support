@@ -1,0 +1,45 @@
+---
+title: Admin UI
+description: Securely enable and use the admin control plane.
+---
+
+## Enable
+
+```env
+AI_ENGINE_ENABLE_ADMIN_UI=true
+AI_ENGINE_ADMIN_PREFIX=ai-engine/admin
+```
+
+## Access Control (Recommended)
+
+### User-based
+
+```env
+AI_ENGINE_ADMIN_ALLOWED_USER_IDS=1,2
+AI_ENGINE_ADMIN_ALLOWED_EMAILS=admin@example.com,ops@example.com
+```
+
+### IP-based
+
+```env
+AI_ENGINE_ADMIN_ALLOWED_IPS=127.0.0.1,::1,192.168.1.0/24
+AI_ENGINE_ADMIN_ALLOW_LOCALHOST=true
+```
+
+## Common 404/403 Causes
+
+- `AI_ENGINE_ENABLE_ADMIN_UI=false`
+- config cache not refreshed
+- request user or IP not in allowlist
+
+Fix:
+
+```bash
+php artisan optimize:clear
+```
+
+## Use Cases
+
+- diagnostics and health visibility
+- node and manifest operations
+- operational checks before release

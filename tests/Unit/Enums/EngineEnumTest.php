@@ -9,6 +9,11 @@ use LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
 
 class EngineEnumTest extends TestCase
 {
+    protected function engine(string $value): EngineEnum
+    {
+        return EngineEnum::from($value);
+    }
+
     public function test_engine_enum_cases_exist()
     {
         $expectedEngines = [
@@ -39,18 +44,18 @@ class EngineEnumTest extends TestCase
     {
         $this->assertEquals(
             OpenAIEngineDriver::class,
-            EngineEnum::OPENAI->driverClass()
+            $this->engine(EngineEnum::OPENAI)->driverClass()
         );
 
         $this->assertEquals(
             AnthropicEngineDriver::class,
-            EngineEnum::ANTHROPIC->driverClass()
+            $this->engine(EngineEnum::ANTHROPIC)->driverClass()
         );
     }
 
     public function test_engine_capabilities()
     {
-        $openaiCapabilities = EngineEnum::OPENAI->capabilities();
+        $openaiCapabilities = $this->engine(EngineEnum::OPENAI)->capabilities();
         
         $this->assertIsArray($openaiCapabilities);
         $this->assertContains('text', $openaiCapabilities);
@@ -60,7 +65,7 @@ class EngineEnumTest extends TestCase
 
     public function test_engine_default_models()
     {
-        $openaiModels = EngineEnum::OPENAI->getDefaultModels();
+        $openaiModels = $this->engine(EngineEnum::OPENAI)->getDefaultModels();
         
         $this->assertIsArray($openaiModels);
         $this->assertNotEmpty($openaiModels);
@@ -69,7 +74,7 @@ class EngineEnumTest extends TestCase
     public function test_engine_from_string()
     {
         $engine = EngineEnum::from('openai');
-        $this->assertEquals(EngineEnum::OPENAI, $engine);
+        $this->assertEquals(EngineEnum::OPENAI, $engine->value);
     }
 
     public function test_engine_try_from_invalid()

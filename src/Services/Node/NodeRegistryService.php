@@ -6,6 +6,7 @@ use LaravelAIEngine\Models\AINode;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Collection;
 
 class NodeRegistryService
@@ -71,6 +72,10 @@ class NodeRegistryService
      */
     public function getActiveNodes(): Collection
     {
+        if (!$this->nodesTableExists()) {
+            return collect();
+        }
+
         if(app()->environment('local')) {
             return AINode::get();
         }
@@ -84,6 +89,10 @@ class NodeRegistryService
      */
     public function getAllNodes(): Collection
     {
+        if (!$this->nodesTableExists()) {
+            return collect();
+        }
+
         return AINode::all();
     }
 
@@ -92,6 +101,10 @@ class NodeRegistryService
      */
     public function getNode(string $slug): ?AINode
     {
+        if (!$this->nodesTableExists()) {
+            return null;
+        }
+
         return AINode::where('slug', $slug)->first();
     }
 
@@ -100,7 +113,32 @@ class NodeRegistryService
      */
     public function getNodeById(int $id): ?AINode
     {
+        if (!$this->nodesTableExists()) {
+            return null;
+        }
+
         return AINode::find($id);
+    }
+
+    protected function nodesTableExists(): bool
+    {
+        static $checked = null;
+
+        if ($checked !== null) {
+            return $checked;
+        }
+
+        try {
+            $checked = Schema::hasTable((new AINode())->getTable());
+        } catch (\Throwable) {
+            $checked = false;
+        }
+
+        if ($checked === false) {
+            Log::channel('ai-engine')->warning('Node features are disabled because the ai_nodes table is missing');
+        }
+
+        return $checked;
     }
 
     /**
@@ -125,40 +163,26 @@ class NodeRegistryService
 
             $duration = (int) ((microtime(true) - $startTime) * 1000);
 
-            $success = $response->successful();
+            $health = $response->json();
+            $declaredStatus = strtolower((string) ($health['status'] ?? 'healthy'));
+            $declaredReady = (bool) ($health['ready'] ?? true);
+            $declaredHealthy = in_array($declaredStatus, ['healthy', 'ok'], true) && $declaredReady;
+            $success = $response->successful() && $declaredHealthy;
 
             // Record ping result
             $node->recordPing($success, $duration);
 
             if ($success) {
-                // Update node metadata from response (auto-discovered from child)
-                $data = $response->json();
                 $updateData = [
-                    'version' => $data['version'] ?? $node->version,
-                    'capabilities' => $data['capabilities'] ?? $node->capabilities,
+                    'version' => $health['version'] ?? $node->version,
+                    'capabilities' => $health['capabilities'] ?? $node->capabilities,
                 ];
 
-                // Sync auto-discovered metadata if provided
-                if (!empty($data['description'])) {
-                    $updateData['description'] = $data['description'];
-                }
-                if (!empty($data['domains'])) {
-                    $updateData['domains'] = $data['domains'];
-                }
-                if (!empty($data['data_types'])) {
-                    $updateData['data_types'] = $data['data_types'];
-                }
-                if (!empty($data['keywords'])) {
-                    $updateData['keywords'] = $data['keywords'];
-                }
-                if (!empty($data['collections'])) {
-                    $updateData['collections'] = $data['collections'];
-                }
-                if (!empty($data['workflows'])) {
-                    $updateData['workflows'] = $data['workflows'];
-                }
-                if (!empty($data['autonomous_collectors'])) {
-                    $updateData['autonomous_collectors'] = $data['autonomous_collectors'];
+                $manifest = $this->fetchManifest($node);
+                if (!empty($manifest)) {
+                    $updateData = array_merge($updateData, $this->mapManifestToNodeFields($manifest));
+                } else {
+                    $updateData = array_merge($updateData, $this->mapLegacyHealthMetadata($health));
                 }
 
                 $node->update($updateData);
@@ -184,6 +208,10 @@ class NodeRegistryService
                     'node_id' => $node->id,
                     'node_slug' => $node->slug,
                     'status_code' => $response->status(),
+                    'health_status' => $declaredStatus,
+                    'health_ready' => $declaredReady,
+                    'health_message' => data_get($health, 'checks.remote_node_migrations.message')
+                        ?? data_get($health, 'checks.qdrant_connectivity.message'),
                 ]);
             }
 
@@ -223,6 +251,53 @@ class NodeRegistryService
         }
 
         return $results;
+    }
+
+    protected function fetchManifest(AINode $node): ?array
+    {
+        try {
+            $response = NodeHttpClient::makeAuthenticated($node)
+                ->get($node->getApiUrl('manifest'));
+
+            if ($response->successful()) {
+                return $response->json();
+            }
+        } catch (\Exception $e) {
+            Log::channel('ai-engine')->debug('Failed to fetch node manifest', [
+                'node_slug' => $node->slug,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return null;
+    }
+
+    protected function mapManifestToNodeFields(array $manifest): array
+    {
+        return array_filter([
+            'description' => data_get($manifest, 'node.description'),
+            'capabilities' => $manifest['capabilities'] ?? [],
+            'domains' => $manifest['domains'] ?? [],
+            'data_types' => $manifest['data_types'] ?? [],
+            'keywords' => $manifest['keywords'] ?? [],
+            'collections' => $manifest['collections'] ?? [],
+            'workflows' => $manifest['workflows'] ?? [],
+            'autonomous_collectors' => $manifest['autonomous_collectors'] ?? [],
+            'version' => data_get($manifest, 'node.version') ?? ($manifest['version'] ?? null),
+        ], static fn ($value) => $value !== null && $value !== []);
+    }
+
+    protected function mapLegacyHealthMetadata(array $data): array
+    {
+        $updateData = [];
+
+        foreach (['description', 'domains', 'data_types', 'keywords', 'collections', 'workflows', 'autonomous_collectors'] as $field) {
+            if (!empty($data[$field])) {
+                $updateData[$field] = $data[$field];
+            }
+        }
+
+        return $updateData;
     }
 
     /**

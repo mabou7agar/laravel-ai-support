@@ -8,6 +8,7 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Enums\EntityState;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -95,7 +96,10 @@ trait AutomatesSteps
         $fields = $config['fields'] ?? [];
 
         if (empty($fields)) {
-            return ActionResult::success(message: 'No data to collect');
+            return ActionResult::success(message: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.no_data_to_collect',
+                'No data to collect'
+            ));
         }
 
         \Illuminate\Support\Facades\Log::info('AutomatesSteps: autoCollectData called', [
@@ -170,7 +174,10 @@ trait AutomatesSteps
         // If data collection is complete (success), we should proceed to next step
         if ($result->success && !$result->getMetadata('needs_user_input', false)) {
             return ActionResult::success(
-                message: 'Data collection complete',
+                message: $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.data_collection_complete',
+                    'Data collection complete'
+                ),
                 data: $result->data
             );
         }
@@ -259,7 +266,11 @@ trait AutomatesSteps
             $fieldConfig = $fields[$field] ?? [];
 
             return ActionResult::needsUserInput(
-                message: $fieldConfig['prompt'] ?? "Please provide {$field}",
+                message: $fieldConfig['prompt'] ?? $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.provide_field',
+                    'Please provide :field',
+                    ['field' => $field]
+                ),
                 metadata: [
                     'field' => $field,
                     'type' => $fieldConfig['type'] ?? 'string',
@@ -268,7 +279,10 @@ trait AutomatesSteps
         }
 
         return ActionResult::success(
-            message: 'All data collected',
+            message: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.all_data_collected',
+                'All data collected'
+            ),
             data: $collectedData
         );
     }
@@ -284,7 +298,10 @@ trait AutomatesSteps
 
         if ($skipInSubflow && $activeSubflow) {
             // Skip confirmation and proceed directly to final action
-            return ActionResult::success(message: 'Skipping confirmation in subflow context');
+            return ActionResult::success(message: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.skip_confirmation_subflow',
+                'Skipping confirmation in subflow context'
+            ));
         }
 
         // Otherwise, show normal confirmation
@@ -311,7 +328,10 @@ trait AutomatesSteps
                 $context->forget('user_confirmed_action');
                 $context->forget('confirmation_message_shown');
                 $context->forget('awaiting_confirmation');
-                return ActionResult::success(message: 'Confirmed');
+                return ActionResult::success(message: $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.confirmed',
+                    'Confirmed'
+                ));
             }
         }
 
@@ -410,7 +430,13 @@ trait AutomatesSteps
         // Create user-friendly confirmation message using AI enhancement
         $message = $this->enhanceConfirmationMessage($dataForDisplay, $config);
 
-        $message .= "\n\nWould you like to proceed? Type 'yes' to confirm, 'no' to cancel";
+        $confirmToken = $this->automatesLexicon('intent.confirm', ['yes'])[0] ?? 'yes';
+        $rejectToken = $this->automatesLexicon('intent.reject', ['no'])[0] ?? 'no';
+        $message .= "\n\n" . $this->automatesRuntimeText(
+            'ai-engine::runtime.automates_steps.proceed_prompt',
+            "Would you like to proceed? Type ':yes' to confirm, ':no' to cancel",
+            ['yes' => $confirmToken, 'no' => $rejectToken]
+        );
 
         // Add context-aware modification hint if there's data that can be modified
         if (!empty($dataForDisplay)) {
@@ -472,7 +498,11 @@ trait AutomatesSteps
                             $summary = $this->enhanceConfirmationMessage($collectedData, $config);
                             
                             // Prepend "Updated!" to the confirmation message
-                            $message = "✅ **Updated!**\n\n" . $summary;
+                            $updatedTitle = $this->automatesRuntimeText(
+                                'ai-engine::runtime.automates_steps.updated_title',
+                                'Updated!'
+                            );
+                            $message = "✅ **{$updatedTitle}**\n\n" . $summary;
                             
                             return ActionResult::needsUserInput(
                                 message: $message,
@@ -487,7 +517,10 @@ trait AutomatesSteps
 
                     if ($intent === 'confirm') {
                         $context->set('user_confirmed_action', true);
-                        return ActionResult::success(message: 'Confirmed');
+                        return ActionResult::success(message: $this->automatesRuntimeText(
+                            'ai-engine::runtime.automates_steps.confirmed',
+                            'Confirmed'
+                        ));
                     } elseif ($intent === 'cancel') {
                         // Clear confirmation flags to prevent infinite loop
                         $context->forget('confirmation_message_shown');
@@ -495,7 +528,10 @@ trait AutomatesSteps
                         $context->forget('user_confirmed_action');
 
                         return ActionResult::failure(
-                            error: 'Action cancelled by user',
+                            error: $this->automatesRuntimeText(
+                                'ai-engine::runtime.automates_steps.cancelled_by_user',
+                                'Cancelled.'
+                            ),
                             data: ['user_cancelled' => true]
                         );
                     }
@@ -1218,7 +1254,11 @@ PROMPT;
             }
 
             return ActionResult::success(
-                message: ucfirst($entityName) . " resolved",
+                message: $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.entity_resolved',
+                    ':entity resolved',
+                    ['entity' => ucfirst($entityName)]
+                ),
                 data: [$entityName . '_id' => $entityId, $entityName => $entityId]
             );
         }
@@ -1285,7 +1325,11 @@ PROMPT;
                         $context->forget('active_subflow');
 
                         return ActionResult::success(
-                            message: ucfirst($entityName) . " resolved",
+                            message: $this->automatesRuntimeText(
+                                'ai-engine::runtime.automates_steps.entity_resolved',
+                                ':entity resolved',
+                                ['entity' => ucfirst($entityName)]
+                            ),
                             data: [$entityName . '_id' => $entity->id, $entityName => $entity->id]
                         );
                     }
@@ -1397,7 +1441,11 @@ PROMPT;
                             $context->set('collected_data', $collectedData);
 
                             return ActionResult::success(
-                                message: ucfirst($entityName) . " created successfully",
+                                message: $this->automatesRuntimeText(
+                                    'ai-engine::runtime.automates_steps.entity_created_short',
+                                    ':entity created successfully',
+                                    ['entity' => ucfirst($entityName)]
+                                ),
                                 data: [$entityName . '_id' => $entity->id, $entityName => $entity->id]
                             );
                         }
@@ -1427,7 +1475,11 @@ PROMPT;
 
         if (!$modelClass) {
             $context->setEntityState($entityName, EntityState::FAILED, "Model class not configured");
-            return ActionResult::failure(error: "Model class not configured for {$entityName}");
+            return ActionResult::failure(error: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.model_not_configured',
+                "Model class not configured for {$entityName}",
+                ['entity' => $entityName]
+            ));
         }
 
         // Get identifier from collected data
@@ -1526,7 +1578,11 @@ PROMPT;
         // If no custom resolver and no identifier, fail
         if (!$identifier) {
             $context->setEntityState($entityName, EntityState::FAILED, "Identifier not found");
-            return ActionResult::failure(error: "{$entityName} identifier not found");
+            return ActionResult::failure(error: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.identifier_not_found',
+                "{$entityName} identifier not found",
+                ['entity' => $entityName]
+            ));
         }
 
         // Mark as pending while resolving
@@ -1683,7 +1739,11 @@ PROMPT;
 
             if ($results->isEmpty()) {
                 $context->setEntityState($entityName, EntityState::MISSING, $identifier);
-                return ActionResult::failure(error: "{$entityName} not found");
+                return ActionResult::failure(error: $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.entity_not_found',
+                    "{$entityName} not found",
+                    ['entity' => $entityName]
+                ));
             }
 
             if ($results->count() === 1) {
@@ -1695,7 +1755,11 @@ PROMPT;
 
                 $entityName_display = $entity->name ?? $entityId;
                 return ActionResult::success(
-                    message: "{$entityName} found: {$entityName_display}",
+                    message: $this->automatesRuntimeText(
+                        'ai-engine::runtime.automates_steps.entity_found',
+                        "{$entityName} found: {$entityName_display}",
+                        ['entity' => $entityName, 'name' => (string) $entityName_display]
+                    ),
                     data: [$entityName => $entity]
                 );
             }
@@ -1703,14 +1767,22 @@ PROMPT;
             // Multiple matches - need user choice
             $context->setEntityState($entityName, EntityState::PENDING, $identifier);
             return ActionResult::needsUserInput(
-                message: "Found multiple {$entityName} matches. Which one?",
+                message: $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.entity_multiple_matches',
+                    "Found multiple {$entityName} matches. Which one?",
+                    ['entity' => $entityName]
+                ),
                 data: ['matches' => $results],
                 metadata: ['needs_choice' => true, 'entity' => $entityName]
             );
 
         } catch (\Exception $e) {
             $context->setEntityState($entityName, EntityState::FAILED, $e->getMessage());
-            return ActionResult::failure(error: "Search failed: {$e->getMessage()}");
+            return ActionResult::failure(error: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.search_failed',
+                "Search failed: {$e->getMessage()}",
+                ['error' => $e->getMessage()]
+            ));
         }
     }
 
@@ -1731,7 +1803,10 @@ PROMPT;
             // This is already being called from autoResolveEntity, so we shouldn't reach here
             // But if we do, return a failure to indicate the entity needs to be resolved
             return ActionResult::failure(
-                error: "Entity requires user confirmation before creation"
+                error: $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.entity_confirmation_required',
+                    'Entity requires user confirmation before creation'
+                )
             );
         }
 
@@ -1755,7 +1830,11 @@ PROMPT;
 
         // Fallback: ask user if they want to create
         return ActionResult::needsUserInput(
-            message: "{$entityName} not found. Would you like to create it?",
+            message: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.entity_create_prompt',
+                "{$entityName} not found. Would you like to create it?",
+                ['entity' => $entityName]
+            ),
             metadata: ['awaiting_confirmation' => true, 'entity' => $entityName]
         );
     }
@@ -1811,7 +1890,11 @@ PROMPT;
                     }
 
                     return ActionResult::success(
-                        message: "✅ {$entityName} created successfully",
+                        message: $this->automatesRuntimeText(
+                            'ai-engine::runtime.automates_steps.entity_created',
+                            '✅ :entity created successfully',
+                            ['entity' => $entityName]
+                        ),
                         data: $response->data
                     );
                 }
@@ -1827,7 +1910,11 @@ PROMPT;
 
                 // Subflow failed - propagate the actual error message
                 $context->popWorkflow();
-                $errorMessage = $response->error ?: $response->message ?: "Subflow failed to create {$entityName}";
+                $errorMessage = $response->error ?: $response->message ?: $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.subworkflow_failed_create',
+                    'Subworkflow failed to create :entity',
+                    ['entity' => $entityName]
+                );
                 return ActionResult::failure(error: $errorMessage);
             }
 
@@ -1898,14 +1985,21 @@ PROMPT;
                 }
 
                 return ActionResult::success(
-                    message: "✅ {$entityName} created successfully",
+                    message: $this->automatesRuntimeText(
+                        'ai-engine::runtime.automates_steps.entity_created',
+                        '✅ :entity created successfully',
+                        ['entity' => $entityName]
+                    ),
                     data: $response->data
                 );
             }
 
             // Unexpected state
             $context->popWorkflow();
-            return ActionResult::failure(error: "Subworkflow started but in unexpected state");
+            return ActionResult::failure(error: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.subworkflow_unexpected_state',
+                'Subworkflow started but in unexpected state'
+            ));
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error("Subworkflow execution failed", [
@@ -1920,7 +2014,11 @@ PROMPT;
                 $context->popWorkflow();
             }
 
-            return ActionResult::failure(error: "Failed to create {$entityName}: {$e->getMessage()}");
+            return ActionResult::failure(error: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.entity_create_failed',
+                "Failed to create {$entityName}: {$e->getMessage()}",
+                ['entity' => $entityName, 'error' => $e->getMessage()]
+            ));
         }
     }
 
@@ -1934,7 +2032,10 @@ PROMPT;
     ): ActionResult {
         // Override this method in your workflow for custom creation logic
         return ActionResult::failure(
-            error: "Entity creation not implemented. Use subflow or override createEntity()"
+            error: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.entity_create_not_implemented',
+                'Entity creation not implemented. Use subflow or override createEntity()'
+            )
         );
     }
 
@@ -2083,7 +2184,10 @@ PROMPT;
             }
         }
 
-        return ActionResult::success(message: 'All array item fields collected');
+        return ActionResult::success(message: $this->automatesRuntimeText(
+            'ai-engine::runtime.automates_steps.array_fields_collected',
+            'All array item fields collected'
+        ));
     }
 
     /**
@@ -2110,7 +2214,10 @@ PROMPT;
         $finalAction = $config['final_action'] ?? null;
 
         if (!$finalAction || !is_callable($finalAction)) {
-            return ActionResult::failure(error: 'Final action not configured');
+            return ActionResult::failure(error: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.final_action_not_configured',
+                'Final action not configured'
+            ));
         }
 
         try {
@@ -2121,7 +2228,10 @@ PROMPT;
             }
 
             return ActionResult::success(
-                message: $config['goal'] ?? 'Task completed',
+                message: $config['goal'] ?? $this->automatesRuntimeText(
+                    'ai-engine::runtime.automates_steps.task_completed',
+                    'Task completed'
+                ),
                 data: $result
             );
 
@@ -2131,7 +2241,11 @@ PROMPT;
                 'error' => $e->getMessage(),
             ]);
 
-            return ActionResult::failure(error: "Failed: {$e->getMessage()}");
+            return ActionResult::failure(error: $this->automatesRuntimeText(
+                'ai-engine::runtime.automates_steps.final_action_failed',
+                "Failed: {$e->getMessage()}",
+                ['error' => $e->getMessage()]
+            ));
         }
     }
 
@@ -2269,6 +2383,30 @@ protected function normalizeCollectedDataTypes(array $collectedData, array $fiel
     }
 
     return $collectedData;
+}
+
+protected function automatesRuntimeText(string $key, string $fallback, array $replace = []): string
+{
+    $fallbackReplace = [];
+    foreach ($replace as $name => $value) {
+        $fallbackReplace[':' . $name] = (string) $value;
+    }
+
+    try {
+        $translated = app(LocaleResourceService::class)->translation($key, $replace);
+        return $translated !== '' ? $translated : strtr($fallback, $fallbackReplace);
+    } catch (\Throwable) {
+        return strtr($fallback, $fallbackReplace);
+    }
+}
+
+protected function automatesLexicon(string $key, array $fallback = []): array
+{
+    try {
+        return app(LocaleResourceService::class)->lexicon($key, default: $fallback);
+    } catch (\Throwable) {
+        return $fallback;
+    }
 }
 
 /**

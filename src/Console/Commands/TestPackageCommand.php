@@ -20,6 +20,7 @@ use LaravelAIEngine\Events\AIActionTriggered;
 use LaravelAIEngine\Events\AIFailoverTriggered;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class TestPackageCommand extends Command
 {
@@ -44,6 +45,7 @@ class TestPackageCommand extends Command
         // Run test suites
         if (!$this->option('skip-config')) {
             $this->testConfiguration();
+            $this->testInfrastructureServices();
         }
 
         if (!$this->option('skip-services')) {
@@ -81,12 +83,25 @@ class TestPackageCommand extends Command
         }
 
         // Test engine configurations
-        $engines = ['openai', 'anthropic', 'gemini', 'stability'];
+        $engines = ['openai', 'anthropic', 'gemini', 'stable_diffusion'];
         foreach ($engines as $engine) {
             $this->test("Engine '{$engine}' configured", function () use ($engine) {
                 return config("ai-engine.engines.{$engine}") !== null;
             });
         }
+    }
+
+    protected function testInfrastructureServices(): void
+    {
+        $this->section('Infrastructure Services Tests');
+
+        $this->test('InfrastructureHealthService can be resolved', function () {
+            return app(InfrastructureHealthService::class) instanceof InfrastructureHealthService;
+        });
+
+        $this->test('infra-health command is registered', function () {
+            return $this->getApplication()->has('ai-engine:infra-health');
+        });
     }
 
     protected function testServices(): void
@@ -233,7 +248,7 @@ class TestPackageCommand extends Command
         $this->test('EngineEnum::fromSlug() works', function () {
             try {
                 $engine = EngineEnum::fromSlug('openai');
-                return $engine === EngineEnum::OPENAI;
+                return $engine instanceof EngineEnum && $engine->value === EngineEnum::OPENAI;
             } catch (\Exception $e) {
                 return false;
             }
@@ -255,7 +270,7 @@ class TestPackageCommand extends Command
 
         // Test enum methods
         $this->test('EngineEnum has required methods', function () {
-            $engine = EngineEnum::OPENAI;
+            $engine = EngineEnum::from(EngineEnum::OPENAI);
             return method_exists($engine, 'label') &&
                    method_exists($engine, 'driverClass') &&
                    method_exists($engine, 'capabilities');

@@ -10,6 +10,7 @@ use LaravelAIEngine\Enums\ActionTypeEnum;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\ChatService;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -22,7 +23,8 @@ class DataCollectorChatService
 {
     public function __construct(
         protected DataCollectorService $dataCollector,
-        protected ?ChatService $chatService = null
+        protected ?ChatService $chatService = null,
+        protected ?LocaleResourceService $localeResources = null
     ) {}
 
     /**
@@ -107,7 +109,8 @@ class DataCollectorChatService
         // Check if there's an active session
         if (!$this->dataCollector->hasSession($sessionId)) {
             return $this->buildErrorResponse(
-                "No active data collection session found. Please start a new session.",
+                $this->locale()->translation('ai-engine::runtime.data_collector.no_active_session')
+                    ?: "No active data collection session found. Please start a new session.",
                 $engine,
                 $model
             );
@@ -216,7 +219,8 @@ class DataCollectorChatService
         
         if (!$state) {
             return $this->buildErrorResponse(
-                "No active session found.",
+                $this->locale()->translation('ai-engine::runtime.data_collector.api.active_session_not_found')
+                    ?: 'No active session found.',
                 'openai',
                 'gpt-4o'
             );
@@ -263,6 +267,11 @@ class DataCollectorChatService
         }
 
         $actions = [];
+        $locale = $this->locale()->resolveLocale($state->detectedLocale ?? $config->locale);
+        $confirmToken = $this->locale()->lexicon('intent.confirm', $locale, ['yes'])[0] ?? 'yes';
+        $rejectToken = $this->locale()->lexicon('intent.reject', $locale, ['no'])[0] ?? 'no';
+        $cancelToken = $this->locale()->lexicon('intent.cancel', $locale, ['cancel'])[0] ?? 'cancel';
+        $doneToken = $this->locale()->lexicon('intent.done', $locale, ['done'])[0] ?? 'done';
 
         // Add field-specific quick actions
         if ($state->status === DataCollectorState::STATUS_COLLECTING) {
@@ -291,7 +300,7 @@ class DataCollectorChatService
                 $actions[] = new InteractiveAction(
                     id: 'skip_field',
                     type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                    label: '⏭️ Skip',
+                    label: '⏭️ ' . ($this->t('ai-engine::data_collector.ui.skip', $locale) ?: 'Skip'),
                     description: null,
                     data: [
                         'action' => 'skip_field',
@@ -307,11 +316,11 @@ class DataCollectorChatService
             $actions[] = new InteractiveAction(
                 id: 'confirm_yes',
                 type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                label: '✅ Confirm',
+                label: '✅ ' . ($this->t('ai-engine::data_collector.ui.confirm', $locale) ?: 'Confirm'),
                 description: null,
                 data: [
                     'action' => 'confirm',
-                    'reply' => 'yes',
+                    'reply' => $confirmToken,
                 ]
             );
 
@@ -319,11 +328,11 @@ class DataCollectorChatService
                 $actions[] = new InteractiveAction(
                     id: 'confirm_modify',
                     type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                    label: '✏️ Modify',
+                    label: '✏️ ' . ($this->t('ai-engine::data_collector.ui.modify', $locale) ?: 'Modify'),
                     description: null,
                     data: [
                         'action' => 'modify',
-                        'reply' => 'no',
+                        'reply' => $rejectToken,
                     ]
                 );
             }
@@ -344,7 +353,7 @@ class DataCollectorChatService
                     data: [
                         'action' => 'edit_field',
                         'field' => $name,
-                        'reply' => "I want to change the {$name}",
+                        'reply' => "{$name}",
                     ]
                 );
             }
@@ -352,11 +361,11 @@ class DataCollectorChatService
             $actions[] = new InteractiveAction(
                 id: 'done_editing',
                 type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                label: '✅ Done',
+                label: '✅ ' . ucfirst($doneToken),
                 description: null,
                 data: [
                     'action' => 'done_editing',
-                    'reply' => 'done',
+                    'reply' => $doneToken,
                 ]
             );
         }
@@ -366,11 +375,11 @@ class DataCollectorChatService
             $actions[] = new InteractiveAction(
                 id: 'cancel_collection',
                 type: new ActionTypeEnum(ActionTypeEnum::BUTTON),
-                label: '❌ Cancel',
+                label: '❌ ' . ($this->t('ai-engine::data_collector.ui.cancel', $locale) ?: 'Cancel'),
                 description: null,
                 data: [
                     'action' => 'cancel',
-                    'reply' => 'cancel',
+                    'reply' => $cancelToken,
                 ]
             );
         }
@@ -468,7 +477,7 @@ class DataCollectorChatService
         string $sessionId,
         string $content,
         array $fields,
-        string $language = 'en',
+        string $language = '',
         array $fieldConfig = []
     ): array {
         return $this->dataCollector->extractDataFromContent($sessionId, $content, $fields, $language, $fieldConfig);
@@ -485,7 +494,7 @@ class DataCollectorChatService
     public function applyExtractedData(
         string $sessionId,
         array $extractedData,
-        string $language = 'en'
+        string $language = ''
     ): AIResponse {
         $response = $this->dataCollector->applyExtractedData($sessionId, $extractedData, $language);
         
@@ -512,5 +521,19 @@ class DataCollectorChatService
                 'progress' => 100,
             ]
         );
+    }
+
+    protected function t(string $key, ?string $locale = null): string
+    {
+        return $this->locale()->translation($key, locale: $locale);
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 }

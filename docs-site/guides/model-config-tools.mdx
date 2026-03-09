@@ -1,0 +1,87 @@
+---
+title: Model Config and Tools
+description: Define safe model behavior and business operations for agent execution.
+---
+
+Use `AutonomousModelConfig` classes as the explicit contract between AI and your domain model.
+
+## Example: Invoice Model Config
+
+```php
+<?php
+
+namespace App\AI\Configs;
+
+use App\Models\Invoice;
+use LaravelAIEngine\Contracts\AutonomousModelConfig;
+
+class InvoiceModelConfig extends AutonomousModelConfig
+{
+    public static function getModelClass(): string
+    {
+        return Invoice::class;
+    }
+
+    public static function getName(): string
+    {
+        return 'invoice';
+    }
+
+    public static function getDescription(): string
+    {
+        return 'Customer invoices with status, due dates, and totals.';
+    }
+
+    public static function getFilterConfig(): array
+    {
+        return [
+            'user_field' => 'user_id',
+            'date_field' => 'invoice_date',
+            'status_field' => 'status',
+            'amount_field' => 'total_amount',
+            'eager_load' => ['customer'],
+        ];
+    }
+
+    public static function getTools(): array
+    {
+        return [
+            'create_invoice' => [
+                'description' => 'Create a new invoice',
+                'parameters' => ['customer_id', 'invoice_date', 'items'],
+                'requires_confirmation' => true,
+                'handler' => function (array $data) {
+                    return Invoice::create([
+                        'customer_id' => $data['customer_id'],
+                        'invoice_date' => $data['invoice_date'],
+                        'status' => 'draft',
+                        'total_amount' => $data['total_amount'] ?? 0,
+                    ]);
+                },
+            ],
+        ];
+    }
+}
+```
+
+## Permissions Per User
+
+Override `getAllowedOperations(?int $userId)` to enforce authorization boundaries.
+
+## Best Practices
+
+- keep tool handlers deterministic
+- require confirmation for write/delete operations
+- return normalized arrays/models only
+- avoid hidden side effects inside handlers
+
+## List UX Hooks Per Model
+
+For cleaner list responses, add model methods:
+
+- `toAISummarySource()` for compact summary-cache source
+- `toRAGListPreview(?string $locale = null)` for multi-line, scan-friendly cards
+
+These keep response formatting domain-aware without hardcoding entity-specific logic in global services.
+
+See `guides/entity-list-preview-ux` for full patterns.

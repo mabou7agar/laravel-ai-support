@@ -1,0 +1,6 @@
+Is this message a REJECTION, CANCELLATION, or NEGATIVE response?
+Message: "{{message}}"
+{{context_block}}
+Respond with ONLY one token:
+- "{{yes}}" if it is rejection/cancellation/negative
+- "{{no}}" if it is not

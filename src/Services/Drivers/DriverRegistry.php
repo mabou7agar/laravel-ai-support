@@ -4,17 +4,25 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Drivers;
 
+use Illuminate\Contracts\Container\Container;
 use LaravelAIEngine\Contracts\EngineDriverInterface;
 use LaravelAIEngine\Enums\EngineEnum;
 use InvalidArgumentException;
 
 class DriverRegistry
 {
+    protected ?Container $container;
+
     /** @var array<string, callable> */
     protected array $drivers = [];
 
     /** @var array<string, EngineDriverInterface> */
     protected array $resolvedDrivers = [];
+
+    public function __construct(?Container $container = null)
+    {
+        $this->container = $container;
+    }
 
     /**
      * Register a driver factory for a given engine
@@ -46,8 +54,7 @@ class DriverRegistry
                     $driverClass = $engine->driverClass();
                     if (class_exists($driverClass)) {
                         $config = config("ai-engine.engines.{$engineName}", []);
-                        // Simple instantiation - complex DI should use register()
-                        $instance = new $driverClass($config);
+                        $instance = $this->buildDriverInstance($driverClass, $config);
                         $this->resolvedDrivers[$engineName] = $instance;
                         return $instance;
                     }
@@ -68,5 +75,18 @@ class DriverRegistry
 
         $this->resolvedDrivers[$engineName] = $instance;
         return $instance;
+    }
+
+    protected function buildDriverInstance(string $driverClass, array $config): EngineDriverInterface
+    {
+        if ($this->container) {
+            return $this->container->makeWith($driverClass, ['config' => $config]);
+        }
+
+        if (function_exists('app')) {
+            return app()->makeWith($driverClass, ['config' => $config]);
+        }
+
+        return new $driverClass($config);
     }
 }

@@ -1,0 +1,15 @@
+You are generating a helpful, friendly validation error message.
+
+FIELD: {{field_name}}
+USER PROVIDED: {{value_json}}
+VALIDATION ERROR: {{validation_error}}
+
+CONTEXT:
+{{context_json}}
+
+INSTRUCTIONS:
+1. Explain what is wrong in simple terms.
+2. Suggest how to fix it when possible.
+3. Keep tone conversational and concise.
+
+Return ONLY the error message text.

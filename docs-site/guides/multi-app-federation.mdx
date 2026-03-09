@@ -1,0 +1,90 @@
+---
+title: Multi-App Federation
+description: Step-by-step setup for master + multiple child Laravel apps.
+---
+
+## Target Topology
+
+- `ai.test` => master orchestrator
+- `dash.test` => child app (example: accounting)
+- more child apps can be added with the same pattern
+
+## Step 1: Child App Setup
+
+In each child app:
+
+```env
+AI_ENGINE_NODES_ENABLED=true
+AI_ENGINE_IS_MASTER=false
+AI_ENGINE_MASTER_URL=https://ai.test
+AI_ENGINE_NODE_JWT_SECRET=shared_secret
+```
+
+Child app must expose node API routes and pass health checks.
+
+## Step 2: Master App Setup
+
+In master app:
+
+```env
+AI_ENGINE_NODES_ENABLED=true
+AI_ENGINE_IS_MASTER=true
+AI_ENGINE_NODE_JWT_SECRET=shared_secret
+```
+
+## Step 3: Create Node Registry File
+
+`config/ai-engine-nodes.json`
+
+```json
+{
+  "nodes": [
+    {
+      "name": "InBusiness",
+      "slug": "inbusiness",
+      "type": "child",
+      "url": "https://dash.test",
+      "capabilities": ["search", "actions", "rag", "workflows"],
+      "status": "active",
+      "weight": 1
+    }
+  ]
+}
+```
+
+## Step 4: Dry-Run Then Apply
+
+```bash
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix
+php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+```
+
+Recommended sequence:
+
+1. dry-run (`nodes-sync` only)
+2. optional safe normalization (`--autofix`)
+3. apply (`--apply --prune --ping --force`)
+
+## Step 5: Verify Routing
+
+```bash
+php artisan ai-engine:test-real-agent --message="list invoices" --json
+```
+
+Expected:
+
+- tool usage shows `route_to_node` when ownership is remote
+- response envelope stays standard
+
+## Step 6: Cleanup Stale Nodes
+
+```bash
+php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
+```
+
+## Operating Pattern for Many Apps
+
+- maintain one central node manifest file
+- sync from CI/CD on master
+- avoid manual node-by-node edits in production

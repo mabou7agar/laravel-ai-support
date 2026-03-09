@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\AIChatController;
+use LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware;
+use LaravelAIEngine\Http\Middleware\StandardizeApiResponseMiddleware;
 
 /*
 |--------------------------------------------------------------------------
@@ -13,7 +15,7 @@ use LaravelAIEngine\Http\Controllers\AIChatController;
 |
 */
 
-Route::prefix('api/ai-chat')->middleware(['web'])->group(function () {
+Route::prefix('api/ai-chat')->middleware(['web', SetRequestLocaleMiddleware::class, StandardizeApiResponseMiddleware::class])->group(function () {
     // Send message to AI
     Route::post('/send', [AIChatController::class, 'sendMessage'])->name('ai-chat.send');
     
@@ -34,7 +36,7 @@ Route::prefix('api/ai-chat')->middleware(['web'])->group(function () {
 });
 
 // Optional: Add authentication middleware for protected routes
-Route::prefix('api/ai-chat')->middleware(['web', 'auth'])->group(function () {
+Route::prefix('api/ai-chat')->middleware(['web', 'auth', SetRequestLocaleMiddleware::class, StandardizeApiResponseMiddleware::class])->group(function () {
     // Protected routes that require authentication
     // Route::post('/send', [AIChatController::class, 'sendMessage'])->name('ai-chat.send.auth');
 });

@@ -106,7 +106,7 @@ class Conversation extends Model
         })->toArray();
     }
 
-    protected function trimMessages(): void
+    public function trimMessages(): void
     {
         $messageCount = $this->messages()->count();
         $maxMessages = $this->max_messages;

@@ -132,6 +132,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Explicit Agent Manifest
+    |--------------------------------------------------------------------------
+    |
+    | Deterministic registration for model configs, tools, collectors, and
+    | filters. This avoids runtime directory scanning in production and gives
+    | one source of truth.
+    |
+    | Default file: app/AI/agent-manifest.php
+    |
+    */
+    'manifest' => [
+        'path' => env('AI_AGENT_MANIFEST_PATH', app_path('AI/agent-manifest.php')),
+        'fallback_discovery' => env('AI_AGENT_MANIFEST_FALLBACK_DISCOVERY', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Debug Mode
     |--------------------------------------------------------------------------
     |

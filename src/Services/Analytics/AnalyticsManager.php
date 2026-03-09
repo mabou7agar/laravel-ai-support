@@ -32,8 +32,17 @@ class AnalyticsManager
     /**
      * Track AI request
      */
-    public function trackRequest(array $data): void
+    public function trackRequest(array $data): bool
     {
+        if (is_callable([$this->driver(), 'track'])) {
+            $this->driver()->track('request', $data);
+            $this->callMetric('incrementCounter', ['requests.total']);
+            if (isset($data['tokens'])) {
+                $this->callMetric('recordGauge', ['requests.tokens', $data['tokens']]);
+            }
+            return true;
+        }
+
         $requestData = array_merge([
             'timestamp' => Carbon::now()->toISOString(),
             'request_id' => $data['request_id'] ?? uniqid('req_'),
@@ -61,13 +70,21 @@ class AnalyticsManager
             'engine' => $requestData['engine'],
             'tokens' => $requestData['total_tokens']
         ]);
+
+        return true;
     }
 
     /**
      * Track streaming session
      */
-    public function trackStreaming(array $data): void
+    public function trackStreaming(array $data): bool
     {
+        if (is_callable([$this->driver(), 'track'])) {
+            $this->driver()->track('streaming', $data);
+            $this->callMetric('incrementCounter', ['streaming.sessions']);
+            return true;
+        }
+
         $streamingData = array_merge([
             'timestamp' => Carbon::now()->toISOString(),
             'session_id' => $data['session_id'] ?? uniqid('stream_'),
@@ -83,13 +100,21 @@ class AnalyticsManager
 
         $this->driver()->trackStreaming($streamingData);
         $this->metricsCollector->recordStreaming($streamingData);
+
+        return true;
     }
 
     /**
      * Track interactive action
      */
-    public function trackAction(array $data): void
+    public function trackAction(array $data): bool
     {
+        if (is_callable([$this->driver(), 'track'])) {
+            $this->driver()->track('action', $data);
+            $this->callMetric('incrementCounter', ['actions.total']);
+            return true;
+        }
+
         $actionData = array_merge([
             'timestamp' => Carbon::now()->toISOString(),
             'action_id' => $data['action_id'] ?? uniqid('action_'),
@@ -104,6 +129,23 @@ class AnalyticsManager
 
         $this->driver()->trackAction($actionData);
         $this->metricsCollector->recordAction($actionData);
+
+        return true;
+    }
+
+    /**
+     * Track error events (legacy compatibility API).
+     */
+    public function trackError(array $data): bool
+    {
+        if (is_callable([$this->driver(), 'track'])) {
+            $this->driver()->track('error', $data);
+            $this->callMetric('incrementCounter', ['errors.total']);
+            return true;
+        }
+
+        $payload = array_merge($data, ['success' => false]);
+        return $this->trackRequest($payload);
     }
 
     /**
@@ -119,6 +161,10 @@ class AnalyticsManager
      */
     public function getPerformanceMetrics(array $filters = []): array
     {
+        if (is_callable([$this->driver(), 'query'])) {
+            return $this->driver()->query('performance', $filters);
+        }
+
         return $this->driver()->getPerformanceMetrics($filters);
     }
 
@@ -143,6 +189,10 @@ class AnalyticsManager
      */
     public function getDashboardData(array $filters = []): array
     {
+        if (is_callable([$this->driver(), 'query'])) {
+            return $this->driver()->query('dashboard', $filters);
+        }
+
         $timeRange = $filters['time_range'] ?? '24h';
         $userId = $filters['user_id'] ?? null;
 
@@ -236,6 +286,10 @@ class AnalyticsManager
      */
     public function generateReport(array $options = []): array
     {
+        if (is_callable([$this->driver(), 'query'])) {
+            return $this->driver()->query('report', $options);
+        }
+
         $format = $options['format'] ?? 'array';
         $timeRange = $options['time_range'] ?? '7d';
         $includeCharts = $options['include_charts'] ?? false;
@@ -272,6 +326,38 @@ class AnalyticsManager
     }
 
     /**
+     * Legacy alias for extend().
+     */
+    public function registerDriver(string $name, AnalyticsDriverInterface $driver): void
+    {
+        $this->extend($name, $driver);
+    }
+
+    /**
+     * Set active analytics driver name.
+     */
+    public function setDriver(string $name): void
+    {
+        $this->defaultDriver = $name;
+    }
+
+    /**
+     * Get currently active driver name.
+     */
+    public function getCurrentDriver(): string
+    {
+        return $this->defaultDriver;
+    }
+
+    /**
+     * Return all registered drivers.
+     */
+    public function getAvailableDrivers(): array
+    {
+        return $this->drivers;
+    }
+
+    /**
      * Get analytics driver
      */
     public function driver(?string $name = null): AnalyticsDriverInterface
@@ -283,6 +369,63 @@ class AnalyticsManager
         }
 
         return $this->drivers[$name];
+    }
+
+    /**
+     * Legacy insights API.
+     */
+    public function getUsageInsights(array $filters = []): array
+    {
+        if (is_callable([$this->driver(), 'query'])) {
+            return $this->driver()->query('insights', $filters);
+        }
+
+        return $this->generateInsights($this->getDashboardData($filters));
+    }
+
+    /**
+     * Legacy cost analysis API.
+     */
+    public function getCostAnalysis(array $filters = []): array
+    {
+        if (is_callable([$this->driver(), 'query'])) {
+            return $this->driver()->query('cost_analysis', $filters);
+        }
+
+        return $this->getCostAnalytics($filters);
+    }
+
+    /**
+     * Legacy cleanup API.
+     */
+    public function cleanupOldData(int $retentionDays): int
+    {
+        if (is_callable([$this->driver(), 'cleanup'])) {
+            return (int) $this->driver()->cleanup($retentionDays);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Legacy export API.
+     */
+    public function exportData(array $filters = [], string $format = 'json'): mixed
+    {
+        if (is_callable([$this->driver(), 'export'])) {
+            return $this->driver()->export($filters, $format);
+        }
+
+        return [];
+    }
+
+    protected function callMetric(string $method, array $arguments = []): void
+    {
+        try {
+            $this->metricsCollector->{$method}(...$arguments);
+        } catch (\Throwable) {
+            // Metrics collector may not implement legacy methods.
+        }
     }
 
     /**

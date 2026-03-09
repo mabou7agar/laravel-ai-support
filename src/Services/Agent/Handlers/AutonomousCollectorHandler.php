@@ -7,6 +7,7 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\Log;
 class AutonomousCollectorHandler implements MessageHandlerInterface
 {
     public function __construct(
-        protected AutonomousCollectorService $collectorService
+        protected AutonomousCollectorService $collectorService,
+        protected ?LocaleResourceService $localeResources = null
     ) {
     }
 
@@ -49,7 +51,8 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         if (!$collectorState) {
             Log::channel('ai-engine')->warning('AutonomousCollectorHandler called without active collector');
             return AgentResponse::failure(
-                message: 'No active collector session.',
+                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.no_active_session')
+                    ?: 'No active collector session.',
                 context: $context
             );
         }
@@ -69,7 +72,8 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
                 'available_configs' => array_keys(AutonomousCollectorRegistry::getConfigs()),
             ]);
             return AgentResponse::failure(
-                message: 'Collector configuration not found.',
+                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.config_not_found')
+                    ?: 'Collector configuration not found.',
                 context: $context
             );
         }
@@ -88,7 +92,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
      */
     protected function handleStartCollector(string $message, UnifiedActionContext $context, array $options = []): AgentResponse
     {
-        // First check if match was already found by MessageAnalyzer (avoid duplicate AI call)
+        // First check if the orchestrator already supplied a collector match.
         $match = $options['collector_match'] ?? null;
 
         // Fallback to finding config if not passed (shouldn't happen normally)
@@ -97,12 +101,21 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         }
 
         if ($match) {
+            $config = $match['config'] ?? null;
+            if (!$config instanceof AutonomousCollectorConfig) {
+                return AgentResponse::failure(
+                    message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.config_not_found')
+                        ?: 'Collector configuration not found.',
+                    context: $context
+                );
+            }
+
             Log::channel('ai-engine')->info('Starting autonomous collector from registry', [
                 'name' => $match['name'],
-                'goal' => $match['config']->goal,
+                'goal' => $config->goal,
             ]);
 
-            return $this->startCollector($context, $match['config'], $message);
+            return $this->startCollector($context, $config, $message, (string) ($match['name'] ?? ''));
         }
 
         Log::channel('ai-engine')->warning('No autonomous collector config found for message', [
@@ -110,7 +123,8 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         ]);
 
         return AgentResponse::conversational(
-            message: "I couldn't find a matching collector for your request. Can you please clarify what you'd like to do?",
+            message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.no_matching_collector')
+                ?: "I couldn't find a matching collector for your request. Can you please clarify what you'd like to do?",
             context: $context
         );
     }
@@ -160,7 +174,10 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
                     ]);
 
                     return AgentResponse::failure(
-                        message: "Failed to complete: {$e->getMessage()}",
+                        message: $this->locale()->translation(
+                            'ai-engine::runtime.autonomous_collector.completion_failed',
+                            ['error' => $e->getMessage()]
+                        ) ?: "Failed to complete: {$e->getMessage()}",
                         context: $context
                     );
                 }
@@ -170,7 +187,8 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
                 $context->set('autonomous_collector', $collectorState);
 
                 return AgentResponse::needsUserInput(
-                    message: "No problem. What would you like to change?",
+                    message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.change_prompt')
+                        ?: 'No problem. What would you like to change?',
                     context: $context
                 );
             }
@@ -181,7 +199,8 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             $context->forget('autonomous_collector');
 
             return AgentResponse::success(
-                message: 'Collection cancelled.',
+                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.cancelled')
+                    ?: 'Collection cancelled.',
                 context: $context
             );
         }
@@ -420,15 +439,25 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         $cleanMessage = trim($cleanMessage);
 
         if ($config->confirmBeforeComplete) {
-            $summary = $this->generateSummary($finalOutput);
+            $summary = $this->generateSummary($finalOutput, 0, $config, $collectorState['tool_results'] ?? []);
+            $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
+            $noToken = $this->locale()->lexicon('intent.reject', default: ['no'])[0] ?? 'no';
+            $title = $this->locale()->translation('ai-engine::runtime.autonomous_collector.confirm_review_title')
+                ?: 'Please Review:';
+            $footer = $this->locale()->translation('ai-engine::runtime.autonomous_collector.confirm_footer')
+                ?: 'Confirm to proceed or cancel';
+            $typeHint = $this->locale()->translation(
+                'ai-engine::runtime.autonomous_collector.confirm_type_hint',
+                ['yes' => $yesToken, 'no' => $noToken]
+            ) ?: "Type: '{$yesToken}' or '{$noToken}'";
 
             // Build structured confirmation message
-            $confirmMessage = "📋 **Please Review:**\n\n";
+            $confirmMessage = "📋 **{$title}**\n\n";
             $confirmMessage .= $summary;
             $confirmMessage .= "\n\n";
             $confirmMessage .= "---\n";
-            $confirmMessage .= "✅ Confirm to proceed | ❌ Cancel\n";
-            $confirmMessage .= "Type: **yes** or **no**";
+            $confirmMessage .= "✅ {$footer}\n";
+            $confirmMessage .= $typeHint;
 
             $conversation[] = ['role' => 'assistant', 'content' => $confirmMessage];
             $collectorState['conversation'] = $conversation;
@@ -447,13 +476,16 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             $context->forget('autonomous_collector');
 
             return AgentResponse::success(
-                message: '✅ Successfully completed!',
+                message: '✅ ' . ($this->locale()->translation('ai-engine::runtime.autonomous_collector.completed') ?: 'Successfully completed!'),
                 context: $context,
                 data: ['result' => $result]
             );
         } catch (\Exception $e) {
             return AgentResponse::failure(
-                message: "Failed: {$e->getMessage()}",
+                message: $this->locale()->translation(
+                    'ai-engine::runtime.autonomous_collector.failed',
+                    ['error' => $e->getMessage()]
+                ) ?: "Failed: {$e->getMessage()}",
                 context: $context
             );
         }
@@ -479,13 +511,18 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
     /**
      * Generate summary of collected data
      */
-    protected function generateSummary(array $data, int $depth = 0): string
+    protected function generateSummary(
+        array $data,
+        int $depth = 0,
+        ?AutonomousCollectorConfig $config = null,
+        array $toolResults = []
+    ): string
     {
         $lines = [];
         $indent = str_repeat('  ', $depth);
 
         // Fetch entity details for user-friendly display
-        $entityDetails = $this->fetchEntityDetails($data);
+        $entityDetails = $this->fetchEntityDetails($data, $config, $toolResults);
 
         // Group fields by category for better organization
         $entities = [];
@@ -496,6 +533,19 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             // Skip internal fields (prefixed with _)
             if (str_starts_with($key, '_')) {
                 continue;
+            }
+
+            // Skip empty/null values to reduce noise.
+            if (!$this->hasDisplayValue($value)) {
+                continue;
+            }
+
+            // Skip auxiliary user IDs if main entity ID is already present.
+            if (str_ends_with($key, '_user_id')) {
+                $baseEntity = str_replace('_user_id', '', $key) . '_id';
+                if (array_key_exists($baseEntity, $data) && $this->hasDisplayValue($data[$baseEntity] ?? null)) {
+                    continue;
+                }
             }
 
             // Categorize fields
@@ -530,9 +580,9 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             $label = $this->formatFieldLabel($key);
             if (is_array($value)) {
                 $lines[] = "{$indent}📝 **{$label}**:";
-                $lines[] = $this->generateSummary($value, $depth + 1);
+                $lines[] = $this->generateSummary($value, $depth + 1, $config, $toolResults);
             } else {
-                $lines[] = "{$indent}📝 **{$label}**: {$value}";
+                $lines[] = "{$indent}📝 **{$label}**: " . $this->formatScalarValue($key, $value);
             }
         }
 
@@ -542,14 +592,10 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             $lines[] = "{$indent}📦 **{$label}**: " . count($value) . " item(s)";
             foreach ($value as $item) {
                 if (is_array($item)) {
-                    $itemSummary = [];
-                    foreach ($item as $k => $v) {
-                        if (!is_array($v) && !str_starts_with($k, '_')) {
-                            $itemLabel = $this->formatFieldLabel($k);
-                            $itemSummary[] = "{$itemLabel}: {$v}";
-                        }
+                    $itemSummary = $this->buildItemSummary($item);
+                    if ($itemSummary !== '') {
+                        $lines[] = "{$indent}  • {$itemSummary}";
                     }
-                    $lines[] = "{$indent}  • " . implode(', ', $itemSummary);
                 } else {
                     $lines[] = "{$indent}  • {$item}";
                 }
@@ -563,21 +609,25 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
      * Fetch entity details for user-friendly display
      * Uses collector config's entity resolvers if available
      */
-    protected function fetchEntityDetails(array $data): array
+    protected function fetchEntityDetails(
+        array $data,
+        ?AutonomousCollectorConfig $config = null,
+        array $toolResults = []
+    ): array
     {
         $details = [];
-        $config = $this->getCollectorConfig();
-
-        if (!$config) {
-            return $details;
-        }
 
         // Get entity resolvers from config
-        $entityResolvers = $config->entityResolvers ?? [];
+        $entityResolvers = $config?->entityResolvers ?? [];
+        $toolLookup = $this->buildEntityLookupFromToolResults($toolResults);
 
         foreach ($data as $key => $value) {
             // Check if this is an ID field with a resolver
-            if (str_ends_with($key, '_id') && isset($entityResolvers[$key])) {
+            if (!str_ends_with($key, '_id') || !$this->hasDisplayValue($value)) {
+                continue;
+            }
+
+            if (isset($entityResolvers[$key])) {
                 try {
                     $resolver = $entityResolvers[$key];
 
@@ -595,6 +645,13 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
                         'error' => $e->getMessage(),
                     ]);
                 }
+
+                continue;
+            }
+
+            $lookupValue = $toolLookup[$key][(string) $value] ?? null;
+            if (is_array($lookupValue) && $lookupValue !== []) {
+                $details[$key] = $lookupValue;
             }
         }
 
@@ -635,6 +692,138 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         return ucwords(str_replace('_', ' ', $field));
     }
 
+    protected function hasDisplayValue(mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        if (is_string($value)) {
+            return trim($value) !== '';
+        }
+
+        if (is_array($value)) {
+            return $value !== [];
+        }
+
+        return true;
+    }
+
+    protected function formatScalarValue(string $key, mixed $value): string
+    {
+        if (is_bool($value)) {
+            return $value ? 'Yes' : 'No';
+        }
+
+        if (is_numeric($value)) {
+            if (preg_match('/(?:total|subtotal|tax|amount|price|cost)/i', $key)) {
+                return number_format((float) $value, 2, '.', '');
+            }
+
+            return (string) $value;
+        }
+
+        if (is_scalar($value)) {
+            return trim((string) $value);
+        }
+
+        return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+    }
+
+    protected function buildItemSummary(array $item): string
+    {
+        $name = trim((string) ($item['name'] ?? $item['title'] ?? ''));
+        $quantity = $item['quantity'] ?? null;
+        $unitPrice = $item['unit_price'] ?? $item['price'] ?? null;
+        $total = $item['total'] ?? null;
+
+        if ($name !== '' && $this->hasDisplayValue($quantity) && $this->hasDisplayValue($unitPrice)) {
+            $summary = $name . ' × ' . $this->formatScalarValue('quantity', $quantity);
+            $summary .= ' @ ' . $this->formatScalarValue('unit_price', $unitPrice);
+            if ($this->hasDisplayValue($total)) {
+                $summary .= ' = ' . $this->formatScalarValue('total', $total);
+            }
+
+            return $summary;
+        }
+
+        $parts = [];
+        foreach ($item as $key => $value) {
+            if (str_starts_with((string) $key, '_') || !$this->hasDisplayValue($value) || is_array($value)) {
+                continue;
+            }
+
+            if (str_ends_with((string) $key, '_id') && isset($item[str_replace('_id', '_name', (string) $key)])) {
+                continue;
+            }
+
+            $parts[] = $this->formatFieldLabel((string) $key) . ': ' . $this->formatScalarValue((string) $key, $value);
+        }
+
+        return implode(', ', $parts);
+    }
+
+    protected function buildEntityLookupFromToolResults(array $toolResults): array
+    {
+        $lookup = [];
+
+        foreach ($toolResults as $entry) {
+            if (!is_array($entry) || (($entry['success'] ?? false) !== true)) {
+                continue;
+            }
+
+            $tool = strtolower((string) ($entry['tool'] ?? ''));
+            $result = $entry['result'] ?? null;
+            if (!is_array($result)) {
+                continue;
+            }
+
+            $rows = [];
+            if (isset($result['id']) || isset($result['user_id'])) {
+                $rows[] = $result;
+            }
+            foreach (['customers', 'products', 'vendors', 'items'] as $listKey) {
+                if (!empty($result[$listKey]) && is_array($result[$listKey])) {
+                    foreach ($result[$listKey] as $row) {
+                        if (is_array($row)) {
+                            $rows[] = $row;
+                        }
+                    }
+                }
+            }
+
+            foreach ($rows as $row) {
+                $name = trim((string) ($row['name'] ?? $row['title'] ?? ''));
+                $email = trim((string) ($row['email'] ?? ''));
+                $profile = [];
+                if ($name !== '') {
+                    $profile['Name'] = $name;
+                }
+                if ($email !== '') {
+                    $profile['Email'] = $email;
+                }
+
+                if ($profile === []) {
+                    continue;
+                }
+
+                if (isset($row['id']) && str_contains($tool, 'customer')) {
+                    $lookup['customer_id'][(string) $row['id']] = $profile;
+                }
+
+                if (isset($row['user_id']) && str_contains($tool, 'customer')) {
+                    $lookup['customer_user_id'][(string) $row['user_id']] = $profile;
+                }
+
+                if (isset($row['id']) && str_contains($tool, 'product')) {
+                    $lookup['product_id'][(string) $row['id']] = $profile;
+                }
+            }
+        }
+
+        return $lookup;
+    }
+
     /**
      * Build conversation prompt
      */
@@ -661,8 +850,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
      */
     protected function isConfirmation(string $message): bool
     {
-        $message = strtolower(trim($message));
-        return in_array($message, ['yes', 'y', 'confirm', 'proceed', 'ok', 'sure', 'go ahead', 'do it']);
+        return $this->locale()->isLexiconMatch(strtolower(trim($message)), 'intent.confirm');
     }
 
     /**
@@ -670,8 +858,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
      */
     protected function isDenial(string $message): bool
     {
-        $message = strtolower(trim($message));
-        return in_array($message, ['no', 'n', 'cancel', 'change', 'modify', 'edit']);
+        return $this->locale()->isLexiconMatch(strtolower(trim($message)), 'intent.deny');
     }
 
     /**
@@ -679,8 +866,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
      */
     protected function isCancellation(string $message): bool
     {
-        $message = strtolower(trim($message));
-        return in_array($message, ['cancel', 'stop', 'quit', 'exit', 'nevermind', 'never mind']);
+        return $this->locale()->isLexiconMatch(strtolower(trim($message)), 'intent.cancel');
     }
 
     /**
@@ -691,18 +877,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         $messageLower = strtolower(trim($message));
 
         // Common query patterns that indicate user wants to do something else
-        $queryPatterns = [
-            'list ',
-            'show ',
-            'get ',
-            'find ',
-            'search ',
-            'display ',
-            'view ',
-            'what are ',
-            'how many ',
-            'count ',
-        ];
+        $queryPatterns = $this->locale()->lexicon('intent.query_prefixes');
 
         foreach ($queryPatterns as $pattern) {
             if (str_starts_with($messageLower, $pattern)) {
@@ -728,6 +903,15 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         }
 
         return false;
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 
     public function canHandle(string $action): bool
@@ -806,16 +990,22 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
     {
         $inputs = [];
         $contentLower = strtolower($content);
+        $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
+        $noToken = $this->locale()->lexicon('intent.reject', default: ['no'])[0] ?? 'no';
+        $confirmLabel = $this->locale()->translation('ai-engine::runtime.common.confirm_label') ?: 'Confirm';
+        $yesLabel = $this->locale()->translation('ai-engine::runtime.common.yes_label') ?: 'Yes';
+        $noLabel = $this->locale()->translation('ai-engine::runtime.common.no_label') ?: 'No';
 
-        // Check for confirmation requests (yes/no)
-        $confirmationPatterns = [
-            'is this correct',
-            'shall i proceed',
-            'would you like to',
-            'do you want to',
-            'proceed?',
-            '(yes/no)',
-        ];
+        $confirmationHint = mb_strtolower((string) $this->locale()->translation(
+            'ai-engine::runtime.autonomous_collector.confirm_type_hint',
+            ['yes' => $yesToken, 'no' => $noToken]
+        ));
+        $reviewTitle = mb_strtolower((string) $this->locale()->translation('ai-engine::runtime.autonomous_collector.confirm_review_title'));
+        $confirmationPatterns = array_values(array_filter([
+            trim($confirmationHint),
+            trim($reviewTitle),
+            "({$yesToken}/{$noToken})",
+        ]));
 
         $isConfirmation = false;
         foreach ($confirmationPatterns as $pattern) {
@@ -825,15 +1015,21 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             }
         }
 
+        if (!$isConfirmation) {
+            $yesPattern = preg_quote($yesToken, '/');
+            $noPattern = preg_quote($noToken, '/');
+            $isConfirmation = (bool) preg_match("/({$yesPattern}.*{$noPattern}|{$noPattern}.*{$yesPattern})/iu", $contentLower);
+        }
+
         if ($isConfirmation) {
             $inputs[] = [
                 'name' => 'confirmation',
                 'type' => 'confirm',
-                'label' => 'Confirm',
+                'label' => $confirmLabel,
                 'required' => true,
                 'options' => [
-                    ['value' => 'yes', 'label' => 'Yes'],
-                    ['value' => 'no', 'label' => 'No'],
+                    ['value' => $yesToken, 'label' => $yesLabel],
+                    ['value' => $noToken, 'label' => $noLabel],
                 ],
             ];
         }
@@ -956,14 +1152,23 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
     public function startCollector(
         UnifiedActionContext $context,
         AutonomousCollectorConfig $config,
-        string $initialMessage = ''
+        string $initialMessage = '',
+        string $configNameHint = ''
     ): AgentResponse {
-        // Register config for later retrieval
-        $this->collectorService->registerConfig($config);
+        $configName = trim($config->name ?? '');
+        if ($configName === '') {
+            $configName = trim($configNameHint);
+        }
+        if ($configName === '') {
+            $configName = 'collector_' . substr(sha1($context->sessionId . '|' . $config->goal), 0, 16);
+        }
+
+        // Register config for later retrieval (name may be generated at runtime).
+        $this->collectorService->registerConfigAs($configName, $config);
 
         // Initialize collector state in context
         $collectorState = [
-            'config_name' => $config->name,
+            'config_name' => $configName,
             'status' => 'collecting',
             'conversation' => [],
             'collected_data' => [],
@@ -975,7 +1180,7 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
 
         Log::channel('ai-engine')->info('Autonomous collector started', [
             'session_id' => $context->sessionId,
-            'config_name' => $config->name,
+            'config_name' => $configName,
             'goal' => $config->goal,
         ]);
 

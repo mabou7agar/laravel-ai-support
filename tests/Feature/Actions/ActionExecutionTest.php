@@ -19,7 +19,7 @@ class ActionExecutionTest extends ActionTestCase
     public function test_action_executes_successfully()
     {
         // Arrange: Register a test action
-        $this->registerTestAction('test_action', [
+        $this->registerTestAction('create_product', [
             'executor' => 'model.dynamic',
             'model_class' => \App\Models\Product::class,
             'required_params' => ['name', 'price'],
@@ -45,7 +45,9 @@ class ActionExecutionTest extends ActionTestCase
     public function test_action_fails_with_missing_parameters()
     {
         // Arrange
-        $this->registerTestAction('test_action', [
+        $this->registerTestAction('create_product', [
+            'executor' => 'model.dynamic',
+            'model_class' => \App\Models\Product::class,
             'required_params' => ['name', 'price'],
         ]);
         
@@ -135,7 +137,7 @@ class ActionExecutionTest extends ActionTestCase
     public function test_remote_action_execution()
     {
         // Arrange: Register remote action
-        $this->registerTestAction('remote_action', [
+        $this->registerTestAction('create_product', [
             'executor' => 'model.remote',
             'model_class' => \App\Models\Product::class,
             'node_slug' => 'test-node',

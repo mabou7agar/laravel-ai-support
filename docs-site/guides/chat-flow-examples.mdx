@@ -1,0 +1,82 @@
+---
+title: Chat Flow Examples
+description: Real conversation patterns and expected system behavior.
+---
+
+## Example 1: List + Follow-Up (No Re-list Loop)
+
+### User
+
+`list invoices`
+
+### Expected system behavior
+
+- tool executes invoice list query
+- result gets cached in conversation context/session state
+
+### User follow-up
+
+`what is the status of the first one?`
+
+### Expected behavior
+
+- resolve from selected entity/context if available
+- avoid re-running full list unless needed
+
+## Example 2: Missing Fields -> Collector
+
+### User
+
+`create invoice for acme`
+
+### Expected behavior
+
+- identify missing required fields (date/items/amount)
+- start collector flow
+- ask only for missing fields
+- call `create_invoice` tool after completion
+
+## Example 3: Local or Remote Ownership
+
+### User
+
+`create chart of account`
+
+### Expected behavior
+
+- ownership resolver checks if local or child node owns domain
+- if remote: route to owning node and return normalized response
+
+## Example 4: Authenticated User Personal Context
+
+### User
+
+`what is my name`
+
+### Expected behavior
+
+- when `AI_ENGINE_INJECT_USER_CONTEXT=true` and request is authenticated, AI can answer from injected user context
+- no custom hardcoded rule is required in app code
+- response language follows resolved locale
+
+## Example 5: Confirmation + Follow-Up Continuity
+
+### User
+
+`create invoice for google glass`
+
+### Expected behavior
+
+- system asks for missing fields and confirms before write action
+- follow-up like `yes` should continue pending action, not restart from scratch
+- if clarification is needed, continue in the same pending flow context
+
+## Run These As Canary
+
+```bash
+php artisan ai-engine:test-real-agent --message="list invoices" --message="what is the status of the first one?" --json
+php artisan ai-engine:test-real-agent --message="create chart of account" --json
+php artisan ai-engine:test-real-agent --script=followup --json
+```
+
+For HTTP copy-paste requests/responses, see `guides/copy-paste-playbooks`.

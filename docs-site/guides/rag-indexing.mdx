@@ -1,0 +1,44 @@
+---
+title: RAG Indexing
+description: Index your Laravel models for retrieval and contextual follow-up.
+---
+
+## When To Index
+
+Index models when you need:
+
+- semantic search
+- follow-up context from previous results
+- cross-model contextual answers
+
+## Typical Workflow
+
+```bash
+php artisan ai-engine:list-models
+php artisan ai-engine:analyze-model "App\\Models\\Invoice"
+php artisan ai-engine:vector-index "App\\Models\\Invoice" --with-relationships
+php artisan ai-engine:vector-status
+```
+
+## Test Retrieval
+
+```bash
+php artisan ai-engine:vector-search "overdue invoices from last month"
+```
+
+## Practical Guidance
+
+- start with 1-2 critical models (Invoice, Customer)
+- include only relationships needed for answers
+- avoid over-indexing noisy text fields
+- re-index after schema/meaningful data shape changes
+
+## If Qdrant Is Used
+
+Run infrastructure health checks:
+
+```bash
+php artisan ai-engine:infra-health
+```
+
+If `qdrant_self_check` fails, fix connection first before debugging AI behavior.

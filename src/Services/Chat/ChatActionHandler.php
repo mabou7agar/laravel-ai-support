@@ -11,6 +11,7 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\Actions\ActionManager;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\Services\PendingActionService;
 use LaravelAIEngine\Services\Node\RemoteActionService;
 use LaravelAIEngine\Services\Actions\ActionExecutionPipeline;
@@ -22,7 +23,8 @@ class ChatActionHandler
         protected ActionManager $actionManager,
         protected ChatResponseFormatter $formatter,
         protected ?PendingActionService $pendingActionService = null,
-        protected ?RemoteActionService $remoteActionService = null
+        protected ?RemoteActionService $remoteActionService = null,
+        protected ?LocaleResourceService $localeResources = null
     ) {
     }
 
@@ -234,7 +236,11 @@ class ChatActionHandler
             ];
             $summary = $this->formatter->formatModelSummary($params, $modelName, $context);
 
-            $description = "**Confirm {$modelName} Creation**\n\n{$summary}\n**Please review the information above.**\nReply 'yes' to create, or tell me what you'd like to change.";
+            $description = $this->confirmCreationMessage(
+                $modelName,
+                $summary,
+                $intentAnalysis['detected_locale'] ?? null
+            );
 
             return new AIResponse(
                 content: $description,
@@ -446,6 +452,35 @@ class ChatActionHandler
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    protected function confirmCreationMessage(string $modelName, string $summary, ?string $locale = null): string
+    {
+        $yesToken = $this->locale()->lexicon('intent.confirm', $locale, ['yes'])[0] ?? 'yes';
+        $message = $this->locale()->translation(
+            'ai-engine::runtime.chat_action.confirm_creation_message',
+            [
+                'model' => $modelName,
+                'summary' => $summary,
+                'yes' => $yesToken,
+            ],
+            $locale
+        );
+
+        if ($message !== '') {
+            return $message;
+        }
+
+        return "**Confirm {$modelName} Creation**\n\n{$summary}\n**Please review the information above.**\nReply '{$yesToken}' to create, or tell me what you'd like to change.";
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 
     protected function executeEmailReply(array $params, $userId): array

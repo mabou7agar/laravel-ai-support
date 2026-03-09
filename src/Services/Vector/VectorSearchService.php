@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Services\Vector\VectorDriverManager;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
+use Throwable;
 
 class VectorSearchService
 {
@@ -95,7 +96,7 @@ class VectorSearchService
 
             // Hydrate models from results
             return $this->hydrateModels($modelClass, $results);
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Vector search failed', [
                 'model' => $modelClass,
                 'query' => $query,
@@ -149,7 +150,7 @@ class VectorSearchService
 
             // Hydrate models
             return $this->hydrateModels($modelClass, $results);
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Find similar failed', [
                 'model' => get_class($model),
                 'id' => $model->id,
@@ -214,7 +215,7 @@ class VectorSearchService
             }
 
             return $success;
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Model indexing failed', [
                 'model' => get_class($model),
                 'id' => $model->id,
@@ -278,7 +279,7 @@ class VectorSearchService
             ]);
 
             return $count;
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Batch indexing failed', [
                 'model' => $modelClass,
                 'count' => $models->count(),
@@ -308,7 +309,7 @@ class VectorSearchService
             }
 
             return $success;
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Delete from index failed', [
                 'model' => get_class($model),
                 'id' => $model->id,
@@ -361,7 +362,7 @@ class VectorSearchService
             }
 
             return $success;
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Create collection failed', [
                 'model' => $modelClass,
                 'error' => $e->getMessage(),

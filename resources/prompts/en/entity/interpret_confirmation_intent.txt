@@ -1,0 +1,9 @@
+The user was asked to confirm an action.
+User response: "{{user_input}}"
+
+Determine the user's intent:
+- If they want to proceed or confirm, return: confirm
+- If they want to cancel or decline, return: cancel
+- If unclear, return: unclear
+
+Return ONLY one word: confirm, cancel, or unclear.

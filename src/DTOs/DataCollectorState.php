@@ -227,6 +227,7 @@ class DataCollectorState
             'embedded_config' => $this->embeddedConfig,
             'metadata' => $this->metadata,
             'confirmed_action_summary' => $this->confirmedActionSummary,
+            'detected_locale' => $this->detectedLocale,
         ];
     }
 
@@ -249,6 +250,7 @@ class DataCollectorState
             embeddedConfig: $data['embedded_config'] ?? null,
             metadata: $data['metadata'] ?? [],
             confirmedActionSummary: $data['confirmed_action_summary'] ?? null,
+            detectedLocale: $data['detected_locale'] ?? null,
         );
     }
 }

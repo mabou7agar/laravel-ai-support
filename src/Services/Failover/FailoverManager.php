@@ -99,10 +99,7 @@ class FailoverManager
         // All providers failed
         $this->recordSystemFailure($providers, $lastException);
         
-        throw new AIEngineException(
-            "All providers failed after {$attemptCount} attempts. Last error: " . 
-            ($lastException ? $lastException->getMessage() : 'Unknown error')
-        );
+        throw new AIEngineException('All providers failed after exhausting failover options');
     }
 
     /**
@@ -111,17 +108,35 @@ class FailoverManager
     public function getProviderHealth(?string $provider = null): array
     {
         if ($provider) {
-            return $this->providerHealth[$provider] ?? $this->getDefaultHealth();
+            return $this->normalizeHealth($this->providerHealth[$provider] ?? $this->getDefaultHealth());
         }
-        
-        return $this->providerHealth;
+
+        return array_map(fn (array $health) => $this->normalizeHealth($health), $this->providerHealth);
     }
 
     /**
      * Update provider health manually
      */
-    public function updateProviderHealth(string $provider, array $health): void
+    public function updateProviderHealth(string $provider, array|bool $health): void
     {
+        if (is_bool($health)) {
+            $current = $this->providerHealth[$provider] ?? $this->getDefaultHealth();
+            $current['status'] = $health ? 'healthy' : 'unhealthy';
+            $current['last_check'] = Carbon::now()->toISOString();
+            if ($health) {
+                $current['last_success_at'] = Carbon::now()->toISOString();
+                $current['health_score'] = max(0.8, (float) ($current['health_score'] ?? 1.0));
+            } else {
+                $current['failure_count'] = (int) ($current['failure_count'] ?? 0) + 1;
+                $current['last_failure_at'] = Carbon::now()->toISOString();
+                $current['health_score'] = min(0.4, (float) ($current['health_score'] ?? 1.0));
+            }
+            $current['updated_at'] = Carbon::now()->toISOString();
+            $this->providerHealth[$provider] = $current;
+            $this->saveProviderHealth();
+            return;
+        }
+
         $this->providerHealth[$provider] = array_merge(
             $this->getDefaultHealth(),
             $health,
@@ -190,7 +205,7 @@ class FailoverManager
      */
     public function getAvailableStrategies(): array
     {
-        return array_keys($this->strategies);
+        return $this->strategies;
     }
 
     /**
@@ -216,14 +231,63 @@ class FailoverManager
         
         $systemScore = $totalProviders > 0 ? $healthyProviders / $totalProviders : 0;
         
+        $status = $systemScore >= 0.8 ? 'healthy' : ($systemScore >= 0.5 ? 'degraded' : 'unhealthy');
+
         return [
             'system_health_score' => $systemScore,
+            'status' => $status,
             'total_providers' => $totalProviders,
             'healthy_providers' => $healthyProviders,
             'degraded_providers' => $degradedProviders,
             'unhealthy_providers' => $unhealthyProviders,
             'circuit_breakers' => $this->getCircuitBreakerStatus(),
             'last_updated' => Carbon::now()->toISOString(),
+            'timestamp' => Carbon::now()->toISOString(),
+        ];
+    }
+
+    /**
+     * Reset stored health metrics for a provider.
+     */
+    public function resetProviderHealth(string $provider): void
+    {
+        $this->providerHealth[$provider] = $this->getDefaultHealth();
+        $this->saveProviderHealth();
+    }
+
+    /**
+     * Return aggregate failover statistics.
+     */
+    public function getFailoverStats(): array
+    {
+        $totalRequests = 0;
+        $totalFailures = 0;
+        $providerUsage = [];
+
+        foreach ($this->providerHealth as $provider => $health) {
+            $requests = (int) ($health['total_requests'] ?? 0);
+            $failures = (int) ($health['failure_count'] ?? 0);
+            $successes = (int) ($health['success_count'] ?? 0);
+
+            $totalRequests += $requests;
+            $totalFailures += $failures;
+            $providerUsage[$provider] = [
+                'requests' => $requests,
+                'successes' => $successes,
+                'failures' => $failures,
+            ];
+        }
+
+        $failoverCount = $totalFailures;
+        $successRate = $totalRequests > 0
+            ? (($totalRequests - $totalFailures) / $totalRequests) * 100
+            : 100.0;
+
+        return [
+            'total_requests' => $totalRequests,
+            'failover_count' => $failoverCount,
+            'success_rate' => round($successRate, 2),
+            'provider_usage' => $providerUsage,
         ];
     }
 
@@ -245,6 +309,8 @@ class FailoverManager
         
         // Update health score
         $health['health_score'] = $this->calculateHealthScore($health);
+        $health['status'] = 'healthy';
+        $health['last_check'] = Carbon::now()->toISOString();
         
         $this->providerHealth[$provider] = $health;
         $this->saveProviderHealth();
@@ -264,6 +330,8 @@ class FailoverManager
         
         // Update health score
         $health['health_score'] = $this->calculateHealthScore($health);
+        $health['status'] = 'unhealthy';
+        $health['last_check'] = Carbon::now()->toISOString();
         
         $this->providerHealth[$provider] = $health;
         $this->saveProviderHealth();
@@ -396,6 +464,8 @@ class FailoverManager
     protected function getDefaultHealth(): array
     {
         return [
+            'status' => 'healthy',
+            'last_check' => Carbon::now()->toISOString(),
             'health_score' => 1.0,
             'success_count' => 0,
             'failure_count' => 0,
@@ -407,5 +477,21 @@ class FailoverManager
             'created_at' => Carbon::now()->toISOString(),
             'updated_at' => Carbon::now()->toISOString(),
         ];
+    }
+
+    protected function normalizeHealth(array $health): array
+    {
+        $normalized = array_merge($this->getDefaultHealth(), $health);
+
+        if (!isset($normalized['status']) || !is_string($normalized['status']) || $normalized['status'] === '') {
+            $score = (float) ($normalized['health_score'] ?? 0);
+            $normalized['status'] = $score >= 0.8 ? 'healthy' : ($score >= 0.5 ? 'degraded' : 'unhealthy');
+        }
+
+        if (empty($normalized['last_check'])) {
+            $normalized['last_check'] = Carbon::now()->toISOString();
+        }
+
+        return $normalized;
     }
 }

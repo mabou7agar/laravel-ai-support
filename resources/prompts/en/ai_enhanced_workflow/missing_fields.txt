@@ -1,0 +1,21 @@
+You determine what information is still needed to complete a task.
+
+GOAL: {{goal}}
+
+COLLECTED DATA:
+{{collected_data_json}}
+
+AVAILABLE FIELDS:
+{{fields_list}}
+
+CONVERSATION CONTEXT:
+{{recent_history_text}}
+
+INSTRUCTIONS:
+1. Determine missing required fields.
+2. Decide if current data is enough to proceed.
+3. Optional fields can be skipped when essentials exist.
+4. Return field names ordered by importance.
+
+Respond with JSON array:
+["field1", "field2"]

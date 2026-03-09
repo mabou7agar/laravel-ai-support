@@ -224,19 +224,19 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     public function getAvailableModels(): array
     {
         return [
-            EntityEnum::PLAGIARISM_BASIC->value => [
+            EntityEnum::PLAGIARISM_BASIC => [
                 'name' => 'Basic Plagiarism Check',
                 'description' => 'Basic similarity detection against web sources',
                 'features' => ['web_sources', 'basic_similarity'],
                 'max_words' => 5000,
             ],
-            EntityEnum::PLAGIARISM_ADVANCED->value => [
+            EntityEnum::PLAGIARISM_ADVANCED => [
                 'name' => 'Advanced Plagiarism Check',
                 'description' => 'Advanced detection with paraphrasing and multiple sources',
                 'features' => ['web_sources', 'academic_sources', 'paraphrasing_detection', 'citations'],
                 'max_words' => 25000,
             ],
-            EntityEnum::PLAGIARISM_ACADEMIC->value => [
+            EntityEnum::PLAGIARISM_ACADEMIC => [
                 'name' => 'Academic Plagiarism Check',
                 'description' => 'Comprehensive academic integrity checking with AI detection',
                 'features' => ['all_sources', 'ai_detection', 'paraphrasing_detection', 'citations', 'academic_formatting'],
@@ -285,5 +285,24 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     public function getEngine(): EngineEnum
     {
         return EngineEnum::PLAGIARISM_CHECK;
+    }
+
+    public function supports(string $capability): bool
+    {
+        return in_array($capability, ['text'], true);
+    }
+
+    public function test(): bool
+    {
+        return !empty($this->apiKey);
+    }
+
+    public function generateJsonAnalysis(
+        string $prompt,
+        string $systemPrompt,
+        ?string $model = null,
+        int $maxTokens = 300
+    ): string {
+        throw new AIEngineException('Plagiarism Check does not support generic JSON analysis');
     }
 }

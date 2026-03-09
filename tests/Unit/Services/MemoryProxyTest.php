@@ -147,7 +147,7 @@ class MemoryProxyTest extends TestCase
     {
         $this->memoryManager
             ->shouldReceive('createConversation')
-            ->with('conv-123', ['title' => 'Test Conversation'])
+            ->with(null, 'Test Conversation', null, [])
             ->once()
             ->andReturn(true);
 

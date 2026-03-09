@@ -1,0 +1,220 @@
+---
+title: Data Collector Recipes
+description: Production-ready recipes for common guided and autonomous collection workflows.
+---
+
+## Recipe 1: Guided Invoice Creation (Registered Config)
+
+Use this when invoice structure is fixed and validation is strict.
+
+### Config
+
+```php
+use LaravelAIEngine\DTOs\DataCollectorConfig;
+use LaravelAIEngine\Facades\DataCollector;
+
+DataCollector::registerConfig(new DataCollectorConfig(
+    name: 'invoice_create',
+    title: 'Create Invoice',
+    description: 'Collect customer, date, and line items',
+    fields: [
+        'customer_id' => 'Customer ID | required | integer',
+        'issue_date' => 'Issue date | required | date',
+        'due_date' => 'Due date | required | date',
+        'currency' => [
+            'type' => 'select',
+            'description' => 'Currency',
+            'options' => ['USD', 'EUR', 'EGP'],
+            'required' => true,
+        ],
+        'notes' => [
+            'type' => 'text',
+            'description' => 'Invoice notes',
+            'required' => false,
+        ],
+    ],
+    onCompleteAction: \App\Actions\CreateInvoiceFromCollectedData::class,
+    confirmBeforeComplete: true,
+    allowEnhancement: true,
+));
+```
+
+### API Flow
+
+```bash
+curl -X POST http://localhost/api/v1/data-collector/start \
+  -H "Content-Type: application/json" \
+  -d '{"config_name":"invoice_create","session_id":"inv-1001"}'
+
+curl -X POST http://localhost/api/v1/data-collector/message \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"inv-1001","message":"Customer is 88"}'
+
+curl -X POST http://localhost/api/v1/data-collector/message \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"inv-1001","message":"Issue date 2026-03-09, due date 2026-03-20"}'
+```
+
+## Recipe 2: Guided Support Ticket Intake (Inline `start-custom`)
+
+Use this when each UI/screen can define fields dynamically.
+
+```bash
+curl -X POST http://localhost/api/v1/data-collector/start-custom \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id":"ticket-2001",
+    "title":"Create Support Ticket",
+    "description":"Collect incident details for triage",
+    "fields":{
+      "subject":"Ticket subject | required | min:5",
+      "priority":{"type":"select","description":"Priority","options":["low","medium","high"],"required":true},
+      "details":"Detailed description | required | min:20",
+      "affected_module":{"type":"text","description":"Affected module","required":false}
+    },
+    "confirm_before_complete":true,
+    "allow_enhancement":true,
+    "allow_skip_optional":true,
+    "on_complete_action":"App\\Actions\\CreateSupportTicketAction"
+  }'
+```
+
+## Recipe 3: File-Assisted Invoice Intake
+
+Use this when user uploads supplier/customer invoice docs.
+
+### Step 1: Analyze file
+
+```bash
+curl -X POST http://localhost/api/v1/data-collector/analyze-file \
+  -F "file=@/tmp/invoice.pdf" \
+  -F "session_id=inv-1001" \
+  -F 'fields=["customer_id","issue_date","due_date","notes"]'
+```
+
+### Step 2: Apply extracted data
+
+```bash
+curl -X POST http://localhost/api/v1/data-collector/apply-extracted \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id":"inv-1001",
+    "extracted_data":{
+      "customer_id":88,
+      "issue_date":"2026-03-09",
+      "due_date":"2026-03-20"
+    }
+  }'
+```
+
+## Recipe 4: Autonomous Invoice Collector (Goal + Tools)
+
+Use this when users give messy natural language and AI should discover IDs/items through tools.
+
+```php
+use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
+use LaravelAIEngine\Facades\AutonomousCollector;
+
+AutonomousCollector::registerConfigAs('invoice_auto', new AutonomousCollectorConfig(
+    name: 'invoice_auto',
+    goal: 'Create sales invoice',
+    description: 'Resolve customer and products, then create invoice payload',
+    tools: [
+        'search_customer' => [
+            'description' => 'Find customer by name or email',
+            'parameters' => ['query' => 'string|required'],
+            'handler' => fn(array $args) => \App\Models\Customer::query()
+                ->where('name', 'like', '%' . ($args['query'] ?? '') . '%')
+                ->limit(5)
+                ->get(),
+        ],
+        'search_product' => [
+            'description' => 'Find product by name/SKU',
+            'parameters' => ['query' => 'string|required'],
+            'handler' => fn(array $args) => \App\Models\Product::query()
+                ->where('name', 'like', '%' . ($args['query'] ?? '') . '%')
+                ->orWhere('sku', 'like', '%' . ($args['query'] ?? '') . '%')
+                ->limit(10)
+                ->get(),
+        ],
+    ],
+    outputSchema: [
+        'customer_id' => 'integer|required',
+        'items' => [
+            'type' => 'array',
+            'items' => [
+                'product_id' => 'integer|required',
+                'quantity' => 'integer|required|min:1',
+                'price' => 'numeric|required',
+            ],
+        ],
+    ],
+    onComplete: fn(array $payload) => \App\Models\Invoice::create($payload),
+));
+```
+
+## Recipe 5: Auto-Discoverable Autonomous Collector
+
+Use this when you want collector bootstrapping from app classes and node manifests.
+
+```php
+namespace App\AI\Configs;
+
+use LaravelAIEngine\Contracts\DiscoverableAutonomousCollector;
+use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
+
+class PurchaseOrderCollector implements DiscoverableAutonomousCollector
+{
+    public static function getName(): string { return 'purchase_order'; }
+    public static function getDescription(): string { return 'Create purchase orders from supplier requests'; }
+    public static function getPriority(): int { return 60; }
+    public static function getModelClass(): ?string { return \App\Models\PurchaseOrder::class; }
+    public static function getFilterConfig(): array { return ['date_field' => 'order_date']; }
+    public static function getAllowedOperations(?int $userId): array { return ['create', 'list']; }
+
+    public static function getConfig(): AutonomousCollectorConfig
+    {
+        return new AutonomousCollectorConfig(
+            name: 'purchase_order',
+            goal: 'Create a purchase order',
+            description: 'Collect supplier and item lines for PO creation',
+            tools: [],
+            outputSchema: ['supplier_id' => 'integer|required'],
+        );
+    }
+}
+```
+
+Then discover and register:
+
+```bash
+php artisan ai-engine:autonomous-collectors --discover
+php artisan ai-engine:clear-discovery-cache --warm
+```
+
+## Recipe 6: Localization-First Collector
+
+Use locale fields for multilingual apps:
+
+```php
+new DataCollectorConfig(
+    name: 'lead_capture',
+    title: 'Lead Capture',
+    fields: [
+        'name' => 'Full name | required | min:2',
+        'company' => 'Company | required',
+    ],
+    locale: 'ar',
+    detectLocale: true,
+);
+```
+
+Recommendation: keep business prompts in locale templates and lexicons rather than inline hardcoded sentences.
+
+## Operational Checks
+
+```bash
+php artisan ai:test-data-collector --preset=support --detect-locale
+php artisan ai-engine:autonomous-collectors --discover --nodes
+php artisan ai-engine:test-real-agent --message="create invoice for acme with 2 keyboards" --json
+```

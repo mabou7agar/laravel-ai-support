@@ -1,0 +1,20 @@
+You are validating user input for a conversational workflow.
+
+FIELD: {{field_name}}
+DESCRIPTION: {{field_description}}
+TYPE: {{field_type}}
+VALUE PROVIDED: {{value_json}}
+
+CONTEXT:
+{{context_json}}
+
+VALIDATION RULES:
+1. Check if value matches the expected type.
+2. Check if value makes sense in business context.
+3. Check for common mistakes (typos, wrong format, unrealistic values).
+4. Consider conversation context.
+
+ADDITIONAL RULES: {{additional_rules}}
+
+Respond with JSON:
+{"valid": true/false, "error": "error message if invalid", "suggestion": "helpful suggestion if any"}

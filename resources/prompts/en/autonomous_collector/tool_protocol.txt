@@ -1,0 +1,11 @@
+If you need to use a tool, respond with:
+```tool
+{"tool": "tool_name", "arguments": {...}}
+```
+
+Otherwise, respond naturally to the user.
+
+When you have all required information, output the final data as:
+```json
+{...final output...}
+```

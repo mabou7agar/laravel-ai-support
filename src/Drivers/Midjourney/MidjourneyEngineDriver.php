@@ -316,19 +316,19 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     public function getAvailableModels(): array
     {
         return [
-            EntityEnum::MIDJOURNEY_V6->value => [
+            EntityEnum::MIDJOURNEY_V6 => [
                 'name' => 'Midjourney v6',
                 'description' => 'Latest Midjourney model with improved coherence and detail',
                 'features' => ['high_quality', 'coherent_text', 'detailed_images'],
                 'max_resolution' => '2048x2048',
             ],
-            EntityEnum::MIDJOURNEY_V5->value => [
+            EntityEnum::MIDJOURNEY_V5 => [
                 'name' => 'Midjourney v5',
                 'description' => 'Stable Midjourney model with excellent artistic quality',
                 'features' => ['artistic_style', 'creative_interpretation'],
                 'max_resolution' => '1024x1024',
             ],
-            EntityEnum::MIDJOURNEY_NIJI->value => [
+            EntityEnum::MIDJOURNEY_NIJI => [
                 'name' => 'Midjourney Niji',
                 'description' => 'Anime and illustration focused model',
                 'features' => ['anime_style', 'illustration', 'character_design'],
@@ -364,5 +364,24 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     public function getEngine(): EngineEnum
     {
         return EngineEnum::MIDJOURNEY;
+    }
+
+    public function supports(string $capability): bool
+    {
+        return in_array($capability, ['image'], true);
+    }
+
+    public function test(): bool
+    {
+        return !empty($this->apiKey) && !empty($this->discordToken);
+    }
+
+    public function generateJsonAnalysis(
+        string $prompt,
+        string $systemPrompt,
+        ?string $model = null,
+        int $maxTokens = 300
+    ): string {
+        throw new AIEngineException('Midjourney does not support JSON analysis for text tasks');
     }
 }

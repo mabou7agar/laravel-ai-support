@@ -1,0 +1,55 @@
+---
+title: Policy Learning
+description: Improve decision prompts with feedback-driven policy versions.
+---
+
+This package supports **prompt policy learning**, not model weight fine-tuning.
+
+## What Gets Learned
+
+- parse failures
+- fallback overuse
+- relist risk patterns
+- weak tool-choice decisions
+
+## Persistence Model
+
+Policy learning is persisted in database tables:
+
+- `ai_prompt_feedback_events` (runtime feedback events)
+- `ai_prompt_policy_versions` (versioned decision prompt policies)
+
+The baseline decision template comes from:
+
+- `resources/prompts/rag/decision_prompt.txt`
+
+New policy versions can override this template per policy key/runtime context.
+
+## Loop
+
+1. collect feedback events
+2. evaluate recent window
+3. create/activate improved policy version
+
+```bash
+php artisan ai-engine:decision-feedback:report
+php artisan ai-engine:decision-policy:evaluate --window-hours=48
+php artisan ai-engine:decision-policy:create v2 --activate
+```
+
+## Recommended Production Cadence
+
+- daily: report and evaluate
+- weekly: create candidate policy
+- activate only after canary tests pass
+
+## Canary Before Activation
+
+```bash
+php artisan ai-engine:test-real-agent --script=followup --report-feedback --json
+```
+
+## Important
+
+This is policy adaptation, not weight training.  
+Use canary activation and promote only after real conversation tests pass.

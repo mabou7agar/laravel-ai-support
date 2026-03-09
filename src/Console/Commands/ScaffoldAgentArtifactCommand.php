@@ -1,0 +1,455 @@
+<?php
+
+namespace LaravelAIEngine\Console\Commands;
+
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
+use LaravelAIEngine\Services\Agent\AgentManifestService;
+
+class ScaffoldAgentArtifactCommand extends Command
+{
+    protected $signature = 'ai-engine:scaffold
+                            {type? : agent|collector|filter|tool}
+                            {name? : Class name (e.g. Invoice)}
+                            {--model= : Model class for agent/collector (e.g. App\\Models\\Invoice)}
+                            {--description= : Description text used in generated class}
+                            {--force : Overwrite file if it already exists}
+                            {--no-register : Skip automatic manifest registration}';
+
+    protected $description = 'Scaffold AI agent artifacts (agent config, collector, filter, tool)';
+
+    /**
+     * @var array<string, array{namespace:string,directory:string,suffix:string,manifest:string,map:bool}>
+     */
+    protected array $types = [
+        'agent' => [
+            'namespace' => 'App\\AI\\Configs',
+            'directory' => 'AI/Configs',
+            'suffix' => 'Config',
+            'manifest' => 'model_configs',
+            'map' => false,
+        ],
+        'collector' => [
+            'namespace' => 'App\\AI\\Collectors',
+            'directory' => 'AI/Collectors',
+            'suffix' => 'Collector',
+            'manifest' => 'collectors',
+            'map' => true,
+        ],
+        'filter' => [
+            'namespace' => 'App\\AI\\Filters',
+            'directory' => 'AI/Filters',
+            'suffix' => 'Filter',
+            'manifest' => 'filters',
+            'map' => true,
+        ],
+        'tool' => [
+            'namespace' => 'App\\AI\\Tools',
+            'directory' => 'AI/Tools',
+            'suffix' => 'Tool',
+            'manifest' => 'tools',
+            'map' => true,
+        ],
+    ];
+
+    public function handle(AgentManifestService $manifestService): int
+    {
+        $type = $this->resolveType();
+        if ($type === null) {
+            return self::FAILURE;
+        }
+
+        $name = $this->resolveName($type);
+        if ($name === null) {
+            $this->error('A class name is required.');
+            return self::FAILURE;
+        }
+
+        $className = $this->normalizeClassName($name, $this->types[$type]['suffix']);
+        $namespace = $this->types[$type]['namespace'];
+        $directory = app_path($this->types[$type]['directory']);
+        $path = $directory . '/' . $className . '.php';
+        $fqcn = $namespace . '\\' . $className;
+
+        File::ensureDirectoryExists($directory);
+
+        if (is_file($path) && !$this->option('force')) {
+            $this->error("File already exists: {$path}");
+            $this->line('Use --force to overwrite.');
+            return self::FAILURE;
+        }
+
+        $contents = $this->buildTemplate($type, $namespace, $className);
+        File::put($path, $contents);
+
+        $this->info("Generated {$type} class:");
+        $this->line($path);
+
+        if (!$this->option('no-register')) {
+            $manifestPath = $this->normalizePath($manifestService->manifestPath());
+            $manifest = $this->loadManifest($manifestPath);
+
+            $section = $this->types[$type]['manifest'];
+            $manifest[$section] = $manifest[$section] ?? [];
+
+            $registered = false;
+
+            if ($this->types[$type]['map']) {
+                $key = $this->artifactKey($className);
+                $current = $manifest[$section][$key] ?? null;
+                if ($current !== $fqcn) {
+                    $manifest[$section][$key] = $fqcn;
+                    $registered = true;
+                }
+            } else {
+                if (!in_array($fqcn, $manifest[$section], true)) {
+                    $manifest[$section][] = $fqcn;
+                    $registered = true;
+                }
+            }
+
+            if ($registered) {
+                File::ensureDirectoryExists(dirname($manifestPath));
+                File::put($manifestPath, $this->renderManifest($manifest));
+                $manifestService->refresh();
+                $this->line("Registered in manifest [{$section}] at {$manifestPath}");
+            } else {
+                $this->line("Manifest already contains this {$type} entry.");
+            }
+        }
+
+        $this->newLine();
+        $this->line('Next:');
+        $this->line('1) Implement real logic in the generated class');
+        $this->line('2) Run php artisan ai-engine:test-agent');
+
+        return self::SUCCESS;
+    }
+
+    protected function resolveType(): ?string
+    {
+        $type = strtolower(trim((string) ($this->argument('type') ?? '')));
+
+        if ($type === '') {
+            $type = (string) $this->choice('What do you want to scaffold?', array_keys($this->types), 0);
+        }
+
+        if (!array_key_exists($type, $this->types)) {
+            $this->error('Invalid type. Allowed: agent, collector, filter, tool.');
+            return null;
+        }
+
+        return $type;
+    }
+
+    protected function resolveName(string $type): ?string
+    {
+        $name = trim((string) ($this->argument('name') ?? ''));
+
+        if ($name !== '') {
+            return $name;
+        }
+
+        return $this->ask('Class name', Str::studly($type));
+    }
+
+    protected function normalizeClassName(string $name, string $suffix): string
+    {
+        $sanitized = preg_replace('/[^A-Za-z0-9]+/', ' ', $name) ?? $name;
+        $class = Str::studly($sanitized);
+
+        if ($class === '') {
+            return $suffix;
+        }
+
+        if (!Str::endsWith($class, $suffix)) {
+            return $class . $suffix;
+        }
+
+        return $class;
+    }
+
+    protected function inferModelClass(string $className, string $type): string
+    {
+        $provided = trim((string) ($this->option('model') ?? ''));
+        if ($provided !== '') {
+            $provided = preg_replace('/::class$/', '', $provided) ?? $provided;
+            return ltrim($provided, '\\');
+        }
+
+        $base = $className;
+        if ($type === 'agent') {
+            $base = Str::beforeLast($className, 'Config');
+        } elseif ($type === 'collector') {
+            $base = Str::beforeLast($className, 'Collector');
+        }
+
+        $base = $base === '' ? 'Model' : $base;
+
+        return 'App\\Models\\' . $base;
+    }
+
+    protected function artifactKey(string $className): string
+    {
+        $key = preg_replace('/(Config|Collector|Filter|Tool)$/', '', $className) ?? $className;
+        $key = Str::snake($key);
+
+        return $key !== '' ? $key : Str::snake($className);
+    }
+
+    protected function buildTemplate(string $type, string $namespace, string $className): string
+    {
+        return match ($type) {
+            'agent' => $this->buildAgentTemplate($namespace, $className),
+            'collector' => $this->buildCollectorTemplate($namespace, $className),
+            'filter' => $this->buildFilterTemplate($namespace, $className),
+            'tool' => $this->buildToolTemplate($namespace, $className),
+            default => throw new \InvalidArgumentException("Unsupported scaffold type: {$type}"),
+        };
+    }
+
+    protected function buildAgentTemplate(string $namespace, string $className): string
+    {
+        $modelClass = $this->inferModelClass($className, 'agent');
+        $name = Str::snake(Str::beforeLast($className, 'Config'));
+        $name = $name !== '' ? $name : Str::snake($className);
+        $description = trim((string) ($this->option('description') ?? ''));
+        $description = $description !== '' ? $description : "AI operations for {$name}.";
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Contracts\AutonomousModelConfig;
+
+class {$className} extends AutonomousModelConfig
+{
+    public static function getModelClass(): string
+    {
+        return \\{$modelClass}::class;
+    }
+
+    public static function getName(): string
+    {
+        return '{$name}';
+    }
+
+    public static function getDescription(): string
+    {
+        return '{$this->escapeSingleQuotes($description)}';
+    }
+
+    public static function getFilterConfig(): array
+    {
+        return [
+            // 'user_field' => 'user_id',
+            // 'date_field' => 'created_at',
+            // 'status_field' => 'status',
+        ];
+    }
+
+    public static function getTools(): array
+    {
+        return [];
+    }
+}
+PHP;
+    }
+
+    protected function buildCollectorTemplate(string $namespace, string $className): string
+    {
+        $modelClass = $this->inferModelClass($className, 'collector');
+        $name = Str::snake(Str::beforeLast($className, 'Collector'));
+        $name = $name !== '' ? $name : Str::snake($className);
+        $description = trim((string) ($this->option('description') ?? ''));
+        $description = $description !== '' ? $description : "Autonomous collector for {$name}.";
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Contracts\DiscoverableAutonomousCollector;
+use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
+
+class {$className} implements DiscoverableAutonomousCollector
+{
+    public static function getName(): string
+    {
+        return '{$name}';
+    }
+
+    public static function getDescription(): string
+    {
+        return '{$this->escapeSingleQuotes($description)}';
+    }
+
+    public static function getPriority(): int
+    {
+        return 0;
+    }
+
+    public static function getModelClass(): ?string
+    {
+        return \\{$modelClass}::class;
+    }
+
+    public static function getFilterConfig(): array
+    {
+        return [];
+    }
+
+    public static function getAllowedOperations(?int \$userId): array
+    {
+        return \$userId ? ['list', 'create', 'update'] : ['list'];
+    }
+
+    public static function getConfig(): AutonomousCollectorConfig
+    {
+        return new AutonomousCollectorConfig(
+            goal: 'Handle {$name} requests',
+            description: self::getDescription(),
+            tools: [],
+            outputSchema: [],
+        );
+    }
+}
+PHP;
+    }
+
+    protected function buildFilterTemplate(string $namespace, string $className): string
+    {
+        $description = trim((string) ($this->option('description') ?? ''));
+        $description = $description !== '' ? $description : 'Apply query constraints from request context.';
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use Illuminate\Database\Eloquent\Builder;
+
+class {$className}
+{
+    /**
+     * {$this->escapeSingleQuotes($description)}
+     */
+    public function __invoke(Builder \$query, array \$context = []): Builder
+    {
+        // Example: limit records to current user
+        if (isset(\$context['user_id'])) {
+            // \$query->where('user_id', \$context['user_id']);
+        }
+
+        return \$query;
+    }
+}
+PHP;
+    }
+
+    protected function buildToolTemplate(string $namespace, string $className): string
+    {
+        $name = Str::snake(Str::beforeLast($className, 'Tool'));
+        $name = $name !== '' ? $name : Str::snake($className);
+        $description = trim((string) ($this->option('description') ?? ''));
+        $description = $description !== '' ? $description : "Tool for {$name} operations.";
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\DTOs\ActionResult;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\Tools\AgentTool;
+
+class {$className} extends AgentTool
+{
+    public function getName(): string
+    {
+        return '{$name}';
+    }
+
+    public function getDescription(): string
+    {
+        return '{$this->escapeSingleQuotes($description)}';
+    }
+
+    public function getParameters(): array
+    {
+        return [
+            'input' => [
+                'type' => 'string',
+                'required' => true,
+                'description' => 'Input payload for tool execution',
+            ],
+        ];
+    }
+
+    public function execute(array \$parameters, UnifiedActionContext \$context): ActionResult
+    {
+        return ActionResult::success('Tool executed successfully', [
+            'received' => \$parameters,
+        ]);
+    }
+}
+PHP;
+    }
+
+    protected function loadManifest(string $path): array
+    {
+        $default = [
+            'model_configs' => [],
+            'collectors' => [],
+            'tools' => [],
+            'filters' => [],
+        ];
+
+        if (!is_file($path)) {
+            return $default;
+        }
+
+        try {
+            $loaded = require $path;
+            if (!is_array($loaded)) {
+                return $default;
+            }
+
+            return array_merge($default, $loaded);
+        } catch (\Throwable) {
+            return $default;
+        }
+    }
+
+    protected function renderManifest(array $manifest): string
+    {
+        $normalized = [
+            'model_configs' => array_values(array_unique(array_values((array) ($manifest['model_configs'] ?? [])))),
+            'collectors' => (array) ($manifest['collectors'] ?? []),
+            'tools' => (array) ($manifest['tools'] ?? []),
+            'filters' => (array) ($manifest['filters'] ?? []),
+        ];
+
+        return "<?php\n\nreturn " . var_export($normalized, true) . ";\n";
+    }
+
+    protected function escapeSingleQuotes(string $value): string
+    {
+        return str_replace("'", "\\'", $value);
+    }
+
+    protected function normalizePath(string $path): string
+    {
+        if ($path === '') {
+            return app_path('AI/agent-manifest.php');
+        }
+
+        if ($path[0] === '/' || preg_match('/^[A-Za-z]:[\\\\\/]/', $path) === 1) {
+            return $path;
+        }
+
+        return base_path($path);
+    }
+}

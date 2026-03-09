@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Services\RAG;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
 use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\Services\ConversationService;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use Illuminate\Support\Collection;
@@ -24,6 +25,7 @@ class IntelligentRAGService
     protected ConversationService $conversationService;
     protected array $config;
     protected array $historyConfig;
+    protected ?LocaleResourceService $localeResources = null;
 
     protected $nodeRegistry = null;
     protected $federatedSearch = null;
@@ -32,11 +34,13 @@ class IntelligentRAGService
     public function __construct(
         VectorSearchService $vectorSearch,
         AIEngineManager $aiEngine,
-        ConversationService $conversationService
+        ConversationService $conversationService,
+        ?LocaleResourceService $localeResources = null
     ) {
         $this->vectorSearch = $vectorSearch;
         $this->aiEngine = $aiEngine;
         $this->conversationService = $conversationService;
+        $this->localeResources = $localeResources;
         $this->config = config('ai-engine.intelligent_rag', []);
         $this->historyConfig = config('ai-engine.conversation_history', []);
 
@@ -1633,6 +1637,14 @@ PROMPT;
         }
 
         $prompt .= "CURRENT QUESTION: {$message}\n\n";
+        $locale = $this->resolvePromptLocale($options);
+        $yesToken = $this->locale()->lexicon('intent.confirm', $locale, ['yes'])[0] ?? 'yes';
+        $noToken = $this->locale()->lexicon('intent.reject', $locale, ['no'])[0] ?? 'no';
+        $confirmTokens = $this->locale()->lexicon('intent.confirm', $locale, ['yes', 'ok', 'confirm']);
+        $confirmTokenList = implode('/', array_slice($confirmTokens, 0, 3));
+        if ($confirmTokenList === '') {
+            $confirmTokenList = $yesToken;
+        }
 
         // Collect search instructions from models and merge with API-level instructions
         $modelInstructions = null;
@@ -1684,7 +1696,7 @@ PROMPT;
             $prompt .= "- Cite sources: [Source 0], [Source 1]\n";
             $prompt .= "- Don't say 'based on the context' - just answer naturally\n";
             $prompt .= "- For email replies: use actual names from context (from_name, subject), NEVER use placeholders like [Recipient's Name]\n";
-            $prompt .= "- User's name is Mohamed - use for signatures\n";
+            $prompt .= "- For signatures, use the user's display name from USER CONTEXT when available\n";
             $prompt .= "- When listing multiple items (emails, tasks, options), use NUMBERED LISTS (1. 2. 3.) with FULL DETAILS\n";
             $prompt .= "- Format: 1. **Subject**: From [sender], Date [date], Preview: [first 100 chars] [Source X]\n";
             $prompt .= "- Include ALL relevant details in the list (subject, sender, date, preview) - don't just show titles\n";
@@ -1695,8 +1707,8 @@ PROMPT;
             $prompt .= "EMAIL REPLY WORKFLOW:\n";
             $prompt .= "- When user asks to 'reply' or 'suggest a reply' to an email, draft a professional response\n";
             $prompt .= "- Include: To, Subject (Re: original), and full message body\n";
-            $prompt .= "- After showing the draft, ask: 'Would you like me to send this reply? (yes/no)'\n";
-            $prompt .= "- If user confirms (yes/send/ok), respond with: ACTION:SEND_EMAIL with the email details\n";
+            $prompt .= "- After showing the draft, ask: 'Would you like me to send this reply? ({$yesToken}/{$noToken})'\n";
+            $prompt .= "- If user confirms ({$confirmTokenList}/send), respond with: ACTION:SEND_EMAIL with the email details\n";
             $prompt .= "- Format: ACTION:SEND_EMAIL|to=email@example.com|subject=Re: Subject|body=Message body here\n";
         } else {
             // No KB context - but check if we have aggregate data
@@ -2232,7 +2244,7 @@ When helping draft emails or replies:
 1. **Tone**: Use a professional, approachable, and clear tone. Avoid overly formal or robotic language.
 2. ALWAYS replace placeholders with actual information from context:
    - [Recipient's Name] → Use sender's name from the email being replied to
-   - [Your Name] → Use user's name (Mohamed in this case)
+   - [Your Name] → Use user's display name from USER CONTEXT
    - [Company Name] → Use actual company name from context
    - [Date/Time] → Use actual dates from context
 3. Extract information from:
@@ -3285,6 +3297,29 @@ PROMPT;
         }
 
         return $existingFields;
+    }
+
+    protected function resolvePromptLocale(array $options): string
+    {
+        $candidate = null;
+        if (isset($options['locale']) && is_string($options['locale'])) {
+            $candidate = $options['locale'];
+        } elseif (isset($options['language']) && is_string($options['language'])) {
+            $candidate = $options['language'];
+        } else {
+            $candidate = app()->getLocale();
+        }
+
+        return $this->locale()->resolveLocale($candidate);
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 
 }

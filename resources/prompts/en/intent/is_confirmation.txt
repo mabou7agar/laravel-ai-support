@@ -1,0 +1,6 @@
+Is this message a CONFIRMATION or AGREEMENT?
+Message: "{{message}}"
+{{context_block}}
+Respond with ONLY one token:
+- "{{yes}}" if it is confirmation/agreement
+- "{{no}}" if it is not

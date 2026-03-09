@@ -6,6 +6,7 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 
@@ -21,7 +22,8 @@ use LaravelAIEngine\Enums\EntityEnum;
 class WorkflowDataCollector
 {
     public function __construct(
-        protected AIEngineService $ai
+        protected AIEngineService $ai,
+        protected ?LocaleResourceService $localeResources = null
     ) {
         // Services instantiated on-demand to avoid circular dependencies
     }
@@ -148,7 +150,11 @@ class WorkflowDataCollector
             if (!empty($missing)) {
                 $firstMissing = $missing[0];
                 $fieldDef = $fieldDefinitions[$firstMissing];
-                $prompt = $fieldDef['prompt'] ?? $fieldDef['description'] ?? "Please provide {$firstMissing}";
+                $prompt = $fieldDef['prompt'] ?? $fieldDef['description'] ?? $this->runtimeText(
+                    'ai-engine::runtime.workflow_data_collector.provide_field',
+                    '',
+                    ['field' => $firstMissing]
+                );
 
                 // If prompt is a Closure, evaluate it with context
                 if ($prompt instanceof \Closure) {
@@ -161,7 +167,11 @@ class WorkflowDataCollector
 
                     if ($suggestion) {
                         // Append suggestion to the prompt
-                        $prompt .= " I suggest: {$suggestion}";
+                        $prompt .= ' ' . $this->runtimeText(
+                            'ai-engine::runtime.workflow_data_collector.suggestion_hint',
+                            '',
+                            ['suggestion' => $suggestion]
+                        );
 
                         \Illuminate\Support\Facades\Log::info('Using pre-generated suggestion for field', [
                             'field' => $firstMissing,
@@ -183,12 +193,19 @@ class WorkflowDataCollector
             }
 
             return ActionResult::success(
-                message: 'All data collected',
+                message: $this->runtimeText(
+                    'ai-engine::runtime.workflow_data_collector.all_data_collected',
+                    ''
+                ),
                 data: $collectedData
             );
         } catch (\Exception $e) {
             return ActionResult::failure(
-                error: "Data collection failed: {$e->getMessage()}"
+                error: $this->runtimeText(
+                    'ai-engine::runtime.workflow_data_collector.collection_failed',
+                    '',
+                    ['error' => $e->getMessage()]
+                )
             );
         }
     }
@@ -202,6 +219,8 @@ class WorkflowDataCollector
         array $existingData,
         ?string $askingFor = null
     ): array {
+        $heuristicData = [];
+
         // If we're asking for a specific field, extract only that field
         if (!empty($askingFor) && isset($fieldDefinitions[$askingFor])) {
             $fieldDef = $fieldDefinitions[$askingFor];
@@ -240,11 +259,12 @@ class WorkflowDataCollector
             $prompt .= "Return ONLY valid JSON. Example: {\"$askingFor\": \"value\"}";
         } else {
             // Extract all fields
+            $extractableFields = $this->filterExtractableFields($fieldDefinitions);
+            $heuristicData = $this->extractHeuristicData($message, $extractableFields);
+
             $prompt = "Extract structured data from the user's message.\n\n";
             $prompt .= "User message: {$message}\n\n";
             $prompt .= "FIELDS TO EXTRACT:\n";
-
-            $extractableFields = $this->filterExtractableFields($fieldDefinitions);
 
             foreach ($extractableFields as $fieldName => $fieldDef) {
                 $type = $fieldDef['type'] ?? 'string';
@@ -314,8 +334,10 @@ class WorkflowDataCollector
                     'content' => $content,
                     'error' => json_last_error_msg(),
                 ]);
-                return [];
+                return $heuristicData;
             }
+
+            $extracted = array_merge($heuristicData, $extracted ?? []);
 
             \Illuminate\Support\Facades\Log::info('WorkflowDataCollector: Extraction result', [
                 'extracted' => $extracted,
@@ -365,8 +387,34 @@ class WorkflowDataCollector
 
         } catch (\Exception $e) {
             // AI extraction failed - return empty and let normal flow ask for the field
-            return [];
+            return $heuristicData;
         }
+    }
+
+    protected function extractHeuristicData(string $message, array $fieldDefinitions): array
+    {
+        $data = [];
+
+        foreach ($fieldDefinitions as $fieldName => $fieldDef) {
+            $validation = $fieldDef['validation'] ?? [];
+            $validationRules = is_array($validation) ? $validation : explode('|', (string) $validation);
+            $fieldType = (string) ($fieldDef['type'] ?? '');
+
+            $isEmailField = in_array('email', $validationRules, true) || str_contains(strtolower($fieldName), 'email');
+            if ($isEmailField && preg_match('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', $message, $matches)) {
+                $data[$fieldName] = $matches[0];
+                continue;
+            }
+
+            $isNumericField = in_array($fieldType, ['integer', 'float', 'number'], true)
+                || in_array('numeric', $validationRules, true);
+            if ($isNumericField && preg_match('/-?\d+(\.\d+)?/', $message, $matches)) {
+                $value = $matches[0];
+                $data[$fieldName] = $fieldType === 'integer' ? (int) $value : (float) $value;
+            }
+        }
+
+        return $data;
     }
 
     /**
@@ -485,6 +533,38 @@ class WorkflowDataCollector
     {
         $context->forget('collected_data');
         $context->forget('asking_for');
+    }
+
+    protected function runtimeText(string $key, string $fallback = '', array $replace = []): string
+    {
+        $translated = $this->locale()->translation($key, $replace);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        $fallbackLocale = $this->locale()->resolveLocale(
+            (string) (config('ai-engine.localization.fallback_locale') ?: config('app.fallback_locale') ?: app()->getLocale())
+        );
+        $translated = $this->locale()->translation($key, $replace, $fallbackLocale);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        $fallbackReplace = [];
+        foreach ($replace as $name => $value) {
+            $fallbackReplace[':' . $name] = (string) $value;
+        }
+
+        return $fallback !== '' ? strtr($fallback, $fallbackReplace) : '';
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 
     /**

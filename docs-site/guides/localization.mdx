@@ -1,0 +1,71 @@
+---
+title: Localization
+description: Configure language-aware behavior without hardcoded rules.
+---
+
+## Enable Locale Handling
+
+```env
+AI_ENGINE_LOCALIZATION_ENABLED=true
+AI_ENGINE_SUPPORTED_LOCALES=en,ar
+AI_ENGINE_FALLBACK_LOCALE=en
+AI_ENGINE_DETECT_LOCALE_FROM_MESSAGE=true
+AI_ENGINE_DETECT_LOCALE_FROM_ACCEPT_LANGUAGE=true
+INTELLIGENT_RAG_DECISION_LANGUAGE_MODE=hybrid
+```
+
+## Request-Level Locale Control
+
+- query param (default): `?locale=ar`
+- header: `X-Locale: ar`
+- authenticated user locale fields (`locale` or `language`)
+- message script detection (for example Arabic text)
+- `Accept-Language` fallback
+
+## Resolution Order
+
+`query -> X-Locale header -> authenticated user -> message script -> Accept-Language -> fallback`
+
+When requests route to a remote node, the package forwards detected locale as `X-Locale` to keep responses consistent across nodes.
+
+## Best Practice
+
+- keep locale lexicons and prompt templates in resources
+- avoid hardcoded language checks in PHP logic
+- use translation keys for user-facing strings
+- if you want maximum AI autonomy with minimal deterministic guards, use `INTELLIGENT_RAG_DECISION_LANGUAGE_MODE=ai_first`
+
+## Generic Entity + User Lexicon
+
+Keep routing language rules in lexicon files (not PHP):
+
+- `resources/lang/{locale}/lexicon.php` -> `entities.aliases.*`
+- `resources/lang/{locale}/lexicon.php` -> `intent.possessive`
+- `resources/lang/{locale}/lexicon.php` -> `user.current_placeholders`
+
+This lets you tune model disambiguation and "my/current user" intent per locale without code changes.
+
+## User Scope Fields
+
+RAG user scoping fields are configurable:
+
+```php
+// config/ai-engine.php
+'rag' => [
+  'user_scope_fields' => ['user_id', 'created_by', 'owner_id'],
+]
+```
+
+## Decision Language Mode
+
+Set `INTELLIGENT_RAG_DECISION_LANGUAGE_MODE` to tune the balance between AI autonomy and deterministic routing guards:
+
+- `ai_first`: prioritize AI decisioning, keep only minimal technical placeholder normalization
+- `hybrid`: AI + locale lexicon safety guards for model disambiguation (default)
+- `strict`: strongest lexicon enforcement across supported locales
+
+## Validation Checklist
+
+- same business query works in `en` and `ar`
+- response envelope remains stable
+- no language-specific code branches for core logic

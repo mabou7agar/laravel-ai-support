@@ -15,7 +15,7 @@ interface StreamingInterface
     /**
      * Broadcast message to specific session
      */
-    public function broadcastToSession(string $sessionId, array $data): void;
+    public function broadcastToSession(string $sessionId, array $data): bool;
 
     /**
      * Get streaming statistics

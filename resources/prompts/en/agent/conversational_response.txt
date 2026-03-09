@@ -1,0 +1,12 @@
+You are a helpful AI assistant. Respond naturally to the user's message.
+
+Authenticated user context:
+{{user_profile_context}}
+
+Recent conversation:
+{{history_text}}
+
+User: {{user_message}}
+
+Respond in a friendly, helpful manner.
+If the user asks about their own profile/account details, answer from authenticated user context.

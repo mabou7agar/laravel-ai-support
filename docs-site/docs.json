@@ -1,0 +1,71 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Laravel AI Engine",
+  "description": "Laravel AI agent engine for orchestration, tool execution, RAG, and deterministic node federation.",
+  "colors": {
+    "primary": "#2563eb",
+    "light": "#1d4ed8",
+    "dark": "#60a5fa"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Start Here",
+            "pages": [
+              "index",
+              "guides/quickstart",
+              "guides/concepts",
+              "guides/architecture"
+            ]
+          },
+          {
+            "group": "Implementation",
+            "pages": [
+              "guides/single-app-setup",
+              "guides/configuration",
+              "guides/model-config-tools",
+              "guides/direct-generation-recipes",
+              "guides/entity-list-preview-ux",
+              "guides/data-collectors",
+              "guides/data-collector-recipes",
+              "guides/rag-indexing",
+              "guides/chat-flow-examples",
+              "guides/copy-paste-playbooks"
+            ]
+          },
+          {
+            "group": "Federation",
+            "pages": [
+              "guides/federation",
+              "guides/multi-app-federation"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "guides/admin-ui",
+              "guides/localization",
+              "guides/policy-learning",
+              "guides/testing-playbook",
+              "guides/troubleshooting"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/commands",
+              "reference/api-reference",
+              "reference/data-collector-api",
+              "reference/env-reference",
+              "reference/upgrade"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

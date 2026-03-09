@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Tests\Unit\Services;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\ConversationManager;
 use LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -22,17 +23,22 @@ class AIEngineServiceConversationTest extends TestCase
     private AIEngineService $aiEngineService;
     private ConversationManager $conversationManager;
     private CreditManager $creditManager;
+    private DriverRegistry $driverRegistry;
 
     protected function setUp(): void
     {
         parent::setUp();
         
         $this->creditManager = Mockery::mock(CreditManager::class);
+        $this->creditManager->shouldReceive('calculateCredits')->zeroOrMoreTimes()->andReturn(1.0);
         $this->conversationManager = app(ConversationManager::class);
+        $this->driverRegistry = Mockery::mock(DriverRegistry::class);
+        config(['ai-engine.error_handling.fallback_engines.openai' => []]);
         
         $this->aiEngineService = new AIEngineService(
             $this->creditManager,
-            $this->conversationManager
+            $this->conversationManager,
+            $this->driverRegistry
         );
     }
 
@@ -57,13 +63,10 @@ class AIEngineServiceConversationTest extends TestCase
             ['tokens' => 20]
         );
 
-        // We'll need to mock the actual driver call since we don't have real API access
-        $this->app->bind(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class, function () use ($mockResponse) {
-            $driver = Mockery::mock(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class);
-            $driver->shouldReceive('validateRequest')->andReturn(true);
-            $driver->shouldReceive('generate')->andReturn($mockResponse);
-            return $driver;
-        });
+        $driver = Mockery::mock(\LaravelAIEngine\Contracts\EngineDriverInterface::class);
+        $driver->shouldReceive('validateRequest')->andReturn(true);
+        $driver->shouldReceive('generate')->andReturn($mockResponse);
+        $this->driverRegistry->shouldReceive('resolve')->andReturn($driver);
 
         $response = $this->aiEngineService->generateWithConversation(
             message: 'Hello, how are you?',
@@ -92,7 +95,7 @@ class AIEngineServiceConversationTest extends TestCase
     {
         // Mock credit manager
         $this->creditManager->shouldReceive('hasCredits')->andReturn(true);
-        $this->creditManager->shouldReceive('deductCredits')->twice();
+        $this->creditManager->shouldReceive('deductCredits')->once();
 
         // Create a conversation with some history
         $conversation = $this->conversationManager->createConversation(
@@ -116,15 +119,13 @@ class AIEngineServiceConversationTest extends TestCase
             EntityEnum::GPT_4O
         );
 
-        $this->app->bind(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class, function () use ($mockResponse, &$capturedRequest) {
-            $driver = Mockery::mock(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class);
-            $driver->shouldReceive('validateRequest')->andReturn(true);
-            $driver->shouldReceive('generate')->andReturnUsing(function ($request) use ($mockResponse, &$capturedRequest) {
-                $capturedRequest = $request;
-                return $mockResponse;
-            });
-            return $driver;
+        $driver = Mockery::mock(\LaravelAIEngine\Contracts\EngineDriverInterface::class);
+        $driver->shouldReceive('validateRequest')->andReturn(true);
+        $driver->shouldReceive('generate')->andReturnUsing(function ($request) use ($mockResponse, &$capturedRequest) {
+            $capturedRequest = $request;
+            return $mockResponse;
         });
+        $this->driverRegistry->shouldReceive('resolve')->andReturn($driver);
 
         $response = $this->aiEngineService->generateWithConversation(
             message: 'Is that correct?',
@@ -170,17 +171,15 @@ class AIEngineServiceConversationTest extends TestCase
 
         // Mock the driver to return a failed response
         $mockResponse = AIResponse::failure(
+            'API rate limit exceeded',
             EngineEnum::OPENAI,
-            EntityEnum::GPT_4O,
-            'API rate limit exceeded'
+            EntityEnum::GPT_4O
         );
 
-        $this->app->bind(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class, function () use ($mockResponse) {
-            $driver = Mockery::mock(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class);
-            $driver->shouldReceive('validateRequest')->andReturn(true);
-            $driver->shouldReceive('generate')->andReturn($mockResponse);
-            return $driver;
-        });
+        $driver = Mockery::mock(\LaravelAIEngine\Contracts\EngineDriverInterface::class);
+        $driver->shouldReceive('validateRequest')->andReturn(true);
+        $driver->shouldReceive('generate')->andReturn($mockResponse);
+        $this->driverRegistry->shouldReceive('resolve')->andReturn($driver);
 
         $response = $this->aiEngineService->generateWithConversation(
             message: 'Hello',
@@ -207,7 +206,7 @@ class AIEngineServiceConversationTest extends TestCase
     {
         // Mock credit manager
         $this->creditManager->shouldReceive('hasCredits')->andReturn(true);
-        $this->creditManager->shouldReceive('deductCredits')->times(4);
+        $this->creditManager->shouldReceive('deductCredits')->times(2);
 
         // Create a conversation with message limit
         $conversation = $this->conversationManager->createConversation(
@@ -221,12 +220,10 @@ class AIEngineServiceConversationTest extends TestCase
             EntityEnum::GPT_4O
         );
 
-        $this->app->bind(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class, function () use ($mockResponse) {
-            $driver = Mockery::mock(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class);
-            $driver->shouldReceive('validateRequest')->andReturn(true);
-            $driver->shouldReceive('generate')->andReturn($mockResponse);
-            return $driver;
-        });
+        $driver = Mockery::mock(\LaravelAIEngine\Contracts\EngineDriverInterface::class);
+        $driver->shouldReceive('validateRequest')->andReturn(true);
+        $driver->shouldReceive('generate')->andReturn($mockResponse);
+        $this->driverRegistry->shouldReceive('resolve')->andReturn($driver);
 
         // Add messages beyond the limit
         $this->aiEngineService->generateWithConversation(
@@ -249,9 +246,9 @@ class AIEngineServiceConversationTest extends TestCase
 
         // Create a conversation
         $conversation = $this->conversationManager->createConversation(
-            userId: 'user-123',
-            lastActivityAt: now()->subHour()
+            userId: 'user-123'
         );
+        $conversation->update(['last_activity_at' => now()->subHour()]);
 
         $oldActivity = $conversation->last_activity_at;
 
@@ -261,12 +258,10 @@ class AIEngineServiceConversationTest extends TestCase
             EntityEnum::GPT_4O
         );
 
-        $this->app->bind(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class, function () use ($mockResponse) {
-            $driver = Mockery::mock(\LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class);
-            $driver->shouldReceive('validateRequest')->andReturn(true);
-            $driver->shouldReceive('generate')->andReturn($mockResponse);
-            return $driver;
-        });
+        $driver = Mockery::mock(\LaravelAIEngine\Contracts\EngineDriverInterface::class);
+        $driver->shouldReceive('validateRequest')->andReturn(true);
+        $driver->shouldReceive('generate')->andReturn($mockResponse);
+        $this->driverRegistry->shouldReceive('resolve')->andReturn($driver);
 
         $this->aiEngineService->generateWithConversation(
             'Hello', $conversation->conversation_id, EngineEnum::OPENAI, EntityEnum::GPT_4O, 'user-123'

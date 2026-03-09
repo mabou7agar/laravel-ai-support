@@ -49,6 +49,12 @@ class ActionExecutionPipeline
             $durationMs = (int)((microtime(true) - $startTime) * 1000);
             $result->withDuration($durationMs);
             $result->withActionInfo($action->id, $action->type->value);
+            $this->trackActionMetric(
+                actionId: $action->data['action_id'] ?? $action->id,
+                userId: $userId,
+                result: $result,
+                durationMs: $durationMs
+            );
             
             Log::channel('ai-engine')->info('Action execution completed', [
                 'action_id' => $action->id,
@@ -71,6 +77,27 @@ class ActionExecutionPipeline
                 error: 'Action execution failed: ' . $e->getMessage(),
                 metadata: ['exception' => get_class($e)]
             )->withDuration($durationMs);
+        }
+    }
+
+    protected function trackActionMetric(string $actionId, mixed $userId, ActionResult $result, int $durationMs): void
+    {
+        if (!class_exists(\LaravelAIEngine\Models\ActionMetric::class)) {
+            return;
+        }
+
+        try {
+            \LaravelAIEngine\Models\ActionMetric::create([
+                'action_id' => $actionId,
+                'user_id' => $userId !== null ? (string) $userId : null,
+                'success' => $result->success,
+                'duration_ms' => $durationMs,
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('ai-engine')->debug('Failed to store action metric', [
+                'action_id' => $actionId,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
     
@@ -209,6 +236,8 @@ class ActionExecutionPipeline
      */
     protected function executeRemoteModelAction(array $definition, array $params, $userId): ActionResult
     {
+        $nodeName = $definition['node_name'] ?? ($definition['node_slug'] ?? 'Unknown');
+
         try {
             $remoteActionService = app(\LaravelAIEngine\Services\Node\RemoteActionService::class);
             
@@ -216,14 +245,21 @@ class ActionExecutionPipeline
             $modelClass = $definition['model_class'] ?? null;
             
             if (!$nodeSlug || !$modelClass) {
-                return ActionResult::failure('Missing node or model information');
+                return ActionResult::failure(
+                    'Missing node or model information',
+                    metadata: ['node' => $nodeName]
+                );
             }
             
-            $result = $remoteActionService->executeAction($nodeSlug, [
-                'action' => 'create',
-                'model_class' => $modelClass,
-                'params' => array_merge($params, ['user_id' => $userId]),
-            ]);
+            $result = $remoteActionService->executeOn(
+                $nodeSlug,
+                'create',
+                [
+                    'model_class' => $modelClass,
+                    'params' => array_merge($params, ['user_id' => $userId]),
+                    'user_id' => $userId,
+                ]
+            );
             
             if ($result['success'] ?? false) {
                 $modelName = class_basename($modelClass);
@@ -231,7 +267,7 @@ class ActionExecutionPipeline
                     message: "✅ {$modelName} created on remote node!",
                     data: $result['data'] ?? null,
                     metadata: [
-                        'node' => $definition['node_name'] ?? 'Unknown',
+                        'node' => $nodeName,
                         'model_class' => $modelClass,
                     ]
                 );
@@ -239,12 +275,14 @@ class ActionExecutionPipeline
             
             return ActionResult::failure(
                 error: $result['error'] ?? 'Remote action failed',
-                data: $result
+                data: $result,
+                metadata: ['node' => $nodeName]
             );
             
         } catch (\Exception $e) {
             return ActionResult::failure(
-                error: 'Remote execution failed: ' . $e->getMessage()
+                error: 'Remote execution failed: ' . $e->getMessage(),
+                metadata: ['node' => $nodeName]
             );
         }
     }

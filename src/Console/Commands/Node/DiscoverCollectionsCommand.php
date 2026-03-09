@@ -134,7 +134,7 @@ class DiscoverCollectionsCommand extends Command
     {
         try {
             $response = NodeHttpClient::make()
-                ->get($node->url . '/api/ai-engine/collections');
+                ->get($node->url . '/api/ai-engine/manifest');
             
             if (!$response->successful()) {
                 $statusCode = $response->status();
@@ -142,7 +142,7 @@ class DiscoverCollectionsCommand extends Command
                 
                 // Check if response is HTML (error page)
                 if (str_contains($body, '<!DOCTYPE html>') || str_contains($body, '<html')) {
-                    throw new \Exception("HTTP {$statusCode}: Node returned HTML error page. The /api/ai-engine/collections endpoint may not exist or has an error. Please update the child node package.");
+                    throw new \Exception("HTTP {$statusCode}: Node returned HTML error page. The /api/ai-engine/manifest endpoint may not exist or has an error. Please update the child node package.");
                 }
                 
                 // Try to get JSON error message

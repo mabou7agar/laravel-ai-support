@@ -10,6 +10,7 @@ use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 abstract class AgentWorkflow
@@ -17,13 +18,20 @@ abstract class AgentWorkflow
     protected array $steps = [];
     protected AIEngineService $ai;
     protected ?ToolRegistry $tools = null;
+    protected ?LocaleResourceService $localeResources = null;
     protected ?string $stepPrefix = null;
 
-    public function __construct(AIEngineService $ai, ?ToolRegistry $tools = null, ?string $stepPrefix = null)
+    public function __construct(
+        AIEngineService $ai,
+        ?ToolRegistry $tools = null,
+        ?string $stepPrefix = null,
+        ?LocaleResourceService $localeResources = null
+    )
     {
         $this->ai = $ai;
         $this->tools = $tools;
         $this->stepPrefix = $stepPrefix;
+        $this->localeResources = $localeResources;
         $this->steps = $this->defineSteps();
 
         // Apply step prefix if this is a subworkflow
@@ -318,23 +326,26 @@ abstract class AgentWorkflow
             return false;
         }
 
-        $content = strtolower(trim($lastMessage['content'] ?? ''));
-
-        // Check for cancel keywords
-        $cancelKeywords = ['cancel', 'abort', 'stop', 'quit', 'exit', 'nevermind', 'never mind'];
-
-        foreach ($cancelKeywords as $keyword) {
-            if ($content === $keyword || str_starts_with($content, $keyword . ' ')) {
-                Log::channel('ai-engine')->info('User requested workflow cancellation', [
-                    'workflow' => $this->getName(),
-                    'session_id' => $context->sessionId,
-                    'message' => $content,
-                ]);
-                return true;
-            }
+        $content = mb_strtolower(trim((string) ($lastMessage['content'] ?? '')));
+        if ($content === '') {
+            return false;
         }
 
-        return false;
+        $locale = $this->resolveContextLocale($context);
+        $isCancel = $this->locale()->isLexiconMatch($content, 'intent.cancel', $locale)
+            || $this->locale()->startsWithLexicon($content, 'intent.cancel', $locale);
+
+        if (!$isCancel) {
+            return false;
+        }
+
+        Log::channel('ai-engine')->info('User requested workflow cancellation', [
+            'workflow' => $this->getName(),
+            'session_id' => $context->sessionId,
+            'message' => $content,
+        ]);
+
+        return true;
     }
 
     /**
@@ -351,9 +362,37 @@ abstract class AgentWorkflow
         $this->cleanupAfterCompletion($context);
 
         return ActionResult::failure(
-            error: 'Workflow cancelled by user',
+            error: $this->locale()->translation('ai-engine::runtime.agent.workflow_cancelled_error')
+                ?: 'Workflow cancelled by user',
             metadata: ['cancelled' => true]
         );
+    }
+
+    protected function resolveContextLocale(UnifiedActionContext $context): ?string
+    {
+        $metadataLocale = $context->metadata['detected_locale']
+            ?? $context->metadata['locale']
+            ?? null;
+        if (is_string($metadataLocale) && trim($metadataLocale) !== '') {
+            return $metadataLocale;
+        }
+
+        $stateLocale = $context->get('detected_locale')
+            ?? $context->get('locale');
+        if (is_string($stateLocale) && trim($stateLocale) !== '') {
+            return $stateLocale;
+        }
+
+        return null;
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 
     /**

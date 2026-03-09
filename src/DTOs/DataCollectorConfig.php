@@ -6,6 +6,7 @@ namespace LaravelAIEngine\DTOs;
 
 use Closure;
 use Illuminate\Support\Str;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 /**
  * Configuration for a Data Collector Chat session
@@ -87,7 +88,9 @@ class DataCollectorConfig
     {
         $order = 0;
         foreach ($this->fields as $name => $definition) {
-            $field = DataCollectorField::fromArray($name, $definition);
+            [$resolvedName, $resolvedDefinition] = $this->normalizeFieldDefinition($name, $definition, $order);
+
+            $field = DataCollectorField::fromArray($resolvedName, $resolvedDefinition);
             
             // Set order if not specified
             if ($field->order === null) {
@@ -105,11 +108,101 @@ class DataCollectorConfig
                 );
             }
             
-            $this->parsedFields[$name] = $field;
+            $this->parsedFields[$field->name] = $field;
         }
 
         // Sort by order
         uasort($this->parsedFields, fn($a, $b) => ($a->order ?? 0) <=> ($b->order ?? 0));
+    }
+
+    /**
+     * Normalize incoming field definitions so API clients can send either:
+     * - associative fields map: {"customer_name": "..."}
+     * - indexed field list: [{"name":"customer_name","description":"..."}]
+     * - indexed single-key objects: [{"customer_name":"..."}]
+     *
+     * @return array{0:string,1:array|string}
+     */
+    protected function normalizeFieldDefinition(string|int $name, mixed $definition, int $index): array
+    {
+        $resolvedDefinition = $this->normalizeFieldValue($definition);
+
+        if (is_string($name) && trim($name) !== '') {
+            return [trim($name), $resolvedDefinition];
+        }
+
+        if (is_array($resolvedDefinition)) {
+            if (isset($resolvedDefinition['name']) && is_scalar($resolvedDefinition['name'])) {
+                $resolvedName = trim((string) $resolvedDefinition['name']);
+                if ($resolvedName !== '') {
+                    unset($resolvedDefinition['name']);
+
+                    return [$resolvedName, $resolvedDefinition];
+                }
+            }
+
+            if (count($resolvedDefinition) === 1) {
+                $singleKey = array_key_first($resolvedDefinition);
+                $singleValue = $singleKey !== null ? $resolvedDefinition[$singleKey] : null;
+                $reservedKeys = [
+                    'name',
+                    'type',
+                    'description',
+                    'validation',
+                    'required',
+                    'examples',
+                    'default',
+                    'options',
+                    'prompt',
+                    'order',
+                    'field_name',
+                    'field',
+                    'key',
+                ];
+
+                if (
+                    is_string($singleKey)
+                    && trim($singleKey) !== ''
+                    && !in_array(strtolower($singleKey), $reservedKeys, true)
+                    && (is_array($singleValue) || is_string($singleValue))
+                ) {
+                    return [trim($singleKey), $this->normalizeFieldValue($singleValue)];
+                }
+            }
+
+            foreach (['field_name', 'field', 'key'] as $altNameKey) {
+                if (!isset($resolvedDefinition[$altNameKey]) || !is_scalar($resolvedDefinition[$altNameKey])) {
+                    continue;
+                }
+
+                $resolvedName = trim((string) $resolvedDefinition[$altNameKey]);
+                if ($resolvedName !== '') {
+                    unset($resolvedDefinition[$altNameKey]);
+
+                    return [$resolvedName, $resolvedDefinition];
+                }
+            }
+        }
+
+        return ['field_' . ($index + 1), $resolvedDefinition];
+    }
+
+    /**
+     * Ensure field value is compatible with DataCollectorField::fromArray().
+     */
+    protected function normalizeFieldValue(mixed $definition): array|string
+    {
+        if (is_array($definition) || is_string($definition)) {
+            return $definition;
+        }
+
+        if (is_scalar($definition) || $definition === null) {
+            return (string) $definition;
+        }
+
+        $encoded = json_encode($definition, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        return $encoded === false ? '' : $encoded;
     }
 
     /**
@@ -285,95 +378,115 @@ class DataCollectorConfig
             return $this->systemPrompt;
         }
 
+        $descriptionLine = $this->description !== ''
+            ? $this->translateRuntime(
+                'data_collector.system_prompt.description_line',
+                'DESCRIPTION: :description',
+                ['description' => $this->description]
+            )
+            : '';
+        $templatePrompt = '';
+        if ($this->localeResources() !== null) {
+            $templatePrompt = $this->localeResources()->renderPromptTemplate(
+                'data_collector/system_prompt',
+                [
+                    'title' => $this->title,
+                    'description_line' => $descriptionLine,
+                    'fields_block' => $this->buildFieldsPromptBlock(),
+                    'allow_enhancement_line' => $this->allowEnhancement
+                        ? $this->translateRuntime('data_collector.system_prompt.allow_enhancement_line')
+                        : '',
+                    'allow_skip_optional_line' => $this->allowSkipOptional
+                        ? $this->translateRuntime('data_collector.system_prompt.allow_skip_optional_line')
+                        : '',
+                    'language_block' => $this->buildLanguageSystemPromptBlock(),
+                ],
+                $this->locale
+            );
+        }
+
+        if (trim($templatePrompt) !== '') {
+            return trim($templatePrompt);
+        }
+
+        return $this->buildSystemPromptFallback($descriptionLine);
+    }
+
+    protected function buildFieldsPromptBlock(): string
+    {
+        $requiredLabel = $this->translateRuntime('data_collector.system_prompt.required_label', '(required)');
+        $optionalLabel = $this->translateRuntime('data_collector.system_prompt.optional_label', '(optional)');
+        $examplePrefix = $this->translateRuntime('data_collector.system_prompt.example_prefix', 'e.g.');
+
+        $lines = [];
+        foreach ($this->parsedFields as $name => $field) {
+            $required = $field->required ? $requiredLabel : $optionalLabel;
+            $line = "- {$name} {$required}: {$field->description}";
+
+            if (!empty($field->examples)) {
+                $line .= " ({$examplePrefix}, " . implode(', ', $field->examples) . ")";
+            }
+
+            $lines[] = $line;
+        }
+
+        return implode("\n", $lines);
+    }
+
+    protected function buildLanguageSystemPromptBlock(): string
+    {
+        $lines = [];
+        if ($this->locale) {
+            $lines[] = $this->translateRuntime(
+                'data_collector.language_requirement.force_locale',
+                '',
+                ['language' => $this->getLocaleName()]
+            );
+            $lines[] = $this->translateRuntime(
+                'data_collector.language_requirement.json_values',
+                '',
+                ['language' => $this->getLocaleName()]
+            );
+        } elseif ($this->detectLocale) {
+            $lines[] = $this->translateRuntime('data_collector.language_requirement.match_user', '');
+            $lines[] = $this->translateRuntime(
+                'data_collector.language_requirement.json_values',
+                '',
+                ['language' => $this->getLocaleName()]
+            );
+        }
+
+        $lines = array_values(array_filter(array_map('trim', $lines), static fn (string $line): bool => $line !== ''));
+
+        return implode("\n", $lines);
+    }
+
+    protected function buildSystemPromptFallback(string $descriptionLine): string
+    {
         $prompt = "You are a helpful assistant collecting information from the user.\n\n";
         $prompt .= "TASK: {$this->title}\n";
-        
-        if ($this->description) {
-            $prompt .= "DESCRIPTION: {$this->description}\n";
+        if ($descriptionLine !== '') {
+            $prompt .= $descriptionLine . "\n";
         }
 
         $prompt .= "\nFIELDS TO COLLECT:\n";
-        
-        foreach ($this->parsedFields as $name => $field) {
-            $required = $field->required ? '(required)' : '(optional)';
-            $prompt .= "- {$name} {$required}: {$field->description}";
-            
-            if (!empty($field->examples)) {
-                $prompt .= " (e.g., " . implode(', ', $field->examples) . ")";
-            }
-            
-            $prompt .= "\n";
-        }
-
-        $prompt .= "\nINSTRUCTIONS:\n";
-        $prompt .= "1. Ask for ONE field at a time in a conversational manner\n";
-        $prompt .= "2. ONLY mention the current field you're asking for - NEVER mention other fields\n";
-        $prompt .= "3. When acknowledging user input, ONLY reference the field you just collected\n";
-        $prompt .= "4. Validate user input and ask for corrections if needed\n";
-        $prompt .= "5. Be helpful and provide examples when the user seems unsure\n";
-        $prompt .= "6. After collecting all required fields, provide a summary\n";
-        $prompt .= "7. Ask for confirmation before completing\n";
-        
+        $prompt .= $this->buildFieldsPromptBlock() . "\n\n";
+        $prompt .= "INSTRUCTIONS:\n";
+        $prompt .= "1. Ask for one field at a time.\n";
+        $prompt .= "2. Use FIELD_COLLECTED markers exactly like FIELD_COLLECTED:field_name=value.\n";
+        $prompt .= "3. Ask for confirmation before completion.\n";
         if ($this->allowEnhancement) {
-            $prompt .= "6. Allow the user to modify any field before final confirmation\n";
+            $prompt .= "4. Allow user modifications before final confirmation.\n";
         }
-
         if ($this->allowSkipOptional) {
-            $prompt .= "7. Allow skipping optional fields if the user wants to\n";
+            $prompt .= "5. Allow skipping optional fields.\n";
         }
+        $prompt .= "\nComplete token: DATA_COLLECTION_COMPLETE\n";
+        $prompt .= "Cancel token: DATA_COLLECTION_CANCELLED\n";
 
-        $prompt .= "\nRESPONSE FORMAT (CRITICAL - ALWAYS FOLLOW THIS):\n";
-        $prompt .= "═══════════════════════════════════════════════════════════════\n";
-        $prompt .= "MANDATORY: You MUST include FIELD_COLLECTED markers for EVERY field value you extract.\n";
-        $prompt .= "Format: FIELD_COLLECTED:field_name=value\n\n";
-        $prompt .= "CRITICAL FIELD NAMING RULES:\n";
-        $prompt .= "- When collecting field 'name', say: 'I've recorded the name' (NOT other fields)\n";
-        $prompt .= "- When collecting field 'description', say: 'I've recorded the description' (NOT other fields)\n";
-        $prompt .= "- When collecting field 'duration', say: 'I've recorded the duration' (NOT other fields)\n";
-        $prompt .= "- NEVER mention field names you're NOT currently collecting\n";
-        $prompt .= "- If user provides info for multiple fields, ONLY acknowledge the current one\n\n";
-        $prompt .= "EXAMPLES:\n";
-        $prompt .= "Example 1 - Collecting 'name' field:\n";
-        $prompt .= "User: 'Laravel Basics'\n";
-        $prompt .= "✓ CORRECT: 'Great! I've recorded the name: Laravel Basics'\n";
-        $prompt .= "✗ WRONG: 'Great! I've recorded the duration: Laravel Basics'\n";
-        $prompt .= "FIELD_COLLECTED:name=Laravel Basics\n\n";
-        $prompt .= "Example 2 - Collecting 'description' field:\n";
-        $prompt .= "User: 'This course teaches Laravel from zero to hero'\n";
-        $prompt .= "✓ CORRECT: 'Perfect! I've recorded the description'\n";
-        $prompt .= "✗ WRONG: 'Perfect! I've recorded the duration'\n";
-        $prompt .= "FIELD_COLLECTED:description=This course teaches Laravel from zero to hero\n\n";
-        $prompt .= "Example 3 (Arabic) - Collecting 'description':\n";
-        $prompt .= "User: 'هذه الدورة تعلم Laravel من الصفر'\n";
-        $prompt .= "✓ CORRECT: 'رائع! لقد سجلت الوصف'\n";
-        $prompt .= "✗ WRONG: 'رائع! لقد سجلت المدة'\n";
-        $prompt .= "FIELD_COLLECTED:description=هذه الدورة تعلم Laravel من الصفر\n\n";
-        $prompt .= "RULES:\n";
-        $prompt .= "1. ONLY extract the field you're currently asking for\n";
-        $prompt .= "2. ONLY mention the current field name in your acknowledgment\n";
-        $prompt .= "3. Place markers at the END of your response (after conversational text)\n";
-        $prompt .= "4. Field names MUST match exactly (from the field list above)\n";
-        $prompt .= "5. Values can be in any language the user provides\n";
-        $prompt .= "6. Even if you acknowledge a value, you MUST include the marker\n";
-        $prompt .= "7. Missing markers = data loss = failure\n";
-        $prompt .= "8. Mentioning wrong field names = confusion = failure\n";
-        $prompt .= "═══════════════════════════════════════════════════════════════\n\n";
-        $prompt .= "When all fields are collected and user confirms, respond with:\n";
-        $prompt .= "DATA_COLLECTION_COMPLETE\n";
-        $prompt .= "If user wants to cancel, respond with:\n";
-        $prompt .= "DATA_COLLECTION_CANCELLED\n";
-
-        // Add language instructions
-        if ($this->locale) {
-            $prompt .= "\nLANGUAGE:\n";
-            $prompt .= "You MUST respond in {$this->getLocaleName()} language.\n";
-            $prompt .= "All your conversational responses, questions, and summaries must be in {$this->getLocaleName()}.\n";
-            $prompt .= "The FIELD_COLLECTED markers should keep the field names in English, but values can be in the user's language.\n";
-        } elseif ($this->detectLocale) {
-            $prompt .= "\nLANGUAGE:\n";
-            $prompt .= "Detect the language from the user's first message and respond in that same language.\n";
-            $prompt .= "Continue using that language throughout the conversation.\n";
-            $prompt .= "The FIELD_COLLECTED markers should keep the field names in English, but values can be in the user's language.\n";
+        $languageBlock = $this->buildLanguageSystemPromptBlock();
+        if ($languageBlock !== '') {
+            $prompt .= "\nLANGUAGE:\n{$languageBlock}\n";
         }
 
         return $prompt;
@@ -384,40 +497,13 @@ class DataCollectorConfig
      */
     public function getLocaleName(): string
     {
-        $localeNames = [
-            'en' => 'English',
-            'ar' => 'Arabic',
-            'fr' => 'French',
-            'es' => 'Spanish',
-            'de' => 'German',
-            'it' => 'Italian',
-            'pt' => 'Portuguese',
-            'ru' => 'Russian',
-            'zh' => 'Chinese',
-            'ja' => 'Japanese',
-            'ko' => 'Korean',
-            'hi' => 'Hindi',
-            'tr' => 'Turkish',
-            'nl' => 'Dutch',
-            'pl' => 'Polish',
-            'sv' => 'Swedish',
-            'da' => 'Danish',
-            'no' => 'Norwegian',
-            'fi' => 'Finnish',
-            'he' => 'Hebrew',
-            'th' => 'Thai',
-            'vi' => 'Vietnamese',
-            'id' => 'Indonesian',
-            'ms' => 'Malay',
-            'uk' => 'Ukrainian',
-            'cs' => 'Czech',
-            'ro' => 'Romanian',
-            'hu' => 'Hungarian',
-            'el' => 'Greek',
-            'bg' => 'Bulgarian',
-        ];
+        if ($this->localeResources() !== null) {
+            return $this->localeResources()->languageName($this->locale);
+        }
 
-        return $localeNames[$this->locale] ?? $this->locale ?? 'English';
+        $fallbackLocale = $this->locale ?? app()->getLocale();
+
+        return strtoupper((string) $fallbackLocale);
     }
 
     /**
@@ -474,10 +560,18 @@ class DataCollectorConfig
             return $summary;
         }
 
-        // Default action summary based on title (with locale support)
-        if ($this->locale === 'ar') {
-            return "سيتم إكمال عملية '{$this->title}' بالمعلومات التي قدمتها.";
+        if ($this->localeResources() !== null) {
+            $translated = $this->localeResources()->translation(
+                'ai-engine::runtime.data_collector.default_action_summary',
+                ['title' => $this->title],
+                $this->locale
+            );
+            if ($translated !== '') {
+                return $translated;
+            }
         }
+
+        // Default action summary
         return "This will complete the '{$this->title}' process with the information you provided.";
     }
 
@@ -488,26 +582,107 @@ class DataCollectorConfig
     {
         $message = $this->generateSummary($data);
         $message .= "\n---\n\n";
-        
-        if ($this->locale === 'ar') {
-            $message .= "## ما سيحدث:\n\n";
-            $message .= $this->generateActionSummary($data);
-            $message .= "\n\n---\n\n";
-            $message .= "**يرجى التأكيد:**\n";
-            $message .= "- قل **'نعم'** أو **'تأكيد'** للمتابعة\n";
-            $message .= "- قل **'لا'** أو **'تغيير'** لتعديل أي معلومات\n";
-            $message .= "- قل **'إلغاء'** لإلغاء العملية\n";
-        } else {
-            $message .= "## What will happen:\n\n";
-            $message .= $this->generateActionSummary($data);
-            $message .= "\n\n---\n\n";
-            $message .= "**Please confirm:**\n";
-            $message .= "- Say **'yes'** or **'confirm'** to proceed\n";
-            $message .= "- Say **'no'** or **'change'** to modify any information\n";
-            $message .= "- Say **'cancel'** to abort the process\n";
-        }
+
+        $whatWillHappen = $this->translateRuntime('data_collector.confirmation.what_will_happen', 'What will happen:');
+        $pleaseConfirm = $this->translateRuntime('data_collector.confirmation.please_confirm', 'Please confirm:');
+
+        $confirmLexicon = $this->localeLexicon('intent.confirm', ['yes', 'confirm']);
+        $rejectLexicon = $this->localeLexicon('intent.reject', ['no', 'change']);
+        $modifyLexicon = $this->localeLexicon('intent.modify', ['change']);
+        $cancelLexicon = $this->localeLexicon('intent.cancel', ['cancel']);
+
+        $yes = $confirmLexicon[0] ?? 'yes';
+        $confirm = $confirmLexicon[1] ?? $yes;
+        $no = $rejectLexicon[0] ?? 'no';
+        $change = $modifyLexicon[0] ?? ($rejectLexicon[1] ?? 'change');
+        $cancel = $cancelLexicon[0] ?? 'cancel';
+
+        $proceedLine = $this->translateRuntime(
+            'data_collector.confirmation.proceed_line',
+            "Say ':yes' or ':confirm' to proceed",
+            ['yes' => $yes, 'confirm' => $confirm]
+        );
+        $modifyLine = $this->translateRuntime(
+            'data_collector.confirmation.modify_line',
+            "Say ':no' or ':change' to modify any information",
+            ['no' => $no, 'change' => $change]
+        );
+        $cancelLine = $this->translateRuntime(
+            'data_collector.confirmation.cancel_line',
+            "Say ':cancel' to abort the process",
+            ['cancel' => $cancel]
+        );
+
+        $message .= "## {$whatWillHappen}\n\n";
+        $message .= $this->generateActionSummary($data);
+        $message .= "\n\n---\n\n";
+        $message .= "**{$pleaseConfirm}**\n";
+        $message .= "- {$proceedLine}\n";
+        $message .= "- {$modifyLine}\n";
+        $message .= "- {$cancelLine}\n";
         
         return $message;
+    }
+
+    protected function translateRuntime(string $key, string $fallback = '', array $replace = []): string
+    {
+        $fallbackReplace = [];
+        foreach ($replace as $name => $value) {
+            $fallbackReplace[':' . $name] = (string) $value;
+        }
+
+        if ($this->localeResources() === null) {
+            return strtr($fallback, $fallbackReplace);
+        }
+
+        $translated = $this->localeResources()->translation(
+            "ai-engine::runtime.{$key}",
+            $replace,
+            $this->locale
+        );
+
+        if ($translated === '') {
+            $translated = $this->localeResources()->translation(
+                "ai-engine::runtime.{$key}",
+                $replace,
+                $this->fallbackLocale()
+            );
+        }
+
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        return $fallback !== '' ? strtr($fallback, $fallbackReplace) : '';
+    }
+
+    protected function fallbackLocale(): ?string
+    {
+        $fallback = config('ai-engine.localization.fallback_locale')
+            ?: config('app.fallback_locale')
+            ?: app()->getLocale();
+
+        return is_string($fallback) && trim($fallback) !== '' ? $fallback : null;
+    }
+
+    protected function localeLexicon(string $key, array $default = []): array
+    {
+        if ($this->localeResources() === null) {
+            return $default;
+        }
+
+        $values = $this->localeResources()->lexicon($key, $this->locale, $default);
+
+        return $values !== [] ? $values : $default;
+    }
+
+    protected function localeResources(): ?LocaleResourceService
+    {
+        try {
+            return app(LocaleResourceService::class);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

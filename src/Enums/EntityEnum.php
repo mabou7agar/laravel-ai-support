@@ -334,6 +334,14 @@ class EntityEnum
                 return new EngineEnum(EngineEnum::STABLE_DIFFUSION);
             case self::ELEVEN_MULTILINGUAL_V2:
                 return new EngineEnum(EngineEnum::ELEVEN_LABS);
+            case self::FAL_FLUX_PRO:
+            case self::FAL_FLUX_DEV:
+            case self::FAL_FLUX_SCHNELL:
+            case self::FAL_SDXL:
+            case self::FAL_SD3_MEDIUM:
+            case self::FAL_STABLE_VIDEO:
+            case self::FAL_ANIMATEDIFF:
+            case self::FAL_LUMA_DREAM:
             case self::FLUX_PRO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
@@ -360,6 +368,9 @@ class EntityEnum
             case self::MIDJOURNEY_NIJI:
                 return new EngineEnum(EngineEnum::MIDJOURNEY);
             case self::AZURE_TEXT_ANALYTICS:
+            case self::AZURE_TTS:
+            case self::AZURE_STT:
+            case self::AZURE_TRANSLATOR:
             case self::AZURE_COMPUTER_VISION:
                 return new EngineEnum(EngineEnum::AZURE);
             case self::OPENROUTER_MISTRAL_7B_FREE:
@@ -891,11 +902,18 @@ class EntityEnum
             case self::OPENROUTER_PHI_3_MINI_FREE:
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return 'text';
+            case self::DALL_E_3:
+            case self::DALL_E_2:
+            case self::FAL_FLUX_PRO:
             case self::FAL_FLUX_DEV:
             case self::FAL_FLUX_SCHNELL:
             case self::FAL_SDXL:
             case self::FAL_SD3_MEDIUM:
+            case self::FLUX_PRO:
                 return 'image';
+            case self::FAL_STABLE_VIDEO:
+            case self::FAL_ANIMATEDIFF:
+            case self::FAL_LUMA_DREAM:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
                 return 'video';
@@ -903,6 +921,12 @@ class EntityEnum
             case self::ELEVEN_MULTILINGUAL_V2:
                 return 'audio';
             case self::UNSPLASH_SEARCH:
+            case self::PERPLEXITY_SONAR_LARGE:
+            case self::PERPLEXITY_SONAR_MEDIUM:
+            case self::PERPLEXITY_SONAR_SMALL:
+            case self::SERPER_SEARCH:
+            case self::SERPER_NEWS:
+            case self::SERPER_IMAGES:
                 return 'search';
             case self::PLAGIARISM_BASIC:
             case self::PLAGIARISM_ADVANCED:
@@ -997,6 +1021,8 @@ class EntityEnum
         switch ($this->value) {
             case self::GPT_4O:
             case self::GPT_5:
+            case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_OPUS:
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
                 return true;
@@ -1046,7 +1072,16 @@ class EntityEnum
             case self::GPT_5_NANO:
             case self::DEEPSEEK_CHAT:
             case self::DEEPSEEK_REASONER:
+            case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_HAIKU:
+            case self::CLAUDE_3_OPUS:
                 return true;
+            case self::DALL_E_3:
+            case self::DALL_E_2:
+            case self::MIDJOURNEY_V6:
+            case self::MIDJOURNEY_V5:
+            case self::MIDJOURNEY_NIJI:
+                return false;
             default:
                 // Check database for streaming support
                 return $this->getSupportsStreamingFromDatabase();
@@ -1136,7 +1171,7 @@ class EntityEnum
     {
         return array_filter(
             self::cases(),
-            fn(self $entity) => $entity->engine() === $engine
+            fn(self $entity) => $entity->engine()->value === $engine->value
         );
     }
 

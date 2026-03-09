@@ -1,0 +1,2 @@
+Generate a concise prompt in {{language}}.
+Output only the prompt text.

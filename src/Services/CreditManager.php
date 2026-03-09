@@ -159,6 +159,16 @@ class CreditManager
     public function hasCredits(string $userId, AIRequest $request): bool
     {
         $user = $this->getUserModel($userId);
+
+        if ($this->usesEntityCreditLedger($user)) {
+            $entry = $this->getEntityCreditEntry($user, $request->engine, $request->model);
+            if (($entry['is_unlimited'] ?? false) === true) {
+                return true;
+            }
+
+            $requiredCredits = $this->calculateCredits($request);
+            return ((float) ($entry['balance'] ?? 0.0)) >= $requiredCredits;
+        }
         
         // Use custom lifecycle handler if configured
         $handler = $this->getLifecycleHandler();
@@ -184,6 +194,30 @@ class CreditManager
         $user = $this->getUserModel($userId);
         
         $creditsToDeduct = $actualCreditsUsed ?? $this->calculateCredits($request);
+
+        if ($this->usesEntityCreditLedger($user)) {
+            $entry = $this->getEntityCreditEntry($user, $request->engine, $request->model);
+            if (($entry['is_unlimited'] ?? false) === true) {
+                return true;
+            }
+
+            $currentBalance = (float) ($entry['balance'] ?? 0.0);
+            if ($currentBalance < $creditsToDeduct) {
+                throw new InsufficientCreditsException(
+                    "Insufficient credits. Required: {$creditsToDeduct}, Available: {$currentBalance}"
+                );
+            }
+
+            $this->setEntityCreditEntry(
+                $user,
+                $request->engine,
+                $request->model,
+                $currentBalance - $creditsToDeduct,
+                false
+            );
+
+            return true;
+        }
         
         // Use custom lifecycle handler if configured
         $handler = $this->getLifecycleHandler();
@@ -210,9 +244,23 @@ class CreditManager
     /**
      * Add MyCredits to user
      */
-    public function addCredits(string $userId, float $credits, array $metadata = []): bool
+    public function addCredits(string $userId, mixed ...$args): bool
     {
         $user = $this->getUserModel($userId);
+        [$engine, $model, $credits, $metadata] = $this->parseCreditMutationArguments($args);
+
+        if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
+            $entry = $this->getEntityCreditEntry($user, $engine, $model);
+            $this->setEntityCreditEntry(
+                $user,
+                $engine,
+                $model,
+                (float) ($entry['balance'] ?? 0.0) + $credits,
+                (bool) ($entry['is_unlimited'] ?? false)
+            );
+
+            return true;
+        }
         
         // Use custom lifecycle handler if configured
         $handler = $this->getLifecycleHandler();
@@ -228,9 +276,16 @@ class CreditManager
     /**
      * Set user MyCredits balance
      */
-    public function setCredits(string $userId, float $credits): bool
+    public function setCredits(string $userId, mixed ...$args): bool
     {
         $user = $this->getUserModel($userId);
+        [$engine, $model, $credits] = $this->parseCreditSetArguments($args);
+
+        if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
+            $this->setEntityCreditEntry($user, $engine, $model, $credits, false);
+            return true;
+        }
+
         $user->my_credits = $credits;
         return $user->save();
     }
@@ -238,9 +293,24 @@ class CreditManager
     /**
      * Set unlimited credits for user
      */
-    public function setUnlimitedCredits(string $userId, bool $unlimited = true): bool
+    public function setUnlimitedCredits(string $userId, mixed ...$args): bool
     {
         $user = $this->getUserModel($userId);
+
+        [$engine, $model, $unlimited] = $this->parseUnlimitedArguments($args);
+        if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
+            $entry = $this->getEntityCreditEntry($user, $engine, $model);
+            $this->setEntityCreditEntry(
+                $user,
+                $engine,
+                $model,
+                (float) ($entry['balance'] ?? config('ai-engine.credits.default_balance', 100.0)),
+                $unlimited
+            );
+
+            return true;
+        }
+
         $user->has_unlimited_credits = $unlimited;
         return $user->save();
     }
@@ -248,9 +318,21 @@ class CreditManager
     /**
      * Get user MyCredits balance
      */
-    public function getUserCredits(string $userId): array
+    public function getUserCredits(string $userId, mixed ...$args): array
     {
         $user = $this->getUserModel($userId);
+
+        if (count($args) >= 2) {
+            $engine = $this->resolveEngine($args[0]);
+            $model = $this->resolveModel($args[1]);
+            $entry = $this->getEntityCreditEntry($user, $engine, $model);
+
+            return [
+                'balance' => (float) ($entry['balance'] ?? config('ai-engine.credits.default_balance', 100.0)),
+                'is_unlimited' => (bool) ($entry['is_unlimited'] ?? false),
+                'currency' => config('ai-engine.credits.currency', 'MyCredits'),
+            ];
+        }
         
         return [
             'balance' => $user->my_credits ?? 0,
@@ -307,6 +389,31 @@ class CreditManager
     public function getTotalCredits(string $userId): float
     {
         $user = $this->getUserModel($userId);
+
+        if ($this->usesEntityCreditLedger($user)) {
+            $ledger = $this->getEntityCreditLedger($user);
+            $total = 0.0;
+
+            foreach ($ledger as $engineCredits) {
+                if (!is_array($engineCredits)) {
+                    continue;
+                }
+
+                foreach ($engineCredits as $modelCredits) {
+                    if (!is_array($modelCredits)) {
+                        continue;
+                    }
+
+                    if (($modelCredits['is_unlimited'] ?? false) === true) {
+                        return PHP_FLOAT_MAX;
+                    }
+
+                    $total += (float) ($modelCredits['balance'] ?? 0.0);
+                }
+            }
+
+            return $total;
+        }
         
         if ($user->has_unlimited_credits) {
             return PHP_FLOAT_MAX;
@@ -347,6 +454,29 @@ class CreditManager
     public function resetCredits(string $userId): bool
     {
         $user = $this->getUserModel($userId);
+
+        if ($this->usesEntityCreditLedger($user)) {
+            $ledger = $this->getEntityCreditLedger($user);
+            $defaultBalance = (float) config('ai-engine.credits.default_balance', 100.0);
+
+            foreach ($ledger as $engine => $engineCredits) {
+                if (!is_array($engineCredits)) {
+                    continue;
+                }
+
+                foreach ($engineCredits as $model => $modelCredits) {
+                    if (!is_array($modelCredits)) {
+                        continue;
+                    }
+                    $ledger[$engine][$model]['balance'] = $defaultBalance;
+                    $ledger[$engine][$model]['is_unlimited'] = false;
+                }
+            }
+
+            $user->entity_credits = $ledger;
+            return $user->save();
+        }
+
         $user->my_credits = config('ai-engine.credits.default_balance', 100.0);
         $user->has_unlimited_credits = false;
         return $user->save();
@@ -381,6 +511,156 @@ class CreditManager
     private function countCharacters(string $text): int
     {
         return mb_strlen(strip_tags($text));
+    }
+
+    /**
+     * Parse addCredits args supporting legacy (engine, model, credits) and modern (credits, metadata) signatures.
+     *
+     * @return array{0:?EngineEnum,1:?EntityEnum,2:float,3:array}
+     */
+    private function parseCreditMutationArguments(array $args): array
+    {
+        if ($args === []) {
+            throw new \InvalidArgumentException('addCredits requires at least one argument.');
+        }
+
+        if (is_numeric($args[0])) {
+            $credits = (float) $args[0];
+            $metadata = (isset($args[1]) && is_array($args[1])) ? $args[1] : [];
+            return [null, null, $credits, $metadata];
+        }
+
+        $engine = $this->resolveEngine($args[0] ?? null);
+        $model = $this->resolveModel($args[1] ?? null);
+        $credits = (float) ($args[2] ?? 0);
+        $metadata = (isset($args[3]) && is_array($args[3])) ? $args[3] : [];
+
+        return [$engine, $model, $credits, $metadata];
+    }
+
+    /**
+     * Parse setCredits args supporting legacy (engine, model, credits) and modern (credits) signatures.
+     *
+     * @return array{0:?EngineEnum,1:?EntityEnum,2:float}
+     */
+    private function parseCreditSetArguments(array $args): array
+    {
+        if ($args === []) {
+            throw new \InvalidArgumentException('setCredits requires at least one argument.');
+        }
+
+        if (is_numeric($args[0])) {
+            return [null, null, (float) $args[0]];
+        }
+
+        $engine = $this->resolveEngine($args[0] ?? null);
+        $model = $this->resolveModel($args[1] ?? null);
+        $credits = (float) ($args[2] ?? 0);
+
+        return [$engine, $model, $credits];
+    }
+
+    /**
+     * Parse setUnlimitedCredits args supporting legacy and modern signatures.
+     *
+     * @return array{0:?EngineEnum,1:?EntityEnum,2:bool}
+     */
+    private function parseUnlimitedArguments(array $args): array
+    {
+        if ($args === []) {
+            return [null, null, true];
+        }
+
+        if (is_bool($args[0])) {
+            return [null, null, (bool) $args[0]];
+        }
+
+        $engine = $this->resolveEngine($args[0] ?? null);
+        $model = $this->resolveModel($args[1] ?? null);
+
+        if (isset($args[2]) && is_bool($args[2])) {
+            return [$engine, $model, (bool) $args[2]];
+        }
+
+        if (isset($args[3]) && is_bool($args[3])) {
+            return [$engine, $model, (bool) $args[3]];
+        }
+
+        return [$engine, $model, true];
+    }
+
+    private function resolveEngine(mixed $engine): EngineEnum
+    {
+        if ($engine instanceof EngineEnum) {
+            return $engine;
+        }
+
+        if (!is_string($engine) || $engine === '') {
+            throw new \InvalidArgumentException('Invalid engine value provided.');
+        }
+
+        return EngineEnum::fromSlug($engine);
+    }
+
+    private function resolveModel(mixed $model): EntityEnum
+    {
+        if ($model instanceof EntityEnum) {
+            return $model;
+        }
+
+        if (!is_string($model) || $model === '') {
+            throw new \InvalidArgumentException('Invalid model value provided.');
+        }
+
+        return EntityEnum::from($model);
+    }
+
+    private function usesEntityCreditLedger(Model $user): bool
+    {
+        $attributes = $user->getAttributes();
+        if (array_key_exists('entity_credits', $attributes)) {
+            return true;
+        }
+
+        return isset($user->entity_credits) && $user->entity_credits !== null;
+    }
+
+    private function getEntityCreditLedger(Model $user): array
+    {
+        $ledger = $user->entity_credits ?? [];
+        if (is_string($ledger)) {
+            $decoded = json_decode($ledger, true);
+            $ledger = is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($ledger) ? $ledger : [];
+    }
+
+    private function getEntityCreditEntry(Model $user, EngineEnum $engine, EntityEnum $model): array
+    {
+        $ledger = $this->getEntityCreditLedger($user);
+        $defaultBalance = (float) config('ai-engine.credits.default_balance', 100.0);
+
+        return $ledger[$engine->value][$model->value] ?? [
+            'balance' => $defaultBalance,
+            'is_unlimited' => false,
+        ];
+    }
+
+    private function setEntityCreditEntry(
+        Model $user,
+        EngineEnum $engine,
+        EntityEnum $model,
+        float $balance,
+        bool $isUnlimited
+    ): void {
+        $ledger = $this->getEntityCreditLedger($user);
+        $ledger[$engine->value][$model->value] = [
+            'balance' => $balance,
+            'is_unlimited' => $isUnlimited,
+        ];
+        $user->entity_credits = $ledger;
+        $user->save();
     }
 
 
@@ -431,9 +711,17 @@ class CreditManager
             }
         }
         
-        // Fallback to default query logic
-        // Get the model class from config (can be User, Tenant, Workspace, etc.)
-        $ownerModel = config('ai-engine.credits.owner_model', config('ai-engine.user_model', 'App\\Models\\User'));
+        // Fallback to configured owner model (User, Tenant, Workspace, etc.)
+        $ownerModel = config('ai-engine.credits.owner_model');
+        if (!is_string($ownerModel) || $ownerModel === '' || !class_exists($ownerModel)) {
+            $ownerModel = config('ai-engine.user_model');
+        }
+
+        if (!is_string($ownerModel) || $ownerModel === '' || !class_exists($ownerModel)) {
+            throw new \RuntimeException(
+                'Credit owner model is not configured. Set ai-engine.credits.owner_model or ai-engine.user_model.'
+            );
+        }
         
         // Get the ID column name from config (e.g., 'id', 'tenant_id', 'workspace_id')
         $ownerIdColumn = config('ai-engine.credits.owner_id_column', 'id');

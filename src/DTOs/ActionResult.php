@@ -176,4 +176,20 @@ class ActionResult
     {
         return $this->metadata[$key] ?? $default;
     }
+
+    public function requiresUserInput(): bool
+    {
+        return (bool) ($this->metadata['needs_user_input'] ?? false);
+    }
+
+    /**
+     * Backward-compatible virtual properties.
+     */
+    public function __get(string $name): mixed
+    {
+        return match ($name) {
+            'needsUserInput', 'needs_user_input' => $this->requiresUserInput(),
+            default => throw new \InvalidArgumentException("Property {$name} does not exist on " . self::class),
+        };
+    }
 }

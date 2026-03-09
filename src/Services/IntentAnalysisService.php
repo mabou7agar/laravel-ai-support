@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Services;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -16,7 +17,8 @@ class IntentAnalysisService
 {
     public function __construct(
         protected AIEngineService $aiEngineService,
-        protected ?PendingActionService $pendingActionService = null
+        protected ?PendingActionService $pendingActionService = null,
+        protected ?LocaleResourceService $localeResources = null
     ) {
     }
 
@@ -37,9 +39,8 @@ class IntentAnalysisService
     {
         // Quick check for single-word confirmations (optimization)
         $messageLower = strtolower(trim($message));
-        $quickConfirms = ['yes', 'ok', 'okay', 'confirm', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead', 'create', 'do it', 'make it'];
 
-        if (in_array($messageLower, $quickConfirms)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.confirm')) {
             return [
                 'intent' => 'confirm',
                 'confidence' => 1.0,
@@ -50,8 +51,7 @@ class IntentAnalysisService
         }
 
         // Quick check for rejection
-        $quickRejects = ['no', 'cancel', 'stop', 'abort', 'nevermind', 'reject'];
-        if (in_array($messageLower, $quickRejects)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.reject')) {
             return [
                 'intent' => 'reject',
                 'confidence' => 1.0,
@@ -61,8 +61,7 @@ class IntentAnalysisService
         }
 
         // Quick check for greetings (optimization)
-        $greetings = ['hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon', 'good evening'];
-        if (in_array($messageLower, $greetings)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.greeting')) {
             return [
                 'intent' => 'greeting',
                 'confidence' => 1.0,
@@ -326,33 +325,52 @@ class IntentAnalysisService
         $messageLower = strtolower(trim($message));
         
         // Quick check for obvious confirmations (optimization - no AI call needed)
-        $quickConfirms = ['yes', 'ok', 'okay', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead', 'do it', 'confirm'];
-        if (in_array($messageLower, $quickConfirms)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.confirm')) {
             return true;
         }
         
         // Quick check for obvious rejections
-        $quickRejects = ['no', 'cancel', 'stop', 'abort', 'nevermind', 'nope'];
-        if (in_array($messageLower, $quickRejects)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.reject')) {
             return false;
         }
         
         // Use AI for ambiguous messages
         try {
-            $prompt = "Is this message a CONFIRMATION or AGREEMENT?\n";
-            $prompt .= "Message: \"{$message}\"\n";
-            if ($context) {
-                $prompt .= "Context: {$context}\n";
+            $contextBlock = $context
+                ? $this->locale()->translation('ai-engine::runtime.intent.context_block', ['context' => $context])
+                : '';
+            $yesToken = $this->locale()->lexicon('response.affirmative', default: ['yes'])[0] ?? 'yes';
+            $noToken = $this->locale()->lexicon('response.negative', default: ['no'])[0] ?? 'no';
+            $prompt = $this->locale()->renderPromptTemplate('intent/is_confirmation', [
+                'message' => $message,
+                'context_block' => $contextBlock,
+                'yes' => $yesToken,
+                'no' => $noToken,
+            ]);
+
+            if ($prompt === '') {
+                $prompt = "Is this message a CONFIRMATION or AGREEMENT?\nMessage: \"{$message}\"\n" .
+                    ($context ? "Context: {$context}\n" : '') .
+                    "\nRespond with ONLY '{$yesToken}' or '{$noToken}'.";
             }
-            $prompt .= "\nRespond with ONLY 'yes' or 'no'.";
             
             $response = $this->aiEngineService->generate(new AIRequest(
                 prompt: $prompt,
                 maxTokens: 3,
                 temperature: 0
             ));
-            
-            return strtolower(trim($response->getContent())) === 'yes';
+
+            $parsed = $this->locale()->responseBoolean($response->getContent());
+            if ($parsed !== null) {
+                return $parsed;
+            }
+
+            $normalized = strtolower(trim($response->getContent()));
+            return in_array(
+                $normalized,
+                $this->locale()->lexicon('response.affirmative', default: ['yes']),
+                true
+            );
         } catch (\Exception $e) {
             Log::channel('ai-engine')->debug('AI confirmation check failed', ['error' => $e->getMessage()]);
             return false;
@@ -367,33 +385,52 @@ class IntentAnalysisService
         $messageLower = strtolower(trim($message));
         
         // Quick check for obvious rejections
-        $quickRejects = ['no', 'cancel', 'stop', 'abort', 'nevermind', 'nope', 'reject'];
-        if (in_array($messageLower, $quickRejects)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.reject')) {
             return true;
         }
         
         // Quick check for obvious confirmations
-        $quickConfirms = ['yes', 'ok', 'okay', 'sure', 'yep', 'yeah', 'yup', 'proceed'];
-        if (in_array($messageLower, $quickConfirms)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.confirm')) {
             return false;
         }
         
         // Use AI for ambiguous messages
         try {
-            $prompt = "Is this message a REJECTION, CANCELLATION, or NEGATIVE response?\n";
-            $prompt .= "Message: \"{$message}\"\n";
-            if ($context) {
-                $prompt .= "Context: {$context}\n";
+            $contextBlock = $context
+                ? $this->locale()->translation('ai-engine::runtime.intent.context_block', ['context' => $context])
+                : '';
+            $yesToken = $this->locale()->lexicon('response.affirmative', default: ['yes'])[0] ?? 'yes';
+            $noToken = $this->locale()->lexicon('response.negative', default: ['no'])[0] ?? 'no';
+            $prompt = $this->locale()->renderPromptTemplate('intent/is_rejection', [
+                'message' => $message,
+                'context_block' => $contextBlock,
+                'yes' => $yesToken,
+                'no' => $noToken,
+            ]);
+
+            if ($prompt === '') {
+                $prompt = "Is this message a REJECTION, CANCELLATION, or NEGATIVE response?\nMessage: \"{$message}\"\n" .
+                    ($context ? "Context: {$context}\n" : '') .
+                    "\nRespond with ONLY '{$yesToken}' or '{$noToken}'.";
             }
-            $prompt .= "\nRespond with ONLY 'yes' or 'no'.";
             
             $response = $this->aiEngineService->generate(new AIRequest(
                 prompt: $prompt,
                 maxTokens: 3,
                 temperature: 0
             ));
-            
-            return strtolower(trim($response->getContent())) === 'yes';
+
+            $parsed = $this->locale()->responseBoolean($response->getContent());
+            if ($parsed !== null) {
+                return $parsed;
+            }
+
+            $normalized = strtolower(trim($response->getContent()));
+            return in_array(
+                $normalized,
+                $this->locale()->lexicon('response.affirmative', default: ['yes']),
+                true
+            );
         } catch (\Exception $e) {
             Log::channel('ai-engine')->debug('AI rejection check failed', ['error' => $e->getMessage()]);
             return false;
@@ -408,31 +445,39 @@ class IntentAnalysisService
         $messageLower = strtolower(trim($message));
         
         // Quick checks for common patterns
-        $quickConfirms = ['yes', 'ok', 'okay', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead', 'confirm'];
-        if (in_array($messageLower, $quickConfirms)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.confirm')) {
             return 'confirmation';
         }
         
-        $quickRejects = ['no', 'cancel', 'stop', 'abort', 'nevermind', 'nope'];
-        if (in_array($messageLower, $quickRejects)) {
+        if ($this->locale()->isLexiconMatch($messageLower, 'intent.reject')) {
             return 'rejection';
         }
         
         // Use AI for complex messages
         try {
-            $prompt = "Classify this message into ONE category:\n";
-            $prompt .= "Message: \"{$message}\"\n";
-            if ($context) {
-                $prompt .= "Context: {$context}\n";
+            $contextBlock = $context
+                ? $this->locale()->translation('ai-engine::runtime.intent.context_block', ['context' => $context])
+                : '';
+            $prompt = $this->locale()->renderPromptTemplate('intent/detect_message_type', [
+                'message' => $message,
+                'context_block' => $contextBlock,
+            ]);
+
+            if ($prompt === '') {
+                $prompt = "Classify this message into ONE category:\n";
+                $prompt .= "Message: \"{$message}\"\n";
+                if ($context) {
+                    $prompt .= "Context: {$context}\n";
+                }
+                $prompt .= "\nCategories:\n";
+                $prompt .= "- confirmation: User agrees/confirms/approves\n";
+                $prompt .= "- rejection: User disagrees/cancels/rejects\n";
+                $prompt .= "- modification: User wants to change/update something\n";
+                $prompt .= "- data: User is providing data/information\n";
+                $prompt .= "- question: User is asking a question\n";
+                $prompt .= "- other: None of the above\n";
+                $prompt .= "\nRespond with ONLY the category name:";
             }
-            $prompt .= "\nCategories:\n";
-            $prompt .= "- confirmation: User agrees/confirms/approves\n";
-            $prompt .= "- rejection: User disagrees/cancels/rejects\n";
-            $prompt .= "- modification: User wants to change/update something\n";
-            $prompt .= "- data: User is providing data/information\n";
-            $prompt .= "- question: User is asking a question\n";
-            $prompt .= "- other: None of the above\n";
-            $prompt .= "\nRespond with ONLY the category name:";
             
             $response = $this->aiEngineService->generate(new AIRequest(
                 prompt: $prompt,
@@ -448,5 +493,14 @@ class IntentAnalysisService
             Log::channel('ai-engine')->debug('AI message type detection failed', ['error' => $e->getMessage()]);
             return 'other';
         }
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 }

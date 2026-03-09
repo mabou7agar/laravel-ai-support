@@ -1,0 +1,69 @@
+---
+title: Single App Setup
+description: Build a complete local-only setup before federation.
+---
+
+## Goal
+
+Run fully in one Laravel app first, then expand to multi-app federation.
+
+## Step 1: Configure Engine Defaults
+
+```env
+AI_ENGINE_DEFAULT=openai
+AI_ENGINE_DEFAULT_MODEL=gpt-4o
+AI_ORCHESTRATION_MODEL=gpt-4o-mini
+OPENAI_API_KEY=your_key
+```
+
+## Step 2: Keep Node Features Enabled but Local
+
+```env
+AI_ENGINE_NODES_ENABLED=true
+AI_ENGINE_IS_MASTER=true
+```
+
+For local-only testing, use command option `--local-only`.
+
+## Step 3: Register Your Domain Models
+
+- ensure target models are discoverable
+- add model config classes for filters/tools (see next guide)
+- index vectorizable models for RAG if needed
+
+## Step 4: Validate End-to-End
+
+```bash
+php artisan ai-engine:test-real-agent --script=followup --local-only --json
+```
+
+## Step 5: Validate API Contract
+
+Expected response envelope:
+
+```json
+{
+  "success": true,
+  "message": "Request completed.",
+  "data": {
+    "response": "..."
+  },
+  "error": null,
+  "meta": {
+    "schema": "ai-engine.v1"
+  }
+}
+```
+
+## Common Failure During Single-App Setup
+
+- stale config cache
+- missing model configs for structured tools
+- running without embeddings while expecting vector search
+
+Fix quickly:
+
+```bash
+php artisan optimize:clear
+php artisan ai-engine:test-package
+```

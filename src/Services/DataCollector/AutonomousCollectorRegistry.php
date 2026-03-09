@@ -34,7 +34,30 @@ class AutonomousCollectorRegistry
      */
     public static function register(string $name, array $configData): void
     {
+        $configInstance = static::resolveConfigInstance($configData['config'] ?? null);
+
+        if (($configData['goal'] ?? '') === '' && is_object($configInstance) && isset($configInstance->goal)) {
+            $configData['goal'] = (string) $configInstance->goal;
+        }
+
+        if (($configData['description'] ?? '') === '' && is_object($configInstance) && isset($configInstance->description)) {
+            $configData['description'] = (string) $configInstance->description;
+        }
+
         static::$configs[$name] = $configData;
+    }
+
+    protected static function resolveConfigInstance(mixed $config): mixed
+    {
+        if ($config instanceof \Closure) {
+            try {
+                return $config();
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+
+        return $config;
     }
 
     /**

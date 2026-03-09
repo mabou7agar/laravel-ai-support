@@ -82,14 +82,14 @@ class MongoMemoryDriver implements MemoryDriverInterface
         );
 
         $messages = [];
-        foreach ($cursor as $document) {
+        $this->iterateCursor($cursor, function ($document) use (&$messages): void {
             $messages[] = [
                 'role' => $document['role'],
                 'content' => $document['content'],
                 'metadata' => $document['metadata'] ?? [],
                 'created_at' => $document['created_at']->toDateTime()->format('Y-m-d H:i:s'),
             ];
-        }
+        });
 
         return $messages;
     }
@@ -229,9 +229,9 @@ class MongoMemoryDriver implements MemoryDriverInterface
         
         $roleCounts = [];
         $cursor = $this->messages->aggregate($pipeline);
-        foreach ($cursor as $result) {
+        $this->iterateCursor($cursor, function ($result) use (&$roleCounts): void {
             $roleCounts[$result['_id']] = $result['count'];
-        }
+        });
 
         return [
             'message_count' => $conversation['message_count'] ?? 0,
@@ -268,7 +268,7 @@ class MongoMemoryDriver implements MemoryDriverInterface
         );
 
         $conversations = [];
-        foreach ($cursor as $document) {
+        $this->iterateCursor($cursor, function ($document) use (&$conversations): void {
             $conversations[] = [
                 'conversation_id' => $document['conversation_id'],
                 'title' => $document['title'],
@@ -276,7 +276,7 @@ class MongoMemoryDriver implements MemoryDriverInterface
                 'created_at' => $document['created_at']->toDateTime()->format('Y-m-d H:i:s'),
                 'last_activity_at' => $document['last_activity_at']->toDateTime()->format('Y-m-d H:i:s'),
             ];
-        }
+        });
 
         return $conversations;
     }
@@ -306,7 +306,7 @@ class MongoMemoryDriver implements MemoryDriverInterface
         );
 
         $conversations = [];
-        foreach ($cursor as $document) {
+        $this->iterateCursor($cursor, function ($document) use (&$conversations): void {
             $conversations[] = [
                 'conversation_id' => $document['conversation_id'],
                 'title' => $document['title'],
@@ -314,7 +314,7 @@ class MongoMemoryDriver implements MemoryDriverInterface
                 'created_at' => $document['created_at']->toDateTime()->format('Y-m-d H:i:s'),
                 'last_activity_at' => $document['last_activity_at']->toDateTime()->format('Y-m-d H:i:s'),
             ];
-        }
+        });
 
         return $conversations;
     }
@@ -350,10 +350,10 @@ class MongoMemoryDriver implements MemoryDriverInterface
 
         $dailyMessages = [];
         $cursor = $this->messages->aggregate($pipeline);
-        foreach ($cursor as $result) {
+        $this->iterateCursor($cursor, function ($result) use (&$dailyMessages): void {
             $date = sprintf('%04d-%02d-%02d', $result['_id']['year'], $result['_id']['month'], $result['_id']['day']);
             $dailyMessages[$date] = $result['count'];
-        }
+        });
 
         return [
             'total_conversations' => $totalConversations,
@@ -416,10 +416,39 @@ class MongoMemoryDriver implements MemoryDriverInterface
         );
 
         $ids = [];
-        foreach ($cursor as $document) {
+        $this->iterateCursor($cursor, function ($document) use (&$ids): void {
             $ids[] = $document['conversation_id'];
-        }
+        });
 
         return $ids;
+    }
+
+    /**
+     * Iterate MongoDB cursors and cursor-like test doubles consistently.
+     */
+    protected function iterateCursor(mixed $cursor, callable $callback): void
+    {
+        if (
+            is_object($cursor)
+            && is_callable([$cursor, 'rewind'])
+            && is_callable([$cursor, 'valid'])
+            && is_callable([$cursor, 'current'])
+            && is_callable([$cursor, 'next'])
+        ) {
+            $cursor->rewind();
+            while ($cursor->valid()) {
+                $callback($cursor->current());
+                $cursor->next();
+            }
+            return;
+        }
+
+        if (!is_iterable($cursor)) {
+            return;
+        }
+
+        foreach ($cursor as $item) {
+            $callback($item);
+        }
     }
 }

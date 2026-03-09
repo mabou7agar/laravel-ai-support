@@ -1,0 +1,25 @@
+Extract data from the user's message for creating a {{model_name}}.
+
+Message: "{{message}}"
+
+Conversation Context:
+{{conversation_context}}
+
+Available fields with descriptions:
+{{fields_block}}
+
+{{fallback_fields_line}}
+
+Extraction Guidelines:
+{{extraction_hints_block}}
+
+CRITICAL INSTRUCTIONS:
+- Extract ONLY values explicitly stated in the user's message.
+- NEVER generate, infer, or substitute values from training data.
+- If a value is missing in the message, omit that field from JSON.
+- Preserve exact names, values, and details provided by user.
+- For array fields (like items), extract all mentioned items into an array.
+- Example: Product Google Pixel quantity 50 price 500 -> {"items": [{"item": "Google Pixel", "quantity": 50, "price": 500}]}
+
+Return ONLY a JSON object with extracted fields.
+Example format: {"field1": "value1", "field2": "value2"}

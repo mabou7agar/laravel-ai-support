@@ -7,6 +7,7 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Throwable;
 
 class QdrantDriver implements VectorDriverInterface
 {
@@ -75,7 +76,7 @@ class QdrantDriver implements VectorDriverInterface
             $this->createPayloadIndexes($name, $modelClass);
             
             return true;
-        } catch (GuzzleException $e) {
+        } catch (Throwable $e) {
             Log::error('Qdrant create collection failed', [
                 'collection' => $name,
                 'error' => $e->getMessage(),
@@ -141,19 +142,31 @@ class QdrantDriver implements VectorDriverInterface
         }
         
         try {
-            $instance = new $modelClass();
-            
-            if (method_exists($instance, 'getQdrantIndexes')) {
-                $indexes = $instance->getQdrantIndexes();
-                
-                Log::debug('Model custom indexes detected', [
-                    'model' => $modelClass,
-                    'indexes' => $indexes,
-                ]);
-                
-                return is_array($indexes) ? $indexes : [];
+            if (!method_exists($modelClass, 'getQdrantIndexes')) {
+                return [];
             }
-        } catch (\Exception $e) {
+
+            $reflection = new \ReflectionMethod($modelClass, 'getQdrantIndexes');
+            $vectorizableMethodFile = (new \ReflectionMethod(\LaravelAIEngine\Traits\Vectorizable::class, 'getQdrantIndexes'))->getFileName();
+
+            // Skip the trait default implementation; it can trigger expensive metadata
+            // resolution on some models during collection creation.
+            if ($reflection->getFileName() === $vectorizableMethodFile) {
+                return [];
+            }
+
+            $instance = new $modelClass();
+            $indexes = $reflection->isStatic()
+                ? $modelClass::getQdrantIndexes()
+                : $instance->getQdrantIndexes();
+            
+            Log::debug('Model custom indexes detected', [
+                'model' => $modelClass,
+                'indexes' => $indexes,
+            ]);
+            
+            return is_array($indexes) ? $indexes : [];
+        } catch (Throwable $e) {
             Log::warning('Failed to get model custom indexes', [
                 'model' => $modelClass,
                 'error' => $e->getMessage(),
@@ -175,62 +188,19 @@ class QdrantDriver implements VectorDriverInterface
         }
         
         try {
-            $instance = new $modelClass();
-            $reflection = new \ReflectionClass($instance);
-            
-            foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-                // Skip non-model methods
-                if ($method->class !== $modelClass && !is_subclass_of($method->class, \Illuminate\Database\Eloquent\Model::class)) {
-                    continue;
-                }
-                
-                // Skip methods with parameters
-                if ($method->getNumberOfParameters() > 0) {
-                    continue;
-                }
-                
-                // Skip common non-relation methods
-                $skipMethods = ['getKey', 'getTable', 'getFillable', 'getHidden', 'getCasts', 'toArray', 'toJson'];
-                if (in_array($method->getName(), $skipMethods)) {
-                    continue;
-                }
-                
-                try {
-                    $returnType = $method->getReturnType();
-                    if ($returnType) {
-                        $typeName = $returnType->getName();
-                        if ($typeName === \Illuminate\Database\Eloquent\Relations\BelongsTo::class || 
-                            str_ends_with($typeName, 'BelongsTo')) {
-                            
-                            // Call the method to get the relation
-                            $relation = $method->invoke($instance);
-                            if ($relation instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
-                                $foreignKey = $relation->getForeignKeyName();
-                                $fields[] = $foreignKey;
-                                
-                                Log::debug('Detected belongsTo foreign key', [
-                                    'model' => $modelClass,
-                                    'method' => $method->getName(),
-                                    'foreign_key' => $foreignKey,
-                                ]);
-                            }
-                        }
-                    }
-                } catch (\Exception $e) {
-                    // Skip methods that fail
-                    continue;
+            $reflection = new \ReflectionClass($modelClass);
+            $defaults = $reflection->getDefaultProperties();
+            $fillable = $defaults['fillable'] ?? [];
+
+            // Cheap and safe heuristic: index *_id fields from fillable attributes.
+            // This avoids invoking model relation methods, which can be very expensive
+            // or trigger container side effects in large applications.
+            foreach ((array) $fillable as $fillableField) {
+                if (is_string($fillableField) && str_ends_with($fillableField, '_id')) {
+                    $fields[] = $fillableField;
                 }
             }
-            
-            // Also check for vectorParentLookup if defined
-            if (method_exists($instance, 'getVectorParentKey')) {
-                $parentKey = $instance->getVectorParentKey();
-                if ($parentKey) {
-                    $fields[] = $parentKey;
-                }
-            }
-            
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             Log::warning('Failed to detect belongsTo fields', [
                 'model' => $modelClass,
                 'error' => $e->getMessage(),
@@ -264,7 +234,7 @@ class QdrantDriver implements VectorDriverInterface
             ]);
             
             return $statusCode === 200;
-        } catch (GuzzleException $e) {
+        } catch (Throwable $e) {
             // Check if it's "already exists" error (which is OK)
             $errorMessage = $e->getMessage();
             $isAlreadyExists = str_contains($errorMessage, 'already exists') || 
@@ -295,65 +265,13 @@ class QdrantDriver implements VectorDriverInterface
     protected function detectFieldTypes(?string $modelClass, array $fields): array
     {
         $fieldTypes = [];
-        
-        if ($modelClass && class_exists($modelClass)) {
-            try {
-                $instance = new $modelClass();
-                $table = $instance->getTable();
-                $connection = $instance->getConnection();
-                $schemaBuilder = $connection->getSchemaBuilder();
-                
-                // Get column information from database (compatible with Laravel 9+)
-                $columnMap = [];
-                
-                // Try getColumns() first (Laravel 10+), fallback to getColumnListing + getColumnType
-                if (method_exists($schemaBuilder, 'getColumns')) {
-                    $columns = $schemaBuilder->getColumns($table);
-                    foreach ($columns as $column) {
-                        $columnMap[$column['name']] = $column['type_name'] ?? $column['type'] ?? 'string';
-                    }
-                } else {
-                    // Fallback for Laravel 9 and earlier
-                    $columnNames = $schemaBuilder->getColumnListing($table);
-                    foreach ($columnNames as $columnName) {
-                        if (in_array($columnName, $fields)) {
-                            try {
-                                $columnMap[$columnName] = $connection->getDoctrineColumn($table, $columnName)->getType()->getName();
-                            } catch (\Exception $e) {
-                                // If Doctrine fails, use guessing
-                                $columnMap[$columnName] = 'string';
-                            }
-                        }
-                    }
-                }
-                
-                foreach ($fields as $field) {
-                    if (isset($columnMap[$field])) {
-                        $fieldTypes[$field] = $this->mapDatabaseTypeToQdrant($columnMap[$field], $field);
-                    }
-                }
-                
-                Log::debug('Detected field types from schema', [
-                    'model' => $modelClass,
-                    'table' => $table,
-                    'field_types' => $fieldTypes,
-                ]);
-                
-            } catch (\Exception $e) {
-                Log::warning('Failed to detect field types from schema, using defaults', [
-                    'model' => $modelClass,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-        
-        // For fields not detected, use sensible defaults
+
+        // Use lightweight field-name heuristics during collection creation.
+        // This avoids booting models and recursively resolving services.
         foreach ($fields as $field) {
-            if (!isset($fieldTypes[$field])) {
-                $fieldTypes[$field] = $this->guessFieldType($field);
-            }
+            $fieldTypes[$field] = $this->guessFieldType($field);
         }
-        
+
         return $fieldTypes;
     }
     

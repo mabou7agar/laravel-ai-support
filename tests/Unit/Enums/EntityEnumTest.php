@@ -8,6 +8,11 @@ use LaravelAIEngine\Enums\EngineEnum;
 
 class EntityEnumTest extends TestCase
 {
+    protected function entity(string $model): EntityEnum
+    {
+        return EntityEnum::from($model);
+    }
+
     public function test_entity_enum_cases_exist()
     {
         $expectedModels = [
@@ -34,69 +39,69 @@ class EntityEnumTest extends TestCase
 
     public function test_entity_engine_mapping()
     {
-        $this->assertEquals(EngineEnum::OPENAI, EntityEnum::GPT_4O->engine());
-        $this->assertEquals(EngineEnum::ANTHROPIC, EntityEnum::CLAUDE_3_5_SONNET->engine());
-        $this->assertEquals(EngineEnum::GEMINI, EntityEnum::GEMINI_1_5_PRO->engine());
-        $this->assertEquals(EngineEnum::STABLE_DIFFUSION, EntityEnum::SD3_LARGE->engine());
-        $this->assertEquals(EngineEnum::FAL_AI, EntityEnum::FAL_FLUX_PRO->engine());
-        $this->assertEquals(EngineEnum::PLAGIARISM_CHECK, EntityEnum::PLAGIARISM_BASIC->engine());
-        $this->assertEquals(EngineEnum::MIDJOURNEY, EntityEnum::MIDJOURNEY_V6->engine());
-        $this->assertEquals(EngineEnum::AZURE, EntityEnum::AZURE_TTS->engine());
+        $this->assertEquals(EngineEnum::OPENAI, $this->entity(EntityEnum::GPT_4O)->engine()->value);
+        $this->assertEquals(EngineEnum::ANTHROPIC, $this->entity(EntityEnum::CLAUDE_3_5_SONNET)->engine()->value);
+        $this->assertEquals(EngineEnum::GEMINI, $this->entity(EntityEnum::GEMINI_1_5_PRO)->engine()->value);
+        $this->assertEquals(EngineEnum::STABLE_DIFFUSION, $this->entity(EntityEnum::SD3_LARGE)->engine()->value);
+        $this->assertEquals(EngineEnum::FAL_AI, $this->entity(EntityEnum::FAL_FLUX_PRO)->engine()->value);
+        $this->assertEquals(EngineEnum::PLAGIARISM_CHECK, $this->entity(EntityEnum::PLAGIARISM_BASIC)->engine()->value);
+        $this->assertEquals(EngineEnum::MIDJOURNEY, $this->entity(EntityEnum::MIDJOURNEY_V6)->engine()->value);
+        $this->assertEquals(EngineEnum::AZURE, $this->entity(EntityEnum::AZURE_TTS)->engine()->value);
     }
 
     public function test_entity_content_types()
     {
-        $this->assertEquals('text', EntityEnum::GPT_4O->getContentType());
-        $this->assertEquals('image', EntityEnum::DALL_E_3->getContentType());
-        $this->assertEquals('audio', EntityEnum::WHISPER_1->getContentType());
-        $this->assertEquals('video', EntityEnum::FAL_STABLE_VIDEO->getContentType());
-        $this->assertEquals('search', EntityEnum::PERPLEXITY_SONAR_LARGE->getContentType());
-        $this->assertEquals('plagiarism', EntityEnum::PLAGIARISM_BASIC->getContentType());
+        $this->assertEquals('text', $this->entity(EntityEnum::GPT_4O)->getContentType());
+        $this->assertEquals('image', $this->entity(EntityEnum::DALL_E_3)->getContentType());
+        $this->assertEquals('audio', $this->entity(EntityEnum::WHISPER_1)->getContentType());
+        $this->assertEquals('video', $this->entity(EntityEnum::FAL_STABLE_VIDEO)->getContentType());
+        $this->assertEquals('search', $this->entity(EntityEnum::PERPLEXITY_SONAR_LARGE)->getContentType());
+        $this->assertEquals('plagiarism', $this->entity(EntityEnum::PLAGIARISM_BASIC)->getContentType());
     }
 
     public function test_entity_credit_indices()
     {
-        $this->assertIsFloat(EntityEnum::GPT_4O->creditIndex());
-        $this->assertGreaterThan(0, EntityEnum::GPT_4O->creditIndex());
+        $this->assertIsFloat($this->entity(EntityEnum::GPT_4O)->creditIndex());
+        $this->assertGreaterThan(0, $this->entity(EntityEnum::GPT_4O)->creditIndex());
         
         // Premium models should have higher credit indices
         $this->assertGreaterThan(
-            EntityEnum::GPT_4O_MINI->creditIndex(),
-            EntityEnum::GPT_4O->creditIndex()
+            $this->entity(EntityEnum::GPT_4O_MINI)->creditIndex(),
+            $this->entity(EntityEnum::GPT_4O)->creditIndex()
         );
     }
 
     public function test_entity_max_tokens()
     {
-        $this->assertIsInt(EntityEnum::GPT_4O->maxTokens());
-        $this->assertGreaterThan(0, EntityEnum::GPT_4O->maxTokens());
+        $this->assertIsInt($this->entity(EntityEnum::GPT_4O)->maxTokens());
+        $this->assertGreaterThan(0, $this->entity(EntityEnum::GPT_4O)->maxTokens());
         
         // GPT-4o should have high token limit
-        $this->assertGreaterThanOrEqual(128000, EntityEnum::GPT_4O->maxTokens());
+        $this->assertGreaterThanOrEqual(128000, $this->entity(EntityEnum::GPT_4O)->maxTokens());
     }
 
     public function test_entity_streaming_support()
     {
-        $this->assertTrue(EntityEnum::GPT_4O->supportsStreaming());
-        $this->assertTrue(EntityEnum::CLAUDE_3_5_SONNET->supportsStreaming());
-        $this->assertFalse(EntityEnum::DALL_E_3->supportsStreaming());
-        $this->assertFalse(EntityEnum::MIDJOURNEY_V6->supportsStreaming());
+        $this->assertTrue($this->entity(EntityEnum::GPT_4O)->supportsStreaming());
+        $this->assertTrue($this->entity(EntityEnum::CLAUDE_3_5_SONNET)->supportsStreaming());
+        $this->assertFalse($this->entity(EntityEnum::DALL_E_3)->supportsStreaming());
+        $this->assertFalse($this->entity(EntityEnum::MIDJOURNEY_V6)->supportsStreaming());
     }
 
     public function test_entity_vision_support()
     {
-        $this->assertTrue(EntityEnum::GPT_4O->supportsVision());
-        $this->assertTrue(EntityEnum::CLAUDE_3_5_SONNET->supportsVision());
-        $this->assertTrue(EntityEnum::GEMINI_1_5_PRO->supportsVision());
-        $this->assertFalse(EntityEnum::GPT_3_5_TURBO->supportsVision());
+        $this->assertTrue($this->entity(EntityEnum::GPT_4O)->supportsVision());
+        $this->assertTrue($this->entity(EntityEnum::CLAUDE_3_5_SONNET)->supportsVision());
+        $this->assertTrue($this->entity(EntityEnum::GEMINI_1_5_PRO)->supportsVision());
+        $this->assertFalse($this->entity(EntityEnum::GPT_3_5_TURBO)->supportsVision());
     }
 
     public function test_entity_calculation_methods()
     {
-        $this->assertEquals('words', EntityEnum::GPT_4O->calculationMethod());
-        $this->assertEquals('images', EntityEnum::DALL_E_3->calculationMethod());
-        $this->assertEquals('minutes', EntityEnum::WHISPER_1->calculationMethod());
-        $this->assertEquals('videos', EntityEnum::FAL_STABLE_VIDEO->calculationMethod());
+        $this->assertEquals('words', $this->entity(EntityEnum::GPT_4O)->calculationMethod());
+        $this->assertEquals('images', $this->entity(EntityEnum::DALL_E_3)->calculationMethod());
+        $this->assertEquals('minutes', $this->entity(EntityEnum::WHISPER_1)->calculationMethod());
+        $this->assertEquals('videos', $this->entity(EntityEnum::FAL_STABLE_VIDEO)->calculationMethod());
     }
 
     public function test_all_entities_have_valid_engines()

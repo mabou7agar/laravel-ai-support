@@ -55,7 +55,7 @@ class ActionTypeEnum
             case self::FILE_UPLOAD:
                 return 'File upload interface';
             case self::CONFIRM:
-                return 'Confirmation dialog with yes/no options';
+                return 'Confirmation dialog with explicit approve/reject options';
             case self::MENU:
                 return 'Dropdown menu with multiple options';
             case self::CARD:

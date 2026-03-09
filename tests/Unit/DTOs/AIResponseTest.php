@@ -21,8 +21,8 @@ class AIResponseTest extends TestCase
         );
 
         $this->assertEquals('Generated content', $response->content);
-        $this->assertEquals(EngineEnum::OPENAI, $response->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $response->model);
+        $this->assertEquals(EngineEnum::OPENAI, $response->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $response->model->value);
         $this->assertEquals(['test' => 'data'], $response->metadata);
         $this->assertEquals(100, $response->tokensUsed);
         $this->assertEquals(0.5, $response->creditsUsed);
@@ -202,8 +202,8 @@ class AIResponseTest extends TestCase
         $response = AIResponse::fromArray($data);
 
         $this->assertEquals('Generated content', $response->content);
-        $this->assertEquals(EngineEnum::OPENAI, $response->engine);
-        $this->assertEquals(EntityEnum::GPT_4O, $response->model);
+        $this->assertEquals(EngineEnum::OPENAI, $response->engine->value);
+        $this->assertEquals(EntityEnum::GPT_4O, $response->model->value);
         $this->assertEquals(['tokens' => 100, 'total_cost' => 0.5], $response->usage);
         $this->assertEquals(['model' => 'gpt-4o'], $response->metadata);
         $this->assertTrue($response->success);

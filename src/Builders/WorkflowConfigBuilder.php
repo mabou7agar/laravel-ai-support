@@ -2,6 +2,8 @@
 
 namespace LaravelAIEngine\Builders;
 
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
+
 class WorkflowConfigBuilder
 {
     protected array $config = [
@@ -482,38 +484,43 @@ class WorkflowConfigBuilder
         $searchFields = $entityConfig['search_fields'] ?? $aiConfig['search_fields'] ?? [];
         $displayField = $aiConfig['display_field'] ?? 'name';
 
-        // Detect user's language from app locale
-        $locale = app()->getLocale();
-        $languageNames = [
-            'en' => 'English',
-            'ar' => 'Arabic',
-            'es' => 'Spanish',
-            'fr' => 'French',
-            'de' => 'German',
-            'it' => 'Italian',
-            'pt' => 'Portuguese',
-            'ru' => 'Russian',
-            'zh' => 'Chinese',
-            'ja' => 'Japanese',
-        ];
-        $language = $languageNames[$locale] ?? 'English';
+        $locale = $this->resolveLocale();
+        $language = $this->languageName($locale);
 
         // Use AI to generate an intelligent, language-aware prompt
         try {
             $aiService = app(\LaravelAIEngine\Services\AIEngineService::class);
 
-            $systemPrompt = "You are a helpful assistant that generates concise, user-friendly prompts for data collection in the user's language. Generate a short, natural prompt (max 15 words) asking the user to provide an identifier for the entity. IMPORTANT: Generate the prompt in {$language} language.";
-
             $promptType = $isMultiple ? 'multiple items' : 'a single item';
+            $templateData = [
+                'language' => $language,
+                'entity_name' => $entityName,
+                'prompt_type' => $promptType,
+                'model_name' => class_basename($modelClass),
+                'display_field' => $displayField,
+                'search_fields' => implode(', ', $searchFields),
+                'available_fields' => implode(', ', array_keys($fields)),
+                'type_description' => $isMultiple
+                    ? 'asking for multiple items to add'
+                    : 'asking for a single identifier',
+            ];
 
-            $userPrompt = "Generate a prompt in {$language} asking for {$promptType} of type '{$entityName}'.\n\n";
-            $userPrompt .= "Entity: {$entityName}\n";
-            $userPrompt .= "Model: " . class_basename($modelClass) . "\n";
-            $userPrompt .= "Display field: {$displayField}\n";
-            $userPrompt .= "Search fields: " . implode(', ', $searchFields) . "\n";
-            $userPrompt .= "Available fields: " . implode(', ', array_keys($fields)) . "\n";
-            $userPrompt .= "Type: " . ($isMultiple ? 'asking for multiple items to add' : 'asking for a single identifier') . "\n\n";
-            $userPrompt .= "Generate a natural prompt in {$language} that asks for the most appropriate identifier(s). Be concise and friendly.";
+            $systemPrompt = $this->renderPromptTemplate('workflow/entity_prompt_system', $templateData, $locale);
+            if ($systemPrompt === '') {
+                $systemPrompt = "You are a helpful assistant that generates concise, user-friendly prompts for data collection in the user's language. Generate a short, natural prompt (max 15 words) asking the user to provide an identifier for the entity. IMPORTANT: Generate the prompt in {$language} language.";
+            }
+
+            $userPrompt = $this->renderPromptTemplate('workflow/entity_prompt_user', $templateData, $locale);
+            if ($userPrompt === '') {
+                $userPrompt = "Generate a prompt in {$language} asking for {$promptType} of type '{$entityName}'.\n\n";
+                $userPrompt .= "Entity: {$entityName}\n";
+                $userPrompt .= "Model: " . class_basename($modelClass) . "\n";
+                $userPrompt .= "Display field: {$displayField}\n";
+                $userPrompt .= "Search fields: " . implode(', ', $searchFields) . "\n";
+                $userPrompt .= "Available fields: " . implode(', ', array_keys($fields)) . "\n";
+                $userPrompt .= "Type: " . ($isMultiple ? 'asking for multiple items to add' : 'asking for a single identifier') . "\n\n";
+                $userPrompt .= "Generate a natural prompt in {$language} that asks for the most appropriate identifier(s). Be concise and friendly.";
+            }
 
             // Engine and model auto-selected from config inside AIRequest constructor
             $request = new \LaravelAIEngine\DTOs\AIRequest(
@@ -552,26 +559,36 @@ class WorkflowConfigBuilder
      */
     protected function generateFallbackPrompt(string $entityName, bool $isMultiple = false): string
     {
+        $locale = $this->resolveLocale();
+
         try {
             $aiService = app(\LaravelAIEngine\Services\AIEngineService::class);
-            $locale = app()->getLocale();
-            $languageNames = [
-                'en' => 'English',
-                'ar' => 'Arabic',
-                'es' => 'Spanish',
-                'fr' => 'French',
-                'de' => 'German',
-            ];
-            $language = $languageNames[$locale] ?? 'English';
+            $language = $this->languageName($locale);
 
             $promptType = $isMultiple
                 ? "asking what {$entityName} items the user would like to add"
                 : "asking for the {$entityName} name or identifier";
 
+            $templateData = [
+                'language' => $language,
+                'entity_name' => $entityName,
+                'prompt_type' => $promptType,
+            ];
+
+            $prompt = $this->renderPromptTemplate('workflow/entity_prompt_fallback_user', $templateData, $locale);
+            if ($prompt === '') {
+                $prompt = "Generate a very short prompt (max 10 words) in {$language} {$promptType}. Just the prompt, nothing else.";
+            }
+
+            $systemPrompt = $this->renderPromptTemplate('workflow/entity_prompt_fallback_system', $templateData, $locale);
+            if ($systemPrompt === '') {
+                $systemPrompt = "Generate a concise prompt in {$language}. Output only the prompt text.";
+            }
+
             // Engine and model auto-selected from config inside AIRequest constructor
             $request = new \LaravelAIEngine\DTOs\AIRequest(
-                prompt:       "Generate a very short prompt (max 10 words) in {$language} {$promptType}. Just the prompt, nothing else.",
-                systemPrompt: "Generate a concise prompt in {$language}. Output only the prompt text.",
+                prompt:       $prompt,
+                systemPrompt: $systemPrompt,
                 maxTokens:    30,
                 temperature:  0.3
             );
@@ -580,10 +597,72 @@ class WorkflowConfigBuilder
             return trim($response);
         } catch (\Exception $e) {
             // Ultimate fallback - but this should rarely happen
-            return $isMultiple
+            $key = $isMultiple
+                ? 'ai-engine::runtime.workflow_builder.fallback_multiple'
+                : 'ai-engine::runtime.workflow_builder.fallback_single';
+            $fallback = $isMultiple
                 ? "What {$entityName} would you like to add?"
                 : "What is the {$entityName} name?";
+
+            $translated = trans($key, ['entity' => $entityName], $locale);
+            if (is_string($translated) && $translated !== $key) {
+                return $translated;
+            }
+
+            return $fallback;
         }
+    }
+
+    protected function resolveLocale(): string
+    {
+        if ($this->locale() !== null) {
+            return $this->locale()->resolveLocale(app()->getLocale());
+        }
+
+        $locale = strtolower(str_replace('_', '-', (string) app()->getLocale()));
+        if ($locale !== '') {
+            return $locale;
+        }
+
+        $fallback = (string) config('ai-engine.localization.fallback_locale', '');
+        $fallback = strtolower(str_replace('_', '-', trim($fallback)));
+        if ($fallback !== '') {
+            return $fallback;
+        }
+
+        $appFallback = strtolower(str_replace('_', '-', (string) config('app.fallback_locale', '')));
+        if ($appFallback !== '') {
+            return $appFallback;
+        }
+
+        return 'en';
+    }
+
+    protected function languageName(string $locale): string
+    {
+        if ($this->locale() !== null) {
+            return $this->locale()->languageName($locale);
+        }
+
+        return strtoupper($locale);
+    }
+
+    protected function renderPromptTemplate(string $template, array $replace, string $locale): string
+    {
+        if ($this->locale() === null) {
+            return '';
+        }
+
+        return $this->locale()->renderPromptTemplate($template, $replace, $locale);
+    }
+
+    protected function locale(): ?LocaleResourceService
+    {
+        if (!app()->bound(LocaleResourceService::class)) {
+            return null;
+        }
+
+        return app(LocaleResourceService::class);
     }
 
     /**

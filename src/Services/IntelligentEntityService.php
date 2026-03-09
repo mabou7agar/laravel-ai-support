@@ -3,6 +3,7 @@
 namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -18,10 +19,12 @@ use Illuminate\Support\Facades\Log;
 class IntelligentEntityService
 {
     protected $ai;
+    protected ?LocaleResourceService $localeResources = null;
     
-    public function __construct(AIEngineService $ai)
+    public function __construct(AIEngineService $ai, ?LocaleResourceService $localeResources = null)
     {
         $this->ai = $ai;
+        $this->localeResources = $localeResources;
     }
     
     /**
@@ -344,13 +347,31 @@ class IntelligentEntityService
      */
     public function interpretConfirmationIntent(string $userInput): ?string
     {
-        $prompt = "The user was asked to confirm an action (yes to proceed, no to cancel).\n";
-        $prompt .= "User response: \"{$userInput}\"\n\n";
-        $prompt .= "Determine the user's intent:\n";
-        $prompt .= "- If they want to PROCEED/CONFIRM, return: confirm\n";
-        $prompt .= "- If they want to CANCEL/DECLINE, return: cancel\n";
-        $prompt .= "- If unclear, return: unclear\n\n";
-        $prompt .= "Return ONLY one word: confirm, cancel, or unclear";
+        $normalized = mb_strtolower(trim($userInput));
+        if ($normalized !== '') {
+            if ($this->locale()->isLexiconMatch($normalized, 'intent.confirm')
+                || $this->locale()->startsWithLexicon($normalized, 'intent.confirm')) {
+                return 'confirm';
+            }
+
+            if ($this->locale()->isLexiconMatch($normalized, 'intent.reject')
+                || $this->locale()->startsWithLexicon($normalized, 'intent.reject')) {
+                return 'cancel';
+            }
+        }
+
+        $prompt = $this->locale()->renderPromptTemplate('entity/interpret_confirmation_intent', [
+            'user_input' => $userInput,
+        ]);
+        if ($prompt === '') {
+            $prompt = "The user was asked to confirm an action.\n";
+            $prompt .= "User response: \"{$userInput}\"\n\n";
+            $prompt .= "Determine the user's intent:\n";
+            $prompt .= "- If they want to PROCEED/CONFIRM, return: confirm\n";
+            $prompt .= "- If they want to CANCEL/DECLINE, return: cancel\n";
+            $prompt .= "- If unclear, return: unclear\n\n";
+            $prompt .= "Return ONLY one word: confirm, cancel, or unclear";
+        }
 
         try {
             $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
@@ -360,6 +381,14 @@ class IntelligentEntityService
             ));
 
             $intent = strtolower(trim($response->getContent()));
+
+            $boolIntent = $this->locale()->responseBoolean($intent);
+            if ($boolIntent === true) {
+                return 'confirm';
+            }
+            if ($boolIntent === false) {
+                return 'cancel';
+            }
             
             if (str_contains($intent, 'confirm')) {
                 return 'confirm';
@@ -374,5 +403,14 @@ class IntelligentEntityService
             ]);
             return null;
         }
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 }

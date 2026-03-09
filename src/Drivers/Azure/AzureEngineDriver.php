@@ -344,31 +344,31 @@ class AzureEngineDriver implements EngineDriverInterface
     public function getAvailableModels(): array
     {
         return [
-            EntityEnum::AZURE_TTS->value => [
+            EntityEnum::AZURE_TTS => [
                 'name' => 'Azure Text-to-Speech',
                 'description' => 'Neural text-to-speech with natural voices',
                 'features' => ['neural_voices', 'ssml_support', 'multiple_languages'],
                 'supported_languages' => 75,
             ],
-            EntityEnum::AZURE_STT->value => [
+            EntityEnum::AZURE_STT => [
                 'name' => 'Azure Speech-to-Text',
                 'description' => 'Accurate speech recognition and transcription',
                 'features' => ['real_time', 'batch_processing', 'custom_models'],
                 'supported_languages' => 85,
             ],
-            EntityEnum::AZURE_TRANSLATOR->value => [
+            EntityEnum::AZURE_TRANSLATOR => [
                 'name' => 'Azure Translator',
                 'description' => 'Real-time text translation',
                 'features' => ['90_languages', 'auto_detect', 'custom_models'],
                 'supported_languages' => 90,
             ],
-            EntityEnum::AZURE_TEXT_ANALYTICS->value => [
+            EntityEnum::AZURE_TEXT_ANALYTICS => [
                 'name' => 'Azure Text Analytics',
                 'description' => 'Sentiment analysis, key phrase extraction, entity recognition',
                 'features' => ['sentiment', 'key_phrases', 'entities', 'language_detection'],
                 'supported_languages' => 50,
             ],
-            EntityEnum::AZURE_COMPUTER_VISION->value => [
+            EntityEnum::AZURE_COMPUTER_VISION => [
                 'name' => 'Azure Computer Vision',
                 'description' => 'Image analysis and object detection',
                 'features' => ['object_detection', 'ocr', 'face_detection', 'image_description'],
@@ -417,5 +417,24 @@ class AzureEngineDriver implements EngineDriverInterface
     public function getEngine(): EngineEnum
     {
         return EngineEnum::AZURE;
+    }
+
+    public function supports(string $capability): bool
+    {
+        return in_array($capability, ['text', 'audio', 'vision', 'translation'], true);
+    }
+
+    public function test(): bool
+    {
+        return !empty($this->apiKey);
+    }
+
+    public function generateJsonAnalysis(
+        string $prompt,
+        string $systemPrompt,
+        ?string $model = null,
+        int $maxTokens = 300
+    ): string {
+        throw new AIEngineException('Azure Cognitive Services driver does not support generic JSON analysis');
     }
 }

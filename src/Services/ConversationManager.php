@@ -43,6 +43,7 @@ class ConversationManager
             'user_id' => $userId,
             'title' => $title,
             'system_prompt' => $systemPrompt,
+            'is_active' => true,
             'settings' => array_merge([
                 'max_messages' => 50,
                 'temperature' => 0.7,
@@ -150,11 +151,18 @@ class ConversationManager
     ): AIRequest {
         $context = $this->getConversationContext($conversationId);
 
-        // Add user message to context
-        $context[] = [
-            'role' => 'user',
-            'content' => $request->prompt,
-        ];
+        // Add user message to context unless it is already the latest entry.
+        $lastMessage = end($context);
+        $alreadyAppended = is_array($lastMessage)
+            && ($lastMessage['role'] ?? null) === 'user'
+            && ($lastMessage['content'] ?? null) === $request->prompt;
+
+        if (!$alreadyAppended) {
+            $context[] = [
+                'role' => 'user',
+                'content' => $request->prompt,
+            ];
+        }
 
         // Create new request with conversation context
         return new AIRequest(
@@ -423,11 +431,11 @@ class ConversationManager
         $messages = $conversation->messages();
 
         return [
-            'total_messages' => $messages->count(),
-            'user_messages' => $messages->where('role', 'user')->count(),
-            'assistant_messages' => $messages->where('role', 'assistant')->count(),
-            'total_tokens' => $messages->sum('tokens_used'),
-            'total_credits' => $messages->sum('credits_used'),
+            'total_messages' => (clone $messages)->count(),
+            'user_messages' => (clone $messages)->where('role', 'user')->count(),
+            'assistant_messages' => (clone $messages)->where('role', 'assistant')->count(),
+            'total_tokens' => (clone $messages)->sum('tokens_used'),
+            'total_credits' => (clone $messages)->sum('credits_used'),
             'created_at' => $conversation->created_at,
             'last_activity' => $conversation->last_activity_at,
         ];

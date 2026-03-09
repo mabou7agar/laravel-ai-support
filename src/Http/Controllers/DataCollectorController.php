@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use LaravelAIEngine\Services\DataCollector\DataCollectorChatService;
 use LaravelAIEngine\DTOs\DataCollectorConfig;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 /**
  * Example controller for Data Collector Chat
@@ -17,7 +18,8 @@ use LaravelAIEngine\DTOs\DataCollectorConfig;
 class DataCollectorController extends Controller
 {
     public function __construct(
-        protected DataCollectorChatService $dataCollector
+        protected DataCollectorChatService $dataCollector,
+        protected ?LocaleResourceService $localeResources = null
     ) {}
 
     /**
@@ -313,7 +315,8 @@ class DataCollectorController extends Controller
         $sessionId = $request->input('session_id');
         $fields = json_decode($request->input('fields', '[]'), true) ?: [];
         $fieldConfig = json_decode($request->input('field_config', '{}'), true) ?: [];
-        $language = $request->input('language', 'en');
+        $language = $request->input('language', $this->fallbackLocale());
+        $locale = $this->locale()->resolveLocale($language);
 
         try {
             // Extract text from file
@@ -322,9 +325,10 @@ class DataCollectorController extends Controller
             if (empty($content)) {
                 return response()->json([
                     'success' => false,
-                    'message' => $language === 'ar' 
-                        ? 'لم نتمكن من قراءة محتوى الملف.' 
-                        : 'Could not read file content.',
+                    'message' => $this->locale()->translation(
+                        'ai-engine::runtime.data_collector.api.could_not_read_file',
+                        locale: $locale
+                    ) ?: 'Could not read file content.',
                 ]);
             }
 
@@ -340,27 +344,30 @@ class DataCollectorController extends Controller
             if (empty($extractedData)) {
                 return response()->json([
                     'success' => false,
-                    'message' => $language === 'ar' 
-                        ? 'لم نتمكن من استخراج بيانات من الملف.' 
-                        : 'Could not extract data from file.',
+                    'message' => $this->locale()->translation(
+                        'ai-engine::runtime.data_collector.api.could_not_extract_file',
+                        locale: $locale
+                    ) ?: 'Could not extract data from file.',
                 ]);
             }
 
             return response()->json([
                 'success' => true,
                 'extracted_data' => $extractedData,
-                'message' => $language === 'ar' 
-                    ? 'تم استخراج البيانات بنجاح.' 
-                    : 'Data extracted successfully.',
+                'message' => $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.api.data_extracted_success',
+                    locale: $locale
+                ) ?: 'Data extracted successfully.',
             ]);
 
         } catch (\Exception $e) {
             \Log::error('File analysis error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => $language === 'ar' 
-                    ? 'حدث خطأ أثناء تحليل الملف.' 
-                    : 'Error analyzing file.',
+                'message' => $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.api.file_analysis_error',
+                    locale: $locale
+                ) ?: 'Error analyzing file.',
             ], 500);
         }
     }
@@ -383,7 +390,8 @@ class DataCollectorController extends Controller
 
         $sessionId = $request->input('session_id');
         $extractedData = $request->input('extracted_data');
-        $language = $request->input('language', 'en');
+        $language = $request->input('language', $this->fallbackLocale());
+        $locale = $this->locale()->resolveLocale($language);
 
         try {
             $response = $this->dataCollector->applyExtractedData(
@@ -404,11 +412,31 @@ class DataCollectorController extends Controller
             \Log::error('Apply extracted data error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => $language === 'ar' 
-                    ? 'حدث خطأ أثناء تطبيق البيانات.' 
-                    : 'Error applying data.',
+                'message' => $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.api.apply_data_error',
+                    locale: $locale
+                ) ?: 'Error applying data.',
             ], 500);
         }
+    }
+
+    protected function fallbackLocale(): string
+    {
+        $fallback = config('ai-engine.localization.fallback_locale');
+        if (is_string($fallback) && trim($fallback) !== '') {
+            return $this->locale()->resolveLocale($fallback);
+        }
+
+        return $this->locale()->resolveLocale(app()->getLocale());
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 
     /**

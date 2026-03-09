@@ -8,6 +8,7 @@ use LaravelAIEngine\DTOs\DataCollectorField;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\Services\ConversationService;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use Illuminate\Support\Facades\Cache;
@@ -27,7 +28,8 @@ class DataCollectorService
 
     public function __construct(
         protected AIEngineManager $aiEngine,
-        protected ?ConversationService $conversationService = null
+        protected ?ConversationService $conversationService = null,
+        protected ?LocaleResourceService $localeResources = null
     ) {}
 
     /**
@@ -154,7 +156,8 @@ class DataCollectorService
         if (!$state) {
             return new DataCollectorResponse(
                 success: false,
-                message: 'No active data collection session found.',
+                message: $this->locale()->translation('ai-engine::runtime.data_collector.no_active_session')
+                    ?: 'No active data collection session found.',
                 state: null,
             );
         }
@@ -165,7 +168,8 @@ class DataCollectorService
         if (!$config) {
             return new DataCollectorResponse(
                 success: false,
-                message: 'Configuration not found.',
+                message: $this->locale()->translation('ai-engine::runtime.data_collector.configuration_not_found')
+                    ?: 'Configuration not found.',
                 state: $state,
             );
         }
@@ -178,7 +182,7 @@ class DataCollectorService
         // Auto-detect locale from user message if not already set or if detectLocale is enabled
         if ($config->detectLocale || !isset($state->detectedLocale)) {
             $detectedLocale = $this->detectLocale($message);
-            if ($detectedLocale !== 'en') {
+            if (!$this->isDefaultLocale($detectedLocale)) {
                 $state->detectedLocale = $detectedLocale;
                 Log::channel('ai-engine')->info('Locale auto-detected', [
                     'session_id' => $state->sessionId,
@@ -197,9 +201,10 @@ class DataCollectorService
             DataCollectorState::STATUS_ENHANCING => $this->handleEnhancing($state, $config, $message, $engine, $model),
             default => new DataCollectorResponse(
                 success: false,
-                message: ($state->detectedLocale ?? $config->locale ?? 'en') === 'ar'
-                    ? 'الجلسة ليست في حالة نشطة.'
-                    : 'Session is not in an active state.',
+                message: $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.session_not_active',
+                    locale: $state->detectedLocale ?? $config->locale
+                ) ?: 'Session is not in an active state.',
                 state: $state,
             ),
         };
@@ -228,35 +233,9 @@ class DataCollectorService
 
         // Add locale instruction to ensure consistent language
         $locale = $state->detectedLocale ?? $config->locale ?? null;
-
-        if ($config->locale) {
-            // If locale is explicitly configured, enforce it strictly
-            $languageNames = [
-                'ar' => 'Arabic',
-                'en' => 'English',
-                'zh' => 'Chinese',
-                'ja' => 'Japanese',
-                'ko' => 'Korean',
-                'ru' => 'Russian',
-                'el' => 'Greek',
-                'he' => 'Hebrew',
-                'th' => 'Thai',
-                'hi' => 'Hindi',
-                'es' => 'Spanish',
-                'fr' => 'French',
-                'de' => 'German',
-                'it' => 'Italian',
-                'pt' => 'Portuguese',
-            ];
-
-            $languageName = $languageNames[$config->locale] ?? $config->locale;
-            $contextPrompt .= "\n\n⚠️ LANGUAGE REQUIREMENT: You MUST respond ENTIRELY in {$languageName}. Do NOT mix languages in your response. All text, questions, acknowledgments, examples, and field descriptions must be in {$languageName} only.\n";
-        } elseif ($locale && $locale !== 'en') {
-            // If language was auto-detected (not English), match the user's language
-            $contextPrompt .= "\n\n⚠️ LANGUAGE REQUIREMENT: The user is communicating in their native language. You MUST respond ENTIRELY in the SAME language as the user. Do NOT mix languages. Maintain consistency with the user's language throughout the conversation.\n";
-        } else {
-            // Auto-detect mode - respond in whatever language the user uses
-            $contextPrompt .= "\n\n⚠️ LANGUAGE REQUIREMENT: Respond in the SAME language as the user's message. If the user switches languages, switch with them. Do NOT mix multiple languages in a single response.\n";
+        $languageRule = $this->buildCollectorLanguageRequirement($config, $locale);
+        if ($languageRule !== '') {
+            $contextPrompt .= "\n\n" . $languageRule . "\n";
         }
 
         // Generate AI response (using context summary instead of full history)
@@ -268,140 +247,25 @@ class DataCollectorService
             $model
         );
 
-        $responseContent = $aiResponse->getContent();
+        $collectingInput = $this->resolveCollectingInput(
+            state: $state,
+            config: $config,
+            message: $message,
+            aiResponse: $aiResponse,
+            responseContent: $aiResponse->getContent(),
+            engine: $engine,
+            model: $model
+        );
 
-        // Check if user is selecting a suggestion by number
-        $selectedSuggestion = $this->checkSuggestionSelection($message, $state);
-        $usedSuggestionSelection = false;
-        if ($selectedSuggestion !== null) {
-            // User selected a suggestion - treat it as providing a value
-            $extractedFields = [$state->currentField => $selectedSuggestion];
-            $usedSuggestionSelection = true;
-
-            Log::channel('ai-engine')->info('User selected suggestion by number', [
-                'field' => $state->currentField,
-                'selected_value' => substr($selectedSuggestion, 0, 100),
-            ]);
-
-            // Clear suggestions after selection
-            unset($state->lastSuggestions);
-
-            // Skip intent analysis and AI response generation, go straight to validation
-            $responseContent = ''; // No AI response needed
-            goto validateAndSave;
+        if ($collectingInput instanceof DataCollectorResponse) {
+            return $collectingInput;
         }
 
-        // CRITICAL: Check for modification intent BEFORE intent analysis
-        // This prevents "I want to change X" from being extracted as field data
-        $isModificationIntent = $this->isRejectionIntent($message, $state, $config);
-        
-        if ($isModificationIntent) {
-            Log::channel('ai-engine')->info('Modification intent detected - skipping field extraction', [
-                'session_id' => $state->sessionId,
-                'current_field' => $state->currentField,
-                'user_message' => substr($message, 0, 100),
-            ]);
-            
-            // Don't extract anything - let AI handle the modification request
-            $extractedFields = [];
-            $intentAnalysis = ['intent' => 'modification', 'confidence' => 1.0];
-            
-            // Generate AI response to handle modification
-            $aiResponse = $this->generateAIResponse(
-                $config->getSystemPrompt(),
-                $this->buildContextPrompt($state, $config) . "\n\nUser wants to modify something. Ask what they'd like to change.",
-                $state->messageHistory ?? [],
-                $engine,
-                $model
-            );
-            $responseContent = $aiResponse->getContent();
-        } else {
-            // Use intent analysis to intelligently extract field value (only if we have a current field)
-            if ($state->currentField) {
-                $intentAnalysis = $this->analyzeFieldIntent(
-                    $message,
-                    $state->currentField,
-                    $config,
-                    $state->getData()
-                );
-
-                Log::channel('ai-engine')->info('Field intent analysis completed', [
-                    'session_id' => $state->sessionId,
-                    'intent' => $intentAnalysis['intent'],
-                    'confidence' => $intentAnalysis['confidence'],
-                    'extracted_value' => $intentAnalysis['extracted_value'] ?? null,
-                    'current_field' => $state->currentField,
-                ]);
-            } else {
-                // No current field - check if there's a pending field update
-                $pendingField = $state->metadata['pending_field_update'] ?? null;
-                
-                if ($pendingField) {
-                    // Set pending field as current field and analyze intent for it
-                    $state->setCurrentField($pendingField);
-                    
-                    Log::channel('ai-engine')->info('Using pending field as current field', [
-                        'session_id' => $state->sessionId,
-                        'pending_field' => $pendingField,
-                    ]);
-                    
-                    // Now analyze intent with the pending field as current
-                    $intentAnalysis = $this->analyzeFieldIntent(
-                        $message,
-                        $pendingField,
-                        $config,
-                        $state->getData()
-                    );
-                    
-                    // Clear the pending field update
-                    $metadata = $state->metadata;
-                    unset($metadata['pending_field_update']);
-                    $state->setMetadata($metadata);
-                } else {
-                    // No current field and no pending field - skip intent analysis
-                    $intentAnalysis = ['intent' => 'unclear', 'confidence' => 0];
-                    Log::channel('ai-engine')->info('Skipping intent analysis - no current field', [
-                        'session_id' => $state->sessionId,
-                    ]);
-                }
-            }
-
-            // Handle different intents from analysis
-            $extractedFields = [];
-
-            if ($intentAnalysis['intent'] === 'provide_value' && !empty($intentAnalysis['extracted_value'])) {
-                // User provided a value - use it
-                $extractedFields[$state->currentField] = $intentAnalysis['extracted_value'];
-
-                Log::channel('ai-engine')->info('Using value from intent analysis', [
-                    'field' => $state->currentField,
-                    'value' => $intentAnalysis['extracted_value'],
-                    'confidence' => $intentAnalysis['confidence'],
-                ]);
-            } elseif ($intentAnalysis['intent'] === 'question') {
-                // User is asking a question - don't extract, let AI respond
-                Log::channel('ai-engine')->info('User asked a question, no extraction needed');
-            } elseif ($intentAnalysis['intent'] === 'suggest') {
-                // User wants suggestions - generate AI-powered suggestions
-                return $this->handleSuggestionRequest($state, $config, $engine, $model);
-            } elseif ($intentAnalysis['intent'] === 'skip') {
-                // User wants to skip - handle skip logic
-                Log::channel('ai-engine')->info('User wants to skip field', [
-                    'field' => $state->currentField,
-                ]);
-            } elseif ($intentAnalysis['intent'] === 'unclear') {
-                // Message is unclear - let AI ask for clarification
-                Log::channel('ai-engine')->info('User message unclear, AI will ask for clarification');
-            } else {
-                // Fallback: Parse AI response for field extractions
-                Log::channel('ai-engine')->info('Intent analysis returned no value, falling back to marker parsing', [
-                    'intent' => $intentAnalysis['intent'],
-                ]);
-                $extractedFields = $this->parseFieldExtractions($responseContent, $config);
-            }
-        }
-
-        validateAndSave:
+        $aiResponse = $collectingInput['ai_response'];
+        $responseContent = $collectingInput['response_content'];
+        $extractedFields = $collectingInput['extracted_fields'];
+        $intentAnalysis = $collectingInput['intent_analysis'];
+        $usedSuggestionSelection = $collectingInput['used_suggestion_selection'];
 
         Log::channel('ai-engine')->info('Field extraction results', [
             'session_id' => $state->sessionId,
@@ -513,7 +377,14 @@ class DataCollectorService
                     $errorPrompt .= "1. Explains what went wrong based on the validation errors\n";
                     $errorPrompt .= "2. Asks them to provide a valid value\n";
                     $errorPrompt .= "3. Mentions examples if available: " . json_encode($fieldExamples, JSON_UNESCAPED_UNICODE) . "\n\n";
-                    $errorPrompt .= "Be polite and helpful. Respond in the user's language.";
+                    $languageRule = $this->locale()->translation(
+                        'ai-engine::runtime.data_collector.language_requirement.match_user',
+                        locale: $state->detectedLocale ?? $config->locale
+                    );
+                    $errorPrompt .= "Be polite and helpful.\n";
+                    if ($languageRule !== '') {
+                        $errorPrompt .= $languageRule;
+                    }
 
                     try {
                         $errorResponse = $this->generateAIResponse(
@@ -673,7 +544,11 @@ class DataCollectorService
                     );
                     $fullMessage = $cleanResponse . "\n\n" . trim($confirmResponse->getContent());
                 } catch (\Exception $e) {
-                    $fullMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . $actionSummary . "\n\nPlease confirm to proceed.";
+                    $confirmHint = $this->locale()->translation(
+                        'ai-engine::runtime.data_collector.confirm_to_proceed',
+                        locale: $state->detectedLocale ?? $config->locale
+                    ) ?: 'Please confirm to proceed.';
+                    $fullMessage = $cleanResponse . "\n\n" . $summary . "\n\n" . $actionSummary . "\n\n{$confirmHint}";
                 }
 
                 return new DataCollectorResponse(
@@ -748,6 +623,157 @@ class DataCollectorService
     }
 
     /**
+     * Resolve extraction intent and candidate fields for collecting phase.
+     *
+     * @return array{
+     *   ai_response: AIResponse,
+     *   response_content: string,
+     *   extracted_fields: array<string, mixed>,
+     *   intent_analysis: array<string, mixed>,
+     *   used_suggestion_selection: bool
+     * }|DataCollectorResponse
+     */
+    protected function resolveCollectingInput(
+        DataCollectorState $state,
+        DataCollectorConfig $config,
+        string $message,
+        AIResponse $aiResponse,
+        string $responseContent,
+        string $engine,
+        string $model
+    ): array|DataCollectorResponse {
+        $extractedFields = [];
+        $intentAnalysis = ['intent' => 'none', 'confidence' => 0.0];
+        $usedSuggestionSelection = false;
+
+        // Check if user is selecting a previously suggested value.
+        $selectedSuggestion = $this->checkSuggestionSelection($message, $state);
+        if ($selectedSuggestion !== null) {
+            $extractedFields = [$state->currentField => $selectedSuggestion];
+            $usedSuggestionSelection = true;
+
+            Log::channel('ai-engine')->info('User selected suggestion by number', [
+                'field' => $state->currentField,
+                'selected_value' => substr($selectedSuggestion, 0, 100),
+            ]);
+
+            $this->clearLastSuggestions($state);
+            $responseContent = '';
+        } else {
+            $isModificationIntent = $this->isRejectionIntent($message, $state, $config);
+            if ($isModificationIntent) {
+                Log::channel('ai-engine')->info('Modification intent detected - skipping field extraction', [
+                    'session_id' => $state->sessionId,
+                    'current_field' => $state->currentField,
+                    'user_message' => substr($message, 0, 100),
+                ]);
+
+                $intentAnalysis = ['intent' => 'modification', 'confidence' => 1.0];
+                $aiResponse = $this->generateAIResponse(
+                    $config->getSystemPrompt(),
+                    $this->buildContextPrompt($state, $config) . "\n\nUser wants to modify something. Ask what they'd like to change.",
+                    $state->conversationHistory ?? [],
+                    $engine,
+                    $model
+                );
+                $responseContent = $aiResponse->getContent();
+            } else {
+                $intentAnalysis = $this->resolveCollectingIntentAnalysis($state, $config, $message);
+
+                if ($intentAnalysis['intent'] === 'provide_value' && !empty($intentAnalysis['extracted_value'])) {
+                    $extractedFields[$state->currentField] = $intentAnalysis['extracted_value'];
+
+                    Log::channel('ai-engine')->info('Using value from intent analysis', [
+                        'field' => $state->currentField,
+                        'value' => $intentAnalysis['extracted_value'],
+                        'confidence' => $intentAnalysis['confidence'],
+                    ]);
+                } elseif ($intentAnalysis['intent'] === 'question') {
+                    Log::channel('ai-engine')->info('User asked a question, no extraction needed');
+                } elseif ($intentAnalysis['intent'] === 'suggest') {
+                    return $this->handleSuggestionRequest($state, $config, $engine, $model);
+                } elseif ($intentAnalysis['intent'] === 'skip') {
+                    Log::channel('ai-engine')->info('User wants to skip field', [
+                        'field' => $state->currentField,
+                    ]);
+                } elseif ($intentAnalysis['intent'] === 'unclear') {
+                    Log::channel('ai-engine')->info('User message unclear, AI will ask for clarification');
+                } else {
+                    Log::channel('ai-engine')->info('Intent analysis returned no value, falling back to marker parsing', [
+                        'intent' => $intentAnalysis['intent'],
+                    ]);
+                    $extractedFields = $this->parseFieldExtractions($responseContent, $config);
+                }
+            }
+        }
+
+        return [
+            'ai_response' => $aiResponse,
+            'response_content' => $responseContent,
+            'extracted_fields' => $extractedFields,
+            'intent_analysis' => $intentAnalysis,
+            'used_suggestion_selection' => $usedSuggestionSelection,
+        ];
+    }
+
+    /**
+     * Resolve intent analysis for current/pending field context.
+     */
+    protected function resolveCollectingIntentAnalysis(
+        DataCollectorState $state,
+        DataCollectorConfig $config,
+        string $message
+    ): array {
+        if ($state->currentField) {
+            $intentAnalysis = $this->analyzeFieldIntent(
+                $message,
+                $state->currentField,
+                $config,
+                $state->getData()
+            );
+
+            Log::channel('ai-engine')->info('Field intent analysis completed', [
+                'session_id' => $state->sessionId,
+                'intent' => $intentAnalysis['intent'],
+                'confidence' => $intentAnalysis['confidence'],
+                'extracted_value' => $intentAnalysis['extracted_value'] ?? null,
+                'current_field' => $state->currentField,
+            ]);
+
+            return $intentAnalysis;
+        }
+
+        $pendingField = $state->metadata['pending_field_update'] ?? null;
+        if ($pendingField) {
+            $state->setCurrentField($pendingField);
+
+            Log::channel('ai-engine')->info('Using pending field as current field', [
+                'session_id' => $state->sessionId,
+                'pending_field' => $pendingField,
+            ]);
+
+            $intentAnalysis = $this->analyzeFieldIntent(
+                $message,
+                $pendingField,
+                $config,
+                $state->getData()
+            );
+
+            $metadata = $state->metadata;
+            unset($metadata['pending_field_update']);
+            $state->setMetadata($metadata);
+
+            return $intentAnalysis;
+        }
+
+        Log::channel('ai-engine')->info('Skipping intent analysis - no current field', [
+            'session_id' => $state->sessionId,
+        ]);
+
+        return ['intent' => 'unclear', 'confidence' => 0];
+    }
+
+    /**
      * Handle the confirming status - user confirms or modifies
      */
     protected function handleConfirming(
@@ -759,9 +785,8 @@ class DataCollectorService
     ): DataCollectorResponse {
         $lowerMessage = strtolower(trim($message));
 
-        // Check for confirmation (English and Arabic)
-        $confirmWords = ['yes', 'y', 'confirm', 'correct', 'ok', 'okay', 'looks good', 'perfect', 'submit', 'نعم', 'تأكيد', 'تاكيد', 'صحيح', 'موافق', 'اكيد', 'أكيد'];
-        if (in_array($lowerMessage, $confirmWords)) {
+        // Check for confirmation using locale lexicon
+        if ($this->locale()->isLexiconMatch($lowerMessage, 'intent.confirm', $state->detectedLocale ?? $config->locale)) {
             // Store the confirmed action summary before completion
             // This will be used as the source for JSON generation
             if ($config->actionSummaryPrompt) {
@@ -894,6 +919,17 @@ class DataCollectorService
         }
 
         // Build enhancement prompt for input fields (generic, no hardcoded language)
+        $enhancingLocale = $state->detectedLocale ?? $config->locale;
+        $confirmToken = $this->locale()->lexicon('intent.confirm', $enhancingLocale, ['yes'])[0] ?? 'yes';
+        $confirmGuideline = $this->locale()->translation(
+            'ai-engine::runtime.data_collector.enhancing.confirm_with_token',
+            ['confirm' => $confirmToken],
+            $enhancingLocale
+        );
+        if ($confirmGuideline === '') {
+            $confirmGuideline = "If user is done with changes, ask them to confirm with '{$confirmToken}'";
+        }
+
         $systemPrompt = $config->getSystemPrompt() . "\n\n";
         $systemPrompt .= "Current data:\n" . $config->generateSummary($state->getData()) . "\n\n";
         $systemPrompt .= "Available fields: " . implode(', ', $config->getFieldNames()) . "\n\n";
@@ -901,7 +937,7 @@ class DataCollectorService
         $systemPrompt .= "5. Be helpful and provide examples when the user seems unsure\n";
         $systemPrompt .= "6. After collecting all required fields, provide a summary\n";
         $systemPrompt .= "7. Ask for confirmation before completing\n";
-        $systemPrompt .= "5. If user is done with changes, ask them to confirm with 'yes'\n";
+        $systemPrompt .= "8. {$confirmGuideline}\n";
 
         $aiResponse = $this->generateAIResponse(
             $systemPrompt,
@@ -968,8 +1004,8 @@ class DataCollectorService
 
                 // Check if user mentioned this field
                 if (str_contains($lowerMessage, $fieldNameLower) || str_contains($lowerMessage, $descriptionLower)) {
-                    // Extract value from message (remove field name mentions)
-                    $value = trim(preg_replace('/\b(name|description|duration|level|price)\b/i', '', $message));
+                    // Extract value from message by removing the detected field token(s).
+                    $value = $this->stripFieldTermsFromMessage($message, [$fieldName, $field->description]);
                     if (!empty($value) && strlen($value) > 2) {
                         $extractedFields[$fieldName] = $value;
                         Log::channel('ai-engine')->info('Direct field extraction during enhancement', [
@@ -1010,7 +1046,7 @@ class DataCollectorService
         // If field was updated, generate acknowledgment
         if ($fieldUpdated && $updatedFieldName) {
             $field = $config->getField($updatedFieldName);
-            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
+            $locale = $state->detectedLocale ?? $config->locale ?? $this->fallbackLocale();
 
             // Generate AI acknowledgment in user's language
             $ackPrompt = "The user just updated the {$field->description}. Generate a brief acknowledgment and ask if they want to make any other changes or if they're done.";
@@ -1035,7 +1071,7 @@ class DataCollectorService
         }
 
         // Check if user is done enhancing using AI intent detection
-        $isDone = $this->isCompletionIntent($message);
+        $isDone = $this->isCompletionIntent($message, $state->detectedLocale ?? $config->locale);
 
         if ($isDone) {
             $state->setStatus(DataCollectorState::STATUS_CONFIRMING);
@@ -1071,7 +1107,11 @@ class DataCollectorService
                 );
                 $fullMessage = trim($confirmResponse->getContent());
             } catch (\Exception $e) {
-                $fullMessage = $summary . "\n\n" . $actionSummary . "\n\nPlease confirm to proceed.";
+                $confirmHint = $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.confirm_to_proceed',
+                    locale: $state->detectedLocale ?? $config->locale
+                ) ?: 'Please confirm to proceed.';
+                $fullMessage = $summary . "\n\n" . $actionSummary . "\n\n{$confirmHint}";
             }
 
             return new DataCollectorResponse(
@@ -1264,12 +1304,22 @@ class DataCollectorService
             ]);
         }
 
-        $successMessage = $config->successMessage ?? "Thank you! Your information has been successfully collected and processed.";
+        $successMessage = $config->successMessage
+            ?? $this->locale()->translation(
+                'ai-engine::runtime.data_collector.completion_success_default',
+                locale: $state->detectedLocale ?? $config->locale
+            )
+            ?: "Thank you! Your information has been successfully collected and processed.";
 
         if ($error) {
+            $errorMessage = $this->locale()->translation(
+                'ai-engine::runtime.data_collector.completion_error',
+                ['error' => $error],
+                $state->detectedLocale ?? $config->locale
+            );
             return new DataCollectorResponse(
                 success: false,
-                message: "There was an error processing your data: {$error}",
+                message: $errorMessage !== '' ? $errorMessage : "There was an error processing your data: {$error}",
                 state: $state,
                 isComplete: false,
             );
@@ -1355,11 +1405,11 @@ class DataCollectorService
 
             $suggestions = $aiResponse->getContent();
 
-            // Store suggestions in state for later selection
-            $state->lastSuggestions = [
+            // Store suggestions in metadata for later selection
+            $this->storeLastSuggestions($state, [
                 'field' => $state->currentField,
                 'suggestions' => $suggestions,
-            ];
+            ]);
 
             // Simple format - AI already generated in user's language
             $responseMessage = $suggestions;
@@ -1390,7 +1440,14 @@ class DataCollectorService
             // Fallback to examples if available
             if (!empty($field->examples)) {
                 $examplesList = implode("\n", array_map(fn($ex, $i) => ($i+1) . ". {$ex}", $field->examples, array_keys($field->examples)));
-                $fallbackMessage = "Examples for {$field->description}:\n\n{$examplesList}";
+                $fallbackMessage = $this->runtimeText(
+                    'ai-engine::runtime.data_collector.suggestions.examples_for_field',
+                    ['field' => $field->description, 'examples' => $examplesList],
+                    $state->detectedLocale ?? $config->locale
+                );
+                if ($fallbackMessage === '') {
+                    $fallbackMessage = $examplesList;
+                }
 
                 return new DataCollectorResponse(
                     success: true,
@@ -1400,7 +1457,14 @@ class DataCollectorService
                 );
             }
 
-            $errorMessage = "Sorry, I couldn't generate suggestions. Please provide {$field->description}.";
+            $errorMessage = $this->runtimeText(
+                'ai-engine::runtime.data_collector.suggestions.generation_failed',
+                ['field' => $field->description],
+                $state->detectedLocale ?? $config->locale
+            );
+            if ($errorMessage === '') {
+                $errorMessage = (string) $field->description;
+            }
 
             return new DataCollectorResponse(
                 success: false,
@@ -1421,7 +1485,12 @@ class DataCollectorService
         $state->setStatus(DataCollectorState::STATUS_CANCELLED);
         $this->saveState($state);
 
-        $cancelMessage = $config->cancelMessage ?? "Data collection has been cancelled. Your information has not been saved.";
+        $cancelMessage = $config->cancelMessage
+            ?? $this->runtimeText(
+                'ai-engine::runtime.data_collector.cancelled_default',
+                locale: $state->detectedLocale ?? $config->locale
+            )
+            ?: '';
 
         Log::channel('ai-engine')->info('Data collection cancelled', [
             'session_id' => $state->sessionId,
@@ -1483,34 +1552,8 @@ class DataCollectorService
             // Add language context - AI will detect from conversation
             $locale = $state ? ($state->detectedLocale ?? $config->locale) : $config->locale;
 
-            // Build strong language enforcement
-            $languageNames = [
-                'ar' => 'Arabic',
-                'en' => 'English',
-                'zh' => 'Chinese',
-                'ja' => 'Japanese',
-                'ko' => 'Korean',
-                'ru' => 'Russian',
-                'el' => 'Greek',
-                'he' => 'Hebrew',
-                'th' => 'Thai',
-                'hi' => 'Hindi',
-                'es' => 'Spanish',
-                'fr' => 'French',
-                'de' => 'German',
-                'it' => 'Italian',
-                'pt' => 'Portuguese',
-            ];
-
-            $languageContext = '';
-            if ($locale && $locale !== 'en') {
-                $languageName = $languageNames[$locale] ?? $locale;
-                $languageContext = "\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT:\n";
-                $languageContext .= "You MUST generate ALL content ENTIRELY in {$languageName}.\n";
-                $languageContext .= "Do NOT use English or any other language.\n";
-                $languageContext .= "ALL titles, descriptions, text, and content must be in {$languageName} only.\n";
-                $languageContext .= "The user has been communicating in {$languageName} throughout this conversation.\n";
-            }
+            // Build locale-specific language requirement from translation resources
+            $languageContext = $this->buildLanguageRequirement($locale, includeJsonValuesRule: false);
 
             $fullPrompt = $dataContext . $prompt . $modificationContext . $languageContext;
 
@@ -1518,9 +1561,8 @@ class DataCollectorService
                 . "Format your response in a clear, readable way using markdown. "
                 . "Be specific and detailed in your preview.";
 
-            if ($locale && $locale !== 'en') {
-                $languageName = $languageNames[$locale] ?? $locale;
-                $systemPrompt .= " ⚠️ CRITICAL: You MUST respond ENTIRELY in {$languageName}. Do NOT use English or mix languages.";
+            if ($languageContext !== '') {
+                $systemPrompt .= ' ' . trim($languageContext);
             }
 
             Log::channel('ai-engine')->info('Generating AI action summary', [
@@ -1590,35 +1632,8 @@ class DataCollectorService
                 }
             }
 
-            // Build strong language enforcement
-            $locale = $config->locale ?? 'en';
-            $languageNames = [
-                'ar' => 'Arabic',
-                'en' => 'English',
-                'zh' => 'Chinese',
-                'ja' => 'Japanese',
-                'ko' => 'Korean',
-                'ru' => 'Russian',
-                'el' => 'Greek',
-                'he' => 'Hebrew',
-                'th' => 'Thai',
-                'hi' => 'Hindi',
-                'es' => 'Spanish',
-                'fr' => 'French',
-                'de' => 'German',
-                'it' => 'Italian',
-                'pt' => 'Portuguese',
-            ];
-
-            $localeInstruction = '';
-            if ($locale && $locale !== 'en') {
-                $languageName = $languageNames[$locale] ?? $locale;
-                $localeInstruction = "\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT:\n";
-                $localeInstruction .= "You MUST generate the ENTIRE summary in {$languageName}.\n";
-                $localeInstruction .= "Do NOT use English, Spanish, or any other language.\n";
-                $localeInstruction .= "ALL text must be in {$languageName} only.\n";
-                $localeInstruction .= "The user has been communicating in {$languageName} throughout this conversation.\n";
-            }
+            $locale = $config->locale ?? $this->fallbackLocale();
+            $localeInstruction = $this->buildLanguageRequirement($locale, includeJsonValuesRule: false);
 
             $fullPrompt = "Collected data:\n\n{$dataContext}\n\n" . $prompt . $localeInstruction;
 
@@ -1626,9 +1641,8 @@ class DataCollectorService
                 . "Format your response in a clear, readable way using markdown. "
                 . "Be concise but comprehensive.";
 
-            if ($locale && $locale !== 'en') {
-                $languageName = $languageNames[$locale] ?? $locale;
-                $systemPrompt .= " ⚠️ CRITICAL: You MUST respond ENTIRELY in {$languageName}. Do NOT use English or any other language.";
+            if ($localeInstruction !== '') {
+                $systemPrompt .= ' ' . trim($localeInstruction);
             }
 
             Log::channel('ai-engine')->info('Generating AI data summary', [
@@ -1727,34 +1741,7 @@ class DataCollectorService
             // Add language context - AI will detect from conversation
             $locale = $state->detectedLocale ?? $config->locale ?? null;
 
-            // Build strong language enforcement
-            $languageNames = [
-                'ar' => 'Arabic',
-                'en' => 'English',
-                'zh' => 'Chinese',
-                'ja' => 'Japanese',
-                'ko' => 'Korean',
-                'ru' => 'Russian',
-                'el' => 'Greek',
-                'he' => 'Hebrew',
-                'th' => 'Thai',
-                'hi' => 'Hindi',
-                'es' => 'Spanish',
-                'fr' => 'French',
-                'de' => 'German',
-                'it' => 'Italian',
-                'pt' => 'Portuguese',
-            ];
-
-            $languageContext = '';
-            if ($locale && $locale !== 'en') {
-                $languageName = $languageNames[$locale] ?? $locale;
-                $languageContext = "\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT:\n";
-                $languageContext .= "You MUST generate ALL text content ENTIRELY in {$languageName}.\n";
-                $languageContext .= "JSON keys should be in English, but ALL VALUES (titles, descriptions, names, etc.) must be in {$languageName}.\n";
-                $languageContext .= "Do NOT use English or any other language for the content values.\n";
-                $languageContext .= "The user has been communicating in {$languageName} throughout this conversation.\n";
-            }
+            $languageContext = $this->buildLanguageRequirement($locale, includeJsonValuesRule: true);
 
             $fullPrompt = $dataContext . "\n---\n\n" . $prompt . $actionSummaryContext . $languageContext;
 
@@ -1766,9 +1753,8 @@ class DataCollectorService
             $systemPrompt .= "3. Generate realistic, relevant content based on the input data\n";
             $systemPrompt .= "4. For arrays, generate the number of items specified or a reasonable default\n";
 
-            if ($locale && $locale !== 'en') {
-                $languageName = $languageNames[$locale] ?? $locale;
-                $systemPrompt .= "5. ⚠️ CRITICAL: Generate ALL text content (titles, descriptions, names, etc.) ENTIRELY in {$languageName}. Only JSON keys in English.\n";
+            if ($languageContext !== '') {
+                $systemPrompt .= "5. " . trim($languageContext) . "\n";
             }
 
             Log::channel('ai-engine')->info('Generating structured output', [
@@ -2486,12 +2472,17 @@ class DataCollectorService
      */
     protected function checkSuggestionSelection(string $message, DataCollectorState $state): ?string
     {
+        $lastSuggestions = $this->getLastSuggestions($state);
+
         // Check if we have stored suggestions
-        if (empty($state->lastSuggestions) || $state->lastSuggestions['field'] !== $state->currentField) {
+        if ($lastSuggestions === null || ($lastSuggestions['field'] ?? null) !== $state->currentField) {
             return null;
         }
 
-        $suggestions = $state->lastSuggestions['suggestions'];
+        $suggestions = (string) ($lastSuggestions['suggestions'] ?? '');
+        if ($suggestions === '') {
+            return null;
+        }
 
         // Let AI determine if user is selecting a suggestion and extract it
         $detectionPrompt = "The user was previously shown these suggestions:\n\n{$suggestions}\n\n";
@@ -2544,59 +2535,46 @@ class DataCollectorService
         return null;
     }
 
+    protected function storeLastSuggestions(DataCollectorState $state, array $payload): void
+    {
+        $metadata = $state->metadata;
+        $metadata['last_suggestions'] = $payload;
+        $state->setMetadata($metadata);
+    }
+
+    protected function getLastSuggestions(DataCollectorState $state): ?array
+    {
+        $value = $state->metadata['last_suggestions'] ?? null;
+        return is_array($value) ? $value : null;
+    }
+
+    protected function clearLastSuggestions(DataCollectorState $state): void
+    {
+        $metadata = $state->metadata;
+        unset($metadata['last_suggestions']);
+        $state->setMetadata($metadata);
+    }
+
     /**
      * Detect locale from user message
      * Supports multiple languages automatically
      */
     protected function detectLocale(string $message): string
     {
-        // Check for Arabic characters
-        if (preg_match('/[\x{0600}-\x{06FF}]/u', $message)) {
-            return 'ar';
+        $scriptDetection = config('ai-engine.localization.script_detection', []);
+        if (is_array($scriptDetection)) {
+            foreach ($scriptDetection as $locale => $pattern) {
+                if (!is_string($locale) || !is_string($pattern) || $pattern === '') {
+                    continue;
+                }
+
+                if (@preg_match($pattern, $message)) {
+                    return $locale;
+                }
+            }
         }
 
-        // Check for Chinese characters (Simplified/Traditional)
-        if (preg_match('/[\x{4E00}-\x{9FFF}]/u', $message)) {
-            return 'zh';
-        }
-
-        // Check for Japanese characters (Hiragana, Katakana, Kanji)
-        if (preg_match('/[\x{3040}-\x{309F}\x{30A0}-\x{30FF}\x{4E00}-\x{9FFF}]/u', $message)) {
-            return 'ja';
-        }
-
-        // Check for Korean characters
-        if (preg_match('/[\x{AC00}-\x{D7AF}]/u', $message)) {
-            return 'ko';
-        }
-
-        // Check for Cyrillic (Russian, Ukrainian, etc.)
-        if (preg_match('/[\x{0400}-\x{04FF}]/u', $message)) {
-            return 'ru';
-        }
-
-        // Check for Greek
-        if (preg_match('/[\x{0370}-\x{03FF}]/u', $message)) {
-            return 'el';
-        }
-
-        // Check for Hebrew
-        if (preg_match('/[\x{0590}-\x{05FF}]/u', $message)) {
-            return 'he';
-        }
-
-        // Check for Thai
-        if (preg_match('/[\x{0E00}-\x{0E7F}]/u', $message)) {
-            return 'th';
-        }
-
-        // Check for Devanagari (Hindi, Sanskrit, etc.)
-        if (preg_match('/[\x{0900}-\x{097F}]/u', $message)) {
-            return 'hi';
-        }
-
-        // Default to English (or could be any Latin-based language)
-        return 'en';
+        return $this->fallbackLocale();
     }
 
 
@@ -2605,16 +2583,9 @@ class DataCollectorService
      */
     protected function isCancellationRequest(string $message): bool
     {
-        $cancelPhrases = ['cancel', 'stop', 'quit', 'exit', 'abort', 'nevermind', 'never mind'];
         $lowerMessage = strtolower(trim($message));
 
-        foreach ($cancelPhrases as $phrase) {
-            if ($lowerMessage === $phrase || str_starts_with($lowerMessage, $phrase . ' ')) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->locale()->startsWithLexicon($lowerMessage, 'intent.cancel');
     }
 
     /**
@@ -2856,31 +2827,19 @@ class DataCollectorService
      */
     public function getGreeting(DataCollectorConfig $config, ?DataCollectorState $state = null): string
     {
-        $locale = $state?->detectedLocale ?? $config->locale ?? 'en';
+        $locale = $this->locale()->resolveLocale($state?->detectedLocale ?? $config->locale);
 
-        // Localized greeting phrases
-        $greetings = [
-            'en' => [
-                'hello' => "Hello! I'll help you collect the required information. Let's get started!",
-                'provide' => "Please provide the",
-                'already_have' => "I already have some information:",
-            ],
-            'ar' => [
-                'hello' => "مرحباً! سأساعدك في جمع المعلومات المطلوبة. لنبدأ!",
-                'provide' => "يرجى تقديم",
-                'already_have' => "لدي بالفعل بعض المعلومات:",
-            ],
-        ];
+        $hello = $this->locale()->translation('ai-engine::runtime.data_collector.greeting.hello', locale: $locale);
+        $provide = $this->locale()->translation('ai-engine::runtime.data_collector.greeting.provide', locale: $locale);
+        $alreadyHave = $this->locale()->translation('ai-engine::runtime.data_collector.greeting.already_have', locale: $locale);
 
-        $phrases = $greetings[$locale] ?? $greetings['en'];
-
-        $greeting = $phrases['hello'] . "\n\n";
+        $greeting = ($hello !== '' ? $hello : "Hello! I'll help you collect the required information. Let's get started!") . "\n\n";
 
         // If we have initial data, mention it
         if ($state && !empty($state->getData())) {
             $collectedData = array_filter($state->getData(), fn($v) => $v !== null && $v !== '');
             if (!empty($collectedData)) {
-                $greeting .= $phrases['already_have'] . "\n";
+                $greeting .= ($alreadyHave !== '' ? $alreadyHave : 'I already have some information:') . "\n";
                 foreach ($collectedData as $field => $value) {
                     $fieldObj = $config->getField($field);
                     $fieldLabel = $fieldObj ? $fieldObj->description : $field;
@@ -2895,7 +2854,7 @@ class DataCollectorService
 
         if ($nextField) {
             $fieldName = $nextField->description ?: $nextField->name;
-            $greeting .= $phrases['provide'] . ": " . $fieldName;
+            $greeting .= ($provide !== '' ? $provide : 'Please provide') . ": " . $fieldName;
 
             // Add validation hints
             if ($nextField->validation) {
@@ -2912,25 +2871,11 @@ class DataCollectorService
     /**
      * Get human-readable validation hints
      */
-    protected function getValidationHints(string $validation, string $locale = 'en'): string
+    protected function getValidationHints(string $validation, string $locale = ''): string
     {
+        $resolvedLocale = $this->resolveLocaleOrFallback($locale);
         $hints = [];
         $rules = explode('|', $validation);
-
-        $labels = [
-            'en' => [
-                'required' => 'Required',
-                'min' => 'minimum %d characters',
-                'max' => 'maximum %d characters',
-            ],
-            'ar' => [
-                'required' => 'مطلوب',
-                'min' => 'الحد الأدنى %d حرف',
-                'max' => 'الحد الأقصى %d حرف',
-            ],
-        ];
-
-        $l = $labels[$locale] ?? $labels['en'];
 
         foreach ($rules as $rule) {
             if ($rule === 'required') {
@@ -2938,10 +2883,20 @@ class DataCollectorService
                 continue;
             }
             if (preg_match('/^min:(\d+)$/', $rule, $matches)) {
-                $hints[] = sprintf($l['min'], $matches[1]);
+                $hint = $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.validation_hints.min',
+                    ['value' => $matches[1]],
+                    $resolvedLocale
+                );
+                $hints[] = $hint !== '' ? $hint : "minimum {$matches[1]} characters";
             }
             if (preg_match('/^max:(\d+)$/', $rule, $matches)) {
-                $hints[] = sprintf($l['max'], $matches[1]);
+                $hint = $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.validation_hints.max',
+                    ['value' => $matches[1]],
+                    $resolvedLocale
+                );
+                $hints[] = $hint !== '' ? $hint : "maximum {$matches[1]} characters";
             }
         }
 
@@ -2966,9 +2921,10 @@ class DataCollectorService
         string $sessionId,
         string $content,
         array $fields,
-        string $language = 'en',
+        string $language = '',
         array $fieldConfig = []
     ): array {
+        $resolvedLanguage = $this->resolveLocaleOrFallback($language);
         // Get config from session if available
         $state = $this->getState($sessionId);
         $config = $state ? $this->getConfig($state->configName) : null;
@@ -3011,7 +2967,7 @@ class DataCollectorService
         }
 
         // Build extraction prompt
-        $prompt = $this->buildExtractionPrompt($content, $fieldDescriptions, $language);
+        $prompt = $this->buildExtractionPrompt($content, $fieldDescriptions, $resolvedLanguage);
 
         try {
             // Use AI to extract data
@@ -3061,40 +3017,24 @@ class DataCollectorService
     protected function buildExtractionPrompt(string $content, array $fieldDescriptions, string $language): string
     {
         $fieldsJson = json_encode($fieldDescriptions, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $prompt = $this->locale()->renderPromptTemplate(
+            'data_collector/extract_from_content',
+            [
+                'content' => $content,
+                'fields_json' => $fieldsJson,
+            ],
+            $language
+        );
 
-        if ($language === 'ar') {
-            return <<<PROMPT
-قم بتحليل المحتوى التالي واستخراج المعلومات المطلوبة.
-
-المحتوى:
-{$content}
-
-الحقول المطلوبة:
-{$fieldsJson}
-
-قم بإرجاع البيانات المستخرجة بتنسيق JSON فقط. إذا لم تجد قيمة لحقل معين، اتركه فارغاً.
-لا تضف أي نص إضافي، فقط JSON.
-
-مثال على التنسيق المطلوب:
-{"field_name": "extracted_value", "another_field": "another_value"}
-PROMPT;
+        if ($prompt !== '') {
+            return $prompt;
         }
 
-        return <<<PROMPT
-Analyze the following content and extract the required information.
-
-Content:
-{$content}
-
-Required fields:
-{$fieldsJson}
-
-Return the extracted data in JSON format only. If you cannot find a value for a field, leave it empty.
-Do not add any additional text, only JSON.
-
-Example format:
-{"field_name": "extracted_value", "another_field": "another_value"}
-PROMPT;
+        return "Analyze the following content and extract the required information.\n\n"
+            . "Content:\n{$content}\n\n"
+            . "Required fields:\n{$fieldsJson}\n\n"
+            . "Return the extracted data in JSON format only. If you cannot find a value for a field, leave it empty.\n"
+            . "Do not add any additional text, only JSON.";
     }
 
     /**
@@ -3108,16 +3048,18 @@ PROMPT;
     public function applyExtractedData(
         string $sessionId,
         array $extractedData,
-        string $language = 'en'
+        string $language = ''
     ): DataCollectorResponse {
+        $resolvedLocale = $this->locale()->resolveLocale($language);
         $state = $this->getState($sessionId);
 
         if (!$state) {
             return new DataCollectorResponse(
                 success: false,
-                message: $language === 'ar'
-                    ? 'لم يتم العثور على جلسة نشطة.'
-                    : 'No active session found.',
+                message: $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.api.active_session_not_found',
+                    locale: $resolvedLocale
+                ) ?: 'No active session found.',
                 state: null,
             );
         }
@@ -3127,9 +3069,10 @@ PROMPT;
         if (!$config) {
             return new DataCollectorResponse(
                 success: false,
-                message: $language === 'ar'
-                    ? 'لم يتم العثور على التكوين.'
-                    : 'Configuration not found.',
+                message: $this->locale()->translation(
+                    'ai-engine::runtime.data_collector.api.config_not_found',
+                    locale: $resolvedLocale
+                ) ?: 'Configuration not found.',
                 state: $state,
             );
         }
@@ -3151,9 +3094,14 @@ PROMPT;
         // Build confirmation summary
         $summary = $this->buildConfirmationSummary($state, $config, $language);
 
-        $message = $language === 'ar'
-            ? "تم استخراج البيانات من الملف وتطبيقها. يرجى مراجعة المعلومات التالية:\n\n{$summary}\n\nهل هذه المعلومات صحيحة؟"
-            : "Data extracted from file and applied. Please review the following information:\n\n{$summary}\n\nIs this information correct?";
+        $message = $this->locale()->translation(
+            'ai-engine::runtime.data_collector.extract_apply_message',
+            ['summary' => $summary],
+            $resolvedLocale
+        );
+        if ($message === '') {
+            $message = "Data extracted from file and applied. Please review the following information:\n\n{$summary}\n\nIs this information correct?";
+        }
 
         return new DataCollectorResponse(
             success: true,
@@ -3177,7 +3125,9 @@ PROMPT;
             $summary .= "• **{$label}**: {$value}\n";
         }
 
-        return $summary ?: ($language === 'ar' ? 'لا توجد بيانات' : 'No data');
+        $noData = $this->locale()->translation('ai-engine::runtime.data_collector.no_data', locale: $language);
+
+        return $summary ?: ($noData !== '' ? $noData : 'No data');
     }
 
     /**
@@ -3215,7 +3165,7 @@ PROMPT;
                 }
             }
             
-            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
+            $locale = $state->detectedLocale ?? $config->locale ?? $this->fallbackLocale();
             
             $prompt = "Generate a friendly validation error message for the user.\n\n";
             $prompt .= $errorContext . "\n";
@@ -3240,10 +3190,11 @@ PROMPT;
             ]);
             
             // Fallback to simple message
-            $locale = $state->detectedLocale ?? $config->locale ?? 'en';
-            return $locale === 'ar' 
-                ? 'عذراً، هناك بعض الأخطاء في البيانات المدخلة. يرجى المحاولة مرة أخرى.'
-                : 'Sorry, there are some validation errors. Please try again with correct values.';
+            $locale = $state->detectedLocale ?? $config->locale ?? $this->fallbackLocale();
+            return $this->locale()->translation(
+                'ai-engine::runtime.data_collector.validation_error_fallback',
+                locale: $locale
+            ) ?: 'Sorry, there are some validation errors. Please try again with correct values.';
         }
     }
 
@@ -3300,30 +3251,43 @@ PROMPT;
      */
     protected function isRejectionIntent(string $message, DataCollectorState $state, DataCollectorConfig $config): bool
     {
+        $locale = $state->detectedLocale ?? $config->locale;
+        $yesToken = $this->locale()->lexicon('response.affirmative', $locale, ['yes'])[0] ?? 'yes';
+        $noToken = $this->locale()->lexicon('response.negative', $locale, ['no'])[0] ?? 'no';
+
         // Use AI to detect rejection/modification intent in any language
-        $intentPrompt = "Analyze if the user's message expresses intent to change, modify, edit, update, reject, or correct something.\n\n";
-        $intentPrompt .= "User message: \"{$message}\"\n\n";
-        $intentPrompt .= "Answer YES if they want to make any changes or modifications.\n";
-        $intentPrompt .= "Answer NO if they are accepting, confirming, or providing new information.\n\n";
-        $intentPrompt .= "Respond with ONLY 'YES' or 'NO'.";
+        $intentPrompt = $this->locale()->renderPromptTemplate('data_collector/is_rejection_intent', [
+            'message' => $message,
+            'yes' => $yesToken,
+            'no' => $noToken,
+        ], $locale);
+        if ($intentPrompt === '') {
+            $intentPrompt = "Analyze if the user's message expresses intent to change, modify, edit, update, reject, or correct something.\n\n";
+            $intentPrompt .= "User message: \"{$message}\"\n\n";
+            $intentPrompt .= "Answer {$yesToken} if they want to make any changes or modifications.\n";
+            $intentPrompt .= "Answer {$noToken} if they are accepting, confirming, or providing new information.\n\n";
+            $intentPrompt .= "Respond with ONLY '{$yesToken}' or '{$noToken}'.";
+        }
         
         try {
             $response = $this->aiEngine
                 ->engine(EngineEnum::OPENAI)
                 ->model(EntityEnum::GPT_4O_MINI)
-                ->withSystemPrompt("You are an intent classifier. Analyze user intent and respond with only YES or NO.")
+                ->withSystemPrompt("You are an intent classifier. Analyze user intent and respond with only one token.")
                 ->withMaxTokens(10)
                 ->generate($intentPrompt);
             
-            $intent = strtoupper(trim($response->getContent()));
+            $intent = trim($response->getContent());
+            $parsed = $this->locale()->responseBoolean($intent, $locale);
+            $detected = $parsed === true || str_contains(strtoupper($intent), 'YES');
             
             Log::channel('ai-engine')->debug('Rejection intent detection', [
                 'message' => $message,
                 'ai_response' => $intent,
-                'detected' => str_contains($intent, 'YES'),
+                'detected' => $detected,
             ]);
             
-            return str_contains($intent, 'YES');
+            return $detected;
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('Failed to detect rejection intent, defaulting to false', [
                 'error' => $e->getMessage(),
@@ -3335,28 +3299,202 @@ PROMPT;
     /**
      * Detect if user message indicates they're done with modifications using AI
      */
-    protected function isCompletionIntent(string $message): bool
+    protected function isCompletionIntent(string $message, ?string $locale = null): bool
     {
+        $yesToken = $this->locale()->lexicon('response.affirmative', $locale, ['yes'])[0] ?? 'yes';
+        $noToken = $this->locale()->lexicon('response.negative', $locale, ['no'])[0] ?? 'no';
+
         // Use AI to detect completion intent in any language
-        $intentPrompt = "Analyze the user's message and determine if they are done/finished/ready to complete.\n\n";
-        $intentPrompt .= "User message: \"{$message}\"\n\n";
-        $intentPrompt .= "Respond with ONLY 'YES' if they are done/finished/ready, or 'NO' if they want to continue.";
+        $intentPrompt = $this->locale()->renderPromptTemplate('data_collector/is_completion_intent', [
+            'message' => $message,
+            'yes' => $yesToken,
+            'no' => $noToken,
+        ], $locale);
+        if ($intentPrompt === '') {
+            $intentPrompt = "Analyze the user's message and determine if they are done/finished/ready to complete.\n\n";
+            $intentPrompt .= "User message: \"{$message}\"\n\n";
+            $intentPrompt .= "Respond with ONLY '{$yesToken}' if they are done/finished/ready, or '{$noToken}' if they want to continue.";
+        }
         
         try {
             $response = $this->aiEngine
                 ->engine(EngineEnum::OPENAI)
                 ->model(EntityEnum::GPT_4O_MINI)
-                ->withSystemPrompt("You are an intent classifier. Respond with only YES or NO.")
+                ->withSystemPrompt("You are an intent classifier. Respond with only one token.")
                 ->withMaxTokens(10)
                 ->generate($intentPrompt);
             
-            $intent = strtoupper(trim($response->getContent()));
-            return str_contains($intent, 'YES');
+            $intent = trim($response->getContent());
+            $parsed = $this->locale()->responseBoolean($intent, $locale);
+            if ($parsed !== null) {
+                return $parsed;
+            }
+
+            return str_contains(strtoupper($intent), 'YES');
         } catch (\Exception $e) {
             Log::channel('ai-engine')->warning('Failed to detect completion intent, defaulting to false', [
                 'error' => $e->getMessage(),
             ]);
             return false;
         }
+    }
+
+    protected function stripFieldTermsFromMessage(string $message, array $terms): string
+    {
+        $result = $message;
+
+        foreach ($terms as $term) {
+            if (!is_string($term)) {
+                continue;
+            }
+
+            $normalized = trim($term);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $quoted = preg_quote($normalized, '/');
+            $result = preg_replace('/\b' . $quoted . '\b/iu', ' ', $result) ?? $result;
+        }
+
+        $result = preg_replace('/\s{2,}/u', ' ', $result) ?? $result;
+
+        return trim($result);
+    }
+
+    protected function buildCollectorLanguageRequirement(DataCollectorConfig $config, ?string $locale): string
+    {
+        if (is_string($config->locale) && trim($config->locale) !== '') {
+            $languageName = $this->locale()->languageName($config->locale);
+            $forced = $this->locale()->translation(
+                'ai-engine::runtime.data_collector.language_requirement.force_locale',
+                ['language' => $languageName],
+                $config->locale
+            );
+
+            return $forced;
+        }
+
+        if (is_string($locale) && trim($locale) !== '' && !$this->isDefaultLocale($locale)) {
+            $languageName = $this->locale()->languageName($locale);
+            $detected = $this->locale()->translation(
+                'ai-engine::runtime.data_collector.language_requirement.detected_locale',
+                ['language' => $languageName],
+                $locale
+            );
+
+            return $detected;
+        }
+
+        return $this->locale()->translation(
+            'ai-engine::runtime.data_collector.language_requirement.match_user',
+            locale: $locale
+        );
+    }
+
+    protected function buildLanguageRequirement(?string $locale, bool $includeJsonValuesRule = false): string
+    {
+        if (!is_string($locale) || trim($locale) === '') {
+            return '';
+        }
+
+        $resolved = $this->locale()->resolveLocale($locale);
+        if ($this->isDefaultLocale($resolved)) {
+            return '';
+        }
+
+        $languageName = $this->locale()->languageName($resolved);
+        $instruction = $this->locale()->translation(
+            'ai-engine::runtime.data_collector.language_requirement.force_locale',
+            ['language' => $languageName],
+            $resolved
+        );
+        if ($instruction === '') {
+            $instruction = $this->locale()->translation(
+                'ai-engine::runtime.data_collector.language_requirement.force_locale',
+                ['language' => $languageName],
+                $this->fallbackLocale()
+            );
+        }
+        if ($instruction === '') {
+            return '';
+        }
+
+        if ($includeJsonValuesRule) {
+            $jsonValuesRule = $this->locale()->translation(
+                'ai-engine::runtime.data_collector.language_requirement.json_values',
+                ['language' => $languageName],
+                $resolved
+            );
+            if ($jsonValuesRule !== '') {
+                $instruction .= "\n" . $jsonValuesRule;
+            }
+        }
+
+        return "\n\n⚠️ " . $instruction;
+    }
+
+    protected function runtimeText(
+        string $key,
+        array $replace = [],
+        ?string $locale = null,
+        string $fallback = ''
+    ): string {
+        $translated = $this->locale()->translation($key, $replace, $locale);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        $fallbackLocale = $this->fallbackLocale();
+        if ($locale !== null && $this->locale()->resolveLocale($locale) !== $fallbackLocale) {
+            $translated = $this->locale()->translation($key, $replace, $fallbackLocale);
+            if ($translated !== '') {
+                return $translated;
+            }
+        }
+
+        if ($fallback === '') {
+            return '';
+        }
+
+        $fallbackReplace = [];
+        foreach ($replace as $name => $value) {
+            $fallbackReplace[':' . $name] = (string) $value;
+        }
+
+        return strtr($fallback, $fallbackReplace);
+    }
+
+    protected function resolveLocaleOrFallback(?string $locale): string
+    {
+        if (is_string($locale) && trim($locale) !== '') {
+            return $this->locale()->resolveLocale($locale);
+        }
+
+        return $this->fallbackLocale();
+    }
+
+    protected function fallbackLocale(): string
+    {
+        $fallback = config('ai-engine.localization.fallback_locale');
+        if (is_string($fallback) && trim($fallback) !== '') {
+            return $this->locale()->resolveLocale($fallback);
+        }
+
+        return $this->locale()->resolveLocale(app()->getLocale());
+    }
+
+    protected function isDefaultLocale(string $locale): bool
+    {
+        return $this->locale()->resolveLocale($locale) === $this->fallbackLocale();
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 }

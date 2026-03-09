@@ -1,0 +1,44 @@
+---
+title: Architecture
+description: Internal runtime architecture and responsibility boundaries.
+---
+
+## Runtime Pipeline
+
+```mermaid
+flowchart TD
+  U["User"] --> API["Chat API"]
+  API --> ORCH["Agent Orchestrator"]
+  ORCH --> IR["IntentRouter"]
+  ORCH --> PL["AgentPlanner"]
+  PL --> EX["AgentActionExecutionService"]
+  EX --> TOOL["Tool / Collector / RAG"]
+  TOOL --> NODE["Local Node or Remote Node"]
+  NODE --> RF["AgentResponseFinalizer"]
+  RF --> RESP["Standard API Envelope"]
+```
+
+## Responsibility Split
+
+- `IntentRouter`: classify intent and pick strategy
+- `AgentPlanner`: produce explicit plan
+- `AgentActionExecutionService`: execute deterministic actions/tools
+- `AgentConversationService`: session + context continuity
+- `AgentResponseFinalizer`: normalize final response and metadata
+
+## RAG Service Split
+
+- decision service
+- context/state service
+- execution service
+- structured data service
+- prompt policy + feedback service
+
+This avoids giant single-class behavior and reduces regression risk.
+
+## Federation Boundary
+
+- master node is planner/orchestrator
+- child node is owner/executor for its domain
+- ownership resolver decides route
+- no chained child-to-child orchestration

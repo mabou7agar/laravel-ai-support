@@ -4,26 +4,24 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine;
 
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use LaravelAIEngine\Services\AIEngineManager;
-use LaravelAIEngine\Services\CreditManager;
-use LaravelAIEngine\Services\CacheManager;
-use LaravelAIEngine\Services\RateLimitManager;
-use LaravelAIEngine\Services\ConversationManager;
 use LaravelAIEngine\Services\ActionManager;
-use LaravelAIEngine\Services\AnalyticsManager;
-use LaravelAIEngine\Services\ActionHandlers\ButtonActionHandler;
-use LaravelAIEngine\Services\ActionHandlers\QuickReplyActionHandler;
 use LaravelAIEngine\Services\Failover\FailoverManager;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
 use LaravelAIEngine\Services\Analytics\AnalyticsManager as NewAnalyticsManager;
-use LaravelAIEngine\Services\Analytics\Metrics\MetricsCollector;
-use LaravelAIEngine\Services\Analytics\Drivers\DatabaseAnalyticsDriver;
-use LaravelAIEngine\Services\Analytics\Drivers\RedisAnalyticsDriver;
-use LaravelAIEngine\Services\DiscoveryCacheWarmer;
+use LaravelAIEngine\Support\Providers\AgentServiceRegistrar;
+use LaravelAIEngine\Support\Providers\CoreServiceRegistrar;
+use LaravelAIEngine\Support\Providers\EnterpriseServiceRegistrar;
+use LaravelAIEngine\Support\Providers\NodeServiceRegistrar;
+use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class AIEngineServiceProvider extends ServiceProvider
 {
+    protected static bool $startupGateChecked = false;
+
     /**
      * Register any application services.
      */
@@ -71,185 +69,8 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function registerCoreServices(): void
     {
-        // Register OpenAI Client (lazy - only throws error when actually used)
-        $this->app->singleton(\OpenAI\Client::class, function ($app) {
-            $apiKey = config('ai-engine.engines.openai.api_key');
-            if (empty($apiKey)) {
-                // Return a null client or throw only when methods are called
-                // This prevents boot-time failures
-                throw new \RuntimeException('OpenAI API key is not configured. Please set OPENAI_API_KEY in your .env file.');
-            }
-            return \OpenAI::client($apiKey);
-        });
-
-        // Register dependencies first
-        $this->app->singleton(CreditManager::class, function ($app) {
-            return new CreditManager($app);
-        });
-
-        $this->app->singleton(CacheManager::class, function ($app) {
-            return new CacheManager($app);
-        });
-
-        $this->app->singleton(RateLimitManager::class, function ($app) {
-            return new RateLimitManager($app);
-        });
-
-        $this->app->singleton(AnalyticsManager::class, function ($app) {
-            return new AnalyticsManager($app);
-        });
-
-        // Register AIEngineManager with all dependencies
-        $this->app->singleton(AIEngineManager::class, function ($app) {
-            return new AIEngineManager(
-                $app,
-                $app->make(CreditManager::class),
-                $app->make(CacheManager::class),
-                $app->make(RateLimitManager::class),
-                $app->make(AnalyticsManager::class),
-                $app->bound(\LaravelAIEngine\Services\Memory\MemoryManager::class)
-                    ? $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class)
-                    : null,
-                $app->bound(ActionManager::class)
-                    ? $app->make(ActionManager::class)
-                    : null,
-                $app->bound(WebSocketManager::class)
-                    ? $app->make(WebSocketManager::class)
-                    : null
-            );
-        });
-
-        // ConversationManager - no constructor dependencies (RAG service is lazy-loaded)
-        $this->app->singleton(ConversationManager::class, function ($app) {
-            return new ConversationManager();
-        });
-
-        // Discovery Cache Warmer
-        $this->app->singleton(DiscoveryCacheWarmer::class, function ($app) {
-            return new DiscoveryCacheWarmer(
-                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class),
-                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, function ($app) {
-            return new \LaravelAIEngine\Services\Memory\MemoryManager();
-        });
-
-        // Register services from legacy provider that are still needed
-        $this->app->singleton(\LaravelAIEngine\Services\AIEngineService::class, function ($app) {
-            return new \LaravelAIEngine\Services\AIEngineService($app->make(CreditManager::class));
-        });
-
-        // Removed: BrandVoiceManager (unused - 639 lines)
-        // Removed: ContentModerationService (unused - 294 lines)
-        // Removed: DuplicateDetectionService (test-only)
-
-        $this->app->singleton(\LaravelAIEngine\Services\WebhookManager::class, function ($app) {
-            return new \LaravelAIEngine\Services\WebhookManager();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\TemplateManager::class, function ($app) {
-            return new \LaravelAIEngine\Services\TemplateManager();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\JobStatusTracker::class, function ($app) {
-            return new \LaravelAIEngine\Services\JobStatusTracker();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\QueuedAIProcessor::class, function ($app) {
-            return new \LaravelAIEngine\Services\QueuedAIProcessor($app->make(\LaravelAIEngine\Services\JobStatusTracker::class));
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class, function ($app) {
-            return new \LaravelAIEngine\Services\RAG\IntelligentRAGService(
-                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
-                $app->make(AIEngineManager::class),
-                $app->make(\LaravelAIEngine\Services\ConversationService::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\AIModelRegistry::class, function ($app) {
-            return new \LaravelAIEngine\Services\AIModelRegistry();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, function ($app) {
-            return new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class, function ($app) {
-            return new \LaravelAIEngine\Services\DataCollector\DataCollectorService(
-                $app->make(AIEngineManager::class),
-                $app->make(\LaravelAIEngine\Services\ConversationService::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorChatService::class, function ($app) {
-            return new \LaravelAIEngine\Services\DataCollector\DataCollectorChatService(
-                $app->make(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class),
-                $app->make(\LaravelAIEngine\Services\ChatService::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\ModelResolver::class, function ($app) {
-            return new \LaravelAIEngine\Services\ModelResolver();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\PendingActionService::class, function ($app) {
-            return new \LaravelAIEngine\Services\PendingActionService();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentCollectionAdapter::class, function ($app) {
-            return new \LaravelAIEngine\Services\Agent\AgentCollectionAdapter(
-                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class),
-                $app->make(\LaravelAIEngine\Services\ModelAnalyzer::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\AgentMode::class, function ($app) {
-            return new \LaravelAIEngine\Services\Agent\AgentMode();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class, function ($app) {
-            $registry = new \LaravelAIEngine\Services\Agent\Tools\ToolRegistry();
-            $registry->discoverFromConfig();
-            return $registry;
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ValidateFieldTool::class);
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class);
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class);
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class);
-
-        // Autonomous RAG Agent - single AI call for all decisions
-        $this->app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGAgent::class, function ($app) {
-            return new \LaravelAIEngine\Services\RAG\AutonomousRAGAgent(
-                $app->make(AIEngineManager::class),
-                $app->make(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class),
-                $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\ContextManager::class, function ($app) {
-            return new \LaravelAIEngine\Services\Agent\ContextManager();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\WorkflowDiscoveryService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Agent\WorkflowDiscoveryService();
-        });
-
-        // Register MinimalAIOrchestrator - AI-driven orchestration
-        $this->app->singleton(\LaravelAIEngine\Services\Agent\MinimalAIOrchestrator::class, function ($app) {
-            return new \LaravelAIEngine\Services\Agent\MinimalAIOrchestrator(
-                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
-                $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class),
-                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::class),
-                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)
-            );
-        });
-
-        // Deprecated: AgentOrchestrator moved to Legacy folder
-        // Use MinimalAIOrchestrator instead for AI-driven orchestration
+        CoreServiceRegistrar::register($this->app);
+        AgentServiceRegistrar::register($this->app);
     }
 
     /**
@@ -257,121 +78,7 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function registerEnterpriseServices(): void
     {
-        // Interactive Actions System
-        $this->app->singleton(ActionManager::class, function ($app) {
-            $manager = new ActionManager();
-
-            // Register default action handlers
-            $manager->registerHandler(new ButtonActionHandler());
-            $manager->registerHandler(new QuickReplyActionHandler());
-
-            return $manager;
-        });
-
-        // Automatic Failover System
-        $this->app->singleton(FailoverManager::class, function ($app) {
-            return new FailoverManager();
-        });
-
-        // WebSocket Streaming System (only if Ratchet is installed)
-        if (interface_exists('Ratchet\MessageComponentInterface')) {
-            $this->app->singleton(WebSocketManager::class, function ($app) {
-                return new WebSocketManager();
-            });
-        }
-
-        // Analytics and Monitoring System
-        $this->app->singleton(MetricsCollector::class, function ($app) {
-            return new MetricsCollector();
-        });
-
-        $this->app->singleton(DatabaseAnalyticsDriver::class, function ($app) {
-            return new DatabaseAnalyticsDriver();
-        });
-
-        $this->app->singleton(RedisAnalyticsDriver::class, function ($app) {
-            return new RedisAnalyticsDriver();
-        });
-
-        $this->app->singleton(NewAnalyticsManager::class, function ($app) {
-            return new NewAnalyticsManager($app->make(MetricsCollector::class));
-        });
-
-        // Vector Search & Embeddings System
-        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorDriverManager::class, function ($app) {
-            return new \LaravelAIEngine\Services\Vector\VectorDriverManager();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Vector\EmbeddingService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Vector\EmbeddingService(
-                $app->make(\OpenAI\Client::class),
-                $app->make(CreditManager::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorAccessControl::class, function ($app) {
-            return new \LaravelAIEngine\Services\Vector\VectorAccessControl();
-        });
-
-        // Multi-Tenant Vector Service (for multi-database tenancy)
-        $this->app->singleton(\LaravelAIEngine\Services\Tenant\MultiTenantVectorService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Tenant\MultiTenantVectorService();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorSearchService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Vector\VectorSearchService(
-                $app->make(\LaravelAIEngine\Services\Vector\VectorDriverManager::class),
-                $app->make(\LaravelAIEngine\Services\Vector\EmbeddingService::class),
-                $app->make(\LaravelAIEngine\Services\Vector\VectorAccessControl::class)
-            );
-        });
-
-        // Media Processing Services
-        $this->app->singleton(\LaravelAIEngine\Services\Media\VisionService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Media\VisionService(
-                $app->make(\OpenAI\Client::class),
-                $app->make(CreditManager::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Media\AudioService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Media\AudioService(
-                $app->make(\OpenAI\Client::class),
-                $app->make(CreditManager::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Media\VideoService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Media\VideoService(
-                $app->make(\LaravelAIEngine\Services\Media\AudioService::class),
-                $app->make(\LaravelAIEngine\Services\Media\VisionService::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Media\DocumentService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Media\DocumentService();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Media\MediaEmbeddingService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Media\MediaEmbeddingService(
-                $app->make(\LaravelAIEngine\Services\Vector\EmbeddingService::class)
-            );
-        });
-
-        // Vector Enterprise Services
-        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorAuthorizationService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Vector\VectorAuthorizationService();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Vector\ChunkingService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Vector\ChunkingService();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Vector\VectorAnalyticsService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Vector\VectorAnalyticsService();
-        });
-
-        // Node Management Services
+        EnterpriseServiceRegistrar::register($this->app);
         $this->registerNodeServices();
     }
 
@@ -380,190 +87,7 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function registerNodeServices(): void
     {
-        if (!config('ai-engine.nodes.enabled', true)) {
-            return;
-        }
-
-        // Validate node configuration
-        $this->validateNodeConfiguration();
-
-        // Removed: NodeConnectionPool (redundant)
-        // Removed: NodeCacheService (over-engineered)
-        // Removed: LoadBalancerService (unnecessary)
-        // Removed: SearchResultMerger (over-complex)
-
-        // Auth Service (kept for API authentication)
-        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeAuthService::class);
-
-        // Circuit Breaker (kept for health monitoring)
-        $this->app->singleton(\LaravelAIEngine\Services\Node\CircuitBreakerService::class);
-
-        // Registry Service
-        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRegistryService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Node\NodeRegistryService(
-                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
-                $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)
-            );
-        });
-
-        // Removed: FederatedSearchService (replaced with UnifiedRAGSearchService)
-        // Removed: LoadBalancerService (unnecessary complexity)
-        // Removed: NodeConnectionPool (redundant)
-        // Removed: NodeCacheService (over-engineered)
-        // Removed: SearchResultMerger (over-engineered)
-
-        // New: Unified RAG Search Service (simple, fast, reliable)
-        $this->app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, function ($app) {
-            return new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService(
-                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class)
-            );
-        });
-
-        // Node Router Service (kept for backward compatibility)
-        $this->app->singleton(\LaravelAIEngine\Services\Node\NodeRouterService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Node\NodeRouterService(
-                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
-                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class)
-            );
-        });
-
-        // Remote Action Service
-        $this->app->singleton(\LaravelAIEngine\Services\Node\RemoteActionService::class, function ($app) {
-            return new \LaravelAIEngine\Services\Node\RemoteActionService(
-                $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
-                $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class),
-                $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)
-            );
-        });
-
-        // Action Execution Service
-        $this->app->singleton(\LaravelAIEngine\Services\ActionExecutionService::class, function ($app) {
-            return new \LaravelAIEngine\Services\ActionExecutionService(
-                $app->bound(\LaravelAIEngine\Services\ChatService::class)
-                    ? $app->make(\LaravelAIEngine\Services\ChatService::class)
-                    : null,
-                $app->bound(\LaravelAIEngine\Services\AIEngineService::class)
-                    ? $app->make(\LaravelAIEngine\Services\AIEngineService::class)
-                    : null,
-                $app->bound(\LaravelAIEngine\Services\Node\RemoteActionService::class)
-                    ? $app->make(\LaravelAIEngine\Services\Node\RemoteActionService::class)
-                    : null
-            );
-        });
-
-        // Action System (Unified)
-        $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
-
-        $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class, function ($app) {
-            return new \LaravelAIEngine\Services\Actions\ActionParameterExtractor();
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class, function ($app) {
-            return new \LaravelAIEngine\Services\Actions\ActionExecutionPipeline(
-                $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
-                $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class)
-            );
-        });
-
-        $this->app->singleton(\LaravelAIEngine\Services\Actions\ActionManager::class, function ($app) {
-            return new \LaravelAIEngine\Services\Actions\ActionManager(
-                $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
-                $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class),
-                $app->make(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class)
-            );
-        });
-
-        // Template Engine
-        $this->app->singleton(\LaravelAIEngine\Services\TemplateEngine::class, function ($app) {
-            return new \LaravelAIEngine\Services\TemplateEngine(
-                $app->bound(\LaravelAIEngine\Services\AIEngineService::class)
-                    ? $app->make(\LaravelAIEngine\Services\AIEngineService::class)
-                    : null
-            );
-        });
-    }
-
-    /**
-     * Validate node configuration
-     */
-    protected function validateNodeConfiguration(): void
-    {
-        // Check JWT secret - correct config path is nodes.jwt.secret
-        $jwtSecret = config('ai-engine.nodes.jwt.secret')?? config('ai-engine.nodes.jwt_secret');
-        if ($jwtSecret === null || $jwtSecret === '') {
-            throw new \RuntimeException(
-                'AI_ENGINE_JWT_SECRET is required when nodes are enabled. ' .
-                'Set it in your .env file or disable nodes with AI_ENGINE_NODES_ENABLED=false'
-            );
-        }
-
-        // Warn if master node doesn't have master_url configured
-        if (config('ai-engine.nodes.is_master', true)) {
-            if (!config('ai-engine.nodes.master_url')) {
-                \Log::channel('ai-engine')->warning(
-                    'Master node should have AI_ENGINE_MASTER_URL configured for child nodes to register'
-                );
-            }
-        }
-
-        // Validate connection pool settings
-        if (config('ai-engine.nodes.connection_pool.enabled', true)) {
-            $maxPerNode = config('ai-engine.nodes.connection_pool.max_per_node', 5);
-            if ($maxPerNode < 1 || $maxPerNode > 100) {
-                throw new \RuntimeException(
-                    'AI_ENGINE_CONNECTION_POOL_MAX_PER_NODE must be between 1 and 100'
-                );
-            }
-
-            $ttl = config('ai-engine.nodes.connection_pool.ttl', 300);
-            if ($ttl < 60 || $ttl > 3600) {
-                throw new \RuntimeException(
-                    'AI_ENGINE_CONNECTION_POOL_TTL must be between 60 and 3600 seconds'
-                );
-            }
-        }
-
-        // Validate rate limiting settings
-        if (config('ai-engine.nodes.rate_limit.enabled', true)) {
-            $maxAttempts = config('ai-engine.nodes.rate_limit.max_attempts', 60);
-            if ($maxAttempts < 1 || $maxAttempts > 10000) {
-                throw new \RuntimeException(
-                    'AI_ENGINE_RATE_LIMIT_MAX must be between 1 and 10000'
-                );
-            }
-
-            $decayMinutes = config('ai-engine.nodes.rate_limit.decay_minutes', 1);
-            if ($decayMinutes < 1 || $decayMinutes > 1440) {
-                throw new \RuntimeException(
-                    'AI_ENGINE_RATE_LIMIT_DECAY must be between 1 and 1440 minutes'
-                );
-            }
-        }
-
-        // Validate circuit breaker settings
-        $failureThreshold = config('ai-engine.nodes.circuit_breaker.failure_threshold', 5);
-        if ($failureThreshold < 1 || $failureThreshold > 100) {
-            throw new \RuntimeException(
-                'AI_ENGINE_CB_FAILURE_THRESHOLD must be between 1 and 100'
-            );
-        }
-
-        $successThreshold = config('ai-engine.nodes.circuit_breaker.success_threshold', 2);
-        if ($successThreshold < 1 || $successThreshold > 50) {
-            throw new \RuntimeException(
-                'AI_ENGINE_CB_SUCCESS_THRESHOLD must be between 1 and 50'
-            );
-        }
-
-        // Validate timeout settings
-        $timeout = config('ai-engine.nodes.request_timeout', 30);
-        if ($timeout < 1 || $timeout > 300) {
-            throw new \RuntimeException(
-                'AI_ENGINE_REQUEST_TIMEOUT must be between 1 and 300 seconds'
-            );
-        }
-
-        \Log::channel('ai-engine')->info('Node configuration validated successfully');
+        NodeServiceRegistrar::register($this->app);
     }
 
     /**
@@ -573,6 +97,7 @@ class AIEngineServiceProvider extends ServiceProvider
     {
         // Core aliases
         $this->app->alias(AIEngineManager::class, 'ai-engine');
+        $this->app->alias(\LaravelAIEngine\Services\UnifiedEngineManager::class, 'unified-engine');
 
         // Enterprise aliases
         $this->app->alias(ActionManager::class, 'ai-actions');
@@ -604,6 +129,10 @@ class AIEngineServiceProvider extends ServiceProvider
                 __DIR__.'/../resources/views' => resource_path('views/vendor/ai-engine'),
             ], 'ai-engine-views');
 
+            $this->publishes([
+                __DIR__.'/../resources/lang' => lang_path('vendor/ai-engine'),
+            ], 'ai-engine-lang');
+
             // Laravel 8 specific: publish components to app/View/Components for manual registration
             $this->publishes([
                 __DIR__.'/../resources/views/components' => resource_path('views/components/ai-engine'),
@@ -630,6 +159,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\FailoverStatusCommand::class,
                 Console\Commands\StreamingServerCommand::class,
                 Console\Commands\SystemHealthCommand::class,
+                Console\Commands\InfrastructureHealthCommand::class,
                 Console\Commands\TestPackageCommand::class,
                 Console\Commands\VectorIndexCommand::class,
                 Console\Commands\VectorSearchCommand::class,
@@ -647,10 +177,17 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\TestLargeMediaCommand::class,
                 Console\Commands\CreateQdrantIndexesCommand::class,
                 Console\Commands\TestIntentAnalysisCommand::class,
+                Console\Commands\DecisionFeedbackReportCommand::class,
+                Console\Commands\DecisionPolicyCreateCommand::class,
+                Console\Commands\DecisionPolicyActivateCommand::class,
+                Console\Commands\DecisionPolicyEvaluateCommand::class,
+                Console\Commands\TestRealAgentFlowCommand::class,
                 Console\Commands\TestDataCollectorCommand::class,
                 Console\Commands\ListAutonomousCollectorsCommand::class,
                 Console\Commands\ClearDiscoveryCacheCommand::class,
                 Console\Commands\WarmDiscoveryCacheCommand::class,
+                Console\Commands\InitAgentWorkspaceCommand::class,
+                Console\Commands\ScaffoldAgentArtifactCommand::class,
             ]);
 
             // Node Management Commands
@@ -666,12 +203,15 @@ class AIEngineServiceProvider extends ServiceProvider
                     Console\Commands\Node\DemoNodesCommand::class,
                     Console\Commands\Node\NodeLogsCommand::class,
                     Console\Commands\Node\DiscoverCollectionsCommand::class,
+                    Console\Commands\Node\BulkSyncNodesCommand::class,
+                    Console\Commands\Node\CleanupNodesCommand::class,
                     Console\Commands\NodeDiscoverCommand::class,
                 ]);
             }
         }
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        $this->loadTranslationsFrom(__DIR__.'/../resources/lang', 'ai-engine');
 
         // Load routes
         $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
@@ -682,6 +222,11 @@ class AIEngineServiceProvider extends ServiceProvider
             $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
         }
 
+        // Load admin UI routes conditionally (safe for config cache)
+        if (config('ai-engine.admin_ui.enabled', false)) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/admin.php');
+        }
+
         // Load API routes (check for published version first)
         $publishedApiRoutes = base_path('routes/ai-engine-api.php');
         if (file_exists($publishedApiRoutes)) {
@@ -689,6 +234,11 @@ class AIEngineServiceProvider extends ServiceProvider
         } else {
             $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
         }
+
+        // Register middleware
+        $router = $this->app['router'];
+        $router->aliasMiddleware('ai-engine.locale', \LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware::class);
+        $router->aliasMiddleware('ai-engine.admin.access', \LaravelAIEngine\Http\Middleware\AdminAccessMiddleware::class);
 
         // Load node API routes (check for published version first)
         if (config('ai-engine.nodes.enabled', true)) {
@@ -699,8 +249,6 @@ class AIEngineServiceProvider extends ServiceProvider
                 $this->loadRoutesFrom(__DIR__.'/../routes/node-api.php');
             }
 
-            // Register middleware
-            $router = $this->app['router'];
             $router->aliasMiddleware('node.auth', \LaravelAIEngine\Http\Middleware\NodeAuthMiddleware::class);
             $router->aliasMiddleware('node.rate_limit', \LaravelAIEngine\Http\Middleware\NodeRateLimitMiddleware::class);
         }
@@ -719,6 +267,9 @@ class AIEngineServiceProvider extends ServiceProvider
 
         // Register scheduled tasks
         $this->registerScheduledTasks();
+
+        // Optional startup gate for infrastructure readiness
+        $this->runStartupHealthGate();
     }
 
     /**
@@ -857,10 +408,47 @@ class AIEngineServiceProvider extends ServiceProvider
     protected function discoverAutonomousCollectors(): void
     {
         try {
+            $manifestCollectors = [];
+            if ($this->app->bound(\LaravelAIEngine\Services\Agent\AgentManifestService::class)) {
+                $manifestCollectors = $this->app
+                    ->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class)
+                    ->collectors();
+            }
+
+            foreach ($manifestCollectors as $name => $manifestCollector) {
+                $className = $manifestCollector['class'] ?? null;
+                if (!$className || !class_exists($className)) {
+                    continue;
+                }
+
+                $config = null;
+                if (method_exists($className, 'getConfig')) {
+                    $config = $className::getConfig();
+                } elseif (method_exists($className, 'create')) {
+                    $config = $className::create();
+                }
+
+                if (!$config) {
+                    continue;
+                }
+
+                \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::register($name, [
+                    'config' => $config,
+                    'goal' => (string) ($config->goal ?? ''),
+                    'description' => (string) ($manifestCollector['description'] ?? ''),
+                    'priority' => (int) ($manifestCollector['priority'] ?? 0),
+                    'source' => 'manifest',
+                ]);
+            }
+
             $discoveryService = $this->app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class);
             $collectors = $discoveryService->discoverCollectors(useCache: true, includeRemote: true);
 
             foreach ($collectors as $name => $collectorData) {
+                if (\LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::has($name)) {
+                    continue;
+                }
+
                 $className = $collectorData['class'] ?? null;
                 $source = $collectorData['source'] ?? 'local';
                 $config = $collectorData['config'] ?? null;
@@ -875,6 +463,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 if ($config) {
                     \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::register($name, [
                         'config' => $config,
+                        'goal' => (string) ($config->goal ?? ''),
                         'description' => $collectorData['description'] ?? '',
                         'priority' => $collectorData['priority'] ?? 0,
                         'source' => $source,
@@ -886,6 +475,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('Discovered AutonomousCollectors', [
                     'count' => count($collectors),
                     'names' => array_keys($collectors),
+                    'manifest_count' => count($manifestCollectors),
                 ]);
             }
         } catch (\Exception $e) {
@@ -893,6 +483,61 @@ class AIEngineServiceProvider extends ServiceProvider
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    protected function runStartupHealthGate(): void
+    {
+        if (self::$startupGateChecked) {
+            return;
+        }
+
+        if (!config('ai-engine.infrastructure.startup_health_gate.enabled', true)) {
+            self::$startupGateChecked = true;
+            return;
+        }
+
+        if ($this->app->runningInConsole() && config('ai-engine.infrastructure.startup_health_gate.skip_in_console', true)) {
+            self::$startupGateChecked = true;
+            return;
+        }
+
+        $ttl = max(0, (int) config('ai-engine.infrastructure.startup_health_gate.cache_seconds', 60));
+        $cacheKey = 'ai-engine:startup-health-gate-report';
+        $service = $this->app->make(InfrastructureHealthService::class);
+
+        try {
+            $report = $ttl > 0
+                ? Cache::remember($cacheKey, $ttl, fn (): array => $service->evaluate())
+                : $service->evaluate();
+        } catch (\Throwable $e) {
+            Log::channel('ai-engine')->error('Startup health gate check failed to execute', [
+                'error' => $e->getMessage(),
+            ]);
+
+            if (config('ai-engine.infrastructure.startup_health_gate.strict', false)) {
+                throw new \RuntimeException('AI Engine startup health gate failed to execute: ' . $e->getMessage(), previous: $e);
+            }
+
+            return;
+        }
+
+        if ((bool) ($report['ready'] ?? false)) {
+            self::$startupGateChecked = true;
+            return;
+        }
+
+        $message = $service->startupGateMessage($report);
+
+        Log::channel('ai-engine')->critical('AI Engine startup health gate blocked readiness', [
+            'message' => $message,
+            'report' => $report,
+        ]);
+
+        if (config('ai-engine.infrastructure.startup_health_gate.strict', false)) {
+            throw new \RuntimeException('AI Engine startup health gate failed: ' . $message);
+        }
+
+        self::$startupGateChecked = true;
     }
 
     /**

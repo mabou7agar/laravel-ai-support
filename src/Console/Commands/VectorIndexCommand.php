@@ -5,7 +5,7 @@ namespace LaravelAIEngine\Console\Commands;
 use Illuminate\Console\Command;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
-use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class VectorIndexCommand extends Command
 {
@@ -60,15 +60,23 @@ class VectorIndexCommand extends Command
 
         $totalIndexed = 0;
         $totalFailed = 0;
+        $failedModels = [];
 
         foreach ($models as $modelClass) {
             $this->info("📦 Indexing {$modelClass}...");
-            $result = $this->indexModel($modelClass, $vectorSearch, false);
+            try {
+                $result = $this->indexModel($modelClass, $vectorSearch, false);
+            } catch (Throwable $e) {
+                $result = self::FAILURE;
+                $this->error("Unhandled error while indexing {$modelClass}: {$e->getMessage()}");
+                report($e);
+            }
 
             if ($result === self::SUCCESS) {
                 $totalIndexed++;
             } else {
                 $totalFailed++;
+                $failedModels[] = $modelClass;
             }
             $this->newLine();
         }
@@ -77,9 +85,12 @@ class VectorIndexCommand extends Command
         $this->info("  • Successfully indexed: {$totalIndexed} model(s)");
         if ($totalFailed > 0) {
             $this->warn("  • Failed: {$totalFailed} model(s)");
+            foreach ($failedModels as $failedModel) {
+                $this->line("    - {$failedModel}");
+            }
         }
 
-        return self::SUCCESS;
+        return $totalFailed > 0 ? self::FAILURE : self::SUCCESS;
     }
 
     protected function discoverVectorizableModels(): array
@@ -175,7 +186,7 @@ class VectorIndexCommand extends Command
                 $this->warn("⚠️  No payload indexes found for '{$collectionName}' - filtering may not work");
                 $this->newLine();
             }
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             // Silently fail - not critical
             $this->line("<fg=gray>   Could not verify indexes: {$e->getMessage()}</>");
         }
@@ -234,7 +245,7 @@ class VectorIndexCommand extends Command
             }
 
             $this->newLine();
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             $this->error("   Failed to check/create indexes: {$e->getMessage()}");
         }
     }
@@ -284,7 +295,7 @@ class VectorIndexCommand extends Command
             $this->newLine();
             $this->line("<fg=gray>💡 Check logs for detailed field list: storage/logs/laravel.log</>");
             $this->newLine();
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             // Silently fail - not critical
         }
     }
@@ -320,7 +331,11 @@ class VectorIndexCommand extends Command
             }
 
             // Create collection and ensure indexes
-            $vectorSearch->createCollection($modelClass, $force);
+            $collectionCreated = $vectorSearch->createCollection($modelClass, $force);
+            if (!$collectionCreated) {
+                $this->error("Failed to prepare vector collection '{$collectionName}' for {$modelClass}");
+                return self::FAILURE;
+            }
             $this->showCreatedIndexes($vectorSearch, $modelClass);
 
             // Check if relationships should be included (default: true, unless --no-relationships is set)
@@ -355,7 +370,8 @@ class VectorIndexCommand extends Command
             $bar = $this->output->createProgressBar($total);
             $bar->start();
 
-            $query->chunk($batchSize, function ($models) use ($vectorSearch, &$indexed, &$failed, $bar, $withRelationships, $relationshipDepth) {
+            $keyName = (new $modelClass())->getKeyName();
+            $query->chunkById($batchSize, function ($models) use ($vectorSearch, &$indexed, &$failed, $bar, $withRelationships, $relationshipDepth) {
                 foreach ($models as $model) {
                     try {
                         // Check if should be indexed
@@ -372,16 +388,28 @@ class VectorIndexCommand extends Command
                             }
                         }
 
-                        $vectorSearch->index($model);
-                        $indexed++;
-                    } catch (\Exception $e) {
+                        $indexedOk = $vectorSearch->index($model);
+                        if ($indexedOk) {
+                            $indexed++;
+                        } else {
+                            $failed++;
+                            $modelId = $model->getKey();
+                            $this->warn("\nSkipped model {$modelId}: vector driver reported indexing failure");
+                        }
+                    } catch (Throwable $e) {
                         $failed++;
-                        $this->error("\nFailed to index model {$model->id}: {$e->getMessage()}");
+                        $modelId = $model->getKey();
+                        $this->error("\nFailed to index model {$modelId}: {$e->getMessage()}");
+                        report($e);
                     }
 
                     $bar->advance();
                 }
-            });
+                unset($models);
+                if (function_exists('gc_collect_cycles')) {
+                    gc_collect_cycles();
+                }
+            }, $keyName);
 
             $bar->finish();
             $this->newLine(2);
@@ -392,9 +420,10 @@ class VectorIndexCommand extends Command
                 $this->warn("✗ Failed to index {$failed} models");
             }
 
-            return self::SUCCESS;
-        } catch (\Exception $e) {
+            return $failed > 0 ? self::FAILURE : self::SUCCESS;
+        } catch (Throwable $e) {
             $this->error("Indexing failed: {$e->getMessage()}");
+            report($e);
             return self::FAILURE;
         }
     }

@@ -7,6 +7,7 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -20,7 +21,8 @@ class IntelligentCRUDHandler
     public function __construct(
         protected AIEngineService $ai,
         protected \LaravelAIEngine\Services\Agent\AgentCollectionAdapter $agentAdapter,
-        protected ?IntelligentPromptGenerator $intelligentPrompt = null
+        protected ?IntelligentPromptGenerator $intelligentPrompt = null,
+        protected ?LocaleResourceService $localeResources = null
     ) {
         $this->intelligentPrompt = $intelligentPrompt ?? app(IntelligentPromptGenerator::class);
     }
@@ -53,35 +55,35 @@ class IntelligentCRUDHandler
 
             // Discover available entities dynamically
             $availableEntities = $this->getAvailableEntities();
-
-            // Build detection prompt
-            $prompt = $contextualPrompt . "\n\n";
-            $prompt .= "TASK: Detect CRUD operation\n\n";
-
-            $prompt .= "OPERATIONS:\n";
-            $prompt .= "- CREATE: User wants to create/add/make a new entity\n";
-            $prompt .= "- READ: User wants to view/show/list/find/search entities\n";
-            $prompt .= "- UPDATE: User wants to edit/modify/change/update an existing entity\n";
-            $prompt .= "- DELETE: User wants to remove/delete/cancel an entity\n\n";
-
-            $prompt .= "AVAILABLE ENTITIES:\n";
+            $availableEntitiesLines = '';
             if (!empty($availableEntities)) {
                 foreach ($availableEntities as $entity => $description) {
-                    $prompt .= "- {$entity}: {$description}\n";
+                    $availableEntitiesLines .= "- {$entity}: {$description}\n";
                 }
             } else {
-                $prompt .= "- Any entity type mentioned by the user\n";
+                $availableEntitiesLines = $this->t(
+                    'ai-engine::runtime.intelligent_crud.prompts.detect_operation.default_entities_line'
+                );
             }
-            $prompt .= "\n";
 
-            $prompt .= "EXAMPLES:\n";
-            $prompt .= "- 'create invoice' → {\"operation\": \"create\", \"entity\": \"invoice\", \"identifier\": null}\n";
-            $prompt .= "- 'update product 123' → {\"operation\": \"update\", \"entity\": \"product\", \"identifier\": \"123\"}\n";
-            $prompt .= "- 'delete the simple product' → {\"operation\": \"delete\", \"entity\": \"product\", \"identifier\": \"simple product\"}\n";
-            $prompt .= "- 'show all customers' → {\"operation\": \"read\", \"entity\": \"customer\", \"identifier\": null}\n\n";
-
-            $prompt .= "Return ONLY valid JSON:\n";
-            $prompt .= '{\"operation\": \"create|read|update|delete\", \"entity\": \"product|customer|invoice|etc\", \"identifier\": \"id or search term or null\"}';
+            $prompt = $this->locale()->renderPromptTemplate(
+                'intelligent_crud/detect_operation',
+                [
+                    'contextual_prompt' => $contextualPrompt,
+                    'available_entities_lines' => trim($availableEntitiesLines),
+                ],
+                $this->localeCode()
+            );
+            if ($prompt === '') {
+                $prompt = $this->t(
+                    'ai-engine::runtime.intelligent_crud.prompts.detect_operation.fallback',
+                    '',
+                    [
+                        'contextual_prompt' => $contextualPrompt,
+                        'available_entities_lines' => trim($availableEntitiesLines),
+                    ]
+                );
+            }
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,
@@ -135,7 +137,11 @@ class IntelligentCRUDHandler
             $context->saveToCache();
 
             return ActionResult::needsUserInput(
-                message: "Which {$entity} would you like to update? Please provide the name or ID."
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.update.which_entity',
+                    "Which {$entity} would you like to update? Please provide the name or ID.",
+                    ['entity' => $entity]
+                )
             );
         }
 
@@ -147,7 +153,11 @@ class IntelligentCRUDHandler
         // Step 2: Find the entity
         $modelClass = $this->getModelClass($entity);
         if (!$modelClass) {
-            return ActionResult::failure(error: "Unknown entity type: {$entity}");
+            return ActionResult::failure(error: $this->t(
+                'ai-engine::runtime.intelligent_crud.unknown_entity_type',
+                "Unknown entity type: {$entity}",
+                ['entity' => $entity]
+            ));
         }
 
         $entityRecord = $this->findEntity($modelClass, $identifier);
@@ -155,7 +165,11 @@ class IntelligentCRUDHandler
         if (!$entityRecord) {
             $context->saveToCache();
             return ActionResult::needsUserInput(
-                message: "I couldn't find a {$entity} matching '{$identifier}'. Could you provide more details or check the name/ID?"
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.entity_not_found',
+                    "I couldn't find a {$entity} matching '{$identifier}'. Could you provide more details or check the name/ID?",
+                    ['entity' => $entity, 'identifier' => (string) $identifier]
+                )
             );
         }
 
@@ -170,7 +184,11 @@ class IntelligentCRUDHandler
         if (empty($fieldsToUpdate)) {
             $context->saveToCache();
             return ActionResult::needsUserInput(
-                message: "What would you like to update for {$entity} '{$entityRecord->name}'? (e.g., 'change the price to 150', 'update the name to XYZ')"
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.update.ask_changes',
+                    "What would you like to update for {$entity} '{$entityRecord->name}'? (e.g., 'change the price to 150', 'update the name to XYZ')",
+                    ['entity' => $entity, 'name' => (string) ($entityRecord->name ?? '')]
+                )
             );
         }
 
@@ -191,12 +209,20 @@ class IntelligentCRUDHandler
             $context->saveToCache();
 
             return ActionResult::success(
-                message: "✅ {$entity} '{$entityRecord->name}' updated successfully!",
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.update.success',
+                    "✅ {$entity} '{$entityRecord->name}' updated successfully!",
+                    ['entity' => $entity, 'name' => (string) ($entityRecord->name ?? '')]
+                ),
                 data: ['updated_id' => $entityRecord->id, 'updated_fields' => $fieldsToUpdate]
             );
         } catch (\Exception $e) {
             return ActionResult::failure(
-                error: "Failed to update {$entity}: " . $e->getMessage()
+                error: $this->t(
+                    'ai-engine::runtime.intelligent_crud.update.failed',
+                    "Failed to update {$entity}: " . $e->getMessage(),
+                    ['entity' => $entity, 'error' => $e->getMessage()]
+                )
             );
         }
     }
@@ -231,7 +257,11 @@ class IntelligentCRUDHandler
             if (!$entityRecord) {
                 $context->saveToCache();
                 return ActionResult::needsUserInput(
-                    message: "I couldn't find a {$entity} matching '{$message}'. Could you provide the exact name or ID?"
+                    message: $this->t(
+                        'ai-engine::runtime.intelligent_crud.entity_not_found_exact',
+                        "I couldn't find a {$entity} matching '{$message}'. Could you provide the exact name or ID?",
+                        ['entity' => $entity, 'identifier' => $message]
+                    )
                 );
             }
 
@@ -240,7 +270,11 @@ class IntelligentCRUDHandler
             $context->saveToCache();
 
             return ActionResult::needsUserInput(
-                message: "Found {$entity} '{$entityRecord->name}'. What would you like to update? (e.g., 'change the price to 150')"
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.update.found_prompt',
+                    "Found {$entity} '{$entityRecord->name}'. What would you like to update? (e.g., 'change the price to 150')",
+                    ['entity' => $entity, 'name' => (string) ($entityRecord->name ?? '')]
+                )
             );
         }
 
@@ -249,7 +283,10 @@ class IntelligentCRUDHandler
             $entityObj = $modelClass::find($entityRecord['id']);
 
             if (!$entityObj) {
-                return ActionResult::failure(error: "Entity no longer exists");
+                return ActionResult::failure(error: $this->t(
+                    'ai-engine::runtime.intelligent_crud.entity_no_longer_exists',
+                    'Entity no longer exists'
+                ));
             }
 
             $fieldsToUpdate = $this->extractUpdateFields($message, $entity, $entityObj);
@@ -257,7 +294,10 @@ class IntelligentCRUDHandler
             if (empty($fieldsToUpdate)) {
                 $context->saveToCache();
                 return ActionResult::needsUserInput(
-                    message: "I didn't understand what to update. Please specify like 'change the price to 150' or 'update the name to XYZ'"
+                    message: $this->t(
+                        'ai-engine::runtime.intelligent_crud.update.not_understood',
+                        "I didn't understand what to update. Please specify like 'change the price to 150' or 'update the name to XYZ'"
+                    )
                 );
             }
 
@@ -278,17 +318,28 @@ class IntelligentCRUDHandler
                 $context->saveToCache();
 
                 return ActionResult::success(
-                    message: "✅ {$entity} '{$entityObj->name}' updated successfully!",
+                    message: $this->t(
+                        'ai-engine::runtime.intelligent_crud.update.success',
+                        "✅ {$entity} '{$entityObj->name}' updated successfully!",
+                        ['entity' => $entity, 'name' => (string) ($entityObj->name ?? '')]
+                    ),
                     data: ['updated_id' => $entityObj->id, 'updated_fields' => $fieldsToUpdate]
                 );
             } catch (\Exception $e) {
                 return ActionResult::failure(
-                    error: "Failed to update {$entity}: " . $e->getMessage()
+                    error: $this->t(
+                        'ai-engine::runtime.intelligent_crud.update.failed',
+                        "Failed to update {$entity}: " . $e->getMessage(),
+                        ['entity' => $entity, 'error' => $e->getMessage()]
+                    )
                 );
             }
         }
 
-        return ActionResult::failure(error: "Update operation in invalid state");
+        return ActionResult::failure(error: $this->t(
+            'ai-engine::runtime.intelligent_crud.update.invalid_state',
+            'Update operation in invalid state'
+        ));
     }
 
     /**
@@ -299,6 +350,10 @@ class IntelligentCRUDHandler
         $identifier,
         UnifiedActionContext $context
     ): ActionResult {
+        $locale = $this->locale();
+        $yesToken = $locale->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
+        $noToken = $locale->lexicon('intent.reject', default: ['no'])[0] ?? 'no';
+
         Log::channel('ai-engine')->info('Handling DELETE operation', [
             'entity' => $entity,
             'identifier' => $identifier,
@@ -307,21 +362,33 @@ class IntelligentCRUDHandler
         // Step 1: Find the entity to delete
         if (!$identifier) {
             return ActionResult::needsUserInput(
-                message: "Which {$entity} would you like to delete? Please provide the name or ID."
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.delete.which_entity',
+                    "Which {$entity} would you like to delete? Please provide the name or ID.",
+                    ['entity' => $entity]
+                )
             );
         }
 
         // Step 2: Find the entity
         $modelClass = $this->getModelClass($entity);
         if (!$modelClass) {
-            return ActionResult::failure(error: "Unknown entity type: {$entity}");
+            return ActionResult::failure(error: $this->t(
+                'ai-engine::runtime.intelligent_crud.unknown_entity_type',
+                "Unknown entity type: {$entity}",
+                ['entity' => $entity]
+            ));
         }
 
         $entityRecord = $this->findEntity($modelClass, $identifier);
 
         if (!$entityRecord) {
             return ActionResult::needsUserInput(
-                message: "I couldn't find a {$entity} matching '{$identifier}'. Could you provide more details?"
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.entity_not_found_short',
+                    "I couldn't find a {$entity} matching '{$identifier}'. Could you provide more details?",
+                    ['entity' => $entity, 'identifier' => (string) $identifier]
+                )
             );
         }
 
@@ -334,7 +401,16 @@ class IntelligentCRUDHandler
             $context->set('crud_entity_id', $entityRecord->id);
 
             return ActionResult::needsUserInput(
-                message: "⚠️ Are you sure you want to delete {$entity} '{$entityRecord->name}'? This action cannot be undone. (yes/no)"
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.delete.confirm',
+                    "⚠️ Are you sure you want to delete {$entity} '{$entityRecord->name}'? This action cannot be undone. ({$yesToken}/{$noToken})",
+                    [
+                        'entity' => $entity,
+                        'name' => (string) ($entityRecord->name ?? ''),
+                        'yes' => $yesToken,
+                        'no' => $noToken,
+                    ]
+                )
             );
         }
 
@@ -349,7 +425,8 @@ class IntelligentCRUDHandler
             }
         }
 
-        if (preg_match('/(yes|confirm|ok|sure|delete)/i', $lastMessage)) {
+        if ($locale->isLexiconMatch($lastMessage, 'intent.confirm')
+            || $locale->startsWithLexicon($lastMessage, 'intent.confirm')) {
             // Perform deletion
             try {
                 $entityRecord->delete();
@@ -359,12 +436,20 @@ class IntelligentCRUDHandler
                 $context->forget('crud_entity_id');
 
                 return ActionResult::success(
-                    message: "✅ {$entity} '{$entityRecord->name}' has been deleted successfully.",
+                    message: $this->t(
+                        'ai-engine::runtime.intelligent_crud.delete.success',
+                        "✅ {$entity} '{$entityRecord->name}' has been deleted successfully.",
+                        ['entity' => $entity, 'name' => (string) ($entityRecord->name ?? '')]
+                    ),
                     data: ['deleted_id' => $entityRecord->id]
                 );
             } catch (\Exception $e) {
                 return ActionResult::failure(
-                    error: "Failed to delete {$entity}: " . $e->getMessage()
+                    error: $this->t(
+                        'ai-engine::runtime.intelligent_crud.delete.failed',
+                        "Failed to delete {$entity}: " . $e->getMessage(),
+                        ['entity' => $entity, 'error' => $e->getMessage()]
+                    )
                 );
             }
         } else {
@@ -373,9 +458,61 @@ class IntelligentCRUDHandler
             $context->forget('crud_entity_to_delete');
 
             return ActionResult::success(
-                message: "Deletion cancelled. The {$entity} was not deleted."
+                message: $this->t(
+                    'ai-engine::runtime.intelligent_crud.delete.cancelled',
+                    "Deletion cancelled. The {$entity} was not deleted.",
+                    ['entity' => $entity]
+                )
             );
         }
+    }
+
+    protected function t(string $key, string $fallback = '', array $replace = []): string
+    {
+        $locale = $this->localeCode();
+        $translated = $this->locale()->translation($key, $replace, $locale);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        $fallbackLocale = $this->locale()->resolveLocale(
+            (string) (config('ai-engine.localization.fallback_locale') ?: config('app.fallback_locale') ?: app()->getLocale())
+        );
+        if ($fallbackLocale !== $locale) {
+            $translated = $this->locale()->translation($key, $replace, $fallbackLocale);
+            if ($translated !== '') {
+                return $translated;
+            }
+        }
+
+        if ($fallback === '') {
+            return '';
+        }
+
+        return strtr(
+            $fallback,
+            array_map(
+                static fn ($value): string => (string) $value,
+                array_combine(
+                    array_map(static fn ($name): string => ':' . $name, array_keys($replace)),
+                    array_values($replace)
+                ) ?: []
+            )
+        );
+    }
+
+    protected function localeCode(): string
+    {
+        return $this->locale()->resolveLocale(app()->getLocale());
+    }
+
+    protected function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 
     /**
@@ -487,7 +624,11 @@ class IntelligentCRUDHandler
                     $entityKey = strtolower($entityName);
 
                     // Use description from AI config (from model's getRAGDescription or initializeAI)
-                    $description = $model['description'] ?? ucfirst($entityName) . 's';
+                    $description = $model['description'] ?? $this->t(
+                        'ai-engine::runtime.intelligent_crud.default_entity_description',
+                        ':entity items',
+                        ['entity' => $entityName]
+                    );
 
                     $entities[$entityKey] = $description;
                 }
@@ -538,15 +679,26 @@ class IntelligentCRUDHandler
     protected function extractUpdateFields(string $message, string $entity, $entityRecord): array
     {
         try {
-            $prompt = "Extract what fields the user wants to update from their message.\n\n";
-            $prompt .= "USER MESSAGE: \"{$message}\"\n";
-            $prompt .= "ENTITY TYPE: {$entity}\n";
-            $prompt .= "CURRENT VALUES:\n" . json_encode($entityRecord->toArray(), JSON_PRETTY_PRINT) . "\n\n";
-            $prompt .= "EXAMPLES:\n";
-            $prompt .= "- 'change the price to 150' → {\"price\": 150, \"sale_price\": 150}\n";
-            $prompt .= "- 'update the name to XYZ' → {\"name\": \"XYZ\"}\n";
-            $prompt .= "- 'set quantity to 50' → {\"quantity\": 50}\n\n";
-            $prompt .= "Return JSON object with fields to update, or empty object {} if not clear.";
+            $prompt = $this->locale()->renderPromptTemplate(
+                'intelligent_crud/extract_update_fields',
+                [
+                    'user_message' => $message,
+                    'entity' => $entity,
+                    'current_values_json' => json_encode($entityRecord->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                ],
+                $this->localeCode()
+            );
+            if ($prompt === '') {
+                $prompt = $this->t(
+                    'ai-engine::runtime.intelligent_crud.prompts.extract_update_fields.fallback',
+                    '',
+                    [
+                        'user_message' => $message,
+                        'entity' => $entity,
+                        'current_values_json' => json_encode($entityRecord->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                    ]
+                );
+            }
 
             $response = $this->ai->generate(new AIRequest(
                 prompt: $prompt,

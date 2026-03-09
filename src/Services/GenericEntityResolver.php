@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\DTOs\ActionResult;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -43,11 +44,17 @@ class GenericEntityResolver
     protected $ai;
     protected $intelligentService;
     protected $aiEnhanced;
+    protected ?LocaleResourceService $localeResources = null;
 
-    public function __construct(AIEngineService $ai, IntelligentEntityService $intelligentService)
+    public function __construct(
+        AIEngineService $ai,
+        IntelligentEntityService $intelligentService,
+        ?LocaleResourceService $localeResources = null
+    )
     {
         $this->ai = $ai;
         $this->intelligentService = $intelligentService;
+        $this->localeResources = $localeResources;
         $this->aiEnhanced = app(\LaravelAIEngine\Services\AIEnhancedWorkflowService::class);
     }
 
@@ -91,7 +98,7 @@ class GenericEntityResolver
             'has_model' => isset($config['model']),
         ]);
 
-        $modelClass = $config['model'] ?? null;
+        $modelClass = $this->normalizeModelClass($config['model'] ?? null);
 
         Log::channel('ai-engine')->info('resolveEntity: Extracting config', [
             'field' => $fieldName,
@@ -112,7 +119,11 @@ class GenericEntityResolver
         ]);
 
         if (!$modelClass) {
-            return ActionResult::failure(error: "No model class specified for {$fieldName}");
+            return ActionResult::failure(error: $this->runtimeText(
+                'no_model_class',
+                'No model class specified for :field',
+                ['field' => $fieldName]
+            ));
         }
 
         // Handle identifier as object (e.g., {name: "John", email: "john@test.com"})
@@ -235,8 +246,12 @@ class GenericEntityResolver
                     ]);
 
                     return ActionResult::success(
-                        message: "Found existing " . class_basename($modelClass),
-                        data: [$fieldName => $exactMatch->id, 'entity' => $exactMatch]
+                        message: $this->runtimeText(
+                            'found_existing_entity',
+                            'Found existing :entity',
+                            ['entity' => class_basename($modelClass)]
+                        ),
+                        data: $this->singleEntityData($fieldName, $exactMatch)
                     );
                 }
 
@@ -278,8 +293,12 @@ class GenericEntityResolver
                 }
 
                 return ActionResult::success(
-                    message: "Found existing " . class_basename($modelClass),
-                    data: [$fieldName => $entity->id, 'entity' => $entity]
+                    message: $this->runtimeText(
+                        'found_existing_entity',
+                        'Found existing :entity',
+                        ['entity' => class_basename($modelClass)]
+                    ),
+                    data: $this->singleEntityData($fieldName, $entity)
                 );
             }
         }
@@ -322,7 +341,11 @@ class GenericEntityResolver
 
             // Return user input request instead of failure to prevent workflow termination
             return ActionResult::needsUserInput(
-                message: "Unable to resolve {$fieldName}. Error: {$e->getMessage()}\n\nWould you like to try again?",
+                message: $this->runtimeText(
+                    'unable_resolve_try_again',
+                    "Unable to resolve :field. Error: :error\n\nWould you like to try again?",
+                    ['field' => $fieldName, 'error' => $e->getMessage()]
+                ),
                 metadata: ['error' => $e->getMessage(), 'field' => $fieldName]
             );
         }
@@ -340,7 +363,11 @@ class GenericEntityResolver
         bool $isMultiple
     ): ActionResult {
         if (!class_exists($resolverClass)) {
-            return ActionResult::failure(error: "Custom resolver class not found: {$resolverClass}");
+            return ActionResult::failure(error: $this->runtimeText(
+                'custom_resolver_not_found',
+                'Custom resolver class not found: :resolver',
+                ['resolver' => $resolverClass]
+            ));
         }
 
         $resolver = app($resolverClass);
@@ -386,7 +413,11 @@ class GenericEntityResolver
         }
 
         return ActionResult::failure(
-            error: "No suitable method found in custom resolver: {$resolverClass}"
+            error: $this->runtimeText(
+                'custom_resolver_method_not_found',
+                'No suitable method found in custom resolver: :resolver',
+                ['resolver' => $resolverClass]
+            )
         );
     }
 
@@ -426,13 +457,17 @@ class GenericEntityResolver
             return $this->delegateToCustomResolver($config['resolver'], $fieldName, $config, $items, $context, true);
         }
 
-        $modelClass = $config['model'] ?? null;
+        $modelClass = $this->normalizeModelClass($config['model'] ?? null);
         $searchFields = $config['search_fields'] ?? ['name'];
         $interactive = $config['interactive'] ?? true;
         $filters = $config['filters'] ?? null;
 
         if (!$modelClass) {
-            return ActionResult::failure(error: "No model class specified for {$fieldName}");
+            return ActionResult::failure(error: $this->runtimeText(
+                'no_model_class',
+                'No model class specified for :field',
+                ['field' => $fieldName]
+            ));
         }
 
         // Check if we're in the middle of creation
@@ -496,7 +531,7 @@ class GenericEntityResolver
                     // Add created entity to validated list
                     if (!empty($missing[$index])) {
                         // Fetch the complete entity from database to get all fields (including prices)
-                        $modelClass = $config['model'] ?? null;
+                        $modelClass = $this->normalizeModelClass($config['model'] ?? null);
                         $createdEntity = null;
 
                         if ($modelClass && class_exists($modelClass)) {
@@ -637,7 +672,11 @@ class GenericEntityResolver
 
                         $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
                         return ActionResult::success(
-                            message: "All {$entityName} created successfully",
+                            message: $this->runtimeText(
+                                'all_entities_created_success',
+                                'All :entity created successfully',
+                                ['entity' => $entityName]
+                            ),
                             data: [$fieldName => $validated]
                         );
                     }
@@ -735,6 +774,7 @@ class GenericEntityResolver
 
         if (empty($missing)) {
             $context->set($fieldName, $validated);
+            $context->set("{$fieldName}_validated", $validated);
             
             // Store in collected_data under entity name (single source of truth)
             $collectedData = $context->get('collected_data', []);
@@ -1007,16 +1047,28 @@ class GenericEntityResolver
     private function askAboutDuplicates(string $fieldName, $duplicates, UnifiedActionContext $context, array $config = []): ActionResult
     {
         $entityName = class_basename($duplicates->first());
+        $useToken = $this->locale()->lexicon('intent.duplicate_use', default: ['use'])[0] ?? 'use';
+        $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
+        $createLexicon = $this->locale()->lexicon('intent.duplicate_create', default: ['new', 'create']);
+        $newToken = $createLexicon[0] ?? 'new';
+        $createToken = $createLexicon[1] ?? $newToken;
 
         if ($duplicates->count() === 1) {
             $entity = $duplicates->first();
             $context->set("{$fieldName}_found_duplicate", $entity);
 
-            $message = "Found existing {$entityName}: **{$entity->name}**";
+            $message = $this->locale()->translation(
+                'ai-engine::runtime.entity_resolver.duplicate_single_found',
+                ['entity' => $entityName, 'name' => $entity->name]
+            ) ?: "Found existing {$entityName}: **{$entity->name}**";
 
             // Add similarity score if available
             if (isset($entity->similarity_score)) {
-                $message .= " (Match: {$entity->similarity_score}%)";
+                $message .= ' (' . $this->runtimeText(
+                    'duplicate_match_label',
+                    'Match: :score%',
+                    ['score' => (string) $entity->similarity_score]
+                ) . ')';
             }
 
             // Add additional identifying info from display_fields config
@@ -1028,9 +1080,15 @@ class GenericEntityResolver
                 }
             }
 
-            $message .= "\n\nWould you like to:\n";
-            $message .= "1. Use this {$entityName} (reply 'use' or 'yes')\n";
-            $message .= "2. Create a new {$entityName} (reply 'new' or 'create')";
+            $message .= "\n\n" . $this->runtimeText('duplicate_prompt_intro', 'Would you like to:') . "\n";
+            $message .= ($this->locale()->translation(
+                'ai-engine::runtime.entity_resolver.duplicate_single_use',
+                ['entity' => $entityName, 'use' => $useToken, 'yes' => $yesToken]
+            ) ?: "1. Use this {$entityName} (reply '{$useToken}' or '{$yesToken}')") . "\n";
+            $message .= $this->locale()->translation(
+                'ai-engine::runtime.entity_resolver.duplicate_single_create',
+                ['entity' => $entityName, 'new' => $newToken, 'create' => $createToken]
+            ) ?: "2. Create a new {$entityName} (reply '{$newToken}' or '{$createToken}')";
 
             $context->set("{$fieldName}_duplicate_choice_pending", true);
             return ActionResult::needsUserInput(message: $message);
@@ -1039,13 +1097,21 @@ class GenericEntityResolver
         // Multiple matches
         $context->set("{$fieldName}_found_duplicates", $duplicates);
 
-        $message = "Found {$duplicates->count()} similar {$entityName}s:\n\n";
+        $message = $this->locale()->translation(
+            'ai-engine::runtime.entity_resolver.duplicate_many_found',
+            ['count' => $duplicates->count(), 'entity' => $entityName]
+        ) ?: "Found {$duplicates->count()} similar {$entityName}s:";
+        $message .= "\n\n";
         foreach ($duplicates as $index => $entity) {
             $message .= ($index + 1) . ". **{$entity->name}**";
 
             // Add similarity score if available
             if (isset($entity->similarity_score)) {
-                $message .= " ({$entity->similarity_score}% match)";
+                $message .= ' (' . $this->runtimeText(
+                    'duplicate_match_suffix',
+                    ':score% match',
+                    ['score' => (string) $entity->similarity_score]
+                ) . ')';
             }
 
             // Add additional identifying info from display_fields config
@@ -1060,9 +1126,15 @@ class GenericEntityResolver
             $message .= "\n";
         }
 
-        $message .= "\nWould you like to:\n";
-        $message .= "- Use one of these (reply with number 1-{$duplicates->count()})\n";
-        $message .= "- Create a new {$entityName} (reply 'new' or 'create')";
+        $message .= "\n" . $this->runtimeText('duplicate_prompt_intro', 'Would you like to:') . "\n";
+        $message .= '- ' . ($this->locale()->translation(
+            'ai-engine::runtime.entity_resolver.duplicate_many_use',
+            ['max' => $duplicates->count()]
+        ) ?: "Use one of these (reply with number 1-{$duplicates->count()})") . "\n";
+        $message .= '- ' . ($this->locale()->translation(
+            'ai-engine::runtime.entity_resolver.duplicate_many_create',
+            ['entity' => $entityName, 'new' => $newToken, 'create' => $createToken]
+        ) ?: "Create a new {$entityName} (reply '{$newToken}' or '{$createToken}')");
 
         $context->set("{$fieldName}_duplicate_choice_pending", true);
         return ActionResult::needsUserInput(message: $message);
@@ -1108,9 +1180,14 @@ class GenericEntityResolver
                     $context->forget("{$fieldName}_found_duplicate");
                     $context->forget("{$fieldName}_found_duplicates");
 
+                    $usingMessage = $this->locale()->translation(
+                        'ai-engine::runtime.entity_resolver.duplicate_using_existing',
+                        ['entity' => class_basename($entity), 'name' => $entity->name]
+                    ) ?: "Using existing " . class_basename($entity) . ": {$entity->name}";
+
                     return ActionResult::success(
-                        message: "Using existing " . class_basename($entity) . ": {$entity->name}",
-                        data: [$fieldName => $entity->id, 'entity' => $entity]
+                        message: $usingMessage,
+                        data: $this->singleEntityData($fieldName, $entity)
                     );
                 }
             } elseif ($interpretation['action'] === 'create') {
@@ -1125,8 +1202,23 @@ class GenericEntityResolver
         }
 
         // Could not interpret - ask for clarification
+        $useToken = $this->locale()->lexicon('intent.duplicate_use', default: ['use'])[0] ?? 'use';
+        $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
+        $createLexicon = $this->locale()->lexicon('intent.duplicate_create', default: ['new', 'create']);
+        $newToken = $createLexicon[0] ?? 'new';
+        $createToken = $createLexicon[1] ?? $newToken;
+
         return ActionResult::needsUserInput(
-            message: "I didn't understand that. Please reply with:\n- 'use' or 'yes' to use the existing entity\n- A number (1-{$maxOptions}) to select a specific one\n- 'new' or 'create' to create a new one"
+            message: $this->locale()->translation(
+                'ai-engine::runtime.entity_resolver.duplicate_clarification',
+                [
+                    'use' => $useToken,
+                    'yes' => $yesToken,
+                    'max' => $maxOptions,
+                    'new' => $newToken,
+                    'create' => $createToken,
+                ]
+            ) ?: "I didn't understand that. Please reply with:\n- '{$useToken}' or '{$yesToken}' to use the existing entity\n- A number (1-{$maxOptions}) to select a specific one\n- '{$newToken}' or '{$createToken}' to create a new one"
         );
     }
 
@@ -1140,6 +1232,17 @@ class GenericEntityResolver
         UnifiedActionContext $context
     ): ActionResult {
         $entityName = class_basename($config['model']);
+        $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
+        $noToken = $this->locale()->lexicon('intent.reject', default: ['no'])[0] ?? 'no';
+        $createPrompt = $this->locale()->translation(
+            'ai-engine::runtime.entity_resolver.create_missing_prompt',
+            [
+                'entity' => $entityName,
+                'identifier' => $identifier,
+                'yes' => $yesToken,
+                'no' => $noToken,
+            ]
+        ) ?: "{$entityName} '{$identifier}' doesn't exist. Would you like to create it? ({$yesToken}/{$noToken})";
 
         // Check if we should use subflow with step prefixing
         if (!empty($config['subflow']) && class_exists($config['subflow'])) {
@@ -1164,7 +1267,7 @@ class GenericEntityResolver
             ]);
 
             return ActionResult::needsUserInput(
-                message: "{$entityName} '{$identifier}' doesn't exist. Would you like to create it? (yes/no)"
+                message: $createPrompt
             );
         }
 
@@ -1173,7 +1276,7 @@ class GenericEntityResolver
         $context->set("{$fieldName}_identifier", $identifier);
 
         return ActionResult::needsUserInput(
-            message: "{$entityName} '{$identifier}' doesn't exist. Would you like to create it? (yes/no)"
+            message: $createPrompt
         );
     }
 
@@ -1235,7 +1338,10 @@ class GenericEntityResolver
                     $context->forget("{$fieldName}_identifier");
 
                     return ActionResult::failure(
-                        error: "Cannot create entity - identifier is missing"
+                        error: $this->runtimeText(
+                            'identifier_missing_for_creation',
+                            'Cannot create entity - identifier is missing'
+                        )
                     );
                 }
 
@@ -1258,19 +1364,24 @@ class GenericEntityResolver
                 $context->forget("{$fieldName}_identifier");
 
                 return ActionResult::failure(
-                    error: "Entity creation cancelled by user"
+                    error: $this->locale()->translation('ai-engine::runtime.entity_resolver.cancelled_by_user')
+                        ?: 'Cancelled.'
                 );
             }
         }
 
         $createFields = $config['create_fields'] ?? [];
-        $modelClass = $config['model'];
+        $modelClass = $this->normalizeModelClass($config['model'] ?? null) ?? '';
 
         // Implementation would handle each field collection step
         // For now, return a simplified version
 
         return ActionResult::needsUserInput(
-            message: "Please provide additional information for " . class_basename($modelClass)
+            message: $this->runtimeText(
+                'provide_additional_info',
+                'Please provide additional information for :entity',
+                ['entity' => class_basename($modelClass)]
+            )
         );
     }
 
@@ -1283,10 +1394,18 @@ class GenericEntityResolver
         $identifier,
         UnifiedActionContext $context
     ): ActionResult {
-        $modelClass = $config['model'];
+        $modelClass = $this->normalizeModelClass($config['model'] ?? null);
         $defaults = $config['defaults'] ?? [];
 
         try {
+            if (!$modelClass) {
+                return ActionResult::failure(error: $this->runtimeText(
+                    'no_model_class',
+                    'No model class specified for :field',
+                    ['field' => $fieldName]
+                ));
+            }
+
             // Get model instance to inspect fillable fields
             $model = new $modelClass();
             $fillable = $model->getFillable();
@@ -1346,8 +1465,12 @@ class GenericEntityResolver
             ]);
 
             return ActionResult::success(
-                message: class_basename($modelClass) . " created",
-                data: [$fieldName => $entity->id, 'entity' => $entity]
+                message: $this->runtimeText(
+                    'entity_created',
+                    ':entity created',
+                    ['entity' => class_basename($modelClass)]
+                ),
+                data: $this->singleEntityData($fieldName, $entity)
             );
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Entity creation failed', [
@@ -1356,9 +1479,38 @@ class GenericEntityResolver
             ]);
 
             return ActionResult::failure(
-                error: "Failed to create " . class_basename($modelClass) . ": " . $e->getMessage()
+                error: $this->runtimeText(
+                    'entity_create_failed',
+                    'Failed to create :entity: :error',
+                    ['entity' => class_basename($modelClass), 'error' => $e->getMessage()]
+                )
             );
         }
+    }
+
+    /**
+     * Build single-entity result payload with backward-compatible keys.
+     */
+    private function singleEntityData(string $fieldName, object $entity): array
+    {
+        return [
+            $fieldName => $entity->id,
+            "{$fieldName}_id" => $entity->id,
+            'entity' => $entity,
+        ];
+    }
+
+    private function normalizeModelClass(mixed $model): ?string
+    {
+        if (is_object($model)) {
+            return get_class($model);
+        }
+
+        if (is_string($model) && $model !== '') {
+            return $model;
+        }
+
+        return null;
     }
 
     /**
@@ -1467,17 +1619,31 @@ class GenericEntityResolver
             }
         }
 
-        $message = "The following {$entityName} don't exist:\n\n";
+        $message = $this->runtimeText(
+            'missing_entities_intro',
+            "The following :entity don't exist:",
+            ['entity' => $entityName]
+        ) . "\n\n";
         foreach ($uniqueMissing as $item) {
             $itemName = $this->extractEntityNameWithAI($item, $entityName);
 
             $message .= "• {$itemName}";
             if (isset($item['quantity'])) {
-                $message .= " (qty: {$item['quantity']})";
+                $message .= ' (' . $this->runtimeText(
+                    'quantity_label',
+                    'qty: :quantity',
+                    ['quantity' => (string) $item['quantity']]
+                ) . ')';
             }
             $message .= "\n";
         }
-        $message .= "\nWould you like to create them? (yes/no)";
+        $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
+        $noToken = $this->locale()->lexicon('intent.reject', default: ['no'])[0] ?? 'no';
+        $createManyPrompt = $this->locale()->translation(
+            'ai-engine::runtime.entity_resolver.create_many_prompt',
+            ['yes' => $yesToken, 'no' => $noToken]
+        ) ?: "Would you like to create them? ({$yesToken}/{$noToken})";
+        $message .= "\n{$createManyPrompt}";
 
         return ActionResult::needsUserInput(message: $message);
     }
@@ -1516,7 +1682,11 @@ class GenericEntityResolver
                     $context->forget("{$fieldName}_validated");
 
                     return ActionResult::failure(
-                        error: "User declined to create {$entityName}"
+                        error: $this->runtimeText(
+                            'user_declined_create',
+                            'User declined to create :entity',
+                            ['entity' => $entityName]
+                        )
                     );
                 }
                 
@@ -1563,7 +1733,11 @@ class GenericEntityResolver
                     
                     // If extraction failed, ask user for specific products
                     return ActionResult::needsUserInput(
-                        message: "Please specify which {$entityName} you'd like to use:"
+                        message: $this->runtimeText(
+                            'specify_entities_to_use',
+                            "Please specify which :entity you'd like to use:",
+                            ['entity' => $entityName]
+                        )
                     );
                 }
             }
@@ -1579,7 +1753,11 @@ class GenericEntityResolver
             // Entity details were provided, create it
             $currentItem = $missing[$index] ?? null;
             if (!$currentItem) {
-                return ActionResult::failure(error: "Entity not found at index {$index}");
+                return ActionResult::failure(error: $this->runtimeText(
+                    'entity_not_found_index',
+                    'Entity not found at index :index',
+                    ['index' => $index]
+                ));
             }
 
             // Create the entity (this would be handled by entity creation service)
@@ -1604,13 +1782,21 @@ class GenericEntityResolver
 
                 $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
                 return ActionResult::success(
-                    message: "All {$entityName} created",
+                    message: $this->runtimeText(
+                        'all_entities_created',
+                        'All :entity created',
+                        ['entity' => $entityName]
+                    ),
                     data: [$fieldName => $allEntities]
                 );
             }
         }
 
-        return ActionResult::failure(error: "Unknown creation step: {$step}");
+        return ActionResult::failure(error: $this->runtimeText(
+            'unknown_creation_step',
+            'Unknown creation step: :step',
+            ['step' => $step]
+        ));
     }
 
     /**
@@ -1646,7 +1832,11 @@ class GenericEntityResolver
         } else {
             // Default generic prompt
             $message = "{$entityName}: {$itemName}\n\n";
-            $message .= "Please provide additional details for this {$entityName}.";
+            $message .= $this->runtimeText(
+                'provide_additional_details',
+                'Please provide additional details for this :entity.',
+                ['entity' => $entityName]
+            );
         }
 
         return ActionResult::needsUserInput(message: $message);
@@ -1830,7 +2020,11 @@ class GenericEntityResolver
             // Instead of failing the entire workflow, return a user input request
             // This allows the workflow to continue and ask the user what to do
             return ActionResult::needsUserInput(
-                message: "Unable to automatically create {$entityName}. Error: {$e->getMessage()}\n\nWould you like to try again or skip this step?",
+                message: $this->runtimeText(
+                    'unable_auto_create_try_again_or_skip',
+                    "Unable to automatically create :entity. Error: :error\n\nWould you like to try again or skip this step?",
+                    ['entity' => $entityName, 'error' => $e->getMessage()]
+                ),
                 metadata: ['error' => $e->getMessage(), 'field' => $fieldName]
             );
         }
@@ -1846,8 +2040,16 @@ class GenericEntityResolver
         array $missing,
         UnifiedActionContext $context
     ): ActionResult {
-        $modelClass = $config['model'];
+        $modelClass = $this->normalizeModelClass($config['model'] ?? null);
         $created = [];
+
+        if (!$modelClass) {
+            return ActionResult::failure(error: $this->runtimeText(
+                'no_model_class',
+                'No model class specified for :field',
+                ['field' => $fieldName]
+            ));
+        }
 
         foreach ($missing as $item) {
             try {
@@ -1879,7 +2081,11 @@ class GenericEntityResolver
         $context->set($fieldName, $all);
 
         return ActionResult::success(
-            message: count($created) . " " . class_basename($modelClass) . "(s) created",
+            message: $this->runtimeText(
+                'created_count',
+                ':count :entity created',
+                ['count' => (string) count($created), 'entity' => class_basename($modelClass)]
+            ),
             data: [$fieldName => $all]
         );
     }
@@ -1947,14 +2153,32 @@ class GenericEntityResolver
     {
         try {
             $userId = auth()->check() ? (string) auth()->id() : null;
+            $locale = $this->locale()->resolveLocale(app()->getLocale());
+            $acceptExamples = $this->locale()->lexicon('intent.confirm', $locale, ['yes', 'ok', 'sure']);
+            $declineExamples = $this->locale()->lexicon('intent.reject', $locale, ['no', 'cancel', 'stop']);
+            $modifyExamples = $this->locale()->lexicon('intent.modify', $locale, ['change', 'replace', 'update']);
 
-            $prompt = "User was asked: 'Would you like to {$action}?'\n";
-            $prompt .= "User responded: \"{$userResponse}\"\n\n";
-            $prompt .= "Determine the user's intent:\n";
-            $prompt .= "- 'accept' = user wants to proceed (yes, ok, sure, etc.)\n";
-            $prompt .= "- 'decline' = user wants to cancel/stop (no, cancel, nevermind, etc.)\n";
-            $prompt .= "- 'modify' = user wants to change/replace/update something (replace X with Y, change to Z, use A instead, etc.)\n\n";
-            $prompt .= "Respond with ONLY one word: 'accept', 'decline', or 'modify'";
+            $prompt = $this->locale()->renderPromptTemplate(
+                'entity/determine_user_intent',
+                [
+                    'action' => $action,
+                    'user_response' => $userResponse,
+                    'accept_examples' => implode(', ', $acceptExamples),
+                    'decline_examples' => implode(', ', $declineExamples),
+                    'modify_examples' => implode(', ', $modifyExamples),
+                ],
+                $locale
+            );
+
+            if ($prompt === '') {
+                $prompt = "User was asked: 'Would you like to {$action}?'\n";
+                $prompt .= "User responded: \"{$userResponse}\"\n\n";
+                $prompt .= "Determine the user's intent:\n";
+                $prompt .= "- 'accept' = user wants to proceed ({$this->formatExamples($acceptExamples)})\n";
+                $prompt .= "- 'decline' = user wants to cancel/stop ({$this->formatExamples($declineExamples)})\n";
+                $prompt .= "- 'modify' = user wants to change/replace/update ({$this->formatExamples($modifyExamples)})\n\n";
+                $prompt .= "Respond with ONLY one word: 'accept', 'decline', or 'modify'";
+            }
 
             $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
                 prompt:                                      $prompt,
@@ -1979,10 +2203,15 @@ class GenericEntityResolver
 
             // Fallback: simple heuristic if AI fails
             $lower = strtolower($userResponse);
-            if (strlen($lower) <= 3 && (str_contains($lower, 'yes') || str_contains($lower, 'ok'))) {
+            if ($this->locale()->isLexiconMatch($lower, 'intent.confirm')) {
                 return 'accept';
             }
             // Check for modification keywords
+            foreach ($this->locale()->lexicon('intent.modify', default: ['replace', 'change', 'use', 'instead']) as $keyword) {
+                if ($keyword !== '' && str_contains($lower, $keyword)) {
+                    return 'modify';
+                }
+            }
             if (str_contains($lower, 'replace') || str_contains($lower, 'change') || str_contains($lower, 'use') || str_contains($lower, 'instead')) {
                 return 'modify';
             }
@@ -2058,5 +2287,39 @@ class GenericEntityResolver
         }
 
         return $name;
+    }
+
+    private function formatExamples(array $examples): string
+    {
+        $filtered = array_values(array_filter($examples, static fn (mixed $value): bool => is_string($value) && $value !== ''));
+        if ($filtered === []) {
+            return '-';
+        }
+
+        return implode(', ', array_slice($filtered, 0, 6));
+    }
+
+    private function runtimeText(string $key, string $fallback, array $replace = []): string
+    {
+        $translated = $this->locale()->translation("ai-engine::runtime.entity_resolver.{$key}", $replace);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        $fallbackReplace = [];
+        foreach ($replace as $name => $value) {
+            $fallbackReplace[':' . $name] = (string) $value;
+        }
+
+        return strtr($fallback, $fallbackReplace);
+    }
+
+    private function locale(): LocaleResourceService
+    {
+        if ($this->localeResources === null) {
+            $this->localeResources = app(LocaleResourceService::class);
+        }
+
+        return $this->localeResources;
     }
 }

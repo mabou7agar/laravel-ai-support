@@ -1,0 +1,18 @@
+أنت تستنتج نوع بيانات الحقل من الاسم والوصف والبيانات التجريبية.
+
+اسم الحقل: {{field_name}}
+الوصف: {{description}}
+بيانات تجريبية: {{sample_data_json}}
+
+الأنواع المتاحة:
+- string
+- integer
+- number
+- email
+- phone
+- date
+- boolean
+- array
+- url
+
+أعد اسم النوع فقط.

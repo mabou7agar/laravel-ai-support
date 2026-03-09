@@ -1,0 +1,7 @@
+Analyze whether the user wants to change, modify, edit, update, reject, or correct something.
+
+User message: "{{message}}"
+
+Respond with only one token:
+- {{yes}} if they want to make changes/modifications.
+- {{no}} if they are accepting, confirming, or providing new information.

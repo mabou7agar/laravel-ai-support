@@ -194,14 +194,19 @@ class AutonomousCollectorDiscoveryService
                         ]);
                     }
                 } else {
-                    // Fallback: Fetch from autonomous-collectors endpoint if not synced
+                    // Fallback: Fetch from manifest endpoint if not synced
                     try {
                         $response = NodeHttpClient::makeAuthenticated($node)
-                            ->get($node->getApiUrl('autonomous-collectors'));
+                            ->get($node->getApiUrl('manifest'));
 
                         if ($response->successful()) {
                             $data = $response->json();
-                            foreach ($data['collectors'] ?? [] as $collectorName => $collectorData) {
+                            foreach (($data['autonomous_collectors'] ?? []) as $collectorData) {
+                                $collectorName = $collectorData['name'] ?? null;
+                                if (!$collectorName) {
+                                    continue;
+                                }
+
                                 // Add node information to remote collectors
                                 $collectors[$collectorName] = array_merge($collectorData, [
                                     'source' => 'remote',

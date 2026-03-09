@@ -8,7 +8,7 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\DTOs\InteractiveAction;
 
-class AIResponse
+class AIResponse implements \JsonSerializable
 {
     private string $content;
     private EngineEnum $engine;
@@ -30,8 +30,8 @@ class AIResponse
 
     public function __construct(
         string $content,
-        EngineEnum $engine,
-        EntityEnum $model,
+        mixed $engine,
+        mixed $model,
         array $metadata = [],
         ?int $tokensUsed = null,
         ?float $creditsUsed = null,
@@ -47,9 +47,12 @@ class AIResponse
         ?string $conversationId = null,
         ?array $functionCall = null
     ) {
+        $resolvedEngine = self::resolveEngine($engine);
+        $resolvedModel = self::resolveModel($model, $resolvedEngine);
+
         $this->content = $content;
-        $this->engine = $engine;
-        $this->model = $model;
+        $this->engine = $resolvedEngine;
+        $this->model = $resolvedModel;
         $this->functionCall = $functionCall;
         $this->metadata = $metadata;
         $this->tokensUsed = $tokensUsed;
@@ -71,8 +74,8 @@ class AIResponse
      */
     public static function success(
         string $content,
-        EngineEnum $engine,
-        EntityEnum $model,
+        mixed $engine = null,
+        mixed $model = null,
         array $metadata = [],
         array $actions = []
     ): self {
@@ -91,10 +94,15 @@ class AIResponse
      */
     public static function error(
         string $error,
-        EngineEnum $engine,
-        EntityEnum $model,
+        mixed $engine = null,
+        mixed $model = null,
         array $metadata = []
     ): self {
+        if (is_int($engine) && $model === null) {
+            $metadata = array_merge(['code' => $engine], $metadata);
+            $engine = null;
+        }
+
         return new self(
             content: '',
             engine: $engine,
@@ -103,6 +111,18 @@ class AIResponse
             error: $error,
             success: false
         );
+    }
+
+    /**
+     * Backward-compatible alias for error responses.
+     */
+    public static function failure(
+        string $error,
+        mixed $engine = null,
+        mixed $model = null,
+        array $metadata = []
+    ): self {
+        return self::error($error, $engine, $model, $metadata);
     }
 
     /**
@@ -512,8 +532,8 @@ class AIResponse
     {
         return [
             'content' => $this->content,
-            'engine' => $this->engine,
-            'model' => $this->model,
+            'engine' => $this->engine->value,
+            'model' => $this->model->value,
             'metadata' => $this->metadata,
             'usage' => $this->usage ?? [],
             'success' => $this->success,
@@ -536,26 +556,34 @@ class AIResponse
         return json_encode($this->toArray(), JSON_THROW_ON_ERROR);
     }
 
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
+    }
+
     /**
      * Create an AIResponse from an array
      */
     public static function fromArray(array $data): self
     {
         return new self(
-            $data['content'] ?? '',
-            $data['engine'] ?? null,
-            $data['model'] ?? null,
-            $data['metadata'] ?? [],
-            $data['tokensUsed'] ?? null,
-            $data['creditsUsed'] ?? null,
-            $data['latency'] ?? null,
-            $data['requestId'] ?? null,
-            $data['usage'] ?? [],
-            $data['cached'] ?? false,
-            $data['finishReason'] ?? null,
-            $data['files'] ?? [],
-            $data['error'] ?? null,
-            $data['success'] ?? true
+            content: $data['content'] ?? '',
+            engine: $data['engine'] ?? null,
+            model: $data['model'] ?? null,
+            metadata: $data['metadata'] ?? [],
+            tokensUsed: $data['tokensUsed'] ?? null,
+            creditsUsed: $data['creditsUsed'] ?? null,
+            latency: $data['latency'] ?? null,
+            requestId: $data['requestId'] ?? null,
+            usage: $data['usage'] ?? [],
+            cached: $data['cached'] ?? false,
+            finishReason: $data['finishReason'] ?? null,
+            files: $data['files'] ?? [],
+            actions: $data['actions'] ?? [],
+            error: $data['error'] ?? null,
+            success: $data['success'] ?? true,
+            conversationId: $data['conversationId'] ?? null,
+            functionCall: $data['functionCall'] ?? null
         );
     }
 
@@ -651,5 +679,50 @@ class AIResponse
             return $this->$name;
         }
         throw new \InvalidArgumentException("Property {$name} does not exist");
+    }
+
+    protected static function resolveEngine(mixed $engine): EngineEnum
+    {
+        if ($engine instanceof EngineEnum) {
+            return $engine;
+        }
+
+        if (is_string($engine) && trim($engine) !== '') {
+            try {
+                return EngineEnum::fromSlug($engine);
+            } catch (\Throwable) {
+                return new EngineEnum($engine);
+            }
+        }
+
+        return new EngineEnum(EngineEnum::OPENAI);
+    }
+
+    protected static function resolveModel(mixed $model, EngineEnum $engine): EntityEnum
+    {
+        if ($model instanceof EntityEnum) {
+            return $model;
+        }
+
+        if (is_string($model) && trim($model) !== '') {
+            return EntityEnum::fromSlug($model);
+        }
+
+        return match ($engine->value) {
+            EngineEnum::ANTHROPIC => new EntityEnum(EntityEnum::CLAUDE_3_5_SONNET),
+            EngineEnum::GEMINI => new EntityEnum(EntityEnum::GEMINI_1_5_FLASH),
+            EngineEnum::STABLE_DIFFUSION => new EntityEnum(EntityEnum::SD3_LARGE),
+            EngineEnum::ELEVEN_LABS => new EntityEnum(EntityEnum::ELEVEN_MULTILINGUAL_V2),
+            EngineEnum::FAL_AI => new EntityEnum(EntityEnum::FAL_FLUX_PRO),
+            EngineEnum::DEEPSEEK => new EntityEnum(EntityEnum::DEEPSEEK_CHAT),
+            EngineEnum::PERPLEXITY => new EntityEnum(EntityEnum::PERPLEXITY_SONAR_LARGE),
+            EngineEnum::MIDJOURNEY => new EntityEnum(EntityEnum::MIDJOURNEY_V6),
+            EngineEnum::AZURE => new EntityEnum(EntityEnum::AZURE_TEXT_ANALYTICS),
+            EngineEnum::SERPER => new EntityEnum(EntityEnum::SERPER_SEARCH),
+            EngineEnum::PLAGIARISM_CHECK => new EntityEnum(EntityEnum::PLAGIARISM_BASIC),
+            EngineEnum::UNSPLASH => new EntityEnum(EntityEnum::UNSPLASH_SEARCH),
+            EngineEnum::OLLAMA => new EntityEnum(EntityEnum::OLLAMA_LLAMA3),
+            default => new EntityEnum(EntityEnum::GPT_4O_MINI),
+        };
     }
 }
