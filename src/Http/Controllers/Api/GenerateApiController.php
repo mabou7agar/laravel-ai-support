@@ -54,7 +54,7 @@ class GenerateApiController extends Controller
                 systemPrompt: $validated['system_prompt'] ?? null,
                 maxTokens: isset($validated['max_tokens']) ? (int) $validated['max_tokens'] : null,
                 temperature: isset($validated['temperature']) ? (float) $validated['temperature'] : null,
-                userId: auth()->id() ? (string) auth()->id() : null,
+                userId: $this->resolveAuthenticatedUserId(),
             ));
 
             if (!$response->isSuccess()) {
@@ -144,7 +144,7 @@ class GenerateApiController extends Controller
                 engine: $engine,
                 model: $model,
                 parameters: array_merge($parameters, ['image_count' => $count]),
-                userId: auth()->id() ? (string) auth()->id() : null,
+                userId: $this->resolveAuthenticatedUserId(),
             ));
 
             if (!$response->isSuccess()) {
@@ -239,7 +239,7 @@ class GenerateApiController extends Controller
                 model: $model,
                 parameters: $parameters,
                 files: [$realPath],
-                userId: auth()->id() ? (string) auth()->id() : null,
+                userId: $this->resolveAuthenticatedUserId(),
             ));
 
             if (!$response->isSuccess()) {
@@ -334,7 +334,7 @@ class GenerateApiController extends Controller
                 engine: $engine,
                 model: $model,
                 parameters: array_merge($parameters, ['audio_minutes' => $minutes]),
-                userId: auth()->id() ? (string) auth()->id() : null,
+                userId: $this->resolveAuthenticatedUserId(),
             ));
 
             if (!$response->isSuccess()) {
@@ -405,5 +405,16 @@ class GenerateApiController extends Controller
     private function generateDirect(AIRequest $request): AIResponse
     {
         return $this->aiEngineService->generateDirect($request);
+    }
+
+    private function resolveAuthenticatedUserId(): ?string
+    {
+        try {
+            $id = auth()->id();
+            return $id !== null ? (string) $id : null;
+        } catch (Throwable $e) {
+            // Optional-auth endpoints should degrade to guest context.
+            return null;
+        }
     }
 }

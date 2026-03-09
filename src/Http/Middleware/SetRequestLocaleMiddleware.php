@@ -76,7 +76,13 @@ class SetRequestLocaleMiddleware
 
     protected function resolveFromUser(array $supported): ?string
     {
-        $user = auth()->user();
+        try {
+            $user = auth()->user();
+        } catch (\Throwable $e) {
+            // Ignore auth token errors on optional-auth routes and continue locale fallback chain.
+            return null;
+        }
+
         if (!$user) {
             return null;
         }

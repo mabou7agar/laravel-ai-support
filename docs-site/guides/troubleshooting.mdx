@@ -206,3 +206,21 @@ Fix in latest package:
 - hides redundant `*_user_id` when main entity is already present
 - uses friendly item formatting (`Name × Qty @ Unit = Total`)
 - enriches entity labels from resolver/tool results when available
+
+## 14) "Token has expired" on routes that should allow guest access
+
+Cause:
+
+- optional-auth routes can still receive stale `Authorization` headers
+- some auth guards throw on `auth()->user()` / `auth()->id()` when JWT is expired
+
+Fix in latest package:
+
+- locale middleware now ignores auth token exceptions and continues fallback locale resolution
+- service/controller user-id resolution is now safe and degrades to guest context for optional-auth flows
+
+If you require strict auth, keep auth middleware on those routes:
+
+```env
+AI_ENGINE_API_APPEND_MIDDLEWARE=auth:sanctum
+```

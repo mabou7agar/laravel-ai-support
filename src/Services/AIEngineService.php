@@ -70,7 +70,7 @@ class AIEngineService
 
         // Auto-detect authenticated user if userId not provided
         // IMPORTANT: withUserId returns a NEW immutable request, so we must reassign
-        if (!$request->userId && auth()->check()) {
+        if (!$request->userId && $this->isAuthenticatedSafely()) {
             $request = $request->withUserId($this->resolveUserId());
         }
 
@@ -339,7 +339,7 @@ class AIEngineService
         $originalEngine = $request->engine;
 
         // Auto-detect authenticated user if userId not provided
-        if (!$request->userId && auth()->check()) {
+        if (!$request->userId && $this->isAuthenticatedSafely()) {
             $request = $request->withUserId($this->resolveUserId());
         }
 
@@ -554,7 +554,26 @@ class AIEngineService
             }
         }
 
-        // Fallback to default auth()->id()
-        return (string) auth()->id();
+        // Fallback to default auth()->id() (safe on optional-auth routes)
+        return $this->currentAuthUserId() ?? '';
+    }
+
+    protected function isAuthenticatedSafely(): bool
+    {
+        try {
+            return auth()->check();
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    protected function currentAuthUserId(): ?string
+    {
+        try {
+            $id = auth()->id();
+            return $id !== null ? (string) $id : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 }

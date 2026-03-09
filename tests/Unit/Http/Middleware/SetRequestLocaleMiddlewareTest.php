@@ -90,4 +90,23 @@ class SetRequestLocaleMiddlewareTest extends UnitTestCase
         $this->assertSame('en', app()->getLocale());
         $this->assertNull($request->attributes->get('ai_engine_locale'));
     }
+
+    public function test_it_ignores_auth_errors_during_user_locale_resolution(): void
+    {
+        config()->set('ai-engine.localization.detect_from_user', true);
+
+        $authMock = \Mockery::mock();
+        $authMock->shouldReceive('user')->andThrow(new \RuntimeException('Token has expired'));
+        $this->app->instance('auth', $authMock);
+
+        $middleware = new SetRequestLocaleMiddleware();
+        $request = Request::create('/api/test', 'GET', [], [], [], [
+            'HTTP_ACCEPT_LANGUAGE' => 'en-US,en;q=0.9',
+        ]);
+
+        $response = $middleware->handle($request, fn () => new Response('ok', 200));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('en', app()->getLocale());
+    }
 }
