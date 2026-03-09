@@ -3,10 +3,14 @@
 use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\AIChatController;
 use LaravelAIEngine\Http\Controllers\Api\RagChatApiController;
+use LaravelAIEngine\Http\Controllers\Api\GenerateApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\ActionExecutionController;
 use LaravelAIEngine\Http\Controllers\Api\ModelRecommendationController;
 use LaravelAIEngine\Http\Controllers\DataCollectorController;
+use LaravelAIEngine\Http\Controllers\AutonomousCollectorController;
+use LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware;
+use LaravelAIEngine\Http\Middleware\StandardizeApiResponseMiddleware;
 
 /*
 |--------------------------------------------------------------------------
@@ -18,9 +22,35 @@ use LaravelAIEngine\Http\Controllers\DataCollectorController;
 |
 */
 
+$normalizeMiddleware = static function (array $middleware): array {
+    $items = array_map(static function ($item): string {
+        return is_string($item) ? trim($item) : '';
+    }, $middleware);
+
+    return array_values(array_filter($items, static fn (string $item): bool => $item !== ''));
+};
+
+$resolveApiMiddleware = static function (string $group) use ($normalizeMiddleware): array {
+    $defaultStack = ['api', SetRequestLocaleMiddleware::class, StandardizeApiResponseMiddleware::class];
+
+    $replace = config("ai-engine.api.middleware.replace.{$group}", []);
+    $base = (is_array($replace) && $replace !== []) ? $replace : $defaultStack;
+
+    $globalAppend = config('ai-engine.api.middleware.append', []);
+    $groupAppend = config("ai-engine.api.middleware.groups.{$group}", []);
+
+    $stack = array_merge(
+        is_array($base) ? $base : [],
+        is_array($globalAppend) ? $globalAppend : [],
+        is_array($groupAppend) ? $groupAppend : []
+    );
+
+    return array_values(array_unique($normalizeMiddleware($stack)));
+};
+
 // RAG Chat API Routes (v1)
 Route::prefix('api/v1/rag')
-    ->middleware(['api'])
+    ->middleware($resolveApiMiddleware('rag'))
     ->name('ai-engine.rag.api.')
     ->group(function () {
         
@@ -57,7 +87,7 @@ Route::prefix('api/v1/rag')
 
 // Action Execution API Routes (v1)
 Route::prefix('api/v1/actions')
-    ->middleware(['api'])
+    ->middleware($resolveApiMiddleware('actions'))
     ->name('ai-engine.actions.api.')
     ->group(function () {
         
@@ -84,16 +114,36 @@ Route::prefix('api/v1/actions')
 
 // Module Discovery Routes (v1)
 Route::prefix('api/v1/modules')
-    ->middleware(['api'])
+    ->middleware($resolveApiMiddleware('modules'))
     ->name('ai-engine.modules.')
     ->group(function () {
         Route::get('/discover', [ModuleController::class, 'discover'])
             ->name('discover');
     });
 
+// Direct Generation API Routes (v1)
+if (config('ai-engine.api.generate.enabled', true)) {
+    Route::prefix(config('ai-engine.api.generate.prefix', 'api/v1/ai/generate'))
+        ->middleware($resolveApiMiddleware('generate'))
+        ->name('ai-engine.generate.api.')
+        ->group(function () {
+            Route::post('/text', [GenerateApiController::class, 'text'])
+                ->name('text');
+
+            Route::post('/image', [GenerateApiController::class, 'image'])
+                ->name('image');
+
+            Route::post('/transcribe', [GenerateApiController::class, 'transcribe'])
+                ->name('transcribe');
+
+            Route::post('/tts', [GenerateApiController::class, 'tts'])
+                ->name('tts');
+        });
+}
+
 // Data Collector Chat Routes (v1)
 Route::prefix('api/v1/data-collector')
-    ->middleware(['api'])
+    ->middleware($resolveApiMiddleware('data_collector'))
     ->name('ai-engine.data-collector.')
     ->group(function () {
         
@@ -130,9 +180,34 @@ Route::prefix('api/v1/data-collector')
             ->name('apply-extracted');
     });
 
+// Autonomous Collector Routes (v1)
+Route::prefix('api/v1/autonomous-collector')
+    ->middleware($resolveApiMiddleware('autonomous_collector'))
+    ->name('ai-engine.autonomous-collector.')
+    ->group(function () {
+
+        Route::post('/start', [AutonomousCollectorController::class, 'start'])
+            ->name('start');
+
+        Route::post('/message', [AutonomousCollectorController::class, 'message'])
+            ->name('message');
+
+        Route::get('/status/{sessionId}', [AutonomousCollectorController::class, 'status'])
+            ->name('status');
+
+        Route::post('/confirm', [AutonomousCollectorController::class, 'confirm'])
+            ->name('confirm');
+
+        Route::post('/cancel', [AutonomousCollectorController::class, 'cancel'])
+            ->name('cancel');
+
+        Route::get('/data/{sessionId}', [AutonomousCollectorController::class, 'data'])
+            ->name('data');
+    });
+
 // Legacy AI Demo Routes
 Route::prefix('ai-demo')
-    ->middleware(['api'])
+    ->middleware($resolveApiMiddleware('demo'))
     ->name('ai-engine.api.')
     ->group(function () {
         

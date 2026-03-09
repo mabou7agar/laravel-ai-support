@@ -50,6 +50,20 @@ class AIEngineService
      */
     public function generate(AIRequest $request): AIResponse
     {
+        return $this->generateInternal($request, true);
+    }
+
+    /**
+     * Generate AI content without failover.
+     * Useful for deterministic direct APIs where the caller selected engine/model explicitly.
+     */
+    public function generateDirect(AIRequest $request): AIResponse
+    {
+        return $this->generateInternal($request, false);
+    }
+
+    private function generateInternal(AIRequest $request, bool $withFailover): AIResponse
+    {
         $startTime = microtime(true);
         $requestId = uniqid('ai_req_');
         $originalEngine = $request->engine;
@@ -91,8 +105,9 @@ class AIEngineService
             metadata: $request->metadata
         ));
 
-        // Try primary engine and failover engines
-        $response = $this->generateWithFailover($request, $requestId, $debugMode);
+        $response = $withFailover
+            ? $this->generateWithFailover($request, $requestId, $debugMode)
+            : $this->generateSingleEngine($request);
 
         // Calculate credits for this request (always, for accumulation)
         $creditsUsed = $this->creditManager->calculateCredits($request);
@@ -124,7 +139,7 @@ class AIEngineService
                 'response_preview' => substr($response->getContent(), 0, 200),
                 'success' => $response->success,
                 'tokens_used' => $response->metadata['usage'] ?? null,
-                'failover_used' => $response->engine !== $originalEngine,
+                'failover_used' => $withFailover && $response->engine !== $originalEngine,
             ]);
         }
 
@@ -138,6 +153,17 @@ class AIEngineService
         ));
 
         return $response;
+    }
+
+    /**
+     * Generate response against one selected engine/model (no failover attempts).
+     */
+    protected function generateSingleEngine(AIRequest $request): AIResponse
+    {
+        $driver = $this->getDriver($request->engine);
+        $driver->validateRequest($request);
+
+        return $driver->generate($request);
     }
 
     /**
@@ -259,11 +285,18 @@ class AIEngineService
     public function generateWithConversation(
         string $message,
         string $conversationId,
-        EngineEnum $engine,
-        EntityEnum $model,
+        EngineEnum|string $engine,
+        EntityEnum|string $model,
         ?string $userId = null,
         array $parameters = []
     ): AIResponse {
+        if (!$engine instanceof EngineEnum) {
+            $engine = EngineEnum::fromSlug($engine);
+        }
+        if (!$model instanceof EntityEnum) {
+            $model = EntityEnum::from($model);
+        }
+
         // Add user message to conversation
         $this->conversationManager->addUserMessage($conversationId, $message);
 
