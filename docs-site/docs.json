@@ -65,6 +65,12 @@
             ]
           }
         ]
+      },
+      {
+        "tab": "API",
+        "openapi": [
+          "openapi/ai-engine.openapi.yaml"
+        ]
       }
     ]
   }

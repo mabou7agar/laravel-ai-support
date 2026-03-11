@@ -1,0 +1,1780 @@
+openapi: 3.0.3
+info:
+  title: Laravel AI Engine API
+  version: 1.0.0
+  description: |
+    Interactive API reference for the Laravel AI Engine package.
+
+    This spec covers the current v1 application APIs and the node federation
+    contract. Legacy compatibility routes remain documented in the manual docs.
+servers:
+  - url: https://your-app.test
+    description: Host Laravel application
+tags:
+  - name: RAG Chat
+    description: Chat, retrieval, collections, and conversation endpoints.
+  - name: Actions
+    description: Interactive action execution endpoints.
+  - name: AI Generation
+    description: Direct text, image, transcription, and text-to-speech APIs.
+  - name: Data Collectors
+    description: Guided structured data collection flows.
+  - name: Autonomous Collectors
+    description: Autonomous collector workflows.
+  - name: Federation
+    description: Node-to-node infrastructure contract.
+paths:
+  /api/v1/rag/chat:
+    post:
+      tags: [RAG Chat]
+      summary: Send a chat message
+      description: Processes a message with memory, actions, and intelligent RAG.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagChatRequest'
+      responses:
+        '200':
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagChatResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/rag/chat/history/{session_id}:
+    get:
+      tags: [RAG Chat]
+      summary: Get chat history
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+      responses:
+        '200':
+          description: Conversation history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/rag/chat/clear:
+    post:
+      tags: [RAG Chat]
+      summary: Clear chat history
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              properties:
+                session_id:
+                  type: string
+      responses:
+        '200':
+          description: History cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWithData'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/rag/analyze-file:
+    post:
+      tags: [RAG Chat]
+      summary: Analyze an uploaded file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, session_id]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                message:
+                  type: string
+                session_id:
+                  type: string
+                engine:
+                  type: string
+                model:
+                  type: string
+                use_intelligent_rag:
+                  type: boolean
+                  default: true
+                rag_collections:
+                  type: string
+                  description: JSON-encoded collection array
+      responses:
+        '200':
+          description: File analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileAnalysisResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/rag/collections:
+    get:
+      tags: [RAG Chat]
+      summary: List available RAG collections
+      responses:
+        '200':
+          description: Available collections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionsResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/rag/engines:
+    get:
+      tags: [RAG Chat]
+      summary: List configured engines and models
+      responses:
+        '200':
+          description: Engine registry summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnginesResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/rag/health:
+    get:
+      tags: [RAG Chat]
+      summary: Health check
+      responses:
+        '200':
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagHealthResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/rag/conversations:
+    get:
+      tags: [RAG Chat]
+      summary: List authenticated user conversations
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+      responses:
+        '200':
+          description: Paged conversation list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/actions/execute:
+    post:
+      tags: [Actions]
+      summary: Execute an action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionExecuteRequest'
+      responses:
+        '200':
+          description: Action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionExecuteResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/actions/execute-remote:
+    post:
+      tags: [Actions]
+      summary: Execute an action on a specific node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ActionExecuteRequest'
+                - type: object
+                  required: [node]
+                  properties:
+                    node:
+                      type: string
+      responses:
+        '200':
+          description: Remote action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionExecuteResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/actions/execute-all:
+    post:
+      tags: [Actions]
+      summary: Execute an action on multiple nodes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ActionExecuteRequest'
+                - type: object
+                  properties:
+                    parallel:
+                      type: boolean
+                      default: true
+                    node_ids:
+                      type: array
+                      items:
+                        type: string
+      responses:
+        '200':
+          description: Multi-node execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MultiNodeActionResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/actions/select-option:
+    post:
+      tags: [Actions]
+      summary: Select a numbered option from a previous AI response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [option_number, session_id]
+              properties:
+                option_number:
+                  type: integer
+                  minimum: 1
+                session_id:
+                  type: string
+                source_index:
+                  type: integer
+                sources:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/JsonObject'
+                user_id:
+                  oneOf:
+                    - type: string
+                    - type: integer
+      responses:
+        '200':
+          description: Option selection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWithResult'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/actions/available:
+    get:
+      tags: [Actions]
+      summary: List available actions
+      parameters:
+        - name: context
+          in: query
+          schema:
+            type: string
+        - name: include_remote
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: user_id
+          in: query
+          schema:
+            oneOf:
+              - type: string
+              - type: integer
+      responses:
+        '200':
+          description: Available actions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  actions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JsonObject'
+
+  /api/v1/ai/generate/text:
+    post:
+      tags: [AI Generation]
+      summary: Generate text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateTextRequest'
+      responses:
+        '200':
+          description: Text generation response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '402':
+          $ref: '#/components/responses/InsufficientCredits'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/generate/image:
+    post:
+      tags: [AI Generation]
+      summary: Generate image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateImageRequest'
+      responses:
+        '200':
+          description: Image generation response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '402':
+          $ref: '#/components/responses/InsufficientCredits'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/generate/transcribe:
+    post:
+      tags: [AI Generation]
+      summary: Transcribe audio
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                engine:
+                  type: string
+                model:
+                  type: string
+                audio_minutes:
+                  type: number
+                parameters:
+                  $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          description: Transcription response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '402':
+          $ref: '#/components/responses/InsufficientCredits'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/generate/tts:
+    post:
+      tags: [AI Generation]
+      summary: Generate speech audio from text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateTtsRequest'
+      responses:
+        '200':
+          description: TTS response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '402':
+          $ref: '#/components/responses/InsufficientCredits'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/data-collector/start:
+    post:
+      tags: [Data Collectors]
+      summary: Start a guided collector from a registered config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataCollectorStartRequest'
+      responses:
+        '200':
+          description: Collector session started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataCollectorSessionResponse'
+        '404':
+          description: Unknown config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/data-collector/start-custom:
+    post:
+      tags: [Data Collectors]
+      summary: Start a guided collector with inline config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataCollectorStartCustomRequest'
+      responses:
+        '200':
+          description: Collector session started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataCollectorSessionResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/data-collector/message:
+    post:
+      tags: [Data Collectors]
+      summary: Continue a guided collector session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataCollectorMessageRequest'
+      responses:
+        '200':
+          description: Collector response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataCollectorMessageResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/data-collector/status/{sessionId}:
+    get:
+      tags: [Data Collectors]
+      summary: Get collector session status
+      parameters:
+        - $ref: '#/components/parameters/SessionIdCamel'
+      responses:
+        '200':
+          description: Session state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataCollectorStatusResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/data-collector/cancel:
+    post:
+      tags: [Data Collectors]
+      summary: Cancel a collector session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              properties:
+                session_id:
+                  type: string
+      responses:
+        '200':
+          description: Cancellation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWithMetadata'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/data-collector/data/{sessionId}:
+    get:
+      tags: [Data Collectors]
+      summary: Get collected session data
+      parameters:
+        - $ref: '#/components/parameters/SessionIdCamel'
+      responses:
+        '200':
+          description: Session data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  session_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/JsonObject'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/data-collector/analyze-file:
+    post:
+      tags: [Data Collectors]
+      summary: Extract structured data from an uploaded file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, session_id]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                session_id:
+                  type: string
+                fields:
+                  type: string
+                  description: JSON-encoded array of target fields
+                field_config:
+                  type: string
+                  description: JSON-encoded field configuration map
+                language:
+                  type: string
+      responses:
+        '200':
+          description: File extraction result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  extracted_data:
+                    $ref: '#/components/schemas/JsonObject'
+                  message:
+                    type: string
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/data-collector/apply-extracted:
+    post:
+      tags: [Data Collectors]
+      summary: Apply extracted data to a collector session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, extracted_data]
+              properties:
+                session_id:
+                  type: string
+                extracted_data:
+                  $ref: '#/components/schemas/JsonObject'
+                language:
+                  type: string
+      responses:
+        '200':
+          description: Updated session state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataCollectorApplyExtractedResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/autonomous-collector/start:
+    post:
+      tags: [Autonomous Collectors]
+      summary: Start an autonomous collector
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutonomousStartRequest'
+      responses:
+        '200':
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousCollectorResponse'
+        '404':
+          description: Unknown config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/autonomous-collector/message:
+    post:
+      tags: [Autonomous Collectors]
+      summary: Continue an autonomous collector session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, message]
+              properties:
+                session_id:
+                  type: string
+                message:
+                  type: string
+      responses:
+        '200':
+          description: Session update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousCollectorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/autonomous-collector/status/{sessionId}:
+    get:
+      tags: [Autonomous Collectors]
+      summary: Get autonomous collector status
+      parameters:
+        - $ref: '#/components/parameters/SessionIdCamel'
+      responses:
+        '200':
+          description: Session status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  session_id:
+                    type: string
+                  status:
+                    type: string
+                  is_active:
+                    type: boolean
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/autonomous-collector/confirm:
+    post:
+      tags: [Autonomous Collectors]
+      summary: Confirm an autonomous collector session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              properties:
+                session_id:
+                  type: string
+      responses:
+        '200':
+          description: Confirmation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousCollectorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/autonomous-collector/cancel:
+    post:
+      tags: [Autonomous Collectors]
+      summary: Cancel an autonomous collector session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              properties:
+                session_id:
+                  type: string
+      responses:
+        '200':
+          description: Cancellation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousCollectorResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/autonomous-collector/data/{sessionId}:
+    get:
+      tags: [Autonomous Collectors]
+      summary: Get autonomous collector data
+      parameters:
+        - $ref: '#/components/parameters/SessionIdCamel'
+      responses:
+        '200':
+          description: Session data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  session_id:
+                    type: string
+                  status:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/JsonObject'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/ai-engine/health:
+    get:
+      tags: [Federation]
+      summary: Node health endpoint
+      security: []
+      responses:
+        '200':
+          description: Healthy node
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+        '503':
+          description: Unhealthy or not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+
+  /api/ai-engine/manifest:
+    get:
+      tags: [Federation]
+      summary: Node manifest endpoint
+      security: []
+      responses:
+        '200':
+          description: Node manifest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+
+  /api/ai-engine/search:
+    post:
+      tags: [Federation]
+      summary: Remote vector search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeSearchRequest'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeSearchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/ai-engine/chat:
+    post:
+      tags: [Federation]
+      summary: Forward a chat request to a remote node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeChatRequest'
+      responses:
+        '200':
+          description: Remote chat result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeChatResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/ai-engine/tools/execute:
+    post:
+      tags: [Federation]
+      summary: Execute a remote tool or action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeToolRequest'
+      responses:
+        '200':
+          description: Remote action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionExecuteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    nodeTokenAuth:
+      type: apiKey
+      in: header
+      name: X-Node-Token
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+    SessionIdCamel:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+    GenericError:
+      description: Request failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated but not allowed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InsufficientCredits:
+      description: User lacks credits for the requested operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StandardEnvelope'
+  schemas:
+    JsonObject:
+      type: object
+      additionalProperties: true
+    StringArray:
+      type: array
+      items:
+        type: string
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        error:
+          oneOf:
+            - type: string
+            - $ref: '#/components/schemas/JsonObject'
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties: true
+        trace:
+          type: string
+    ValidationErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        error:
+          type: string
+        errors:
+          type: object
+          additionalProperties: true
+    StandardEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/JsonObject'
+        error:
+          nullable: true
+          oneOf:
+            - $ref: '#/components/schemas/JsonObject'
+            - type: string
+        meta:
+          type: object
+          properties:
+            status_code:
+              type: integer
+            schema:
+              type: string
+    RagChatRequest:
+      type: object
+      required: [message, session_id]
+      properties:
+        message:
+          type: string
+          maxLength: 4000
+        session_id:
+          type: string
+        engine:
+          type: string
+          enum: [openai, anthropic, gemini]
+        model:
+          type: string
+        memory:
+          type: boolean
+          default: true
+        actions:
+          type: boolean
+          default: true
+        streaming:
+          type: boolean
+          default: false
+        use_intelligent_rag:
+          type: boolean
+          default: true
+        intelligent_rag:
+          type: boolean
+        force_rag:
+          type: boolean
+        rag_collections:
+          type: array
+          items:
+            type: string
+        search_instructions:
+          type: string
+          maxLength: 500
+        async:
+          type: boolean
+        auto_select_model:
+          type: boolean
+        task_type:
+          type: string
+          enum: [vision, coding, reasoning, fast, cheap, quality, default]
+    RagChatResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            response:
+              type: string
+            rag_enabled:
+              type: boolean
+            context_count:
+              type: integer
+            sources:
+              type: array
+              items:
+                $ref: '#/components/schemas/JsonObject'
+            numbered_options:
+              type: array
+              items:
+                $ref: '#/components/schemas/JsonObject'
+            has_options:
+              type: boolean
+            actions:
+              type: array
+              items:
+                $ref: '#/components/schemas/JsonObject'
+            usage:
+              $ref: '#/components/schemas/JsonObject'
+            session_id:
+              type: string
+    HistoryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  role:
+                    type: string
+                  content:
+                    type: string
+                  timestamp:
+                    type: string
+                    nullable: true
+            session_id:
+              type: string
+            total:
+              type: integer
+    SuccessWithData:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/JsonObject'
+    SuccessWithResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        result:
+          $ref: '#/components/schemas/JsonObject'
+    SuccessWithMetadata:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/JsonObject'
+    FileAnalysisResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            response:
+              type: string
+            extracted_data:
+              $ref: '#/components/schemas/JsonObject'
+            file_type:
+              type: string
+            file_name:
+              type: string
+            sources:
+              type: array
+              items:
+                $ref: '#/components/schemas/JsonObject'
+            rag_enabled:
+              type: boolean
+            suggested_actions:
+              type: array
+              items:
+                $ref: '#/components/schemas/JsonObject'
+    CollectionsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            collections:
+              $ref: '#/components/schemas/StringArray'
+            count:
+              type: integer
+    EnginesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            engines:
+              $ref: '#/components/schemas/JsonObject'
+            default_engine:
+              type: string
+            default_model:
+              type: string
+    RagHealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+            version:
+              type: string
+            rag_enabled:
+              type: boolean
+            collections_count:
+              type: integer
+            timestamp:
+              type: string
+    ConversationsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            conversations:
+              type: array
+              items:
+                type: object
+                properties:
+                  conversation_id:
+                    type: string
+                  title:
+                    type: string
+                    nullable: true
+                  message_count:
+                    type: integer
+                  last_message:
+                    $ref: '#/components/schemas/JsonObject'
+                  last_activity_at:
+                    type: string
+                    nullable: true
+                  created_at:
+                    type: string
+                    nullable: true
+                  settings:
+                    $ref: '#/components/schemas/JsonObject'
+            pagination:
+              type: object
+              properties:
+                total:
+                  type: integer
+                per_page:
+                  type: integer
+                current_page:
+                  type: integer
+                last_page:
+                  type: integer
+                from:
+                  type: integer
+                to:
+                  type: integer
+    ActionExecuteRequest:
+      type: object
+      required: [action_type, data]
+      properties:
+        action_id:
+          type: string
+        action_type:
+          type: string
+        data:
+          $ref: '#/components/schemas/JsonObject'
+        session_id:
+          type: string
+        user_id:
+          oneOf:
+            - type: string
+            - type: integer
+    ActionExecuteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        action_type:
+          type: string
+        node:
+          type: string
+        result:
+          $ref: '#/components/schemas/JsonObject'
+    MultiNodeActionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        action_type:
+          type: string
+        nodes_executed:
+          type: integer
+        success_count:
+          type: integer
+        failure_count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+    GenerateTextRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+        engine:
+          type: string
+        model:
+          type: string
+        system_prompt:
+          type: string
+        max_tokens:
+          type: integer
+        temperature:
+          type: number
+        parameters:
+          $ref: '#/components/schemas/JsonObject'
+    GenerateImageRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+        engine:
+          type: string
+        model:
+          type: string
+        count:
+          type: integer
+          default: 1
+        size:
+          type: string
+        quality:
+          type: string
+        parameters:
+          $ref: '#/components/schemas/JsonObject'
+    GenerateTtsRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+        engine:
+          type: string
+        model:
+          type: string
+        minutes:
+          type: number
+        voice_id:
+          type: string
+        stability:
+          type: number
+        similarity_boost:
+          type: number
+        parameters:
+          $ref: '#/components/schemas/JsonObject'
+    DataCollectorStartRequest:
+      type: object
+      required: [config_name]
+      properties:
+        config_name:
+          type: string
+        session_id:
+          type: string
+        initial_data:
+          $ref: '#/components/schemas/JsonObject'
+    DataCollectorStartCustomRequest:
+      type: object
+      required: [title, fields]
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        fields:
+          oneOf:
+            - $ref: '#/components/schemas/JsonObject'
+            - type: array
+              items:
+                $ref: '#/components/schemas/JsonObject'
+        session_id:
+          type: string
+        initial_data:
+          $ref: '#/components/schemas/JsonObject'
+        confirm_before_complete:
+          type: boolean
+        allow_enhancement:
+          type: boolean
+        allow_skip_optional:
+          type: boolean
+        language:
+          type: string
+        success_message:
+          type: string
+        cancel_message:
+          type: string
+        system_prompt:
+          type: string
+        action_summary:
+          type: string
+        action_summary_prompt:
+          type: string
+        action_summary_prompt_config:
+          $ref: '#/components/schemas/JsonObject'
+        output_schema:
+          $ref: '#/components/schemas/JsonObject'
+        output_prompt:
+          type: string
+        output_config:
+          $ref: '#/components/schemas/JsonObject'
+        on_complete_action:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/JsonObject'
+        detect_locale:
+          type: boolean
+    DataCollectorSessionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        session_id:
+          type: string
+        message:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        metadata:
+          $ref: '#/components/schemas/JsonObject'
+        config_name:
+          type: string
+        fields:
+          type: array
+          items:
+            type: string
+        current_field:
+          type: string
+          nullable: true
+        collected_fields:
+          type: array
+          items:
+            type: string
+        remaining_fields:
+          type: array
+          items:
+            type: string
+        progress:
+          type: number
+        data:
+          $ref: '#/components/schemas/JsonObject'
+        config:
+          $ref: '#/components/schemas/JsonObject'
+        field_definitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+    DataCollectorMessageRequest:
+      type: object
+      required: [session_id, message]
+      properties:
+        session_id:
+          type: string
+        message:
+          type: string
+        config_name:
+          type: string
+        engine:
+          type: string
+        model:
+          type: string
+    DataCollectorMessageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        metadata:
+          $ref: '#/components/schemas/JsonObject'
+        config_name:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        is_complete:
+          type: boolean
+        is_cancelled:
+          type: boolean
+        requires_confirmation:
+          type: boolean
+        allows_enhancement:
+          type: boolean
+        current_field:
+          type: string
+          nullable: true
+        collected_fields:
+          type: array
+          items:
+            type: string
+        remaining_fields:
+          type: array
+          items:
+            type: string
+        fields:
+          type: array
+          items:
+            type: string
+        progress:
+          type: number
+        data:
+          $ref: '#/components/schemas/JsonObject'
+        summary:
+          type: string
+          nullable: true
+        action_summary:
+          type: string
+          nullable: true
+        result:
+          $ref: '#/components/schemas/JsonObject'
+        generated_output:
+          $ref: '#/components/schemas/JsonObject'
+        config:
+          $ref: '#/components/schemas/JsonObject'
+    DataCollectorStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        session_id:
+          type: string
+        status:
+          type: string
+        data:
+          $ref: '#/components/schemas/JsonObject'
+        current_field:
+          type: string
+          nullable: true
+        is_complete:
+          type: boolean
+        is_cancelled:
+          type: boolean
+        validation_errors:
+          type: array
+          items:
+            type: string
+    DataCollectorApplyExtractedResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        metadata:
+          $ref: '#/components/schemas/JsonObject'
+        requires_confirmation:
+          type: boolean
+    AutonomousStartRequest:
+      type: object
+      required: [config_name]
+      properties:
+        config_name:
+          type: string
+        session_id:
+          type: string
+        initial_message:
+          type: string
+    AutonomousCollectorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        session_id:
+          type: string
+        message:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        collected_data:
+          $ref: '#/components/schemas/JsonObject'
+        data:
+          $ref: '#/components/schemas/JsonObject'
+        is_complete:
+          type: boolean
+        is_cancelled:
+          type: boolean
+        requires_confirmation:
+          type: boolean
+        turn_count:
+          type: integer
+        tool_results:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        result:
+          $ref: '#/components/schemas/JsonObject'
+        error:
+          nullable: true
+          type: string
+    NodeSearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+        limit:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 100
+        options:
+          type: object
+          properties:
+            collections:
+              type: array
+              items:
+                type: string
+            user_id:
+              oneOf:
+                - type: integer
+                - type: string
+            threshold:
+              type: number
+            filters:
+              $ref: '#/components/schemas/JsonObject'
+    NodeSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        count:
+          type: integer
+        duration_ms:
+          type: number
+    NodeChatRequest:
+      type: object
+      required: [message, session_id]
+      properties:
+        message:
+          type: string
+        session_id:
+          type: string
+        user_id:
+          oneOf:
+            - type: integer
+            - type: string
+        token:
+          type: string
+        options:
+          type: object
+          properties:
+            engine:
+              type: string
+            model:
+              type: string
+            use_memory:
+              type: boolean
+            use_actions:
+              type: boolean
+            use_intelligent_rag:
+              type: boolean
+            rag_collections:
+              type: array
+              items:
+                type: string
+            search_instructions:
+              type: string
+            conversation_history:
+              type: array
+              items:
+                $ref: '#/components/schemas/JsonObject'
+            selected_entity:
+              $ref: '#/components/schemas/JsonObject'
+            selected_entity_context:
+              $ref: '#/components/schemas/JsonObject'
+    NodeChatResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        response:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/JsonObject'
+        credits_used:
+          type: number
+        duration_ms:
+          type: number
+        error:
+          type: string
+        code:
+          type: string
+        missing_tables:
+          type: array
+          items:
+            type: string
+    NodeToolRequest:
+      type: object
+      required: [action_type, data]
+      properties:
+        action_type:
+          type: string
+        data:
+          $ref: '#/components/schemas/JsonObject'
+        session_id:
+          type: string
+        user_id:
+          oneOf:
+            - type: integer
+            - type: string
