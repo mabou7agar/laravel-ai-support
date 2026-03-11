@@ -1,0 +1,101 @@
+---
+title: Conversation Sessions
+description: How to list authenticated chat sessions and use the session summary field in web and mobile apps.
+---
+
+Use the conversations endpoint when you need a chat inbox or history screen.
+
+Endpoint:
+
+- `GET /api/v1/rag/conversations`
+
+This endpoint is authenticated and returns only the conversations that belong to the current authenticated user.
+
+## What You Get
+
+Each conversation item includes:
+
+- `conversation_id`
+- `title`
+- `summary`
+- `message_count`
+- `last_message`
+- `last_activity_at`
+- `created_at`
+- `settings`
+
+The `summary` field is the right field for chat list screens.
+
+It is resolved in this order:
+
+1. stored summary in conversation metadata if available
+2. latest assistant message
+3. first user message
+4. latest message fallback
+
+## Example Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "conversations": [
+      {
+        "conversation_id": "conv-user-001",
+        "title": "Invoices overview",
+        "summary": "You have two overdue invoices this month. ACME Trading is the highest priority because it is 14 days overdue and has the largest outstanding balance.",
+        "message_count": 2,
+        "last_message": {
+          "role": "assistant",
+          "content": "You have two overdue invoices this month...",
+          "sent_at": "2026-03-12T08:15:00.000000Z"
+        },
+        "last_activity_at": "2026-03-12T08:15:00.000000Z",
+        "created_at": "2026-03-12T08:14:00.000000Z",
+        "settings": {
+          "engine": "openai",
+          "model": "gpt-4o-mini"
+        }
+      }
+    ],
+    "pagination": {
+      "total": 1,
+      "per_page": 20,
+      "current_page": 1,
+      "last_page": 1,
+      "from": 1,
+      "to": 1
+    }
+  }
+}
+```
+
+## Flutter Usage
+
+```dart
+final result = await client.getConversations();
+
+for (final item in result.conversations) {
+  print(item.title);
+  print(item.summary);
+}
+```
+
+## Mintlify API Base URL
+
+The Mintlify `API` tab uses the `servers` block from:
+
+- `openapi/ai-engine.openapi.yaml`
+
+To point the interactive API docs at a different backend:
+
+1. edit the `servers` list in the OpenAPI file
+2. set your test or local base URL there
+3. reload the Mintlify docs
+
+Current test-friendly defaults are:
+
+- `http://ai.test`
+- `http://127.0.0.1:8000`
+
+If your app runs somewhere else, replace those values with your real host.

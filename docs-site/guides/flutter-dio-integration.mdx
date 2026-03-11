@@ -1,0 +1,173 @@
+---
+title: Flutter Dio Integration
+description: Integrate Laravel AI Engine into a Flutter app using Dio and typed DTO classes.
+---
+
+This package works well with Flutter when you keep the HTTP layer thin and DTO-first.
+
+Recommended shape:
+
+- `Dio` for transport
+- DTOs for every request and response
+- one client class for the package endpoints
+- optional repository or Cubit/BLoC layer on top
+
+## Add Dependency
+
+```yaml
+dependencies:
+  dio: ^5.8.0+1
+```
+
+## Suggested App Structure
+
+```text
+lib/
+  core/network/
+    dio_factory.dart
+  features/ai/
+    data/
+      ai_engine_client.dart
+      dto/
+        api_envelope_dto.dart
+        rag_chat_dto.dart
+        data_collector_dto.dart
+        generate_text_dto.dart
+```
+
+## Base URL and Auth
+
+If your Laravel app exposes the package on `https://api.example.com`, use the normal package routes directly:
+
+- `POST /api/v1/rag/chat`
+- `GET /api/v1/rag/conversations`
+- `POST /api/v1/data-collector/start`
+- `POST /api/v1/ai/generate/text`
+
+Bearer auth example:
+
+```dart
+final dio = Dio(
+  BaseOptions(
+    baseUrl: 'https://api.example.com',
+    connectTimeout: const Duration(seconds: 20),
+    receiveTimeout: const Duration(seconds: 30),
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+  ),
+);
+
+dio.interceptors.add(
+  InterceptorsWrapper(
+    onRequest: (options, handler) async {
+      final token = await tokenProvider();
+      if (token != null && token.isNotEmpty) {
+        options.headers['Authorization'] = 'Bearer $token';
+      }
+      handler.next(options);
+    },
+  ),
+);
+```
+
+## Use the Example Client
+
+The package now includes a Dart example client at:
+
+- `packages/laravel-ai-engine/examples/flutter_dio/lib/laravel_ai_engine_client.dart`
+
+It provides:
+
+- typed DTOs for chat, collectors, and direct text generation
+- a reusable `AiEngineClient`
+- consistent envelope parsing for the standardized API responses
+
+## Chat Example
+
+```dart
+final client = AiEngineClient(dio);
+
+final response = await client.sendChat(
+  RagChatRequestDto(
+    message: 'List invoices from this month',
+    sessionId: 'mobile-user-42',
+    engine: 'openai',
+    model: 'gpt-4o-mini',
+    memory: true,
+    actions: true,
+    useIntelligentRag: true,
+  ),
+);
+
+final text = response.response;
+final sources = response.sources;
+final actions = response.actions;
+```
+
+## Conversations List Example
+
+```dart
+final conversations = await client.getConversations();
+
+for (final item in conversations.conversations) {
+  print(item.title);
+  print(item.summary);
+}
+```
+
+## Collector Example
+
+```dart
+final session = await client.startDataCollector(
+  DataCollectorStartRequestDto(
+    configName: 'invoice_create',
+    sessionId: 'collector-1001',
+    initialData: {
+      'customer_name': 'ACME LLC',
+    },
+  ),
+);
+
+final step = await client.sendDataCollectorMessage(
+  DataCollectorMessageRequestDto(
+    sessionId: session.sessionId,
+    message: 'Issue date is 2026-03-11',
+  ),
+);
+```
+
+## Generate Text Example
+
+```dart
+final result = await client.generateText(
+  GenerateTextRequestDto(
+    prompt: 'Summarize this invoice for a mobile dashboard',
+    engine: 'openai',
+    model: 'gpt-4o-mini',
+  ),
+);
+
+print(result.content);
+```
+
+## DTO Rules That Keep Flutter Clean
+
+- Use immutable DTOs with `toJson()` and `fromJson()`.
+- Keep `Map<String, dynamic>` at the client boundary only.
+- Normalize snake_case from the API into Dart camelCase fields.
+- Parse the package envelope first, then parse the nested `data`.
+- Treat `error` and `message` as first-class fields for UI state.
+
+## Recommendation
+
+For production Flutter apps, start with these endpoints only:
+
+- `/api/v1/rag/chat`
+- `/api/v1/rag/conversations`
+- `/api/v1/data-collector/start`
+- `/api/v1/data-collector/message`
+- `/api/v1/ai/generate/text`
+
+That covers most assistant, workflow, and content-generation screens without overbuilding the mobile client.

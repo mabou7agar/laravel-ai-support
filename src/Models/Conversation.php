@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class Conversation extends Model
@@ -48,6 +49,26 @@ class Conversation extends Model
     public function recentMessages(): HasMany
     {
         return $this->messages()->latest('sent_at');
+    }
+
+    public function latestMessage(): HasOne
+    {
+        return $this->hasOne(Message::class, 'conversation_id', 'conversation_id')
+            ->latestOfMany('sent_at');
+    }
+
+    public function latestAssistantMessage(): HasOne
+    {
+        return $this->hasOne(Message::class, 'conversation_id', 'conversation_id')
+            ->where('role', 'assistant')
+            ->latestOfMany('sent_at');
+    }
+
+    public function firstUserMessage(): HasOne
+    {
+        return $this->hasOne(Message::class, 'conversation_id', 'conversation_id')
+            ->where('role', 'user')
+            ->oldestOfMany('sent_at');
     }
 
     public function getMaxMessagesAttribute(): int
@@ -186,6 +207,50 @@ class Conversation extends Model
     public function getSetting(string $key, $default = null)
     {
         return $this->settings[$key] ?? $default;
+    }
+
+    public function buildSummary(int $maxLength = 220): string
+    {
+        $metadata = (array) ($this->metadata ?? []);
+
+        foreach (['summary', 'conversation_summary', 'chat_summary'] as $key) {
+            $value = $metadata[$key] ?? null;
+            if (is_string($value) && trim($value) !== '') {
+                return $this->truncatePreview($value, $maxLength);
+            }
+        }
+
+        $assistantPreview = $this->latestAssistantMessage?->content;
+        if (is_string($assistantPreview) && trim($assistantPreview) !== '') {
+            return $this->truncatePreview($assistantPreview, $maxLength);
+        }
+
+        $userPreview = $this->firstUserMessage?->content;
+        if (is_string($userPreview) && trim($userPreview) !== '') {
+            return $this->truncatePreview($userPreview, $maxLength);
+        }
+
+        $latestPreview = $this->latestMessage?->content;
+        if (is_string($latestPreview) && trim($latestPreview) !== '') {
+            return $this->truncatePreview($latestPreview, $maxLength);
+        }
+
+        return '';
+    }
+
+    protected function truncatePreview(string $content, int $maxLength): string
+    {
+        $normalized = preg_replace('/\s+/u', ' ', trim(strip_tags($content))) ?? '';
+
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (mb_strlen($normalized) <= $maxLength) {
+            return $normalized;
+        }
+
+        return rtrim(mb_substr($normalized, 0, max(0, $maxLength - 3))) . '...';
     }
 
 }

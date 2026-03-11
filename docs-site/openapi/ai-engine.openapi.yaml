@@ -8,8 +8,10 @@ info:
     This spec covers the current v1 application APIs and the node federation
     contract. Legacy compatibility routes remain documented in the manual docs.
 servers:
-  - url: https://your-app.test
-    description: Host Laravel application
+  - url: http://ai.test
+    description: Local test host
+  - url: http://127.0.0.1:8000
+    description: Laravel artisan serve
 tags:
   - name: RAG Chat
     description: Chat, retrieval, collections, and conversation endpoints.
@@ -1280,6 +1282,8 @@ components:
                   title:
                     type: string
                     nullable: true
+                  summary:
+                    type: string
                   message_count:
                     type: integer
                   last_message:

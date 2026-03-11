@@ -1,0 +1,9 @@
+name: laravel_ai_engine_flutter_dio_example
+description: Flutter Dio client example for Laravel AI Engine.
+publish_to: none
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  dio: ^5.8.0+1

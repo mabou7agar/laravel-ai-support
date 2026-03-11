@@ -28,6 +28,8 @@
               "guides/single-app-setup",
               "guides/configuration",
               "guides/model-config-tools",
+              "guides/flutter-dio-integration",
+              "guides/conversation-sessions",
               "guides/direct-generation-recipes",
               "guides/entity-list-preview-ux",
               "guides/data-collectors",

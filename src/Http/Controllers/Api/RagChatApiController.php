@@ -6,6 +6,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\DTOs\ConversationListResponseDTO;
+use LaravelAIEngine\DTOs\ConversationPaginationDTO;
+use LaravelAIEngine\DTOs\ConversationSessionPreviewDTO;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\ActionService;
@@ -488,6 +491,8 @@ class RagChatApiController extends Controller
             // Get conversations
             $conversations = \LaravelAIEngine\Models\Conversation::forUser($userId)
                 ->active()
+                ->withCount('messages')
+                ->with(['latestMessage', 'latestAssistantMessage', 'firstUserMessage'])
                 ->orderBy('last_activity_at', 'desc')
                 ->skip($offset)
                 ->limit($limit)
@@ -499,41 +504,23 @@ class RagChatApiController extends Controller
                 ->count();
 
             // Format conversations
-            $formattedConversations = $conversations->map(function ($conversation) {
-                // Get message count and last message
-                $messageCount = $conversation->messages()->count();
-                $lastMessage = $conversation->messages()
-                    ->latest('sent_at')
-                    ->first();
-
-                return [
-                    'conversation_id' => $conversation->conversation_id,
-                    'title' => $conversation->title,
-                    'message_count' => $messageCount,
-                    'last_message' => $lastMessage ? [
-                        'role' => $lastMessage->role,
-                        'content' => substr($lastMessage->content, 0, 100) . (strlen($lastMessage->content) > 100 ? '...' : ''),
-                        'sent_at' => $lastMessage->sent_at->toISOString(),
-                    ] : null,
-                    'last_activity_at' => $conversation->last_activity_at?->toISOString(),
-                    'created_at' => $conversation->created_at->toISOString(),
-                    'settings' => $conversation->settings,
-                ];
-            });
+            $payload = new ConversationListResponseDTO(
+                conversations: $conversations
+                    ->map(static fn ($conversation) => ConversationSessionPreviewDTO::fromConversation($conversation))
+                    ->all(),
+                pagination: new ConversationPaginationDTO(
+                    total: $total,
+                    perPage: (int) $limit,
+                    currentPage: (int) $page,
+                    lastPage: (int) ceil($total / $limit),
+                    from: $total > 0 ? $offset + 1 : 0,
+                    to: min($offset + $limit, $total),
+                ),
+            );
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'conversations' => $formattedConversations,
-                    'pagination' => [
-                        'total' => $total,
-                        'per_page' => $limit,
-                        'current_page' => $page,
-                        'last_page' => ceil($total / $limit),
-                        'from' => $offset + 1,
-                        'to' => min($offset + $limit, $total),
-                    ],
-                ],
+                'data' => $payload->toArray(),
             ]);
 
         } catch (\Exception $e) {
