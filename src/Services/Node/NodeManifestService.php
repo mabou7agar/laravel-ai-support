@@ -2,6 +2,7 @@
 
 namespace LaravelAIEngine\Services\Node;
 
+use Illuminate\Support\Str;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
@@ -17,13 +18,15 @@ class NodeManifestService
     public function health(): array
     {
         $healthReport = $this->infrastructureHealthReport();
+        $node = $this->localNode();
 
         return [
             'status' => $healthReport['status'] ?? 'healthy',
             'ready' => (bool) ($healthReport['ready'] ?? true),
             'version' => config('ai-engine.version', '1.0.0'),
-            'name' => config('app.name'),
-            'url' => config('app.url'),
+            'name' => $node['name'],
+            'url' => $node['url'],
+            'node' => $node,
             'manifest_url' => url('/api/ai-engine/manifest'),
             'checks' => $healthReport['checks'] ?? [],
             'timestamp' => now()->toIso8601String(),
@@ -37,15 +40,13 @@ class NodeManifestService
         $collectors = $this->normalizeCollectors(
             $this->collectorDiscovery->discoverCollectors(useCache: false, includeRemote: false)
         );
+        $node = $this->localNode();
 
         return [
-            'node' => [
-                'slug' => config('ai-engine.nodes.slug', config('app.name', 'local')),
-                'name' => config('app.name'),
-                'url' => config('app.url'),
+            'node' => array_merge($node, [
                 'version' => config('ai-engine.version', '1.0.0'),
                 'description' => $metadata['description'] ?? '',
-            ],
+            ]),
             'capabilities' => array_values($metadata['capabilities'] ?? []),
             'domains' => array_values($metadata['domains'] ?? []),
             'data_types' => array_values($metadata['data_types'] ?? []),
@@ -120,6 +121,32 @@ class NodeManifestService
         }
 
         return array_values($normalized);
+    }
+
+    protected function localNode(): array
+    {
+        $configuredName = trim((string) config('ai-engine.nodes.local.name', config('app.name', 'Laravel')));
+        $configuredSlug = trim((string) config('ai-engine.nodes.local.slug', ''));
+        $configuredRole = trim((string) config('ai-engine.nodes.local.role', ''));
+        $aliases = config('ai-engine.nodes.local.aliases', []);
+        $aliases = is_array($aliases) ? $aliases : [];
+        $aliases = array_values(array_unique(array_filter(array_map(
+            static fn ($alias) => trim((string) $alias),
+            $aliases
+        ))));
+
+        $name = $configuredName !== '' ? $configuredName : config('app.name', 'Laravel');
+        $slug = $configuredSlug !== '' ? $configuredSlug : Str::slug($name);
+        $slug = $slug !== '' ? $slug : 'local';
+
+        return [
+            'slug' => $slug,
+            'name' => $name,
+            'role' => $configuredRole !== '' ? $configuredRole : (config('ai-engine.nodes.is_master', true) ? 'master' : 'client'),
+            'type' => config('ai-engine.nodes.is_master', true) ? 'master' : 'child',
+            'aliases' => $aliases,
+            'url' => config('app.url'),
+        ];
     }
 
     protected function infrastructureHealthReport(): array

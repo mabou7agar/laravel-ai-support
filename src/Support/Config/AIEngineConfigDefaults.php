@@ -1330,6 +1330,17 @@ class AIEngineConfigDefaults
         // Master node URL (for child nodes)
         'master_url' => env('AI_ENGINE_MASTER_URL'),
 
+        // Local node identity used in health/manifest payloads and admin UI
+        'local' => [
+            'name' => env('AI_ENGINE_NODE_NAME', env('APP_NAME', 'Laravel')),
+            'slug' => env('AI_ENGINE_NODE_SLUG'),
+            'role' => env('AI_ENGINE_NODE_ROLE', env('AI_ENGINE_IS_MASTER', true) ? 'master' : 'client'),
+            'aliases' => array_values(array_filter(array_map(
+                'trim',
+                explode(',', (string) env('AI_ENGINE_NODE_ALIASES', ''))
+            ))),
+        ],
+
         // JWT Configuration
         'jwt' => [
             // JWT secret for node authentication

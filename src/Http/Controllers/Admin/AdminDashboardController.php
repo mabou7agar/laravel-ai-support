@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Http\Controllers\Admin;
 
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use LaravelAIEngine\Services\Agent\AgentManifestService;
 
@@ -12,6 +13,7 @@ class AdminDashboardController extends Controller
     public function index(Request $request, AgentManifestService $manifestService): View
     {
         $manifestPath = $this->normalizePath($manifestService->manifestPath());
+        $localNode = $this->localNodeProfile();
 
         return view('ai-engine::admin.dashboard', [
             'app_name' => config('app.name', 'Laravel'),
@@ -28,6 +30,8 @@ class AdminDashboardController extends Controller
             'qdrant_self_check_enabled' => (bool) config('ai-engine.infrastructure.qdrant_self_check.enabled', false),
             'client_ip' => $request->ip(),
             'user_email' => (string) data_get($request->user(), 'email', 'guest'),
+            'local_node' => $localNode,
+            'master_target' => config('ai-engine.nodes.master_url') ?: $localNode['url'],
         ]);
     }
 
@@ -42,5 +46,31 @@ class AdminDashboardController extends Controller
         }
 
         return base_path($path);
+    }
+
+    protected function localNodeProfile(): array
+    {
+        $name = trim((string) config('ai-engine.nodes.local.name', config('app.name', 'Laravel')));
+        $slug = trim((string) config('ai-engine.nodes.local.slug', ''));
+        $role = trim((string) config('ai-engine.nodes.local.role', ''));
+        $aliases = config('ai-engine.nodes.local.aliases', []);
+
+        $name = $name !== '' ? $name : config('app.name', 'Laravel');
+        $slug = $slug !== '' ? $slug : Str::slug($name);
+        $slug = $slug !== '' ? $slug : 'local';
+        $aliases = is_array($aliases) ? $aliases : [];
+        $aliases = array_values(array_unique(array_filter(array_map(
+            static fn ($alias) => trim((string) $alias),
+            $aliases
+        ))));
+
+        return [
+            'name' => $name,
+            'slug' => $slug,
+            'role' => $role !== '' ? $role : (config('ai-engine.nodes.is_master', true) ? 'master' : 'client'),
+            'type' => config('ai-engine.nodes.is_master', true) ? 'master' : 'child',
+            'aliases' => $aliases,
+            'url' => config('app.url'),
+        ];
     }
 }
