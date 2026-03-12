@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\ConversationListResponseDTO;
 use LaravelAIEngine\DTOs\ConversationPaginationDTO;
 use LaravelAIEngine\DTOs\ConversationSessionPreviewDTO;
+use LaravelAIEngine\Http\Controllers\Concerns\ExtractsConversationContextPayload;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\ActionService;
@@ -23,6 +24,8 @@ use LaravelAIEngine\Http\Requests\SendMessageRequest;
  */
 class RagChatApiController extends Controller
 {
+    use ExtractsConversationContextPayload;
+
     public function __construct(
         protected ChatService $chatService,
         protected ConversationService $conversationService,
@@ -149,6 +152,7 @@ class RagChatApiController extends Controller
                     'actions' => array_map(fn($action) => is_array($action) ? $action : $action->toArray(), $actions),
                     'usage' => $response->getUsage() ?? [],
                     'session_id' => $sessionId,
+                    ...$this->extractConversationContextPayload($metadata),
                 ]
             ]);
 
@@ -676,6 +680,7 @@ class RagChatApiController extends Controller
             'file_content' => "[Image: {$file->getClientOriginalName()}]\n\nAI Analysis:\n{$content}",
         ];
     }
+
 
     /**
      * Analyze a document file - pass directly to AI when possible

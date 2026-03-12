@@ -15,6 +15,7 @@ use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\ActionService;
 use LaravelAIEngine\Events\AIActionTriggered;
+use LaravelAIEngine\Http\Controllers\Concerns\ExtractsConversationContextPayload;
 use LaravelAIEngine\Http\Requests\SendMessageRequest;
 use LaravelAIEngine\Http\Requests\ExecuteActionRequest;
 use LaravelAIEngine\Http\Requests\ClearHistoryRequest;
@@ -30,6 +31,8 @@ use LaravelAIEngine\Services\Vector\VectorAuthorizationService;
 
 class AIChatController extends Controller
 {
+    use ExtractsConversationContextPayload;
+
     public function __construct(
         protected ChatService $chatService,
         protected ConversationService $conversationService,
@@ -214,6 +217,7 @@ class AIChatController extends Controller
                 'session_id' => $dto->sessionId,
                 // Metadata from AgentOrchestrator (includes RAG, workflow, actions, etc.)
                 'metadata' => $metadata,
+                ...$this->extractConversationContextPayload($metadata),
                 // Legacy fields for backward compatibility
                 'rag_enabled' => $metadata['rag_enabled'] ?? false,
                 'sources' => $metadata['sources'] ?? [],
@@ -923,4 +927,5 @@ class AIChatController extends Controller
             'data' => $status,
         ]);
     }
+
 }
