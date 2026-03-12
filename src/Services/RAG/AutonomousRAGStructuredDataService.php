@@ -160,7 +160,7 @@ class AutonomousRAGStructuredDataService
             } else {
                 $startNum = $offset + 1;
                 $endNum = $offset + $items->count();
-                $modelLabel = Str::headline(Str::plural(str_replace('_', ' ', (string) $modelName)));
+                $modelLabel = $this->resolveModelLabel($modelClass, $modelName);
                 $response = "**{$modelLabel}** (showing {$startNum}-{$endNum} of {$totalCount}):\n\n";
 
                 foreach ($items as $index => $item) {
@@ -242,6 +242,28 @@ class AutonomousRAGStructuredDataService
         }
 
         return $formatted;
+    }
+
+    protected function resolveModelLabel(string $modelClass, string $fallbackModelName): string
+    {
+        $displayName = '';
+
+        if (class_exists($modelClass)) {
+            try {
+                $instance = new $modelClass();
+                if (method_exists($instance, 'getRAGDisplayName')) {
+                    $displayName = trim((string) $instance->getRAGDisplayName());
+                }
+            } catch (\Throwable) {
+                $displayName = '';
+            }
+        }
+
+        if ($displayName === '') {
+            $displayName = Str::headline(str_replace('_', ' ', (string) $fallbackModelName));
+        }
+
+        return Str::plural($displayName);
     }
 
     public function queryNext(array $params, $userId, array $options, callable $queryHandler): array

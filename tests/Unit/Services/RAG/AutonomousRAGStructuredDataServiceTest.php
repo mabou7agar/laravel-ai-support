@@ -292,6 +292,36 @@ PHP);
         $this->assertStringContainsString("\n   Customer line", $result['response']);
         $this->assertStringNotContainsString('SUMMARY_TOKEN', $result['response']);
     }
+
+    public function test_query_list_uses_model_display_name_for_heading(): void
+    {
+        Schema::dropIfExists('rag_preview_models');
+        Schema::create('rag_preview_models', function ($table) {
+            $table->id();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->string('name')->nullable();
+            $table->timestamps();
+        });
+
+        SummaryPreviewListModel::create(['created_by' => 9, 'name' => 'INV-1']);
+
+        $service = new AutonomousRAGStructuredDataService(
+            new AutonomousRAGStateService(new AutonomousRAGPolicy()),
+            new AutonomousRAGPolicy()
+        );
+
+        $result = $service->query([
+            'model' => 'summarypreviewlistmodel',
+        ], 9, ['session_id' => 'preview-heading-session'], [
+            'findModelClass' => fn (string $modelName, array $options) => SummaryPreviewListModel::class,
+            'getFilterConfigForModel' => fn (string $modelClass) => ['user_field' => 'created_by'],
+            'applyFilters' => fn ($query, array $filters, string $modelClass, array $options) => $query,
+            'findModelConfigClass' => fn (string $modelClass) => null,
+        ]);
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('**Invoice Cards**', $result['response']);
+    }
 }
 
 class FakeInvoiceModel
@@ -334,5 +364,10 @@ class SummaryPreviewListModel extends Model
     public function toRAGSummary(): string
     {
         return "SUMMARY_TOKEN {$this->name}";
+    }
+
+    public function getRAGDisplayName(): string
+    {
+        return 'Invoice Card';
     }
 }

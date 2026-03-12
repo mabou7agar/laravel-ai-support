@@ -1330,11 +1330,20 @@ class AIEngineConfigDefaults
         // Master node URL (for child nodes)
         'master_url' => env('AI_ENGINE_MASTER_URL'),
 
-        // Local node identity used in health/manifest payloads and admin UI
+        // Local node identity used in health/manifest payloads and admin UI.
+        // Use env() in config defaults; runtime code should read these values
+        // through config('ai-engine.nodes.local.*'). If node-specific env vars
+        // are omitted, the name falls back to APP_NAME, the URL falls back to
+        // APP_URL where it is consumed, the slug is derived later, and the label
+        // defaults from AI_ENGINE_IS_MASTER. AI_ENGINE_NODE_ROLE is kept as a
+        // backward-compatible alias for older app configs.
         'local' => [
             'name' => env('AI_ENGINE_NODE_NAME', env('APP_NAME', 'Laravel')),
             'slug' => env('AI_ENGINE_NODE_SLUG'),
-            'role' => env('AI_ENGINE_NODE_ROLE', env('AI_ENGINE_IS_MASTER', true) ? 'master' : 'client'),
+            'label' => env('AI_ENGINE_NODE_LABEL', env(
+                'AI_ENGINE_NODE_ROLE',
+                env('AI_ENGINE_IS_MASTER', true) ? 'master' : 'client'
+            )),
             'aliases' => array_values(array_filter(array_map(
                 'trim',
                 explode(',', (string) env('AI_ENGINE_NODE_ALIASES', ''))

@@ -127,4 +127,28 @@ PHP);
 
         $this->assertSame($query, $result);
     }
+
+    public function test_find_model_class_does_not_confuse_prefixed_model_names(): void
+    {
+        $service = new AutonomousRAGModelMetadataService(
+            null,
+            new AutonomousRAGStateService(new AutonomousRAGPolicy()),
+            null
+        );
+
+        $modelClass = $service->findModelClass('emailcache', [
+            'rag_collections' => [
+                [
+                    'name' => 'email',
+                    'class' => 'App\\Models\\Email',
+                ],
+                [
+                    'name' => 'emailcache',
+                    'class' => 'App\\Models\\EmailCache',
+                ],
+            ],
+        ]);
+
+        $this->assertSame('App\\Models\\EmailCache', $modelClass);
+    }
 }

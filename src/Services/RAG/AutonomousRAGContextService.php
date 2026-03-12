@@ -95,13 +95,17 @@ class AutonomousRAGContextService
                 if (is_array($firstItem) && isset($firstItem['name'])) {
                     $models = collect($collections)->map(fn (array $collection) => [
                         'name' => $collection['name'],
+                        'display_name' => $collection['display_name'] ?? $collection['name'],
                         'description' => $collection['description'] ?? "Model for {$collection['name']} data",
+                        'aliases' => array_values((array) ($collection['aliases'] ?? [])),
                         'capabilities' => $collection['capabilities'] ?? [],
                     ])->toArray();
                 } else {
                     $models = collect($collections)->map(fn ($collection) => [
                         'name' => strtolower(class_basename($collection)),
+                        'display_name' => class_basename($collection),
                         'description' => 'Model for ' . class_basename($collection) . ' data',
+                        'aliases' => [],
                         'capabilities' => [],
                     ])->toArray();
                 }
@@ -147,8 +151,10 @@ class AutonomousRAGContextService
                 $normalized[$name] = [
                     'name' => $name,
                     'class' => $class,
+                    'display_name' => (string) ($collection['display_name'] ?? $name),
                     'table' => str_ends_with($name, 's') ? $name : $name . 's',
                     'description' => $description,
+                    'aliases' => array_values((array) ($collection['aliases'] ?? [])),
                     'location' => 'remote',
                     'capabilities' => [
                         'db_query' => true,

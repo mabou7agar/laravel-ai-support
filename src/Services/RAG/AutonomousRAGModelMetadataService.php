@@ -33,8 +33,10 @@ class AutonomousRAGModelMetadataService
                 $models[] = [
                     'name' => $collection['name'],
                     'class' => $collectionClass,
+                    'display_name' => $collection['display_name'] ?? $collection['name'],
                     'table' => $collection['table'] ?? $collection['name'] . 's',
                     'description' => $collection['description'] ?? "Model for {$collection['name']} data",
+                    'aliases' => array_values((array) ($collection['aliases'] ?? [])),
                     'location' => $isLocal ? 'local' : 'remote',
                     'capabilities' => $collection['capabilities'] ?? [
                         'db_query' => true,
@@ -62,6 +64,9 @@ class AutonomousRAGModelMetadataService
                 $models[] = [
                     'name' => strtolower($name),
                     'class' => $collection,
+                    'display_name' => method_exists($instance, 'getRAGDisplayName')
+                        ? $instance->getRAGDisplayName()
+                        : $name,
                     'table' => $instance->getTable() ?? strtolower($name) . 's',
                     'schema' => method_exists($instance, 'getModelSchema') ? $instance->getModelSchema() : [],
                     'filter_config' => $this->getFilterConfigForModel($collection),
@@ -75,6 +80,7 @@ class AutonomousRAGModelMetadataService
                     'description' => method_exists($instance, 'getModelDescription')
                         ? $instance->getModelDescription()
                         : "Model for {$name} data",
+                    'aliases' => $this->getModelAliases($instance, $collection),
                 ];
             } catch (\Throwable $e) {
                 Log::channel('ai-engine')->warning('Failed to inspect model', [
@@ -85,6 +91,25 @@ class AutonomousRAGModelMetadataService
         }
 
         return $models;
+    }
+
+    protected function getModelAliases(object $instance, string $collection): array
+    {
+        $aliases = [];
+
+        if (method_exists($instance, 'getRAGAliases')) {
+            $aliases = $instance->getRAGAliases();
+        } elseif (method_exists($collection, 'getRAGAliases')) {
+            $aliases = $collection::getRAGAliases();
+        }
+
+        if (!is_array($aliases)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_unique(array_map(static function ($alias): string {
+            return trim((string) $alias);
+        }, $aliases))));
     }
 
     public function findModelClass(string $modelName, array $options): ?string
@@ -341,16 +366,39 @@ class AutonomousRAGModelMetadataService
             return false;
         }
 
-        $candidateSingular = $this->toSingular($candidate);
-        $candidatePlural = $this->toPlural($candidate);
-        $modelSingular = $this->toSingular($modelName);
-        $modelPlural = $this->toPlural($modelName);
+        $candidateVariants = $this->normalizedModelNameVariants($candidate);
+        $modelVariants = $this->normalizedModelNameVariants($modelName);
 
-        return $candidate === $modelName
-            || $candidateSingular === $modelSingular
-            || $candidatePlural === $modelPlural
-            || str_contains($candidateSingular, $modelSingular)
-            || str_contains($modelSingular, $candidateSingular);
+        return array_intersect($candidateVariants, $modelVariants) !== [];
+    }
+
+    protected function normalizedModelNameVariants(string $value): array
+    {
+        $forms = [
+            $value,
+            $this->toSingular($value),
+            $this->toPlural($value),
+        ];
+
+        $variants = [];
+        foreach ($forms as $form) {
+            $normalized = Str::of($form)
+                ->replace('\\', ' ')
+                ->snake(' ')
+                ->replace(['-', '_'], ' ')
+                ->lower()
+                ->squish()
+                ->value();
+
+            if ($normalized === '') {
+                continue;
+            }
+
+            $variants[] = $normalized;
+            $variants[] = str_replace(' ', '', $normalized);
+        }
+
+        return array_values(array_unique($variants));
     }
 
     protected function findModelClassFromCollectors(string $modelName): ?string

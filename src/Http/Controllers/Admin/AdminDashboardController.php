@@ -52,7 +52,10 @@ class AdminDashboardController extends Controller
     {
         $name = trim((string) config('ai-engine.nodes.local.name', config('app.name', 'Laravel')));
         $slug = trim((string) config('ai-engine.nodes.local.slug', ''));
-        $role = trim((string) config('ai-engine.nodes.local.role', ''));
+        $label = trim((string) config(
+            'ai-engine.nodes.local.label',
+            (string) config('ai-engine.nodes.local.role', '')
+        ));
         $aliases = config('ai-engine.nodes.local.aliases', []);
 
         $name = $name !== '' ? $name : config('app.name', 'Laravel');
@@ -67,7 +70,8 @@ class AdminDashboardController extends Controller
         return [
             'name' => $name,
             'slug' => $slug,
-            'role' => $role !== '' ? $role : (config('ai-engine.nodes.is_master', true) ? 'master' : 'client'),
+            'label' => $label !== '' ? $label : (config('ai-engine.nodes.is_master', true) ? 'master' : 'client'),
+            'role' => $label !== '' ? $label : (config('ai-engine.nodes.is_master', true) ? 'master' : 'client'),
             'type' => config('ai-engine.nodes.is_master', true) ? 'master' : 'child',
             'aliases' => $aliases,
             'url' => config('app.url'),

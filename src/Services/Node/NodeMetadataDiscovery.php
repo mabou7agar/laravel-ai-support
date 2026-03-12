@@ -255,11 +255,15 @@ class NodeMetadataDiscovery
                         try {
                             $instance = new $className;
                             $modelName = class_basename($className);
+                            $displayName = method_exists($instance, 'getRAGDisplayName')
+                                ? $instance->getRAGDisplayName()
+                                : $modelName;
                             
                             // Get description from model if available
                             $description = method_exists($instance, 'getModelDescription')
                                 ? $instance->getModelDescription()
                                 : "Model for {$modelName} data";
+                            $aliases = $this->discoverCollectionAliases($instance, $className);
                             
                             // Get table name
                             $table = method_exists($instance, 'getTable')
@@ -272,8 +276,10 @@ class NodeMetadataDiscovery
                             $collections[] = [
                                 'name' => strtolower($modelName),
                                 'class' => $className,
+                                'display_name' => $displayName,
                                 'table' => $table,
                                 'description' => $description,
+                                'aliases' => $aliases,
                                 'capabilities' => [
                                     'db_query' => true,
                                     'db_count' => true,
@@ -289,8 +295,27 @@ class NodeMetadataDiscovery
                 }
             }
         }
-        
+
         return $collections;
+    }
+
+    protected function discoverCollectionAliases(object $instance, string $className): array
+    {
+        $aliases = [];
+
+        if (method_exists($instance, 'getRAGAliases')) {
+            $aliases = $instance->getRAGAliases();
+        } elseif (method_exists($className, 'getRAGAliases')) {
+            $aliases = $className::getRAGAliases();
+        }
+
+        if (!is_array($aliases)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_unique(array_map(static function ($alias): string {
+            return trim((string) $alias);
+        }, $aliases))));
     }
     
     /**

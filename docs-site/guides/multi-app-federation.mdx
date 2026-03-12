@@ -17,7 +17,10 @@ In each child app:
 AI_ENGINE_NODES_ENABLED=true
 AI_ENGINE_IS_MASTER=false
 AI_ENGINE_MASTER_URL=https://ai.test
-AI_ENGINE_NODE_JWT_SECRET=shared_secret
+AI_ENGINE_JWT_SECRET=shared_secret
+AI_ENGINE_NODE_NAME="Node1"
+AI_ENGINE_NODE_SLUG=node-1
+AI_ENGINE_NODE_LABEL=client
 ```
 
 Child app must expose node API routes and pass health checks.
@@ -29,8 +32,20 @@ In master app:
 ```env
 AI_ENGINE_NODES_ENABLED=true
 AI_ENGINE_IS_MASTER=true
-AI_ENGINE_NODE_JWT_SECRET=shared_secret
+AI_ENGINE_JWT_SECRET=shared_secret
+AI_ENGINE_NODE_NAME="Node2"
+AI_ENGINE_NODE_SLUG=node-2
+AI_ENGINE_NODE_LABEL=dash
 ```
+
+## Local Identity Defaults
+
+- Define node identity in config with `env(...)`, then read it at runtime with `config('ai-engine.nodes.local.*')`.
+- If `AI_ENGINE_NODE_NAME` is missing, the config falls back to `APP_NAME`.
+- If `AI_ENGINE_NODE_SLUG` is missing, runtime services derive it from the resolved node name.
+- If `AI_ENGINE_NODE_LABEL` is missing, it defaults to `master` when `AI_ENGINE_IS_MASTER=true`, otherwise `client`.
+- `AI_ENGINE_NODE_ROLE` is still accepted as a backward-compatible alias, but `AI_ENGINE_NODE_LABEL` is preferred.
+- The node URL should come from `APP_URL`; runtime services read it through `config('app.url')`.
 
 ## Step 3: Create Node Registry File
 

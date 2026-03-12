@@ -21,7 +21,7 @@
     <p class="muted">
         app: {{ $app_name }}
         | slug: {{ $local_node['slug'] }}
-        | role: {{ $local_node['role'] }}
+        | label: {{ $local_node['label'] }}
         | type: {{ $local_node['type'] }}
         | user: {{ $user_email }}
         | ip: {{ $client_ip }}
@@ -71,7 +71,7 @@
         <ul>
             <li>Name: <strong>{{ $local_node['name'] }}</strong></li>
             <li>Slug: <strong>{{ $local_node['slug'] }}</strong></li>
-            <li>Role: <strong>{{ $local_node['role'] }}</strong></li>
+            <li>Label: <strong>{{ $local_node['label'] }}</strong></li>
             <li>Type: <strong>{{ $local_node['type'] }}</strong></li>
             <li>Aliases: <strong>{{ count($local_node['aliases']) ? implode(', ', $local_node['aliases']) : 'none' }}</strong></li>
             <li>URL: <code>{{ $local_node['url'] }}</code></li>

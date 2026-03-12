@@ -99,6 +99,7 @@ class NodeManifestService
                 'display_name' => $displayName,
                 'table' => is_array($collection) ? ($collection['table'] ?? 'unknown') : 'unknown',
                 'description' => is_array($collection) ? ($collection['description'] ?? '') : '',
+                'aliases' => is_array($collection) ? array_values((array) ($collection['aliases'] ?? [])) : [],
                 'capabilities' => is_array($collection) ? ($collection['capabilities'] ?? []) : [],
             ];
         }, $collections));
@@ -127,7 +128,10 @@ class NodeManifestService
     {
         $configuredName = trim((string) config('ai-engine.nodes.local.name', config('app.name', 'Laravel')));
         $configuredSlug = trim((string) config('ai-engine.nodes.local.slug', ''));
-        $configuredRole = trim((string) config('ai-engine.nodes.local.role', ''));
+        $configuredLabel = trim((string) config(
+            'ai-engine.nodes.local.label',
+            (string) config('ai-engine.nodes.local.role', '')
+        ));
         $aliases = config('ai-engine.nodes.local.aliases', []);
         $aliases = is_array($aliases) ? $aliases : [];
         $aliases = array_values(array_unique(array_filter(array_map(
@@ -142,7 +146,8 @@ class NodeManifestService
         return [
             'slug' => $slug,
             'name' => $name,
-            'role' => $configuredRole !== '' ? $configuredRole : (config('ai-engine.nodes.is_master', true) ? 'master' : 'client'),
+            'label' => $configuredLabel !== '' ? $configuredLabel : (config('ai-engine.nodes.is_master', true) ? 'master' : 'client'),
+            'role' => $configuredLabel !== '' ? $configuredLabel : (config('ai-engine.nodes.is_master', true) ? 'master' : 'client'),
             'type' => config('ai-engine.nodes.is_master', true) ? 'master' : 'child',
             'aliases' => $aliases,
             'url' => config('app.url'),

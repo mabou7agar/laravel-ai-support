@@ -958,13 +958,24 @@ class AutonomousRAGDecisionService
     protected function modelAliasCandidates(string $modelName, array $model): array
     {
         $canonical = $this->canonicalEntityType($modelName);
+        $explicitAliases = array_values(array_filter(array_map(
+            static fn ($alias): string => mb_strtolower(trim((string) $alias)),
+            (array) ($model['aliases'] ?? [])
+        )));
+
         $aliases = [
-            mb_strtolower(trim($modelName)),
+            mb_strtolower(trim((string) ($model['display_name'] ?? ''))),
             mb_strtolower(trim((string) ($model['table'] ?? ''))),
             mb_strtolower(trim((string) ($model['class'] ?? ''))),
-            $this->normalizeSingular(mb_strtolower(trim($modelName))),
-            $this->normalizePlural(mb_strtolower(trim($modelName))),
         ];
+
+        if ($explicitAliases === []) {
+            $aliases[] = mb_strtolower(trim($modelName));
+            $aliases[] = $this->normalizeSingular(mb_strtolower(trim($modelName)));
+            $aliases[] = $this->normalizePlural(mb_strtolower(trim($modelName)));
+        } else {
+            $aliases = array_merge($aliases, $explicitAliases);
+        }
 
         if ($this->decisionLanguageMode() !== 'ai_first') {
             foreach ($this->availableLexiconLocales() as $locale) {
