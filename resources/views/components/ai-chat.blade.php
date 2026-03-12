@@ -805,6 +805,19 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     }
+
+    function resolveSendEndpoint(endpoint) {
+        if (typeof endpoint !== 'string') {
+            return endpoint;
+        }
+
+        const trimmed = endpoint.replace(/\/+$/, '');
+        if (trimmed.endsWith('/api/ai-chat') || trimmed.endsWith('/api/ai-chat/')) {
+            return `${trimmed}/send`;
+        }
+
+        return endpoint;
+    }
     
     async function sendMessage() {
         const message = messageInput.value.trim();
@@ -841,7 +854,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     async function sendHttpMessage(message) {
-        const response = await fetch(config.api_endpoint, {
+        const response = await fetch(resolveSendEndpoint(config.api_endpoint), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -858,16 +871,22 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         const data = await response.json();
+        const payload = (data && typeof data.data === 'object' && data.data !== null)
+            ? data.data
+            : data;
         
         hideTypingIndicator();
         
         if (data.success) {
-            addMessage('assistant', data.response);
-            if (data.actions && actionsEnabled) {
-                addInteractiveActions(data.actions);
+            addMessage('assistant', payload.response || '');
+            if (payload.actions && actionsEnabled) {
+                addInteractiveActions(payload.actions);
             }
         } else {
-            showError(data.error || 'An error occurred');
+            const errorMessage = typeof data.error === 'string'
+                ? data.error
+                : (data.error && data.error.message) || data.message || 'An error occurred';
+            showError(errorMessage);
         }
     }
     
@@ -923,6 +942,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function addInteractiveActions(actions) {
         const lastMessage = messagesContainer.querySelector('.message.assistant:last-child .message-content');
         if (!lastMessage) return;
+
+        const existingActions = lastMessage.querySelector('.message-actions');
+        if (existingActions) {
+            existingActions.remove();
+        }
         
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'message-actions';
