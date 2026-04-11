@@ -6,10 +6,12 @@ namespace LaravelAIEngine\Support\Providers;
 
 use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\Services\AnalyticsManager;
+use LaravelAIEngine\Services\AIMediaManager;
 use LaravelAIEngine\Services\CacheManager;
 use LaravelAIEngine\Services\ConversationManager;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Services\DiscoveryCacheWarmer;
+use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\Services\RateLimitManager;
 use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
@@ -27,9 +29,11 @@ class CoreServiceRegistrar
         });
 
         $app->singleton(CreditManager::class, fn ($app) => new CreditManager($app));
+        $app->singleton(AIMediaManager::class, fn () => new AIMediaManager());
         $app->singleton(CacheManager::class, fn ($app) => new CacheManager($app));
         $app->singleton(RateLimitManager::class, fn ($app) => new RateLimitManager($app));
         $app->singleton(AnalyticsManager::class, fn ($app) => new AnalyticsManager($app));
+        $app->singleton(DriverRegistry::class, fn ($app) => new DriverRegistry($app));
 
         $app->singleton(AIEngineManager::class, function ($app) {
             return new AIEngineManager(
@@ -61,6 +65,31 @@ class CoreServiceRegistrar
 
         $app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, fn () => new \LaravelAIEngine\Services\Memory\MemoryManager());
         $app->singleton(\LaravelAIEngine\Services\AIEngineService::class, fn ($app) => new \LaravelAIEngine\Services\AIEngineService($app->make(CreditManager::class)));
+        $app->singleton(\LaravelAIEngine\Support\Fal\FalCharacterStore::class, fn () => new \LaravelAIEngine\Support\Fal\FalCharacterStore());
+        $app->singleton(\LaravelAIEngine\Services\Fal\FalReferencePackGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalReferencePackGenerationService(
+            $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+            $app->make(\LaravelAIEngine\Support\Fal\FalCharacterStore::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Fal\FalCharacterGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalCharacterGenerationService(
+            $app->make(\LaravelAIEngine\Services\Fal\FalReferencePackGenerationService::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Fal\FalMediaWorkflowService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalMediaWorkflowService(
+            $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+            $app->make(\LaravelAIEngine\Support\Fal\FalCharacterStore::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService(
+            $app->make(\LaravelAIEngine\Services\Fal\FalReferencePackGenerationService::class),
+            $app->make(\LaravelAIEngine\Services\JobStatusTracker::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Fal\FalAsyncCharacterGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalAsyncCharacterGenerationService(
+            $app->make(\LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Fal\FalAsyncVideoService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalAsyncVideoService(
+            $app->make(\LaravelAIEngine\Services\Fal\FalMediaWorkflowService::class),
+            $app->make(\LaravelAIEngine\Services\Drivers\DriverRegistry::class),
+            $app->make(\LaravelAIEngine\Services\JobStatusTracker::class),
+            $app->make(CreditManager::class)
+        ));
         $app->singleton(\LaravelAIEngine\Services\UnifiedEngineManager::class, fn ($app) => new \LaravelAIEngine\Services\UnifiedEngineManager(
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
             $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class),

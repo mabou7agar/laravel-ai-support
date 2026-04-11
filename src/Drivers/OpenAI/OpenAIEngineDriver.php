@@ -12,6 +12,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Services\AIMediaManager;
 use OpenAI;
 
 class OpenAIEngineDriver extends BaseEngineDriver
@@ -212,13 +213,27 @@ class OpenAIEngineDriver extends BaseEngineDriver
                 'quality' => $quality,
             ]);
 
-            $imageUrls = array_map(fn($image) => $image->url, $response->data);
+            $storedImages = array_map(function ($image) use ($request) {
+                return app(AIMediaManager::class)->storeRemoteFile($image->url, [
+                    'engine' => $request->getEngine()->value,
+                    'ai_model' => $request->getModel()->value,
+                    'content_type' => 'image',
+                    'collection_name' => 'generated-images',
+                    'name' => 'openai-image',
+                ]);
+            }, $response->data);
+
+            $imageUrls = array_values(array_filter(array_map(
+                static fn (array $image): ?string => $image['url'] ?? $image['source_url'] ?? null,
+                $storedImages
+            )));
 
             return AIResponse::success(
                 $request->getPrompt(),
                 $request->getEngine(),
                 $request->getModel()
             )->withFiles($imageUrls)
+             ->withMetadata(['images' => $storedImages])
              ->withUsage(
                  creditsUsed: $imageCount * $request->getModel()->creditIndex()
              );

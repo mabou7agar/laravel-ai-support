@@ -12,6 +12,7 @@ use LaravelAIEngine\Services\ActionManager;
 use LaravelAIEngine\Services\Failover\FailoverManager;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
 use LaravelAIEngine\Services\Analytics\AnalyticsManager as NewAnalyticsManager;
+use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\Support\Providers\AgentServiceRegistrar;
 use LaravelAIEngine\Support\Providers\CoreServiceRegistrar;
 use LaravelAIEngine\Support\Providers\EnterpriseServiceRegistrar;
@@ -37,6 +38,11 @@ class AIEngineServiceProvider extends ServiceProvider
             'ai-agent'
         );
 
+        $this->mergeNestedConfig(
+            'ai-engine',
+            \LaravelAIEngine\Support\Config\AIEngineConfigDefaults::defaults()
+        );
+
         // Register AI Engine log channel
         $this->registerLogChannel();
 
@@ -52,10 +58,30 @@ class AIEngineServiceProvider extends ServiceProvider
     }
 
     /**
+     * Laravel's mergeConfigFrom is shallow, so older published config files
+     * would miss newer nested keys like engines.fal_ai. Merge recursively here
+     * to preserve backward compatibility.
+     */
+    protected function mergeNestedConfig(string $key, array $defaults): void
+    {
+        $existing = $this->app->make('config')->get($key, []);
+        $existing = is_array($existing) ? $existing : [];
+
+        $this->app->make('config')->set(
+            $key,
+            array_replace_recursive($defaults, $existing)
+        );
+    }
+
+    /**
      * Register AI Engine log channel
      */
     protected function registerLogChannel(): void
     {
+        if ($this->app->make('config')->has('logging.channels.ai-engine')) {
+            return;
+        }
+
         $this->app->make('config')->set('logging.channels.ai-engine', [
             'driver' => 'single',
             'path' => storage_path('logs/ai-engine.log'),
@@ -70,7 +96,32 @@ class AIEngineServiceProvider extends ServiceProvider
     protected function registerCoreServices(): void
     {
         CoreServiceRegistrar::register($this->app);
+        $this->registerDriverRegistry();
         AgentServiceRegistrar::register($this->app);
+    }
+
+    protected function registerDriverRegistry(): void
+    {
+        $this->app->afterResolving(DriverRegistry::class, function (DriverRegistry $registry): void {
+            foreach ([
+                \LaravelAIEngine\Enums\EngineEnum::OPENAI,
+                \LaravelAIEngine\Enums\EngineEnum::ANTHROPIC,
+                \LaravelAIEngine\Enums\EngineEnum::GEMINI,
+                \LaravelAIEngine\Enums\EngineEnum::STABLE_DIFFUSION,
+                \LaravelAIEngine\Enums\EngineEnum::ELEVEN_LABS,
+                \LaravelAIEngine\Enums\EngineEnum::FAL_AI,
+                \LaravelAIEngine\Enums\EngineEnum::OPENROUTER,
+                \LaravelAIEngine\Enums\EngineEnum::OLLAMA,
+            ] as $engine) {
+                $registry->register($engine, function () use ($engine) {
+                    $engineEnum = new \LaravelAIEngine\Enums\EngineEnum($engine);
+                    $driverClass = $engineEnum->driverClass();
+                    $config = config("ai-engine.engines.{$engine}", []);
+
+                    return $this->app->makeWith($driverClass, ['config' => $config]);
+                });
+            }
+        });
     }
 
     /**
@@ -151,7 +202,11 @@ class AIEngineServiceProvider extends ServiceProvider
             ], 'ai-engine-node-routes');
 
             $this->commands([
+                Console\Commands\GenerateFalReferencePackCommand::class,
+                Console\Commands\GenerateFalCharacterCommand::class,
+                Console\Commands\TestAIMediaCommand::class,
                 Console\Commands\TestEnginesCommand::class,
+                Console\Commands\TestFalMediaCommand::class,
                 Console\Commands\SyncModelsCommand::class,
                 Console\Commands\UsageReportCommand::class,
                 Console\Commands\ClearCacheCommand::class,

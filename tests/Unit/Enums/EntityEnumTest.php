@@ -25,6 +25,9 @@ class EntityEnumTest extends TestCase
             'eleven_multilingual_v2',
             'deepseek-chat',
             'fal-flux-pro',
+            'fal-ai/nano-banana-2',
+            'fal-ai/kling-video/o3/standard/image-to-video',
+            'bytedance/seedance-2.0/text-to-video',
             'plagiarism-basic',
             'midjourney-v6',
             'azure-tts',
@@ -44,6 +47,9 @@ class EntityEnumTest extends TestCase
         $this->assertEquals(EngineEnum::GEMINI, $this->entity(EntityEnum::GEMINI_1_5_PRO)->engine()->value);
         $this->assertEquals(EngineEnum::STABLE_DIFFUSION, $this->entity(EntityEnum::SD3_LARGE)->engine()->value);
         $this->assertEquals(EngineEnum::FAL_AI, $this->entity(EntityEnum::FAL_FLUX_PRO)->engine()->value);
+        $this->assertEquals(EngineEnum::FAL_AI, $this->entity(EntityEnum::FAL_NANO_BANANA_2)->engine()->value);
+        $this->assertEquals(EngineEnum::FAL_AI, $this->entity(EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO)->engine()->value);
+        $this->assertEquals(EngineEnum::FAL_AI, $this->entity(EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO)->engine()->value);
         $this->assertEquals(EngineEnum::PLAGIARISM_CHECK, $this->entity(EntityEnum::PLAGIARISM_BASIC)->engine()->value);
         $this->assertEquals(EngineEnum::MIDJOURNEY, $this->entity(EntityEnum::MIDJOURNEY_V6)->engine()->value);
         $this->assertEquals(EngineEnum::AZURE, $this->entity(EntityEnum::AZURE_TTS)->engine()->value);
@@ -53,8 +59,11 @@ class EntityEnumTest extends TestCase
     {
         $this->assertEquals('text', $this->entity(EntityEnum::GPT_4O)->getContentType());
         $this->assertEquals('image', $this->entity(EntityEnum::DALL_E_3)->getContentType());
+        $this->assertEquals('image', $this->entity(EntityEnum::FAL_NANO_BANANA_2)->getContentType());
         $this->assertEquals('audio', $this->entity(EntityEnum::WHISPER_1)->getContentType());
         $this->assertEquals('video', $this->entity(EntityEnum::FAL_STABLE_VIDEO)->getContentType());
+        $this->assertEquals('video', $this->entity(EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO)->getContentType());
+        $this->assertEquals('video', $this->entity(EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO)->getContentType());
         $this->assertEquals('search', $this->entity(EntityEnum::PERPLEXITY_SONAR_LARGE)->getContentType());
         $this->assertEquals('plagiarism', $this->entity(EntityEnum::PLAGIARISM_BASIC)->getContentType());
     }

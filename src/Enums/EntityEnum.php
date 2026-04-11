@@ -19,7 +19,6 @@ use LaravelAIEngine\Drivers\StableDiffusion\SD3LargeDriver;
 use LaravelAIEngine\Drivers\StableDiffusion\SDXL1024Driver;
 use LaravelAIEngine\Drivers\ElevenLabs\MultilingualV2Driver;
 use LaravelAIEngine\Drivers\FalAI\FluxProDriver;
-use LaravelAIEngine\Drivers\FalAI\KlingVideoDriver;
 use LaravelAIEngine\Drivers\DeepSeek\DeepSeekChatDriver;
 use LaravelAIEngine\Drivers\DeepSeek\DeepSeekReasonerDriver;
 use LaravelAIEngine\Services\Models\DynamicModelResolver;
@@ -62,6 +61,13 @@ class EntityEnum
     public const FAL_STABLE_VIDEO = 'fal-stable-video';
     public const FAL_ANIMATEDIFF = 'fal-animatediff';
     public const FAL_LUMA_DREAM = 'fal-luma-dream';
+    public const FAL_NANO_BANANA_2 = 'fal-ai/nano-banana-2';
+    public const FAL_NANO_BANANA_2_EDIT = 'fal-ai/nano-banana-2/edit';
+    public const FAL_KLING_O3_IMAGE_TO_VIDEO = 'fal-ai/kling-video/o3/standard/image-to-video';
+    public const FAL_KLING_O3_REFERENCE_TO_VIDEO = 'fal-ai/kling-video/o3/standard/reference-to-video';
+    public const FAL_SEEDANCE_2_TEXT_TO_VIDEO = 'bytedance/seedance-2.0/text-to-video';
+    public const FAL_SEEDANCE_2_IMAGE_TO_VIDEO = 'bytedance/seedance-2.0/image-to-video';
+    public const FAL_SEEDANCE_2_REFERENCE_TO_VIDEO = 'bytedance/seedance-2.0/reference-to-video';
 
     // Simplified aliases for common models
     public const FLUX_PRO = 'flux-pro';
@@ -342,6 +348,13 @@ class EntityEnum
             case self::FAL_STABLE_VIDEO:
             case self::FAL_ANIMATEDIFF:
             case self::FAL_LUMA_DREAM:
+            case self::FAL_NANO_BANANA_2:
+            case self::FAL_NANO_BANANA_2_EDIT:
+            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
+            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
             case self::FLUX_PRO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
@@ -432,9 +445,16 @@ class EntityEnum
             case self::FLUX_PRO:
                 return FluxProDriver::class;
             case self::FAL_LUMA_DREAM:
+            case self::FAL_NANO_BANANA_2:
+            case self::FAL_NANO_BANANA_2_EDIT:
+            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
+            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
-                return KlingVideoDriver::class;
+                return \LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver::class;
             case self::DEEPSEEK_CHAT:
                 return DeepSeekChatDriver::class;
             case self::DEEPSEEK_REASONER:
@@ -581,6 +601,20 @@ class EntityEnum
                 return 'ElevenLabs Multilingual v2';
             case self::FLUX_PRO:
                 return 'Flux Pro';
+            case self::FAL_NANO_BANANA_2:
+                return 'Nano Banana 2';
+            case self::FAL_NANO_BANANA_2_EDIT:
+                return 'Nano Banana 2 Edit';
+            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
+                return 'Kling O3 Image to Video';
+            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
+                return 'Kling O3 Reference to Video';
+            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
+                return 'Seedance 2.0 Text to Video';
+            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
+                return 'Seedance 2.0 Image to Video';
+            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
+                return 'Seedance 2.0 Reference to Video';
             case self::KLING_VIDEO:
                 return 'Kling Video';
             case self::LUMA_DREAM_MACHINE:
@@ -713,6 +747,10 @@ class EntityEnum
             case self::FAL_FLUX_PRO:
             case self::FLUX_PRO:
                 return 3.5;
+            case self::FAL_NANO_BANANA_2:
+                return 3.8;
+            case self::FAL_NANO_BANANA_2_EDIT:
+                return 3.9;
             case self::FAL_FLUX_DEV:
                 return 2.5;
             case self::FAL_FLUX_SCHNELL:
@@ -725,9 +763,15 @@ class EntityEnum
             case self::FAL_ANIMATEDIFF:
                 return 5.0;
             case self::FAL_LUMA_DREAM:
+            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
+            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
                 return 8.0;
+            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
+                return 7.5;
             case self::DEEPSEEK_CHAT:
                 return 0.2;
             case self::DEEPSEEK_REASONER:
@@ -909,11 +953,18 @@ class EntityEnum
             case self::FAL_FLUX_SCHNELL:
             case self::FAL_SDXL:
             case self::FAL_SD3_MEDIUM:
+            case self::FAL_NANO_BANANA_2:
+            case self::FAL_NANO_BANANA_2_EDIT:
             case self::FLUX_PRO:
                 return 'image';
             case self::FAL_STABLE_VIDEO:
             case self::FAL_ANIMATEDIFF:
             case self::FAL_LUMA_DREAM:
+            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
+            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
+            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
                 return 'video';
@@ -1214,6 +1265,13 @@ class EntityEnum
             self::FAL_STABLE_VIDEO,
             self::FAL_ANIMATEDIFF,
             self::FAL_LUMA_DREAM,
+            self::FAL_NANO_BANANA_2,
+            self::FAL_NANO_BANANA_2_EDIT,
+            self::FAL_KLING_O3_IMAGE_TO_VIDEO,
+            self::FAL_KLING_O3_REFERENCE_TO_VIDEO,
+            self::FAL_SEEDANCE_2_TEXT_TO_VIDEO,
+            self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO,
+            self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO,
             self::FLUX_PRO,
             self::KLING_VIDEO,
             self::LUMA_DREAM_MACHINE,

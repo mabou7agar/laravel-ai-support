@@ -11,6 +11,7 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\AIMediaManager;
 
 class ElevenLabsEngineDriver extends BaseEngineDriver
 {
@@ -140,7 +141,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
             ]);
 
             $audioData = $response->getBody()->getContents();
-            $filename = $this->saveAudioFile($audioData);
+            $filename = $this->saveAudioFile($audioData, $request);
 
             $charactersUsed = strlen($request->getPrompt());
 
@@ -377,18 +378,22 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     /**
      * Save audio file to storage
      */
-    private function saveAudioFile(string $audioData): string
+    private function saveAudioFile(string $audioData, AIRequest $request): string
     {
-        $filename = 'ai_audio_' . uniqid() . '.mp3';
-        $path = storage_path('app/public/ai-audio/' . $filename);
-        
-        if (!is_dir(dirname($path))) {
-            mkdir(dirname($path), 0755, true);
-        }
-        
-        file_put_contents($path, $audioData);
-        
-        return url('storage/ai-audio/' . $filename);
+        $stored = app(AIMediaManager::class)->storeBinary(
+            $audioData,
+            'ai-audio-' . uniqid() . '.mp3',
+            [
+                'engine' => $request->getEngine()->value,
+                'ai_model' => $request->getModel()->value,
+                'content_type' => 'audio',
+                'collection_name' => 'generated-audio',
+                'name' => 'elevenlabs-audio',
+                'mime_type' => 'audio/mpeg',
+            ]
+        );
+
+        return (string) ($stored['url'] ?? '');
     }
 
     /**

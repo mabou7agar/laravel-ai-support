@@ -1,6 +1,6 @@
 ---
 title: Direct Generation Recipes
-description: Separate request patterns for text, image, audio transcription, and text-to-speech.
+description: Separate request patterns for text, image, video, audio transcription, and text-to-speech.
 ---
 
 This page gives exact, separate requests for direct generation.
@@ -9,16 +9,54 @@ This page gives exact, separate requests for direct generation.
 
 - `POST /api/v1/ai/generate/text`
 - `POST /api/v1/ai/generate/image`
+- `POST /api/v1/ai/generate/video`
+- `GET /api/v1/ai/generate/video/jobs/{jobId}`
 - `POST /api/v1/ai/generate/transcribe`
 - `POST /api/v1/ai/generate/tts`
 
 All return standard envelope keys: `success`, `message`, `data`, `error`, `meta`.
 
+## Built-in Console Commands
+
+- `php artisan ai-engine:generate-character`
+- `php artisan ai-engine:generate-reference-pack`
+- `php artisan ai-engine:test-ai-media`
+- `php artisan ai-engine:test-fal-media`
+
 ## Credit behavior
 
 - authenticated requests use the same credit guard/deduction as chat and RAG
-- applies to all direct endpoints: text, image, transcribe, and tts
+- applies to all direct endpoints: text, image, video, transcribe, and tts
 - when balance is insufficient, API returns HTTP `402` with standard error envelope
+- console FAL commands skip credits when `--user-id` is omitted
+- console FAL commands charge credits normally when `--user-id` is passed
+
+## AIMedia storage
+
+Generated media can now be persisted in the `ai_media` table with medialibrary-style records.
+
+Run migrations:
+
+```bash
+php artisan migrate
+```
+
+Use your own cloud disk URLs by setting a storage disk such as `s3`:
+
+```env
+AI_ENGINE_MEDIA_ENABLED=true
+AI_ENGINE_MEDIA_DISK=s3
+AI_ENGINE_MEDIA_DIRECTORY=ai-generated
+AI_ENGINE_MEDIA_VISIBILITY=public
+```
+
+When upload succeeds, media responses return your disk URL instead of the provider URL, and a matching `ai_media` row is created.
+
+Quick verification:
+
+```bash
+php artisan ai-engine:test-ai-media --write-test --cleanup
+```
 
 ## 1) Text generation (HTTP)
 
@@ -51,7 +89,104 @@ curl -X POST https://your-app.test/api/v1/ai/generate/image \
   }'
 ```
 
-## 3) Audio transcription (HTTP)
+## 3) Nano Banana keyframes (HTTP)
+
+```bash
+curl -X POST https://your-app.test/api/v1/ai/generate/image \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt":"Generate 3 cinematic keyframes for Mina, a sci-fi pilot",
+    "engine":"fal_ai",
+    "model":"fal-ai/nano-banana-2",
+    "frame_count":3,
+    "aspect_ratio":"16:9",
+    "resolution":"1K",
+    "thinking_level":"high",
+    "character_sources":[
+      {
+        "name":"Mina",
+        "description":"Athletic sci-fi pilot in a silver flight jacket",
+        "metadata":{"hair":"short black bob","age":24}
+      }
+    ]
+  }'
+```
+
+## 4) Kling 3 character video (HTTP)
+
+```bash
+curl -X POST https://your-app.test/api/v1/ai/generate/video \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt":"@Element1 walks through a rainy neon market",
+    "engine":"fal_ai",
+    "model":"fal-ai/kling-video/o3/standard/reference-to-video",
+    "duration":"8",
+    "aspect_ratio":"16:9",
+    "reference_image_urls":["https://cdn.example.com/market-scene.png"],
+    "character_sources":[
+      {
+        "name":"Mina",
+        "frontal_image_url":"https://cdn.example.com/mina-front.png",
+        "reference_image_urls":["https://cdn.example.com/mina-side.png"]
+      }
+    ]
+  }'
+```
+
+## 5) Seedance 2.0 text-to-video (HTTP)
+
+```bash
+curl -X POST https://your-app.test/api/v1/ai/generate/video \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt":"A cinematic chase through a flooded cyberpunk alley",
+    "engine":"fal_ai",
+    "model":"bytedance/seedance-2.0/text-to-video",
+    "duration":"auto",
+    "resolution":"720p",
+    "generate_audio":true
+  }'
+```
+
+## 6) Async video submission (HTTP)
+
+Use this for long-running Kling or Seedance jobs so your app gets a local `job_id` immediately and polls later.
+
+```bash
+curl -X POST https://your-app.test/api/v1/ai/generate/video \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt":"A cinematic chase through a flooded cyberpunk alley",
+    "engine":"fal_ai",
+    "model":"bytedance/seedance-2.0/text-to-video",
+    "duration":"auto",
+    "resolution":"720p",
+    "generate_audio":true,
+    "async":true
+  }'
+```
+
+Response shape:
+
+- `data.job_id`: local package job id
+- `data.status`: local normalized status like `queued`, `processing`, or `completed`
+- `data.job.metadata.provider.request_id`: provider request id on FAL
+
+## 7) Async video status (HTTP)
+
+```bash
+curl -X GET "https://your-app.test/api/v1/ai/generate/video/jobs/local-job-id?refresh=1" \
+  -H "Accept: application/json"
+```
+
+Use `refresh=1` when you want the package to poll FAL before returning the local status snapshot.
+
+## 8) Audio transcription (HTTP)
 
 ```bash
 curl -X POST https://your-app.test/api/v1/ai/generate/transcribe \
@@ -61,7 +196,7 @@ curl -X POST https://your-app.test/api/v1/ai/generate/transcribe \
   -F "model=whisper-1"
 ```
 
-## 4) Text-to-speech (HTTP)
+## 9) Text-to-speech (HTTP)
 
 ```bash
 curl -X POST https://your-app.test/api/v1/ai/generate/tts \
@@ -75,7 +210,7 @@ curl -X POST https://your-app.test/api/v1/ai/generate/tts \
   }'
 ```
 
-## 5) SDK text generation (`AIRequest`)
+## 10) SDK text generation (`AIRequest`)
 
 Use this when you want application code instead of HTTP.
 
@@ -99,7 +234,7 @@ if (!$response->isSuccess()) {
 $text = $response->getContent();
 ```
 
-## 6) SDK image generation (`AIRequest`)
+## 11) SDK image generation (`AIRequest`)
 
 ```php
 use LaravelAIEngine\DTOs\AIRequest;
@@ -120,7 +255,207 @@ $response = app(AIEngineService::class)->generate($request);
 $files = $response->getFiles();
 ```
 
-## 7) SDK transcription (`AIRequest`)
+## 12) SDK video generation (`AIRequest`)
+
+```php
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Services\AIEngineService;
+
+$request = new AIRequest(
+    prompt: 'A cinematic chase through a flooded cyberpunk alley',
+    engine: 'fal_ai',
+    model: 'bytedance/seedance-2.0/text-to-video',
+    parameters: [
+        'duration' => 'auto',
+        'resolution' => '720p',
+        'generate_audio' => true,
+    ]
+);
+
+$response = app(AIEngineService::class)->generate($request);
+$videoFiles = $response->getFiles();
+```
+
+## 13) Console character generation
+
+Generate a reusable Nano Banana character set and save it for later Kling/Seedance scenes.
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina \
+  --frame-count=8 \
+  --look-size=4 \
+  --aspect-ratio=9:16 \
+  --user-id=123
+```
+
+Character/reference-pack commands queue by default. Add `--wait` if you want the command to block until the queued job finishes, or `--sync` only when you explicitly want inline execution.
+
+If you want to approve the identity first, generate only the preview/base image:
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina-preview \
+  --preview-only
+```
+
+Then expand that approved preview into the full reference set:
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina \
+  --from-character=mina-preview \
+  --frame-count=16 \
+  --look-size=4
+```
+
+`--frame-count` now builds a character sheet workflow:
+
+- views are grouped into looks based on `--look-size`
+- the first look keeps the same clothing, hair, makeup, and overall styling across all angles
+- the next look keeps the same identity but intentionally changes hair and makeup styling
+- each additional look continues introducing a new style variant while preserving the same identity
+
+This stores:
+
+- first generated image as `frontal_image_url`
+- remaining generated images as `reference_image_urls`
+- grouped look metadata in `character.metadata.looks`
+
+Then reuse it later with `--use-character=mina` or `--use-last-character`.
+
+## 13b) Console generic reference pack generation
+
+The generic service/command can create reference packs for objects, furniture, vehicles, products, props, and creatures too.
+
+```bash
+php artisan ai-engine:generate-reference-pack \
+  "Modern curved couch, premium fabric, clean studio background" \
+  --entity-type=furniture \
+  --name="Modern Couch" \
+  --save-as=modern-couch \
+  --frame-count=8 \
+  --look-size=4
+```
+
+Preview-first flow also works for non-character entities:
+
+```bash
+php artisan ai-engine:generate-reference-pack \
+  "Modern curved couch, premium fabric, clean studio background" \
+  --entity-type=furniture \
+  --save-as=modern-couch-preview \
+  --preview-only
+```
+
+If you need to force inline execution during local debugging:
+
+```bash
+php artisan ai-engine:generate-reference-pack \
+  "Modern curved couch, premium fabric, clean studio background" \
+  --entity-type=furniture \
+  --save-as=modern-couch-preview \
+  --preview-only \
+  --sync
+```
+
+Queue a long character workflow instead of waiting in the terminal:
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina \
+  --frame-count=16 \
+  --look-size=4 \
+  --async
+```
+
+Check local queued workflow status:
+
+```bash
+php artisan ai-engine:generate-character --job-status=YOUR_JOB_ID
+```
+
+## 14) Console video generation from saved character
+
+```bash
+php artisan ai-engine:test-fal-media \
+  "Mina walks toward camera in a neon alley" \
+  --use-character=mina \
+  --user-id=123
+```
+
+## 15) Console multi-character and multi-shot Kling scene
+
+Repeat `--use-character`, `--character`, `--reference-image-url`, and `--shot`.
+
+- first character becomes `@Element1`
+- second character becomes `@Element2`
+- first reference image becomes `@Image1`
+
+```bash
+php artisan ai-engine:test-fal-media \
+  --use-character=mina \
+  --use-character=ray \
+  --reference-image-url=https://cdn.example.com/cafe-scene.png \
+  --shot='{"prompt":"@Element1 enters beside @Element2. Match @Image1 lighting.","duration":3}' \
+  --shot='{"prompt":"@Element1 sits across from @Element2 and looks toward camera.","duration":5}' \
+  --user-id=123
+```
+
+## 16) Console async video submission
+
+Use `--async` to enqueue a long-running FAL video job and print a local `job_id`.
+
+```bash
+php artisan ai-engine:test-fal-media \
+  "A cinematic chase through a flooded cyberpunk alley" \
+  --model=bytedance/seedance-2.0/text-to-video \
+  --resolution=720p \
+  --async
+```
+
+Wait locally by polling the job tracker:
+
+```bash
+php artisan ai-engine:test-fal-media \
+  "A cinematic chase through a flooded cyberpunk alley" \
+  --model=bytedance/seedance-2.0/text-to-video \
+  --resolution=720p \
+  --async \
+  --wait \
+  --timeout=300 \
+  --poll-interval=5
+```
+
+Inspect an existing async job:
+
+```bash
+php artisan ai-engine:test-fal-media \
+  --job-status=local-job-id \
+  --refresh-status
+```
+
+## 17) Console dry run
+
+Use `--dry-run` to inspect the normalized request without calling FAL.
+
+```bash
+php artisan ai-engine:test-fal-media \
+  "Create 3 keyframes for Mina" \
+  --frame-count=3 \
+  --aspect-ratio=16:9 \
+  --dry-run
+```
+
+## 18) SDK transcription (`AIRequest`)
 
 ```php
 use LaravelAIEngine\DTOs\AIRequest;
@@ -137,7 +472,7 @@ $response = app(AIEngineService::class)->generate($request);
 $transcript = $response->getContent();
 ```
 
-## 8) SDK text-to-speech (`AIRequest`)
+## 19) SDK text-to-speech (`AIRequest`)
 
 ```php
 use LaravelAIEngine\DTOs\AIRequest;
@@ -157,13 +492,18 @@ $response = app(AIEngineService::class)->generate($request);
 $audioFiles = $response->getFiles();
 ```
 
-## 9) Optional app-specific wrapper endpoints
+## 20) Optional app-specific wrapper endpoints
 
 If you need custom auth/rate limits/tenant policies, wrap these calls in your app controller and proxy to package generation.
 
-## 10) Common mistakes
+## 21) Common mistakes
 
 - engine/model mismatch (example: `engine=openai` with non-OpenAI model slug)
 - missing provider API key (you will get provider-specific error in envelope)
+- forgetting `start_image_url` or references for image-driven video models
+- using synchronous video generation for jobs that can reasonably exceed request timeouts
+- sending character source metadata without the required image URLs for character-consistent video
+- forgetting `--user-id` in console flows when credits must be deducted from a real user
+- assuming `frame_count` means video frames; here it means generated still images/views for Nano Banana
 - using JSON for `/transcribe` instead of multipart upload
 - expecting `/api/v1/rag/chat` to behave like direct multimodal generation API

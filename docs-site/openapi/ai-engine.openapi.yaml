@@ -413,6 +413,67 @@ paths:
         '500':
           $ref: '#/components/responses/GenericError'
 
+  /api/v1/ai/generate/video:
+    post:
+      tags: [AI Generation]
+      summary: Generate video
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateVideoRequest'
+      responses:
+        '200':
+          description: Video generation response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '202':
+          description: Async FAL video job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '402':
+          $ref: '#/components/responses/InsufficientCredits'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/generate/video/jobs/{jobId}:
+    get:
+      tags: [AI Generation]
+      summary: Get async FAL video job status
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: refresh
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Async video job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
   /api/v1/ai/generate/transcribe:
     post:
       tags: [AI Generation]
@@ -1390,8 +1451,105 @@ components:
           type: string
         quality:
           type: string
+        frame_count:
+          type: integer
+        mode:
+          type: string
+          enum: [generate, edit]
+        source_images:
+          type: array
+          items:
+            type: string
+            format: uri
+        character_sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterSourceInput'
+        aspect_ratio:
+          type: string
+        resolution:
+          type: string
+        seed:
+          type: integer
+        thinking_level:
+          type: string
+          enum: [minimal, high]
+        output_format:
+          type: string
         parameters:
           $ref: '#/components/schemas/JsonObject'
+    GenerateVideoRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+        engine:
+          type: string
+        model:
+          type: string
+        duration:
+          oneOf:
+            - type: string
+            - type: integer
+        aspect_ratio:
+          type: string
+        resolution:
+          type: string
+        seed:
+          type: integer
+        start_image_url:
+          type: string
+          format: uri
+        end_image_url:
+          type: string
+          format: uri
+        reference_image_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+        character_sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterSourceInput'
+        generate_audio:
+          type: boolean
+        multi_prompt:
+          type: array
+          items:
+            $ref: '#/components/schemas/VideoPromptInput'
+        async:
+          type: boolean
+        use_webhook:
+          type: boolean
+        parameters:
+          $ref: '#/components/schemas/JsonObject'
+    CharacterSourceInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        frontal_image_url:
+          type: string
+          format: uri
+        reference_image_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+        metadata:
+          $ref: '#/components/schemas/JsonObject'
+    VideoPromptInput:
+      type: object
+      properties:
+        prompt:
+          type: string
+        duration:
+          oneOf:
+            - type: string
+            - type: integer
     GenerateTtsRequest:
       type: object
       required: [text]

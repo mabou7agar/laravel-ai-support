@@ -8,14 +8,17 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\Fal\FalAsyncVideoService;
 use Throwable;
 
 class GenerateApiController extends Controller
 {
     public function __construct(
-        private readonly AIEngineService $aiEngineService
+        private readonly AIEngineService $aiEngineService,
+        private readonly FalAsyncVideoService $falAsyncVideoService
     ) {}
 
     /**
@@ -112,6 +115,15 @@ class GenerateApiController extends Controller
      * @bodyParam count integer Optional image count. Default: 1
      * @bodyParam size string Optional provider-specific size (for OpenAI: 1024x1024).
      * @bodyParam quality string Optional provider-specific quality (for OpenAI: standard|hd).
+     * @bodyParam frame_count integer Optional Nano Banana keyframe count alias for num_images.
+     * @bodyParam mode string Optional Nano Banana mode: generate|edit.
+     * @bodyParam source_images array Optional source image URLs for edit workflows.
+     * @bodyParam character_sources array Optional package-level character source objects.
+     * @bodyParam aspect_ratio string Optional provider-specific aspect ratio.
+     * @bodyParam resolution string Optional provider-specific output resolution.
+     * @bodyParam seed integer Optional generation seed.
+     * @bodyParam thinking_level string Optional Nano Banana thinking level.
+     * @bodyParam output_format string Optional output format.
      * @bodyParam parameters object Optional provider-specific parameters.
      */
     public function image(Request $request): JsonResponse
@@ -123,12 +135,28 @@ class GenerateApiController extends Controller
             'count' => 'nullable|integer|min:1|max:8',
             'size' => 'nullable|string|max:50',
             'quality' => 'nullable|string|max:50',
+            'frame_count' => 'nullable|integer|min:1|max:4',
+            'mode' => 'nullable|string|in:generate,edit',
+            'source_images' => 'nullable|array|max:8',
+            'source_images.*' => 'nullable|url|max:2048',
+            'character_sources' => 'nullable|array|max:4',
+            'character_sources.*.name' => 'nullable|string|max:120',
+            'character_sources.*.description' => 'nullable|string|max:500',
+            'character_sources.*.frontal_image_url' => 'nullable|url|max:2048',
+            'character_sources.*.reference_image_urls' => 'nullable|array|max:4',
+            'character_sources.*.reference_image_urls.*' => 'nullable|url|max:2048',
+            'character_sources.*.metadata' => 'nullable|array',
+            'aspect_ratio' => 'nullable|string|max:20',
+            'resolution' => 'nullable|string|max:20',
+            'seed' => 'nullable|integer',
+            'thinking_level' => 'nullable|string|in:minimal,high',
+            'output_format' => 'nullable|string|in:jpeg,jpg,png,webp,gif',
             'parameters' => 'nullable|array',
         ]);
 
         try {
-            $engine = (string) ($validated['engine'] ?? 'openai');
-            $model = (string) ($validated['model'] ?? 'dall-e-3');
+            $engine = (string) ($validated['engine'] ?? $this->resolveDefaultImageEngine($validated));
+            $model = (string) ($validated['model'] ?? $this->resolveDefaultImageModel($validated));
             $count = (int) ($validated['count'] ?? 1);
             $parameters = is_array($validated['parameters'] ?? null) ? $validated['parameters'] : [];
 
@@ -137,6 +165,43 @@ class GenerateApiController extends Controller
             }
             if (!empty($validated['quality'])) {
                 $parameters['quality'] = (string) $validated['quality'];
+            }
+            if (isset($validated['frame_count'])) {
+                $parameters['frame_count'] = (int) $validated['frame_count'];
+            }
+            if (!empty($validated['mode'])) {
+                $parameters['mode'] = (string) $validated['mode'];
+            }
+            if (!empty($validated['source_images'])) {
+                $parameters['source_images'] = $validated['source_images'];
+            }
+            if (!empty($validated['character_sources'])) {
+                $parameters['character_sources'] = $validated['character_sources'];
+            }
+            if (!empty($validated['aspect_ratio'])) {
+                $parameters['aspect_ratio'] = (string) $validated['aspect_ratio'];
+            }
+            if (!empty($validated['resolution'])) {
+                $parameters['resolution'] = (string) $validated['resolution'];
+            }
+            if (isset($validated['seed'])) {
+                $parameters['seed'] = (int) $validated['seed'];
+            }
+            if (!empty($validated['thinking_level'])) {
+                $parameters['thinking_level'] = (string) $validated['thinking_level'];
+            }
+            if (!empty($validated['output_format'])) {
+                $parameters['output_format'] = (string) $validated['output_format'];
+            }
+            if ($model === EntityEnum::FAL_NANO_BANANA_2_EDIT
+                && empty($parameters['source_images'])
+                && empty($parameters['character_sources'])) {
+                return $this->envelope(
+                    success: false,
+                    message: 'Nano Banana edit requires source_images or character_sources.',
+                    error: ['message' => 'Nano Banana edit requires source_images or character_sources.'],
+                    status: 422
+                );
             }
 
             $response = $this->generateDirect(new AIRequest(
@@ -189,6 +254,266 @@ class GenerateApiController extends Controller
                 message: 'Image generation failed.',
                 error: ['message' => $e->getMessage()],
                 status: 500
+            );
+        }
+    }
+
+    /**
+     * Generate video from text, frames, or reference images.
+     *
+     * @group AI Generate
+     * @bodyParam prompt string Optional video prompt. Required for text-only generation.
+     * @bodyParam engine string Optional engine slug. Default: fal_ai
+     * @bodyParam model string Optional model slug. Auto-selected from inputs when omitted.
+     * @bodyParam duration string Optional provider-specific duration.
+     * @bodyParam aspect_ratio string Optional video aspect ratio.
+     * @bodyParam resolution string Optional video resolution.
+     * @bodyParam seed integer Optional generation seed.
+     * @bodyParam start_image_url string Optional start frame URL.
+     * @bodyParam end_image_url string Optional end frame URL.
+     * @bodyParam reference_image_urls array Optional reference image URLs.
+     * @bodyParam character_sources array Optional package-level character source objects.
+     * @bodyParam generate_audio boolean Optional native audio generation flag.
+     * @bodyParam multi_prompt array Optional multi-shot prompt blocks.
+     * @bodyParam async boolean Optional submit to FAL queue and return a job id instead of waiting.
+     * @bodyParam use_webhook boolean Optional enable provider webhook completion when async=true.
+     * @bodyParam parameters object Optional provider-specific parameters.
+     */
+    public function video(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'prompt' => 'nullable|string|max:4000',
+            'engine' => 'nullable|string|max:100',
+            'model' => 'nullable|string|max:200',
+            'duration' => 'nullable',
+            'aspect_ratio' => 'nullable|string|max:20',
+            'resolution' => 'nullable|string|max:20',
+            'seed' => 'nullable|integer',
+            'start_image_url' => 'nullable|url|max:2048',
+            'end_image_url' => 'nullable|url|max:2048',
+            'reference_image_urls' => 'nullable|array|max:8',
+            'reference_image_urls.*' => 'nullable|url|max:2048',
+            'character_sources' => 'nullable|array|max:4',
+            'character_sources.*.name' => 'nullable|string|max:120',
+            'character_sources.*.description' => 'nullable|string|max:500',
+            'character_sources.*.frontal_image_url' => 'nullable|url|max:2048',
+            'character_sources.*.reference_image_urls' => 'nullable|array|max:4',
+            'character_sources.*.reference_image_urls.*' => 'nullable|url|max:2048',
+            'character_sources.*.metadata' => 'nullable|array',
+            'generate_audio' => 'nullable|boolean',
+            'multi_prompt' => 'nullable|array|max:8',
+            'multi_prompt.*.prompt' => 'nullable|string|max:2000',
+            'multi_prompt.*.duration' => 'nullable',
+            'async' => 'nullable|boolean',
+            'use_webhook' => 'nullable|boolean',
+            'parameters' => 'nullable|array',
+        ]);
+
+        try {
+            $engine = (string) ($validated['engine'] ?? 'fal_ai');
+            $model = (string) ($validated['model'] ?? $this->resolveDefaultVideoModel($validated));
+            $parameters = is_array($validated['parameters'] ?? null) ? $validated['parameters'] : [];
+            $prompt = trim((string) ($validated['prompt'] ?? ''));
+
+            if (!empty($validated['duration'])) {
+                $parameters['duration'] = $validated['duration'];
+            }
+            if (!empty($validated['aspect_ratio'])) {
+                $parameters['aspect_ratio'] = (string) $validated['aspect_ratio'];
+            }
+            if (!empty($validated['resolution'])) {
+                $parameters['resolution'] = (string) $validated['resolution'];
+            }
+            if (isset($validated['seed'])) {
+                $parameters['seed'] = (int) $validated['seed'];
+            }
+            if (!empty($validated['start_image_url'])) {
+                $parameters['start_image_url'] = (string) $validated['start_image_url'];
+                $parameters['image_url'] = (string) $validated['start_image_url'];
+            }
+            if (!empty($validated['end_image_url'])) {
+                $parameters['end_image_url'] = (string) $validated['end_image_url'];
+            }
+            if (!empty($validated['reference_image_urls'])) {
+                $parameters['reference_image_urls'] = $validated['reference_image_urls'];
+            }
+            if (!empty($validated['character_sources'])) {
+                $parameters['character_sources'] = $validated['character_sources'];
+            }
+            if (array_key_exists('generate_audio', $validated)) {
+                $parameters['generate_audio'] = (bool) $validated['generate_audio'];
+            }
+            if (!empty($validated['multi_prompt'])) {
+                $parameters['multi_prompt'] = $validated['multi_prompt'];
+            }
+            if (array_key_exists('use_webhook', $validated)) {
+                $parameters['use_webhook'] = (bool) $validated['use_webhook'];
+            }
+
+            if ($validationError = $this->validateResolvedVideoRequest($model, $prompt, $parameters)) {
+                return $validationError;
+            }
+
+            if ((bool) ($validated['async'] ?? false)) {
+                $submitted = $this->falAsyncVideoService->submit(
+                    $prompt,
+                    array_merge($parameters, ['model' => $model]),
+                    $this->resolveAuthenticatedUserId()
+                );
+
+                return $this->envelope(
+                    success: true,
+                    message: 'Video job submitted successfully.',
+                    data: [
+                        'job_id' => $submitted['job_id'],
+                        'status' => $submitted['status']['status'] ?? 'queued',
+                        'job' => $submitted['status'],
+                        'webhook_url' => $submitted['webhook_url'],
+                    ],
+                    status: 202
+                );
+            }
+
+            $response = $this->generateDirect(new AIRequest(
+                prompt: $prompt,
+                engine: $engine,
+                model: $model,
+                parameters: $parameters,
+                userId: $this->resolveAuthenticatedUserId(),
+            ));
+
+            if (!$response->isSuccess()) {
+                return $this->envelope(
+                    success: false,
+                    message: $response->getError() ?? 'Video generation failed.',
+                    data: [
+                        'engine' => $engine,
+                        'model' => $model,
+                        'usage' => $response->getUsage(),
+                        'metadata' => $response->getMetadata(),
+                    ],
+                    error: ['message' => $response->getError() ?? 'Video generation failed.'],
+                    status: 422
+                );
+            }
+
+            return $this->envelope(
+                success: true,
+                message: 'Video generated successfully.',
+                data: [
+                    'files' => $response->getFiles(),
+                    'content' => $response->getContent(),
+                    'engine' => $response->getEngine()->value,
+                    'model' => $response->getModel()->value,
+                    'usage' => $response->getUsage(),
+                    'metadata' => $response->getMetadata(),
+                ]
+            );
+        } catch (InsufficientCreditsException $e) {
+            return $this->envelope(
+                success: false,
+                message: 'Insufficient credits for this request.',
+                error: ['message' => $e->getMessage()],
+                status: 402
+            );
+        } catch (Throwable $e) {
+            Log::error('AI generate video failed', ['error' => $e->getMessage()]);
+
+            return $this->envelope(
+                success: false,
+                message: 'Video generation failed.',
+                error: ['message' => $e->getMessage()],
+                status: 500
+            );
+        }
+    }
+
+    /**
+     * Fetch local status for an async FAL video job.
+     */
+    public function videoJobStatus(Request $request, string $jobId): JsonResponse
+    {
+        $validated = $request->validate([
+            'refresh' => 'nullable|boolean',
+        ]);
+
+        try {
+            $status = $this->falAsyncVideoService->getStatus(
+                $jobId,
+                (bool) ($validated['refresh'] ?? false)
+            );
+
+            if ($status === null) {
+                return $this->envelope(
+                    success: false,
+                    message: 'Video job not found.',
+                    error: ['message' => 'Video job not found.'],
+                    status: 404
+                );
+            }
+
+            return $this->envelope(
+                success: true,
+                message: 'Video job status fetched successfully.',
+                data: $status
+            );
+        } catch (Throwable $e) {
+            Log::error('AI video job status failed', ['job_id' => $jobId, 'error' => $e->getMessage()]);
+
+            return $this->envelope(
+                success: false,
+                message: 'Video job status lookup failed.',
+                error: ['message' => $e->getMessage()],
+                status: 500
+            );
+        }
+    }
+
+    /**
+     * Receive FAL async video webhook callbacks.
+     */
+    public function falVideoWebhook(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'request_id' => 'nullable|string|max:120',
+            'gateway_request_id' => 'nullable|string|max:120',
+            'status' => 'required|string|max:20',
+            'error' => 'nullable|string|max:2000',
+            'payload' => 'nullable|array',
+            'payload_error' => 'nullable|string|max:2000',
+        ]);
+
+        $jobId = trim((string) $request->query('job_id', ''));
+        $token = trim((string) $request->query('token', ''));
+
+        if ($jobId === '' || $token === '') {
+            return $this->envelope(
+                success: false,
+                message: 'Webhook job token is missing.',
+                error: ['message' => 'Webhook job token is missing.'],
+                status: 422
+            );
+        }
+
+        try {
+            $status = $this->falAsyncVideoService->handleWebhook($jobId, $token, $validated);
+
+            return $this->envelope(
+                success: true,
+                message: 'Webhook accepted.',
+                data: [
+                    'job_id' => $jobId,
+                    'status' => $status['status'] ?? null,
+                ]
+            );
+        } catch (Throwable $e) {
+            Log::warning('AI video webhook rejected', ['job_id' => $jobId, 'error' => $e->getMessage()]);
+
+            return $this->envelope(
+                success: false,
+                message: 'Webhook processing failed.',
+                error: ['message' => $e->getMessage()],
+                status: 422
             );
         }
     }
@@ -416,5 +741,87 @@ class GenerateApiController extends Controller
             // Optional-auth endpoints should degrade to guest context.
             return null;
         }
+    }
+
+    private function resolveDefaultImageEngine(array $validated): string
+    {
+        return $this->usesFalImageWorkflow($validated) ? 'fal_ai' : 'openai';
+    }
+
+    private function resolveDefaultImageModel(array $validated): string
+    {
+        if (!$this->usesFalImageWorkflow($validated)) {
+            return 'dall-e-3';
+        }
+
+        if (($validated['mode'] ?? null) === 'edit'
+            || !empty($validated['source_images'])
+            || !empty($validated['character_sources'])) {
+            return EntityEnum::FAL_NANO_BANANA_2_EDIT;
+        }
+
+        return EntityEnum::FAL_NANO_BANANA_2;
+    }
+
+    private function resolveDefaultVideoModel(array $validated): string
+    {
+        if (!empty($validated['character_sources']) || !empty($validated['reference_image_urls'])) {
+            return EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO;
+        }
+
+        if (!empty($validated['start_image_url']) || !empty($validated['end_image_url'])) {
+            return EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO;
+        }
+
+        return EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO;
+    }
+
+    private function usesFalImageWorkflow(array $validated): bool
+    {
+        foreach (['frame_count', 'mode', 'source_images', 'character_sources', 'aspect_ratio', 'resolution', 'thinking_level', 'output_format'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function validateResolvedVideoRequest(string $model, string $prompt, array $parameters): ?JsonResponse
+    {
+        if ($model === EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO && $prompt === '') {
+            return $this->envelope(
+                success: false,
+                message: 'Prompt is required for text-to-video generation.',
+                error: ['message' => 'Prompt is required for text-to-video generation.'],
+                status: 422
+            );
+        }
+
+        if (in_array($model, [
+            EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
+            EntityEnum::FAL_SEEDANCE_2_IMAGE_TO_VIDEO,
+        ], true) && empty($parameters['start_image_url']) && empty($parameters['image_url'])) {
+            return $this->envelope(
+                success: false,
+                message: 'This video model requires start_image_url.',
+                error: ['message' => 'This video model requires start_image_url.'],
+                status: 422
+            );
+        }
+
+        if (in_array($model, [
+            EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO,
+            EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO,
+        ], true) && empty($parameters['reference_image_urls']) && empty($parameters['character_sources'])) {
+            return $this->envelope(
+                success: false,
+                message: 'This video model requires reference_image_urls or character_sources.',
+                error: ['message' => 'This video model requires reference_image_urls or character_sources.'],
+                status: 422
+            );
+        }
+
+        return null;
     }
 }

@@ -113,6 +113,25 @@ class AIEngineConfigDefaults
 
     /*
     |--------------------------------------------------------------------------
+    | AI Media Library
+    |--------------------------------------------------------------------------
+    |
+    | Persistent storage for generated images, video, and audio outputs.
+    | Configure a cloud disk here if you want returned file URLs to use your
+    | own storage domain instead of provider URLs.
+    |
+    */
+    'media_library' => [
+        'enabled' => env('AI_ENGINE_MEDIA_ENABLED', true),
+        'persist_records' => env('AI_ENGINE_MEDIA_PERSIST_RECORDS', true),
+        'disk' => env('AI_ENGINE_MEDIA_DISK', env('FILESYSTEM_DISK', 'public')),
+        'directory' => env('AI_ENGINE_MEDIA_DIRECTORY', 'ai-generated'),
+        'visibility' => env('AI_ENGINE_MEDIA_VISIBILITY', 'public'),
+        'remote_timeout' => (int) env('AI_ENGINE_MEDIA_REMOTE_TIMEOUT', 20),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Localization
     |--------------------------------------------------------------------------
     |
@@ -512,6 +531,37 @@ class AIEngineConfigDefaults
             'models' => [
                 'sd3-medium' => ['enabled' => true, 'credit_index' => 3.0],
                 'sdxl-1024-v1-0' => ['enabled' => true, 'credit_index' => 2.5],
+            ],
+        ],
+
+        'fal_ai' => [
+            'driver' => 'fal_ai',
+            'api_key' => env('FAL_API_KEY'),
+            'base_url' => env('FAL_BASE_URL', 'https://fal.run'),
+            'queue_base_url' => env('FAL_QUEUE_BASE_URL', 'https://queue.fal.run'),
+            'timeout' => env('FAL_TIMEOUT', 180),
+            'character_generation' => [
+                'queue' => env('FAL_CHARACTER_QUEUE', 'ai-media'),
+            ],
+            'reference_pack' => [
+                'queue' => env('FAL_REFERENCE_PACK_QUEUE', env('FAL_CHARACTER_QUEUE', 'ai-media')),
+            ],
+            'async' => [
+                'webhook_url' => env('FAL_ASYNC_WEBHOOK_URL'),
+            ],
+            'models' => [
+                'fal-flux-pro' => ['enabled' => true, 'credit_index' => 3.5],
+                'fal-flux-dev' => ['enabled' => true, 'credit_index' => 2.5],
+                'fal-flux-schnell' => ['enabled' => true, 'credit_index' => 1.5],
+                'fal-sdxl' => ['enabled' => true, 'credit_index' => 2.0],
+                'fal-sd3-medium' => ['enabled' => true, 'credit_index' => 2.5],
+                'fal-ai/nano-banana-2' => ['enabled' => true, 'credit_index' => 3.8],
+                'fal-ai/nano-banana-2/edit' => ['enabled' => true, 'credit_index' => 3.9],
+                'fal-ai/kling-video/o3/standard/image-to-video' => ['enabled' => true, 'credit_index' => 8.0],
+                'fal-ai/kling-video/o3/standard/reference-to-video' => ['enabled' => true, 'credit_index' => 8.0],
+                'bytedance/seedance-2.0/text-to-video' => ['enabled' => true, 'credit_index' => 7.5],
+                'bytedance/seedance-2.0/image-to-video' => ['enabled' => true, 'credit_index' => 7.5],
+                'bytedance/seedance-2.0/reference-to-video' => ['enabled' => true, 'credit_index' => 7.5],
             ],
         ],
 

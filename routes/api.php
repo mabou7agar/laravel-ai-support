@@ -123,6 +123,13 @@ Route::prefix('api/v1/modules')
 
 // Direct Generation API Routes (v1)
 if (config('ai-engine.api.generate.enabled', true)) {
+    Route::post(
+        trim(config('ai-engine.api.generate.prefix', 'api/v1/ai/generate'), '/') . '/video/fal/webhook',
+        [GenerateApiController::class, 'falVideoWebhook']
+    )
+        ->middleware(['api', StandardizeApiResponseMiddleware::class])
+        ->name('ai-engine.generate.api.video.webhook');
+
     Route::prefix(config('ai-engine.api.generate.prefix', 'api/v1/ai/generate'))
         ->middleware($resolveApiMiddleware('generate'))
         ->name('ai-engine.generate.api.')
@@ -132,6 +139,12 @@ if (config('ai-engine.api.generate.enabled', true)) {
 
             Route::post('/image', [GenerateApiController::class, 'image'])
                 ->name('image');
+
+            Route::post('/video', [GenerateApiController::class, 'video'])
+                ->name('video');
+
+            Route::get('/video/jobs/{jobId}', [GenerateApiController::class, 'videoJobStatus'])
+                ->name('video.jobs.status');
 
             Route::post('/transcribe', [GenerateApiController::class, 'transcribe'])
                 ->name('transcribe');

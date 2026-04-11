@@ -6,11 +6,14 @@ namespace LaravelAIEngine\Drivers\StableDiffusion;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use LaravelAIEngine\Drivers\BaseEngineDriver;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\AIMediaManager;
 
 class StableDiffusionEngineDriver extends BaseEngineDriver
 {
@@ -156,7 +159,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
             foreach ($data['artifacts'] ?? [] as $artifact) {
                 if (isset($artifact['base64'])) {
                     // Save base64 image and return URL
-                    $imageUrls[] = $this->saveBase64Image($artifact['base64']);
+                    $imageUrls[] = $this->saveBase64Image($artifact['base64'], $request);
                 }
             }
 
@@ -214,9 +217,9 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
 
             // Add image data
             if ($initImage) {
-                $payload['image'] = base64_encode(file_get_contents($initImage));
+                $payload['image'] = base64_encode(File::get($initImage));
             } elseif (isset($request->getParameters()['init_image_url'])) {
-                $payload['image'] = base64_encode(file_get_contents($request->getParameters()['init_image_url']));
+                $payload['image'] = base64_encode($this->downloadRemoteImage((string) $request->getParameters()['init_image_url']));
             }
 
             $response = $this->httpClient->post('/v2beta/image-to-video', [
@@ -338,21 +341,23 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
     /**
      * Save base64 image to storage
      */
-    private function saveBase64Image(string $base64Data): string
+    private function saveBase64Image(string $base64Data, AIRequest $request): string
     {
         $imageData = base64_decode($base64Data);
-        $filename = 'ai_generated_' . uniqid() . '.png';
-        
-        // This would integrate with Laravel's storage system
-        $path = storage_path('app/public/ai-images/' . $filename);
-        
-        if (!is_dir(dirname($path))) {
-            mkdir(dirname($path), 0755, true);
-        }
-        
-        file_put_contents($path, $imageData);
-        
-        return url('storage/ai-images/' . $filename);
+        $stored = app(AIMediaManager::class)->storeBinary(
+            $imageData === false ? '' : $imageData,
+            'ai-generated-' . uniqid() . '.png',
+            [
+                'engine' => $request->getEngine()->value,
+                'ai_model' => $request->getModel()->value,
+                'content_type' => 'image',
+                'collection_name' => 'generated-images',
+                'name' => 'stable-diffusion-image',
+                'mime_type' => 'image/png',
+            ]
+        );
+
+        return (string) ($stored['url'] ?? '');
     }
 
     /**
@@ -370,5 +375,20 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
         }
         
         return $multipart;
+    }
+
+    private function downloadRemoteImage(string $url): string
+    {
+        $response = Http::timeout((int) $this->getTimeout())
+            ->withHeaders([
+                'User-Agent' => 'Laravel-AI-Engine/1.0',
+            ])
+            ->get($url);
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Unable to download init image from URL.');
+        }
+
+        return $response->body();
     }
 }

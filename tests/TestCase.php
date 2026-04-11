@@ -49,6 +49,10 @@ abstract class TestCase extends Orchestra
         $app['config']->set('queue.default', 'sync');
         $app['config']->set('ai-engine.nodes.enabled', false);
         $app['config']->set('ai-engine.nodes.jwt.secret', 'test-jwt-secret');
+        $app['config']->set('logging.channels.ai-engine', [
+            'driver' => 'errorlog',
+            'level' => 'debug',
+        ]);
     }
 
     protected function setUpConfig(): void
@@ -70,6 +74,7 @@ abstract class TestCase extends Orchestra
         Config::set('ai-engine.engines.gemini.api_key', 'test-gemini-key');
         Config::set('ai-engine.engines.stable_diffusion.api_key', 'test-stability-key');
         Config::set('ai-engine.engines.eleven_labs.api_key', 'test-elevenlabs-key');
+        Config::set('ai-engine.engines.fal_ai.api_key', 'test-fal-key');
     }
 
     protected function setUpDatabase(): void
