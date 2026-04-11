@@ -118,7 +118,7 @@ class AIEngineServiceProvider extends ServiceProvider
                     $driverClass = $engineEnum->driverClass();
                     $config = config("ai-engine.engines.{$engine}", []);
 
-                    return $this->app->makeWith($driverClass, ['config' => $config]);
+                    return new $driverClass($config);
                 });
             }
         });

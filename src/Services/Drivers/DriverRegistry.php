@@ -79,14 +79,6 @@ class DriverRegistry
 
     protected function buildDriverInstance(string $driverClass, array $config): EngineDriverInterface
     {
-        if ($this->container) {
-            return $this->container->makeWith($driverClass, ['config' => $config]);
-        }
-
-        if (function_exists('app')) {
-            return app()->makeWith($driverClass, ['config' => $config]);
-        }
-
         return new $driverClass($config);
     }
 }
