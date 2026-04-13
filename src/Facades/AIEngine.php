@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Facades;
 
 use Illuminate\Support\Facades\Facade;
-use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\Services\UnifiedEngineManager;
 
 /**
- * @method static \LaravelAIEngine\Services\EngineBuilder engine(string $engine)
- * @method static \LaravelAIEngine\Services\EngineBuilder model(string $model)
+ * @method static \LaravelAIEngine\Services\EngineProxy engine(string $engine)
+ * @method static \LaravelAIEngine\Services\EngineProxy model(string $model)
  * @method static array getAvailableEngines()
  * @method static array getAvailableModels(string $engine = null)
  * @method static \LaravelAIEngine\Services\BatchProcessor batch()
@@ -17,7 +17,9 @@ use LaravelAIEngine\Services\AIEngineManager;
  * @method static \LaravelAIEngine\Services\AnalyticsManager analytics()
  * @method static array estimateCost(array $operations)
  *
- * @see \LaravelAIEngine\Services\AIEngineManager
+ * @deprecated Use \LaravelAIEngine\Facades\Engine instead.
+ *
+ * @see \LaravelAIEngine\Services\UnifiedEngineManager
  */
 class AIEngine extends Facade
 {
@@ -26,6 +28,6 @@ class AIEngine extends Facade
      */
     protected static function getFacadeAccessor(): string
     {
-        return AIEngineManager::class;
+        return 'unified-engine';
     }
 }

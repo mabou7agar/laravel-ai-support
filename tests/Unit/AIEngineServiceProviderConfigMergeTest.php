@@ -6,6 +6,7 @@ use LaravelAIEngine\AIEngineServiceProvider;
 use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
 use LaravelAIEngine\Support\Config\AIEngineConfigDefaults;
 use LaravelAIEngine\Services\Drivers\DriverRegistry;
+use LaravelAIEngine\Services\UnifiedEngineManager;
 use LaravelAIEngine\Tests\UnitTestCase;
 use ReflectionMethod;
 
@@ -39,5 +40,10 @@ class AIEngineServiceProviderConfigMergeTest extends UnitTestCase
         $driver = $this->app->make(DriverRegistry::class)->resolve('fal_ai');
 
         $this->assertInstanceOf(FalAIEngineDriver::class, $driver);
+    }
+
+    public function test_ai_engine_alias_resolves_unified_manager(): void
+    {
+        $this->assertInstanceOf(UnifiedEngineManager::class, $this->app->make('ai-engine'));
     }
 }

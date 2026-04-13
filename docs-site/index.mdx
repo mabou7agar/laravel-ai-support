@@ -13,6 +13,15 @@ It combines:
 - RAG retrieval over your Laravel models
 - node federation across many Laravel apps
 
+## Runtime Entry Points
+
+The package now has a clear runtime split:
+
+- `UnifiedEngineManager`: public fluent entrypoint for `app('ai-engine')`, the `Engine` facade, and builder-style usage
+- `EngineProxy`: fluent object returned by `engine()` and `model()`
+- `AIEngineService`: direct typed execution API for `AIRequest`-driven calls
+- `DriverRegistry`: single driver construction and resolution path
+
 ## What Is Different In This Package
 
 1. **Deterministic execution first**: business operations happen through declared tools/config, not free-form model guessing.
@@ -44,6 +53,7 @@ It combines:
 ## Current Architecture Snapshot (March 2026)
 
 - modular orchestrator services (`IntentRouter`, `AgentPlanner`, execution + response finalization services)
+- unified runtime entrypoint through `UnifiedEngineManager` instead of the removed legacy manager/builder pair
 - autonomous RAG split by responsibility (decision, context/state, execution, policy)
 - manifest/ownership-based node routing
 - standardized API envelope (`success`, `message`, `data`, `error`, `meta`)

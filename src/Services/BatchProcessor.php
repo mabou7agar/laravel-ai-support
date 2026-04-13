@@ -15,7 +15,7 @@ class BatchProcessor
     private array $requests = [];
 
     public function __construct(
-        private AIEngineManager $manager
+        private UnifiedEngineManager $manager
     ) {}
 
     /**

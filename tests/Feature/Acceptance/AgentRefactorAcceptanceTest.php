@@ -25,10 +25,8 @@ use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\AgentOrchestrator;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
-use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
-use LaravelAIEngine\Services\EngineBuilder;
 use LaravelAIEngine\Services\Node\NodeOwnershipResolver;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\RAG\AutonomousRAGAgent;
@@ -227,19 +225,14 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
 
     public function test_refund_policy_lookup_uses_vector_search_path(): void
     {
-        $builder = Mockery::mock(EngineBuilder::class);
-        $builder->shouldReceive('withTemperature')->once()->with(0.1)->andReturnSelf();
-        $builder->shouldReceive('withMaxTokens')->once()->with(1000)->andReturnSelf();
-        $builder->shouldReceive('generate')->once()->andReturn(
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generateText')->once()->andReturn(
             AIResponse::success(
                 '{"tool":"vector_search","reasoning":"Policy questions should use RAG","parameters":{"model":"policy_document","query":"refund policy","limit":10}}',
                 EngineEnum::from('openai'),
                 EntityEnum::from('gpt-4o-mini')
             )
         );
-
-        $ai = Mockery::mock(AIEngineManager::class);
-        $ai->shouldReceive('model')->once()->with('gpt-4o-mini')->andReturn($builder);
 
         $decisionService = new AutonomousRAGDecisionService($ai, new AutonomousRAGPolicy());
         $decision = $decisionService->decide('what is the refund policy?', [

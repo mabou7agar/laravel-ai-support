@@ -7,7 +7,6 @@ namespace LaravelAIEngine;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
-use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\Services\ActionManager;
 use LaravelAIEngine\Services\Failover\FailoverManager;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
@@ -147,7 +146,7 @@ class AIEngineServiceProvider extends ServiceProvider
     protected function registerAliases(): void
     {
         // Core aliases
-        $this->app->alias(AIEngineManager::class, 'ai-engine');
+        $this->app->alias(\LaravelAIEngine\Services\UnifiedEngineManager::class, 'ai-engine');
         $this->app->alias(\LaravelAIEngine\Services\UnifiedEngineManager::class, 'unified-engine');
 
         // Enterprise aliases
@@ -601,7 +600,7 @@ class AIEngineServiceProvider extends ServiceProvider
     public function provides(): array
     {
         return [
-            AIEngineManager::class,
+            \LaravelAIEngine\Services\UnifiedEngineManager::class,
             CreditManager::class,
             CacheManager::class,
             RateLimitManager::class,

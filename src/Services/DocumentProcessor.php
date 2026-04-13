@@ -120,7 +120,7 @@ class DocumentProcessor
         $prompt = $this->buildAnalysisPrompt($processedData, $analysisType);
         
         // Use OpenAI for analysis
-        $aiEngine = app('ai-engine');
+        $aiEngine = app(AIEngineService::class);
         
         $request = new AIRequest(
             prompt: $prompt,
@@ -205,7 +205,7 @@ class DocumentProcessor
     private function generateEmbeddings(array $chunks): array
     {
         $embeddings = [];
-        $aiEngine = app('ai-engine');
+        $aiEngine = app(AIEngineService::class);
         
         foreach ($chunks as $chunk) {
             $request = new AIRequest(
@@ -228,7 +228,7 @@ class DocumentProcessor
      */
     private function generateQueryEmbedding(string $query): array
     {
-        $aiEngine = app('ai-engine');
+        $aiEngine = app(AIEngineService::class);
         
         $request = new AIRequest(
             prompt: $query,

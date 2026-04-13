@@ -534,6 +534,19 @@ class AIEngineConfigDefaults
             ],
         ],
 
+        'eleven_labs' => [
+            'driver' => 'eleven_labs',
+            'api_key' => env('ELEVENLABS_API_KEY'),
+            'base_url' => env('ELEVENLABS_BASE_URL', 'https://api.elevenlabs.io'),
+            'timeout' => env('ELEVENLABS_TIMEOUT', 60),
+            'default_voice_id' => env('ELEVENLABS_VOICE_ID', 'pNInz6obpgDQGcFmaJgB'),
+            'models' => [
+                'eleven_multilingual_v2' => ['enabled' => true, 'credit_index' => 1.2],
+                'eleven_turbo_v2' => ['enabled' => true, 'credit_index' => 1.0],
+                'eleven_monolingual_v1' => ['enabled' => true, 'credit_index' => 0.9],
+            ],
+        ],
+
         'fal_ai' => [
             'driver' => 'fal_ai',
             'api_key' => env('FAL_API_KEY'),

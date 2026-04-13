@@ -894,7 +894,7 @@ PROMPT;
                 model: new \LaravelAIEngine\Enums\EntityEnum('gpt-4o-mini')
             );
 
-            $response = app(\LaravelAIEngine\Services\AIEngineManager::class)->processRequest($aiRequest);
+            $response = app(\LaravelAIEngine\Services\AIEngineService::class)->generate($aiRequest);
             $content = trim($response->getContent());
 
             // Extract JSON from response
@@ -1942,7 +1942,7 @@ PROMPT;
             model: new \LaravelAIEngine\Enums\EntityEnum($model)
         );
 
-        $response = app(\LaravelAIEngine\Services\AIEngineManager::class)->processRequest($request);
+        $response = app(\LaravelAIEngine\Services\AIEngineService::class)->generate($request);
 
         return $response->getContent();
     }
@@ -1969,7 +1969,7 @@ PROMPT;
             model: new \LaravelAIEngine\Enums\EntityEnum($model)
         );
 
-        $response = app(\LaravelAIEngine\Services\AIEngineManager::class)->processRequest($request);
+        $response = app(\LaravelAIEngine\Services\AIEngineService::class)->generate($request);
 
         return $response->getContent();
     }
@@ -1996,7 +1996,7 @@ PROMPT;
             model: new \LaravelAIEngine\Enums\EntityEnum($model)
         );
 
-        $aiResponse = app(\LaravelAIEngine\Services\AIEngineManager::class)->processRequest($request);
+        $aiResponse = app(\LaravelAIEngine\Services\AIEngineService::class)->generate($request);
         $response = $aiResponse->getContent();
 
         $tags = array_map('trim', explode(',', $response));

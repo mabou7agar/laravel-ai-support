@@ -10,6 +10,13 @@ vendor/bin/phpunit tests/Feature/Node tests/Unit/Services/Node
 vendor/bin/phpunit tests/Unit/Services/Agent tests/Unit/Services/RAG
 ```
 
+## Test Boundaries
+
+- mock `DriverRegistry` or `EngineDriverInterface` when testing `AIEngineService`
+- mock `UnifiedEngineManager` when testing facade consumers
+- avoid relying on container-global `GuzzleHttp\\Client` swaps for driver tests, because drivers own their configured clients
+- keep a smaller number of true provider integration tests and make the rest deterministic
+
 ## 2) Node Runtime Checks
 
 ```bash
@@ -42,3 +49,4 @@ Always verify:
 - collectors complete and execute tools once data is complete
 - authenticated "my profile" questions resolve from injected user context
 - locale-aware responses stay consistent across local and remote node calls
+- fluent `Engine::engine(...)->model(...)` and direct `AIEngineService` paths both resolve the same driver behavior

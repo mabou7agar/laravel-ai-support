@@ -9,6 +9,10 @@ description: Internal runtime architecture and responsibility boundaries.
 flowchart TD
   U["User"] --> API["Chat API"]
   API --> ORCH["Agent Orchestrator"]
+  API --> RT["Unified Runtime Layer"]
+  RT --> UM["UnifiedEngineManager / EngineProxy"]
+  RT --> SVC["AIEngineService"]
+  SVC --> REG["DriverRegistry"]
   ORCH --> IR["IntentRouter"]
   ORCH --> PL["AgentPlanner"]
   PL --> EX["AgentActionExecutionService"]
@@ -19,6 +23,17 @@ flowchart TD
 ```
 
 ## Responsibility Split
+
+### Runtime APIs
+
+- `UnifiedEngineManager`: public fluent entrypoint used by `Engine`, `AIEngine`, and `app('ai-engine')`
+- `EngineProxy`: fluent per-request builder returned by `engine()` and `model()`
+- `AIEngineService`: direct typed execution for `AIRequest` flows
+- `DriverRegistry`: single source of truth for driver resolution
+
+The removed `AIEngineManager` and `EngineBuilder` are no longer part of the runtime architecture.
+
+### Agent Runtime
 
 - `IntentRouter`: classify intent and pick strategy
 - `AgentPlanner`: produce explicit plan
@@ -42,3 +57,9 @@ This avoids giant single-class behavior and reduces regression risk.
 - child node is owner/executor for its domain
 - ownership resolver decides route
 - no chained child-to-child orchestration
+
+## Practical Rule
+
+- use `UnifiedEngineManager` when you want fluent `engine()->model()->generate(...)` style calls
+- use `AIEngineService` when you already have an `AIRequest` and want direct typed execution
+- mock `DriverRegistry` in tests when validating service behavior without real provider clients

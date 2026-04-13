@@ -4,9 +4,11 @@ namespace LaravelAIEngine\Tests\Unit\Services;
 
 use LaravelAIEngine\Services\UnifiedEngineManager;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Services\Memory\MemoryManager;
 use LaravelAIEngine\Services\EngineProxy;
 use LaravelAIEngine\Services\MemoryProxy;
+use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
@@ -211,6 +213,29 @@ class UnifiedEngineManagerTest extends TestCase
 
         $this->assertInstanceOf(AIResponse::class, $result);
         $this->assertTrue($result->success);
+    }
+
+    public function test_estimate_cost_uses_credit_manager(): void
+    {
+        $creditManager = Mockery::mock(CreditManager::class);
+        $this->app->instance(CreditManager::class, $creditManager);
+
+        $creditManager
+            ->shouldReceive('calculateCredits')
+            ->with(Mockery::type(AIRequest::class))
+            ->once()
+            ->andReturn(12.5);
+
+        $result = $this->manager->estimateCost([[
+            'engine' => 'openai',
+            'model' => 'gpt-4o',
+            'prompt' => 'Summarize this text.',
+            'parameters' => ['temperature' => 0.2],
+        ]]);
+
+        $this->assertSame(12.5, $result['total_credits']);
+        $this->assertSame(config('ai-engine.credits.currency', 'credits'), $result['currency']);
+        $this->assertCount(1, $result['breakdown']);
     }
 
     protected function tearDown(): void

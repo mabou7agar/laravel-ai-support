@@ -12,13 +12,15 @@ use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Fal\FalAsyncVideoService;
+use LaravelAIEngine\Support\Fal\FalCharacterStore;
 use Throwable;
 
 class GenerateApiController extends Controller
 {
     public function __construct(
         private readonly AIEngineService $aiEngineService,
-        private readonly FalAsyncVideoService $falAsyncVideoService
+        private readonly FalAsyncVideoService $falAsyncVideoService,
+        private readonly FalCharacterStore $characterStore
     ) {}
 
     /**
@@ -621,8 +623,12 @@ class GenerateApiController extends Controller
      * @bodyParam model string Optional model slug. Default: eleven_multilingual_v2
      * @bodyParam minutes number Optional duration hint for usage accounting.
      * @bodyParam voice_id string Optional voice id.
+     * @bodyParam use_character string Optional saved character alias with stored voice metadata.
+     * @bodyParam use_last_character boolean Optional reuse the last saved character voice metadata.
      * @bodyParam stability number Optional voice stability.
      * @bodyParam similarity_boost number Optional voice similarity boost.
+     * @bodyParam style number Optional voice style strength.
+     * @bodyParam use_speaker_boost boolean Optional speaker boost toggle.
      * @bodyParam parameters object Optional provider-specific parameters.
      */
     public function tts(Request $request): JsonResponse
@@ -633,8 +639,12 @@ class GenerateApiController extends Controller
             'model' => 'nullable|string|max:200',
             'minutes' => 'nullable|numeric|min:0.1|max:180',
             'voice_id' => 'nullable|string|max:120',
+            'use_character' => 'nullable|string|max:120',
+            'use_last_character' => 'nullable|boolean',
             'stability' => 'nullable|numeric|min:0|max:1',
             'similarity_boost' => 'nullable|numeric|min:0|max:1',
+            'style' => 'nullable|numeric|min:0|max:1',
+            'use_speaker_boost' => 'nullable|boolean',
             'parameters' => 'nullable|array',
         ]);
 
@@ -643,6 +653,14 @@ class GenerateApiController extends Controller
             $model = (string) ($validated['model'] ?? 'eleven_multilingual_v2');
             $minutes = (float) ($validated['minutes'] ?? 1.0);
             $parameters = is_array($validated['parameters'] ?? null) ? $validated['parameters'] : [];
+            $storedVoice = $this->resolveStoredCharacterVoice($validated);
+            if ($storedVoice instanceof JsonResponse) {
+                return $storedVoice;
+            }
+
+            if ($storedVoice !== []) {
+                $parameters = array_merge($storedVoice, $parameters);
+            }
 
             if (!empty($validated['voice_id'])) {
                 $parameters['voice_id'] = (string) $validated['voice_id'];
@@ -652,6 +670,12 @@ class GenerateApiController extends Controller
             }
             if (isset($validated['similarity_boost'])) {
                 $parameters['similarity_boost'] = (float) $validated['similarity_boost'];
+            }
+            if (isset($validated['style'])) {
+                $parameters['style'] = (float) $validated['style'];
+            }
+            if (array_key_exists('use_speaker_boost', $validated)) {
+                $parameters['use_speaker_boost'] = (bool) $validated['use_speaker_boost'];
             }
 
             $response = $this->generateDirect(new AIRequest(
@@ -741,6 +765,77 @@ class GenerateApiController extends Controller
             // Optional-auth endpoints should degrade to guest context.
             return null;
         }
+    }
+
+    private function resolveStoredCharacterVoice(array $validated): array|JsonResponse
+    {
+        $alias = null;
+        if (!empty($validated['use_character'])) {
+            $alias = trim((string) $validated['use_character']);
+        } elseif (($validated['use_last_character'] ?? false) === true) {
+            $lastCharacter = $this->characterStore->getLast();
+            if (!is_array($lastCharacter)) {
+                return $this->envelope(
+                    success: false,
+                    message: 'No saved character is available.',
+                    error: ['message' => 'No saved character is available.'],
+                    status: 422
+                );
+            }
+
+            $alias = (string) ($lastCharacter['alias'] ?? '');
+            if ($alias === '') {
+                return $this->envelope(
+                    success: false,
+                    message: 'Last saved character is missing an alias.',
+                    error: ['message' => 'Last saved character is missing an alias.'],
+                    status: 422
+                );
+            }
+        }
+
+        if ($alias === null || $alias === '') {
+            return [];
+        }
+
+        $character = $this->characterStore->get($alias);
+        if (!is_array($character)) {
+            return $this->envelope(
+                success: false,
+                message: "Saved character [{$alias}] was not found.",
+                error: ['message' => "Saved character [{$alias}] was not found."],
+                status: 422
+            );
+        }
+
+        $voice = $this->extractCharacterVoiceParameters($character);
+        if ($voice === []) {
+            return $this->envelope(
+                success: false,
+                message: "Saved character [{$alias}] does not have voice metadata.",
+                error: ['message' => "Saved character [{$alias}] does not have voice metadata."],
+                status: 422
+            );
+        }
+
+        return $voice;
+    }
+
+    private function extractCharacterVoiceParameters(array $character): array
+    {
+        $parameters = [];
+        if (isset($character['voice_id']) && is_string($character['voice_id']) && trim($character['voice_id']) !== '') {
+            $parameters['voice_id'] = trim($character['voice_id']);
+        }
+
+        $voiceSettings = is_array($character['voice_settings'] ?? null) ? $character['voice_settings'] : [];
+        foreach (['stability', 'similarity_boost', 'style', 'use_speaker_boost'] as $key) {
+            if (array_key_exists($key, $voiceSettings)) {
+                $parameters[$key] = $voiceSettings[$key];
+            }
+        }
+
+        return $parameters;
     }
 
     private function resolveDefaultImageEngine(array $validated): string

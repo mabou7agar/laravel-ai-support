@@ -2,8 +2,12 @@
 
 namespace LaravelAIEngine\Tests\Feature;
 
+use LaravelAIEngine\Contracts\EngineDriverInterface;
 use LaravelAIEngine\Tests\TestCase;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\ConversationManager;
+use LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -59,28 +63,14 @@ class AIEngineIntegrationTest extends TestCase
 
     public function test_image_generation_with_file_saving()
     {
-        // Mock HTTP client for image generation with proper OpenAI response structure
-        $mockResponse = \Mockery::mock(\Psr\Http\Message\ResponseInterface::class);
-        $mockResponse->shouldReceive('getBody->getContents')
-            ->andReturn(json_encode([
-                'created' => 1234567890,
-                'data' => [
-                    [
-                        'url' => 'https://example.com/generated-image.png',
-                        'revised_prompt' => 'Enhanced prompt'
-                    ]
-                ]
-            ]));
-        $mockResponse->shouldReceive('getStatusCode')->andReturn(200);
-        $mockResponse->shouldReceive('getHeaderLine')->andReturn('application/json');
-        $mockResponse->shouldReceive('getHeaders')->andReturn(['content-type' => ['application/json']]);
-
-        $mockClient = \Mockery::mock(\GuzzleHttp\Client::class);
-        $mockClient->shouldReceive('post')->andReturn($mockResponse);
-        $mockClient->shouldReceive('sendRequest')->andReturn($mockResponse);
-        $mockClient->shouldReceive('send')->andReturn($mockResponse);
-
-        $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
+        $this->useDriverMock(
+            EngineEnum::OPENAI,
+            AIResponse::success(
+                'A beautiful sunset over mountains',
+                new EngineEnum(EngineEnum::OPENAI),
+                EntityEnum::DALL_E_3
+            )->withFiles(['https://example.com/generated-image.png'])
+        );
 
         $request = new AIRequest(
             prompt: 'A beautiful sunset over mountains',
@@ -145,40 +135,19 @@ class AIEngineIntegrationTest extends TestCase
 
     public function test_streaming_response()
     {
-        // Mock streaming response
-        $mockClient = \Mockery::mock(\GuzzleHttp\Client::class);
-        $mockResponse = \Mockery::mock(\GuzzleHttp\Psr7\Response::class);
-
         $streamData = [
-            'data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Hello"}}]}' . "\n\n",
-            'data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":" world"}}]}' . "\n\n",
-            'data: [DONE]' . "\n\n"
+            'Hello',
+            ' world',
         ];
-
-        $mockBody = \Mockery::mock(\Psr\Http\Message\StreamInterface::class);
-        $mockBody->shouldReceive('getContents')
-            ->andReturn(implode('', $streamData));
-        $mockBody->shouldReceive('eof')
-            ->andReturn(false, false, true);
-        $mockBody->shouldReceive('read')
-            ->andReturn($streamData[0], $streamData[1], $streamData[2]);
-        $mockBody->shouldReceive('isReadable')
-            ->andReturn(true);
-
-        $mockResponse->shouldReceive('getBody')
-            ->andReturn($mockBody);
-
-        $mockResponse->shouldReceive('getStatusCode')
-            ->andReturn(200);
-
-        $mockClient->shouldReceive('post')
-            ->andReturn($mockResponse);
-
-        // Mock the send method for streaming requests
-        $mockClient->shouldReceive('send')
-            ->andReturn($mockResponse);
-
-        $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
+        $this->useDriverMock(
+            EngineEnum::OPENAI,
+            (function () use ($streamData) {
+                foreach ($streamData as $chunk) {
+                    yield $chunk;
+                }
+            })(),
+            forStream: true
+        );
 
         $request = new AIRequest(
             prompt: 'Test streaming',
@@ -227,45 +196,14 @@ class AIEngineIntegrationTest extends TestCase
 
     public function test_openai_engine_support()
     {
-        // Create a mock response
-        $mockResponse = new \GuzzleHttp\Psr7\Response(200, [], json_encode([
-            'id' => 'chatcmpl-123456',
-            'object' => 'chat.completion',
-            'created' => 1677858242,
-            'model' => 'gpt-4o-2024-05-13',
-            'choices' => [
-                [
-                    'message' => [
-                        'role' => 'assistant',
-                        'content' => 'OpenAI response'
-                    ],
-                    'finish_reason' => 'stop',
-                    'index' => 0
-                ]
-            ],
-            'usage' => [
-                'prompt_tokens' => 5,
-                'completion_tokens' => 10,
-                'total_tokens' => 15
-            ]
-        ]));
-
-        // Create a mock handler and add the response
-        $mock = new \GuzzleHttp\Handler\MockHandler([$mockResponse]);
-        $handlerStack = \GuzzleHttp\HandlerStack::create($mock);
-
-        // Create a client with the mock handler
-        $mockClient = new \GuzzleHttp\Client([
-            'handler' => $handlerStack
-        ]);
-
-        // Bind the mock client to the container
-        $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
-
-        // Configure the OpenAI engine
-        config(['ai-engine.engines.openai' => [
-            'api_key' => 'test-key'
-        ]]);
+        $this->useDriverMock(
+            EngineEnum::OPENAI,
+            AIResponse::success(
+                'OpenAI response',
+                new EngineEnum(EngineEnum::OPENAI),
+                EntityEnum::GPT_4O
+            )
+        );
 
         // Create the request
         $openaiRequest = new AIRequest(
@@ -289,35 +227,14 @@ class AIEngineIntegrationTest extends TestCase
 
     public function test_anthropic_engine_support()
     {
-        // Create a mock response
-        $mockResponse = new \GuzzleHttp\Psr7\Response(200, [], json_encode([
-            'id' => 'msg_123456',
-            'content' => [
-                ['type' => 'text', 'text' => 'Anthropic response']
-            ],
-            'usage' => ['input_tokens' => 5, 'output_tokens' => 10],
-            'stop_reason' => 'end_turn',
-            'model' => 'claude-3-5-sonnet-20240620'
-        ]));
-
-        // Create a mock handler and add the response
-        $mock = new \GuzzleHttp\Handler\MockHandler([$mockResponse]);
-        $handlerStack = \GuzzleHttp\HandlerStack::create($mock);
-
-        // Create a client with the mock handler
-        $mockClient = new \GuzzleHttp\Client([
-            'handler' => $handlerStack,
-            'base_uri' => 'https://api.anthropic.com'
-        ]);
-
-        // Bind the mock client to the container
-        $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
-
-        // Configure the Anthropic engine
-        config(['ai-engine.engines.anthropic' => [
-            'api_key' => 'test-key',
-            'base_url' => 'https://api.anthropic.com'
-        ]]);
+        $this->useDriverMock(
+            EngineEnum::ANTHROPIC,
+            AIResponse::success(
+                'Anthropic response',
+                new EngineEnum(EngineEnum::ANTHROPIC),
+                EntityEnum::CLAUDE_3_5_SONNET
+            )
+        );
 
         // Create the request
         $anthropicRequest = new AIRequest(
@@ -352,40 +269,14 @@ class AIEngineIntegrationTest extends TestCase
             'target_audience' => 'developers'
         ]);
 
-        // Mock HTTP client for brand voice integration with proper OpenAI response structure
-        $mockResponse = \Mockery::mock(\Psr\Http\Message\ResponseInterface::class);
-        $mockResponse->shouldReceive('getBody->getContents')
-            ->andReturn(json_encode([
-                'id' => 'chatcmpl-123',
-                'object' => 'chat.completion',
-                'created' => 1234567890,
-                'model' => 'gpt-4o',
-                'choices' => [
-                    [
-                        'index' => 0,
-                        'message' => [
-                            'role' => 'assistant',
-                            'content' => 'Professional tech response'
-                        ],
-                        'finish_reason' => 'stop'
-                    ]
-                ],
-                'usage' => [
-                    'prompt_tokens' => 5,
-                    'completion_tokens' => 5,
-                    'total_tokens' => 10
-                ]
-            ]));
-        $mockResponse->shouldReceive('getStatusCode')->andReturn(200);
-        $mockResponse->shouldReceive('getHeaderLine')->andReturn('application/json');
-        $mockResponse->shouldReceive('getHeaders')->andReturn(['content-type' => ['application/json']]);
-
-        $mockClient = \Mockery::mock(\GuzzleHttp\Client::class);
-        $mockClient->shouldReceive('post')->andReturn($mockResponse);
-        $mockClient->shouldReceive('sendRequest')->andReturn($mockResponse);
-        $mockClient->shouldReceive('send')->andReturn($mockResponse);
-
-        $this->app->instance(\GuzzleHttp\Client::class, $mockClient);
+        $this->useDriverMock(
+            EngineEnum::OPENAI,
+            AIResponse::success(
+                'Professional tech response',
+                new EngineEnum(EngineEnum::OPENAI),
+                EntityEnum::GPT_4O
+            )
+        );
 
         $request = new AIRequest(
             prompt: 'Write about our product',
@@ -443,5 +334,35 @@ class AIEngineIntegrationTest extends TestCase
     {
         \Mockery::close();
         parent::tearDown();
+    }
+
+    private function useDriverMock(EngineEnum|string $engine, AIResponse|\Generator $result, bool $forStream = false): void
+    {
+        $engineValue = $engine instanceof EngineEnum ? $engine->value : $engine;
+
+        $driver = \Mockery::mock(EngineDriverInterface::class);
+        $driver->shouldReceive('validateRequest')->andReturn(true);
+        $driver->shouldReceive('getEngine')->andReturn(new EngineEnum($engineValue));
+        $driver->shouldReceive('supports')->withAnyArgs()->andReturn(true);
+        $driver->shouldReceive('getAvailableModels')->andReturn([]);
+        $driver->shouldReceive('test')->andReturn(true);
+        $driver->shouldReceive('generateJsonAnalysis')->andReturn('{}');
+
+        if ($forStream) {
+            $driver->shouldReceive('stream')->once()->andReturn($result);
+        } else {
+            $driver->shouldReceive('generate')->once()->andReturn($result);
+        }
+
+        $registry = \Mockery::mock(DriverRegistry::class);
+        $registry->shouldReceive('resolve')
+            ->with(\Mockery::on(fn ($resolved) => ($resolved instanceof EngineEnum ? $resolved->value : $resolved) === $engineValue))
+            ->andReturn($driver);
+
+        $this->aiEngineService = new AIEngineService(
+            app(CreditManager::class),
+            app(ConversationManager::class),
+            $registry
+        );
     }
 }

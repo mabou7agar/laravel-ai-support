@@ -20,6 +20,25 @@ php artisan ai-engine:test-nodes --quick
 php artisan ai-engine:test-real-agent --script=minimal --json
 ```
 
+## Breaking Changes
+
+The legacy runtime pair below was removed:
+
+- `LaravelAIEngine\Services\AIEngineManager`
+- `LaravelAIEngine\Services\EngineBuilder`
+
+Use the new runtime shape instead:
+
+- `LaravelAIEngine\Services\UnifiedEngineManager` for fluent application-facing usage
+- `LaravelAIEngine\Services\EngineProxy` for the object returned by `engine()` and `model()`
+- `LaravelAIEngine\Services\AIEngineService` for direct typed execution with `AIRequest`
+
+Common replacements:
+
+- `app('ai-engine')` now resolves `UnifiedEngineManager`
+- `AIEngine::engine('openai')->model('gpt-4o')...` still works and now returns `EngineProxy`
+- constructor or service-container references to `AIEngineManager` should be replaced with `UnifiedEngineManager` or `AIEngineService`, depending on whether you need fluent orchestration or direct execution
+
 ## New Data Tables To Expect
 
 Recent refactors introduce these package tables:

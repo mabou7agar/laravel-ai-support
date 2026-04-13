@@ -3,7 +3,9 @@
 namespace LaravelAIEngine\Services\RAG;
 
 use Illuminate\Support\Facades\Log;
-use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 class AutonomousRAGDecisionService
@@ -11,7 +13,7 @@ class AutonomousRAGDecisionService
     protected ?string $activeContextLocale = null;
 
     public function __construct(
-        protected AIEngineManager $ai,
+        protected AIEngineService $ai,
         protected ?AutonomousRAGPolicy $policy = null,
         protected ?AutonomousRAGDecisionPromptService $promptService = null,
         protected ?AutonomousRAGDecisionFeedbackService $feedbackService = null,
@@ -45,11 +47,7 @@ class AutonomousRAGDecisionService
         try {
             Log::channel('ai-engine')->info('RAG Agent Prompt', ['prompt' => $prompt]);
 
-            $response = $this->ai
-                ->model($model)
-                ->withTemperature(0.1)
-                ->withMaxTokens(1000)
-                ->generate($prompt);
+            $response = $this->generateDecisionResponse($prompt, $model);
 
             $content = trim($response->getContent());
             $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
@@ -96,6 +94,19 @@ class AutonomousRAGDecisionService
     public function recordExecutionOutcome(array $decision, array $result, array $runtime = []): void
     {
         $this->feedbackService->recordExecutionOutcome($decision, $result, $runtime);
+    }
+
+    protected function generateDecisionResponse(string $prompt, string $model): \LaravelAIEngine\DTOs\AIResponse
+    {
+        $entity = EntityEnum::from($model);
+
+        return $this->ai->generateText(new AIRequest(
+            prompt: $prompt,
+            engine: $entity->engine(),
+            model: $entity,
+            temperature: 0.1,
+            maxTokens: 1000
+        ));
     }
 
     protected function buildPrompt(string $message, array $context): string

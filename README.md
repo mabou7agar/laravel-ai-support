@@ -35,6 +35,21 @@ php artisan vendor:publish --tag=ai-engine-migrations
 php artisan migrate
 ```
 
+## Runtime Architecture
+
+- `Engine` / `AIEngine` facade and `app('ai-engine')` resolve to `UnifiedEngineManager`
+- `UnifiedEngineManager` is the public fluent entrypoint
+- `AIEngineService` is the direct typed execution API for internal services and explicit `AIRequest` flows
+- `DriverRegistry` is the single driver construction path
+
+## Breaking Upgrade Note
+
+The legacy `AIEngineManager` and `EngineBuilder` classes were removed. If your application instantiated or type-hinted them directly, migrate to:
+
+- `LaravelAIEngine\\Services\\UnifiedEngineManager` for fluent facade-style usage
+- `LaravelAIEngine\\Services\\AIEngineService` for direct request execution
+- `LaravelAIEngine\\Services\\EngineProxy` as the fluent builder returned by `engine()` / `model()`
+
 ## Minimal Production Baseline
 
 ```env
@@ -136,6 +151,8 @@ Built-in direct generation endpoints:
 - `POST /api/v1/ai/generate/transcribe`
 - `POST /api/v1/ai/generate/tts`
 
+For consistent TTS per saved character, store `voice_id` and optional ElevenLabs voice settings when you save the character, then call `/api/v1/ai/generate/tts` with `use_character` or `use_last_character`.
+
 Authenticated calls are credit-enforced (same policy as chat/RAG), including image/audio endpoints.
 
 Toggle/prefix with env:
@@ -191,7 +208,7 @@ php artisan vendor:publish --tag=ai-engine-config --force
 php artisan optimize:clear
 ```
 
-See `docs-site/reference/upgrade.mdx` for the upgrade checklist.
+See `docs-site/reference/upgrade.mdx` for the upgrade checklist and removed-class migration notes.
 
 ## License
 

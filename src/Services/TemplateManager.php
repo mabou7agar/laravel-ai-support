@@ -13,7 +13,7 @@ class TemplateManager
 
     public function __construct(
         private string $templateName,
-        private AIEngineManager $manager
+        private UnifiedEngineManager $manager
     ) {}
 
     /**

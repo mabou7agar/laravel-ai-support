@@ -3,13 +3,13 @@
 namespace LaravelAIEngine\Facades;
 
 use Illuminate\Support\Facades\Facade;
-use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\Services\UnifiedEngineManager;
 
 /**
  * Engine facade providing simple API for AI operations and memory management
  * 
- * @method static \LaravelAIEngine\Services\EngineBuilder engine(string $engine)
- * @method static \LaravelAIEngine\Services\EngineBuilder model(string $model)
+ * @method static \LaravelAIEngine\Services\EngineProxy engine(string $engine)
+ * @method static \LaravelAIEngine\Services\EngineProxy model(string $model)
  * @method static \LaravelAIEngine\Services\Memory\MemoryManager memory(string $driver = null)
  * @method static array getEngines()
  * @method static array getModels(string $engine = null)
@@ -33,8 +33,9 @@ use LaravelAIEngine\Services\AIEngineManager;
  * @method static \LaravelAIEngine\Services\TemplateManager template(string $name)
  * @method static \LaravelAIEngine\Services\AnalyticsManager analytics()
  * @method static \LaravelAIEngine\DTOs\AIRequest createRequest(string $prompt, string $engine = null, string $model = null, int $maxTokens = null, float $temperature = null, string $systemPrompt = null, array $parameters = [])
+ * @method static array estimateCost(array $operations)
  * 
- * @see \LaravelAIEngine\Services\AIEngineManager
+ * @see \LaravelAIEngine\Services\UnifiedEngineManager
  */
 class Engine extends Facade
 {
@@ -43,10 +44,6 @@ class Engine extends Facade
      */
     protected static function getFacadeAccessor(): string
     {
-        if (function_exists('app') && app()->bound('unified-engine')) {
-            return 'unified-engine';
-        }
-
-        return AIEngineManager::class;
+        return 'unified-engine';
     }
 }

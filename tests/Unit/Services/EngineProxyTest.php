@@ -188,6 +188,30 @@ class EngineProxyTest extends TestCase
         $this->assertTrue($result->success);
     }
 
+    public function test_estimate_cost_uses_unified_manager()
+    {
+        $this->manager
+            ->shouldReceive('estimateCost')
+            ->with([
+                [
+                    'prompt' => 'Hello',
+                    'engine' => 'openai',
+                    'model' => 'gpt-4o',
+                    'parameters' => ['top_p' => 0.9],
+                ],
+            ])
+            ->once()
+            ->andReturn(['total_credits' => 1.5]);
+
+        $result = $this->proxy
+            ->engine('openai')
+            ->model('gpt-4o')
+            ->withParameters(['top_p' => 0.9])
+            ->estimateCost('Hello');
+
+        $this->assertSame(['total_credits' => 1.5], $result);
+    }
+
     public function test_proxy_resets_after_send()
     {
         $messages = [['role' => 'user', 'content' => 'Hello']];

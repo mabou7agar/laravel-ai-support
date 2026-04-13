@@ -6,7 +6,7 @@ use LaravelAIEngine\DTOs\DataCollectorConfig;
 use LaravelAIEngine\DTOs\DataCollectorState;
 use LaravelAIEngine\DTOs\DataCollectorField;
 use LaravelAIEngine\DTOs\AIResponse;
-use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\Services\UnifiedEngineManager;
 use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -27,7 +27,7 @@ class DataCollectorService
     protected int $cacheTtl = 3600; // 1 hour
 
     public function __construct(
-        protected AIEngineManager $aiEngine,
+        protected UnifiedEngineManager $aiEngine,
         protected ?ConversationService $conversationService = null,
         protected ?LocaleResourceService $localeResources = null
     ) {}

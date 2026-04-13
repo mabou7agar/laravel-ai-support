@@ -447,18 +447,6 @@ class AIEngineService
 
         $config = config("ai-engine.engines.{$engine->value}", []);
 
-        if (
-            $driverClass === \LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver::class ||
-            $driverClass === \LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver::class
-        ) {
-            try {
-                $httpClient = app(\GuzzleHttp\Client::class);
-                return new $driverClass($config, $httpClient);
-            } catch (\Exception $e) {
-                return new $driverClass($config);
-            }
-        }
-
         return new $driverClass($config);
     }
 
@@ -505,6 +493,54 @@ class AIEngineService
         // Ensure the request is for text generation
         if ($request->model->getContentType() !== 'text') {
             throw new AIEngineException('The specified model is not suitable for text generation');
+        }
+
+        return $this->generate($request);
+    }
+
+    /**
+     * Generate image content using the specified request.
+     */
+    public function generateImage(AIRequest $request): AIResponse
+    {
+        if ($request->model->getContentType() !== 'image') {
+            throw new AIEngineException('The specified model is not suitable for image generation');
+        }
+
+        return $this->generate($request);
+    }
+
+    /**
+     * Generate video content using the specified request.
+     */
+    public function generateVideo(AIRequest $request): AIResponse
+    {
+        if ($request->model->getContentType() !== 'video') {
+            throw new AIEngineException('The specified model is not suitable for video generation');
+        }
+
+        return $this->generate($request);
+    }
+
+    /**
+     * Generate embeddings using the specified request.
+     */
+    public function generateEmbeddings(AIRequest $request): AIResponse
+    {
+        if ($request->model->getContentType() !== 'embeddings') {
+            throw new AIEngineException('The specified model is not suitable for embeddings generation');
+        }
+
+        return $this->generate($request);
+    }
+
+    /**
+     * Generate audio content using the specified request.
+     */
+    public function generateAudio(AIRequest $request): AIResponse
+    {
+        if ($request->model->getContentType() !== 'audio') {
+            throw new AIEngineException('The specified model is not suitable for audio generation');
         }
 
         return $this->generate($request);

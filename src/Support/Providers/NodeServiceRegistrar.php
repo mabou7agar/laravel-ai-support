@@ -25,7 +25,10 @@ class NodeServiceRegistrar
             $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class),
             $app->make(\LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService::class)
         ));
-        $app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService($app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService(
+            $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+            $app->make(\LaravelAIEngine\Services\AIEngineService::class)
+        ));
         $app->singleton(\LaravelAIEngine\Services\Node\NodeRouterService::class, fn ($app) => new \LaravelAIEngine\Services\Node\NodeRouterService($app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class), $app->make(\LaravelAIEngine\Services\Node\NodeOwnershipResolver::class)));
         $app->singleton(\LaravelAIEngine\Services\Node\RemoteActionService::class, fn ($app) => new \LaravelAIEngine\Services\Node\RemoteActionService($app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class), $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)));
         $app->singleton(\LaravelAIEngine\Services\ActionExecutionService::class, fn ($app) => new \LaravelAIEngine\Services\ActionExecutionService($app->bound(\LaravelAIEngine\Services\ChatService::class) ? $app->make(\LaravelAIEngine\Services\ChatService::class) : null, $app->bound(\LaravelAIEngine\Services\AIEngineService::class) ? $app->make(\LaravelAIEngine\Services\AIEngineService::class) : null, $app->bound(\LaravelAIEngine\Services\Node\RemoteActionService::class) ? $app->make(\LaravelAIEngine\Services\Node\RemoteActionService::class) : null));

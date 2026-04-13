@@ -3,7 +3,7 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\Services\UnifiedEngineManager;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Services\CacheManager;
 use LaravelAIEngine\Services\RateLimitManager;
@@ -110,7 +110,7 @@ class TestPackageCommand extends Command
 
         // Test core services
         $services = [
-            'AIEngineManager' => AIEngineManager::class,
+            'UnifiedEngineManager' => UnifiedEngineManager::class,
             'CreditManager' => CreditManager::class,
             'CacheManager' => CacheManager::class,
             'RateLimitManager' => RateLimitManager::class,
@@ -145,9 +145,9 @@ class TestPackageCommand extends Command
             return file_exists(__DIR__ . '/../../Services/Streaming/WebSocketManager.php');
         });
 
-        // Test AIEngineManager methods
-        $this->test('AIEngineManager has required methods', function () {
-            $manager = app(AIEngineManager::class);
+        // Test UnifiedEngineManager methods
+        $this->test('UnifiedEngineManager has required methods', function () {
+            $manager = app(UnifiedEngineManager::class);
             return method_exists($manager, 'engine') &&
                    method_exists($manager, 'model') &&
                    method_exists($manager, 'getAvailableEngines') &&
@@ -155,14 +155,14 @@ class TestPackageCommand extends Command
         });
 
         // Test service method calls
-        $this->test('AIEngineManager->getAvailableEngines() works', function () {
-            $manager = app(AIEngineManager::class);
+        $this->test('UnifiedEngineManager->getAvailableEngines() works', function () {
+            $manager = app(UnifiedEngineManager::class);
             $engines = $manager->getAvailableEngines();
             return is_array($engines) && count($engines) > 0;
         });
 
-        $this->test('AIEngineManager->getAvailableModels() works', function () {
-            $manager = app(AIEngineManager::class);
+        $this->test('UnifiedEngineManager->getAvailableModels() works', function () {
+            $manager = app(UnifiedEngineManager::class);
             $models = $manager->getAvailableModels();
             return is_array($models) && count($models) > 0;
         });

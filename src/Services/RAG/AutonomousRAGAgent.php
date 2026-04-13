@@ -4,7 +4,7 @@ namespace LaravelAIEngine\Services\RAG;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
-use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Models\AINode;
 
 /**
@@ -19,7 +19,6 @@ use LaravelAIEngine\Models\AINode;
  */
 class AutonomousRAGAgent
 {
-    protected AIEngineManager $ai;
     protected ?IntelligentRAGService $ragService;
     protected ?RAGCollectionDiscovery $discovery;
     protected AutonomousRAGStateService $stateService;
@@ -31,7 +30,7 @@ class AutonomousRAGAgent
     protected AutonomousRAGModelMetadataService $modelMetadata;
 
     public function __construct(
-        AIEngineManager $ai,
+        AIEngineService $ai,
         ?IntelligentRAGService $ragService = null,
         ?RAGCollectionDiscovery $discovery = null,
         ?AutonomousRAGStateService $stateService = null,
@@ -42,7 +41,6 @@ class AutonomousRAGAgent
         ?AutonomousRAGContextService $contextService = null,
         ?AutonomousRAGModelMetadataService $modelMetadata = null
     ) {
-        $this->ai = $ai;
         $this->ragService = $ragService;
         $this->discovery = $discovery ?? (app()->bound(RAGCollectionDiscovery::class) ? app(
             RAGCollectionDiscovery::class

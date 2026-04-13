@@ -17,6 +17,10 @@ abstract class TestCase extends Orchestra
     {
         parent::setUp();
 
+        if (!class_exists(\App\Models\User::class)) {
+            class_alias(User::class, \App\Models\User::class);
+        }
+
         if (!class_exists(\App\Models\Product::class)) {
             class_alias(ProductStub::class, \App\Models\Product::class);
         }
@@ -49,6 +53,7 @@ abstract class TestCase extends Orchestra
         $app['config']->set('queue.default', 'sync');
         $app['config']->set('ai-engine.nodes.enabled', false);
         $app['config']->set('ai-engine.nodes.jwt.secret', 'test-jwt-secret');
+        $app['config']->set('auth.providers.users.model', User::class);
         $app['config']->set('logging.channels.ai-engine', [
             'driver' => 'errorlog',
             'level' => 'debug',
@@ -67,6 +72,7 @@ abstract class TestCase extends Orchestra
         Config::set('ai-engine.infrastructure.startup_health_gate.enabled', false);
         Config::set('ai-engine.infrastructure.qdrant_self_check.enabled', false);
         Config::set('ai-engine.user_model', User::class);
+        Config::set('auth.providers.users.model', User::class);
         
         // Set test API keys
         Config::set('ai-engine.engines.openai.api_key', 'test-openai-key');

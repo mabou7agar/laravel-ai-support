@@ -15,6 +15,11 @@ There are three route families:
 - legacy app APIs (`/ai-demo/*`, `/api/ai-chat/*`) for compatibility
 - node federation contract (`/api/ai-engine/*`) for master/child communication
 
+For PHP runtime usage, the parallel entrypoints are:
+
+- `UnifiedEngineManager` / `Engine` facade for fluent application-facing calls
+- `AIEngineService` for direct `AIRequest` execution
+
 ## App-Facing v1 Endpoints
 
 ### RAG Chat (`/api/v1/rag`)

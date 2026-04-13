@@ -90,6 +90,11 @@ class GenerateFalCharacterCommandTest extends TestCase
                 $this->assertSame('Front-facing portrait of Mina', $prompt);
                 $this->assertSame(5, $options['frame_count']);
                 $this->assertSame(4, $options['look_size']);
+                $this->assertSame('voice-mina', $options['voice_id']);
+                $this->assertSame(0.33, $options['voice_settings']['stability']);
+                $this->assertSame(0.77, $options['voice_settings']['similarity_boost']);
+                $this->assertSame(0.15, $options['voice_settings']['style']);
+                $this->assertTrue($options['voice_settings']['use_speaker_boost']);
                 $this->assertSame('42', $userId);
                 return true;
             })
@@ -115,6 +120,8 @@ class GenerateFalCharacterCommandTest extends TestCase
                 $this->assertSame('Mina', $options['name']);
                 $this->assertSame('hero-mina', $options['save_as']);
                 $this->assertSame(4, $options['look_size']);
+                $this->assertSame('voice-mina', $options['voice_id']);
+                $this->assertSame(0.33, $options['voice_settings']['stability']);
                 $this->assertSame('42', $userId);
                 $this->assertIsCallable($progress);
                 return true;
@@ -128,6 +135,7 @@ class GenerateFalCharacterCommandTest extends TestCase
                         'https://example.com/mina-side.png',
                         'https://example.com/mina-closeup.png',
                     ],
+                    'voice_id' => 'voice-mina',
                 ],
             ]);
 
@@ -145,6 +153,11 @@ class GenerateFalCharacterCommandTest extends TestCase
             '--frame-count' => 5,
             '--look-size' => 4,
             '--user-id' => '42',
+            '--voice-id' => 'voice-mina',
+            '--voice-stability' => '0.33',
+            '--voice-similarity-boost' => '0.77',
+            '--voice-style' => '0.15',
+            '--voice-speaker-boost' => 'true',
             '--sync' => true,
         ]);
 
@@ -152,6 +165,7 @@ class GenerateFalCharacterCommandTest extends TestCase
         $output = Artisan::output();
         $this->assertStringContainsString("Character saved as 'hero-mina'", $output);
         $this->assertStringContainsString('https://example.com/mina-front.png', $output);
+        $this->assertStringContainsString('voice-mina', $output);
     }
 
     public function test_command_queues_character_workflow_by_default(): void

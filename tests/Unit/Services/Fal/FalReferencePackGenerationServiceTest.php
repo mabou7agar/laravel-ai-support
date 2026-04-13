@@ -127,4 +127,37 @@ class FalReferencePackGenerationServiceTest extends TestCase
         $this->assertSame('reference_pack', $result['response']->getMetadata()['workflow']);
         $this->assertSame('furniture', $result['response']->getMetadata()['entity_type']);
     }
+
+    public function test_generate_and_store_persists_voice_metadata_for_reuse_in_tts(): void
+    {
+        $aiEngineService = Mockery::mock(AIEngineService::class);
+        $aiEngineService->shouldReceive('generateDirect')
+            ->once()
+            ->andReturn(
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2)->withMetadata([
+                    'images' => [['url' => 'https://example.com/mina-front.png']],
+                ])
+            );
+
+        $store = app(FalCharacterStore::class);
+        $service = new FalReferencePackGenerationService($aiEngineService, $store);
+
+        $result = $service->generateAndStore('Generate Mina', [
+            'name' => 'Mina',
+            'save_as' => 'mina',
+            'frame_count' => 1,
+            'voice_id' => 'voice-mina',
+            'voice_settings' => [
+                'stability' => 0.25,
+                'similarity_boost' => 0.9,
+                'style' => 0.1,
+                'use_speaker_boost' => true,
+            ],
+        ], '42');
+
+        $this->assertSame('voice-mina', $result['reference_pack']['voice_id']);
+        $this->assertSame(0.25, $result['reference_pack']['voice_settings']['stability']);
+        $this->assertSame('voice-mina', $store->voiceProfile('mina')['voice_id']);
+        $this->assertSame(0.9, $store->voiceProfile('mina')['similarity_boost']);
+    }
 }

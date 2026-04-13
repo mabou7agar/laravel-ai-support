@@ -5,6 +5,12 @@ description: Separate request patterns for text, image, video, audio transcripti
 
 This page gives exact, separate requests for direct generation.
 
+## Which PHP API To Use
+
+- use `UnifiedEngineManager` / `Engine` facade when you want fluent builder-style calls
+- use `AIEngineService` when you want direct execution from an `AIRequest`
+- both paths resolve drivers through the same `DriverRegistry`
+
 ## Built-in HTTP endpoints
 
 - `POST /api/v1/ai/generate/text`
@@ -210,6 +216,34 @@ curl -X POST https://your-app.test/api/v1/ai/generate/tts \
   }'
 ```
 
+If you already saved a reusable character with voice metadata, you can keep the same voice consistently by referencing the character alias instead of sending `voice_id` each time:
+
+```bash
+curl -X POST https://your-app.test/api/v1/ai/generate/tts \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text":"Welcome back, Mina.",
+    "engine":"eleven_labs",
+    "model":"eleven_multilingual_v2",
+    "use_character":"hero-mina"
+  }'
+```
+
+Attach the voice when saving the character:
+
+```bash
+php artisan ai-engine:generate-character "Front-facing portrait of Mina" \
+  --name="Mina" \
+  --save-as="hero-mina" \
+  --voice-id="pNInz6obpgDQGcFmaJgB" \
+  --voice-stability="0.35" \
+  --voice-similarity-boost="0.75" \
+  --voice-style="0.10" \
+  --voice-speaker-boost="true" \
+  --sync
+```
+
 ## 10) SDK text generation (`AIRequest`)
 
 Use this when you want application code instead of HTTP.
@@ -232,6 +266,18 @@ if (!$response->isSuccess()) {
 }
 
 $text = $response->getContent();
+```
+
+## 10.5) Fluent text generation (`Engine`)
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+$response = Engine::engine('openai')
+    ->model('gpt-4o-mini')
+    ->withTemperature(0.1)
+    ->withMaxTokens(180)
+    ->generate('Summarize this support ticket in 3 bullets.');
 ```
 
 ## 11) SDK image generation (`AIRequest`)
@@ -486,6 +532,28 @@ $request = new AIRequest(
         'voice_id' => 'pNInz6obpgDQGcFmaJgB',
         'audio_minutes' => 1.0,
     ]
+);
+
+$response = app(AIEngineService::class)->generate($request);
+$audioFiles = $response->getFiles();
+```
+
+If you want the same saved character voice over multiple calls, resolve the stored profile once and feed it into the request parameters:
+
+```php
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Support\Fal\FalCharacterStore;
+
+$voice = app(FalCharacterStore::class)->voiceProfile('hero-mina');
+
+$request = new AIRequest(
+    prompt: 'Welcome back, Mina.',
+    engine: 'eleven_labs',
+    model: 'eleven_multilingual_v2',
+    parameters: array_merge($voice ?? [], [
+        'audio_minutes' => 1.0,
+    ])
 );
 
 $response = app(AIEngineService::class)->generate($request);

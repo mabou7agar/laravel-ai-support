@@ -32,7 +32,7 @@ class AgentServiceRegistrar
 
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGAgent::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\AutonomousRAGAgent(
-                $app->make(\LaravelAIEngine\Services\AIEngineManager::class),
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
                 $app->make(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class),
                 $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class),
                 $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGStateService::class),

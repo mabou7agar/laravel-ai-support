@@ -441,7 +441,7 @@ class AIChatController extends Controller
                 generator: function() use ($engine, $model, $message, $messages, $conversationId, $sessionId, $userId) {
                     $fullResponse = '';
 
-                    // Use EngineBuilder for proper streaming
+                    // Use the fluent engine proxy for proper streaming
                     $builder = Engine::engine($engine)
                         ->model($model)
                         ->withTemperature(0.7)

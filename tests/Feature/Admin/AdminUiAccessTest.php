@@ -39,7 +39,7 @@ class AdminUiAccessTest extends UnitTestCase
         $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
             ->get('/ai-engine/admin')
             ->assertOk()
-            ->assertSee('AI Engine Admin');
+            ->assertSee('Laravel Admin');
     }
 
     public function test_allows_access_to_nodes_health_and_policies_pages_for_allowed_ip(): void
@@ -78,7 +78,7 @@ class AdminUiAccessTest extends UnitTestCase
             ->withServerVariables(['REMOTE_ADDR' => '198.51.100.25'])
             ->get('/ai-engine/admin')
             ->assertOk()
-            ->assertSee('AI Engine Admin');
+            ->assertSee('Laravel Admin');
     }
 
     public function test_denies_authenticated_user_when_not_in_allowlist(): void

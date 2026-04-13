@@ -3,8 +3,9 @@
 namespace LaravelAIEngine\Services\RAG;
 
 use LaravelAIEngine\Services\Vector\VectorSearchService;
-use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\ConversationService;
+use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
@@ -21,7 +22,8 @@ use Illuminate\Support\Facades\Schema;
 class IntelligentRAGService
 {
     protected VectorSearchService $vectorSearch;
-    protected AIEngineManager $aiEngine;
+    protected AIEngineService $aiEngine;
+    protected DriverRegistry $driverRegistry;
     protected ConversationService $conversationService;
     protected array $config;
     protected array $historyConfig;
@@ -33,12 +35,14 @@ class IntelligentRAGService
 
     public function __construct(
         VectorSearchService $vectorSearch,
-        AIEngineManager $aiEngine,
+        AIEngineService $aiEngine,
+        DriverRegistry $driverRegistry,
         ConversationService $conversationService,
         ?LocaleResourceService $localeResources = null
     ) {
         $this->vectorSearch = $vectorSearch;
         $this->aiEngine = $aiEngine;
+        $this->driverRegistry = $driverRegistry;
         $this->conversationService = $conversationService;
         $this->localeResources = $localeResources;
         $this->config = config('ai-engine.intelligent_rag', []);
@@ -556,10 +560,11 @@ class IntelligentRAGService
             $fullResponse = '';
             $responseModel = $options['model'] ?? $this->config['response_model'] ?? config('ai-engine.default_model', 'gpt-4o');
 
-            $generator = $this->aiEngine
-                ->engine($options['engine'] ?? config('ai-engine.default'))
-                ->model($responseModel)
-                ->generateStream($enhancedPrompt);
+            $generator = $this->aiEngine->stream(new AIRequest(
+                prompt: $enhancedPrompt,
+                engine: $options['engine'] ?? config('ai-engine.default'),
+                model: $responseModel
+            ));
 
             foreach ($generator as $chunk) {
                 $fullResponse .= $chunk;
@@ -900,7 +905,7 @@ PROMPT;
             ]);
 
             // Use the driver's generateJsonAnalysis which handles all model-specific logic
-            $driver = $this->aiEngine->getEngineDriver(
+            $driver = $this->driverRegistry->resolve(
                 new \LaravelAIEngine\Enums\EngineEnum(config('ai-engine.default', 'openai'))
             );
 
@@ -1954,7 +1959,7 @@ PROMPT;
             }
         }
 
-        return $this->aiEngine->processRequest($request);
+        return $this->aiEngine->generate($request);
     }
 
     /**

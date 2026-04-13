@@ -3,7 +3,7 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\AIEngineManager;
+use LaravelAIEngine\Services\UnifiedEngineManager;
 
 class SystemHealthCommand extends Command
 {
@@ -13,7 +13,7 @@ class SystemHealthCommand extends Command
 
     protected $description = 'Check overall AI Engine system health and status';
 
-    public function handle(AIEngineManager $aiEngine): int
+    public function handle(UnifiedEngineManager $aiEngine): int
     {
         try {
             $this->info('=== AI Engine System Health Check ===');
@@ -117,9 +117,9 @@ class SystemHealthCommand extends Command
     }
 
     /**
-     * Get system status from AIEngineManager
+     * Get system status from the unified engine manager
      */
-    protected function getSystemStatus(AIEngineManager $aiEngine): array
+    protected function getSystemStatus(UnifiedEngineManager $aiEngine): array
     {
         return [
             'core' => [

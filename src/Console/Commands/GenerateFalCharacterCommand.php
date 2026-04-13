@@ -14,6 +14,11 @@ class GenerateFalCharacterCommand extends Command
                             {prompt? : Prompt used to generate the character}
                             {--name= : Character display name}
                             {--save-as= : Alias used later with --use-character}
+                            {--voice-id= : Optional ElevenLabs voice ID to attach for consistent TTS}
+                            {--voice-stability= : Optional ElevenLabs stability setting between 0 and 1}
+                            {--voice-similarity-boost= : Optional ElevenLabs similarity boost between 0 and 1}
+                            {--voice-style= : Optional ElevenLabs style setting between 0 and 1}
+                            {--voice-speaker-boost=1 : Enable or disable ElevenLabs speaker boost}
                             {--from-character= : Expand a previously approved preview/character alias}
                             {--user-id= : User ID used for credit checks and deductions}
                             {--frame-count=3 : Number of generated views/images}
@@ -140,6 +145,7 @@ class GenerateFalCharacterCommand extends Command
                     ['alias', $alias],
                     ['frontal_image_url', $character['frontal_image_url']],
                     ['reference_image_urls', implode("\n", $character['reference_image_urls']) ?: '(none)'],
+                    ['voice_id', $character['voice_id'] ?? '(none)'],
                 ]
             );
 
@@ -180,6 +186,36 @@ class GenerateFalCharacterCommand extends Command
         $seed = $this->option('seed');
         if ($seed !== null && $seed !== '') {
             $options['seed'] = (int) $seed;
+        }
+
+        $voiceId = $this->option('voice-id');
+        if (is_string($voiceId) && trim($voiceId) !== '') {
+            $options['voice_id'] = trim($voiceId);
+        }
+
+        $voiceSettings = [];
+        foreach ([
+            'voice-stability' => 'stability',
+            'voice-similarity-boost' => 'similarity_boost',
+            'voice-style' => 'style',
+        ] as $option => $key) {
+            $value = $this->option($option);
+            if ($value !== null && $value !== '') {
+                $voiceSettings[$key] = (float) $value;
+            }
+        }
+
+        $speakerBoost = filter_var(
+            (string) $this->option('voice-speaker-boost'),
+            FILTER_VALIDATE_BOOLEAN,
+            FILTER_NULL_ON_FAILURE
+        );
+        if ($speakerBoost !== null) {
+            $voiceSettings['use_speaker_boost'] = $speakerBoost;
+        }
+
+        if ($voiceSettings !== []) {
+            $options['voice_settings'] = $voiceSettings;
         }
 
         return $options;

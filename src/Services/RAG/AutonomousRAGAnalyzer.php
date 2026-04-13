@@ -2,8 +2,9 @@
 
 namespace LaravelAIEngine\Services\RAG;
 
-use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\AIEngineService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 class AutonomousRAGAnalyzer
 {
     public function __construct(
-        protected AIEngineManager $aiEngine
+        protected AIEngineService $aiEngine
     ) {}
 
     /**
@@ -35,12 +36,7 @@ class AutonomousRAGAnalyzer
             // Let AI make ALL decisions
             $prompt = $this->buildAutonomousPrompt($query, $contextSummary, $collectionsInfo);
             
-            // Use the engine builder pattern
-            $response = $this->aiEngine
-                ->model('gpt-4o-mini')
-                ->withMaxTokens(500)
-                ->withTemperature(0.1)
-                ->generate($prompt);
+            $response = $this->generateAnalysisResponse($prompt);
             
             $content = $response->getContent();
             
@@ -166,6 +162,19 @@ Think step by step:
 
 RESPOND WITH ONLY JSON:
 PROMPT;
+    }
+
+    protected function generateAnalysisResponse(string $prompt): \LaravelAIEngine\DTOs\AIResponse
+    {
+        $model = EntityEnum::from('gpt-4o-mini');
+
+        return $this->aiEngine->generateText(new AIRequest(
+            prompt: $prompt,
+            engine: $model->engine(),
+            model: $model,
+            temperature: 0.1,
+            maxTokens: 500
+        ));
     }
 
     /**

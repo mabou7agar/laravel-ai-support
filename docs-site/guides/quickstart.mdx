@@ -35,6 +35,23 @@ php artisan ai-engine:infra-health
 
 Expected: all checks pass.
 
+## 3.5) Know The Runtime APIs
+
+You will normally use one of these:
+
+- `app('ai-engine')` or the `Engine` facade for fluent usage through `UnifiedEngineManager`
+- `AIEngineService` for explicit `AIRequest` execution
+
+Example:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+$response = Engine::engine('openai')
+    ->model('gpt-4o-mini')
+    ->generate('Summarize today\\'s support queue in 3 bullets.');
+```
+
 ## 4) First Real Conversation Test
 
 ```bash
@@ -82,3 +99,5 @@ Use `guides/copy-paste-playbooks` to run end-to-end curl tests for:
 - localized/authenticated prompts
 - guided and autonomous collectors
 - federation and policy loop smoke checks
+
+If you are upgrading an older install, also read `reference/upgrade` before wiring application services against package classes.

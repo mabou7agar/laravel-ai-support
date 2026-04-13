@@ -119,7 +119,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     public function generateAudio(AIRequest $request): AIResponse
     {
         try {
-            $voiceId = $request->getParameters()['voice_id'] ?? 'pNInz6obpgDQGcFmaJgB'; // Default voice
+            $voiceId = $request->getParameters()['voice_id'] ?? ($this->config['default_voice_id'] ?? 'pNInz6obpgDQGcFmaJgB');
             $stability = $request->getParameters()['stability'] ?? 0.5;
             $similarityBoost = $request->getParameters()['similarity_boost'] ?? 0.5;
             $style = $request->getParameters()['style'] ?? 0.0;
@@ -184,7 +184,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     public function generateAudioStream(AIRequest $request): \Generator
     {
         try {
-            $voiceId = $request->getParameters()['voice_id'] ?? 'pNInz6obpgDQGcFmaJgB';
+            $voiceId = $request->getParameters()['voice_id'] ?? ($this->config['default_voice_id'] ?? 'pNInz6obpgDQGcFmaJgB');
             
             $payload = [
                 'text' => $request->getPrompt(),

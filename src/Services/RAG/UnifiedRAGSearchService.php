@@ -2,7 +2,9 @@
 
 namespace LaravelAIEngine\Services\RAG;
 
+use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
+use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Models\AINode;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -19,13 +21,13 @@ use Illuminate\Support\Facades\Log;
 class UnifiedRAGSearchService
 {
     protected $vectorSearch;
-    protected $aiEngine;
+    protected AIEngineService $aiEngine;
     protected $projectId;
 
-    public function __construct(VectorSearchService $vectorSearch)
+    public function __construct(VectorSearchService $vectorSearch, AIEngineService $aiEngine)
     {
         $this->vectorSearch = $vectorSearch;
-        $this->aiEngine = app('ai-engine');
+        $this->aiEngine = $aiEngine;
         $this->projectId = config('ai-engine.vector.project_id');
     }
 
@@ -135,13 +137,13 @@ class UnifiedRAGSearchService
 
         // Use AI to determine relevant projects
         try {
-            $response = $this->aiEngine->generateText([
-                'prompt' => $prompt,
-                'engine' => 'openai',
-                'model' => 'gpt-4o-mini',
-                'temperature' => 0.1,
-                'max_tokens' => 200,
-            ]);
+            $response = $this->aiEngine->generateText(new AIRequest(
+                prompt: $prompt,
+                engine: 'openai',
+                model: 'gpt-4o-mini',
+                temperature: 0.1,
+                maxTokens: 200
+            ));
 
             if ($response->isSuccess()) {
                 $relevantProjects = $this->parseProjectsFromResponse($response->content, $projects);

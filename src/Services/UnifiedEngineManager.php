@@ -4,23 +4,30 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services;
 
+use LaravelAIEngine\DTOs\ActionResponse;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\InteractiveAction;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\Memory\MemoryManager;
+use LaravelAIEngine\Services\Streaming\WebSocketManager;
 
 class UnifiedEngineManager
 {
     public function __construct(
         protected AIEngineService $aiEngineService,
-        protected MemoryManager $memoryManager,
-        protected ?AIEngineManager $legacyEngineManager = null
+        protected MemoryManager $memoryManager
     ) {}
 
     public function engine(string $engine): EngineProxy
     {
         return (new EngineProxy($this))->engine($engine);
+    }
+
+    public function model(string $model): EngineProxy
+    {
+        return (new EngineProxy($this))->model($model);
     }
 
     public function memory(?string $driver = null): MemoryProxy
@@ -82,22 +89,214 @@ class UnifiedEngineManager
         }
     }
 
-    /**
-     * Backward compatibility bridge for facade methods that still live on AIEngineManager.
-     */
-    public function __call(string $name, array $arguments): mixed
+    public function getAvailableEngines(): array
     {
-        $manager = $this->resolveLegacyEngineManager();
+        return $this->getEngines();
+    }
 
-        if ($manager !== null && method_exists($manager, $name)) {
-            return $manager->{$name}(...$arguments);
+    public function getAvailableModels(?string $engine = null): array
+    {
+        return $this->getModels($engine);
+    }
+
+    public function processRequest(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->generate($request);
+    }
+
+    public function processStreamingRequest(AIRequest $request): \Generator
+    {
+        return $this->aiEngineService->stream($request);
+    }
+
+    public function generateText(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->generateText($request);
+    }
+
+    public function generateImage(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->generateImage($request);
+    }
+
+    public function generateVideo(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->generateVideo($request);
+    }
+
+    public function generateEmbeddings(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->generateEmbeddings($request);
+    }
+
+    public function generateAudio(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->generateAudio($request);
+    }
+
+    public function generatePrompt(string $prompt, array $options = []): AIResponse
+    {
+        return $this->processRequest($this->buildPromptRequest($prompt, $options, false));
+    }
+
+    public function streamPrompt(string $prompt, array $options = []): \Generator
+    {
+        return $this->processStreamingRequest($this->buildPromptRequest($prompt, $options, true));
+    }
+
+    public function batch(): BatchProcessor
+    {
+        return new BatchProcessor($this);
+    }
+
+    public function template(string $name): TemplateManager
+    {
+        return new TemplateManager($name, $this);
+    }
+
+    public function createRequest(
+        string $prompt,
+        ?string $engine = null,
+        ?string $model = null,
+        ?int $maxTokens = null,
+        ?float $temperature = null,
+        ?string $systemPrompt = null,
+        array $parameters = []
+    ): AIRequest {
+        return new AIRequest(
+            prompt: $prompt,
+            engine: $engine,
+            model: $model,
+            parameters: $parameters,
+            maxTokens: $maxTokens,
+            temperature: $temperature,
+            systemPrompt: $systemPrompt
+        );
+    }
+
+    public function estimateCost(array $operations): array
+    {
+        $totalCredits = 0.0;
+        $breakdown = [];
+
+        foreach ($operations as $operation) {
+            $engine = EngineEnum::fromSlug((string) $operation['engine']);
+            $model = EntityEnum::fromSlug((string) $operation['model']);
+
+            $request = AIRequest::make(
+                (string) ($operation['prompt'] ?? ''),
+                $engine,
+                $model,
+                is_array($operation['parameters'] ?? null) ? $operation['parameters'] : []
+            );
+
+            $credits = $this->creditManager()->calculateCredits($request);
+            $totalCredits += $credits;
+
+            $breakdown[] = [
+                'operation' => $operation,
+                'credits' => $credits,
+                'cost_breakdown' => [
+                    'input_count' => $this->getInputCount($request),
+                    'credit_index' => $model->creditIndex(),
+                    'calculation_method' => $model->calculationMethod(),
+                ],
+            ];
         }
 
-        throw new \BadMethodCallException(sprintf(
-            'Method %s::%s does not exist.',
-            static::class,
-            $name
-        ));
+        return [
+            'total_credits' => $totalCredits,
+            'breakdown' => $breakdown,
+            'currency' => config('ai-engine.credits.currency', 'credits'),
+        ];
+    }
+
+    public function analytics(): AnalyticsManager
+    {
+        return app(AnalyticsManager::class);
+    }
+
+    public function trackRequest(array $data): void
+    {
+        $this->analytics()->trackRequest($data);
+    }
+
+    public function trackAction(array $data): void
+    {
+        $this->analytics()->trackAction($data);
+    }
+
+    public function trackStreaming(array $data): void
+    {
+        $this->analytics()->trackStreaming($data);
+    }
+
+    public function executeAction(InteractiveAction $action, array $payload = []): ActionResponse
+    {
+        return $this->actionManager()->executeAction($action, $payload);
+    }
+
+    public function createAction(array $data): InteractiveAction
+    {
+        return InteractiveAction::fromArray($data);
+    }
+
+    public function createActions(array $actionsData): array
+    {
+        return array_map(fn ($data) => InteractiveAction::fromArray($data), $actionsData);
+    }
+
+    public function getSupportedActionTypes(): array
+    {
+        return $this->actionManager()->getSupportedActionTypes();
+    }
+
+    public function validateAction(InteractiveAction $action, array $payload = []): array
+    {
+        return $this->actionManager()->validateAction($action, $payload);
+    }
+
+    public function streamResponse(string $sessionId, callable $generator, array $options = []): void
+    {
+        $manager = $this->webSocketManager();
+
+        if ($manager !== null) {
+            $manager->streamResponse($sessionId, $generator, $options);
+            return;
+        }
+
+        foreach ($generator() as $chunk) {
+            // No-op fallback when streaming infrastructure is unavailable.
+        }
+    }
+
+    public function streamWithActions(string $sessionId, callable $generator, array $actions = [], array $options = []): void
+    {
+        $manager = $this->webSocketManager();
+
+        if ($manager !== null) {
+            $manager->streamWithActions($sessionId, $generator, $actions, $options);
+        }
+    }
+
+    public function getStreamingStats(): array
+    {
+        return $this->webSocketManager()?->getStats() ?? [];
+    }
+
+    public function getDashboardData(array $filters = []): array
+    {
+        return $this->analytics()->getDashboardData($filters);
+    }
+
+    public function getUsageStats(array $filters = []): array
+    {
+        return $this->analytics()->getUsageStats($filters);
+    }
+
+    public function getPerformanceMetrics(array $filters = []): array
+    {
+        return $this->analytics()->getPerformanceMetrics($filters);
     }
 
     protected function buildRequest(
@@ -121,6 +320,27 @@ class UnifiedEngineManager
             stream: $stream,
             maxTokens: isset($options['max_tokens']) ? (int) $options['max_tokens'] : null,
             temperature: isset($options['temperature']) ? (float) $options['temperature'] : null
+        );
+    }
+
+    protected function buildPromptRequest(string $prompt, array $options, bool $stream): AIRequest
+    {
+        return new AIRequest(
+            prompt: $prompt,
+            engine: $options['engine'] ?? config('ai-engine.default', config('ai-engine.default_engine', EngineEnum::OPENAI)),
+            model: $options['model'] ?? config('ai-engine.default_model', EntityEnum::GPT_4O),
+            parameters: is_array($options['parameters'] ?? null) ? $options['parameters'] : [],
+            userId: isset($options['user']) ? (string) $options['user'] : ($options['user_id'] ?? null),
+            conversationId: $this->extractConversationId($options),
+            context: is_array($options['context'] ?? null) ? $options['context'] : [],
+            files: is_array($options['files'] ?? null) ? $options['files'] : [],
+            stream: $stream,
+            systemPrompt: isset($options['system_prompt']) ? (string) $options['system_prompt'] : null,
+            messages: is_array($options['messages'] ?? null) ? $options['messages'] : [],
+            maxTokens: isset($options['max_tokens']) ? (int) $options['max_tokens'] : null,
+            temperature: isset($options['temperature']) ? (float) $options['temperature'] : null,
+            seed: isset($options['seed']) ? (int) $options['seed'] : null,
+            metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : []
         );
     }
 
@@ -201,16 +421,34 @@ class UnifiedEngineManager
         return null;
     }
 
-    protected function resolveLegacyEngineManager(): ?AIEngineManager
+    protected function actionManager(): ActionManager
     {
-        if ($this->legacyEngineManager instanceof AIEngineManager) {
-            return $this->legacyEngineManager;
+        return app(ActionManager::class);
+    }
+
+    protected function creditManager(): CreditManager
+    {
+        return app(CreditManager::class);
+    }
+
+    protected function getInputCount(AIRequest $request): float|int
+    {
+        return match ($request->model->calculationMethod()) {
+            'words' => str_word_count(strip_tags($request->prompt)),
+            'characters' => mb_strlen(strip_tags($request->prompt)),
+            'images' => $request->parameters['image_count'] ?? 1,
+            'videos' => $request->parameters['video_count'] ?? 1,
+            'minutes' => $request->parameters['audio_minutes'] ?? 1,
+            default => 1,
+        };
+    }
+
+    protected function webSocketManager(): ?WebSocketManager
+    {
+        if (function_exists('app') && app()->bound(WebSocketManager::class)) {
+            return app(WebSocketManager::class);
         }
 
-        if (function_exists('app') && app()->bound(AIEngineManager::class)) {
-            $this->legacyEngineManager = app(AIEngineManager::class);
-        }
-
-        return $this->legacyEngineManager;
+        return null;
     }
 }

@@ -1564,10 +1564,18 @@ components:
           type: number
         voice_id:
           type: string
+        use_character:
+          type: string
+        use_last_character:
+          type: boolean
         stability:
           type: number
         similarity_boost:
           type: number
+        style:
+          type: number
+        use_speaker_boost:
+          type: boolean
         parameters:
           $ref: '#/components/schemas/JsonObject'
     DataCollectorStartRequest:

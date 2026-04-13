@@ -5,6 +5,15 @@ description: Agent, tool, collector, RAG, and node roles.
 
 ## Core Building Blocks
 
+### Runtime API
+
+There are two application-facing PHP APIs:
+
+- `UnifiedEngineManager` for fluent request building and facade usage
+- `AIEngineService` for direct `AIRequest` execution
+
+`EngineProxy` is the fluent object returned by `engine()` and `model()`. Driver instantiation is handled only by `DriverRegistry`.
+
 ### Agent
 
 The orchestration layer that decides what to do next.
@@ -76,3 +85,4 @@ flowchart LR
 - Use **autonomous collector** for open-ended create/update flows.
 - Use **RAG** when answering or narrowing from available data.
 - Use **node routing** when ownership is remote.
+- Use **UnifiedEngineManager** for fluent app code and **AIEngineService** for typed internal service code.

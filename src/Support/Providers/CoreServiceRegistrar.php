@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Support\Providers;
 
-use LaravelAIEngine\Services\AIEngineManager;
 use LaravelAIEngine\Services\AnalyticsManager;
 use LaravelAIEngine\Services\AIMediaManager;
 use LaravelAIEngine\Services\CacheManager;
@@ -35,25 +34,6 @@ class CoreServiceRegistrar
         $app->singleton(AnalyticsManager::class, fn ($app) => new AnalyticsManager($app));
         $app->singleton(DriverRegistry::class, fn ($app) => new DriverRegistry($app));
 
-        $app->singleton(AIEngineManager::class, function ($app) {
-            return new AIEngineManager(
-                $app,
-                $app->make(CreditManager::class),
-                $app->make(CacheManager::class),
-                $app->make(RateLimitManager::class),
-                $app->make(AnalyticsManager::class),
-                $app->bound(\LaravelAIEngine\Services\Memory\MemoryManager::class)
-                    ? $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class)
-                    : null,
-                $app->bound(\LaravelAIEngine\Services\ActionManager::class)
-                    ? $app->make(\LaravelAIEngine\Services\ActionManager::class)
-                    : null,
-                $app->bound(\LaravelAIEngine\Services\Streaming\WebSocketManager::class)
-                    ? $app->make(\LaravelAIEngine\Services\Streaming\WebSocketManager::class)
-                    : null
-            );
-        });
-
         $app->singleton(ConversationManager::class, fn () => new ConversationManager());
 
         $app->singleton(DiscoveryCacheWarmer::class, function ($app) {
@@ -64,7 +44,11 @@ class CoreServiceRegistrar
         });
 
         $app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, fn () => new \LaravelAIEngine\Services\Memory\MemoryManager());
-        $app->singleton(\LaravelAIEngine\Services\AIEngineService::class, fn ($app) => new \LaravelAIEngine\Services\AIEngineService($app->make(CreditManager::class)));
+        $app->singleton(\LaravelAIEngine\Services\AIEngineService::class, fn ($app) => new \LaravelAIEngine\Services\AIEngineService(
+            $app->make(CreditManager::class),
+            $app->make(ConversationManager::class),
+            $app->make(DriverRegistry::class)
+        ));
         $app->singleton(\LaravelAIEngine\Support\Fal\FalCharacterStore::class, fn () => new \LaravelAIEngine\Support\Fal\FalCharacterStore());
         $app->singleton(\LaravelAIEngine\Services\Fal\FalReferencePackGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalReferencePackGenerationService(
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
@@ -92,8 +76,7 @@ class CoreServiceRegistrar
         ));
         $app->singleton(\LaravelAIEngine\Services\UnifiedEngineManager::class, fn ($app) => new \LaravelAIEngine\Services\UnifiedEngineManager(
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
-            $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class),
-            $app->make(AIEngineManager::class)
+            $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\WebhookManager::class, fn () => new \LaravelAIEngine\Services\WebhookManager());
         $app->singleton(\LaravelAIEngine\Services\TemplateManager::class, fn () => new \LaravelAIEngine\Services\TemplateManager());
@@ -103,7 +86,8 @@ class CoreServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\IntelligentRAGService(
                 $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
-                $app->make(AIEngineManager::class),
+                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+                $app->make(DriverRegistry::class),
                 $app->make(\LaravelAIEngine\Services\ConversationService::class)
             );
         });
@@ -116,14 +100,14 @@ class CoreServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGStateService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGStateService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGModelMetadataService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGModelMetadataService($app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGStateService::class), $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGContextService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGContextService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGModelMetadataService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService($app->make(AIEngineManager::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionPromptService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionPromptService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGExecutionService::class, fn () => new \LaravelAIEngine\Services\RAG\AutonomousRAGExecutionService());
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGAggregateService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGAggregateService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGStructuredDataService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGStructuredDataService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGStateService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGAggregateService::class)));
 
         $app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class, function ($app) {
             return new \LaravelAIEngine\Services\DataCollector\DataCollectorService(
-                $app->make(AIEngineManager::class),
+                $app->make(\LaravelAIEngine\Services\UnifiedEngineManager::class),
                 $app->make(\LaravelAIEngine\Services\ConversationService::class)
             );
         });
