@@ -1,0 +1,23 @@
+meta {
+  name: Update Node Status
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/nodes/status
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "node_id": {{adminNodeId}},
+    "status": "active"
+  }
+}

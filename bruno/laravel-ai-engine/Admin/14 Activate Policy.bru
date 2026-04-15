@@ -1,0 +1,23 @@
+meta {
+  name: Activate Policy
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/policies/activate
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "policy_id": {{policyId}},
+    "status": "active"
+  }
+}

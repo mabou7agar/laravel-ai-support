@@ -1,0 +1,25 @@
+meta {
+  name: TTS
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/generate/tts
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "text": "Hello from Laravel AI Engine"
+  }
+}

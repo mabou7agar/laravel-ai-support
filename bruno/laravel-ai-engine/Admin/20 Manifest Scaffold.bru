@@ -1,0 +1,26 @@
+meta {
+  name: Manifest Scaffold
+  type: http
+  seq: 20
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/manifest/scaffold
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "type": "tool",
+    "name": "ExampleTool",
+    "model": "App\\Models\\User",
+    "description": "Example scaffolded tool",
+    "register": true
+  }
+}

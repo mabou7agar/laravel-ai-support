@@ -1,0 +1,26 @@
+meta {
+  name: Image
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/generate/image
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "prompt": "A clean product hero shot",
+    "count": 1
+  }
+}

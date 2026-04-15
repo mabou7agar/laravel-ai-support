@@ -1,0 +1,27 @@
+meta {
+  name: Start
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/autonomous-collector/start
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "config_name": "{{autonomousConfigName}}",
+    "session_id": "{{autonomousCollectorSessionId}}",
+    "initial_message": "Collect customer intake information"
+  }
+}

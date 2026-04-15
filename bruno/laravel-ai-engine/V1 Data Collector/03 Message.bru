@@ -1,0 +1,28 @@
+meta {
+  name: Message
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/data-collector/message
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "session_id": "{{dataCollectorSessionId}}",
+    "message": "John Doe",
+    "engine": "openai",
+    "model": "gpt-4o"
+  }
+}

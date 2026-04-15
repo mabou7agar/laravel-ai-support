@@ -1,0 +1,22 @@
+meta {
+  name: Ping Node
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/nodes/ping
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "node_id": {{adminNodeId}}
+  }
+}

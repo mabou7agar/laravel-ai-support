@@ -1,0 +1,19 @@
+meta {
+  name: Conversations
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/ai-demo/chat/conversations
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

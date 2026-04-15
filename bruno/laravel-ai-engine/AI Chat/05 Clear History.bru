@@ -1,0 +1,16 @@
+meta {
+  name: Clear History
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/ai-chat/history/{{chatSessionId}}
+  body: none
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}

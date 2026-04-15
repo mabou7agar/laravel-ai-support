@@ -1,0 +1,24 @@
+meta {
+  name: Bulk Sync Apply
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/nodes/bulk-sync/apply
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "payload": "{\"nodes\":[{\"name\":\"Child Node\",\"slug\":\"child-node\",\"type\":\"child\",\"url\":\"https://child.example.com\"}]}",
+    "prune": false,
+    "ping": false
+  }
+}

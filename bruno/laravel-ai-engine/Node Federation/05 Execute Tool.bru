@@ -1,0 +1,27 @@
+meta {
+  name: Execute Tool
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/ai-engine/tools/execute
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-Node-Token: {{nodeToken}}
+  X-User-Token: {{userToken}}
+}
+
+body:json {
+  {
+    "action_type": "{{actionType}}",
+    "data": {
+      "model_id": 1,
+      "model_class": "App\\Models\\User"
+    },
+    "session_id": "{{chatSessionId}}"
+  }
+}

@@ -1,0 +1,29 @@
+meta {
+  name: Apply Extracted
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/v1/data-collector/apply-extracted
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "session_id": "{{dataCollectorSessionId}}",
+    "extracted_data": {
+      "full_name": "John Doe",
+      "email": "john@example.com"
+    }
+  }
+}

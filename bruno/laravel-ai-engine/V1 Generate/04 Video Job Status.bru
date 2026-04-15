@@ -1,0 +1,19 @@
+meta {
+  name: Video Job Status
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/generate/video/jobs/{{videoJobId}}?refresh=true
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

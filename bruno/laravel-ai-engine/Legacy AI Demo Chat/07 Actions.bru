@@ -1,0 +1,19 @@
+meta {
+  name: Actions
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/ai-demo/chat/actions
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

@@ -1,0 +1,19 @@
+meta {
+  name: Memory Stats
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/ai-demo/chat/memory-stats/{{chatSessionId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

@@ -1,0 +1,19 @@
+meta {
+  name: Cheapest
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/ai-demo/models/cheapest
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

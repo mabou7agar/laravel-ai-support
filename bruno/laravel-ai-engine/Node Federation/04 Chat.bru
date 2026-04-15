@@ -1,0 +1,30 @@
+meta {
+  name: Chat
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/ai-engine/chat
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-Node-Token: {{nodeToken}}
+  X-User-Token: {{userToken}}
+}
+
+body:json {
+  {
+    "message": "List invoices",
+    "session_id": "{{ragSessionId}}",
+    "options": {
+      "engine": "openai",
+      "model": "gpt-4o-mini",
+      "use_memory": true,
+      "use_actions": true,
+      "use_intelligent_rag": true
+    }
+  }
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Bulk Sync Preview
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/nodes/bulk-sync/preview
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "payload": "{\"nodes\":[{\"name\":\"Child Node\",\"slug\":\"child-node\",\"type\":\"child\",\"url\":\"https://child.example.com\"}]}"
+  }
+}

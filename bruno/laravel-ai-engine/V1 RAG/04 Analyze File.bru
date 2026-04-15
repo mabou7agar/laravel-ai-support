@@ -1,0 +1,25 @@
+meta {
+  name: Analyze File
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/rag/analyze-file
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:multipart-form {
+  file: @file({{filePath}})
+  message: summarize
+  session_id: {{ragSessionId}}
+}

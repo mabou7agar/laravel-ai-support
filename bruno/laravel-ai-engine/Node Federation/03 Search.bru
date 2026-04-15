@@ -1,0 +1,26 @@
+meta {
+  name: Search
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/ai-engine/search
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-Node-Token: {{nodeToken}}
+  X-User-Token: {{userToken}}
+}
+
+body:json {
+  {
+    "query": "invoice status",
+    "limit": 5,
+    "options": {
+      "collections": ["{{collectionClass}}"]
+    }
+  }
+}

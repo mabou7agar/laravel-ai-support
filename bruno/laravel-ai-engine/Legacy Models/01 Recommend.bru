@@ -1,0 +1,19 @@
+meta {
+  name: Recommend
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/ai-demo/models/recommend?task=speed
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

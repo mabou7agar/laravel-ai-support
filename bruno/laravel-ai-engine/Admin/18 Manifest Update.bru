@@ -1,0 +1,25 @@
+meta {
+  name: Manifest Update
+  type: http
+  seq: 18
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/manifest/entries/update
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "type": "tool",
+    "old_key": "example_tool",
+    "key": "example_tool_v2",
+    "class": "App\\AI\\Tools\\ExampleToolV2"
+  }
+}

@@ -1,0 +1,23 @@
+meta {
+  name: Transcribe
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/generate/transcribe
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:multipart-form {
+  file: @file({{audioPath}})
+}
