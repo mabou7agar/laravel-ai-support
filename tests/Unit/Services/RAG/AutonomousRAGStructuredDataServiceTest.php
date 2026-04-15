@@ -3,11 +3,14 @@
 namespace LaravelAIEngine\Tests\Unit\Services\RAG;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
+use LaravelAIEngine\Services\Graph\Neo4jRetrievalService;
 use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
 use LaravelAIEngine\Services\RAG\AutonomousRAGStateService;
 use LaravelAIEngine\Services\RAG\AutonomousRAGStructuredDataService;
 use LaravelAIEngine\Tests\UnitTestCase;
+use Mockery;
 
 class AutonomousRAGStructuredDataServiceTest extends UnitTestCase
 {
@@ -321,6 +324,63 @@ PHP);
 
         $this->assertTrue($result['success']);
         $this->assertStringContainsString('**Invoice Cards**', $result['response']);
+    }
+
+    public function test_query_can_enrich_structured_results_with_graph_context(): void
+    {
+        Schema::dropIfExists('rag_preview_models');
+        Schema::create('rag_preview_models', function ($table) {
+            $table->id();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->string('name')->nullable();
+            $table->timestamps();
+        });
+
+        SummaryPreviewListModel::create(['created_by' => 9, 'name' => 'INV-1']);
+
+        $graphRetrieval = Mockery::mock(Neo4jRetrievalService::class);
+        $graphRetrieval->shouldReceive('enabled')->andReturn(true);
+        $graphRetrieval->shouldReceive('retrieveRelevantContext')->once()->andReturn(new Collection([
+            (object) [
+                'id' => 901,
+                'title' => 'Graph Owner',
+                'matched_chunk_text' => "Graph owner summary",
+                'vector_metadata' => [
+                    'entity_ref' => ['model_id' => 901, 'model_class' => 'App\\Models\\User'],
+                    'object' => ['id' => 901, 'title' => 'Graph Owner'],
+                    'graph_planned' => true,
+                    'planner_strategy' => 'semantic_graph_planner',
+                    'planner_query_kind' => 'ownership',
+                    'relation_path' => ['OWNED_BY'],
+                    'path_length' => 1,
+                ],
+            ],
+        ]));
+
+        $service = new AutonomousRAGStructuredDataService(
+            new AutonomousRAGStateService(new AutonomousRAGPolicy()),
+            new AutonomousRAGPolicy(),
+            null,
+            null,
+            null,
+            $graphRetrieval
+        );
+
+        $result = $service->query([
+            'model' => 'invoice',
+            'query' => 'list invoice cards and who owns them',
+        ], 9, ['session_id' => 'preview-heading-session'], [
+            'findModelClass' => fn (string $modelName, array $options) => SummaryPreviewListModel::class,
+            'getFilterConfigForModel' => fn (string $modelClass) => ['user_field' => 'created_by'],
+            'applyFilters' => fn ($query, array $filters, string $modelClass, array $options) => $query,
+            'findModelConfigClass' => fn (string $modelClass) => null,
+        ], 1, 'list invoice cards and who owns them');
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('Related graph context', $result['response']);
+        $this->assertTrue((bool) ($result['metadata']['graph_planned'] ?? false));
+        $this->assertSame('ownership', $result['metadata']['planner_query_kind'] ?? null);
+        $this->assertCount(1, $result['metadata']['sources'] ?? []);
     }
 }
 

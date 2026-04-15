@@ -1,0 +1,25 @@
+meta {
+  name: Confirm
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/autonomous-collector/confirm
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "session_id": "{{autonomousCollectorSessionId}}"
+  }
+}

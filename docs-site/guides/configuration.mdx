@@ -13,6 +13,7 @@ Set only what you need. Keep defaults unless you have a concrete reason.
 AI_ENGINE_DEFAULT=openai
 AI_ENGINE_DEFAULT_MODEL=gpt-4o
 AI_ORCHESTRATION_MODEL=gpt-4o-mini
+AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini;deepseek;ollama
 
 AI_ENGINE_STANDARDIZE_API_RESPONSES=true
 AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY=true
@@ -26,6 +27,14 @@ AI_ENGINE_REMOTE_NODE_MIGRATION_GUARD=true
 AI_ENGINE_QDRANT_SELF_CHECK_ENABLED=true
 AI_ENGINE_STARTUP_HEALTH_GATE_ENABLED=true
 ```
+
+For direct generation requests that pass only a `model`, keep `native` first if you want direct-provider preference, then list aggregator or fallback providers after it. Example:
+
+```env
+AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini
+```
+
+If the native provider is not configured or the model is unavailable there, the resolver walks the remaining providers in order and still applies normal credit checks against the final chosen provider/model.
 
 ## Multi-App Federation Profile
 
@@ -43,6 +52,77 @@ AI_ENGINE_IS_MASTER=false
 AI_ENGINE_MASTER_URL=https://ai.test
 AI_ENGINE_NODE_JWT_SECRET=shared_secret
 ```
+
+## Central Neo4j Graph Profile
+
+```env
+AI_ENGINE_GRAPH_ENABLED=true
+AI_ENGINE_GRAPH_BACKEND=neo4j
+AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=true
+AI_ENGINE_GRAPH_KB_ENABLED=true
+
+AI_ENGINE_NEO4J_URL=http://localhost:7474
+AI_ENGINE_NEO4J_DATABASE=neo4j
+AI_ENGINE_NEO4J_USERNAME=neo4j
+AI_ENGINE_NEO4J_PASSWORD=secret
+AI_ENGINE_NEO4J_CHUNK_VECTOR_INDEX=chunk_embedding_index
+AI_ENGINE_NEO4J_CHUNK_VECTOR_PROPERTY=embedding
+AI_ENGINE_NEO4J_SHARED_DEPLOYMENT=false
+AI_ENGINE_NEO4J_VECTOR_NAMING_STRATEGY=static
+AI_ENGINE_NEO4J_VECTOR_SIMILARITY=cosine
+```
+
+For shared Neo4j deployments, prefer node or node+tenant scoped vector names:
+
+```env
+AI_ENGINE_NEO4J_SHARED_DEPLOYMENT=true
+AI_ENGINE_NEO4J_VECTOR_NAMING_STRATEGY=node
+AI_ENGINE_NEO4J_VECTOR_NODE_SLUG=billing_app
+AI_ENGINE_NEO4J_CHUNK_VECTOR_INDEX=chunk_embedding_index
+AI_ENGINE_NEO4J_CHUNK_VECTOR_PROPERTY=embedding
+```
+
+That keeps vector indexes and properties isolated per app while still sharing the same Neo4j database.
+
+Fresh installs are Neo4j-first by default. If Neo4j is not fully configured, runtime read-path resolution falls back to the configured vector driver instead of hard-failing.
+
+## Graph Knowledge Base Profile
+
+```env
+AI_ENGINE_GRAPH_KB_ENABLED=true
+AI_ENGINE_GRAPH_KB_CACHE_RESULTS=true
+AI_ENGINE_GRAPH_KB_PLANNER_SIGNATURE=v2
+AI_ENGINE_GRAPH_KB_PLAN_CACHE_TTL=1800
+AI_ENGINE_GRAPH_KB_RESULT_CACHE_TTL=900
+AI_ENGINE_GRAPH_KB_PROFILE_TTL=86400
+AI_ENGINE_GRAPH_KB_PROFILE_INDEX_LIMIT=200
+AI_ENGINE_GRAPH_KB_WARM_DEFAULT_LIMIT=25
+AI_ENGINE_GRAPH_BENCHMARK_HISTORY_LIMIT=100
+AI_ENGINE_GRAPH_BENCHMARK_HISTORY_TTL=604800
+AI_ENGINE_GRAPH_BENCHMARK_LOAD_CONCURRENCY=4
+AI_ENGINE_GRAPH_RANKING_FEEDBACK_ENABLED=true
+AI_ENGINE_GRAPH_RANKING_FEEDBACK_MIN_SAMPLES=5
+```
+
+## Graph Planner and Adaptive Ranking
+
+```env
+AI_ENGINE_GRAPH_PLANNER_ENABLED=true
+AI_ENGINE_GRAPH_NL_PLANNING_ENABLED=true
+AI_ENGINE_GRAPH_PLANNER_SCORE_BREAKDOWN=true
+AI_ENGINE_GRAPH_RANKING_FEEDBACK_ENABLED=true
+AI_ENGINE_GRAPH_RANKING_FEEDBACK_MIN_SAMPLES=5
+AI_ENGINE_GRAPH_RANKING_FEEDBACK_TTL=604800
+AI_ENGINE_GRAPH_ONTOLOGY_PACKS=project_management,messaging
+```
+
+Built-in ontology packs:
+
+- `project_management`
+- `messaging`
+- `support`
+- `crm`
+- `commerce`
 
 ## Admin Profile
 
@@ -68,5 +148,6 @@ Only set env values when you need to change behavior from defaults, especially f
 
 - provider/model selection
 - federation mode (master vs child)
+- Neo4j graph + KB enablement
 - admin access restrictions
 - API envelope compatibility during migration

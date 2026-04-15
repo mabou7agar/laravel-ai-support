@@ -1,0 +1,19 @@
+meta {
+  name: Discover
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/modules/discover
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

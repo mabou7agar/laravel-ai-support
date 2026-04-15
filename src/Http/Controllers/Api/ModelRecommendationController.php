@@ -28,7 +28,7 @@ class ModelRecommendationController extends Controller
     public function recommend(Request $request): JsonResponse
     {
         $request->validate([
-            'task' => 'required|string|in:vision,coding,reasoning,fast,cheap,quality,default',
+            'task' => 'required|string|in:vision,coding,reasoning,fast,speed,cheap,cost,performance,quality,default',
             'provider' => 'nullable|string',
             'offline' => 'nullable|boolean',
         ]);
@@ -77,7 +77,7 @@ class ModelRecommendationController extends Controller
      */
     public function all(): JsonResponse
     {
-        $tasks = ['vision', 'coding', 'reasoning', 'fast', 'cheap', 'quality'];
+        $tasks = ['vision', 'coding', 'reasoning', 'fast', 'cheap', 'performance', 'quality'];
         $recommendations = [];
 
         foreach ($tasks as $task) {

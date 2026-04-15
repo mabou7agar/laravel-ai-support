@@ -37,6 +37,7 @@ class AgentOrchestratorRoutingFallbackTest extends UnitTestCase
                 'action' => 'route_to_node',
                 'resource_name' => 'billing',
                 'reasoning' => 'billing domain',
+                'decision_source' => 'router_ai',
             ]);
 
         $selection = Mockery::mock(AgentSelectionService::class);
@@ -46,7 +47,10 @@ class AgentOrchestratorRoutingFallbackTest extends UnitTestCase
         $execution = Mockery::mock(AgentExecutionFacade::class);
         $execution->shouldReceive('routeToNode')
             ->once()
-            ->with('billing', 'list invoices', $context, [])
+            ->with('billing', 'show invoice domain status', $context, Mockery::on(function (array $options): bool {
+                return ($options['decision_path'] ?? null) === 'router_ai_route_to_node'
+                    && ($options['decision_source'] ?? null) === 'router_ai';
+            }))
             ->andReturn(AgentResponse::failure(
                 message: "I couldn't reach remote node 'billing' (HTTP 500).",
                 context: $context
@@ -54,9 +58,10 @@ class AgentOrchestratorRoutingFallbackTest extends UnitTestCase
         $execution->shouldReceive('executeSearchRag')
             ->once()
             ->withArgs(function (string $message, UnifiedActionContext $ctx, array $options, $reroute) use ($context) {
-                return $message === 'list invoices'
+                return $message === 'show invoice domain status'
                     && $ctx === $context
                     && ($options['local_only'] ?? false) === true
+                    && ($options['decision_path'] ?? null) === 'router_ai_route_to_node'
                     && is_callable($reroute);
             })
             ->andReturn(AgentResponse::conversational(
@@ -79,11 +84,10 @@ class AgentOrchestratorRoutingFallbackTest extends UnitTestCase
             $execution
         );
 
-        $response = $orchestrator->process('list invoices', 'session-route-fallback', 5);
+        $response = $orchestrator->process('show invoice domain status', 'session-route-fallback', 5);
 
         $this->assertTrue($response->success);
         $this->assertStringContainsString('Remote down, local fallback active.', $response->message);
         $this->assertStringContainsString('No invoices found locally.', $response->message);
     }
 }
-

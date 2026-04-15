@@ -83,6 +83,35 @@ class AutonomousRAGDecisionServiceTest extends UnitTestCase
         $this->assertSame('emailcache', $decision['parameters']['model']);
     }
 
+    public function test_decide_fallback_uses_vector_search_for_semantic_question_when_json_parsing_fails(): void
+    {
+        $service = new AutonomousRAGDecisionService($this->mockAiResponse(
+            'This should search semantically but I am not returning JSON.'
+        ));
+
+        $decision = $service->decide(
+            'What changed on Friday for Apollo and who is it related to?',
+            $this->sampleContext([
+                'models' => [
+                    [
+                        'name' => 'project',
+                        'class' => 'App\\Models\\Project',
+                        'description' => 'Project records',
+                    ],
+                    [
+                        'name' => 'mail',
+                        'class' => 'App\\Models\\Mail',
+                        'description' => 'Mail records',
+                    ],
+                ],
+            ]),
+            'gpt-4o-mini'
+        );
+
+        $this->assertSame('vector_search', $decision['tool']);
+        $this->assertSame('What changed on Friday for Apollo and who is it related to?', $decision['parameters']['query']);
+    }
+
     public function test_decide_normalizes_table_parameter_to_model_name(): void
     {
         $service = new AutonomousRAGDecisionService($this->mockAiResponse(

@@ -1,0 +1,22 @@
+meta {
+  name: Delete Node
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/nodes/delete
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "node_id": {{adminNodeId}}
+  }
+}

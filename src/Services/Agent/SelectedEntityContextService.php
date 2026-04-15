@@ -62,6 +62,14 @@ class SelectedEntityContextService
             $params['entity_data'] = $selectedEntity['entity_data'];
         }
 
+        if (!empty($selectedEntity['entity_ref']) && is_array($selectedEntity['entity_ref'])) {
+            $params['entity_ref'] = $selectedEntity['entity_ref'];
+        }
+
+        if (!empty($selectedEntity['object']) && is_array($selectedEntity['object'])) {
+            $params['object'] = $selectedEntity['object'];
+        }
+
         return $params;
     }
 

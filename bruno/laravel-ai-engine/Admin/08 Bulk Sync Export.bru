@@ -1,0 +1,15 @@
+meta {
+  name: Bulk Sync Export
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/ai-engine/admin/nodes/bulk-sync/export
+  body: none
+}
+
+headers {
+  Accept: application/json
+  Cookie: {{webCookie}}
+}

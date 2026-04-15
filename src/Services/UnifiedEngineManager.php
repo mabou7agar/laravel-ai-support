@@ -305,8 +305,12 @@ class UnifiedEngineManager
         bool $stream,
         ?string $conversationId
     ): AIRequest {
-        $engine = EngineEnum::fromSlug((string) ($options['engine'] ?? config('ai-engine.default', config('ai-engine.default_engine', EngineEnum::OPENAI))));
-        $model = EntityEnum::from((string) ($options['model'] ?? config('ai-engine.default_model', EntityEnum::GPT_4O)));
+        $engine = array_key_exists('engine', $options)
+            ? EngineEnum::fromSlug((string) $options['engine'])
+            : null;
+        $model = array_key_exists('model', $options)
+            ? EntityEnum::from((string) $options['model'])
+            : null;
 
         $prompt = $this->extractPrompt($messages);
 
@@ -319,7 +323,8 @@ class UnifiedEngineManager
             messages: $messages,
             stream: $stream,
             maxTokens: isset($options['max_tokens']) ? (int) $options['max_tokens'] : null,
-            temperature: isset($options['temperature']) ? (float) $options['temperature'] : null
+            temperature: isset($options['temperature']) ? (float) $options['temperature'] : null,
+            metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : []
         );
     }
 
@@ -327,8 +332,8 @@ class UnifiedEngineManager
     {
         return new AIRequest(
             prompt: $prompt,
-            engine: $options['engine'] ?? config('ai-engine.default', config('ai-engine.default_engine', EngineEnum::OPENAI)),
-            model: $options['model'] ?? config('ai-engine.default_model', EntityEnum::GPT_4O),
+            engine: $options['engine'] ?? null,
+            model: $options['model'] ?? null,
             parameters: is_array($options['parameters'] ?? null) ? $options['parameters'] : [],
             userId: isset($options['user']) ? (string) $options['user'] : ($options['user_id'] ?? null),
             conversationId: $this->extractConversationId($options),

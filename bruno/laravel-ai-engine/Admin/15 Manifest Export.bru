@@ -1,0 +1,15 @@
+meta {
+  name: Manifest Export
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{baseUrl}}/ai-engine/admin/manifest/export
+  body: none
+}
+
+headers {
+  Accept: application/json
+  Cookie: {{webCookie}}
+}

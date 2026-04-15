@@ -10,6 +10,7 @@ Index models when you need:
 - semantic search
 - follow-up context from previous results
 - cross-model contextual answers
+- graph-aware retrieval over related entities
 
 ## Typical Workflow
 
@@ -20,10 +21,29 @@ php artisan ai-engine:vector-index "App\\Models\\Invoice" --with-relationships
 php artisan ai-engine:vector-status
 ```
 
+`ai-engine:analyze-model` is diagnostic only. It does not write to the database, create vectors, or publish graph nodes. It only reads schema metadata, reflects model relationships, and estimates record counts for sizing guidance.
+
 ## Test Retrieval
 
 ```bash
 php artisan ai-engine:vector-search "overdue invoices from last month"
+```
+
+## GraphRAG Workflow
+
+For central Neo4j retrieval:
+
+```bash
+php artisan ai-engine:neo4j-init
+php artisan ai-engine:neo4j-sync --fresh
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-diagnose
+```
+
+If integrity issues are reported:
+
+```bash
+php artisan ai-engine:neo4j-repair --apply
 ```
 
 ## Practical Guidance
@@ -32,6 +52,39 @@ php artisan ai-engine:vector-search "overdue invoices from last month"
 - include only relationships needed for answers
 - avoid over-indexing noisy text fields
 - re-index after schema/meaningful data shape changes
+
+## Preferred Model Contract
+
+Legacy compatibility methods:
+
+- `getVectorContent()`
+- `getVectorMetadata()`
+- `toRAGContent()`
+
+Preferred methods for new work:
+
+- `toSearchDocument()`
+- `toGraphObject()`
+- `getGraphRelations()`
+- `getAccessScope()`
+- `toRAGSummary()`
+- `toRAGDetail()`
+- `toRAGListPreview(?string $locale = null)`
+
+The package now prefers explicit search documents over auto-discovered text.
+
+## Retrieval Result Contract
+
+Graph/vector results standardize on:
+
+- `model_id`
+- `model_class`
+- `model_type`
+- `source_node`
+- `app_slug`
+- optional `scope_type`, `scope_id`, `scope_label`
+- `entity_ref`
+- `object`
 
 ## If Qdrant Is Used
 

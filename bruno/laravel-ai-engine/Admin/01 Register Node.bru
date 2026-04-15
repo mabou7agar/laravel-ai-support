@@ -1,0 +1,30 @@
+meta {
+  name: Register Node
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/nodes/register
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "name": "Child Node",
+    "slug": "child-node",
+    "type": "child",
+    "url": "https://child.example.com",
+    "description": "Remote child node",
+    "capabilities": "search,actions,rag",
+    "weight": 1,
+    "status": "active",
+    "api_key": "node-api-key"
+  }
+}

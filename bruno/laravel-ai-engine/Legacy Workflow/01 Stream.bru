@@ -1,0 +1,15 @@
+meta {
+  name: Stream
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/ai-demo/workflow/stream/{{workflowJobId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}

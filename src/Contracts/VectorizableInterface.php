@@ -13,6 +13,11 @@ namespace LaravelAIEngine\Contracts;
  * - getVectorMetadata(): Returns metadata for filtering in vector DB
  * 
  * Optional but recommended:
+ * - toSearchDocument(): Canonical search document for indexing and GraphRAG
+ * - toGraphObject(): Sanitized object payload for retrieval results
+ * - toRAGSummary(): Compact summary text for list rendering
+ * - toRAGDetail(): Detailed text for selected-record rendering
+ * - toRAGListPreview(): Compact preview text for numbered lists
  * - toRAGContent(): Returns formatted content for RAG responses
  * - getVectorCollectionName(): Custom collection name (default: table name)
  * - shouldBeIndexed(): Whether this record should be indexed

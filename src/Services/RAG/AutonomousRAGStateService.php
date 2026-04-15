@@ -26,6 +26,8 @@ class AutonomousRAGStateService
             'entity_type' => $queryState['model'] ?? 'item',
             'entity_data' => $queryState['entity_data'] ?? [],
             'entity_ids' => $queryState['entity_ids'] ?? [],
+            'entity_refs' => $queryState['entity_refs'] ?? [],
+            'objects' => $queryState['objects'] ?? [],
             'start_position' => $queryState['start_position'] ?? 1,
             'end_position' => $queryState['end_position'] ?? count($queryState['entity_ids'] ?? []),
             'current_page' => $queryState['current_page'] ?? 1,

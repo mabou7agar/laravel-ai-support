@@ -1,0 +1,147 @@
+---
+title: End-to-End Graph Walkthrough
+description: Full walkthrough from model contracts to sync, chat, follow-up retrieval, and KB warm/build.
+---
+
+## Scenario
+
+You want one user to search across related `Project`, `Mail`, `Task`, and optional `Workspace` data through normal chat.
+
+The target behavior is:
+
+- models publish into Neo4j
+- chat hits graph retrieval without `force_rag`
+- follow-ups reuse `entity_ref` and `object`
+- repeated graph questions get faster over time
+
+## 1) Implement Model Contracts
+
+At minimum, implement:
+
+- `toSearchDocument()`
+- `toGraphObject()`
+- `getGraphRelations()`
+- `getAccessScope()`
+
+This makes indexing and graph topology explicit.
+
+## 2) Enable Graph Mode
+
+```env
+AI_ENGINE_GRAPH_ENABLED=true
+AI_ENGINE_GRAPH_BACKEND=neo4j
+AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=true
+AI_ENGINE_GRAPH_KB_ENABLED=true
+
+AI_ENGINE_NEO4J_URL=http://localhost:7474
+AI_ENGINE_NEO4J_DATABASE=neo4j
+AI_ENGINE_NEO4J_USERNAME=neo4j
+AI_ENGINE_NEO4J_PASSWORD=secret
+```
+
+## 3) Initialize and Sync
+
+```bash
+php artisan ai-engine:neo4j-init
+php artisan ai-engine:neo4j-sync --fresh
+php artisan ai-engine:neo4j-diagnose
+```
+
+Expected result:
+
+- graph schema exists
+- entities and chunks are indexed
+- relations and access edges are present
+
+## 4) Ask a Normal Semantic Question
+
+Example:
+
+```text
+What changed around Apollo this week?
+```
+
+Expected routing:
+
+- not conversational
+- not forced
+- semantic graph retrieval
+- planner chooses a graph-aware strategy
+
+Expected result shape:
+
+- `sources[]`
+- each source has `entity_ref`
+- each source has `object`
+
+## 5) Ask a Follow-Up
+
+Example:
+
+```text
+What about the first project owner?
+```
+
+Expected behavior:
+
+- selected entity context is reused
+- retrieval does not restart from scratch
+- graph path can traverse ownership edges
+
+## 6) Warm the KB
+
+```bash
+php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+```
+
+Expected result:
+
+- hot query plans are cached
+- hot graph neighborhoods are cached
+- repeated follow-ups become faster
+
+## 7) Verify the Host-App Scheduler
+
+The host app should schedule:
+
+```php
+Schedule::command('ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
+    ->hourly()
+    ->withoutOverlapping();
+```
+
+## 8) Test It
+
+Package-level acceptance and unit tests should cover deterministic graph behavior.
+
+Host-app live tests should cover:
+
+- real HTTP chat route
+- real Neo4j server
+- real graph sync/retrieval path
+- scheduler registration
+
+Useful examples:
+
+- `tests/Feature/RealGraphRAGWorkflowTest.php`
+- `tests/Feature/GraphChatRouteLiveE2ETest.php`
+- `tests/Feature/Neo4jKnowledgeBaseScheduleTest.php`
+
+## 9) Troubleshoot
+
+If results are wrong or incomplete:
+
+```bash
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-diagnose
+php artisan ai-engine:neo4j-repair --apply
+php artisan ai-engine:neo4j-sync --fresh
+```
+
+## Related Docs
+
+- [GraphRAG with Neo4j](/guides/graph-rag-neo4j)
+- [Neo4j Ops Runbook](/guides/neo4j-ops-runbook)
+- [Graph Relation Modeling](/guides/graph-relation-modeling)
+- [Testing Playbook](/guides/testing-playbook)

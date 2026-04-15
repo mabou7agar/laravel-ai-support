@@ -1,0 +1,23 @@
+meta {
+  name: Manifest Delete
+  type: http
+  seq: 19
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/manifest/entries/delete
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "type": "tool",
+    "key": "example_tool_v2"
+  }
+}

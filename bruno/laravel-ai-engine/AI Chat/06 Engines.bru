@@ -1,0 +1,15 @@
+meta {
+  name: Engines
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/ai-chat/engines
+  body: none
+}
+
+headers {
+  Accept: application/json
+  Cookie: {{webCookie}}
+}

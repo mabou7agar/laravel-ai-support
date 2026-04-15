@@ -233,4 +233,20 @@ class AIRequestTest extends TestCase
         $this->assertTrue($array['stream']);
         $this->assertEquals(1000, $array['max_tokens']);
     }
+
+    public function test_ai_request_tracks_explicit_selection_flags()
+    {
+        $request = new AIRequest(
+            prompt: 'Test prompt',
+            model: EntityEnum::GPT_4O
+        );
+
+        $this->assertFalse($request->wasEngineExplicitlyProvided());
+        $this->assertTrue($request->wasModelExplicitlyProvided());
+
+        $rerouted = $request->withEngineAndModel(EngineEnum::OPENAI, EntityEnum::GPT_4O);
+
+        $this->assertFalse($rerouted->wasEngineExplicitlyProvided());
+        $this->assertTrue($rerouted->wasModelExplicitlyProvided());
+    }
 }

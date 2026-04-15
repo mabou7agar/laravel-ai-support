@@ -4,6 +4,8 @@ namespace LaravelAIEngine\Traits;
 
 use LaravelAIEngine\Services\RAG\IntelligentRAGService;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\SearchDocument;
+use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
 
 /**
  * Vectorizable Trait
@@ -19,7 +21,12 @@ use LaravelAIEngine\DTOs\AIResponse;
  * - getVectorMetadata(): Returns metadata for filtering in vector DB
  *
  * Optional but recommended to override:
- * - toRAGContent(): Returns formatted content for RAG responses
+ * - toSearchDocument(): Returns the canonical searchable document
+ * - toGraphObject(): Returns a sanitized object payload for retrieval responses
+ * - toRAGSummary(): Returns compact list/summary text
+ * - toRAGDetail(): Returns detailed human-readable RAG content
+ * - toRAGListPreview(): Returns compact list preview text
+ * - toRAGContent(): Legacy formatted content for RAG responses
  * - shouldBeIndexed(): Whether this record should be indexed
  * - getQdrantIndexes(): Custom Qdrant indexes for filtering
  *
@@ -1088,6 +1095,72 @@ PROMPT;
         // Default: use vector content
         // Models should override this for better formatting
         return $this->getVectorContent();
+    }
+
+    /**
+     * Build the canonical search document for this model.
+     *
+     * Override this in new code instead of extending getVectorContent().
+     */
+    public function toSearchDocument(): SearchDocument|array
+    {
+        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this);
+    }
+
+    /**
+     * Return a sanitized object payload for retrieval responses and follow-up actions.
+     *
+     * Override this in new code instead of overloading getVectorMetadata().
+     *
+     * @return array<string, mixed>
+     */
+    public function toGraphObject(): array
+    {
+        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->object;
+    }
+
+    /**
+     * Return graph relationship descriptors for shared graph publishing.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getGraphRelations(): array
+    {
+        return [];
+    }
+
+    /**
+     * Return ownership and access metadata for graph publishing and retrieval scoping.
+     *
+     * @return array<string, mixed>
+     */
+    public function getAccessScope(): array
+    {
+        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->accessScope;
+    }
+
+    /**
+     * Return compact list/summary text.
+     */
+    public function toRAGSummary(): string
+    {
+        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->ragSummary ?? $this->toRAGContent();
+    }
+
+    /**
+     * Return detailed RAG text.
+     */
+    public function toRAGDetail(): string
+    {
+        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->ragDetail ?? $this->toRAGContent();
+    }
+
+    /**
+     * Return list-preview text.
+     */
+    public function toRAGListPreview(?string $locale = null): string
+    {
+        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->listPreview ?? $this->toRAGSummary();
     }
 
     /**

@@ -1,0 +1,19 @@
+meta {
+  name: List Collections
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/v1/rag/collections
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

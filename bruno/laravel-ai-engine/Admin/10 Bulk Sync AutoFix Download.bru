@@ -1,0 +1,23 @@
+meta {
+  name: Bulk Sync AutoFix Download
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/nodes/bulk-sync/autofix-download
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "payload": "{\"nodes\":[{\"name\":\"Child Node\",\"slug\":\"child-node\",\"type\":\"child\",\"url\":\"https://child.example.com\"}]}",
+    "autofix_strict": false
+  }
+}

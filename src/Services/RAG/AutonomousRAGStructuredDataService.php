@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Services\RAG;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use LaravelAIEngine\Services\Graph\Neo4jRetrievalService;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\Services\Summary\EntitySummaryService;
 
@@ -14,7 +15,8 @@ class AutonomousRAGStructuredDataService
         protected AutonomousRAGPolicy $policy,
         protected ?AutonomousRAGAggregateService $aggregateService = null,
         protected ?LocaleResourceService $locale = null,
-        protected ?EntitySummaryService $entitySummaryService = null
+        protected ?EntitySummaryService $entitySummaryService = null,
+        protected ?Neo4jRetrievalService $graphRetrieval = null
     ) {
         $this->aggregateService = $aggregateService ?? new AutonomousRAGAggregateService($this->policy);
         $this->locale = $locale ?? (
@@ -23,9 +25,14 @@ class AutonomousRAGStructuredDataService
                 : new LocaleResourceService()
         );
         $this->entitySummaryService = $entitySummaryService ?? new EntitySummaryService();
+        $this->graphRetrieval = $graphRetrieval ?? (
+            app()->bound(Neo4jRetrievalService::class)
+                ? app(Neo4jRetrievalService::class)
+                : null
+        );
     }
 
-    public function query(array $params, $userId, array $options, array $dependencies, int $page = 1): array
+    public function query(array $params, $userId, array $options, array $dependencies, int $page = 1, ?string $message = null): array
     {
         $modelName = $params['model'] ?? null;
         $sessionId = $options['session_id'] ?? null;
@@ -117,6 +124,7 @@ class AutonomousRAGStructuredDataService
             if ($sessionId) {
                 $startPosition = $offset + 1;
                 $entityIds = $items->pluck('id')->toArray();
+                $documentBuilder = app(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class);
                 $entityData = $items->map(function ($item, $index) use ($startPosition) {
                     $position = $startPosition + $index;
                     $summary = method_exists($item, 'toRAGSummary') ? $item->toRAGSummary() : (string) $item;
@@ -139,6 +147,8 @@ class AutonomousRAGStructuredDataService
                     'total_count' => $totalCount,
                     'entity_ids' => $entityIds,
                     'entity_data' => $entityData,
+                    'entity_refs' => $items->map(fn ($item) => $documentBuilder->buildEntityRef($item))->toArray(),
+                    'objects' => $items->map(fn ($item) => $documentBuilder->buildGraphObject($item))->toArray(),
                     'start_position' => $startPosition,
                     'end_position' => $offset + $items->count(),
                     'current_page' => $page,
@@ -150,7 +160,9 @@ class AutonomousRAGStructuredDataService
             if ($isSingleRecord) {
                 $item = $items->first();
                 $this->entitySummaryService?->summaryForDisplay($item, (string) ($options['locale'] ?? app()->getLocale()));
-                if (method_exists($item, 'toRAGContent')) {
+                if (method_exists($item, 'toRAGDetail')) {
+                    $response = $item->toRAGDetail();
+                } elseif (method_exists($item, 'toRAGContent')) {
                     $response = $item->toRAGContent();
                 } elseif (method_exists($item, '__toString')) {
                     $response = $item->__toString();
@@ -188,6 +200,26 @@ class AutonomousRAGStructuredDataService
                 }
             }
 
+            $metadata = [
+                'entity_ids' => $items->pluck('id')->toArray(),
+                'entity_refs' => $items->map(fn ($item) => app(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class)->buildEntityRef($item))->toArray(),
+                'entity_type' => $modelName,
+            ];
+
+            $graphContext = $this->buildStructuredGraphContext($message, $modelClass, $items, $userId, $options);
+            if ($graphContext !== null) {
+                if ($graphContext['context_text'] !== '') {
+                    $response .= "\n\nRelated graph context:\n" . $graphContext['context_text'];
+                }
+
+                $metadata = array_merge($metadata, [
+                    'sources' => $graphContext['sources'],
+                    'graph_planned' => $graphContext['graph_planned'],
+                    'planner_strategy' => $graphContext['planner_strategy'],
+                    'planner_query_kind' => $graphContext['planner_query_kind'],
+                ]);
+            }
+
             if ($page < $totalPages) {
                 $response .= "\n---\n*Say \"show more\" or \"next\" to see more results.*";
             }
@@ -202,8 +234,10 @@ class AutonomousRAGStructuredDataService
                 'total_pages' => $totalPages,
                 'total_count' => $totalCount,
                 'has_more' => $page < $totalPages,
-                'entity_ids' => $items->pluck('id')->toArray(),
-                'entity_type' => $modelName,
+                'metadata' => $metadata,
+                'entity_ids' => $metadata['entity_ids'],
+                'entity_refs' => $metadata['entity_refs'],
+                'entity_type' => $metadata['entity_type'],
                 'items' => $items->toArray(),
             ];
         } catch (\Exception $e) {
@@ -242,6 +276,95 @@ class AutonomousRAGStructuredDataService
         }
 
         return $formatted;
+    }
+
+    protected function shouldEnrichWithGraph(?string $message, array $options): bool
+    {
+        if ($message === null || trim($message) === '') {
+            return false;
+        }
+
+        if ($this->graphRetrieval === null || !$this->graphRetrieval->enabled()) {
+            return false;
+        }
+
+        $normalized = strtolower(trim($message));
+
+        return preg_match('/\b(related|relationship|connected|context|owner|owns|dependency|dependencies|linked|who is involved|what changed|what happened)\b/i', $normalized) === 1
+            || (($options['preclassified_route_mode'] ?? null) === 'structured_query' && preg_match('/\b(with|for|around)\b/i', $normalized) === 1);
+    }
+
+    protected function buildStructuredGraphContext(?string $message, string $modelClass, $items, $userId, array $options): ?array
+    {
+        if (!$this->shouldEnrichWithGraph($message, $options) || $items->isEmpty()) {
+            return null;
+        }
+
+        $documentBuilder = app(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class);
+        $entityRefs = $items->map(fn ($item) => $documentBuilder->buildEntityRef($item))->filter()->values()->all();
+        if ($entityRefs === []) {
+            return null;
+        }
+
+        $collections = array_values(array_filter(
+            (array) ($options['rag_collections'] ?? [$modelClass]),
+            static fn ($collection): bool => is_string($collection) && trim($collection) !== ''
+        ));
+
+        $context = $this->graphRetrieval->retrieveRelevantContext(
+            [$message],
+            $collections,
+            min(3, max(1, count($entityRefs))),
+            array_merge($options, [
+                'last_entity_list' => [
+                    'entity_type' => class_basename($modelClass),
+                    'entity_refs' => $entityRefs,
+                ],
+            ]),
+            $userId
+        );
+
+        if ($context->isEmpty()) {
+            return null;
+        }
+
+        $sources = $context->map(function ($item): array {
+            $meta = is_array($item->vector_metadata ?? null) ? $item->vector_metadata : [];
+
+            return [
+                'model_id' => $meta['model_id'] ?? $item->id ?? null,
+                'model_class' => $meta['model_class'] ?? null,
+                'model_type' => $meta['model_type'] ?? null,
+                'title' => $item->title ?? null,
+                'entity_ref' => $meta['entity_ref'] ?? null,
+                'object' => $meta['object'] ?? [],
+                'graph_planned' => (bool) ($meta['graph_planned'] ?? false),
+                'planner_strategy' => $meta['planner_strategy'] ?? null,
+                'planner_query_kind' => $meta['planner_query_kind'] ?? null,
+                'relation_path' => $meta['relation_path'] ?? null,
+                'path_length' => $meta['path_length'] ?? null,
+            ];
+        })->values()->all();
+
+        $contextText = $context->map(function ($item): string {
+            $title = $item->title ?? $item->name ?? ('Entity #' . ($item->id ?? '?'));
+            $path = is_array($item->vector_metadata['relation_path'] ?? null)
+                ? implode(' -> ', $item->vector_metadata['relation_path'])
+                : null;
+            $summary = trim((string) ($item->matched_chunk_text ?? $item->content ?? ''));
+
+            return $path
+                ? "- {$title} ({$path}): {$summary}"
+                : "- {$title}: {$summary}";
+        })->implode("\n");
+
+        return [
+            'context_text' => $contextText,
+            'sources' => $sources,
+            'graph_planned' => collect($sources)->contains(static fn (array $source): bool => ($source['graph_planned'] ?? false) === true),
+            'planner_strategy' => collect($sources)->pluck('planner_strategy')->filter()->first(),
+            'planner_query_kind' => collect($sources)->pluck('planner_query_kind')->filter()->first(),
+        ];
     }
 
     protected function resolveModelLabel(string $modelClass, string $fallbackModelName): string

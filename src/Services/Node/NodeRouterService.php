@@ -37,6 +37,15 @@ class NodeRouterService
      */
     public function route(string $query, array $collections = [], array $options = []): array
     {
+        if ($this->centralGraphReadsEnabled()) {
+            return [
+                'node' => null,
+                'is_local' => true,
+                'reason' => 'Central graph read model is enabled for retrieval',
+                'collections' => $collections,
+            ];
+        }
+
         if (!empty($collections)) {
             return $this->routeByCollections($collections);
         }
@@ -149,6 +158,18 @@ class NodeRouterService
         }
 
         return true;
+    }
+
+    protected function centralGraphReadsEnabled(): bool
+    {
+        try {
+            return function_exists('config')
+                && app()->bound('config')
+                && app()->bound(\LaravelAIEngine\Services\Graph\GraphBackendResolver::class)
+                && app(\LaravelAIEngine\Services\Graph\GraphBackendResolver::class)->graphReadPathActive();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**

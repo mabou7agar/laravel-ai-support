@@ -92,9 +92,10 @@ trait ExtractsConversationContextPayload
             return [];
         }
 
-        $entity = $this->normalizeEntityValue($selected['entity_data'] ?? null);
+        $entity = $this->normalizeEntityValue($selected['object'] ?? ($selected['entity_data'] ?? null));
         $entityId = $selected['entity_id'] ?? null;
         $entityType = $selected['entity_type'] ?? null;
+        $entityRef = is_array($selected['entity_ref'] ?? null) ? $selected['entity_ref'] : null;
 
         if ($entity === null && $entityId === null) {
             return [];
@@ -104,6 +105,7 @@ trait ExtractsConversationContextPayload
             'focused_entity' => $entity,
             'focused_entity_id' => $entityId,
             'focused_entity_type' => $entityType,
+            'focused_entity_ref' => $entityRef,
         ], static fn ($value) => $value !== null);
     }
 
@@ -116,6 +118,7 @@ trait ExtractsConversationContextPayload
                     'id' => $selected['entity_id'] ?? null,
                     'source_node' => $selected['source_node'] ?? null,
                     'selected_via' => $selected['selected_via'] ?? null,
+                    'entity_ref' => is_array($selected['entity_ref'] ?? null) ? $selected['entity_ref'] : null,
                 ],
             ], static fn ($value) => $value !== null && $value !== []);
         }
@@ -125,6 +128,7 @@ trait ExtractsConversationContextPayload
                 'conversation_about' => array_filter([
                     'type' => $lastList['entity_type'] ?? null,
                     'entity_ids' => $lastList['entity_ids'] ?? [],
+                    'entity_refs' => $lastList['entity_refs'] ?? [],
                     'start_position' => $lastList['start_position'] ?? null,
                     'end_position' => $lastList['end_position'] ?? null,
                 ], static fn ($value) => $value !== null && $value !== []),

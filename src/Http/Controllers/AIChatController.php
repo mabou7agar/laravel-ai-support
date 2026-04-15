@@ -174,11 +174,17 @@ class AIChatController extends Controller
                 model: $model,
                 useMemory: $useMemory,
                 useActions: $useActions,
-                userId: $dto->userId
+                useIntelligentRAG: $dto->intelligentRag,
+                ragCollections: $dto->ragCollections ?? [],
+                userId: $dto->userId,
+                searchInstructions: $dto->searchInstructions,
+                extraOptions: [
+                    'force_rag' => $dto->forceRag,
+                ]
             );
 
             // Get RAG metadata
-            $metadata = $response->getMetadata();
+            $metadata = $this->normalizeResponseMetadata($response->getMetadata());
 
             // Add interactive actions if enabled
             $actions = [];
@@ -236,6 +242,65 @@ class AIChatController extends Controller
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null,
             ], 500);
         }
+    }
+
+    protected function normalizeResponseMetadata(array $metadata): array
+    {
+        $contextMetadata = is_array($metadata['metadata'] ?? null) ? $metadata['metadata'] : [];
+        foreach (['tool_used', 'fast_path', 'route_mode', 'decision_path', 'decision_source', 'graph_planned', 'planner_strategy', 'planner_query_kind'] as $key) {
+            if (!array_key_exists($key, $metadata) && array_key_exists($key, $contextMetadata)) {
+                $metadata[$key] = $contextMetadata[$key];
+            }
+        }
+
+        $ragMetadata = $metadata['metadata']['rag_last_metadata'] ?? null;
+        if (!is_array($ragMetadata)) {
+            return $metadata;
+        }
+
+        if (empty($metadata['sources']) && !empty($ragMetadata['sources']) && is_array($ragMetadata['sources'])) {
+            $metadata['sources'] = $ragMetadata['sources'];
+        }
+
+        if (!array_key_exists('rag_enabled', $metadata) && array_key_exists('rag_enabled', $ragMetadata)) {
+            $metadata['rag_enabled'] = (bool) $ragMetadata['rag_enabled'];
+        }
+
+        foreach (['context_count', 'numbered_options', 'has_options', 'graph_planned', 'planner_strategy', 'planner_query_kind'] as $key) {
+            if (!array_key_exists($key, $metadata) && array_key_exists($key, $ragMetadata)) {
+                $metadata[$key] = $ragMetadata[$key];
+            }
+        }
+
+        if (!array_key_exists('graph_planned', $metadata) && !empty($metadata['sources']) && is_array($metadata['sources'])) {
+            $metadata['graph_planned'] = collect($metadata['sources'])->contains(
+                static fn ($source): bool => is_array($source) && (($source['graph_planned'] ?? false) === true)
+            );
+        }
+
+        if (!array_key_exists('planner_strategy', $metadata) && !empty($metadata['sources']) && is_array($metadata['sources'])) {
+            $plannerStrategy = collect($metadata['sources'])
+                ->map(static fn ($source) => is_array($source) ? ($source['planner_strategy'] ?? null) : null)
+                ->filter()
+                ->first();
+
+            if ($plannerStrategy !== null) {
+                $metadata['planner_strategy'] = $plannerStrategy;
+            }
+        }
+
+        if (!array_key_exists('planner_query_kind', $metadata) && !empty($metadata['sources']) && is_array($metadata['sources'])) {
+            $plannerQueryKind = collect($metadata['sources'])
+                ->map(static fn ($source) => is_array($source) ? ($source['planner_query_kind'] ?? null) : null)
+                ->filter()
+                ->first();
+
+            if ($plannerQueryKind !== null) {
+                $metadata['planner_query_kind'] = $plannerQueryKind;
+            }
+        }
+
+        return $metadata;
     }
 
     /**

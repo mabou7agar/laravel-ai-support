@@ -65,6 +65,18 @@ php artisan ai-engine:node-list
 php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
 ```
 
+## If You Are Moving To Central Neo4j GraphRAG
+
+Recommended sequence:
+
+1. enable graph publishing with graph reads still off
+2. initialize and sync Neo4j
+3. diagnose graph integrity
+4. switch read preference to central graph
+5. enable KB and schedule `neo4j-kb-build`
+
+See [Qdrant to Neo4j Migration](/reference/qdrant-to-neo4j-migration).
+
 ## Backward Compatibility Notes
 
 - `default_engine` remains as legacy alias

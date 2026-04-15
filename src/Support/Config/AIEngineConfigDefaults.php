@@ -865,6 +865,24 @@ class AIEngineConfigDefaults
 
     /*
     |--------------------------------------------------------------------------
+    | Direct Request Routing
+    |--------------------------------------------------------------------------
+    |
+    | Controls provider selection for direct generation requests when callers
+    | omit `engine` and pass only a model or defaults. Use the special
+    | `native` token to prefer the model's direct provider before aggregator
+    | providers such as OpenRouter.
+    |
+    */
+    'request_routing' => [
+        'provider_priority' => self::csvEnv(
+            'AI_ENGINE_REQUEST_PROVIDER_PRIORITY',
+            'native;openrouter;anthropic;gemini;deepseek;ollama'
+        ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Enterprise Features Configuration
     |--------------------------------------------------------------------------
     |
@@ -1383,6 +1401,222 @@ class AIEngineConfigDefaults
     | multiple applications and services.
     |
     */
+    'graph' => [
+        'enabled' => env('AI_ENGINE_GRAPH_ENABLED', true),
+        'backend' => env('AI_ENGINE_GRAPH_BACKEND', 'neo4j'),
+        'reads_prefer_central_graph' => env('AI_ENGINE_GRAPH_READS_PREFER_CENTRAL', true),
+        'sync_on_index' => env('AI_ENGINE_GRAPH_SYNC_ON_INDEX', false),
+        'neighbor_limit' => (int) env('AI_ENGINE_GRAPH_NEIGHBOR_LIMIT', 3),
+        'neighbor_result_limit' => (int) env('AI_ENGINE_GRAPH_NEIGHBOR_RESULT_LIMIT', 2),
+        'attach_neighbor_context' => env('AI_ENGINE_GRAPH_ATTACH_NEIGHBOR_CONTEXT', true),
+        'max_traversal_hops' => (int) env('AI_ENGINE_GRAPH_MAX_TRAVERSAL_HOPS', 2),
+        'relation_result_boost' => (float) env('AI_ENGINE_GRAPH_RELATION_RESULT_BOOST', 0.82),
+        'relation_hop_decay' => (float) env('AI_ENGINE_GRAPH_RELATION_HOP_DECAY', 0.9),
+        'planner_enabled' => env('AI_ENGINE_GRAPH_PLANNER_ENABLED', true),
+        'planner_candidate_multiplier' => (int) env('AI_ENGINE_GRAPH_PLANNER_CANDIDATE_MULTIPLIER', 2),
+        'planner_seed_limit' => (int) env('AI_ENGINE_GRAPH_PLANNER_SEED_LIMIT', 6),
+        'planner_seed_score_floor' => (float) env('AI_ENGINE_GRAPH_PLANNER_SEED_SCORE_FLOOR', 0.65),
+        'planner_lexical_weight' => (float) env('AI_ENGINE_GRAPH_PLANNER_LEXICAL_WEIGHT', 0.4),
+        'planner_relationship_lexical_weight' => (float) env('AI_ENGINE_GRAPH_PLANNER_RELATIONSHIP_LEXICAL_WEIGHT', 0.5),
+        'planner_selected_seed_boost' => (float) env('AI_ENGINE_GRAPH_PLANNER_SELECTED_SEED_BOOST', 0.05),
+        'planner_relationship_bonus' => (float) env('AI_ENGINE_GRAPH_PLANNER_RELATIONSHIP_BONUS', 0.05),
+        'planner_score_breakdown' => env('AI_ENGINE_GRAPH_PLANNER_SCORE_BREAKDOWN', true),
+        'natural_language_planning' => [
+            'enabled' => env('AI_ENGINE_GRAPH_NL_PLANNING_ENABLED', true),
+        ],
+        'ranking_feedback' => [
+            'enabled' => env('AI_ENGINE_GRAPH_RANKING_FEEDBACK_ENABLED', true),
+            'cache_key' => env('AI_ENGINE_GRAPH_RANKING_FEEDBACK_CACHE_KEY', 'ai_engine:graph_ranking_feedback'),
+            'ttl' => (int) env('AI_ENGINE_GRAPH_RANKING_FEEDBACK_TTL', 604800),
+            'min_samples' => (int) env('AI_ENGINE_GRAPH_RANKING_FEEDBACK_MIN_SAMPLES', 5),
+        ],
+        'extract_relations_from_vector_relationships' => env('AI_ENGINE_GRAPH_EXTRACT_RELATIONS', true),
+        'max_related_entities_per_relation' => (int) env('AI_ENGINE_GRAPH_MAX_RELATED_PER_RELATION', 25),
+        'timeout' => (int) env('AI_ENGINE_GRAPH_TIMEOUT', 10),
+        'ontology' => [
+            'enabled_packs' => array_values(array_filter(array_map(
+                'trim',
+                explode(',', (string) env('AI_ENGINE_GRAPH_ONTOLOGY_PACKS', ''))
+            ))),
+            'relation_aliases' => [
+                'OWNED_BY' => ['owner', 'owned_by', 'ownedby'],
+                'CREATED_BY' => ['creator', 'created_by', 'createdby', 'author'],
+                'ASSIGNED_TO' => ['assignee', 'assigned_to', 'assignedto'],
+                'MANAGED_BY' => ['manager', 'managed_by', 'managedby', 'lead', 'supervisor'],
+                'REPORTED_BY' => ['reporter', 'reported_by', 'reportedby'],
+                'SENT_BY' => ['sender', 'sent_by', 'sentby'],
+                'SENT_TO' => ['recipient', 'recipients', 'receiver', 'to'],
+                'FOR_CUSTOMER' => ['customer', 'client'],
+                'FOR_VENDOR' => ['vendor', 'supplier'],
+                'IN_WORKSPACE' => ['workspace'],
+                'IN_PROJECT' => ['project'],
+                'IN_ORGANIZATION' => ['organization', 'organisation'],
+                'IN_TEAM' => ['team'],
+                'IN_ACCOUNT' => ['account'],
+                'IN_FOLDER' => ['folder'],
+                'IN_CHANNEL' => ['channel'],
+                'IN_THREAD' => ['thread', 'conversation'],
+                'IN_MILESTONE' => ['milestone'],
+                'IN_SPRINT' => ['sprint'],
+                'DEPENDS_ON' => ['dependency', 'dependencies'],
+                'BLOCKED_BY' => ['blocker', 'blockers'],
+                'REPLIED_TO' => ['reply', 'replies', 'reply_to', 'replyto'],
+                'MENTIONS' => ['mention', 'mentions'],
+                'HAS_MEMBER' => ['member', 'members'],
+                'HAS_PARTICIPANT' => ['participant', 'participants', 'collaborator', 'collaborators'],
+                'WATCHED_BY' => ['watcher', 'watchers', 'subscriber', 'subscribers'],
+                'HAS_ATTACHMENT' => ['attachment', 'attachments', 'file', 'files'],
+                'HAS_INVOICE' => ['invoice', 'invoices'],
+                'HAS_ORDER' => ['order', 'orders'],
+                'HAS_TICKET' => ['ticket', 'tickets'],
+                'HAS_ISSUE' => ['issue', 'issues', 'bug', 'bugs'],
+                'HAS_NOTE' => ['note', 'notes'],
+                'HAS_DOCUMENT' => ['document', 'documents', 'doc', 'docs'],
+                'HAS_CONTACT' => ['contact', 'contacts'],
+                'HAS_COMPANY' => ['company', 'companies'],
+            ],
+            'model_aliases' => [
+                'user' => ['owner', 'assignee', 'manager', 'reporter'],
+                'mail' => ['email', 'message', 'thread'],
+                'task' => ['todo', 'checklist'],
+                'project' => ['initiative'],
+                'workspace' => ['space'],
+                'ticket' => ['case'],
+                'issue' => ['bug'],
+                'document' => ['doc'],
+                'contact' => ['person'],
+                'company' => ['organization', 'organisation'],
+            ],
+            'model_relation_types' => [
+                'user' => ['OWNED_BY', 'CREATED_BY', 'ASSIGNED_TO', 'MANAGED_BY', 'REPORTED_BY', 'HAS_USER'],
+                'mail' => ['HAS_MAIL', 'SENT_BY', 'SENT_TO', 'REPLIED_TO', 'MENTIONS', 'HAS_ATTACHMENT', 'IN_THREAD', 'IN_CHANNEL'],
+                'task' => ['HAS_TASK', 'DEPENDS_ON', 'BLOCKED_BY', 'ASSIGNED_TO', 'OWNED_BY', 'IN_SPRINT', 'IN_MILESTONE'],
+                'project' => ['HAS_PROJECT', 'IN_PROJECT', 'BELONGS_TO', 'DEPENDS_ON', 'HAS_MEMBER', 'HAS_PARTICIPANT'],
+                'workspace' => ['HAS_WORKSPACE', 'IN_WORKSPACE', 'BELONGS_TO'],
+                'ticket' => ['HAS_TICKET', 'ASSIGNED_TO', 'REPORTED_BY'],
+                'issue' => ['HAS_ISSUE', 'BLOCKED_BY', 'DEPENDS_ON'],
+                'document' => ['HAS_DOCUMENT', 'HAS_ATTACHMENT'],
+                'contact' => ['HAS_CONTACT', 'FOR_CUSTOMER', 'FOR_VENDOR'],
+                'company' => ['HAS_COMPANY', 'FOR_CUSTOMER', 'FOR_VENDOR'],
+            ],
+            'packs' => [
+                'project_management' => [
+                    'model_aliases' => [
+                        'epic' => ['initiative', 'roadmap_item'],
+                        'milestone' => ['phase'],
+                        'sprint' => ['iteration'],
+                    ],
+                    'model_relation_types' => [
+                        'epic' => ['HAS_PROJECT', 'HAS_TASK', 'IN_MILESTONE'],
+                        'milestone' => ['IN_PROJECT', 'HAS_TASK', 'HAS_ISSUE'],
+                        'sprint' => ['HAS_TASK', 'IN_PROJECT'],
+                    ],
+                    'relation_aliases' => [
+                        'IN_EPIC' => ['epic'],
+                        'HAS_EPIC' => ['epics'],
+                        'HAS_MILESTONE' => ['milestones'],
+                        'HAS_SPRINT' => ['sprints'],
+                    ],
+                ],
+                'messaging' => [
+                    'model_aliases' => [
+                        'message' => ['post', 'chat_message'],
+                        'thread' => ['conversation'],
+                        'channel' => ['stream', 'room'],
+                    ],
+                    'model_relation_types' => [
+                        'message' => ['SENT_BY', 'SENT_TO', 'IN_THREAD', 'IN_CHANNEL', 'MENTIONS', 'HAS_ATTACHMENT'],
+                        'thread' => ['HAS_MESSAGE', 'HAS_PARTICIPANT'],
+                        'channel' => ['HAS_MESSAGE', 'HAS_PARTICIPANT'],
+                    ],
+                    'relation_aliases' => [
+                        'HAS_MESSAGE' => ['messages', 'posts'],
+                        'HAS_COMMENT' => ['comments', 'replies'],
+                    ],
+                ],
+                'support' => [
+                    'model_aliases' => [
+                        'ticket' => ['case', 'support_case'],
+                        'issue' => ['incident', 'problem'],
+                    ],
+                    'model_relation_types' => [
+                        'ticket' => ['HAS_TICKET', 'ASSIGNED_TO', 'REPORTED_BY', 'FOR_CUSTOMER', 'HAS_NOTE'],
+                        'issue' => ['HAS_ISSUE', 'BLOCKED_BY', 'DEPENDS_ON', 'HAS_NOTE'],
+                    ],
+                    'relation_aliases' => [
+                        'HAS_ESCALATION' => ['escalation', 'escalations'],
+                    ],
+                ],
+                'crm' => [
+                    'model_aliases' => [
+                        'lead' => ['prospect'],
+                        'contact' => ['person', 'customer_contact'],
+                        'company' => ['account_company'],
+                    ],
+                    'model_relation_types' => [
+                        'lead' => ['FOR_CUSTOMER', 'HAS_CONTACT', 'HAS_COMPANY', 'OWNED_BY'],
+                        'contact' => ['HAS_CONTACT', 'HAS_COMPANY', 'FOR_CUSTOMER'],
+                        'company' => ['HAS_COMPANY', 'HAS_CONTACT'],
+                    ],
+                    'relation_aliases' => [
+                        'HAS_LEAD' => ['lead', 'leads'],
+                        'FOR_PROSPECT' => ['prospect'],
+                    ],
+                ],
+                'commerce' => [
+                    'model_aliases' => [
+                        'order' => ['purchase'],
+                        'invoice' => ['bill'],
+                    ],
+                    'model_relation_types' => [
+                        'order' => ['HAS_ORDER', 'FOR_CUSTOMER', 'FOR_VENDOR', 'HAS_COMPANY'],
+                        'invoice' => ['HAS_INVOICE', 'FOR_CUSTOMER', 'FOR_VENDOR', 'HAS_ORDER'],
+                    ],
+                    'relation_aliases' => [
+                        'HAS_PAYMENT' => ['payment', 'payments'],
+                        'HAS_SHIPMENT' => ['shipment', 'shipments'],
+                    ],
+                ],
+            ],
+        ],
+        'benchmark' => [
+            'default_iterations' => (int) env('AI_ENGINE_GRAPH_BENCHMARK_ITERATIONS', 5),
+            'default_max_results' => (int) env('AI_ENGINE_GRAPH_BENCHMARK_MAX_RESULTS', 5),
+            'default_index_limit' => (int) env('AI_ENGINE_GRAPH_BENCHMARK_INDEX_LIMIT', 10),
+            'default_load_concurrency' => (int) env('AI_ENGINE_GRAPH_BENCHMARK_LOAD_CONCURRENCY', 4),
+            'history_limit' => (int) env('AI_ENGINE_GRAPH_BENCHMARK_HISTORY_LIMIT', 100),
+            'history_ttl' => (int) env('AI_ENGINE_GRAPH_BENCHMARK_HISTORY_TTL', 604800),
+        ],
+        'knowledge_base' => [
+            'enabled' => env('AI_ENGINE_GRAPH_KB_ENABLED', true),
+            'cache_results' => env('AI_ENGINE_GRAPH_KB_CACHE_RESULTS', true),
+            'planner_signature' => env('AI_ENGINE_GRAPH_KB_PLANNER_SIGNATURE', 'v3'),
+            'plan_cache_ttl' => (int) env('AI_ENGINE_GRAPH_KB_PLAN_CACHE_TTL', 1800),
+            'result_cache_ttl' => (int) env('AI_ENGINE_GRAPH_KB_RESULT_CACHE_TTL', 900),
+            'profile_ttl' => (int) env('AI_ENGINE_GRAPH_KB_PROFILE_TTL', 86400),
+            'profile_index_limit' => (int) env('AI_ENGINE_GRAPH_KB_PROFILE_INDEX_LIMIT', 200),
+            'warm_default_limit' => (int) env('AI_ENGINE_GRAPH_KB_WARM_DEFAULT_LIMIT', 25),
+        ],
+        'neo4j' => [
+            'url' => env('AI_ENGINE_NEO4J_URL', 'http://localhost:7474'),
+            'database' => env('AI_ENGINE_NEO4J_DATABASE', 'neo4j'),
+            'username' => env('AI_ENGINE_NEO4J_USERNAME', 'neo4j'),
+            'password' => env('AI_ENGINE_NEO4J_PASSWORD'),
+            'chunk_vector_index' => env('AI_ENGINE_NEO4J_CHUNK_VECTOR_INDEX', 'chunk_embedding_index'),
+            'chunk_vector_property' => env('AI_ENGINE_NEO4J_CHUNK_VECTOR_PROPERTY', 'embedding'),
+            'shared_deployment' => env('AI_ENGINE_NEO4J_SHARED_DEPLOYMENT', false),
+            'vector_naming' => [
+                'strategy' => env('AI_ENGINE_NEO4J_VECTOR_NAMING_STRATEGY', ''),
+                'node_slug' => env('AI_ENGINE_NEO4J_VECTOR_NODE_SLUG'),
+                'tenant_key' => env('AI_ENGINE_NEO4J_VECTOR_TENANT_KEY'),
+            ],
+            'vector_similarity' => env('AI_ENGINE_NEO4J_VECTOR_SIMILARITY', 'cosine'),
+            'ensure_schema_on_sync' => env('AI_ENGINE_NEO4J_ENSURE_SCHEMA_ON_SYNC', true),
+            'vector_candidate_multiplier' => (int) env('AI_ENGINE_NEO4J_VECTOR_CANDIDATE_MULTIPLIER', 3),
+            'use_query_api' => env('AI_ENGINE_NEO4J_USE_QUERY_API', true),
+        ],
+    ],
+
     'nodes' => [
         // Enable node management
         'enabled' => env('AI_ENGINE_NODES_ENABLED', true),

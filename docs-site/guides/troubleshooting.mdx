@@ -224,3 +224,58 @@ If you require strict auth, keep auth middleware on those routes:
 ```env
 AI_ENGINE_API_APPEND_MIDDLEWARE=auth:sanctum
 ```
+
+## 15) Neo4j graph reads are enabled but chat still behaves like plain RAG
+
+Check:
+
+- `AI_ENGINE_GRAPH_ENABLED=true`
+- `AI_ENGINE_GRAPH_BACKEND=neo4j`
+- `AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=true`
+- graph sync has actually run
+
+Run:
+
+```bash
+php artisan ai-engine:neo4j-diagnose
+php artisan ai-engine:neo4j-sync
+```
+
+## 16) Neo4j graph exists but relations are missing
+
+Cause is usually one of:
+
+- no `getGraphRelations()` implementation
+- only related text flattening, not real edge publishing
+- stale graph state after relation mapping changes
+
+Fix:
+
+```bash
+php artisan ai-engine:neo4j-sync --fresh
+```
+
+Then verify relation modeling rules on the affected models.
+
+## 17) KB is enabled but repeated chat does not get faster
+
+Check:
+
+- `AI_ENGINE_GRAPH_KB_ENABLED=true`
+- scheduler is running
+- `neo4j-kb-build` is succeeding
+- graph scope invalidation is not constantly flushing everything
+
+Run:
+
+```bash
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai-engine:neo4j-stats
+```
+
+## Related Graph Docs
+
+- [GraphRAG with Neo4j](/guides/graph-rag-neo4j)
+- [Neo4j Ops Runbook](/guides/neo4j-ops-runbook)
+- [Graph Relation Modeling](/guides/graph-relation-modeling)
+- [Knowledge Base Security](/guides/knowledge-base-security)

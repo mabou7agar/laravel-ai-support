@@ -1,0 +1,15 @@
+meta {
+  name: List Models By Engine
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/models?engine=openai
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Bulk Sync Template
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/ai-engine/admin/nodes/bulk-sync/template
+  body: none
+}
+
+headers {
+  Accept: application/json
+  Cookie: {{webCookie}}
+}

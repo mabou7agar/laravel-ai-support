@@ -1,0 +1,24 @@
+meta {
+  name: FAL Video Webhook
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/generate/video/fal/webhook
+  body: json
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "request_id": "fal-job-001",
+    "status": "COMPLETED",
+    "result": {
+      "video_url": "https://example.com/video.mp4"
+    }
+  }
+}

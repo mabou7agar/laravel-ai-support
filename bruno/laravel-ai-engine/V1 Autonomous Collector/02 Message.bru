@@ -1,0 +1,26 @@
+meta {
+  name: Message
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/autonomous-collector/message
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "session_id": "{{autonomousCollectorSessionId}}",
+    "message": "My name is John Doe"
+  }
+}

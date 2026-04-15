@@ -1,0 +1,22 @@
+meta {
+  name: Manifest Import
+  type: http
+  seq: 16
+}
+
+post {
+  url: {{baseUrl}}/ai-engine/admin/manifest/import
+  body: json
+}
+
+headers {
+  Accept: application/json
+  X-CSRF-TOKEN: {{csrfToken}}
+  Cookie: {{webCookie}}
+}
+
+body:json {
+  {
+    "payload": "{\"model_configs\":[],\"collectors\":{},\"tools\":{},\"filters\":{}}"
+  }
+}

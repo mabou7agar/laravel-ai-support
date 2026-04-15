@@ -8,6 +8,7 @@ description: Step-by-step setup for master + multiple child Laravel apps.
 - `ai.test` => master orchestrator
 - `dash.test` => child app (example: accounting)
 - more child apps can be added with the same pattern
+- optional central Neo4j => shared read model for cross-app GraphRAG
 
 ## Step 1: Child App Setup
 
@@ -36,6 +37,20 @@ AI_ENGINE_JWT_SECRET=shared_secret
 AI_ENGINE_NODE_NAME="Node2"
 AI_ENGINE_NODE_SLUG=node-2
 AI_ENGINE_NODE_LABEL=dash
+```
+
+If you want central graph reads on the master:
+
+```env
+AI_ENGINE_GRAPH_ENABLED=true
+AI_ENGINE_GRAPH_BACKEND=neo4j
+AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=true
+AI_ENGINE_GRAPH_KB_ENABLED=true
+
+AI_ENGINE_NEO4J_URL=http://localhost:7474
+AI_ENGINE_NEO4J_DATABASE=neo4j
+AI_ENGINE_NEO4J_USERNAME=neo4j
+AI_ENGINE_NEO4J_PASSWORD=secret
 ```
 
 ## Local Identity Defaults
@@ -103,3 +118,5 @@ php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
 - maintain one central node manifest file
 - sync from CI/CD on master
 - avoid manual node-by-node edits in production
+- use Neo4j as the shared read model when you need cross-app semantic/graph search
+- keep node routing for app-owned writes and actions

@@ -3,6 +3,7 @@
 namespace LaravelAIEngine\Observers;
 
 use Illuminate\Database\Eloquent\Model;
+use LaravelAIEngine\Services\Graph\Neo4jGraphSyncService;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -10,13 +11,15 @@ use Illuminate\Support\Facades\Queue;
 class VectorIndexObserver
 {
     protected VectorSearchService $vectorSearch;
+    protected Neo4jGraphSyncService $graphSync;
     protected bool $queueIndexing;
     protected bool $autoIndex;
     protected bool $autoDelete;
 
-    public function __construct(VectorSearchService $vectorSearch)
+    public function __construct(VectorSearchService $vectorSearch, Neo4jGraphSyncService $graphSync)
     {
         $this->vectorSearch = $vectorSearch;
+        $this->graphSync = $graphSync;
         $this->queueIndexing = config('ai-engine.vector.queue.enabled', false);
         $this->autoIndex = config('ai-engine.vector.auto_index', false);
         $this->autoDelete = config('ai-engine.vector.auto_delete', true);
@@ -110,6 +113,9 @@ class VectorIndexObserver
             } else {
                 // Index immediately
                 $this->vectorSearch->index($model);
+                if (config('ai-engine.graph.sync_on_index', false)) {
+                    $this->graphSync->publish($model);
+                }
 
                 Log::info('Model indexed in vector database', [
                     'model_type' => get_class($model),
@@ -132,6 +138,9 @@ class VectorIndexObserver
     {
         try {
             $this->vectorSearch->deleteFromIndex($model);
+            if (config('ai-engine.graph.sync_on_index', false)) {
+                $this->graphSync->delete($model);
+            }
 
             Log::info('Model deleted from vector index', [
                 'model_type' => get_class($model),

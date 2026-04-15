@@ -1,0 +1,30 @@
+meta {
+  name: Execute Dynamic Action
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/ai-demo/chat/execute-action
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "action_type": "{{actionType}}",
+    "action_data": {
+      "model_id": 1,
+      "model_class": "App\\Models\\User"
+    },
+    "session_id": "{{chatSessionId}}"
+  }
+}

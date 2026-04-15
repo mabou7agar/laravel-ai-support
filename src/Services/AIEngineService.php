@@ -23,10 +23,12 @@ class AIEngineService
     public function __construct(
         protected CreditManager $creditManager,
         protected ?ConversationManager $conversationManager = null,
-        protected ?Drivers\DriverRegistry $driverRegistry = null
+        protected ?Drivers\DriverRegistry $driverRegistry = null,
+        protected ?RequestRouteResolver $requestRouteResolver = null
     ) {
         $this->conversationManager = $conversationManager ?? app(ConversationManager::class);
         $this->driverRegistry = $driverRegistry ?? app(Drivers\DriverRegistry::class);
+        $this->requestRouteResolver = $requestRouteResolver ?? app(RequestRouteResolver::class);
     }
 
     /**
@@ -66,6 +68,7 @@ class AIEngineService
     {
         $startTime = microtime(true);
         $requestId = uniqid('ai_req_');
+        $request = $this->requestRouteResolver->resolve($request);
         $originalEngine = $request->engine;
 
         // Auto-detect authenticated user if userId not provided
@@ -336,6 +339,7 @@ class AIEngineService
      */
     public function stream(AIRequest $request): \Generator
     {
+        $request = $this->requestRouteResolver->resolve($request);
         $originalEngine = $request->engine;
 
         // Auto-detect authenticated user if userId not provided
