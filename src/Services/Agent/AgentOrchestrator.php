@@ -23,8 +23,16 @@ class AgentOrchestrator
         protected AgentPlanner $planner,
         protected AgentResponseFinalizer $responseFinalizer,
         protected AgentSelectionService $selectionService,
-        protected AgentExecutionFacade $execution
+        protected AgentExecutionFacade $execution,
+        protected ?MessageRoutingClassifier $messageClassifier = null,
+        protected ?RoutingContextResolver $routingContextResolver = null
     ) {
+        $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
+            ? app(MessageRoutingClassifier::class)
+            : new MessageRoutingClassifier();
+        $this->routingContextResolver ??= app()->bound(RoutingContextResolver::class)
+            ? app(RoutingContextResolver::class)
+            : new RoutingContextResolver();
     }
 
     public function process(
@@ -145,6 +153,56 @@ class AgentOrchestrator
             );
         }
 
+        if (!empty($options['force_rag'])) {
+            Log::channel('ai-engine')->debug('Force RAG enabled, bypassing intent router', [
+                'session_id' => $context->sessionId,
+                'message' => substr($message, 0, 120),
+            ]);
+
+            return $this->finalizeDirect(
+                $context,
+                $this->searchRag($message, $context, array_merge($options, [
+                    'preclassified_route_mode' => 'semantic_retrieval',
+                    'decision_path' => 'forced_rag',
+                    'decision_source' => 'forced',
+                ]))
+            );
+        }
+
+        $options = $this->routingContextResolver->mergeConversationContext($context, $options);
+        $classification = $this->messageClassifier->classify(
+            $message,
+            $this->routingContextResolver->signalsFromContext($context, $options)
+        );
+
+        Log::channel('ai-engine')->debug('Deterministic message classification', [
+            'session_id' => $context->sessionId,
+            'route' => $classification['route'],
+            'mode' => $classification['mode'],
+            'reason' => $classification['reason'],
+        ]);
+
+        if ($classification['route'] === 'conversational') {
+            return $this->finalizeDirect(
+                $context,
+                $this->executeConversational($message, $context, array_merge($options, [
+                    'decision_path' => 'heuristic_conversational',
+                    'decision_source' => $classification['source'],
+                ]))
+            );
+        }
+
+        if ($classification['route'] === 'search_rag') {
+            return $this->finalizeDirect(
+                $context,
+                $this->searchRag($message, $context, array_merge($options, [
+                    'preclassified_route_mode' => $classification['mode'],
+                    'decision_path' => 'heuristic_' . $classification['mode'],
+                    'decision_source' => $classification['source'],
+                ]))
+            );
+        }
+
         // RULE 2: No active session? Ask AI everything
         return $this->askAI($message, $context, $options);
     }
@@ -176,6 +234,10 @@ class AgentOrchestrator
     ): AgentResponse {
         try {
             $decision = $this->intentRouter->route($message, $context, $options);
+            $decisionOptions = array_merge($options, [
+                'decision_path' => 'router_ai_' . ($decision['action'] ?? 'unknown'),
+                'decision_source' => $decision['decision_source'] ?? 'router_ai',
+            ]);
 
             Log::channel('ai-engine')->debug('AI orchestration decision', [
                 'message' => substr($message, 0, 100),
@@ -185,13 +247,13 @@ class AgentOrchestrator
             ]);
 
             $response = $this->planner->dispatch($decision, [
-                'start_collector' => fn (array $plan) => $this->executeStartCollector($plan, $message, $context, $options),
-                'use_tool' => fn (array $plan) => $this->executeUseTool($plan, $message, $context, $options),
-                'resume_session' => fn (array $plan) => $this->executeResumeSession($message, $context, $options),
-                'pause_and_handle' => fn (array $plan) => $this->executePauseAndHandle($message, $context, $options),
-                'route_to_node' => fn (array $plan) => $this->executeRouteToNode($plan, $message, $context, $options),
-                'search_rag' => fn (array $plan) => $this->searchRag($message, $context, $options),
-                'conversational' => fn (array $plan) => $this->executeConversational($message, $context, $options),
+                'start_collector' => fn (array $plan) => $this->executeStartCollector($plan, $message, $context, $decisionOptions),
+                'use_tool' => fn (array $plan) => $this->executeUseTool($plan, $message, $context, $decisionOptions),
+                'resume_session' => fn (array $plan) => $this->executeResumeSession($message, $context, $decisionOptions),
+                'pause_and_handle' => fn (array $plan) => $this->executePauseAndHandle($message, $context, $decisionOptions),
+                'route_to_node' => fn (array $plan) => $this->executeRouteToNode($plan, $message, $context, $decisionOptions),
+                'search_rag' => fn (array $plan) => $this->searchRag($message, $context, $decisionOptions),
+                'conversational' => fn (array $plan) => $this->executeConversational($message, $context, $decisionOptions),
             ]);
 
             return $this->responseFinalizer->finalize($context, $response);
@@ -370,6 +432,11 @@ class AgentOrchestrator
         }
 
         return 'Remote node is unavailable. Showing local results only (degraded mode).';
+    }
+
+    protected function finalizeDirect(UnifiedActionContext $context, AgentResponse $response): AgentResponse
+    {
+        return $this->responseFinalizer->finalize($context, $response);
     }
 
 }

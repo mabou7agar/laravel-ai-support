@@ -50,3 +50,19 @@ Always verify:
 - authenticated "my profile" questions resolve from injected user context
 - locale-aware responses stay consistent across local and remote node calls
 - fluent `Engine::engine(...)->model(...)` and direct `AIEngineService` paths both resolve the same driver behavior
+
+## 6) GraphRAG Runtime Checks
+
+```bash
+php artisan ai-engine:neo4j-diagnose
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+```
+
+Always verify:
+
+- graph reads are actually preferred when enabled
+- semantic chat works without `force_rag`
+- relation-oriented follow-ups use graph context
+- sources include `entity_ref` and `object`
+- KB build does not break scope separation

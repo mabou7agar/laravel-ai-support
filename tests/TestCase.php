@@ -72,6 +72,10 @@ abstract class TestCase extends Orchestra
         Config::set('ai-engine.infrastructure.startup_health_gate.enabled', false);
         Config::set('ai-engine.infrastructure.qdrant_self_check.enabled', false);
         Config::set('ai-engine.user_model', User::class);
+        Config::set('ai-engine.graph.neo4j.url', 'http://neo4j.test');
+        Config::set('ai-engine.graph.neo4j.database', 'neo4j');
+        Config::set('ai-engine.graph.neo4j.username', 'neo4j');
+        Config::set('ai-engine.graph.neo4j.password', 'test-secret');
         Config::set('auth.providers.users.model', User::class);
         
         // Set test API keys

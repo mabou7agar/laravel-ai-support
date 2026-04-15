@@ -50,6 +50,8 @@ class AIRequest
         ?array $functionCall = null
     ) {
         $this->prompt = $prompt;
+        $engineExplicit = $engine !== null;
+        $modelExplicit = $model !== null;
         
         // Auto-select engine and model from config if not provided
         if ($engine === null) {
@@ -79,7 +81,12 @@ class AIRequest
         $this->maxTokens = $maxTokens;
         $this->temperature = $temperature;
         $this->seed = $seed;
-        $this->metadata = $metadata;
+        $this->metadata = array_merge([
+            '_request_resolution' => [
+                'engine_explicit' => $engineExplicit,
+                'model_explicit' => $modelExplicit,
+            ],
+        ], $metadata);
         $this->functions = $functions;
         $this->functionCall = $functionCall;
     }
@@ -163,7 +170,10 @@ class AIRequest
 
     public function getMetadata(): array
     {
-        return $this->metadata;
+        $metadata = $this->metadata;
+        unset($metadata['_request_resolution']);
+
+        return $metadata;
     }
 
     public function getFunctions(): array
@@ -174,6 +184,16 @@ class AIRequest
     public function getFunctionCall(): ?array
     {
         return $this->functionCall;
+    }
+
+    public function wasEngineExplicitlyProvided(): bool
+    {
+        return (bool) ($this->metadata['_request_resolution']['engine_explicit'] ?? true);
+    }
+
+    public function wasModelExplicitlyProvided(): bool
+    {
+        return (bool) ($this->metadata['_request_resolution']['model_explicit'] ?? true);
     }
 
     /**
@@ -355,6 +375,31 @@ class AIRequest
             engine: $this->engine,
             model: $this->model,
             parameters: array_merge($this->parameters, $parameters),
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $this->systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
+        );
+    }
+
+    public function withEngineAndModel(
+        EngineEnum|string $engine,
+        EntityEnum|string $model
+    ): self {
+        return new self(
+            prompt: $this->prompt,
+            engine: $engine,
+            model: $model,
+            parameters: $this->parameters,
             userId: $this->userId,
             conversationId: $this->conversationId,
             context: $this->context,
@@ -612,7 +657,7 @@ class AIRequest
             'max_tokens' => $this->maxTokens,
             'temperature' => $this->temperature,
             'seed' => $this->seed,
-            'metadata' => $this->metadata,
+            'metadata' => $this->getMetadata(),
             'functions' => $this->functions,
             'function_call' => $this->functionCall,
         ];

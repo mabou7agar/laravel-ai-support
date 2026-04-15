@@ -111,9 +111,37 @@ class Transcription extends Model
     /**
      * Get content for vector embedding.
      */
-    public function getEmbeddingContent(): string
+    public function getVectorContent(): string
     {
         return $this->content ?? '';
+    }
+
+    public function toRAGSummary(): string
+    {
+        $language = $this->language ? strtoupper((string) $this->language) . ' ' : '';
+        $duration = $this->formatted_duration ? " ({$this->formatted_duration})" : '';
+
+        return trim($language . 'transcription' . $duration);
+    }
+
+    public function toRAGDetail(): string
+    {
+        $prefix = $this->toRAGSummary();
+
+        return trim($prefix . "\n\n" . ($this->content ?? ''));
+    }
+
+    public function toGraphObject(): array
+    {
+        return [
+            'id' => $this->id,
+            'title' => $this->toRAGSummary(),
+            'status' => $this->status,
+            'summary' => $this->toRAGSummary(),
+            'language' => $this->language,
+            'duration_seconds' => $this->duration_seconds,
+            'confidence' => $this->confidence,
+        ];
     }
 
     /**

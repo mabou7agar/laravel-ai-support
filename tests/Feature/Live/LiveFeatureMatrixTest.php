@@ -41,6 +41,7 @@ class LiveFeatureMatrixTest extends TestCase
                 'tts_generation' => $this->runFeature('tts_generation', fn (): array => $this->checkLiveTtsGeneration()),
                 'transcription' => $this->runFeature('transcription', fn (): array => $this->checkLiveTranscription()),
                 'agent_flow' => $this->runFeature('agent_flow', fn (): array => $this->checkLiveAgentFlow()),
+                'graph_rag' => $this->runFeature('graph_rag', fn (): array => $this->checkLiveGraphRag()),
                 default => $this->skippedResult($feature, 'Unknown feature name.'),
             };
         }
@@ -85,6 +86,7 @@ class LiveFeatureMatrixTest extends TestCase
                 'tts_generation',
                 'transcription',
                 'agent_flow',
+                'graph_rag',
             ];
         }
 
@@ -243,27 +245,32 @@ class LiveFeatureMatrixTest extends TestCase
             return $this->skippedResult('text_generation', 'Set AI_ENGINE_RUN_LIVE_TESTS=true to enable billed live provider checks.');
         }
 
-        [$engine, $model] = $this->resolveLiveTextEngineAndModel();
-        if ($engine === null || $model === null) {
+        $pairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveTextEngineAndModel()]);
+        if ($pairs === []) {
             return $this->skippedResult('text_generation', 'No live text provider credential is configured.');
         }
 
-        $this->configureLiveProvider($engine, $model);
+        $details = [];
+        foreach ($pairs as [$engine, $model]) {
+            $this->configureLiveProvider($engine, $model);
+            $response = $this->postJson('/api/v1/ai/generate/text', [
+                'prompt' => 'Reply with exactly two words: live ok',
+                'engine' => $engine,
+                'model' => $model,
+                'max_tokens' => 20,
+                'temperature' => 0,
+            ]);
 
-        $response = $this->postJson('/api/v1/ai/generate/text', [
-            'prompt' => 'Reply with exactly two words: live ok',
-            'engine' => $engine,
-            'model' => $model,
-            'max_tokens' => 20,
-            'temperature' => 0,
-        ]);
-
-        $response->assertOk()->assertJsonPath('success', true);
+            $response->assertOk()->assertJsonPath('success', true);
+            $details[] = [
+                'engine' => $engine,
+                'model' => $model,
+                'content_length' => strlen((string) $response->json('data.content')),
+            ];
+        }
 
         return $this->passedResult('Live text generation succeeded.', [
-            'engine' => $engine,
-            'model' => $model,
-            'content_length' => strlen((string) $response->json('data.content')),
+            'providers' => $details,
         ]);
     }
 
@@ -273,30 +280,34 @@ class LiveFeatureMatrixTest extends TestCase
             return $this->skippedResult('image_generation', 'Set AI_ENGINE_RUN_LIVE_TESTS=true to enable billed live provider checks.');
         }
 
-        [$engine, $model] = $this->resolveLiveImageEngineAndModel();
-        if ($engine === null || $model === null) {
+        $pairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveImageEngineAndModel()]);
+        if ($pairs === []) {
             return $this->skippedResult('image_generation', 'No live image provider credential is configured.');
         }
 
-        $this->configureLiveProvider($engine, $model);
+        $details = [];
+        foreach ($pairs as [$engine, $model]) {
+            $this->configureLiveProvider($engine, $model);
 
-        $response = $this->postJson('/api/v1/ai/generate/image', [
-            'prompt' => 'A minimal black square on a white background',
-            'engine' => $engine,
-            'model' => $model,
-            'count' => 1,
-        ]);
+            $response = $this->postJson('/api/v1/ai/generate/image', [
+                'prompt' => 'A minimal black square on a white background',
+                'engine' => $engine,
+                'model' => $model,
+                'count' => 1,
+            ]);
 
-        $response->assertOk()->assertJsonPath('success', true);
+            $response->assertOk()->assertJsonPath('success', true);
 
-        $files = $response->json('data.files') ?? [];
-        $this->assertNotEmpty($files, json_encode($response->json(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $files = $response->json('data.files') ?? [];
+            $this->assertNotEmpty($files, json_encode($response->json(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $details[] = [
+                'engine' => $engine,
+                'model' => $model,
+                'files_count' => is_array($files) ? count($files) : 0,
+            ];
+        }
 
-        return $this->passedResult('Live image generation succeeded.', [
-            'engine' => $engine,
-            'model' => $model,
-            'files_count' => is_array($files) ? count($files) : 0,
-        ]);
+        return $this->passedResult('Live image generation succeeded.', ['providers' => $details]);
     }
 
     private function checkLiveVideoGeneration(): array
@@ -305,36 +316,40 @@ class LiveFeatureMatrixTest extends TestCase
             return $this->skippedResult('video_generation', 'Set AI_ENGINE_RUN_LIVE_TESTS=true to enable billed live provider checks.');
         }
 
-        [$engine, $model] = $this->resolveLiveVideoEngineAndModel();
-        if ($engine === null || $model === null) {
+        $pairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveVideoEngineAndModel()]);
+        if ($pairs === []) {
             return $this->skippedResult('video_generation', 'No live video provider credential is configured.');
         }
 
-        $this->configureLiveProvider($engine, $model);
+        $details = [];
+        foreach ($pairs as [$engine, $model]) {
+            $this->configureLiveProvider($engine, $model);
 
-        $response = $this->postJson('/api/v1/ai/generate/video', [
-            'prompt' => 'A short animation of a bouncing ball',
-            'engine' => $engine,
-            'model' => $model,
-            'duration' => '4',
-            'generate_audio' => false,
-        ]);
+            $response = $this->postJson('/api/v1/ai/generate/video', [
+                'prompt' => 'A short animation of a bouncing ball',
+                'engine' => $engine,
+                'model' => $model,
+                'duration' => '4',
+                'generate_audio' => false,
+            ]);
 
-        $payload = $response->json();
-        if ($response->getStatusCode() !== 200) {
-            throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $payload = $response->json();
+            if ($response->getStatusCode() !== 200) {
+                throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            }
+
+            $response->assertJsonPath('success', true);
+
+            $files = $payload['data']['files'] ?? [];
+            $this->assertNotEmpty($files, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $details[] = [
+                'engine' => $engine,
+                'model' => $model,
+                'files_count' => is_array($files) ? count($files) : 0,
+            ];
         }
 
-        $response->assertJsonPath('success', true);
-
-        $files = $payload['data']['files'] ?? [];
-        $this->assertNotEmpty($files, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-
-        return $this->passedResult('Live video generation succeeded.', [
-            'engine' => $engine,
-            'model' => $model,
-            'files_count' => is_array($files) ? count($files) : 0,
-        ]);
+        return $this->passedResult('Live video generation succeeded.', ['providers' => $details]);
     }
 
     private function checkLiveTtsGeneration(): array
@@ -343,55 +358,60 @@ class LiveFeatureMatrixTest extends TestCase
             return $this->skippedResult('tts_generation', 'Set AI_ENGINE_RUN_LIVE_TESTS=true to enable billed live provider checks.');
         }
 
-        [$engine, $model] = $this->resolveLiveTtsEngineAndModel();
-        if ($engine === null || $model === null) {
+        $pairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveTtsEngineAndModel()]);
+        if ($pairs === []) {
             return $this->skippedResult('tts_generation', 'No live TTS provider credential is configured.');
         }
 
-        $this->configureLiveProvider($engine, $model);
-        $alias = 'voice-hero-' . uniqid();
-        app(FalCharacterStore::class)->save([
-            'name' => 'Voice Hero',
-            'voice_id' => (string) (getenv('ELEVENLABS_VOICE_ID') ?: config('ai-engine.engines.eleven_labs.default_voice_id', 'pNInz6obpgDQGcFmaJgB')),
-            'voice_settings' => [
-                'stability' => 0.35,
-                'similarity_boost' => 0.75,
-                'style' => 0.1,
-                'use_speaker_boost' => true,
-            ],
-        ], $alias);
+        $details = [];
+        foreach ($pairs as [$engine, $model]) {
+            $this->configureLiveProvider($engine, $model);
+            $alias = 'voice-hero-' . uniqid();
+            app(FalCharacterStore::class)->save([
+                'name' => 'Voice Hero',
+                'voice_id' => (string) (getenv('ELEVENLABS_VOICE_ID') ?: config('ai-engine.engines.eleven_labs.default_voice_id', 'pNInz6obpgDQGcFmaJgB')),
+                'voice_settings' => [
+                    'stability' => 0.35,
+                    'similarity_boost' => 0.75,
+                    'style' => 0.1,
+                    'use_speaker_boost' => true,
+                ],
+            ], $alias);
 
-        $beforeId = AIMedia::query()->max('id');
-        $response = $this->postJson('/api/v1/ai/generate/tts', [
-            'text' => 'This is a live text to speech check.',
-            'engine' => $engine,
-            'model' => $model,
-            'minutes' => 1,
-            'use_character' => $alias,
-        ]);
+            $beforeId = AIMedia::query()->max('id');
+            $response = $this->postJson('/api/v1/ai/generate/tts', [
+                'text' => 'This is a live text to speech check.',
+                'engine' => $engine,
+                'model' => $model,
+                'minutes' => 1,
+                'use_character' => $alias,
+            ]);
 
-        $payload = $response->json();
-        if ($response->getStatusCode() !== 200) {
-            throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $payload = $response->json();
+            if ($response->getStatusCode() !== 200) {
+                throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            }
+
+            $response->assertJsonPath('success', true);
+
+            $audio = AIMedia::query()
+                ->when($beforeId !== null, fn ($query) => $query->where('id', '>', $beforeId))
+                ->where('content_type', 'audio')
+                ->latest('id')
+                ->first();
+
+            $this->assertNotNull($audio, 'Expected a persisted AIMedia audio row after live TTS generation.');
+
+            $details[] = [
+                'engine' => $engine,
+                'model' => $model,
+                'character_alias' => $alias,
+                'media_id' => $audio?->id,
+                'disk' => $audio?->disk,
+            ];
         }
 
-        $response->assertJsonPath('success', true);
-
-        $audio = AIMedia::query()
-            ->when($beforeId !== null, fn ($query) => $query->where('id', '>', $beforeId))
-            ->where('content_type', 'audio')
-            ->latest('id')
-            ->first();
-
-        $this->assertNotNull($audio, 'Expected a persisted AIMedia audio row after live TTS generation.');
-
-        return $this->passedResult('Live TTS generation succeeded.', [
-            'engine' => $engine,
-            'model' => $model,
-            'character_alias' => $alias,
-            'media_id' => $audio?->id,
-            'disk' => $audio?->disk,
-        ]);
+        return $this->passedResult('Live TTS generation succeeded.', ['providers' => $details]);
     }
 
     private function checkLiveTranscription(): array
@@ -400,83 +420,91 @@ class LiveFeatureMatrixTest extends TestCase
             return $this->skippedResult('transcription', 'Set AI_ENGINE_RUN_LIVE_TESTS=true to enable billed live provider checks.');
         }
 
-        [$ttsEngine, $ttsModel] = $this->resolveLiveTtsEngineAndModel();
-        [$engine, $model] = $this->resolveLiveTranscriptionEngineAndModel();
+        $ttsPairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveTtsEngineAndModel()]);
+        $transcribePairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveTranscriptionEngineAndModel()]);
 
-        if ($ttsEngine === null || $ttsModel === null) {
+        if ($ttsPairs === []) {
             return $this->skippedResult('transcription', 'Live transcription requires a live TTS provider to create sample audio.');
         }
 
-        if ($engine === null || $model === null) {
+        if ($transcribePairs === []) {
             return $this->skippedResult('transcription', 'No live transcription provider credential is configured.');
         }
 
-        $this->configureLiveProvider($ttsEngine, $ttsModel);
-        $this->configureLiveProvider($engine, $model);
-        $alias = 'voice-transcribe-' . uniqid();
-        app(FalCharacterStore::class)->save([
-            'name' => 'Voice Transcribe',
-            'voice_id' => (string) (getenv('ELEVENLABS_VOICE_ID') ?: config('ai-engine.engines.eleven_labs.default_voice_id', 'pNInz6obpgDQGcFmaJgB')),
-        ], $alias);
+        $details = [];
+        foreach ($transcribePairs as [$engine, $model]) {
+            [$ttsEngine, $ttsModel] = $ttsPairs[0];
+            $this->configureLiveProvider($ttsEngine, $ttsModel);
+            $this->configureLiveProvider($engine, $model);
+            $alias = 'voice-transcribe-' . uniqid();
+            app(FalCharacterStore::class)->save([
+                'name' => 'Voice Transcribe',
+                'voice_id' => (string) (getenv('ELEVENLABS_VOICE_ID') ?: config('ai-engine.engines.eleven_labs.default_voice_id', 'pNInz6obpgDQGcFmaJgB')),
+            ], $alias);
 
-        $beforeId = AIMedia::query()->max('id');
-        $ttsResponse = $this->postJson('/api/v1/ai/generate/tts', [
-            'text' => 'Transcribe this live audio sample please.',
-            'engine' => $ttsEngine,
-            'model' => $ttsModel,
-            'minutes' => 1,
-            'use_character' => $alias,
-        ]);
-
-        $ttsResponse->assertOk()->assertJsonPath('success', true);
-
-        $audio = AIMedia::query()
-            ->when($beforeId !== null, fn ($query) => $query->where('id', '>', $beforeId))
-            ->where('content_type', 'audio')
-            ->latest('id')
-            ->first();
-
-        if ($audio === null || !is_string($audio->disk) || !is_string($audio->path)) {
-            return $this->skippedResult('transcription', 'Could not locate a local AIMedia audio artifact for transcription.');
-        }
-
-        $absolutePath = Storage::disk($audio->disk)->path($audio->path);
-        if (!is_string($absolutePath) || !is_file($absolutePath)) {
-            return $this->skippedResult('transcription', 'Generated audio is not available on a local filesystem path.', [
-                'disk' => $audio->disk,
-                'path' => $audio->path,
+            $beforeId = AIMedia::query()->max('id');
+            $ttsResponse = $this->postJson('/api/v1/ai/generate/tts', [
+                'text' => 'Transcribe this live audio sample please.',
+                'engine' => $ttsEngine,
+                'model' => $ttsModel,
+                'minutes' => 1,
+                'use_character' => $alias,
             ]);
+
+            $ttsResponse->assertOk()->assertJsonPath('success', true);
+
+            $audio = AIMedia::query()
+                ->when($beforeId !== null, fn ($query) => $query->where('id', '>', $beforeId))
+                ->where('content_type', 'audio')
+                ->latest('id')
+                ->first();
+
+            if ($audio === null || !is_string($audio->disk) || !is_string($audio->path)) {
+                return $this->skippedResult('transcription', 'Could not locate a local AIMedia audio artifact for transcription.');
+            }
+
+            $absolutePath = Storage::disk($audio->disk)->path($audio->path);
+            if (!is_string($absolutePath) || !is_file($absolutePath)) {
+                return $this->skippedResult('transcription', 'Generated audio is not available on a local filesystem path.', [
+                    'disk' => $audio->disk,
+                    'path' => $audio->path,
+                ]);
+            }
+
+            $upload = new UploadedFile(
+                $absolutePath,
+                basename($absolutePath),
+                'audio/mpeg',
+                null,
+                true
+            );
+
+            $response = $this->post('/api/v1/ai/generate/transcribe', [
+                'engine' => $engine,
+                'model' => $model,
+                'audio_minutes' => 1,
+                'file' => $upload,
+            ], [
+                'Accept' => 'application/json',
+            ]);
+
+            $payload = json_decode($response->getContent(), true);
+            if ($response->getStatusCode() !== 200) {
+                throw new \RuntimeException($response->getContent());
+            }
+
+            $this->assertIsArray($payload, $response->getContent());
+            $this->assertTrue((bool) ($payload['success'] ?? false), $response->getContent());
+
+            $details[] = [
+                'engine' => $engine,
+                'model' => $model,
+                'transcript_length' => strlen((string) ($payload['data']['content'] ?? '')),
+            ];
         }
-
-        $upload = new UploadedFile(
-            $absolutePath,
-            basename($absolutePath),
-            'audio/mpeg',
-            null,
-            true
-        );
-
-        $response = $this->post('/api/v1/ai/generate/transcribe', [
-            'engine' => $engine,
-            'model' => $model,
-            'audio_minutes' => 1,
-            'file' => $upload,
-        ], [
-            'Accept' => 'application/json',
-        ]);
-
-        $payload = json_decode($response->getContent(), true);
-        if ($response->getStatusCode() !== 200) {
-            throw new \RuntimeException($response->getContent());
-        }
-
-        $this->assertIsArray($payload, $response->getContent());
-        $this->assertTrue((bool) ($payload['success'] ?? false), $response->getContent());
 
         return $this->passedResult('Live transcription succeeded using generated TTS audio.', [
-            'engine' => $engine,
-            'model' => $model,
-            'transcript_length' => strlen((string) ($payload['data']['content'] ?? '')),
+            'providers' => $details,
         ]);
     }
 
@@ -486,40 +514,78 @@ class LiveFeatureMatrixTest extends TestCase
             return $this->skippedResult('agent_flow', 'Set AI_ENGINE_RUN_LIVE_TESTS=true to enable billed live provider checks.');
         }
 
-        [$engine, $model] = $this->resolveLiveTextEngineAndModel();
-        if ($engine === null || $model === null) {
+        $pairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveTextEngineAndModel()]);
+        if ($pairs === []) {
             return $this->skippedResult('agent_flow', 'No live text provider credential is configured for agent flow.');
         }
 
-        $this->configureLiveProvider($engine, $model);
+        $details = [];
+        foreach ($pairs as [$engine, $model]) {
+            $this->configureLiveProvider($engine, $model);
 
-        $userId = (string) $this->createTestUser()->id;
-        $options = [
-            '--session' => 'live-matrix-agent-' . uniqid(),
-            '--user' => $userId,
-            '--engine' => $engine,
-            '--model' => $model,
-            '--json' => true,
-            '--script' => (string) (getenv('AI_ENGINE_LIVE_SCRIPT') ?: 'minimal'),
-        ];
+            $userId = (string) $this->createTestUser()->id;
+            $options = [
+                '--session' => 'live-matrix-agent-' . uniqid(),
+                '--user' => $userId,
+                '--engine' => $engine,
+                '--model' => $model,
+                '--json' => true,
+                '--script' => (string) (getenv('AI_ENGINE_LIVE_SCRIPT') ?: 'minimal'),
+            ];
 
-        if ($this->readBoolEnv('AI_ENGINE_LIVE_LOCAL_ONLY', true)) {
-            $options['--local-only'] = true;
+            if ($this->readBoolEnv('AI_ENGINE_LIVE_LOCAL_ONLY', true)) {
+                $options['--local-only'] = true;
+            }
+
+            $exitCode = Artisan::call('ai-engine:test-real-agent', $options);
+            $output = Artisan::output();
+            $payload = json_decode($output, true);
+
+            $this->assertSame(0, $exitCode, $output);
+            $this->assertIsArray($payload, $output);
+            $this->assertSame(0, $payload['summary']['failed_turns'] ?? null, $output);
+            $this->assertGreaterThan(0, $payload['summary']['successful_turns'] ?? 0, $output);
+
+            $details[] = [
+                'engine' => $engine,
+                'model' => $model,
+                'successful_turns' => $payload['summary']['successful_turns'] ?? 0,
+            ];
         }
 
-        $exitCode = Artisan::call('ai-engine:test-real-agent', $options);
-        $output = Artisan::output();
-        $payload = json_decode($output, true);
-
-        $this->assertSame(0, $exitCode, $output);
-        $this->assertIsArray($payload, $output);
-        $this->assertSame(0, $payload['summary']['failed_turns'] ?? null, $output);
-        $this->assertGreaterThan(0, $payload['summary']['successful_turns'] ?? 0, $output);
-
         return $this->passedResult('Live agent flow succeeded.', [
-            'engine' => $engine,
-            'model' => $model,
-            'successful_turns' => $payload['summary']['successful_turns'] ?? 0,
+            'providers' => $details,
+        ]);
+    }
+
+    private function checkLiveGraphRag(): array
+    {
+        if (!$this->readBoolEnv('AI_ENGINE_RUN_NEO4J_LIVE_TESTS')) {
+            return $this->skippedResult('graph_rag', 'Set AI_ENGINE_RUN_NEO4J_LIVE_TESTS=true to enable live graph checks.');
+        }
+
+        $url = trim((string) getenv('AI_ENGINE_NEO4J_URL'));
+        $database = trim((string) (getenv('AI_ENGINE_NEO4J_DATABASE') ?: 'neo4j'));
+        $username = trim((string) (getenv('AI_ENGINE_NEO4J_USERNAME') ?: 'neo4j'));
+        $password = trim((string) getenv('AI_ENGINE_NEO4J_PASSWORD'));
+
+        if ($url === '' || $password === '') {
+            return $this->skippedResult('graph_rag', 'Missing AI_ENGINE_NEO4J_URL or AI_ENGINE_NEO4J_PASSWORD.');
+        }
+
+        $response = \Illuminate\Support\Facades\Http::timeout(10)
+            ->withBasicAuth($username, $password)
+            ->post(rtrim($url, '/') . '/db/' . trim($database, '/') . '/query/v2', [
+                'statement' => 'RETURN 1 AS ok',
+                'parameters' => (object) [],
+            ]);
+
+        $this->assertContains($response->status(), [200, 202], $response->body());
+        $this->assertIsArray($response->json('data'), $response->body());
+
+        return $this->passedResult('Live GraphRAG Query API responded successfully.', [
+            'neo4j_url' => $url,
+            'database' => $database,
         ]);
     }
 
@@ -540,6 +606,32 @@ class LiveFeatureMatrixTest extends TestCase
         }
 
         return [null, null];
+    }
+
+    /**
+     * @return array<int, array{0:string,1:string}>
+     */
+    private function resolveProviderMatrix(string $envName, callable $fallback): array
+    {
+        $raw = getenv($envName);
+        if (!is_string($raw) || trim($raw) === '') {
+            return array_values(array_filter($fallback(), static fn ($pair): bool => is_array($pair) && !empty($pair[0]) && !empty($pair[1])));
+        }
+
+        $pairs = [];
+        foreach (preg_split('/\s*,\s*/', trim($raw)) ?: [] as $pair) {
+            if (!str_contains($pair, ':')) {
+                continue;
+            }
+
+            [$engine, $model] = array_map('trim', explode(':', $pair, 2));
+            [$resolvedEngine, $resolvedModel] = $this->resolveProviderPair($engine, $model);
+            if ($resolvedEngine !== null && $resolvedModel !== null) {
+                $pairs[] = [$resolvedEngine, $resolvedModel];
+            }
+        }
+
+        return $pairs;
     }
 
     private function resolveLiveImageEngineAndModel(): array

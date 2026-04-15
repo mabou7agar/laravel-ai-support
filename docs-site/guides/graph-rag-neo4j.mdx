@@ -1,0 +1,171 @@
+---
+title: GraphRAG with Neo4j
+description: Central Neo4j setup, graph publishing, knowledge-base acceleration, and operational workflow.
+---
+
+## Overview
+
+Laravel AI Engine now supports a central Neo4j graph as the preferred read model for semantic and relational retrieval.
+
+Steady-state shape:
+
+- child apps still own transactional writes
+- apps publish entities, chunks, scope, and relations into Neo4j
+- retrieval reads from Neo4j
+- node routing remains for app-owned writes and actions
+- the graph knowledge base accelerates repeated chat and follow-up retrieval
+
+## Enable Central Graph Reads
+
+```env
+AI_ENGINE_GRAPH_ENABLED=true
+AI_ENGINE_GRAPH_BACKEND=neo4j
+AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=true
+AI_ENGINE_GRAPH_KB_ENABLED=true
+
+AI_ENGINE_NEO4J_URL=http://localhost:7474
+AI_ENGINE_NEO4J_DATABASE=neo4j
+AI_ENGINE_NEO4J_USERNAME=neo4j
+AI_ENGINE_NEO4J_PASSWORD=secret
+AI_ENGINE_NEO4J_CHUNK_VECTOR_INDEX=chunk_embedding_index
+AI_ENGINE_NEO4J_VECTOR_SIMILARITY=cosine
+```
+
+## Preferred Model Contracts
+
+Legacy compatibility methods still work:
+
+- `getVectorContent()`
+- `getVectorMetadata()`
+- `toRAGContent()`
+
+Prefer these for new models:
+
+- `toSearchDocument()`
+- `toGraphObject()`
+- `getGraphRelations()`
+- `getAccessScope()`
+- `toRAGSummary()`
+- `toRAGDetail()`
+- `toRAGListPreview(?string $locale = null)`
+
+These contracts keep indexing, graph shape, and response payloads explicit.
+
+## Graph Publishing Workflow
+
+1. Initialize schema:
+
+```bash
+php artisan ai-engine:neo4j-init
+```
+
+2. Bulk sync models:
+
+```bash
+php artisan ai-engine:neo4j-sync --fresh
+```
+
+3. Inspect graph state:
+
+```bash
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-diagnose
+```
+
+4. Repair common integrity issues:
+
+```bash
+php artisan ai-engine:neo4j-repair --apply
+```
+
+## Knowledge Base Layer
+
+The graph knowledge base is a derived acceleration layer on top of Neo4j, not a second source of truth.
+
+It stores:
+
+- scoped plan cache
+- scoped retrieval result cache
+- query profiles
+- scoped entity snapshots for hot graph neighborhoods
+
+Security rules:
+
+- cache keys include access scope
+- access versions are bumped on graph sync/delete
+- cached payloads are sanitized to the retrieval contract
+- caches do not bypass graph authorization
+
+## Make Chat Faster Over Time
+
+Targeted warmup:
+
+```bash
+php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
+```
+
+Background build:
+
+```bash
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+```
+
+The build command:
+
+- warms hot query plans
+- optionally warms scoped retrieval results
+- builds scoped entity snapshots for hot graph neighborhoods
+
+## Host-App Scheduling
+
+In a Laravel 11+ host app, schedule the build from `routes/console.php`:
+
+```php
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
+    ->hourly()
+    ->withoutOverlapping()
+    ->when(static function (): bool {
+        return (bool) config('ai-engine.graph.enabled', false)
+            && (string) config('ai-engine.graph.backend', 'neo4j') === 'neo4j'
+            && (bool) config('ai-engine.graph.knowledge_base.enabled', true);
+    });
+```
+
+## Planner Behavior
+
+The graph planner classifies queries into kinds such as:
+
+- `ownership`
+- `dependency`
+- `timeline`
+- `relationship`
+- `generic`
+
+It chooses traversal templates such as:
+
+- `ownership_chain`
+- `dependency_chain`
+- `timeline_neighborhood`
+- `relationship_neighborhood`
+- `generic_neighborhood`
+
+This means graph expansion is planner-driven rather than just “semantic hit, then attach neighbors”.
+
+## Stable vs Shared-Server-Sensitive Assertions
+
+Stable guarantees:
+
+- sync to Neo4j
+- vector retrieval from chunk nodes
+- graph-aware candidate expansion
+- `entity_ref` and `object` in results
+- scoped KB caching and invalidation
+
+Shared-server-sensitive behavior:
+
+- exact live top-N ordering on a noisy shared graph
+- whether a specific related entity always appears in the live top window
+
+Keep deterministic graph-behavior assertions in package acceptance/unit tests. Use live tests to validate the real end-to-end stack.

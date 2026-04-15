@@ -1,0 +1,135 @@
+---
+title: Knowledge Base Security
+description: How scoped graph caching stays separated and secure across users, scopes, and apps.
+---
+
+## Principle
+
+The graph knowledge base is an acceleration layer, not an authorization bypass.
+
+It must inherit the same access boundaries as the source graph.
+
+## Security Model
+
+The KB is safe only when all of the following are true:
+
+- cache keys are scope-aware
+- cached payloads are sanitized
+- access versions are invalidated on graph changes
+- retrieval still applies graph authorization
+- summaries do not expose hidden fields
+
+## What Is Cached
+
+The KB may cache:
+
+- planner results
+- retrieval result sets
+- query profiles
+- entity snapshots for hot neighborhoods
+
+The KB should not become:
+
+- a raw dump of private model data
+- a global cross-tenant answer memory
+- a replacement for graph authorization
+
+## Scope-Aware Keys
+
+Cache identity should include:
+
+- user identity when needed
+- scope type and scope id when needed
+- planner signature
+- graph/access version
+
+This prevents one user or workspace from reading another scope's cached plan or result set.
+
+## Sanitized Payloads
+
+Cache only the retrieval contract:
+
+- `entity_ref`
+- `object`
+- safe planner metadata
+- safe path metadata
+
+Do not cache:
+
+- hidden model attributes
+- provider secrets
+- raw serialized models
+- unrestricted relationship payloads
+
+## Invalidation Rules
+
+Invalidate or version-bump KB state when:
+
+- entity content changes
+- entity deletion occurs
+- relation edges change
+- scope membership changes
+- access edges change
+
+If permission boundaries change, stale cache must not remain valid for the old scope version.
+
+## Multi-App Separation
+
+Cross-app search is allowed only across data the same user can already access.
+
+That means:
+
+- apps can share the central graph
+- the KB can accelerate retrieval
+- but scope filters still apply before cached results are reused
+
+Shared graph does not mean shared visibility.
+
+## Recommended Review Checklist
+
+Before enabling KB in production, verify:
+
+- `toGraphObject()` omits hidden fields
+- `getAccessScope()` is implemented or correctly derived
+- graph sync invalidates access-sensitive cache state
+- user/scope changes trigger graph refresh
+- live tests cover cross-scope separation
+
+## Failure Modes To Watch
+
+### Wrong user sees cached result
+
+Usually caused by:
+
+- cache key missing scope info
+- stale access-version handling
+- shared demo data with over-broad access edges
+
+### Result is correct but stale after permission change
+
+Usually caused by:
+
+- incremental sync lag
+- missing invalidation on access-edge updates
+- background KB build using stale graph state
+
+### Summaries leak too much detail
+
+Usually caused by:
+
+- using raw model arrays in `toGraphObject()`
+- skipping field sanitization
+- caching provider-facing debug payloads
+
+## Recommended Production Posture
+
+- enable KB only after graph access edges are reliable
+- start with preview-style `object` payloads, not full detail dumps
+- keep deterministic authorization in the graph path
+- treat KB data as derived and disposable
+
+## Related Docs
+
+- [GraphRAG with Neo4j](/guides/graph-rag-neo4j)
+- [Neo4j Ops Runbook](/guides/neo4j-ops-runbook)
+- [Graph Relation Modeling](/guides/graph-relation-modeling)

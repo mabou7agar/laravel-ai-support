@@ -1,0 +1,15 @@
+meta {
+  name: List Models
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/models
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}

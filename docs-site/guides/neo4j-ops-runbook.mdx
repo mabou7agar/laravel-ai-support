@@ -1,0 +1,202 @@
+---
+title: Neo4j Ops Runbook
+description: Production runbook for initializing, syncing, diagnosing, repairing, and warming the graph knowledge base.
+---
+
+## Purpose
+
+Use this runbook when operating the central Neo4j read model in production or staging.
+
+It covers the normal sequence:
+
+1. initialize schema
+2. bulk sync graph state
+3. inspect health
+4. repair integrity problems
+5. warm/build the knowledge base
+6. verify scheduler behavior
+
+## 1) First-Time Setup
+
+```bash
+php artisan ai-engine:neo4j-init
+php artisan ai-engine:neo4j-sync --fresh
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-diagnose
+```
+
+Expected outcome:
+
+- entity uniqueness is enforced
+- chunk vector index exists
+- entities, chunks, scope, and relation edges are present
+- diagnostics do not report critical graph integrity failures
+
+## 2) Normal Refresh Workflow
+
+Incremental refresh:
+
+```bash
+php artisan ai-engine:neo4j-sync
+```
+
+Fresh rebuild when graph state is stale or after major mapping changes:
+
+```bash
+php artisan ai-engine:neo4j-sync --fresh
+```
+
+Use `--fresh` when:
+
+- relation mapping rules changed
+- access-scope publishing changed
+- stale graph edges are suspected
+- a large backfill just landed
+
+## 3) Diagnose Before Repair
+
+```bash
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-diagnose
+```
+
+Look for:
+
+- orphan chunks
+- missing entity keys
+- duplicate entity identities
+- missing access edges
+- missing relation edges for expected models
+- vector index/schema drift
+
+## 4) Repair Workflow
+
+Dry-run first if available in your environment, then apply:
+
+```bash
+php artisan ai-engine:neo4j-repair --apply
+```
+
+Re-run diagnostics after repair:
+
+```bash
+php artisan ai-engine:neo4j-diagnose
+```
+
+If issues persist, the safe fallback is:
+
+```bash
+php artisan ai-engine:neo4j-sync --fresh
+```
+
+## 5) Knowledge Base Operations
+
+Targeted warmup:
+
+```bash
+php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
+```
+
+Background build:
+
+```bash
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+```
+
+Use `neo4j-kb-warm` when:
+
+- you want to preheat a specific user/scope
+- you just imported hot query profiles
+- you are preparing a demo or load test
+
+Use `neo4j-kb-build` when:
+
+- you want the normal scheduled background maintenance job
+- you want hot entity neighborhoods and hot query plans refreshed
+
+## 6) Scheduler Expectations
+
+Recommended host-app schedule:
+
+```php
+Schedule::command('ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
+    ->hourly()
+    ->withoutOverlapping();
+```
+
+Expected behavior:
+
+- job runs only when graph mode and KB are enabled
+- repeated queries get faster over time
+- cache entries stay scoped and invalidated on graph updates
+
+## 7) Incident Playbooks
+
+### Search results suddenly lose relations
+
+Run:
+
+```bash
+php artisan ai-engine:neo4j-diagnose
+php artisan ai-engine:neo4j-repair --apply
+php artisan ai-engine:neo4j-sync --fresh
+```
+
+Then verify relation publishing rules on the affected models.
+
+### Retrieval is correct but slow
+
+Check:
+
+- KB is enabled
+- scheduler is running
+- `neo4j-kb-build` is succeeding
+- graph reads are preferred
+- vector index still exists
+
+Run:
+
+```bash
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+```
+
+### Cross-app results leak or look over-broad
+
+Check:
+
+- `getAccessScope()` output
+- scope edge publishing
+- KB scope-key handling
+- stale graph state after permission changes
+
+Then run:
+
+```bash
+php artisan ai-engine:neo4j-sync
+php artisan ai-engine:neo4j-diagnose
+```
+
+## 8) Post-Deploy Verification
+
+After deploying graph-related changes:
+
+```bash
+php artisan optimize:clear
+php artisan ai-engine:neo4j-diagnose
+php artisan ai-engine:test-package
+```
+
+Host-app verification:
+
+- run a normal semantic chat query
+- run a relation-oriented follow-up
+- confirm expected sources include `entity_ref` and `object`
+- confirm scheduler is still registered
+
+## Related Docs
+
+- [GraphRAG with Neo4j](/guides/graph-rag-neo4j)
+- [Knowledge Base Security](/guides/knowledge-base-security)
+- [Graph Relation Modeling](/guides/graph-relation-modeling)
+- [Commands Reference](/reference/commands)

@@ -30,6 +30,7 @@ class GenerateApiController extends Controller
      * @bodyParam prompt string required Prompt text.
      * @bodyParam engine string Optional engine slug. Example: openai
      * @bodyParam model string Optional model slug. Example: gpt-4o-mini
+     * @bodyParam preference string Optional routing preference when engine/model are omitted. Example: speed
      * @bodyParam system_prompt string Optional system instruction.
      * @bodyParam max_tokens integer Optional max output tokens.
      * @bodyParam temperature number Optional sampling temperature between 0 and 2.
@@ -41,6 +42,7 @@ class GenerateApiController extends Controller
             'prompt' => 'required|string|max:10000',
             'engine' => 'nullable|string|max:100',
             'model' => 'nullable|string|max:200',
+            'preference' => 'nullable|string|in:cost,cheap,speed,fast,performance,quality',
             'system_prompt' => 'nullable|string|max:4000',
             'max_tokens' => 'nullable|integer|min:1|max:16000',
             'temperature' => 'nullable|numeric|min:0|max:2',
@@ -48,18 +50,21 @@ class GenerateApiController extends Controller
         ]);
 
         try {
-            $engine = (string) ($validated['engine'] ?? config('ai-engine.default', 'openai'));
-            $model = (string) ($validated['model'] ?? config('ai-engine.default_model', 'gpt-4o-mini'));
+            $engine = array_key_exists('engine', $validated) ? (string) $validated['engine'] : null;
+            $model = array_key_exists('model', $validated) ? (string) $validated['model'] : null;
             $parameters = is_array($validated['parameters'] ?? null) ? $validated['parameters'] : [];
             $response = $this->generateDirect(new AIRequest(
                 prompt: (string) $validated['prompt'],
                 engine: $engine,
                 model: $model,
                 parameters: $parameters,
+                userId: $this->resolveAuthenticatedUserId(),
                 systemPrompt: $validated['system_prompt'] ?? null,
                 maxTokens: isset($validated['max_tokens']) ? (int) $validated['max_tokens'] : null,
                 temperature: isset($validated['temperature']) ? (float) $validated['temperature'] : null,
-                userId: $this->resolveAuthenticatedUserId(),
+                metadata: array_filter([
+                    'routing_preference' => $validated['preference'] ?? null,
+                ], static fn ($value): bool => $value !== null && $value !== ''),
             ));
 
             if (!$response->isSuccess()) {
@@ -67,8 +72,8 @@ class GenerateApiController extends Controller
                     success: false,
                     message: $response->getError() ?? 'Text generation failed.',
                     data: [
-                        'engine' => $engine,
-                        'model' => $model,
+                        'engine' => $response->getEngine()->value,
+                        'model' => $response->getModel()->value,
                         'usage' => $response->getUsage(),
                         'metadata' => $response->getMetadata(),
                     ],

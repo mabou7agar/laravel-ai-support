@@ -1,0 +1,137 @@
+---
+title: Qdrant to Neo4j Migration
+description: Migration checklist for teams moving from vector-store-first RAG to central Neo4j GraphRAG.
+---
+
+## Goal
+
+Move from a Qdrant-first setup to a central Neo4j read model without breaking application-facing chat flows.
+
+## Recommended Phases
+
+### Phase 1: Keep Legacy Contracts Working
+
+Do not break existing models.
+
+Legacy methods can continue to work:
+
+- `getVectorContent()`
+- `getVectorMetadata()`
+- `toRAGContent()`
+
+But new work should move to:
+
+- `toSearchDocument()`
+- `toGraphObject()`
+- `getGraphRelations()`
+- `getAccessScope()`
+
+### Phase 2: Enable Graph Publishing
+
+Configure:
+
+```env
+AI_ENGINE_GRAPH_ENABLED=true
+AI_ENGINE_GRAPH_BACKEND=neo4j
+AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=false
+```
+
+Then:
+
+```bash
+php artisan ai-engine:neo4j-init
+php artisan ai-engine:neo4j-sync --fresh
+```
+
+At this stage, you are publishing graph state but not yet preferring graph reads.
+
+### Phase 3: Verify Graph Integrity
+
+```bash
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-diagnose
+```
+
+Check:
+
+- entity counts look reasonable
+- relation edges exist
+- access edges exist
+- chunk vector index exists
+
+### Phase 4: Switch Read Preference
+
+```env
+AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=true
+AI_ENGINE_GRAPH_KB_ENABLED=true
+```
+
+Now semantic retrieval uses central Neo4j.
+
+### Phase 5: Warm the KB
+
+```bash
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+```
+
+## Migration Checklist
+
+- replace implicit vector content with explicit search documents where possible
+- add real graph relations instead of flattening related text only
+- add access scope publishing
+- confirm normal semantic chat works without `force_rag`
+- verify follow-ups reuse `entity_ref` and `object`
+- schedule KB build
+
+## Common Gotchas
+
+### Relations appear in text but not in graph answers
+
+Cause:
+
+- related data was flattened into embedding text
+- no real edge was published
+
+Fix:
+
+- implement `getGraphRelations()`
+- re-sync with `neo4j-sync --fresh`
+
+### Search works but access scope is too broad
+
+Cause:
+
+- graph reads are enabled
+- access edges or scope publishing are incomplete
+
+Fix:
+
+- implement/fix `getAccessScope()`
+- re-sync graph state
+
+### Old env keys still documented in app readmes
+
+Use current keys:
+
+- `AI_ENGINE_GRAPH_READS_PREFER_CENTRAL`
+- `AI_ENGINE_NEO4J_URL`
+- `AI_ENGINE_NEO4J_DATABASE`
+- `AI_ENGINE_NEO4J_USERNAME`
+- `AI_ENGINE_NEO4J_PASSWORD`
+
+## Validation
+
+Recommended validation path:
+
+```bash
+php artisan ai-engine:test-package
+php artisan ai-engine:neo4j-diagnose
+```
+
+Then verify a real semantic query and a real follow-up in the host app.
+
+## Related Docs
+
+- [GraphRAG with Neo4j](/guides/graph-rag-neo4j)
+- [End-to-End Graph Walkthrough](/guides/end-to-end-graph-walkthrough)
+- [Upgrade](/reference/upgrade)

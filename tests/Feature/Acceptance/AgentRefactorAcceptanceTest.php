@@ -289,7 +289,7 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
         $ai->shouldReceive('generate')
             ->once()
             ->andReturn(AIResponse::success(
-                "ACTION: route_to_node\nRESOURCE: payments\nREASON: payment data belongs there",
+                '{"action":"route_to_node","resource_name":"payments","reasoning":"payment data belongs there"}',
                 EngineEnum::from('openai'),
                 EntityEnum::from('gpt-4o-mini')
             ));
@@ -336,11 +336,7 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
         $context->persist();
 
         $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldReceive('route')->once()->andReturn([
-            'action' => 'search_rag',
-            'resource_name' => null,
-            'reasoning' => 'Follow-up about selected invoice',
-        ]);
+        $intentRouter->shouldNotReceive('route');
 
         $ragAgent = Mockery::mock(AutonomousRAGAgent::class);
         $ragAgent->shouldReceive('process')

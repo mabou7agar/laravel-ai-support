@@ -1,6 +1,6 @@
 # Laravel AI Engine
 
-Laravel AI Engine is a Laravel package for AI chat orchestration, deterministic tool execution, RAG, and node federation across multiple Laravel apps.
+Laravel AI Engine is a Laravel package for AI chat orchestration, deterministic tool execution, GraphRAG/RAG, and node federation across multiple Laravel apps.
 
 ## Status (March 2026)
 
@@ -14,6 +14,10 @@ Current codebase includes:
 - prompt policy learning with DB-backed feedback events and policy versions
 - infrastructure hardening (remote migration guard, Qdrant self-check, startup health gate)
 - admin UI with user/email/IP access controls
+- central Neo4j graph sync and read path
+- planner-driven graph retrieval with query-kind-aware traversal templates
+- scoped graph knowledge-base acceleration (plan cache, result cache, entity snapshots)
+- host-app background KB build workflow
 
 ## Compatibility
 
@@ -79,15 +83,66 @@ AI_ENGINE_IS_MASTER=true
 AI_ENGINE_NODE_JWT_SECRET=change_me
 ```
 
+For central GraphRAG with Neo4j:
+
+```env
+AI_ENGINE_GRAPH_ENABLED=true
+AI_ENGINE_GRAPH_BACKEND=neo4j
+AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=true
+AI_ENGINE_GRAPH_KB_ENABLED=true
+
+AI_ENGINE_NEO4J_URL=http://localhost:7474
+AI_ENGINE_NEO4J_DATABASE=neo4j
+AI_ENGINE_NEO4J_USERNAME=neo4j
+AI_ENGINE_NEO4J_PASSWORD=secret
+AI_ENGINE_NEO4J_CHUNK_VECTOR_INDEX=chunk_embedding_index
+AI_ENGINE_NEO4J_CHUNK_VECTOR_PROPERTY=embedding
+AI_ENGINE_NEO4J_SHARED_DEPLOYMENT=false
+AI_ENGINE_NEO4J_VECTOR_NAMING_STRATEGY=static
+AI_ENGINE_NEO4J_VECTOR_NODE_SLUG=
+AI_ENGINE_NEO4J_VECTOR_TENANT_KEY=
+AI_ENGINE_GRAPH_ONTOLOGY_PACKS=project_management,messaging
+```
+
+Fresh installs are now Neo4j-first by default. If Neo4j is not fully configured, runtime read-path resolution falls back to the configured vector driver, which remains `qdrant` by default.
+
+For shared Neo4j clusters, prefer a dedicated vector slot per app or tenant:
+
+```env
+AI_ENGINE_NEO4J_SHARED_DEPLOYMENT=true
+AI_ENGINE_NEO4J_VECTOR_NAMING_STRATEGY=node
+AI_ENGINE_NEO4J_VECTOR_NODE_SLUG=billing_app
+AI_ENGINE_NEO4J_CHUNK_VECTOR_INDEX=chunk_embedding_index
+AI_ENGINE_NEO4J_CHUNK_VECTOR_PROPERTY=embedding
+```
+
+That produces names like `chunk_embedding_index_billing_app` and `embedding_billing_app` so you do not collide with other apps on the same Neo4j database.
+
 ## High-Value Commands
 
 ### Diagnostics
 
 ```bash
 php artisan ai-engine:test-package
+php artisan ai-engine:test-everything
+php artisan ai-engine:test-everything --profile=graph
+php artisan ai-engine:test-everything --profile=all --root-path=/path/to/root/app
+php artisan ai-engine:backend-status
+php artisan ai-engine:model-status "App\\Models\\Project"
 php artisan ai-engine:test-real-agent --script=followup --json
 php artisan ai-engine:infra-health
 ```
+
+`ai-engine:test-everything` is the umbrella validation command:
+
+- `safe`: package graph and chat slices, plus root mocked chat route when available
+- `graph`: safe plus package live Neo4j graph checks
+- `full`: graph plus root-app live graph/chat tests
+- `all`: full plus billed provider live matrix
+
+`ai-engine:backend-status` shows the effective read backend and whether Neo4j is active or falling back.
+
+`ai-engine:model-status "App\\Models\\Project"` shows whether a model is ready for indexing, graph publishing, and chat retrieval. Use `--id=<record>` to inspect a real row instead of a blank instance, which is useful when a model only becomes indexable after required attributes are populated.
 
 ### Federation (Safe Workflow)
 
@@ -98,6 +153,26 @@ php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json
 php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix
 php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
 php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
+```
+
+### Neo4j GraphRAG and Knowledge Base
+
+```bash
+php artisan ai-engine:neo4j-init
+php artisan ai-engine:neo4j-sync --fresh
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-diagnose
+php artisan ai-engine:neo4j-repair --apply
+php artisan ai-engine:neo4j-drift --repair --prune
+php artisan ai-engine:neo4j-benchmark "who owns Apollo?" --iterations=5
+php artisan ai-engine:neo4j-index-benchmark "App\\Models\\Project" --limit=10
+php artisan ai-engine:neo4j-load-benchmark --profile=steady
+php artisan ai-engine:neo4j-load-benchmark --mode=mixed --iterations=50 --concurrency=4
+php artisan ai-engine:chat-benchmark "What changed for Apollo?" --iterations=3
+php artisan ai-engine:benchmark-history --type=retrieval --limit=10
+php artisan ai-engine:graph-ranking-feedback relationship
+php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
 ```
 
 ### Prompt Policy Learning (Policy-Level)
@@ -117,6 +192,53 @@ List responses are model-driven:
 - implement `toAISummarySource()` for compact summary cache input
 
 If `toRAGListPreview()` exists, it is preferred over fallback summary rendering in structured list responses.
+
+## Search Document and Graph Contracts
+
+Legacy compatibility methods:
+
+- `getVectorContent()`
+- `getVectorMetadata()`
+- `toRAGContent()`
+
+Preferred contracts for new work:
+
+- `toSearchDocument()`
+- `toGraphObject()`
+- `getGraphRelations()`
+- `getAccessScope()`
+- `toRAGSummary()`
+- `toRAGDetail()`
+- `toRAGListPreview(?string $locale = null)`
+
+## Ontology Packs and Live Provider Matrices
+
+You can enable built-in ontology packs to bias relation inference toward your app domain:
+
+```env
+AI_ENGINE_GRAPH_ONTOLOGY_PACKS=project_management,messaging,crm
+```
+
+Current packs:
+
+- `project_management`
+- `messaging`
+- `support`
+- `crm`
+- `commerce`
+
+For broader billed live coverage in CI or scheduled validation, provide provider matrices:
+
+```env
+AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX=openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini
+AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX=openai:gpt-4o-mini
+AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX=openai:dall-e-3
+AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX=fal_ai:bytedance/seedance-2.0/text-to-video
+AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX=eleven_labs:eleven_multilingual_v2
+AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX=openai:whisper-1
+```
+
+Graph retrieval now prefers matched chunk context plus `entity_ref` and `object` payloads for follow-ups and UI reuse.
 
 ## Admin UI
 
@@ -155,11 +277,16 @@ For consistent TTS per saved character, store `voice_id` and optional ElevenLabs
 
 Authenticated calls are credit-enforced (same policy as chat/RAG), including image/audio endpoints.
 
+When direct requests omit `engine`, the package can resolve the provider from the requested model and configured availability. By default it prefers the model's native provider first, then OpenRouter-compatible fallbacks. Tune this with `AI_ENGINE_REQUEST_PROVIDER_PRIORITY`.
+
+For text generation you can also omit both `engine` and `model` and send a simple preference like `cost`, `speed`, `performance`, or `quality`. The package resolves a suitable model/provider first, then applies the normal credit checks against the final route.
+
 Toggle/prefix with env:
 
 ```env
 AI_ENGINE_GENERATE_API_ENABLED=true
 AI_ENGINE_GENERATE_API_PREFIX=api/v1/ai/generate
+AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini;deepseek;ollama
 ```
 
 Inject your own middleware into package API routes:
@@ -190,14 +317,20 @@ Recommended reading order:
 2. `guides/concepts`
 3. `guides/single-app-setup`
 4. `guides/model-config-tools`
-5. `guides/direct-generation-recipes`
-6. `guides/entity-list-preview-ux`
-7. `guides/data-collectors`
-8. `guides/rag-indexing`
-9. `guides/copy-paste-playbooks`
-10. `guides/multi-app-federation`
-11. `guides/policy-learning`
-12. `guides/testing-playbook`
+5. `guides/graph-relation-modeling`
+6. `guides/knowledge-base-security`
+7. `guides/direct-generation-recipes`
+8. `guides/entity-list-preview-ux`
+9. `guides/data-collectors`
+10. `guides/rag-indexing`
+11. `guides/graph-rag-neo4j`
+12. `guides/end-to-end-graph-walkthrough`
+13. `guides/copy-paste-playbooks`
+14. `guides/multi-app-federation`
+15. `guides/neo4j-ops-runbook`
+16. `guides/policy-learning`
+17. `guides/testing-playbook`
+18. `guides/troubleshooting`
 
 ## Upgrading Existing Installs
 
@@ -209,6 +342,12 @@ php artisan optimize:clear
 ```
 
 See `docs-site/reference/upgrade.mdx` for the upgrade checklist and removed-class migration notes.
+
+For central graph migration and operations, use:
+
+- `docs-site/reference/qdrant-to-neo4j-migration.mdx`
+- `docs-site/guides/neo4j-ops-runbook.mdx`
+- `docs-site/guides/knowledge-base-security.mdx`
 
 ## License
 

@@ -5,8 +5,10 @@ namespace LaravelAIEngine\Services\Vector;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\DTOs\SearchDocument;
 use LaravelAIEngine\Services\Vector\VectorDriverManager;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
+use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
 use Throwable;
 
 class VectorSearchService
@@ -14,15 +16,21 @@ class VectorSearchService
     protected VectorDriverManager $driverManager;
     protected EmbeddingService $embeddingService;
     protected VectorAccessControl $accessControl;
+    protected SearchDocumentBuilder $documentBuilder;
+    protected ChunkingService $chunkingService;
 
     public function __construct(
         VectorDriverManager $driverManager,
         EmbeddingService $embeddingService,
-        VectorAccessControl $accessControl
+        VectorAccessControl $accessControl,
+        SearchDocumentBuilder $documentBuilder,
+        ChunkingService $chunkingService
     ) {
         $this->driverManager = $driverManager;
         $this->embeddingService = $embeddingService;
         $this->accessControl = $accessControl;
+        $this->documentBuilder = $documentBuilder;
+        $this->chunkingService = $chunkingService;
     }
 
     /**
@@ -169,9 +177,10 @@ class VectorSearchService
         try {
             $modelClass = get_class($model);
             $collectionName = $this->getCollectionName($modelClass);
+            $document = $this->buildSearchDocument($model);
 
             // Get indexable content from model
-            $content = $this->getIndexableContent($model);
+            $content = $document->content;
 
             if (empty($content)) {
                 Log::warning('No indexable content found', [
@@ -184,20 +193,20 @@ class VectorSearchService
             // Check if content needs to be split into multiple chunks
             $maxContentSize = config('ai-engine.vector.max_content_size', 5500);
             $multiChunkEnabled = config('ai-engine.vector.multi_chunk_enabled', true);
-            
-            if ($multiChunkEnabled && strlen($content) > $maxContentSize) {
-                // Split into multiple chunks and create multiple embeddings
-                return $this->indexWithMultipleChunks($model, $content, $collectionName, $userId);
+
+            $chunks = $this->buildChunksForDocument($document, $maxContentSize);
+
+            if ($multiChunkEnabled && count($chunks) > 1) {
+                return $this->indexWithMultipleChunks($model, $document, $chunks, $collectionName, $userId);
             }
 
             // Single chunk - standard indexing
             // Generate embedding
-            $embedding = $this->embeddingService->embed($content, $userId);
+            $chunkText = $chunks[0]['content'] ?? $content;
+            $embedding = $this->embeddingService->embed($chunkText, $userId);
 
             // Prepare metadata
-            $metadata = $this->getMetadata($model);
-            $metadata['chunk_index'] = 0;
-            $metadata['total_chunks'] = 1;
+            $metadata = $this->buildIndexMetadata($model, $document, $chunkText, 0, 1);
 
             // Upsert to vector database
             $driver = $this->driverManager->driver();
@@ -241,12 +250,15 @@ class VectorSearchService
             // Prepare content for batch embedding
             $contents = [];
             $validModels = [];
+            $documents = [];
 
             foreach ($models as $model) {
-                $content = $this->getIndexableContent($model);
+                $document = $this->buildSearchDocument($model);
+                $content = $document->primaryChunk();
                 if (!empty($content)) {
                     $contents[] = $content;
                     $validModels[] = $model;
+                    $documents[] = $document;
                 }
             }
 
@@ -263,7 +275,7 @@ class VectorSearchService
                 $vectors[] = [
                     'id' => (string) $model->id,
                     'vector' => $embeddings[$index],
-                    'metadata' => $this->getMetadata($model),
+                    'metadata' => $this->buildIndexMetadata($model, $documents[$index], $contents[$index], 0, 1),
                 ];
             }
 
@@ -299,7 +311,8 @@ class VectorSearchService
             $collectionName = $this->getCollectionName($modelClass);
 
             $driver = $this->driverManager->driver();
-            $success = $driver->delete($collectionName, [(string) $model->id]);
+            $ids = $this->discoverIndexedIdsForModel($driver, $collectionName, $model->id);
+            $success = $driver->delete($collectionName, $ids);
 
             if ($success) {
                 Log::info('Model removed from index', [
@@ -393,36 +406,7 @@ class VectorSearchService
      */
     protected function getIndexableContent(object $model): string
     {
-        // Check if model has custom method
-        if (method_exists($model, 'getVectorContent')) {
-            return $model->getVectorContent();
-        }
-
-        // Check if model has vectorizable fields defined
-        if (property_exists($model, 'vectorizable')) {
-            $fields = $model->vectorizable;
-            $content = [];
-
-            foreach ($fields as $field) {
-                if (isset($model->$field)) {
-                    $content[] = $model->$field;
-                }
-            }
-
-            return implode(' ', $content);
-        }
-
-        // Default: use common text fields
-        $commonFields = ['title', 'name', 'content', 'description', 'body', 'text'];
-        $content = [];
-
-        foreach ($commonFields as $field) {
-            if (isset($model->$field)) {
-                $content[] = $model->$field;
-            }
-        }
-
-        return implode(' ', $content);
+        return $this->buildSearchDocument($model)->content;
     }
 
     /**
@@ -431,34 +415,7 @@ class VectorSearchService
      */
     protected function getMetadata(object $model): array
     {
-        $metadata = [
-            'model_class' => get_class($model),
-            'model_id' => $model->id,
-            'created_at' => $model->created_at?->toIso8601String(),
-            'updated_at' => $model->updated_at?->toIso8601String(),
-            // Store timestamps as integers for range filtering
-            'created_at_ts' => $model->created_at?->timestamp,
-            'updated_at_ts' => $model->updated_at?->timestamp,
-        ];
-
-        // Add custom metadata if method exists
-        if (method_exists($model, 'getVectorMetadata')) {
-            $customMetadata = $model->getVectorMetadata();
-            
-            // Auto-convert any Carbon/DateTime fields to timestamps
-            foreach ($customMetadata as $key => $value) {
-                if ($value instanceof \Carbon\Carbon || $value instanceof \DateTimeInterface) {
-                    $metadata[$key] = $value->format('Y-m-d\TH:i:sP');
-                    $metadata[$key . '_ts'] = $value->getTimestamp();
-                } else {
-                    $metadata[$key] = $value;
-                }
-            }
-        } else {
-            $metadata = array_merge($metadata, $this->extractDateFieldsAsTimestamps($model));
-        }
-
-        return $metadata;
+        return $this->buildSearchDocument($model)->metadata;
     }
     
     /**
@@ -557,6 +514,10 @@ class VectorSearchService
             if ($model) {
                 $model->vector_score = $result['score'];
                 $model->vector_metadata = $result['metadata'] ?? $result['payload'] ?? [];
+                $model->matched_chunk_text = $model->vector_metadata['chunk_text'] ?? null;
+                $model->matched_chunk_index = $model->vector_metadata['chunk_index'] ?? null;
+                $model->entity_ref = $model->vector_metadata['entity_ref'] ?? $this->buildSearchDocument($model)->entityRef();
+                $model->graph_object = $model->vector_metadata['object'] ?? $this->buildSearchDocument($model)->object;
                 $hydrated->push($model);
             }
         }
@@ -875,43 +836,43 @@ class VectorSearchService
      * @param string|null $userId User ID for credit tracking
      * @return bool Success status
      */
-    protected function indexWithMultipleChunks(object $model, string $content, string $collectionName, ?string $userId = null): bool
+    protected function indexWithMultipleChunks(
+        object $model,
+        SearchDocument $document,
+        array $chunks,
+        string $collectionName,
+        ?string $userId = null
+    ): bool
     {
         $modelClass = get_class($model);
-        $maxContentSize = config('ai-engine.vector.max_content_size', 5500);
-        $chunkOverlap = config('ai-engine.vector.chunk_overlap', 200);
-        
-        // Split content into chunks with overlap
-        $chunks = $this->splitContentIntoChunks($content, $maxContentSize, $chunkOverlap);
         $totalChunks = count($chunks);
         
         Log::info('Indexing model with multiple chunks', [
             'model' => $modelClass,
             'id' => $model->id,
-            'original_size' => strlen($content),
+            'original_size' => strlen($document->content),
             'total_chunks' => $totalChunks,
         ]);
-        
-        // Prepare base metadata
-        $baseMetadata = $this->getMetadata($model);
-        $baseMetadata['total_chunks'] = $totalChunks;
-        
+
         // Generate embeddings and prepare points
         $points = [];
         $driver = $this->driverManager->driver();
         
         foreach ($chunks as $index => $chunk) {
             try {
+                $chunkText = $chunk['content'] ?? '';
+                if ($chunkText === '') {
+                    continue;
+                }
+
                 // Generate embedding for this chunk
-                $embedding = $this->embeddingService->embed($chunk, $userId);
+                $embedding = $this->embeddingService->embed($chunkText, $userId);
                 
                 // Create unique ID for this chunk: model_id_chunk_index
                 $chunkId = $model->id . '_chunk_' . $index;
                 
                 // Prepare metadata for this chunk
-                $metadata = $baseMetadata;
-                $metadata['chunk_index'] = $index;
-                $metadata['chunk_preview'] = substr($chunk, 0, 100) . '...';
+                $metadata = $this->buildIndexMetadata($model, $document, $chunkText, $index, $totalChunks);
                 
                 $points[] = [
                     'id' => $chunkId,
@@ -923,7 +884,7 @@ class VectorSearchService
                     'model' => $modelClass,
                     'id' => $model->id,
                     'chunk_index' => $index,
-                    'chunk_size' => strlen($chunk),
+                    'chunk_size' => strlen($chunkText),
                 ]);
                 
             } catch (\Exception $e) {
@@ -1018,8 +979,129 @@ class VectorSearchService
      */
     protected function deleteModelChunks($driver, string $collectionName, $modelId): void
     {
-        // Skip deletion - upsert will overwrite existing points with same ID
-        // Old chunks with different IDs will remain but won't affect search quality significantly
-        // To fully clean up, use --force flag which recreates the collection
+        $ids = $this->discoverIndexedIdsForModel($driver, $collectionName, $modelId);
+        if ($ids === []) {
+            return;
+        }
+
+        try {
+            $driver->delete($collectionName, $ids);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to delete model chunks before reindex', [
+                'collection' => $collectionName,
+                'model_id' => $modelId,
+                'ids' => $ids,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    protected function buildSearchDocument(object $model): SearchDocument
+    {
+        return $this->documentBuilder->build($model);
+    }
+
+    /**
+     * @return array<int, array{content:string,index:int}>
+     */
+    protected function buildChunksForDocument(SearchDocument $document, int $maxContentSize): array
+    {
+        $normalized = [];
+
+        foreach ($document->normalizedChunks() as $chunk) {
+            $chunkText = trim((string) ($chunk['content'] ?? ''));
+            if ($chunkText === '') {
+                continue;
+            }
+
+            if (strlen($chunkText) > $maxContentSize) {
+                foreach ($this->chunkingService->chunk($chunkText, [
+                    'chunk_size' => $maxContentSize,
+                    'overlap' => (int) config('ai-engine.vector.chunk_overlap', 200),
+                ]) as $splitChunk) {
+                    $normalized[] = [
+                        'content' => $splitChunk,
+                        'index' => count($normalized),
+                    ];
+                }
+
+                continue;
+            }
+
+            $normalized[] = [
+                'content' => $chunkText,
+                'index' => is_numeric($chunk['index'] ?? null) ? (int) $chunk['index'] : count($normalized),
+            ];
+        }
+
+        if ($normalized === []) {
+            return [[
+                'content' => $document->content,
+                'index' => 0,
+            ]];
+        }
+
+        return array_values($normalized);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function buildIndexMetadata(
+        object $model,
+        SearchDocument $document,
+        string $chunkText,
+        int $chunkIndex,
+        int $totalChunks
+    ): array {
+        return array_merge(
+            $document->metadata,
+            [
+                'model_class' => $document->modelClass,
+                'model_id' => $document->modelId,
+                'title' => $document->title,
+                'chunk_index' => $chunkIndex,
+                'total_chunks' => $totalChunks,
+                'chunk_text' => $chunkText,
+                'chunk_preview' => mb_substr($chunkText, 0, 200),
+                'entity_ref' => $document->entityRef(),
+                'object' => $document->object,
+                'app_slug' => $document->appSlug,
+                'source_node' => $document->sourceNode,
+                'scope_type' => $document->scopeType,
+                'scope_id' => $document->scopeId,
+                'scope_label' => $document->scopeLabel,
+            ]
+        );
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function discoverIndexedIdsForModel($driver, string $collectionName, string|int $modelId): array
+    {
+        $modelIdString = (string) $modelId;
+        $ids = [$modelIdString];
+        $offset = null;
+        $guard = 0;
+
+        do {
+            $page = $driver->scroll($collectionName, 200, $offset);
+
+            foreach (($page['points'] ?? []) as $point) {
+                $pointId = (string) ($point['id'] ?? '');
+                $metadata = $point['metadata'] ?? [];
+                $pointModelId = (string) ($metadata['model_id'] ?? '');
+
+                if ($pointModelId === $modelIdString || str_starts_with($pointId, $modelIdString . '_chunk_')) {
+                    $ids[] = $pointId;
+                }
+            }
+
+            $offset = $page['next_offset'] ?? null;
+            $guard++;
+        } while ($offset !== null && $guard < 100);
+
+        return array_values(array_unique(array_filter($ids)));
     }
 }

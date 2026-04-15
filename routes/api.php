@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\AIChatController;
 use LaravelAIEngine\Http\Controllers\Api\RagChatApiController;
 use LaravelAIEngine\Http\Controllers\Api\GenerateApiController;
+use LaravelAIEngine\Http\Controllers\Api\EngineCatalogController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\ActionExecutionController;
 use LaravelAIEngine\Http\Controllers\Api\ModelRecommendationController;
@@ -153,6 +154,20 @@ if (config('ai-engine.api.generate.enabled', true)) {
                 ->name('tts');
         });
 }
+
+Route::prefix('api/v1/ai')
+    ->middleware($resolveApiMiddleware('generate'))
+    ->name('ai-engine.catalog.api.')
+    ->group(function () {
+        Route::get('/models', [EngineCatalogController::class, 'models'])
+            ->name('models');
+
+        Route::get('/engines', [EngineCatalogController::class, 'engines'])
+            ->name('engines');
+
+        Route::get('/engines-with-models', [EngineCatalogController::class, 'enginesWithModels'])
+            ->name('engines-with-models');
+    });
 
 // Data Collector Chat Routes (v1)
 Route::prefix('api/v1/data-collector')

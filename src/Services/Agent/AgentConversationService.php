@@ -20,8 +20,10 @@ class AgentConversationService
         protected AutonomousRAGAgent $ragAgent,
         protected SelectedEntityContextService $selectedEntityContext,
         protected AgentSelectionService $selectionService,
-        protected ?LocaleResourceService $localeResources = null
+        protected ?LocaleResourceService $localeResources = null,
+        protected ?RoutingContextResolver $routingContextResolver = null
     ) {
+        $this->routingContextResolver ??= new RoutingContextResolver($this->selectedEntityContext);
     }
 
     public function executeSearchRAG(
@@ -37,10 +39,8 @@ class AgentConversationService
             'session_id' => $context->sessionId,
         ]);
 
-        $selectedEntity = $this->selectedEntityContext->getFromContext($context);
-        if ($selectedEntity) {
-            $options['selected_entity'] = $selectedEntity;
-        }
+        $options = $this->routingContextResolver->mergeConversationContext($context, $options);
+        $this->recordRoutingMetadata($context, $options);
 
         $result = $this->ragAgent->process(
             $message,
@@ -71,6 +71,9 @@ class AgentConversationService
 
             $context->metadata['tool_used'] = $result['tool'] ?? 'unknown';
             $context->metadata['fast_path'] = $result['fast_path'] ?? false;
+            if (!empty($result['decision_source'])) {
+                $context->metadata['decision_source'] = $result['decision_source'];
+            }
             if (!empty($result['metadata']) && is_array($result['metadata'])) {
                 $context->metadata['rag_last_metadata'] = $result['metadata'];
             }
@@ -111,6 +114,7 @@ class AgentConversationService
             'message' => substr($message, 0, 100),
             'session_id' => $context->sessionId,
         ]);
+        $this->recordRoutingMetadata($context, $options);
 
         $conversationHistory = $context->conversationHistory ?? [];
         $historyText = '';
@@ -159,6 +163,19 @@ PROMPT;
             message: $aiResponse->getContent(),
             context: $context
         );
+    }
+
+    protected function recordRoutingMetadata(UnifiedActionContext $context, array $options): void
+    {
+        foreach ([
+            'preclassified_route_mode' => 'route_mode',
+            'decision_path' => 'decision_path',
+            'decision_source' => 'decision_source',
+        ] as $optionKey => $metadataKey) {
+            if (!empty($options[$optionKey])) {
+                $context->metadata[$metadataKey] = $options[$optionKey];
+            }
+        }
     }
 
     protected function formatRagFailureMessage(array $result): string

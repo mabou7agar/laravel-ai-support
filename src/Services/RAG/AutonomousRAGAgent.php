@@ -78,6 +78,50 @@ class AutonomousRAGAgent
 
         $options['session_id'] = $sessionId;
         $options = $this->stateService->hydrateOptionsWithLastEntityList($sessionId, $options);
+        $routeMode = (string) ($options['preclassified_route_mode'] ?? '');
+
+        if ($routeMode === 'structured_query') {
+            $context = $this->contextService->build($message, $conversationHistory, $userId, $options);
+            $decision = $this->decisionService->fallbackDecisionForMessage(
+                $message,
+                $context,
+                [],
+                'preclassified structured_query; bypassing autonomous tool selection'
+            );
+            $decision['decision_source'] = 'heuristic';
+
+            Log::channel('ai-engine')->info('AutonomousRAGAgent: bypassed to structured tool', [
+                'session_id' => $sessionId,
+                'user_id' => $userId,
+                'tool' => $decision['tool'] ?? 'db_query',
+                'duration_ms' => round((microtime(true) - $startTime) * 1000),
+            ]);
+
+            return $this->executeTool($decision, $message, $sessionId, $userId, $conversationHistory, $options);
+        }
+
+        if (!empty($options['force_rag']) || in_array($routeMode, ['semantic_retrieval', 'contextual_follow_up'], true)) {
+            $decision = [
+                'tool' => 'vector_search',
+                'reasoning' => !empty($options['force_rag'])
+                    ? 'force_rag enabled; bypassing autonomous tool selection'
+                    : "preclassified {$routeMode}; bypassing autonomous tool selection",
+                'parameters' => [
+                    'query' => $message,
+                    'limit' => $this->policy->itemsPerPage(),
+                ],
+                'decision_source' => !empty($options['force_rag']) ? 'forced' : 'heuristic',
+            ];
+
+            Log::channel('ai-engine')->info('AutonomousRAGAgent: bypassed to vector_search', [
+                'session_id' => $sessionId,
+                'user_id' => $userId,
+                'route_mode' => $routeMode,
+                'duration_ms' => round((microtime(true) - $startTime) * 1000),
+            ]);
+
+            return $this->executeTool($decision, $message, $sessionId, $userId, $conversationHistory, $options);
+        }
 
         // Build context for AI with available tools and models
         $context = $this->contextService->build($message, $conversationHistory, $userId, $options);
@@ -196,7 +240,9 @@ class AutonomousRAGAgent
         array $conversationHistory,
         array $options
     ): array {
-        $result = $this->dbQuery($params, $userId, $options);
+        $result = $this->dbQuery($params, $userId, array_merge($options, [
+            'original_message' => $message,
+        ]));
         if (!$result['success'] && ($result['should_route_to_node'] ?? false)) {
             return $this->routeToNodeForModel($params, $message, $sessionId, $userId, $conversationHistory, $options);
         }
@@ -339,7 +385,8 @@ class AutonomousRAGAgent
             $userId,
             $options,
             $this->structuredDataDependencies(),
-            $page
+            $page,
+            $params['query'] ?? ($options['original_message'] ?? null)
         );
     }
 

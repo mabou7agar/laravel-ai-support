@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Services\Vector;
 use OpenAI\Client as OpenAIClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Services\CreditManager;
 
 class EmbeddingService
@@ -289,6 +290,13 @@ class EmbeddingService
             return [];
         }
 
+        if ($this->useFakeEmbeddings) {
+            return array_values(array_map(
+                fn ($text): array => $this->buildDeterministicEmbedding((string) $text),
+                $texts
+            ));
+        }
+
         $embeddings = [];
         $uncachedTexts = [];
         $uncachedIndices = [];
@@ -340,8 +348,18 @@ class EmbeddingService
                     }
 
                     // Track credits
-                    $tokensUsed = $response->usage->totalTokens ?? 0;
-                    $this->creditManager->deductCredits($userId, $tokensUsed, 'embedding');
+                    $tokensUsed = (float) ($response->usage->totalTokens ?? 0);
+                    if ($userId !== null && $tokensUsed > 0 && (bool) config('ai-engine.credits.enabled', true)) {
+                        $this->creditManager->deductCredits(
+                            (string) $userId,
+                            new AIRequest(
+                                prompt: 'embedding batch',
+                                engine: config('ai-engine.default', 'openai'),
+                                model: config('ai-engine.default_model', 'gpt-4o')
+                            ),
+                            $tokensUsed
+                        );
+                    }
                 }
 
                 Log::info('Batch embeddings generated', [

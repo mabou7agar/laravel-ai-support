@@ -1,0 +1,175 @@
+---
+title: Graph Relation Modeling
+description: How to model Eloquent relations, scope edges, and graph-safe search documents for GraphRAG.
+---
+
+## Goal
+
+GraphRAG works best when relations are published as real edges, not copied text.
+
+The preferred split is:
+
+- `toSearchDocument()` for semantic text and chunking
+- `toGraphObject()` for safe result payloads
+- `getGraphRelations()` for graph topology
+- `getAccessScope()` for authorization edges
+
+## Model Contracts
+
+Prefer implementing:
+
+- `toSearchDocument()`
+- `toGraphObject()`
+- `getGraphRelations()`
+- `getAccessScope()`
+
+Legacy compatibility methods still work, but they should not be the long-term source of graph shape.
+
+## Relation Rules
+
+Use graph relations for:
+
+- ownership
+- membership
+- containment
+- dependency
+- reply/thread linkage
+- assignment
+- attachments
+- customer/project/workspace linking
+
+Do not use graph relations for:
+
+- dumping large related text blobs into a parent entity
+- exposing hidden fields through relation payloads
+- replacing access checks
+
+## Example: Project with Owner and Workspace
+
+```php
+public function toSearchDocument(): array
+{
+    return [
+        'title' => $this->name,
+        'content' => $this->description ?? '',
+        'keywords' => [$this->status, 'project'],
+    ];
+}
+
+public function toGraphObject(): array
+{
+    return [
+        'id' => $this->getKey(),
+        'name' => $this->name,
+        'status' => $this->status,
+        'workspace_id' => $this->workspace_id,
+    ];
+}
+
+public function getGraphRelations(): array
+{
+    return [
+        [
+            'type' => 'OWNED_BY',
+            'target_model' => \App\Models\User::class,
+            'target_id' => $this->user_id,
+        ],
+        [
+            'type' => 'IN_WORKSPACE',
+            'target_model' => \App\Models\Workspace::class,
+            'target_id' => $this->workspace_id,
+        ],
+    ];
+}
+
+public function getAccessScope(): array
+{
+    return [
+        'canonical_user_id' => $this->user_id,
+        'scope_type' => 'workspace',
+        'scope_id' => $this->workspace_id,
+    ];
+}
+```
+
+## Scope Modeling
+
+Not every app has workspaces. Scope is optional and app-specific.
+
+Common patterns:
+
+- direct user-owned entities
+- project-scoped entities
+- workspace-scoped entities
+- organization/team/account-scoped entities
+
+Recommended edges:
+
+- `User -> CAN_ACCESS -> Entity`
+- `User -> MEMBER_OF -> Scope`
+- `Entity -> BELONGS_TO -> Scope`
+
+Use direct entity access when no scope container exists.
+
+## Relation Text vs Graph Edges
+
+If related information helps semantic recall, include a small bounded section in `toSearchDocument()`.
+
+Example:
+
+```php
+'related_context' => [
+    'owner' => $this->owner?->name,
+    'workspace' => $this->workspace?->name,
+]
+```
+
+But do not confuse that with graph structure. The relation still needs a real edge in `getGraphRelations()`.
+
+## Edge Naming Guidance
+
+Prefer specific edge types over generic `RELATED_TO`.
+
+Good examples:
+
+- `OWNED_BY`
+- `ASSIGNED_TO`
+- `IN_PROJECT`
+- `IN_WORKSPACE`
+- `DEPENDS_ON`
+- `BLOCKED_BY`
+- `SENT_TO`
+- `SENT_BY`
+- `REPLIED_TO`
+- `HAS_ATTACHMENT`
+
+This improves traversal quality and planner behavior.
+
+## Result Contract
+
+Graph retrieval should return:
+
+- `model_id`
+- `model_class`
+- `model_type`
+- `entity_ref`
+- `object`
+
+`entity_ref` is the stable handle for follow-up actions.
+
+`object` is the sanitized display payload.
+
+## Anti-Patterns
+
+Avoid:
+
+- indexing `$fillable` blindly as the authoritative semantic content path
+- treating `toRAGContent()` as list, detail, summary, and graph payload all at once
+- flattening user/workspace text into every entity instead of publishing edges
+- returning hidden or internal attributes from `toGraphObject()`
+
+## Related Docs
+
+- [GraphRAG with Neo4j](/guides/graph-rag-neo4j)
+- [Knowledge Base Security](/guides/knowledge-base-security)
+- [End-to-End Graph Walkthrough](/guides/end-to-end-graph-walkthrough)

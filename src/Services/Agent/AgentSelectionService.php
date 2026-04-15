@@ -14,6 +14,11 @@ class AgentSelectionService
     {
     }
 
+    protected function documentBuilder(): \LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder
+    {
+        return app(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class);
+    }
+
     public function detectsOptionSelection(string $message, UnifiedActionContext $context): bool
     {
         $trimmed = trim($message);
@@ -212,13 +217,15 @@ class AgentSelectionService
             return $response;
         }
 
-        $context->metadata['selected_entity_context'] = [
-            'entity_id' => $entityId,
-            'entity_type' => $entityType,
-            'entity_data' => $fullEntity,
-            'model_class' => $modelClass,
-            'source_node' => $sourceNode,
-            'selected_via' => 'positional_reference',
+            $context->metadata['selected_entity_context'] = [
+                'entity_id' => $entityId,
+                'entity_type' => $entityType,
+                'entity_data' => $fullEntity,
+                'object' => $fullEntity['object'] ?? null,
+                'entity_ref' => $fullEntity['entity_ref'] ?? null,
+                'model_class' => $modelClass,
+                'source_node' => $sourceNode,
+                'selected_via' => 'positional_reference',
             'position' => $position,
             'suggested_action_content' => null,
         ];
@@ -272,6 +279,14 @@ class AgentSelectionService
                 'start_position' => $queryState['start_position'] ?? 1,
                 'end_position' => $queryState['end_position'] ?? count($entityIds),
                 'entity_data' => $queryState['entity_data'] ?? [],
+                'entity_refs' => array_values(array_filter(array_map(
+                    static fn ($source) => is_array($source['entity_ref'] ?? null) ? $source['entity_ref'] : null,
+                    $sources
+                ))),
+                'objects' => array_values(array_filter(array_map(
+                    static fn ($source) => is_array($source['object'] ?? null) ? $source['object'] : null,
+                    $sources
+                ))),
             ];
         }
 
@@ -304,6 +319,8 @@ class AgentSelectionService
                 'entity_type' => $source['model_type'] ?? $entityType,
                 'model_class' => $source['model_class'] ?? $defaultModelClass,
                 'source_node' => $source['source_node'] ?? $defaultSourceNode,
+                'entity_ref' => $source['entity_ref'] ?? null,
+                'object' => $source['object'] ?? null,
                 'label' => $option['text'] ?? null,
             ];
         }
@@ -424,6 +441,12 @@ class AgentSelectionService
                         'entity_type' => $selection['entity_type'] ?? class_basename($modelClass),
                         'model_class' => $modelClass,
                         'source_node' => $selection['source_node'] ?? null,
+                        'entity_ref' => $this->documentBuilder()->buildEntityRef($record, [
+                            'source_node' => $selection['source_node'] ?? null,
+                        ]),
+                        'object' => $this->documentBuilder()->buildGraphObject($record, [
+                            'source_node' => $selection['source_node'] ?? null,
+                        ]),
                         'selected_via' => 'numbered_option',
                         'detail_excerpt' => substr(trim(strip_tags($detail)), 0, 800),
                         'selected_at' => now()->toIso8601String(),
@@ -451,6 +474,8 @@ class AgentSelectionService
                 'entity_type' => $selection['entity_type'] ?? 'record',
                 'model_class' => $selection['model_class'] ?? null,
                 'source_node' => $selection['source_node'],
+                'entity_ref' => $selection['entity_ref'] ?? null,
+                'object' => $selection['object'] ?? null,
                 'selected_via' => 'numbered_option',
                 'selected_at' => now()->toIso8601String(),
             ];
@@ -467,6 +492,8 @@ class AgentSelectionService
                 'entity_type' => $selection['entity_type'] ?? 'item',
                 'model_class' => $selection['model_class'] ?? null,
                 'source_node' => $selection['source_node'] ?? null,
+                'entity_ref' => $selection['entity_ref'] ?? null,
+                'object' => $selection['object'] ?? null,
                 'selected_via' => 'numbered_option',
                 'selected_at' => now()->toIso8601String(),
             ];
@@ -581,7 +608,13 @@ class AgentSelectionService
                 return null;
             }
 
-            return $entity->toArray();
+            $document = $this->documentBuilder()->build($entity);
+
+            return [
+                ...$entity->toArray(),
+                'entity_ref' => $document->entityRef(),
+                'object' => $document->object,
+            ];
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('Error fetching entity details', [
                 'entity_id' => $entityId,

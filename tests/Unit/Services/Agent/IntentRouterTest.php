@@ -36,7 +36,7 @@ class IntentRouterTest extends TestCase
                 return true;
             }))
             ->andReturn(AIResponse::success(
-                "ACTION: route_to_node\nRESOURCE: billing\nREASON: invoice data belongs to that node",
+                '{"action":"route_to_node","resource_name":"billing","reasoning":"invoice data belongs to that node"}',
                 EngineEnum::from('openai'),
                 EntityEnum::from('gpt-4o-mini')
             ));
@@ -68,6 +68,7 @@ class IntentRouterTest extends TestCase
         $this->assertSame('invoice data belongs to that node', $decision['reasoning']);
         $this->assertStringContainsString('show_invoice', $capturedPrompt);
         $this->assertStringContainsString('"entity_id": 42', $capturedPrompt);
+        $this->assertStringContainsString('Respond with JSON ONLY', $capturedPrompt);
     }
 
     public function test_route_includes_remote_collectors_and_nodes_in_prompt(): void
@@ -81,7 +82,7 @@ class IntentRouterTest extends TestCase
                 return true;
             }))
             ->andReturn(AIResponse::success(
-                "ACTION: start_collector\nRESOURCE: create_invoice\nREASON: this is a create flow",
+                '{"action":"start_collector","resource_name":"create_invoice","reasoning":"this is a create flow"}',
                 EngineEnum::from('openai'),
                 EntityEnum::from('gpt-4o-mini')
             ));
@@ -133,7 +134,7 @@ class IntentRouterTest extends TestCase
 
         $this->assertSame('conversational', $decision['action']);
         $this->assertNull($decision['resource_name']);
-        $this->assertSame('Default fallback', $decision['reasoning']);
+        $this->assertSame('Heuristic fallback: greeting or general chat', $decision['reasoning']);
     }
 
     public function test_forwarded_requests_cannot_reroute_to_another_node(): void
@@ -142,7 +143,7 @@ class IntentRouterTest extends TestCase
         $ai->shouldReceive('generate')
             ->once()
             ->andReturn(AIResponse::success(
-                "ACTION: route_to_node\nRESOURCE: crm\nREASON: customer data belongs there",
+                '{"action":"route_to_node","resource_name":"crm","reasoning":"customer data belongs there"}',
                 EngineEnum::from('openai'),
                 EntityEnum::from('gpt-4o-mini')
             ));
@@ -171,7 +172,7 @@ class IntentRouterTest extends TestCase
                 return true;
             }))
             ->andReturn(AIResponse::success(
-                "ACTION: search_rag\nRESOURCE: none\nREASON: local mode",
+                '{"action":"search_rag","resource_name":null,"reasoning":"local mode"}',
                 EngineEnum::from('openai'),
                 EntityEnum::from('gpt-4o-mini')
             ));

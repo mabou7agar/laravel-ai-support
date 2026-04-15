@@ -59,6 +59,8 @@ class AIModelRegistry
      */
     public function getRecommendedModel(string $task, ?string $provider = null, bool $offlineMode = false): ?AIModel
     {
+        $task = $this->normalizeTask($task);
+
         // If offline mode or no internet, prefer Ollama
         if ($offlineMode || !$this->hasInternetConnection()) {
             $ollamaModel = $this->getRecommendedOllamaModel($task);
@@ -73,14 +75,19 @@ class AIModelRegistry
             $query->where('provider', $provider);
         }
 
+        $models = $query->get();
+
         $model = match ($task) {
-            'vision' => $query->vision()->orderBy('pricing->input')->first(),
-            'coding' => $query->whereJsonContains('capabilities', 'coding')->first(),
-            'reasoning' => $query->whereJsonContains('capabilities', 'reasoning')->first(),
-            'fast' => $query->orderBy('pricing->input')->first(),
-            'cheap' => $query->orderBy('pricing->input')->first(),
-            'quality' => $query->orderByDesc('context_window->input')->first(),
-            default => $query->chat()->orderBy('pricing->input')->first(),
+            'vision' => $this->sortByLowestInputPrice($models->filter(fn (AIModel $model): bool => $model->isVisionModel()))->first(),
+            'coding' => $models->first(fn (AIModel $model): bool => in_array('coding', $model->capabilities ?? [], true)),
+            'reasoning' => $models->first(fn (AIModel $model): bool => in_array('reasoning', $model->capabilities ?? [], true)),
+            'fast' => $this->sortByLowestInputPrice($models)->first(),
+            'cheap' => $this->sortByLowestInputPrice($models)->first(),
+            'performance' => $this->getBestPerformanceModel($models),
+            'quality' => $this->sortByLargestContext($models)->first(),
+            default => $this->sortByLowestInputPrice(
+                $models->filter(fn (AIModel $model): bool => in_array('chat', $model->capabilities ?? [], true))
+            )->first(),
         };
 
         // Fallback to Ollama if no online model available
@@ -104,15 +111,84 @@ class AIModelRegistry
             'reasoning' => $query->orderByDesc('context_window->input')->first(),
             'fast' => $query->orderBy('model_id')->first(), // Smaller models are faster
             'cheap' => $query->first(), // Ollama is free
+            'performance' => $query->orderByDesc('context_window->input')->first(),
             'quality' => $query->orderByDesc('context_window->input')->first(),
             default => $query->first(),
         };
     }
 
+    protected function normalizeTask(string $task): string
+    {
+        return match (strtolower(trim($task))) {
+            'cost' => 'cheap',
+            'speed' => 'fast',
+            default => strtolower(trim($task)),
+        };
+    }
+
+    protected function getBestPerformanceModel(Collection $models): ?AIModel
+    {
+        if ($models->isEmpty()) {
+            return null;
+        }
+
+        /** @var AIModel|null $best */
+        $best = $models
+            ->sortByDesc(fn (AIModel $model): float => $this->performanceScore($model))
+            ->first();
+
+        return $best;
+    }
+
+    protected function performanceScore(AIModel $model): float
+    {
+        $context = (float) ($model->context_window['input'] ?? 0);
+        $price = $model->pricing['input'] ?? null;
+        $price = is_numeric($price) ? (float) $price : null;
+
+        $score = 0.0;
+        $score += min($context / 100000, 4.0);
+        $score += $model->supports_streaming ? 1.0 : 0.0;
+        $score += $model->supports_function_calling ? 1.0 : 0.0;
+        $score += $model->supports_vision ? 0.5 : 0.0;
+
+        if ($price === null) {
+            $score += 0.5;
+        } elseif ($price <= 0.0002) {
+            $score += 3.0;
+        } elseif ($price <= 0.001) {
+            $score += 2.2;
+        } elseif ($price <= 0.005) {
+            $score += 1.5;
+        } elseif ($price <= 0.02) {
+            $score += 0.8;
+        } else {
+            $score += 0.3;
+        }
+
+        return $score;
+    }
+
+    protected function sortByLowestInputPrice(Collection $models): Collection
+    {
+        return $models->sortBy(function (AIModel $model): float {
+            $price = $model->pricing['input'] ?? null;
+
+            return is_numeric($price) ? (float) $price : INF;
+        })->values();
+    }
+
+    protected function sortByLargestContext(Collection $models): Collection
+    {
+        return $models->sortByDesc(function (AIModel $model): int {
+            return (int) ($model->context_window['input'] ?? 0);
+        })->values();
+    }
+
     /**
      * Check if internet connection is available
      */
-    protected function hasInternetConnection(): bool
+    public function hasInternetConnection(): bool
     {
         try {
             // Quick check to OpenAI (most common provider)

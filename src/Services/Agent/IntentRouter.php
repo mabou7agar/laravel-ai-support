@@ -18,8 +18,14 @@ class IntentRouter
         protected AIEngineService $ai,
         protected NodeRegistryService $nodeRegistry,
         protected SelectedEntityContextService $selectedEntityContext,
-        protected ?AgentManifestService $manifestService = null
+        protected ?AgentManifestService $manifestService = null,
+        protected ?MessageRoutingClassifier $messageClassifier = null,
+        protected ?RoutingContextResolver $routingContextResolver = null
     ) {
+        $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
+            ? app(MessageRoutingClassifier::class)
+            : new MessageRoutingClassifier();
+        $this->routingContextResolver ??= new RoutingContextResolver($this->selectedEntityContext);
     }
 
     public function route(string $message, UnifiedActionContext $context, array $options = []): array
@@ -58,7 +64,7 @@ class IntentRouter
         ]);
 
         return $this->enforceForwardedRequestPolicy(
-            $this->parseDecision($rawResponse),
+            $this->parseDecision($rawResponse, $message, $context, $options),
             $options
         );
     }
@@ -314,10 +320,8 @@ Allowed actions:
 - search_rag
 - conversational
 
-Respond with EXACTLY:
-ACTION: <start_collector|use_tool|route_to_node|resume_session|pause_and_handle|search_rag|conversational>
-RESOURCE: <name or "none">
-REASON: <one short sentence>
+Respond with JSON ONLY using this schema:
+{"action":"start_collector|use_tool|route_to_node|resume_session|pause_and_handle|search_rag|conversational","resource_name":"name or null","reasoning":"one short sentence"}
 PROMPT;
     }
 
@@ -469,29 +473,72 @@ PROMPT;
         return implode("\n", $lines);
     }
 
-    protected function parseDecision(string $response): array
+    protected function parseDecision(string $response, string $message, UnifiedActionContext $context, array $options = []): array
     {
-        $decision = [
-            'action' => 'conversational',
-            'resource_name' => null,
-            'reasoning' => 'Default fallback',
+        $allowedActions = [
+            'start_collector',
+            'use_tool',
+            'route_to_node',
+            'resume_session',
+            'pause_and_handle',
+            'search_rag',
+            'conversational',
         ];
 
-        if (preg_match('/ACTION:\s*(\w+)/i', $response, $matches)) {
-            $decision['action'] = strtolower(trim($matches[1]));
+        $decoded = $this->decodeRouterDecision($response);
+        $action = strtolower(trim((string) ($decoded['action'] ?? '')));
+
+        if (!in_array($action, $allowedActions, true)) {
+            $classification = $this->messageClassifier->classify(
+                $message,
+                $this->routingContextResolver->signalsFromContext($context, $options)
+            );
+
+            return [
+                'action' => $classification['route'] === 'search_rag' ? 'search_rag' : 'conversational',
+                'resource_name' => null,
+                'reasoning' => 'Heuristic fallback: ' . $classification['reason'],
+                'decision_source' => 'heuristic_fallback',
+            ];
         }
 
-        if (preg_match('/RESOURCE:\s*(.+?)(?:\n|$)/i', $response, $matches)) {
-            $resourceName = trim($matches[1]);
-            if ($resourceName !== 'none' && $resourceName !== 'null') {
-                $decision['resource_name'] = $resourceName;
+        $resourceName = $decoded['resource_name'] ?? null;
+        if (!is_string($resourceName) || trim($resourceName) === '' || in_array(strtolower(trim($resourceName)), ['none', 'null'], true)) {
+            $resourceName = null;
+        }
+
+        $reasoning = trim((string) ($decoded['reasoning'] ?? 'AI routing decision'));
+
+        return [
+            'action' => $action,
+            'resource_name' => $resourceName,
+            'reasoning' => $reasoning !== '' ? $reasoning : 'AI routing decision',
+            'decision_source' => 'router_ai',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function decodeRouterDecision(string $response): array
+    {
+        $trimmed = trim($response);
+        if ($trimmed === '') {
+            return [];
+        }
+
+        $decoded = json_decode($trimmed, true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+
+        if (preg_match('/\{.*\}/s', $trimmed, $matches) === 1) {
+            $decoded = json_decode($matches[0], true);
+            if (is_array($decoded)) {
+                return $decoded;
             }
         }
 
-        if (preg_match('/REASON:\s*(.+)/i', $response, $matches)) {
-            $decision['reasoning'] = trim($matches[1]);
-        }
-
-        return $decision;
+        return [];
     }
 }

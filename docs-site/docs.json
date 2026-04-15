@@ -28,6 +28,9 @@
               "guides/single-app-setup",
               "guides/configuration",
               "guides/model-config-tools",
+              "guides/graph-relation-modeling",
+              "guides/knowledge-base-security",
+              "guides/end-to-end-graph-walkthrough",
               "guides/flutter-dio-integration",
               "guides/conversation-sessions",
               "guides/direct-generation-recipes",
@@ -35,6 +38,7 @@
               "guides/data-collectors",
               "guides/data-collector-recipes",
               "guides/rag-indexing",
+              "guides/graph-rag-neo4j",
               "guides/chat-flow-examples",
               "guides/copy-paste-playbooks"
             ]
@@ -52,6 +56,7 @@
               "guides/admin-ui",
               "guides/localization",
               "guides/policy-learning",
+              "guides/neo4j-ops-runbook",
               "guides/testing-playbook",
               "guides/troubleshooting"
             ]
@@ -63,6 +68,7 @@
               "reference/api-reference",
               "reference/data-collector-api",
               "reference/env-reference",
+              "reference/qdrant-to-neo4j-migration",
               "reference/upgrade"
             ]
           }

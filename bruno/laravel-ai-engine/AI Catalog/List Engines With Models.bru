@@ -1,0 +1,15 @@
+meta {
+  name: List Engines With Models
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/engines-with-models
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}

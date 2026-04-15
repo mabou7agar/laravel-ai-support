@@ -11,6 +11,10 @@ This page gives exact, separate requests for direct generation.
 - use `AIEngineService` when you want direct execution from an `AIRequest`
 - both paths resolve drivers through the same `DriverRegistry`
 
+If you omit `engine` and pass only a `model`, direct requests now resolve the provider from the model registry plus configured provider availability. By default this prefers the model's native provider before OpenRouter-style fallbacks.
+
+For text requests, you can also omit both `engine` and `model` and send a `preference` such as `cost`, `speed`, `performance`, or `quality`.
+
 ## Built-in HTTP endpoints
 
 - `POST /api/v1/ai/generate/text`
@@ -72,8 +76,7 @@ curl -X POST https://your-app.test/api/v1/ai/generate/text \
   -H "Content-Type: application/json" \
   -d '{
     "prompt":"Write a concise follow-up email for unpaid invoice #124",
-    "engine":"openai",
-    "model":"gpt-4o-mini",
+    "preference":"speed",
     "temperature":0.2,
     "max_tokens":300
   }'

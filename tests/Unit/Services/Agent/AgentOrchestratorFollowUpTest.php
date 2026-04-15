@@ -50,13 +50,7 @@ class AgentOrchestratorFollowUpTest extends UnitTestCase
         $existingContext->persist();
 
         $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldReceive('route')
-            ->once()
-            ->andReturn([
-                'action' => 'search_rag',
-                'resource_name' => null,
-                'reasoning' => 'Follow-up about selected invoice',
-            ]);
+        $intentRouter->shouldNotReceive('route');
 
         $ragAgent = Mockery::mock(AutonomousRAGAgent::class);
         $ragAgent->shouldReceive('process')

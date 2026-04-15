@@ -44,10 +44,14 @@ class CoreServiceRegistrar
         });
 
         $app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, fn () => new \LaravelAIEngine\Services\Memory\MemoryManager());
+        $app->singleton(\LaravelAIEngine\Services\RequestRouteResolver::class, fn ($app) => new \LaravelAIEngine\Services\RequestRouteResolver(
+            $app->make(\LaravelAIEngine\Services\AIModelRegistry::class)
+        ));
         $app->singleton(\LaravelAIEngine\Services\AIEngineService::class, fn ($app) => new \LaravelAIEngine\Services\AIEngineService(
             $app->make(CreditManager::class),
             $app->make(ConversationManager::class),
-            $app->make(DriverRegistry::class)
+            $app->make(DriverRegistry::class),
+            $app->make(\LaravelAIEngine\Services\RequestRouteResolver::class)
         ));
         $app->singleton(\LaravelAIEngine\Support\Fal\FalCharacterStore::class, fn () => new \LaravelAIEngine\Support\Fal\FalCharacterStore());
         $app->singleton(\LaravelAIEngine\Services\Fal\FalReferencePackGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalReferencePackGenerationService(

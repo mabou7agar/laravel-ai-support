@@ -17,6 +17,8 @@ tags:
     description: Chat, retrieval, collections, and conversation endpoints.
   - name: Actions
     description: Interactive action execution endpoints.
+  - name: AI Catalog
+    description: Public engine and model catalog endpoints.
   - name: AI Generation
     description: Direct text, image, transcription, and text-to-speech APIs.
   - name: Data Collectors
@@ -364,6 +366,57 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/JsonObject'
+
+  /api/v1/ai/models:
+    get:
+      tags: [AI Catalog]
+      summary: List available models
+      parameters:
+        - name: engine
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional engine filter such as `openai` or `openrouter`.
+      responses:
+        '200':
+          description: Flat model catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCatalogResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/engines:
+    get:
+      tags: [AI Catalog]
+      summary: List configured engines
+      responses:
+        '200':
+          description: Engine summary catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngineSummaryResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/engines-with-models:
+    get:
+      tags: [AI Catalog]
+      summary: List engines with nested models
+      responses:
+        '200':
+          description: Engine catalog with nested models
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngineCatalogResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
 
   /api/v1/ai/generate/text:
     post:
@@ -1426,6 +1479,9 @@ components:
           type: string
         model:
           type: string
+        preference:
+          type: string
+          enum: [cost, cheap, speed, fast, performance, quality]
         system_prompt:
           type: string
         max_tokens:
@@ -1434,6 +1490,124 @@ components:
           type: number
         parameters:
           $ref: '#/components/schemas/JsonObject'
+    ModelCatalogEntry:
+      type: object
+      properties:
+        engine:
+          type: string
+        provider:
+          type: string
+        model_id:
+          type: string
+        name:
+          type: string
+        source:
+          type: string
+          enum: [config, database]
+        capabilities:
+          type: array
+          items:
+            type: string
+        supports_streaming:
+          type: boolean
+          nullable: true
+        supports_vision:
+          type: boolean
+          nullable: true
+        supports_function_calling:
+          type: boolean
+          nullable: true
+    ModelCatalogResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            models:
+              type: array
+              items:
+                $ref: '#/components/schemas/ModelCatalogEntry'
+            count:
+              type: integer
+            engine:
+              type: string
+              nullable: true
+    EngineSummaryEntry:
+      type: object
+      properties:
+        engine:
+          type: string
+        name:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        configured:
+          type: boolean
+        model_count:
+          type: integer
+        default_model:
+          type: string
+          nullable: true
+    EngineCatalogEntry:
+      type: object
+      properties:
+        engine:
+          type: string
+        name:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        configured:
+          type: boolean
+        default_model:
+          type: string
+          nullable: true
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelCatalogEntry'
+    EngineSummaryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            engines:
+              type: array
+              items:
+                $ref: '#/components/schemas/EngineSummaryEntry'
+            count:
+              type: integer
+            default_engine:
+              type: string
+            default_model:
+              type: string
+    EngineCatalogResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            engines:
+              type: array
+              items:
+                $ref: '#/components/schemas/EngineCatalogEntry'
+            count:
+              type: integer
+            default_engine:
+              type: string
+            default_model:
+              type: string
     GenerateImageRequest:
       type: object
       required: [prompt]

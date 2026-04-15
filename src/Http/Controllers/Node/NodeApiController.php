@@ -98,9 +98,10 @@ class NodeApiController extends Controller
                 ]);
 
                 foreach ($searchResults as $result) {
+                    $document = app(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class)->build($result);
                     $results[] = [
                         'id' => $result->id ?? null,
-                        'content' => $this->extractContent($result),
+                        'content' => $result->matched_chunk_text ?? $this->extractContent($result),
                         'score' => $result->vector_score ?? 0,
                         'model_class' => $collection,
                         'model_type' => class_basename($collection),
@@ -108,6 +109,12 @@ class NodeApiController extends Controller
                             'model_class' => $collection,
                             'model_type' => class_basename($collection),
                             'model_id' => $result->id ?? null,
+                            'entity_ref' => $document->entityRef(),
+                            'object' => $document->object,
+                            'source_node' => $document->sourceNode,
+                            'app_slug' => $document->appSlug,
+                            'scope_type' => $document->scopeType,
+                            'scope_id' => $document->scopeId,
                         ],
                         'vector_metadata' => $result->vector_metadata ?? [
                             'model_class' => $collection,
@@ -116,6 +123,10 @@ class NodeApiController extends Controller
                         'title' => $result->title ?? $result->name ?? $result->subject ?? null,
                         'name' => $result->name ?? null,
                         'body' => $result->body ?? null,
+                        'entity_ref' => $document->entityRef(),
+                        'object' => $document->object,
+                        'source_node' => $document->sourceNode,
+                        'app_slug' => $document->appSlug,
                     ];
                 }
             }
@@ -424,6 +435,14 @@ class NodeApiController extends Controller
 
     protected function extractContent($model): string
     {
+        if (!empty($model->matched_chunk_text) && is_string($model->matched_chunk_text)) {
+            return $model->matched_chunk_text;
+        }
+
+        if (method_exists($model, 'toRAGDetail')) {
+            return $model->toRAGDetail();
+        }
+
         if (method_exists($model, 'getVectorContent')) {
             return $model->getVectorContent();
         }
@@ -456,6 +475,8 @@ class NodeApiController extends Controller
                     'entity_type' => $entityType,
                     'model_class' => $context['model_class'] ?? null,
                     'source_node' => $context['source_node'] ?? null,
+                    'entity_ref' => $context['entity_ref'] ?? null,
+                    'object' => $context['object'] ?? null,
                 ];
             }
         }

@@ -13,12 +13,15 @@ flowchart TD
   RT --> UM["UnifiedEngineManager / EngineProxy"]
   RT --> SVC["AIEngineService"]
   SVC --> REG["DriverRegistry"]
-  ORCH --> IR["IntentRouter"]
+  ORCH --> CLS["Heuristic Classifier"]
+  CLS --> IR["IntentRouter (Ambiguous Only)"]
   ORCH --> PL["AgentPlanner"]
   PL --> EX["AgentActionExecutionService"]
   EX --> TOOL["Tool / Collector / RAG"]
+  TOOL --> GRAPH["Neo4j Graph / KB"]
   TOOL --> NODE["Local Node or Remote Node"]
   NODE --> RF["AgentResponseFinalizer"]
+  GRAPH --> RF
   RF --> RESP["Standard API Envelope"]
 ```
 
@@ -41,6 +44,13 @@ The removed `AIEngineManager` and `EngineBuilder` are no longer part of the runt
 - `AgentConversationService`: session + context continuity
 - `AgentResponseFinalizer`: normalize final response and metadata
 
+Normal routing now prefers deterministic classification first:
+
+- plain chat stays conversational
+- semantic data questions go to graph/vector retrieval
+- explicit list/count/filter requests go to structured execution
+- AI routing is narrowed to ambiguous cases
+
 ## RAG Service Split
 
 - decision service
@@ -57,6 +67,20 @@ This avoids giant single-class behavior and reduces regression risk.
 - child node is owner/executor for its domain
 - ownership resolver decides route
 - no chained child-to-child orchestration
+
+## Central Graph Read Model
+
+- Neo4j is the preferred read path when `graph.reads_prefer_central_graph=true`
+- child apps still own transactional writes
+- graph sync publishes entities, chunks, access scope, and relations
+- retrieval returns `entity_ref` + `object` payloads for follow-up reuse
+
+## Knowledge Base Layer
+
+- graph truth stays in Neo4j
+- the knowledge base is a scoped acceleration layer
+- it caches plans, retrieval results, query profiles, and hot entity snapshots
+- invalidation is tied to graph version and access version changes
 
 ## Practical Rule
 

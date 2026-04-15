@@ -32,6 +32,7 @@ class IntelligentRAGService
     protected $nodeRegistry = null;
     protected $federatedSearch = null;
     protected $nodeRouter = null;
+    protected $graphRetrieval = null;
 
     public function __construct(
         VectorSearchService $vectorSearch,
@@ -59,6 +60,9 @@ class IntelligentRAGService
         }
         if (class_exists(\LaravelAIEngine\Services\Node\NodeRouterService::class)) {
             $this->nodeRouter = app(\LaravelAIEngine\Services\Node\NodeRouterService::class);
+        }
+        if (class_exists(\LaravelAIEngine\Services\Graph\Neo4jRetrievalService::class)) {
+            $this->graphRetrieval = app(\LaravelAIEngine\Services\Graph\Neo4jRetrievalService::class);
         }
     }
 
@@ -654,7 +658,9 @@ class IntelligentRAGService
         }
 
         // 2. CACHING: Check if we analyzed this exact query recently
-        $cacheKey = 'rag_analysis_' . md5($query . implode(',', array_keys($availableCollections)));
+        $cacheCollections = $this->normalizeAvailableCollectionClasses($availableCollections);
+        sort($cacheCollections);
+        $cacheKey = 'rag_analysis_' . md5($query . implode(',', $cacheCollections));
         $cachedAnalysis = cache()->get($cacheKey);
 
         if ($cachedAnalysis) {
@@ -949,8 +955,10 @@ PROMPT;
                     'available_collections' => count($availableCollections),
                 ]);
                 // Use a reasonable subset if available (first 3 collections as fallback)
-                $collections = array_slice($availableCollections, 0, 3);
+                $collections = $this->fallbackCollectionsForQuery($query, $availableCollections);
             }
+
+            $collections = $this->normalizeSelectedCollections($collections, $availableCollections, $query);
 
             $result = [
                 'needs_context' => $analysis['needs_context'] ?? false,
@@ -985,11 +993,96 @@ PROMPT;
                 'needs_context' => true,
                 'reasoning' => 'Analysis failed, using default search',
                 'search_queries' => [$query],
-                'collections' => $availableCollections,
+                'collections' => $this->fallbackCollectionsForQuery($query, $availableCollections),
                 'query_type' => 'informational',
                 'needs_aggregate' => false,
             ];
         }
+    }
+
+    /**
+     * @param array<int, mixed> $availableCollections
+     * @return array<int, string>
+     */
+    protected function normalizeAvailableCollectionClasses(array $availableCollections): array
+    {
+        $normalized = [];
+
+        foreach ($availableCollections as $collection) {
+            if (is_array($collection)) {
+                $class = $collection['class'] ?? null;
+                if (is_string($class) && trim($class) !== '') {
+                    $normalized[] = $class;
+                }
+
+                continue;
+            }
+
+            if (is_string($collection) && trim($collection) !== '') {
+                $normalized[] = $collection;
+            }
+        }
+
+        return array_values(array_unique($normalized));
+    }
+
+    /**
+     * @param array<int, mixed> $availableCollections
+     * @return array<int, string>
+     */
+    protected function fallbackCollectionsForQuery(string $query, array $availableCollections): array
+    {
+        $normalized = $this->normalizeAvailableCollectionClasses($availableCollections);
+        if ($this->isRelationshipOrContextQuery($query)) {
+            return array_slice($normalized, 0, 3);
+        }
+
+        return array_slice($normalized, 0, 2);
+    }
+
+    /**
+     * @param array<int, mixed> $selectedCollections
+     * @param array<int, mixed> $availableCollections
+     * @return array<int, string>
+     */
+    protected function normalizeSelectedCollections(array $selectedCollections, array $availableCollections, string $query): array
+    {
+        $available = $this->normalizeAvailableCollectionClasses($availableCollections);
+        $normalized = $this->normalizeAvailableCollectionClasses($selectedCollections);
+
+        if ($normalized === []) {
+            return $this->fallbackCollectionsForQuery($query, $availableCollections);
+        }
+
+        if ($available !== []) {
+            $normalized = array_values(array_filter(
+                $normalized,
+                static fn (string $collection): bool => in_array($collection, $available, true)
+            ));
+        }
+
+        if ($normalized === []) {
+            return $this->fallbackCollectionsForQuery($query, $availableCollections);
+        }
+
+        if ($this->isRelationshipOrContextQuery($query) && count($normalized) === 1 && count($available) > 1) {
+            foreach ($available as $candidate) {
+                if (!in_array($candidate, $normalized, true)) {
+                    $normalized[] = $candidate;
+                }
+
+                if (count($normalized) >= min(3, count($available))) {
+                    break;
+                }
+            }
+        }
+
+        return array_values(array_unique($normalized));
+    }
+
+    protected function isRelationshipOrContextQuery(string $query): bool
+    {
+        return preg_match('/\b(related to|connected to|show context|who is involved|what changed around|what happened around|context for|linked to|depends on)\b/i', $query) === 1;
     }
 
     /**
@@ -1130,8 +1223,22 @@ PROMPT;
         $maxResults = $options['max_context'] ?? $this->config['max_context_items'] ?? 5;
         $threshold = $options['min_score'] ?? $this->config['min_relevance_score'] ?? 0.3;
 
+        if ($this->graphRetrieval && $this->graphRetrieval->enabled()) {
+            return $this->graphRetrieval->retrieveRelevantContext(
+                $searchQueries,
+                $collections,
+                $maxResults,
+                $options,
+                $userId
+            );
+        }
+
         // Check if nodes are enabled
         $nodesEnabled = config('ai-engine.nodes.enabled', false);
+        if (app()->bound(\LaravelAIEngine\Services\Graph\GraphBackendResolver::class)
+            && app(\LaravelAIEngine\Services\Graph\GraphBackendResolver::class)->graphReadPathActive()) {
+            $nodesEnabled = false;
+        }
         $searchMode = config('ai-engine.nodes.search_mode', 'routing');
 
         // Use routing mode (simple) or federated mode (complex)
@@ -1889,16 +1996,24 @@ PROMPT;
 
         $content = '';
 
+        if (!empty($model->matched_chunk_text) && is_string($model->matched_chunk_text)) {
+            $content = $model->matched_chunk_text;
+        } elseif (isset($model->vector_metadata['chunk_text']) && is_string($model->vector_metadata['chunk_text'])) {
+            $content = $model->vector_metadata['chunk_text'];
+        }
+
         // Priority 1: Use toRAGContent for properly formatted display
-        if (method_exists($model, 'toRAGContent')) {
+        if ($content === '' && method_exists($model, 'toRAGDetail')) {
+            $content = $model->toRAGDetail();
+        } elseif ($content === '' && method_exists($model, 'toRAGContent')) {
             $content = $model->toRAGContent();
         }
         // Priority 2: Use getVectorContent for search content
-        elseif (method_exists($model, 'getVectorContent')) {
+        elseif ($content === '' && method_exists($model, 'getVectorContent')) {
             $content = $model->getVectorContent();
         }
         // Priority 3: Extract from common fields
-        else {
+        elseif ($content === '') {
             $fields = ['content', 'body_text', 'text_preview', 'body', 'description', 'text', 'title', 'name', 'subject'];
             $parts = [];
 
@@ -1968,6 +2083,7 @@ PROMPT;
     protected function enrichResponseWithSources(AIResponse $response, Collection $context): AIResponse
     {
         $sources = $context->map(function ($item, $index) {
+            $documentBuilder = app(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class);
             // Determine model class - try multiple approaches
             $modelClass = null;
 
@@ -2002,6 +2118,27 @@ PROMPT;
             // Extract source node information from federated search results
             $sourceNode = $item->source_node ?? null;
             $sourceNodeName = $item->source_node_name ?? null;
+            $vectorMetadata = isset($item->vector_metadata) && is_array($item->vector_metadata)
+                ? $item->vector_metadata
+                : (isset($item->metadata) && is_array($item->metadata) ? $item->metadata : []);
+            $entityRef = is_array($vectorMetadata['entity_ref'] ?? null)
+                ? $vectorMetadata['entity_ref']
+                : $documentBuilder->buildEntityRef($item, [
+                    'source_node' => $sourceNode,
+                ]);
+            $graphObject = is_array($vectorMetadata['object'] ?? null)
+                ? $vectorMetadata['object']
+                : $documentBuilder->buildGraphObject($item, [
+                    'source_node' => $sourceNode,
+                    'app_slug' => $vectorMetadata['app_slug'] ?? null,
+                ]);
+            $contentPreview = isset($vectorMetadata['chunk_text']) && is_string($vectorMetadata['chunk_text'])
+                ? $vectorMetadata['chunk_text']
+                : (isset($item->matched_chunk_text) && is_string($item->matched_chunk_text)
+                    ? $item->matched_chunk_text
+                    : (isset($item->content)
+                        ? $item->content
+                        : (isset($item->body) ? $item->body : null)));
 
             return [
                 'id' => $item->id ?? null,
@@ -2010,12 +2147,22 @@ PROMPT;
                 'model_type' => $displayName,  // Human-readable display name
                 'title' => $item->title ?? $item->name ?? "Source " . ($index + 1),
                 'relevance' => round(($item->vector_score ?? 0) * 100, 1),
-                'content_preview' => isset($item->content)
-                    ? substr($item->content, 0, 200)
-                    : (isset($item->body) ? substr($item->body, 0, 200) : null),
+                'content_preview' => is_string($contentPreview) ? substr($contentPreview, 0, 200) : null,
                 'source_node' => $sourceNode,  // Node slug (e.g., 'dash', 'inbusiness')
                 'source_node_name' => $sourceNodeName,  // Node display name (e.g., 'Dash', 'InBusiness')
+                'app_slug' => $entityRef['app_slug'] ?? null,
+                'scope_type' => $entityRef['scope_type'] ?? null,
+                'scope_id' => $entityRef['scope_id'] ?? null,
+                'entity_ref' => $entityRef,
+                'object' => $graphObject,
                 'score' => $item->vector_score ?? $item->score ?? null,  // Include score for debugging
+                'graph_planned' => (bool) ($vectorMetadata['graph_planned'] ?? false),
+                'planner_strategy' => $vectorMetadata['planner_strategy'] ?? null,
+                'planner_query_kind' => $vectorMetadata['planner_query_kind'] ?? null,
+                'planner_score' => $vectorMetadata['planner_score'] ?? null,
+                'planner_seed' => $vectorMetadata['planner_seed'] ?? null,
+                'path_length' => $vectorMetadata['path_length'] ?? null,
+                'relation_path' => $vectorMetadata['relation_path'] ?? null,
             ];
         })->toArray();
 
@@ -2037,6 +2184,17 @@ PROMPT;
                     'rag_enabled' => true,
                     'context_count' => $context->count(),
                     'sources' => $sources,
+                    'graph_planned' => collect($sources)->contains(
+                        static fn (array $source): bool => ($source['graph_planned'] ?? false) === true
+                    ),
+                    'planner_strategy' => collect($sources)
+                        ->map(static fn (array $source) => $source['planner_strategy'] ?? null)
+                        ->filter()
+                        ->first(),
+                    'planner_query_kind' => collect($sources)
+                        ->map(static fn (array $source) => $source['planner_query_kind'] ?? null)
+                        ->filter()
+                        ->first(),
                     'numbered_options' => $numberedOptions,
                     'has_options' => !empty($numberedOptions),
                 ]

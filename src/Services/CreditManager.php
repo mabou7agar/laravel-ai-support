@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Services;
 
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\DTOs\AIRequest;
@@ -15,6 +16,7 @@ class CreditManager
 {
     protected static ?string $globalQueryResolver = null;
     protected static ?string $globalLifecycleHandler = null;
+    protected static array $columnSupportCache = [];
     
     /**
      * Request-scoped credit accumulator for tracking cumulative credits
@@ -175,15 +177,19 @@ class CreditManager
         if ($handler) {
             return $handler->hasCredits($user, $request);
         }
+
+        if (!$this->supportsScalarCreditFields($user)) {
+            return true;
+        }
         
         // Default behavior
         // Check unlimited first
-        if (isset($user->has_unlimited_credits) && $user->has_unlimited_credits) {
+        if ($this->readUnlimitedCreditsFlag($user)) {
             return true;
         }
         
         $requiredCredits = $this->calculateCredits($request);
-        return $user->my_credits >= $requiredCredits;
+        return $this->readScalarCreditBalance($user) >= $requiredCredits;
     }
 
     /**
@@ -224,21 +230,25 @@ class CreditManager
         if ($handler) {
             return $handler->deductCredits($user, $request, $creditsToDeduct);
         }
-        
-        // Default behavior
-        // Don't deduct if unlimited
-        if ($user->has_unlimited_credits) {
+
+        if (!$this->supportsScalarCreditFields($user)) {
             return true;
         }
         
-        if ($user->my_credits < $creditsToDeduct) {
+        // Default behavior
+        // Don't deduct if unlimited
+        if ($this->readUnlimitedCreditsFlag($user)) {
+            return true;
+        }
+        
+        $currentBalance = $this->readScalarCreditBalance($user);
+        if ($currentBalance < $creditsToDeduct) {
             throw new InsufficientCreditsException(
-                "Insufficient MyCredits. Required: {$creditsToDeduct}, Available: {$user->my_credits}"
+                "Insufficient MyCredits. Required: {$creditsToDeduct}, Available: {$currentBalance}"
             );
         }
 
-        $user->my_credits -= $creditsToDeduct;
-        return $user->save();
+        return $this->writeScalarCreditState($user, $currentBalance - $creditsToDeduct, false);
     }
 
     /**
@@ -622,7 +632,66 @@ class CreditManager
             return true;
         }
 
-        return isset($user->entity_credits) && $user->entity_credits !== null;
+        if (isset($user->entity_credits) && $user->entity_credits !== null) {
+            return true;
+        }
+
+        return $this->modelHasColumn($user, 'entity_credits');
+    }
+
+    private function supportsScalarCreditFields(Model $user): bool
+    {
+        return $this->modelHasColumn($user, 'my_credits')
+            || $this->modelHasColumn($user, 'has_unlimited_credits');
+    }
+
+    private function readScalarCreditBalance(Model $user): float
+    {
+        $balance = $user->getAttribute('my_credits');
+        if ($balance === null || $balance === '') {
+            return (float) config('ai-engine.credits.default_balance', 100.0);
+        }
+
+        return (float) $balance;
+    }
+
+    private function readUnlimitedCreditsFlag(Model $user): bool
+    {
+        if (!$this->modelHasColumn($user, 'has_unlimited_credits')) {
+            return false;
+        }
+
+        return (bool) $user->getAttribute('has_unlimited_credits');
+    }
+
+    private function writeScalarCreditState(Model $user, float $balance, bool $isUnlimited): bool
+    {
+        if ($this->modelHasColumn($user, 'my_credits')) {
+            $user->setAttribute('my_credits', $balance);
+        }
+
+        if ($this->modelHasColumn($user, 'has_unlimited_credits')) {
+            $user->setAttribute('has_unlimited_credits', $isUnlimited);
+        }
+
+        return $user->save();
+    }
+
+    private function modelHasColumn(Model $user, string $column): bool
+    {
+        $connectionName = $user->getConnectionName() ?: config('database.default');
+        $cacheKey = implode(':', [$connectionName, $user->getTable(), $column]);
+
+        if (array_key_exists($cacheKey, static::$columnSupportCache)) {
+            return static::$columnSupportCache[$cacheKey];
+        }
+
+        try {
+            return static::$columnSupportCache[$cacheKey] = Schema::connection($connectionName)
+                ->hasColumn($user->getTable(), $column);
+        } catch (\Throwable) {
+            return static::$columnSupportCache[$cacheKey] = false;
+        }
     }
 
     private function getEntityCreditLedger(Model $user): array

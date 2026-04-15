@@ -54,6 +54,15 @@ For PHP runtime usage, the parallel entrypoints are:
 
 Authenticated calls to these endpoints are credit-enforced (including image/audio).
 
+### AI Catalog (`/api/v1/ai`)
+
+- `GET /models`
+- `GET /models?engine=openai`
+- `GET /engines`
+- `GET /engines-with-models`
+
+Use these endpoints for model pickers, provider-aware client defaults, and admin tooling. A starter Bruno collection lives in `bruno/laravel-ai-engine`.
+
 ### Data Collectors
 
 - Guided: `/api/v1/data-collector/*`

@@ -2,6 +2,7 @@
 
 namespace LaravelAIEngine\Tests\Unit\Services;
 
+use Illuminate\Database\Eloquent\Model;
 use LaravelAIEngine\Tests\TestCase;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\DTOs\AIRequest;
@@ -9,6 +10,22 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
+
+class CreditlessOwner extends Model
+{
+    protected $table = 'creditless_owners';
+    public $timestamps = false;
+    protected $guarded = [];
+}
+
+class CreditlessOwnerResolver
+{
+    public function resolve(string $ownerId): Model
+    {
+        return CreditlessOwner::query()->findOrFail($ownerId);
+    }
+}
 
 class CreditManagerTest extends TestCase
 {
@@ -303,6 +320,32 @@ class CreditManagerTest extends TestCase
 
         $this->assertEquals(100.0, $credits['balance']); // Default balance from config
         $this->assertFalse($credits['is_unlimited']);
+    }
+
+    public function test_credit_checks_noop_when_owner_model_has_no_credit_storage(): void
+    {
+        if (!Schema::hasTable('creditless_owners')) {
+            Schema::create('creditless_owners', function ($table) {
+                $table->id();
+                $table->string('name');
+            });
+        }
+
+        $owner = CreditlessOwner::query()->create(['name' => 'No Credit Columns']);
+
+        config()->set('ai-engine.credits.owner_model', CreditlessOwner::class);
+        config()->set('ai-engine.credits.query_resolver', CreditlessOwnerResolver::class);
+
+        $request = new AIRequest(
+            prompt: 'Use the real provider without credit columns.',
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O_MINI,
+            userId: (string) $owner->id
+        );
+
+        $this->assertTrue($this->creditManager->hasCredits((string) $owner->id, $request));
+        $this->assertTrue($this->creditManager->deductCredits((string) $owner->id, $request));
+        $this->assertSame(['id', 'name'], array_keys($owner->fresh()->getAttributes()));
     }
 
     public function test_get_user_credits_for_new_model()

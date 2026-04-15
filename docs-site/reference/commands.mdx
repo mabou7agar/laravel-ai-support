@@ -7,10 +7,28 @@ description: Operational command reference with practical usage patterns.
 
 ```bash
 php artisan ai-engine:test-package
+php artisan ai-engine:test-everything
+php artisan ai-engine:test-everything --profile=graph
+php artisan ai-engine:test-everything --profile=all --root-path=/path/to/root/app
+php artisan ai-engine:backend-status
+php artisan ai-engine:model-status "App\\Models\\Project"
+php artisan ai-engine:model-status "App\\Models\\Project" --id=15
 php artisan ai-engine:test-engines
 php artisan ai-engine:infra-health
 php artisan ai-engine:system-health
 ```
+
+Profiles:
+
+- `safe`: package graph and chat unit/command slices, plus root mocked chat route when a host app is available
+- `graph`: safe plus live Neo4j graph package checks
+- `full`: graph plus root-app live graph/chat checks
+- `all`: full plus billed live provider matrix
+
+Use `--stop-on-failure` to halt after the first failed stage and `--json` for machine-readable summaries.
+
+Use `php artisan ai-engine:backend-status` to see whether the app is currently reading from `neo4j_graph` or falling back to `vector_qdrant`.
+Use `php artisan ai-engine:model-status "App\\Models\\Project"` to inspect whether one model is actually ready for indexing, graph publishing, and chat retrieval. Add `--id=15` to inspect a real record instead of a blank model instance, and use `--json` if you want the raw diagnostic payload.
 
 ## Real Conversation Validation
 
@@ -58,6 +76,72 @@ php artisan ai-engine:vector-index "App\\Models\\Invoice" --with-relationships
 php artisan ai-engine:vector-search "overdue invoices"
 php artisan ai-engine:vector-status
 ```
+
+`ai-engine:analyze-model` is read-only. It inspects schema, model relationships, and approximate table size to suggest indexing config, but it does not insert, update, delete, or index records.
+
+## Neo4j GraphRAG
+
+```bash
+php artisan ai-engine:neo4j-init
+php artisan ai-engine:neo4j-sync --fresh
+php artisan ai-engine:neo4j-stats
+php artisan ai-engine:neo4j-diagnose
+php artisan ai-engine:neo4j-repair --apply
+php artisan ai-engine:neo4j-drift --repair --prune
+php artisan ai-engine:neo4j-benchmark "who owns Apollo?" --iterations=5
+php artisan ai-engine:neo4j-index-benchmark "App\\Models\\Project" --limit=10
+php artisan ai-engine:neo4j-load-benchmark --profile=steady
+php artisan ai-engine:neo4j-load-benchmark --mode=mixed --iterations=50 --concurrency=4
+php artisan ai-engine:chat-benchmark "What changed for Apollo?" --iterations=3
+php artisan ai-engine:benchmark-history --type=retrieval --limit=10
+php artisan ai-engine:graph-ranking-feedback relationship
+```
+
+Typical rollout:
+
+1. initialize schema with `neo4j-init`
+2. bulk publish with `neo4j-sync --fresh`
+3. inspect with `neo4j-stats` and `neo4j-diagnose`
+4. repair if needed with `neo4j-repair --apply`
+5. detect and repair graph drift with `neo4j-drift`
+6. benchmark indexing, retrieval, chat, and load latency with `neo4j-index-benchmark`, `neo4j-benchmark`, `chat-benchmark`, and `neo4j-load-benchmark`
+7. inspect recent benchmark trends with `benchmark-history` and ranking adaptation state with `graph-ranking-feedback`
+
+## Graph Knowledge Base
+
+```bash
+php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
+php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+```
+
+- `neo4j-kb-warm` is for targeted or operator-triggered warmup
+- `neo4j-kb-build` is the background job you usually schedule hourly from the host app
+
+## Shared Neo4j Notes
+
+For shared Neo4j databases, prefer dedicated vector property/index names so one app does not collide with another app's embedding dimensions.
+
+Example:
+
+```bash
+php artisan ai-engine:neo4j-init \
+  --index=chunk_embedding_index \
+  --property=embedding \
+  --scope-node=billing_app
+```
+
+If `AI_ENGINE_NEO4J_SHARED_DEPLOYMENT=true`, the package defaults to node-scoped naming and derives names like:
+
+- `chunk_embedding_index_billing_app`
+- `embedding_billing_app`
+
+`neo4j-load-benchmark` also supports reusable profiles:
+
+- `smoke`
+- `interactive`
+- `steady`
+- `burst`
+- `stress`
 
 ## Decision Policy Loop
 

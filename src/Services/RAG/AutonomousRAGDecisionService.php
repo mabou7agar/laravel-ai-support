@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Services\RAG;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\Agent\MessageRoutingClassifier;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
@@ -17,7 +18,8 @@ class AutonomousRAGDecisionService
         protected ?AutonomousRAGPolicy $policy = null,
         protected ?AutonomousRAGDecisionPromptService $promptService = null,
         protected ?AutonomousRAGDecisionFeedbackService $feedbackService = null,
-        protected ?LocaleResourceService $locale = null
+        protected ?LocaleResourceService $locale = null,
+        protected ?MessageRoutingClassifier $messageClassifier = null
     )
     {
         $this->policy = $policy ?? new AutonomousRAGPolicy();
@@ -30,6 +32,11 @@ class AutonomousRAGDecisionService
             app()->bound(LocaleResourceService::class)
                 ? app(LocaleResourceService::class)
                 : new LocaleResourceService()
+        );
+        $this->messageClassifier = $this->messageClassifier ?? (
+            app()->bound(MessageRoutingClassifier::class)
+                ? app(MessageRoutingClassifier::class)
+                : new MessageRoutingClassifier()
         );
     }
 
@@ -68,13 +75,12 @@ class AutonomousRAGDecisionService
         } catch (\Throwable $e) {
             Log::channel('ai-engine')->error('AI decision failed', ['error' => $e->getMessage()]);
 
-            $fallback = [
-                'tool' => 'db_query',
-                'reasoning' => 'AI decision failed: ' . $e->getMessage(),
-                'parameters' => [],
-            ];
-
-            $fallback = $this->annotateDecision($fallback, $runtime, 'fallback');
+            $fallback = $this->fallbackDecisionForMessage(
+                $message,
+                $context,
+                $runtime,
+                'AI decision failed: ' . $e->getMessage()
+            );
             $this->feedbackService->recordFallbackDecision($fallback, $message, array_merge($runtime, [
                 'metadata' => array_merge(
                     (array) ($runtime['metadata'] ?? []),
@@ -132,31 +138,41 @@ class AutonomousRAGDecisionService
         Log::channel('ai-engine')->info('AI DECISION PARSING FAILED', ['content' => $content]);
         $this->feedbackService->recordParseFailure($message, $content, $runtime);
 
+        $fallback = $this->fallbackDecisionForMessage($message, $context, $runtime);
+        $this->feedbackService->recordFallbackDecision($fallback, $message, $runtime);
+
+        return $fallback;
+    }
+
+    public function fallbackDecisionForMessage(
+        string $message,
+        array $context,
+        array $runtime = [],
+        ?string $baseReason = null
+    ): array {
         $messageLower = strtolower($message);
         $detectedModel = $this->inferModelName($context, $messageLower);
         $defaultLimit = $this->policy->itemsPerPage();
         $selectedEntity = $context['selected_entity'] ?? [];
         $selectedEntityId = $selectedEntity['entity_id'] ?? null;
         $selectedEntityModel = $selectedEntity['entity_type'] ?? null;
+        $baseReason = trim((string) $baseReason);
 
-        if ($this->hasAggregateIntent($messageLower, $content)) {
-            $operation = $this->inferAggregateOperation($messageLower, $content);
+        if ($this->hasAggregateIntent($messageLower, '')) {
+            $operation = $this->inferAggregateOperation($messageLower, '');
             if ($operation === 'count') {
                 $fallback = [
                     'tool' => 'db_count',
-                    'reasoning' => 'Aggregate-like request inferred as count from message',
+                    'reasoning' => $this->fallbackReason($baseReason, 'Aggregate-like request inferred as count from message'),
                     'parameters' => ['model' => $detectedModel ?? 'unknown'],
                 ];
 
-                $fallback = $this->annotateDecision($fallback, $runtime, 'fallback');
-                $this->feedbackService->recordFallbackDecision($fallback, $message, $runtime);
-
-                return $fallback;
+                return $this->annotateDecision($fallback, $runtime, 'fallback');
             }
 
             $fallback = [
                 'tool' => 'db_aggregate',
-                'reasoning' => 'Aggregate request inferred from message',
+                'reasoning' => $this->fallbackReason($baseReason, 'Aggregate request inferred from message'),
                 'parameters' => [
                     'model' => $detectedModel ?? 'unknown',
                     'aggregate' => [
@@ -166,29 +182,23 @@ class AutonomousRAGDecisionService
                 ],
             ];
 
-            $fallback = $this->annotateDecision($fallback, $runtime, 'fallback');
-            $this->feedbackService->recordFallbackDecision($fallback, $message, $runtime);
-
-            return $fallback;
+            return $this->annotateDecision($fallback, $runtime, 'fallback');
         }
 
         if ($this->hasNextPageIntent($messageLower)) {
             $fallback = [
                 'tool' => 'db_query_next',
-                'reasoning' => 'Pagination follow-up inferred from message',
+                'reasoning' => $this->fallbackReason($baseReason, 'Pagination follow-up inferred from message'),
                 'parameters' => [],
             ];
 
-            $fallback = $this->annotateDecision($fallback, $runtime, 'fallback');
-            $this->feedbackService->recordFallbackDecision($fallback, $message, $runtime);
-
-            return $fallback;
+            return $this->annotateDecision($fallback, $runtime, 'fallback');
         }
 
         if ($selectedEntityId && !$this->hasListIntent($messageLower)) {
             $fallback = [
                 'tool' => 'db_query',
-                'reasoning' => 'Follow-up inferred for selected entity context',
+                'reasoning' => $this->fallbackReason($baseReason, 'Follow-up inferred for selected entity context'),
                 'parameters' => [
                     'model' => $selectedEntityModel ?? $detectedModel ?? 'unknown',
                     'filters' => ['id' => $selectedEntityId],
@@ -196,16 +206,13 @@ class AutonomousRAGDecisionService
                 ],
             ];
 
-            $fallback = $this->annotateDecision($fallback, $runtime, 'fallback');
-            $this->feedbackService->recordFallbackDecision($fallback, $message, $runtime);
-
-            return $fallback;
+            return $this->annotateDecision($fallback, $runtime, 'fallback');
         }
 
         if (!empty($context['last_entity_list']) && !$this->hasListIntent($messageLower)) {
             $fallback = [
                 'tool' => 'vector_search',
-                'reasoning' => 'Follow-up inferred from previous visible list context',
+                'reasoning' => $this->fallbackReason($baseReason, 'Follow-up inferred from previous visible list context'),
                 'parameters' => [
                     'model' => $context['last_entity_list']['entity_type'] ?? $detectedModel ?? 'unknown',
                     'query' => $message,
@@ -213,41 +220,68 @@ class AutonomousRAGDecisionService
                 ],
             ];
 
-            $fallback = $this->annotateDecision($fallback, $runtime, 'fallback');
-            $this->feedbackService->recordFallbackDecision($fallback, $message, $runtime);
-
-            return $fallback;
+            return $this->annotateDecision($fallback, $runtime, 'fallback');
         }
 
-        if ($this->hasListIntent($messageLower)) {
+        $classification = $this->messageClassifier->classify($message, [
+            'selected_entity' => $context['selected_entity'] ?? null,
+            'last_entity_list' => $context['last_entity_list'] ?? null,
+            'rag_collections' => array_values(array_filter(array_map(
+                static fn (array $model): ?string => isset($model['class']) && is_string($model['class']) ? $model['class'] : null,
+                array_values(array_filter((array) ($context['models'] ?? []), 'is_array'))
+            ))),
+        ]);
+
+        if ($classification['mode'] === 'semantic_retrieval') {
+            $fallback = [
+                'tool' => 'vector_search',
+                'reasoning' => $this->fallbackReason($baseReason, 'Semantic question inferred from message'),
+                'parameters' => [
+                    'model' => $detectedModel ?? 'unknown',
+                    'query' => $message,
+                    'limit' => $defaultLimit,
+                ],
+            ];
+
+            return $this->annotateDecision($fallback, $runtime, 'fallback');
+        }
+
+        if ($classification['mode'] === 'structured_query') {
             $fallback = [
                 'tool' => 'db_query',
-                'reasoning' => 'List intent inferred from message',
+                'reasoning' => $this->fallbackReason($baseReason, 'Structured data request inferred from message'),
                 'parameters' => [
                     'model' => $detectedModel ?? 'unknown',
                     'limit' => $defaultLimit,
                 ],
             ];
 
-            $fallback = $this->annotateDecision($fallback, $runtime, 'fallback');
-            $this->feedbackService->recordFallbackDecision($fallback, $message, $runtime);
+            return $this->annotateDecision($fallback, $runtime, 'fallback');
+        }
 
-            return $fallback;
+        if ($this->hasListIntent($messageLower)) {
+            $fallback = [
+                'tool' => 'db_query',
+                'reasoning' => $this->fallbackReason($baseReason, 'List intent inferred from message'),
+                'parameters' => [
+                    'model' => $detectedModel ?? 'unknown',
+                    'limit' => $defaultLimit,
+                ],
+            ];
+
+            return $this->annotateDecision($fallback, $runtime, 'fallback');
         }
 
         $fallback = [
             'tool' => 'db_query',
-            'reasoning' => 'Could not parse AI decision; defaulting to direct query',
+            'reasoning' => $this->fallbackReason($baseReason, 'Could not parse AI decision; defaulting to direct query'),
             'parameters' => [
                 'model' => $detectedModel ?? 'unknown',
                 'limit' => $defaultLimit,
             ],
         ];
 
-        $fallback = $this->annotateDecision($fallback, $runtime, 'fallback');
-        $this->feedbackService->recordFallbackDecision($fallback, $message, $runtime);
-
-        return $fallback;
+        return $this->annotateDecision($fallback, $runtime, 'fallback');
     }
 
     protected function buildRuntimeContext(array $context, array $extra = []): array
@@ -273,6 +307,15 @@ class AutonomousRAGDecisionService
         }
 
         return $decision;
+    }
+
+    protected function fallbackReason(string $baseReason, string $suffix): string
+    {
+        if ($baseReason === '') {
+            return $suffix;
+        }
+
+        return rtrim($baseReason, '. ') . '; ' . $suffix;
     }
 
     protected function nullableString(mixed $value): ?string

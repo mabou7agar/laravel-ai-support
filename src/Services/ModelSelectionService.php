@@ -97,7 +97,11 @@ class ModelSelectionService
             'creative' => 'Creative writing and content',
             'analysis' => 'Data analysis and reasoning',
             'chat' => 'Conversational interactions',
+            'cost' => 'Lowest cost responses',
+            'speed' => 'Fastest responses',
+            'performance' => 'Best overall balance of capability and cost',
             'fast' => 'Quick responses (optimized for speed)',
+            'cheap' => 'Cheapest responses',
             'quality' => 'High quality responses (optimized for accuracy)',
         ];
     }
