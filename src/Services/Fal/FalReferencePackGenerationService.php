@@ -110,8 +110,11 @@ class FalReferencePackGenerationService
                 'look_index' => $step['look_index'],
                 'look_label' => $step['look_label'],
                 'look_variant' => $step['look_variant'],
+                'look_instruction' => $step['look_instruction'],
                 'view_index' => $step['view_index'],
                 'view' => $step['view'],
+                'view_label' => $step['view_label'],
+                'view_instruction' => $step['view_instruction'],
                 'label' => $step['label'],
                 'entity_type' => $step['entity_type'],
                 'model' => $isInitialStep ? EntityEnum::FAL_NANO_BANANA_2 : EntityEnum::FAL_NANO_BANANA_2_EDIT,
@@ -131,18 +134,19 @@ class FalReferencePackGenerationService
         ?callable $progress = null
     ): array {
         $resolvedUserId = $this->resolveUserId($userId, $options);
-        $entityType = $this->resolveEntityType($options);
-        $basePack = $this->resolveBaseReferencePack($options);
         $plan = $this->buildGenerationPlan($options);
-        $generatedImages = $basePack !== null ? [$this->buildExistingImageRecord($basePack, $entityType)] : [];
-        $generatedByLook = $basePack !== null ? [1 => [$this->buildExistingImageRecord($basePack, $entityType)]] : [];
-        $identityAnchorImages = $basePack !== null ? [$this->buildExistingImageRecord($basePack, $entityType)] : [];
+        $generatedImages = $this->initializeGeneratedImages($options);
         $requests = [];
         $responses = [];
 
         foreach ($plan as $stepIndex => $step) {
-            $referenceImages = $this->resolveReferenceImages($step, $generatedByLook, $identityAnchorImages);
-            $request = $this->buildStepRequest($prompt, $options, $resolvedUserId, $step, $referenceImages, $basePack === null && $stepIndex === 0);
+            $request = $this->prepareStepRequest(
+                $prompt,
+                $options,
+                $resolvedUserId,
+                $step,
+                $generatedImages
+            );
             $requests[] = $request;
 
             if (is_callable($progress)) {
@@ -158,29 +162,34 @@ class FalReferencePackGenerationService
                 ]);
             }
 
-            $response = $this->aiEngineService->generateDirect($request);
+            $response = $this->executeStepGenerationWithFallback(
+                $prompt,
+                $options,
+                $resolvedUserId,
+                $step,
+                $generatedImages,
+                $request
+            );
             if (!$response->isSuccess()) {
                 throw new AIEngineException($response->getError() ?? 'Reference pack generation failed.');
             }
 
             $responses[] = $response;
-            $image = $this->extractGeneratedImage($response, $step, $stepIndex + 1);
+            $image = $this->extractGeneratedImageRecord($response, $step, $stepIndex + 1);
             $generatedImages[] = $image;
-            $generatedByLook[$step['look_index']][] = $image;
-
-            if ($step['look_index'] === 1) {
-                $identityAnchorImages[] = $image;
-            }
         }
-
-        $referencePack = $this->buildReferencePackFromImages($generatedImages, $options);
-        $alias = $this->referencePackStore->save($referencePack, isset($options['save_as']) ? (string) $options['save_as'] : null);
+        $totalCredits = array_reduce(
+            $responses,
+            static fn (float $carry, AIResponse $response): float => $carry + $response->getCreditsUsed(),
+            0.0
+        );
+        $result = $this->finalizeStoredResult($generatedImages, $options, $totalCredits);
 
         return [
-            'alias' => $alias,
-            'reference_pack' => $this->referencePackStore->get($alias) ?? array_merge($referencePack, ['alias' => $alias]),
-            'character' => $this->referencePackStore->get($alias) ?? array_merge($referencePack, ['alias' => $alias]),
-            'response' => $this->buildWorkflowResponse($responses, $generatedImages, $referencePack, $options),
+            'alias' => $result['alias'],
+            'reference_pack' => $result['reference_pack'],
+            'character' => $result['character'],
+            'response' => $result['response'],
             'request' => $requests[0] ?? null,
             'requests' => $requests,
             'responses' => $responses,
@@ -207,19 +216,134 @@ class FalReferencePackGenerationService
         return $total;
     }
 
+    public function initializeGeneratedImages(array $options = []): array
+    {
+        $entityType = $this->resolveEntityType($options);
+        $basePack = $this->resolveBaseReferencePack($options);
+
+        if ($basePack === null) {
+            return [];
+        }
+
+        return [$this->buildExistingImageRecord($basePack, $entityType)];
+    }
+
+    public function prepareStepRequest(
+        string $prompt,
+        array $options,
+        ?string $userId,
+        array $step,
+        array $generatedImages = [],
+        string $urlStrategy = 'stored'
+    ): AIRequest {
+        $generatedByLook = [];
+        $identityAnchorImages = [];
+
+        foreach ($generatedImages as $image) {
+            if (!is_array($image)) {
+                continue;
+            }
+
+            $lookIndex = (int) ($image['look_index'] ?? 0);
+            if ($lookIndex > 0) {
+                $generatedByLook[$lookIndex][] = $image;
+            }
+
+            if ($lookIndex === 1) {
+                $identityAnchorImages[] = $image;
+            }
+        }
+
+        $referenceImages = $this->resolveReferenceImages($step, $generatedByLook, $identityAnchorImages);
+        $isInitialStep = $generatedImages === [] && $this->resolveBaseReferencePack($options) === null;
+
+        return $this->buildStepRequest(
+            $prompt,
+            $options,
+            $userId,
+            $step,
+            $referenceImages,
+            $isInitialStep,
+            $urlStrategy
+        );
+    }
+
+    public function extractGeneratedImageRecord(AIResponse $response, array $step, int $stepNumber): array
+    {
+        return $this->extractGeneratedImage($response, $step, $stepNumber);
+    }
+
+    public function finalizeStoredResult(array $generatedImages, array $options = [], float $totalCredits = 0.0): array
+    {
+        $referencePack = $this->buildReferencePackFromImages($generatedImages, $options);
+        $alias = $this->referencePackStore->save($referencePack, isset($options['save_as']) ? (string) $options['save_as'] : null);
+        $storedReferencePack = $this->referencePackStore->get($alias) ?? array_merge($referencePack, ['alias' => $alias]);
+
+        return [
+            'alias' => $alias,
+            'reference_pack' => $storedReferencePack,
+            'character' => $storedReferencePack,
+            'response' => $this->buildWorkflowResponse($generatedImages, $referencePack, $options, $totalCredits),
+        ];
+    }
+
+    public function hasProviderFallbackForStep(
+        string $prompt,
+        array $options,
+        ?string $userId,
+        array $step,
+        array $generatedImages = []
+    ): bool {
+        $storedRequest = $this->prepareStepRequest($prompt, $options, $userId, $step, $generatedImages, 'stored');
+        $providerRequest = $this->prepareStepRequest($prompt, $options, $userId, $step, $generatedImages, 'provider');
+
+        return $this->requestUsesDifferentReferenceUrls($storedRequest, $providerRequest);
+    }
+
+    private function executeStepGenerationWithFallback(
+        string $prompt,
+        array $options,
+        ?string $userId,
+        array $step,
+        array $generatedImages,
+        AIRequest $request
+    ): AIResponse {
+        $response = $this->aiEngineService->generateDirect($request);
+
+        if ($response->isSuccess()) {
+            return $response;
+        }
+
+        $providerRequest = $this->prepareStepRequest(
+            $prompt,
+            $options,
+            $userId,
+            $step,
+            $generatedImages,
+            'provider'
+        );
+
+        if (!$this->requestUsesDifferentReferenceUrls($request, $providerRequest)) {
+            return $response;
+        }
+
+        return $this->aiEngineService->generateDirect($providerRequest);
+    }
+
     private function buildStepRequest(
         string $prompt,
         array $options,
         ?string $userId,
         array $step,
         array $referenceImages,
-        bool $isInitialStep
+        bool $isInitialStep,
+        string $urlStrategy = 'stored'
     ): AIRequest {
         return new AIRequest(
             prompt: $this->buildPrompt($prompt, $step, $isInitialStep),
             engine: 'fal_ai',
             model: $isInitialStep ? EntityEnum::FAL_NANO_BANANA_2 : EntityEnum::FAL_NANO_BANANA_2_EDIT,
-            parameters: $this->buildStepParameters($options, $referenceImages, !$isInitialStep),
+            parameters: $this->buildStepParameters($options, $referenceImages, !$isInitialStep, $urlStrategy),
             userId: $userId
         );
     }
@@ -302,7 +426,7 @@ class FalReferencePackGenerationService
         return trim(implode(' ', array_filter($segments)));
     }
 
-    private function buildStepParameters(array $options, array $referenceImages, bool $editMode): array
+    private function buildStepParameters(array $options, array $referenceImages, bool $editMode, string $urlStrategy = 'stored'): array
     {
         $parameters = [
             'frame_count' => 1,
@@ -324,10 +448,7 @@ class FalReferencePackGenerationService
         }
 
         if ($editMode && $referenceImages !== []) {
-            $referenceUrls = array_values(array_unique(array_filter(array_map(
-                static fn (array $image): ?string => isset($image['url']) && is_string($image['url']) ? $image['url'] : null,
-                $referenceImages
-            ))));
+            $referenceUrls = $this->buildReferenceUrls($referenceImages, $urlStrategy);
 
             if ($referenceUrls !== []) {
                 $parameters['source_images'] = $referenceUrls;
@@ -339,6 +460,7 @@ class FalReferencePackGenerationService
                     'metadata' => [
                         'workflow' => 'reference_pack',
                         'entity_type' => $this->resolveEntityType($options),
+                        'url_strategy' => $urlStrategy,
                     ],
                 ]];
             }
@@ -374,14 +496,19 @@ class FalReferencePackGenerationService
                 continue;
             }
 
-            $url = $image['url'] ?? $image['source_url'] ?? null;
+            $url = $this->extractRawImageUrl($image, ['url', 'source_url']);
             if (!is_string($url) || trim($url) === '') {
                 continue;
             }
 
+            $storedUrl = $this->extractRawImageUrl($image, ['url'], $url);
+            $providerUrl = $this->extractRawImageUrl($image, ['source_url'], $storedUrl);
+
             return [
-                'url' => trim($url),
-                'source_url' => is_string($image['source_url'] ?? null) ? $image['source_url'] : $url,
+                'url' => $storedUrl,
+                'stored_url' => $storedUrl,
+                'source_url' => $providerUrl,
+                'provider_url' => $providerUrl,
                 'entity_type' => $step['entity_type'],
                 'look_index' => $step['look_index'],
                 'look_variant' => $step['look_variant'],
@@ -403,10 +530,9 @@ class FalReferencePackGenerationService
             throw new AIEngineException('No images were returned to save as a reference pack.');
         }
 
-        $urls = array_values(array_filter(array_map(
-            static fn (array $image): ?string => isset($image['url']) && is_string($image['url']) ? $image['url'] : null,
-            $generatedImages
-        )));
+        $storedUrls = $this->buildReferenceUrls($generatedImages, 'stored');
+        $providerUrls = $this->buildReferenceUrls($generatedImages, 'provider');
+        $urls = $storedUrls !== [] ? $storedUrls : $providerUrls;
 
         if ($urls === []) {
             throw new AIEngineException('Returned reference pack images did not include provider URLs.');
@@ -421,8 +547,10 @@ class FalReferencePackGenerationService
                     'look_index' => $lookIndex,
                     'variant' => $image['look_variant'],
                     'label' => $image['look_label'],
-                    'frontal_image_url' => $image['url'],
+                    'frontal_image_url' => $this->resolveReferenceImageUrl($image, 'stored') ?? $this->resolveReferenceImageUrl($image, 'provider'),
+                    'frontal_provider_image_url' => $this->resolveReferenceImageUrl($image, 'provider'),
                     'reference_image_urls' => [],
+                    'provider_reference_image_urls' => [],
                     'views' => [],
                 ];
             }
@@ -430,13 +558,16 @@ class FalReferencePackGenerationService
             $looks[$lookIndex]['views'][] = [
                 'view' => $image['view'],
                 'label' => $image['view_label'],
-                'url' => $image['url'],
+                'url' => $this->resolveReferenceImageUrl($image, 'stored') ?? $this->resolveReferenceImageUrl($image, 'provider'),
+                'provider_url' => $this->resolveReferenceImageUrl($image, 'provider'),
             ];
 
             if ($image['view_index'] === 1) {
-                $looks[$lookIndex]['frontal_image_url'] = $image['url'];
+                $looks[$lookIndex]['frontal_image_url'] = $this->resolveReferenceImageUrl($image, 'stored') ?? $this->resolveReferenceImageUrl($image, 'provider');
+                $looks[$lookIndex]['frontal_provider_image_url'] = $this->resolveReferenceImageUrl($image, 'provider');
             } else {
-                $looks[$lookIndex]['reference_image_urls'][] = $image['url'];
+                $looks[$lookIndex]['reference_image_urls'][] = $this->resolveReferenceImageUrl($image, 'stored') ?? $this->resolveReferenceImageUrl($image, 'provider');
+                $looks[$lookIndex]['provider_reference_image_urls'][] = $this->resolveReferenceImageUrl($image, 'provider');
             }
         }
 
@@ -449,6 +580,8 @@ class FalReferencePackGenerationService
             'description' => 'Generated by ai-engine:generate-reference-pack',
             'frontal_image_url' => $urls[0],
             'reference_image_urls' => array_slice($urls, 1),
+            'frontal_provider_image_url' => $providerUrls[0] ?? null,
+            'provider_reference_image_urls' => array_slice($providerUrls, 1),
             'voice_id' => $voicePayload['voice_id'] ?? null,
             'voice_settings' => $voicePayload['voice_settings'] ?? [],
             'metadata' => [
@@ -462,14 +595,15 @@ class FalReferencePackGenerationService
                 'look_size' => max(1, (int) ($options['look_size'] ?? min(4, count($generatedImages)))),
                 'looks' => array_values($looks),
                 'views' => array_map(
-                    static fn (array $image): array => [
+                    fn (array $image): array => [
                         'entity_type' => $image['entity_type'],
                         'look_index' => $image['look_index'],
                         'look_variant' => $image['look_variant'],
                         'look_label' => $image['look_label'],
                         'view' => $image['view'],
                         'label' => $image['view_label'],
-                        'url' => $image['url'],
+                        'url' => $this->resolveReferenceImageUrl($image, 'stored') ?? $this->resolveReferenceImageUrl($image, 'provider'),
+                        'provider_url' => $this->resolveReferenceImageUrl($image, 'provider'),
                     ],
                     $generatedImages
                 ),
@@ -502,18 +636,12 @@ class FalReferencePackGenerationService
         return $payload;
     }
 
-    private function buildWorkflowResponse(array $responses, array $generatedImages, array $referencePack, array $options): AIResponse
+    private function buildWorkflowResponse(array $generatedImages, array $referencePack, array $options, float $totalCredits = 0.0): AIResponse
     {
         $files = array_values(array_filter(array_map(
             static fn (array $image): ?string => isset($image['url']) && is_string($image['url']) ? $image['url'] : null,
             $generatedImages
         )));
-
-        $totalCredits = array_reduce(
-            $responses,
-            static fn (float $carry, AIResponse $response): float => $carry + $response->getCreditsUsed(),
-            0.0
-        );
 
         return AIResponse::success(
             json_encode($generatedImages, JSON_UNESCAPED_SLASHES),
@@ -595,9 +723,14 @@ class FalReferencePackGenerationService
 
     private function buildExistingImageRecord(array $referencePack, string $entityType): array
     {
+        $referenceUrl = $this->resolveStoredReferencePackUrl($referencePack) ?? (string) $referencePack['frontal_image_url'];
+        $providerUrl = $this->resolveProviderReferencePackUrl($referencePack) ?? $referenceUrl;
+
         return [
-            'url' => (string) $referencePack['frontal_image_url'],
-            'source_url' => (string) $referencePack['frontal_image_url'],
+            'url' => $referenceUrl,
+            'stored_url' => $referenceUrl,
+            'source_url' => $providerUrl,
+            'provider_url' => $providerUrl,
             'entity_type' => $entityType,
             'look_index' => 1,
             'look_variant' => 'signature',
@@ -608,5 +741,83 @@ class FalReferencePackGenerationService
             'label' => 'Look 1 / Front',
             'step' => 0,
         ];
+    }
+
+    private function resolveReferenceImageUrl(array $image, string $strategy = 'stored'): ?string
+    {
+        $keys = $strategy === 'provider'
+            ? ['provider_url', 'source_url', 'url', 'stored_url']
+            : ['stored_url', 'url', 'source_url', 'provider_url'];
+
+        foreach ($keys as $key) {
+            $value = $image[$key] ?? null;
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        return null;
+    }
+
+    private function extractRawImageUrl(array $image, array $keys, ?string $fallback = null): ?string
+    {
+        foreach ($keys as $key) {
+            $value = $image[$key] ?? null;
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        if (is_string($fallback) && trim($fallback) !== '') {
+            return trim($fallback);
+        }
+
+        return null;
+    }
+
+    private function buildReferenceUrls(array $referenceImages, string $strategy = 'stored'): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            fn (array $image): ?string => $this->resolveReferenceImageUrl($image, $strategy),
+            $referenceImages
+        ))));
+    }
+
+    private function requestUsesDifferentReferenceUrls(AIRequest $primaryRequest, AIRequest $fallbackRequest): bool
+    {
+        $primary = $primaryRequest->getParameters()['source_images'] ?? [];
+        $fallback = $fallbackRequest->getParameters()['source_images'] ?? [];
+
+        return $primary !== $fallback && $fallback !== [];
+    }
+
+    private function resolveStoredReferencePackUrl(array $referencePack): ?string
+    {
+        foreach ([
+            $referencePack['frontal_image_url'] ?? null,
+            data_get($referencePack, 'metadata.looks.0.frontal_image_url'),
+            data_get($referencePack, 'metadata.views.0.url'),
+        ] as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                return trim($candidate);
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveProviderReferencePackUrl(array $referencePack): ?string
+    {
+        foreach ([
+            $referencePack['frontal_provider_image_url'] ?? null,
+            data_get($referencePack, 'metadata.looks.0.frontal_provider_image_url'),
+            data_get($referencePack, 'metadata.views.0.provider_url'),
+        ] as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                return trim($candidate);
+            }
+        }
+
+        return null;
     }
 }

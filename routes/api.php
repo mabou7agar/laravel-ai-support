@@ -131,6 +131,20 @@ if (config('ai-engine.api.generate.enabled', true)) {
         ->middleware(['api', StandardizeApiResponseMiddleware::class])
         ->name('ai-engine.generate.api.video.webhook');
 
+    Route::post(
+        trim(config('ai-engine.api.generate.prefix', 'api/v1/ai/generate'), '/') . '/preview/fal/webhook',
+        [GenerateApiController::class, 'falReferencePackWebhook']
+    )
+        ->middleware(['api', StandardizeApiResponseMiddleware::class])
+        ->name('ai-engine.generate.api.preview.webhook');
+
+    Route::post(
+        trim(config('ai-engine.api.generate.prefix', 'api/v1/ai/generate'), '/') . '/reference-pack/fal/webhook',
+        [GenerateApiController::class, 'falReferencePackWebhook']
+    )
+        ->middleware(['api', StandardizeApiResponseMiddleware::class])
+        ->name('ai-engine.generate.api.reference-pack.webhook');
+
     Route::prefix(config('ai-engine.api.generate.prefix', 'api/v1/ai/generate'))
         ->middleware($resolveApiMiddleware('generate'))
         ->name('ai-engine.generate.api.')
@@ -140,6 +154,18 @@ if (config('ai-engine.api.generate.enabled', true)) {
 
             Route::post('/image', [GenerateApiController::class, 'image'])
                 ->name('image');
+
+            Route::post('/preview', [GenerateApiController::class, 'preview'])
+                ->name('preview');
+
+            Route::get('/preview/jobs/{jobId}', [GenerateApiController::class, 'referencePackJobStatus'])
+                ->name('preview.jobs.status');
+
+            Route::post('/reference-pack', [GenerateApiController::class, 'referencePack'])
+                ->name('reference-pack');
+
+            Route::get('/reference-pack/jobs/{jobId}', [GenerateApiController::class, 'referencePackJobStatus'])
+                ->name('reference-pack.jobs.status');
 
             Route::post('/video', [GenerateApiController::class, 'video'])
                 ->name('video');

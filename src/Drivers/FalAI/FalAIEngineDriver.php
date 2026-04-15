@@ -144,31 +144,8 @@ class FalAIEngineDriver extends BaseEngineDriver
 
         try {
             $data = $this->postToEndpoint($operation['endpoint'], $operation['payload']);
-            $images = $this->normalizeImageResult($data);
 
-            if ($images === []) {
-                throw new AIEngineException('No images returned from FAL AI');
-            }
-
-            return AIResponse::success(
-                json_encode($images, JSON_UNESCAPED_SLASHES),
-                $request->getEngine(),
-                $request->getModel()
-            )->withFiles(array_values(array_filter(array_map(
-                static fn (array $image): ?string => $image['url'] ?? $image['source_url'] ?? null,
-                $images
-            ))))->withDetailedUsage([
-                'images_generated' => count($images),
-                'total_cost' => count($images) * $request->getModel()->creditIndex(),
-            ])->withMetadata([
-                'engine' => EngineEnum::FAL_AI,
-                'model' => $request->getModel()->value,
-                'resolved_model' => $operation['resolved_model'],
-                'resolved_endpoint' => $operation['endpoint'],
-                'parameters' => $operation['payload'],
-                'images' => $images,
-                'character_sources' => $this->normalizeCharacterSources($request->getParameters()['character_sources'] ?? []),
-            ]);
+            return $this->buildImageResponseFromOperation($request, $operation, $data);
         } catch (RequestException $e) {
             return AIResponse::error(
                 'FAL AI image request failed: ' . $e->getMessage(),
@@ -313,6 +290,28 @@ class FalAIEngineDriver extends BaseEngineDriver
             'endpoint' => $this->resolveEndpointForModel($resolvedModel),
             'payload' => $payload,
             'resolved_model' => $resolvedModel,
+        ];
+    }
+
+    public function submitImageAsync(AIRequest $request, ?string $webhookUrl = null): array
+    {
+        $operation = $this->prepareImageOperation($request);
+        $query = [];
+
+        if (is_string($webhookUrl) && trim($webhookUrl) !== '') {
+            $query['fal_webhook'] = trim($webhookUrl);
+        }
+
+        $data = $this->postToQueueEndpoint($operation['endpoint'], $operation['payload'], $query);
+
+        return [
+            'request_id' => $data['request_id'] ?? null,
+            'gateway_request_id' => $data['gateway_request_id'] ?? null,
+            'status_url' => $data['status_url'] ?? null,
+            'response_url' => $data['response_url'] ?? null,
+            'cancel_url' => $data['cancel_url'] ?? null,
+            'queue_position' => $data['queue_position'] ?? null,
+            'operation' => $operation,
         ];
     }
 
@@ -503,6 +502,35 @@ class FalAIEngineDriver extends BaseEngineDriver
     public function getAsyncResult(string $responseUrl): array
     {
         return $this->getJsonFromAbsoluteUrl($responseUrl);
+    }
+
+    public function buildImageResponseFromOperation(AIRequest $request, array $operation, array $data): AIResponse
+    {
+        $images = $this->normalizeImageResult($data);
+
+        if ($images === []) {
+            throw new AIEngineException('No images returned from FAL AI');
+        }
+
+        return AIResponse::success(
+            json_encode($images, JSON_UNESCAPED_SLASHES),
+            $request->getEngine(),
+            $request->getModel()
+        )->withFiles(array_values(array_filter(array_map(
+            static fn (array $image): ?string => $image['url'] ?? $image['source_url'] ?? null,
+            $images
+        ))))->withDetailedUsage([
+            'images_generated' => count($images),
+            'total_cost' => count($images) * $request->getModel()->creditIndex(),
+        ])->withMetadata([
+            'engine' => EngineEnum::FAL_AI,
+            'model' => $request->getModel()->value,
+            'resolved_model' => $operation['resolved_model'] ?? $request->getModel()->value,
+            'resolved_endpoint' => $operation['endpoint'] ?? $request->getModel()->value,
+            'parameters' => $operation['payload'] ?? [],
+            'images' => $images,
+            'character_sources' => $this->normalizeCharacterSources($request->getParameters()['character_sources'] ?? []),
+        ]);
     }
 
     public function buildVideoResponseFromOperation(AIRequest $request, array $operation, array $data): AIResponse

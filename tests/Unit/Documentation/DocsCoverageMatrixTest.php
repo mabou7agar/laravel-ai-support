@@ -67,6 +67,11 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Console/Commands/TestAIMediaCommandTest.php',
             'tests/Unit/Services/Fal/FalMediaWorkflowServiceTest.php',
         ],
+        'guides/end-to-end-graph-walkthrough' => [
+            'tests/Feature/Acceptance/GraphRAGAcceptanceTest.php',
+            'tests/Unit/Services/Graph/GraphQueryPlannerTest.php',
+            'tests/Unit/Services/Graph/Neo4jRetrievalServiceTest.php',
+        ],
         'guides/entity-list-preview-ux' => [
             'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
             'tests/Unit/Services/Summary/EntitySummaryServiceTest.php',
@@ -82,6 +87,22 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Http/Middleware/StandardizeApiResponseMiddlewareTest.php',
             'tests/Feature/Api/ConversationListApiTest.php',
         ],
+        'guides/graph-rag-neo4j' => [
+            'tests/Feature/Acceptance/GraphRAGAcceptanceTest.php',
+            'tests/Unit/Services/Graph/Neo4jRetrievalServiceTest.php',
+            'tests/Unit/Services/Node/NodeRouterServiceGraphPreferenceTest.php',
+            'tests/Unit/Console/Commands/SyncNeo4jGraphCommandTest.php',
+        ],
+        'guides/graph-relation-modeling' => [
+            'tests/Unit/Services/Graph/GraphOntologyServiceTest.php',
+            'tests/Unit/Services/Graph/GraphCypherPlanCompilerTest.php',
+            'tests/Unit/Services/Graph/GraphKnowledgeBaseServiceTest.php',
+        ],
+        'guides/knowledge-base-security' => [
+            'tests/Unit/Services/Graph/GraphKnowledgeBaseServiceTest.php',
+            'tests/Unit/Services/Graph/GraphBackendResolverTest.php',
+            'tests/Unit/Services/Node/NodeRouterServiceGraphPreferenceTest.php',
+        ],
         'guides/localization' => [
             'tests/Unit/Http/Middleware/SetRequestLocaleMiddlewareTest.php',
             'tests/Unit/Services/RAG/AutonomousRAGDecisionServiceTest.php',
@@ -96,6 +117,11 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Feature/Node/BulkSyncNodesCommandTest.php',
             'tests/Feature/Node/CleanupNodesCommandTest.php',
             'tests/Unit/Services/Node/NodeBulkSyncServiceTest.php',
+        ],
+        'guides/neo4j-ops-runbook' => [
+            'tests/Unit/Console/Commands/Neo4jGraphCommandsTest.php',
+            'tests/Unit/Console/Commands/InitNeo4jGraphCommandTest.php',
+            'tests/Unit/Console/Commands/SyncNeo4jGraphCommandTest.php',
         ],
         'guides/policy-learning' => [
             'tests/Feature/Policies/DecisionFeedbackPersistenceTest.php',
@@ -149,6 +175,11 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Support/Config/AIEngineConfigDefaultsTest.php',
             'tests/Unit/Http/Middleware/SetRequestLocaleMiddlewareTest.php',
             'tests/Feature/Admin/AdminUiAccessTest.php',
+        ],
+        'reference/qdrant-to-neo4j-migration' => [
+            'tests/Unit/Services/Graph/GraphBackendResolverTest.php',
+            'tests/Unit/Services/Graph/GraphVectorNamingServiceTest.php',
+            'tests/Unit/Console/Commands/SyncNeo4jGraphCommandTest.php',
         ],
         'reference/upgrade' => [
             'tests/Unit/AIEngineServiceProviderConfigMergeTest.php',

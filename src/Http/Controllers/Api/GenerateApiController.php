@@ -11,6 +11,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService;
 use LaravelAIEngine\Services\Fal\FalAsyncVideoService;
 use LaravelAIEngine\Support\Fal\FalCharacterStore;
 use Throwable;
@@ -20,6 +21,7 @@ class GenerateApiController extends Controller
     public function __construct(
         private readonly AIEngineService $aiEngineService,
         private readonly FalAsyncVideoService $falAsyncVideoService,
+        private readonly FalAsyncReferencePackGenerationService $falAsyncReferencePackGenerationService,
         private readonly FalCharacterStore $characterStore
     ) {}
 
@@ -526,6 +528,176 @@ class GenerateApiController extends Controller
     }
 
     /**
+     * Submit a preview-only character/reference job backed by the async reference-pack workflow.
+     *
+     * @group AI Generate
+     */
+    public function preview(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'prompt' => 'required|string|max:4000',
+            'name' => 'nullable|string|max:120',
+            'save_as' => 'nullable|string|max:120',
+            'from_character' => 'nullable|string|max:120',
+            'frame_count' => 'nullable|integer|min:1|max:32',
+            'look_size' => 'nullable|integer|min:1|max:8',
+            'aspect_ratio' => 'nullable|string|max:20',
+            'resolution' => 'nullable|string|max:20',
+            'seed' => 'nullable|integer',
+            'thinking_level' => 'nullable|string|in:minimal,high',
+            'output_format' => 'nullable|string|in:jpeg,jpg,png,webp,gif',
+            'voice_id' => 'nullable|string|max:120',
+            'voice_settings' => 'nullable|array',
+            'voice_settings.stability' => 'nullable|numeric|min:0|max:1',
+            'voice_settings.similarity_boost' => 'nullable|numeric|min:0|max:1',
+            'voice_settings.style' => 'nullable|numeric|min:0|max:1',
+            'voice_settings.use_speaker_boost' => 'nullable|boolean',
+            'use_webhook' => 'nullable|boolean',
+        ]);
+
+        $validated['preview_only'] = true;
+        $validated['entity_type'] = 'character';
+
+        if (!isset($validated['from_reference_pack']) && isset($validated['from_character'])) {
+            $validated['from_reference_pack'] = $validated['from_character'];
+        }
+
+        return $this->submitReferencePackJob($validated, 'Preview job submitted successfully.');
+    }
+
+    /**
+     * Submit an async reference-pack workflow.
+     *
+     * @group AI Generate
+     */
+    public function referencePack(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'prompt' => 'required|string|max:4000',
+            'entity_type' => 'nullable|string|in:character,object,furniture,vehicle,product,prop,creature',
+            'name' => 'nullable|string|max:120',
+            'save_as' => 'nullable|string|max:120',
+            'from_reference_pack' => 'nullable|string|max:120',
+            'from_character' => 'nullable|string|max:120',
+            'frame_count' => 'nullable|integer|min:1|max:32',
+            'look_size' => 'nullable|integer|min:1|max:8',
+            'aspect_ratio' => 'nullable|string|max:20',
+            'resolution' => 'nullable|string|max:20',
+            'seed' => 'nullable|integer',
+            'thinking_level' => 'nullable|string|in:minimal,high',
+            'output_format' => 'nullable|string|in:jpeg,jpg,png,webp,gif',
+            'preview_only' => 'nullable|boolean',
+            'voice_id' => 'nullable|string|max:120',
+            'voice_settings' => 'nullable|array',
+            'voice_settings.stability' => 'nullable|numeric|min:0|max:1',
+            'voice_settings.similarity_boost' => 'nullable|numeric|min:0|max:1',
+            'voice_settings.style' => 'nullable|numeric|min:0|max:1',
+            'voice_settings.use_speaker_boost' => 'nullable|boolean',
+            'use_webhook' => 'nullable|boolean',
+        ]);
+
+        if (!isset($validated['entity_type'])) {
+            $validated['entity_type'] = 'character';
+        }
+
+        if (!isset($validated['from_reference_pack']) && isset($validated['from_character'])) {
+            $validated['from_reference_pack'] = $validated['from_character'];
+        }
+
+        return $this->submitReferencePackJob($validated, 'Reference pack job submitted successfully.');
+    }
+
+    /**
+     * Fetch local status for an async preview/reference-pack job.
+     */
+    public function referencePackJobStatus(Request $request, string $jobId): JsonResponse
+    {
+        $validated = $request->validate([
+            'refresh' => 'nullable|boolean',
+        ]);
+
+        try {
+            $status = $this->falAsyncReferencePackGenerationService->getStatus(
+                $jobId,
+                (bool) ($validated['refresh'] ?? false)
+            );
+
+            if ($status === null) {
+                return $this->envelope(
+                    success: false,
+                    message: 'Reference pack job not found.',
+                    error: ['message' => 'Reference pack job not found.'],
+                    status: 404
+                );
+            }
+
+            return $this->envelope(
+                success: true,
+                message: 'Reference pack job status fetched successfully.',
+                data: $status
+            );
+        } catch (Throwable $e) {
+            Log::error('AI reference pack job status failed', ['job_id' => $jobId, 'error' => $e->getMessage()]);
+
+            return $this->envelope(
+                success: false,
+                message: 'Reference pack job status lookup failed.',
+                error: ['message' => $e->getMessage()],
+                status: 500
+            );
+        }
+    }
+
+    /**
+     * Receive FAL async preview/reference-pack webhook callbacks.
+     */
+    public function falReferencePackWebhook(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'request_id' => 'nullable|string|max:120',
+            'gateway_request_id' => 'nullable|string|max:120',
+            'status' => 'required|string|max:20',
+            'error' => 'nullable|string|max:2000',
+            'payload' => 'nullable|array',
+            'payload_error' => 'nullable|string|max:2000',
+        ]);
+
+        $jobId = trim((string) $request->query('job_id', ''));
+        $token = trim((string) $request->query('token', ''));
+
+        if ($jobId === '' || $token === '') {
+            return $this->envelope(
+                success: false,
+                message: 'Webhook job token is missing.',
+                error: ['message' => 'Webhook job token is missing.'],
+                status: 422
+            );
+        }
+
+        try {
+            $status = $this->falAsyncReferencePackGenerationService->handleWebhook($jobId, $token, $validated);
+
+            return $this->envelope(
+                success: true,
+                message: 'Webhook accepted.',
+                data: [
+                    'job_id' => $jobId,
+                    'status' => $status['status'] ?? null,
+                ]
+            );
+        } catch (Throwable $e) {
+            Log::warning('AI reference pack webhook rejected', ['job_id' => $jobId, 'error' => $e->getMessage()]);
+
+            return $this->envelope(
+                success: false,
+                message: 'Webhook processing failed.',
+                error: ['message' => $e->getMessage()],
+                status: 422
+            );
+        }
+    }
+
+    /**
      * Transcribe uploaded audio file to text.
      *
      * @group AI Generate
@@ -731,6 +903,48 @@ class GenerateApiController extends Controller
             return $this->envelope(
                 success: false,
                 message: 'Text-to-speech generation failed.',
+                error: ['message' => $e->getMessage()],
+                status: 500
+            );
+        }
+    }
+
+    private function submitReferencePackJob(array $validated, string $successMessage): JsonResponse
+    {
+        try {
+            $prompt = (string) $validated['prompt'];
+            unset($validated['prompt']);
+
+            $submitted = $this->falAsyncReferencePackGenerationService->submit(
+                $prompt,
+                $validated,
+                $this->resolveAuthenticatedUserId()
+            );
+
+            return $this->envelope(
+                success: true,
+                message: $successMessage,
+                data: [
+                    'job_id' => $submitted['job_id'],
+                    'status' => $submitted['status']['status'] ?? 'queued',
+                    'job' => $submitted['status'],
+                    'webhook_url' => $submitted['webhook_url'],
+                ],
+                status: 202
+            );
+        } catch (InsufficientCreditsException $e) {
+            return $this->envelope(
+                success: false,
+                message: 'Insufficient credits for this request.',
+                error: ['message' => $e->getMessage()],
+                status: 402
+            );
+        } catch (Throwable $e) {
+            Log::error('AI reference pack submit failed', ['error' => $e->getMessage()]);
+
+            return $this->envelope(
+                success: false,
+                message: 'Reference pack submission failed.',
                 error: ['message' => $e->getMessage()],
                 status: 500
             );

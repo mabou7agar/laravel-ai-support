@@ -24,6 +24,16 @@ class FalAsyncCharacterGenerationService
         return $this->asyncReferencePackGenerationService->getStatus($jobId);
     }
 
+    public function getStatusWithRefresh(string $jobId, bool $refresh = false): ?array
+    {
+        return $this->asyncReferencePackGenerationService->getStatus($jobId, $refresh);
+    }
+
+    public function handleWebhook(string $jobId, string $token, array $payload): array
+    {
+        return $this->asyncReferencePackGenerationService->handleWebhook($jobId, $token, $payload);
+    }
+
     public function waitForCompletion(string $jobId, int $timeoutSeconds = 900, int $pollIntervalSeconds = 5): array
     {
         return $this->asyncReferencePackGenerationService->waitForCompletion(

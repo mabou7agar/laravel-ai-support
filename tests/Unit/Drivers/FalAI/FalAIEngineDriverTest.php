@@ -170,6 +170,48 @@ class FalAIEngineDriverTest extends TestCase
         $this->assertSame(42, $response->getMetadata()['video']['seed']);
     }
 
+    public function test_submit_image_async_uses_queue_endpoint_and_webhook_query(): void
+    {
+        $syncClient = Mockery::mock(Client::class);
+        $queueClient = Mockery::mock(Client::class);
+        $queueClient->shouldReceive('post')
+            ->once()
+            ->withArgs(function (string $endpoint, array $options): bool {
+                $this->assertSame('fal-ai/nano-banana-2', $endpoint);
+                $this->assertSame('https://app.test/api/v1/ai/generate/preview/fal/webhook?job_id=123&token=abc', $options['query']['fal_webhook']);
+                $this->assertSame('Generate Mina', $options['json']['prompt']);
+                $this->assertSame(1, $options['json']['num_images']);
+
+                return true;
+            })
+            ->andReturn(new Response(200, [], json_encode([
+                'request_id' => 'fal-image-1',
+                'status_url' => 'https://queue.fal.run/status/fal-image-1',
+                'response_url' => 'https://queue.fal.run/response/fal-image-1',
+                'queue_position' => 1,
+            ])));
+
+        $driver = new FalAIEngineDriver([
+            'api_key' => 'test-fal-key',
+            'base_url' => 'https://fal.run',
+            'queue_base_url' => 'https://queue.fal.run',
+            'timeout' => 60,
+        ], $syncClient, $queueClient);
+
+        $submitted = $driver->submitImageAsync(new AIRequest(
+            prompt: 'Generate Mina',
+            engine: EngineEnum::FAL_AI,
+            model: EntityEnum::FAL_NANO_BANANA_2,
+            parameters: [
+                'frame_count' => 1,
+            ]
+        ), 'https://app.test/api/v1/ai/generate/preview/fal/webhook?job_id=123&token=abc');
+
+        $this->assertSame('fal-image-1', $submitted['request_id']);
+        $this->assertSame(1, $submitted['queue_position']);
+        $this->assertSame(EntityEnum::FAL_NANO_BANANA_2, $submitted['operation']['resolved_model']);
+    }
+
     public function test_submit_video_async_uses_queue_endpoint_and_webhook_query(): void
     {
         $syncClient = Mockery::mock(Client::class);

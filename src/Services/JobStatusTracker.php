@@ -186,15 +186,30 @@ class JobStatusTracker
         }
 
         try {
-            DB::table('ai_job_statuses')->updateOrInsert(
-                ['job_id' => $jobId],
-                [
-                    'status' => $status,
-                    'metadata' => json_encode($metadata),
-                    'updated_at' => now(),
-                    'created_at' => DB::raw('COALESCE(created_at, NOW())'),
-                ]
-            );
+            $now = now();
+            $existing = DB::table('ai_job_statuses')
+                ->where('job_id', $jobId)
+                ->exists();
+
+            if ($existing) {
+                DB::table('ai_job_statuses')
+                    ->where('job_id', $jobId)
+                    ->update([
+                        'status' => $status,
+                        'metadata' => json_encode($metadata),
+                        'updated_at' => $now,
+                    ]);
+
+                return;
+            }
+
+            DB::table('ai_job_statuses')->insert([
+                'job_id' => $jobId,
+                'status' => $status,
+                'metadata' => json_encode($metadata),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
         } catch (\Exception $e) {
             // Log error but don't fail the job
             logger()->debug('Failed to store job status in database', [

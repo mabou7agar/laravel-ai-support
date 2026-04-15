@@ -561,6 +561,7 @@ class AIEngineConfigDefaults
             ],
             'async' => [
                 'webhook_url' => env('FAL_ASYNC_WEBHOOK_URL'),
+                'reference_pack_webhook_url' => env('FAL_REFERENCE_PACK_WEBHOOK_URL'),
             ],
             'models' => [
                 'fal-flux-pro' => ['enabled' => true, 'credit_index' => 3.5],

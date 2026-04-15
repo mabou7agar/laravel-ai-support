@@ -160,4 +160,97 @@ class FalReferencePackGenerationServiceTest extends TestCase
         $this->assertSame('voice-mina', $store->voiceProfile('mina')['voice_id']);
         $this->assertSame(0.9, $store->voiceProfile('mina')['similarity_boost']);
     }
+
+    public function test_generate_and_store_saves_stored_urls_and_preserves_provider_fallback_urls(): void
+    {
+        $aiEngineService = Mockery::mock(AIEngineService::class);
+        $aiEngineService->shouldReceive('generateDirect')
+            ->twice()
+            ->andReturn(
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2)->withMetadata([
+                    'images' => [[
+                        'url' => 'https://app.test/storage/generated/front.png',
+                        'source_url' => 'https://v3.fal.media/files/front.png',
+                    ]],
+                ]),
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2_EDIT)->withMetadata([
+                    'images' => [[
+                        'url' => 'https://app.test/storage/generated/side.png',
+                        'source_url' => 'https://v3.fal.media/files/side.png',
+                    ]],
+                ])
+            );
+
+        $store = app(FalCharacterStore::class);
+        $service = new FalReferencePackGenerationService($aiEngineService, $store);
+
+        $result = $service->generateAndStore('Generate Mina', [
+            'name' => 'Mina',
+            'save_as' => 'mina-fal-source',
+            'frame_count' => 2,
+        ], '42');
+
+        $this->assertSame('https://app.test/storage/generated/front.png', $result['reference_pack']['frontal_image_url']);
+        $this->assertSame(['https://app.test/storage/generated/side.png'], $result['reference_pack']['reference_image_urls']);
+        $this->assertSame('https://v3.fal.media/files/front.png', $result['reference_pack']['frontal_provider_image_url']);
+        $this->assertSame(['https://v3.fal.media/files/side.png'], $result['reference_pack']['provider_reference_image_urls']);
+        $this->assertSame('https://app.test/storage/generated/front.png', $result['reference_pack']['metadata']['generated_images'][0]);
+        $this->assertSame('https://v3.fal.media/files/side.png', $result['reference_pack']['metadata']['views'][1]['provider_url']);
+    }
+
+    public function test_generate_and_store_retries_edit_steps_with_provider_urls_after_stored_url_failure(): void
+    {
+        $aiEngineService = Mockery::mock(AIEngineService::class);
+        $aiEngineService->shouldReceive('generateDirect')
+            ->times(3)
+            ->withArgs(function (AIRequest $request): bool {
+                static $calls = 0;
+                $calls++;
+
+                if ($calls === 1) {
+                    $this->assertSame(EntityEnum::FAL_NANO_BANANA_2, $request->getModel()->value);
+                    return true;
+                }
+
+                $this->assertSame(EntityEnum::FAL_NANO_BANANA_2_EDIT, $request->getModel()->value);
+                $sourceImages = $request->getParameters()['source_images'] ?? [];
+
+                if ($calls === 2) {
+                    $this->assertSame(['https://app.test/storage/generated/front.png'], $sourceImages);
+                }
+
+                if ($calls === 3) {
+                    $this->assertSame(['https://v3.fal.media/files/front.png'], $sourceImages);
+                }
+
+                return true;
+            })
+            ->andReturn(
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2)->withMetadata([
+                    'images' => [[
+                        'url' => 'https://app.test/storage/generated/front.png',
+                        'source_url' => 'https://v3.fal.media/files/front.png',
+                    ]],
+                ]),
+                AIResponse::error('Stored URL could not be fetched by FAL', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2_EDIT),
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2_EDIT)->withMetadata([
+                    'images' => [[
+                        'url' => 'https://app.test/storage/generated/side.png',
+                        'source_url' => 'https://v3.fal.media/files/side.png',
+                    ]],
+                ])
+            );
+
+        $service = new FalReferencePackGenerationService($aiEngineService, app(FalCharacterStore::class));
+
+        $result = $service->generateAndStore('Generate Mina', [
+            'name' => 'Mina',
+            'save_as' => 'mina-fallback',
+            'frame_count' => 2,
+        ], '42');
+
+        $this->assertSame('mina-fallback', $result['alias']);
+        $this->assertSame('https://app.test/storage/generated/front.png', $result['reference_pack']['frontal_image_url']);
+        $this->assertSame('https://v3.fal.media/files/front.png', $result['reference_pack']['frontal_provider_image_url']);
+    }
 }

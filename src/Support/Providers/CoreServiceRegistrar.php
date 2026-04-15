@@ -67,7 +67,9 @@ class CoreServiceRegistrar
         ));
         $app->singleton(\LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService(
             $app->make(\LaravelAIEngine\Services\Fal\FalReferencePackGenerationService::class),
-            $app->make(\LaravelAIEngine\Services\JobStatusTracker::class)
+            $app->make(\LaravelAIEngine\Services\Drivers\DriverRegistry::class),
+            $app->make(\LaravelAIEngine\Services\JobStatusTracker::class),
+            $app->make(CreditManager::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Fal\FalAsyncCharacterGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalAsyncCharacterGenerationService(
             $app->make(\LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService::class)
