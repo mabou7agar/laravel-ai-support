@@ -376,16 +376,19 @@ Reference-pack workflows now support explicit look modes:
 - `vendor`: no stored/app-selected look is enforced; good for concept exploration and ideation
 - `guided`: use the stored/app-selected look for the first look, then allow vendor-generated variants after that
 - `strict_stored`: keep only the stored/app-selected look across all generated views; no vendor-invented beauty/fashion/material variants
+- `strict_selected_set`: generate one pack across an exact ordered set of stored looks; no vendor-invented look variants
 
 Default behavior:
 
 - no `look_id`: `vendor`
 - `look_id` present with no mode: `guided`
+- `selected_looks` with more than one item: `strict_selected_set`
 - `strict_stored_looks=true`: shorthand for `look_mode=strict_stored`
 
 Recommended usage:
 
 - screenplay-driven characters, wardrobe, and makeup sheets: `strict_stored`
+- screenplay scenes with multiple approved continuity looks in one reference pack: `strict_selected_set`
 - art-direction exploration from a script-selected base look: `guided`
 - moodboards, campaign discovery, and broad ideation: `vendor`
 
@@ -415,6 +418,45 @@ php artisan ai-engine:generate-character \
   --look-payload='{"label":"Scene 12A hero wardrobe","instruction":"Start from the approved navy coat and natural makeup look."}' \
   --look-mode=guided
 ```
+
+Multi-look production example with an exact stored look set in exact order:
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina-scene-pack \
+  --frame-count=8 \
+  --look-mode=strict_selected_set \
+  --look-set='[
+    {
+      "id":"business-street-look",
+      "name":"Commercial Street Business Look",
+      "instruction":"Keep the charcoal business coat, white blouse, and practical day makeup locked.",
+      "scene_context":"Scene 12 exterior day",
+      "is_primary":true
+    },
+    {
+      "id":"airport-disguise",
+      "name":"Airport Security Disguise",
+      "instruction":"Keep the cap, oversized trench, muted palette, and surveillance-avoidance styling locked.",
+      "scene_context":"Scene 14 terminal surveillance"
+    },
+    {
+      "id":"night-club-exit",
+      "name":"Night Club Exit",
+      "instruction":"Keep the black evening coat, smudged eyeliner, and post-club continuity styling locked.",
+      "scene_context":"Scene 18 exterior night"
+    }
+  ]'
+```
+
+For strict selected sets, the package persists:
+
+- `selected_looks`: the requested stored look set
+- `look_count`: how many stored looks were requested
+- `frames_per_look`: the target number of views allocated per stored look
+- generated `looks` and `views`: what the provider actually returned
 
 This stores:
 
@@ -470,6 +512,30 @@ php artisan ai-engine:generate-reference-pack \
   --look-id=sku_4432_cream_boucle \
   --look-payload='{"label":"Cream boucle hero finish","instruction":"Keep the cream boucle upholstery, walnut legs, and approved silhouette exactly fixed across every view."}' \
   --strict-stored-looks
+```
+
+Exact stored-look-set mode also works for products, furniture, and props:
+
+```bash
+php artisan ai-engine:generate-reference-pack \
+  "Modern curved couch, premium fabric, clean studio background" \
+  --entity-type=furniture \
+  --save-as=modern-couch-scene-pack \
+  --frame-count=6 \
+  --look-mode=strict_selected_set \
+  --look-set='[
+    {
+      "id":"sku_4432_cream_boucle",
+      "name":"Cream boucle hero finish",
+      "instruction":"Keep the cream boucle upholstery and walnut base locked.",
+      "is_primary":true
+    },
+    {
+      "id":"sku_4432_charcoal_wool",
+      "name":"Charcoal wool alternate",
+      "instruction":"Keep the charcoal wool upholstery and blackened steel base locked."
+    }
+  ]'
 ```
 
 Queue a long character workflow instead of waiting in the terminal:

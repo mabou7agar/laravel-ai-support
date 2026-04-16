@@ -21,7 +21,8 @@ class GenerateFalReferencePackCommand extends Command
                             {--look-size=4 : Number of consistent views per styling look before switching style}
                             {--look-id= : Selected look identifier from your app or entity data}
                             {--look-payload= : Optional JSON payload with look label/instruction overrides}
-                            {--look-mode= : Look workflow mode strict_stored|guided|vendor}
+                            {--look-set= : JSON array of selected stored looks used for strict_selected_set workflows}
+                            {--look-mode= : Look workflow mode strict_selected_set|strict_stored|guided|vendor}
                             {--strict-stored-looks : Force the workflow to use only the stored/app-provided look across all views}
                             {--aspect-ratio= : Aspect ratio like 9:16 or 16:9}
                             {--resolution= : Output resolution like 1K}
@@ -73,13 +74,22 @@ class GenerateFalReferencePackCommand extends Command
             $this->components->info('Prepared reference pack workflow');
             $this->line(json_encode([
                 'entity_type' => $options['entity_type'],
+                'look_mode' => $workflow[0]['look_mode'] ?? ($options['look_mode'] ?? null),
+                'look_count' => count(array_values(array_unique(array_map(
+                    static fn (array $step): int => (int) ($step['look_index'] ?? 0),
+                    $workflow
+                )))),
+                'frames_per_look' => $this->resolveFramesPerLook($workflow),
+                'selected_look_ids' => $this->resolveSelectedLookIds($workflow, $options),
                 'requested_views' => count($workflow),
                 'steps' => array_map(static fn (array $step): array => [
                     'step' => $step['step'],
+                    'look_mode' => $step['look_mode'] ?? null,
                     'look_index' => $step['look_index'] ?? null,
                     'look_variant' => $step['look_variant'] ?? null,
                     'view' => $step['view'],
                     'label' => $step['label'],
+                    'reuses_base_preview' => $step['reuses_base_preview'] ?? false,
                     'model' => $step['model'],
                     'parameters' => $step['parameters'],
                 ], $workflow),
@@ -192,6 +202,16 @@ class GenerateFalReferencePackCommand extends Command
             $options['look_payload'] = $decoded;
         }
 
+        $lookSet = $this->option('look-set');
+        if (is_string($lookSet) && trim($lookSet) !== '') {
+            $decoded = json_decode($lookSet, true);
+            if (!is_array($decoded)) {
+                throw new \InvalidArgumentException('--look-set must be valid JSON array.');
+            }
+
+            $options['selected_looks'] = $decoded;
+        }
+
         $lookMode = $this->option('look-mode');
         if (is_string($lookMode) && trim($lookMode) !== '') {
             $options['look_mode'] = trim($lookMode);
@@ -214,5 +234,48 @@ class GenerateFalReferencePackCommand extends Command
         }
 
         return $options;
+    }
+
+    private function resolveFramesPerLook(array $workflow): int
+    {
+        $counts = [];
+
+        foreach ($workflow as $step) {
+            if (!is_array($step)) {
+                continue;
+            }
+
+            $lookIndex = (int) ($step['look_index'] ?? 0);
+            if ($lookIndex < 1) {
+                continue;
+            }
+
+            $counts[$lookIndex] = ($counts[$lookIndex] ?? 0) + 1;
+        }
+
+        return $counts === [] ? 0 : max($counts);
+    }
+
+    private function resolveSelectedLookIds(array $workflow, array $options): array
+    {
+        $stepSelectedLooks = $workflow[0]['selected_looks'] ?? null;
+        if (is_array($stepSelectedLooks) && $stepSelectedLooks !== []) {
+            return array_values(array_filter(array_map(
+                static fn (array $look): ?string => isset($look['id']) && is_string($look['id']) ? $look['id'] : null,
+                $stepSelectedLooks
+            )));
+        }
+
+        $selectedLooks = $options['selected_looks'] ?? null;
+        if (is_array($selectedLooks) && $selectedLooks !== []) {
+            return array_values(array_filter(array_map(
+                static fn (array $look): ?string => isset($look['id']) && is_string($look['id']) ? $look['id'] : null,
+                $selectedLooks
+            )));
+        }
+
+        $lookId = $options['look_id'] ?? null;
+
+        return is_string($lookId) && trim($lookId) !== '' ? [trim($lookId)] : [];
     }
 }

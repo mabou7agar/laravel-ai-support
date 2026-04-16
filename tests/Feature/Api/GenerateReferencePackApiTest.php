@@ -112,6 +112,54 @@ class GenerateReferencePackApiTest extends TestCase
             ->assertJsonPath('data.job_id', 'reference-job-look-1');
     }
 
+    public function test_reference_pack_endpoint_accepts_selected_look_set_fields(): void
+    {
+        $service = Mockery::mock(FalAsyncReferencePackGenerationService::class);
+        $service->shouldReceive('submit')
+            ->once()
+            ->withArgs(function (string $prompt, array $options, ?string $userId): bool {
+                $this->assertSame('Generate Mina set', $prompt);
+                $this->assertSame('strict_selected_set', $options['look_mode']);
+                $this->assertCount(2, $options['selected_looks']);
+                $this->assertSame('business-street-look', $options['selected_looks'][0]['id']);
+                $this->assertSame('airport-disguise', $options['selected_looks'][1]['id']);
+                $this->assertNull($userId);
+
+                return true;
+            })
+            ->andReturn([
+                'job_id' => 'reference-job-look-set-1',
+                'status' => [
+                    'job_id' => 'reference-job-look-set-1',
+                    'status' => 'queued',
+                ],
+                'webhook_url' => 'https://app.test/api/v1/ai/generate/reference-pack/fal/webhook?job_id=reference-job-look-set-1&token=secret',
+            ]);
+
+        $this->app->instance(FalAsyncReferencePackGenerationService::class, $service);
+
+        $response = $this->postJson('/api/v1/ai/generate/reference-pack', [
+            'prompt' => 'Generate Mina set',
+            'look_mode' => 'strict_selected_set',
+            'selected_looks' => [
+                [
+                    'id' => 'business-street-look',
+                    'name' => 'Commercial Street Business Look',
+                    'instruction' => 'Keep the commercial business wardrobe locked.',
+                ],
+                [
+                    'id' => 'airport-disguise',
+                    'name' => 'Airport Security Disguise',
+                    'instruction' => 'Keep the airport disguise wardrobe locked.',
+                ],
+            ],
+        ]);
+
+        $response->assertStatus(202)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.job_id', 'reference-job-look-set-1');
+    }
+
     public function test_reference_pack_webhook_endpoint_accepts_completion_callback(): void
     {
         $service = Mockery::mock(FalAsyncReferencePackGenerationService::class);

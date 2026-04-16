@@ -16,6 +16,7 @@ class FalReferencePackGenerationService
     private const LOOK_MODE_VENDOR = 'vendor';
     private const LOOK_MODE_GUIDED = 'guided';
     private const LOOK_MODE_STRICT_STORED = 'strict_stored';
+    private const LOOK_MODE_STRICT_SELECTED_SET = 'strict_selected_set';
 
     private const VIEW_PRESETS = [
         'character' => [
@@ -117,6 +118,7 @@ class FalReferencePackGenerationService
                 'look_variant' => $step['look_variant'],
                 'look_instruction' => $step['look_instruction'],
                 'selected_look' => $step['selected_look'] ?? null,
+                'selected_looks' => $step['selected_looks'] ?? [],
                 'view_index' => $step['view_index'],
                 'view' => $step['view'],
                 'view_label' => $step['view_label'],
@@ -369,33 +371,13 @@ class FalReferencePackGenerationService
         $entityType = $this->resolveEntityType($options);
         $viewPresets = self::VIEW_PRESETS[$entityType] ?? self::VIEW_PRESETS['object'];
         $lookPresets = self::LOOK_PRESETS[$entityType] ?? self::LOOK_PRESETS['default'];
-        $selectedLook = $this->resolveSelectedLook($options, $entityType, $baseReferencePack);
-        $lookMode = $this->resolveLookMode($options, $selectedLook, $baseReferencePack);
-        $strictStoredLook = $lookMode === self::LOOK_MODE_STRICT_STORED;
-        $lookSize = $this->resolveLookSize($options, $requestedCount, $lookMode);
-        $plan = [];
-
-        for ($index = 0; $index < $requestedCount; $index++) {
-            $lookIndex = $strictStoredLook ? 1 : intdiv($index, $lookSize) + 1;
-            $viewIndex = $strictStoredLook ? $index + 1 : (($index % $lookSize) + 1);
-            $view = $this->resolveViewPreset($viewPresets, $viewIndex);
-            $look = $this->resolvePlanLook($lookPresets, $lookIndex, $selectedLook, $lookMode);
-
-            $plan[] = [
-                'entity_type' => $entityType,
-                'look_mode' => $lookMode,
-                'look_index' => $lookIndex,
-                'look_variant' => $look['key'],
-                'look_label' => $look['label'],
-                'look_instruction' => $look['instruction'],
-                'selected_look' => $selectedLook !== null ? $this->serializeSelectedLook($selectedLook, $lookMode) : null,
-                'view_index' => $viewIndex,
-                'view' => $view['key'],
-                'view_label' => $view['label'],
-                'view_instruction' => $view['instruction'],
-                'label' => sprintf('Look %d: %s / %s', $lookIndex, $look['label'], $view['label']),
-            ];
-        }
+        $selectedLooks = $this->resolveSelectedLooks($options, $entityType, $baseReferencePack);
+        $selectedLook = $this->resolvePrimarySelectedLook($selectedLooks);
+        $lookMode = $this->resolveLookMode($options, $selectedLooks, $baseReferencePack);
+        $lookSize = $this->resolveLookSize($options, $requestedCount, $lookMode, count($selectedLooks));
+        $plan = $lookMode === self::LOOK_MODE_STRICT_SELECTED_SET
+            ? $this->buildStrictSelectedSetPlan($entityType, $viewPresets, $selectedLooks, $requestedCount, $lookMode)
+            : $this->buildStandardPlan($entityType, $viewPresets, $lookPresets, $selectedLook, $selectedLooks, $requestedCount, $lookSize, $lookMode);
 
         if (($options['preview_only'] ?? false) === true) {
             return array_slice($plan, 0, 1);
@@ -406,10 +388,115 @@ class FalReferencePackGenerationService
                 throw new AIEngineException('frame_count must be at least 2 when expanding from an approved preview.');
             }
 
-            return array_slice($plan, 1);
+            return array_values(array_filter(
+                $plan,
+                static fn (array $step): bool => ($step['reuses_base_preview'] ?? false) !== true
+            ));
         }
 
         return $plan;
+    }
+
+    private function buildStandardPlan(
+        string $entityType,
+        array $viewPresets,
+        array $lookPresets,
+        ?array $selectedLook,
+        array $selectedLooks,
+        int $requestedCount,
+        int $lookSize,
+        string $lookMode
+    ): array {
+        $strictStoredLook = $lookMode === self::LOOK_MODE_STRICT_STORED;
+        $plan = [];
+
+        for ($index = 0; $index < $requestedCount; $index++) {
+            $lookIndex = $strictStoredLook ? 1 : intdiv($index, $lookSize) + 1;
+            $viewIndex = $strictStoredLook ? $index + 1 : (($index % $lookSize) + 1);
+            $view = $this->resolveViewPreset($viewPresets, $viewIndex);
+            $look = $this->resolvePlanLook($lookPresets, $lookIndex, $selectedLook, $selectedLooks, $lookMode);
+
+            $plan[] = $this->buildPlanStep(
+                $entityType,
+                $lookMode,
+                $lookIndex,
+                $look,
+                $selectedLook,
+                $selectedLooks,
+                $viewIndex,
+                $view,
+                $index === 0
+            );
+        }
+
+        return $plan;
+    }
+
+    private function buildStrictSelectedSetPlan(
+        string $entityType,
+        array $viewPresets,
+        array $selectedLooks,
+        int $requestedCount,
+        string $lookMode
+    ): array {
+        if ($selectedLooks === []) {
+            throw new AIEngineException('strict_selected_set requires at least one selected look.');
+        }
+
+        $framesPerLook = max(1, (int) ceil($requestedCount / count($selectedLooks)));
+        $plan = [];
+        $emitted = 0;
+
+        foreach (array_values($selectedLooks) as $lookOffset => $selectedLook) {
+            $lookIndex = $lookOffset + 1;
+
+            for ($viewIndex = 1; $viewIndex <= $framesPerLook && $emitted < $requestedCount; $viewIndex++) {
+                $view = $this->resolveViewPreset($viewPresets, $viewIndex);
+                $plan[] = $this->buildPlanStep(
+                    $entityType,
+                    $lookMode,
+                    $lookIndex,
+                    $selectedLook,
+                    $this->resolvePrimarySelectedLook($selectedLooks),
+                    $selectedLooks,
+                    $viewIndex,
+                    $view,
+                    $lookIndex === 1 && $viewIndex === 1
+                );
+                $emitted++;
+            }
+        }
+
+        return $plan;
+    }
+
+    private function buildPlanStep(
+        string $entityType,
+        string $lookMode,
+        int $lookIndex,
+        array $look,
+        ?array $selectedLook,
+        array $selectedLooks,
+        int $viewIndex,
+        array $view,
+        bool $reusesBasePreview = false
+    ): array {
+        return [
+            'entity_type' => $entityType,
+            'look_mode' => $lookMode,
+            'look_index' => $lookIndex,
+            'look_variant' => $look['key'],
+            'look_label' => $look['label'],
+            'look_instruction' => $look['instruction'],
+            'selected_look' => $selectedLook !== null ? $this->serializeSelectedLook($selectedLook, $lookMode) : null,
+            'selected_looks' => $this->serializeSelectedLooks($selectedLooks, $lookMode),
+            'view_index' => $viewIndex,
+            'view' => $view['key'],
+            'view_label' => $view['label'],
+            'view_instruction' => $view['instruction'],
+            'label' => sprintf('Look %d: %s / %s', $lookIndex, $look['label'], $view['label']),
+            'reuses_base_preview' => $reusesBasePreview,
+        ];
     }
 
     private function buildPrompt(string $prompt, array $step, bool $isInitialStep): string
@@ -528,6 +615,7 @@ class FalReferencePackGenerationService
                 'look_label' => $step['look_label'],
                 'look_instruction' => $step['look_instruction'],
                 'selected_look' => $step['selected_look'] ?? null,
+                'selected_looks' => $step['selected_looks'] ?? [],
                 'view_index' => $step['view_index'],
                 'view' => $step['view'],
                 'view_label' => $step['view_label'],
@@ -590,9 +678,13 @@ class FalReferencePackGenerationService
         ksort($looks);
 
         $voicePayload = $this->buildVoicePayload($options);
-        $selectedLook = $this->resolveSelectedLook($options, $this->resolveEntityType($options), $this->resolveBaseReferencePack($options));
-        $lookMode = $this->resolveLookMode($options, $selectedLook, $this->resolveBaseReferencePack($options));
+        $selectedLooks = $this->resolveSelectedLooks($options, $this->resolveEntityType($options), $this->resolveBaseReferencePack($options));
+        $selectedLook = $this->resolvePrimarySelectedLook($selectedLooks);
+        $lookMode = $this->resolveLookMode($options, $selectedLooks, $this->resolveBaseReferencePack($options));
         $selectedLookPayload = $selectedLook !== null ? $this->serializeSelectedLook($selectedLook, $lookMode) : null;
+        $selectedLooksPayload = $this->serializeSelectedLooks($selectedLooks, $lookMode);
+        $lookCount = $selectedLooksPayload !== [] ? count($selectedLooksPayload) : count($looks);
+        $framesPerLook = $this->resolveFramesPerLook(count($generatedImages), $lookMode, $lookCount, $options);
 
         $referencePack = [
             'name' => $this->resolveDisplayName($options),
@@ -613,7 +705,9 @@ class FalReferencePackGenerationService
                 'requested_frame_count' => count($generatedImages),
                 'look_mode' => $lookMode,
                 'strict_stored_looks' => $lookMode === self::LOOK_MODE_STRICT_STORED,
-                'look_size' => $this->resolveLookSize($options, count($generatedImages), $lookMode),
+                'look_size' => $this->resolveLookSize($options, count($generatedImages), $lookMode, count($selectedLooks)),
+                'look_count' => $lookCount,
+                'frames_per_look' => $framesPerLook,
                 'looks' => array_values($looks),
                 'views' => array_map(
                     fn (array $image): array => [
@@ -638,6 +732,11 @@ class FalReferencePackGenerationService
         if ($selectedLookPayload !== null) {
             $referencePack['selected_look'] = $selectedLookPayload;
             $referencePack['metadata']['selected_look'] = $selectedLookPayload;
+        }
+
+        if ($selectedLooksPayload !== []) {
+            $referencePack['selected_looks'] = $selectedLooksPayload;
+            $referencePack['metadata']['selected_looks'] = $selectedLooksPayload;
         }
 
         return $referencePack;
@@ -672,8 +771,16 @@ class FalReferencePackGenerationService
             static fn (array $image): ?string => isset($image['url']) && is_string($image['url']) ? $image['url'] : null,
             $generatedImages
         )));
-        $selectedLook = $this->resolveSelectedLook($options, $this->resolveEntityType($options), $this->resolveBaseReferencePack($options));
-        $lookMode = $this->resolveLookMode($options, $selectedLook, $this->resolveBaseReferencePack($options));
+        $selectedLooks = $this->resolveSelectedLooks($options, $this->resolveEntityType($options), $this->resolveBaseReferencePack($options));
+        $selectedLook = $this->resolvePrimarySelectedLook($selectedLooks);
+        $lookMode = $this->resolveLookMode($options, $selectedLooks, $this->resolveBaseReferencePack($options));
+        $lookCount = count($selectedLooks) > 0 ? count($selectedLooks) : count($referencePack['metadata']['looks'] ?? []);
+        $framesPerLook = $this->resolveFramesPerLook(
+            max(1, (int) ($options['frame_count'] ?? count($generatedImages))),
+            $lookMode,
+            $lookCount,
+            $options
+        );
 
         return AIResponse::success(
             json_encode($generatedImages, JSON_UNESCAPED_SLASHES),
@@ -707,8 +814,11 @@ class FalReferencePackGenerationService
                 'requested_frame_count' => max(1, (int) ($options['frame_count'] ?? 3)),
                 'look_mode' => $lookMode,
                 'strict_stored_looks' => $lookMode === self::LOOK_MODE_STRICT_STORED,
-                'look_size' => $this->resolveLookSize($options, max(1, (int) ($options['frame_count'] ?? 3)), $lookMode),
+                'look_size' => $this->resolveLookSize($options, max(1, (int) ($options['frame_count'] ?? 3)), $lookMode, count($selectedLooks)),
+                'look_count' => $lookCount,
+                'frames_per_look' => $framesPerLook,
                 'selected_look' => $selectedLook !== null ? $this->serializeSelectedLook($selectedLook, $lookMode) : null,
+                'selected_looks' => $this->serializeSelectedLooks($selectedLooks, $lookMode),
             ]);
     }
 
@@ -762,8 +872,9 @@ class FalReferencePackGenerationService
     {
         $referenceUrl = $this->resolveStoredReferencePackUrl($referencePack) ?? (string) $referencePack['frontal_image_url'];
         $providerUrl = $this->resolveProviderReferencePackUrl($referencePack) ?? $referenceUrl;
-        $persistedSelectedLook = $selectedLook ?? $this->extractSelectedLookFromReferencePack($referencePack, $entityType);
-        $lookMode = $this->resolveLookMode([], $persistedSelectedLook, $referencePack);
+        $persistedSelectedLooks = $this->extractSelectedLooksFromReferencePack($referencePack, $entityType);
+        $persistedSelectedLook = $selectedLook ?? $this->resolvePrimarySelectedLook($persistedSelectedLooks);
+        $lookMode = $this->resolveLookMode([], $persistedSelectedLooks, $referencePack);
 
         return [
             'url' => $referenceUrl,
@@ -777,6 +888,7 @@ class FalReferencePackGenerationService
             'look_label' => $persistedSelectedLook['label'] ?? ($entityType === 'character' ? 'Signature look' : 'Primary look'),
             'look_instruction' => $persistedSelectedLook['instruction'] ?? $this->defaultLookInstruction($entityType, 'signature'),
             'selected_look' => $persistedSelectedLook !== null ? $this->serializeSelectedLook($persistedSelectedLook, $lookMode) : null,
+            'selected_looks' => $this->serializeSelectedLooks($persistedSelectedLooks, $lookMode),
             'view_index' => 1,
             'view' => 'front',
             'view_label' => $entityType === 'character' ? 'Front portrait' : 'Front view',
@@ -785,10 +897,27 @@ class FalReferencePackGenerationService
         ];
     }
 
-    private function resolveLookSize(array $options, int $requestedCount, string $lookMode): int
+    private function resolveLookSize(array $options, int $requestedCount, string $lookMode, int $selectedLookCount = 0): int
     {
         if ($lookMode === self::LOOK_MODE_STRICT_STORED) {
             return 1;
+        }
+
+        if ($lookMode === self::LOOK_MODE_STRICT_SELECTED_SET) {
+            return max(1, (int) ceil($requestedCount / max(1, $selectedLookCount)));
+        }
+
+        return max(1, (int) ($options['look_size'] ?? min(4, $requestedCount)));
+    }
+
+    private function resolveFramesPerLook(int $requestedCount, string $lookMode, int $lookCount, array $options = []): int
+    {
+        if ($lookMode === self::LOOK_MODE_STRICT_SELECTED_SET) {
+            return max(1, (int) ceil($requestedCount / max(1, $lookCount)));
+        }
+
+        if ($lookMode === self::LOOK_MODE_STRICT_STORED) {
+            return max(1, $requestedCount);
         }
 
         return max(1, (int) ($options['look_size'] ?? min(4, $requestedCount)));
@@ -803,7 +932,7 @@ class FalReferencePackGenerationService
         ];
     }
 
-    private function resolvePlanLook(array $lookPresets, int $lookIndex, ?array $selectedLook, string $lookMode): array
+    private function resolvePlanLook(array $lookPresets, int $lookIndex, ?array $selectedLook, array $selectedLooks, string $lookMode): array
     {
         if (
             $selectedLook !== null
@@ -819,6 +948,19 @@ class FalReferencePackGenerationService
             ];
         }
 
+        if ($lookMode === self::LOOK_MODE_STRICT_SELECTED_SET) {
+            $strictLook = $selectedLooks[$lookIndex - 1] ?? null;
+            if ($strictLook === null) {
+                throw new AIEngineException("Selected look [{$lookIndex}] is missing from strict_selected_set.");
+            }
+
+            return [
+                'key' => $strictLook['key'],
+                'label' => $strictLook['label'],
+                'instruction' => $strictLook['instruction'],
+            ];
+        }
+
         return $lookPresets[$lookIndex - 1] ?? [
             'key' => 'variant_' . $lookIndex,
             'label' => 'Variant ' . $lookIndex,
@@ -826,7 +968,38 @@ class FalReferencePackGenerationService
         ];
     }
 
+    private function resolveSelectedLooks(array $options, string $entityType, ?array $baseReferencePack = null): array
+    {
+        $rawSelectedLooks = $options['selected_looks'] ?? null;
+
+        if (is_array($rawSelectedLooks) && $rawSelectedLooks !== []) {
+            $selectedLooks = $this->buildSelectedLooks($rawSelectedLooks, $entityType);
+
+            if ($selectedLooks === []) {
+                throw new AIEngineException('selected_looks must include at least one look with an id.');
+            }
+
+            return $selectedLooks;
+        }
+
+        $persistedSelectedLooks = $this->extractSelectedLooksFromReferencePack($baseReferencePack, $entityType);
+        if ($persistedSelectedLooks !== []) {
+            return $persistedSelectedLooks;
+        }
+
+        $selectedLook = $this->resolveSingleSelectedLook($options, $entityType, $baseReferencePack);
+
+        return $selectedLook !== null ? [$selectedLook] : [];
+    }
+
     private function resolveSelectedLook(array $options, string $entityType, ?array $baseReferencePack = null): ?array
+    {
+        return $this->resolvePrimarySelectedLook(
+            $this->resolveSelectedLooks($options, $entityType, $baseReferencePack)
+        );
+    }
+
+    private function resolveSingleSelectedLook(array $options, string $entityType, ?array $baseReferencePack = null): ?array
     {
         $lookPayload = $this->normalizeLookPayload($options['look_payload'] ?? null);
         $lookId = $this->extractLookId($options['look_id'] ?? null, $lookPayload);
@@ -838,17 +1011,21 @@ class FalReferencePackGenerationService
         return $this->extractSelectedLookFromReferencePack($baseReferencePack, $entityType);
     }
 
-    private function resolveLookMode(array $options, ?array $selectedLook = null, ?array $baseReferencePack = null): string
+    private function resolveLookMode(array $options, array $selectedLooks = [], ?array $baseReferencePack = null): string
     {
         $requestedMode = $this->normalizeLookMode($options['look_mode'] ?? null);
         if ($requestedMode !== null) {
             return $requestedMode;
         }
 
+        if (count($selectedLooks) > 1) {
+            return self::LOOK_MODE_STRICT_SELECTED_SET;
+        }
+
         if (array_key_exists('strict_stored_looks', $options)) {
             return (bool) $options['strict_stored_looks']
                 ? self::LOOK_MODE_STRICT_STORED
-                : ($selectedLook !== null ? self::LOOK_MODE_GUIDED : self::LOOK_MODE_VENDOR);
+                : ($selectedLooks !== [] ? self::LOOK_MODE_GUIDED : self::LOOK_MODE_VENDOR);
         }
 
         $storedMode = $this->extractStoredLookMode($baseReferencePack);
@@ -856,7 +1033,7 @@ class FalReferencePackGenerationService
             return $storedMode;
         }
 
-        return $selectedLook !== null ? self::LOOK_MODE_GUIDED : self::LOOK_MODE_VENDOR;
+        return $selectedLooks !== [] ? self::LOOK_MODE_GUIDED : self::LOOK_MODE_VENDOR;
     }
 
     private function normalizeLookMode(mixed $lookMode): ?string
@@ -868,6 +1045,7 @@ class FalReferencePackGenerationService
         $normalized = trim($lookMode);
 
         return in_array($normalized, [
+            self::LOOK_MODE_STRICT_SELECTED_SET,
             self::LOOK_MODE_STRICT_STORED,
             self::LOOK_MODE_GUIDED,
             self::LOOK_MODE_VENDOR,
@@ -902,6 +1080,7 @@ class FalReferencePackGenerationService
             'label' => $this->firstNonEmptyString(
                 $lookPayload['look_label'] ?? null,
                 $lookPayload['label'] ?? null,
+                $lookPayload['name'] ?? null,
                 $preset['label'] ?? null,
                 $this->humanizeLookId($lookId)
             ),
@@ -913,6 +1092,41 @@ class FalReferencePackGenerationService
             ),
             'payload' => $lookPayload,
         ];
+    }
+
+    private function buildSelectedLooks(array $rawSelectedLooks, string $entityType): array
+    {
+        $selectedLooks = [];
+
+        foreach ($rawSelectedLooks as $rawSelectedLook) {
+            if (!is_array($rawSelectedLook)) {
+                continue;
+            }
+
+            $lookId = $this->extractLookId($rawSelectedLook['id'] ?? null, $rawSelectedLook);
+            if ($lookId === null) {
+                continue;
+            }
+
+            $lookPayload = is_array($rawSelectedLook['payload'] ?? null)
+                ? array_merge($rawSelectedLook['payload'], array_filter([
+                    'id' => $lookId,
+                    'label' => $rawSelectedLook['label'] ?? null,
+                    'name' => $rawSelectedLook['name'] ?? null,
+                    'instruction' => $rawSelectedLook['instruction'] ?? null,
+                    'is_primary' => $rawSelectedLook['is_primary'] ?? null,
+                ], static fn (mixed $value): bool => $value !== null))
+                : $rawSelectedLook;
+
+            $look = $this->buildSelectedLook($lookId, $lookPayload, $entityType);
+            if (($rawSelectedLook['is_primary'] ?? false) === true) {
+                $look['is_primary'] = true;
+            }
+
+            $selectedLooks[] = $look;
+        }
+
+        return $selectedLooks;
     }
 
     private function resolveLookPresetById(string $lookId, string $entityType): ?array
@@ -930,8 +1144,23 @@ class FalReferencePackGenerationService
 
     private function extractSelectedLookFromReferencePack(?array $referencePack, string $entityType): ?array
     {
+        $selectedLooks = $this->extractSelectedLooksFromReferencePack($referencePack, $entityType);
+
+        return $this->resolvePrimarySelectedLook($selectedLooks);
+    }
+
+    private function extractSelectedLooksFromReferencePack(?array $referencePack, string $entityType): array
+    {
         if (!is_array($referencePack)) {
-            return null;
+            return [];
+        }
+
+        $selectedLooks = data_get($referencePack, 'metadata.selected_looks');
+        if (is_array($selectedLooks) && $selectedLooks !== []) {
+            $normalizedLooks = $this->buildSelectedLooks($selectedLooks, $entityType);
+            if ($normalizedLooks !== []) {
+                return $normalizedLooks;
+            }
         }
 
         $selectedLook = data_get($referencePack, 'metadata.selected_look');
@@ -942,13 +1171,13 @@ class FalReferencePackGenerationService
 
             $lookId = $this->extractLookId($selectedLook['id'] ?? null, $lookPayload);
             if ($lookId !== null) {
-                return $this->buildSelectedLook($lookId, $lookPayload, $entityType);
+                return [$this->buildSelectedLook($lookId, $lookPayload, $entityType)];
             }
         }
 
         $firstLook = data_get($referencePack, 'metadata.looks.0');
         if (!is_array($firstLook)) {
-            return null;
+            return [];
         }
 
         $fallbackLookId = $this->extractLookId($firstLook['variant'] ?? null, [
@@ -956,11 +1185,11 @@ class FalReferencePackGenerationService
         ]);
 
         return $fallbackLookId !== null
-            ? $this->buildSelectedLook($fallbackLookId, [
+            ? [$this->buildSelectedLook($fallbackLookId, [
                 'look_label' => $firstLook['label'] ?? null,
                 'look_instruction' => $firstLook['instruction'] ?? null,
-            ], $entityType)
-            : null;
+            ], $entityType)]
+            : [];
     }
 
     private function extractStoredLookMode(?array $referencePack): ?string
@@ -979,11 +1208,27 @@ class FalReferencePackGenerationService
             return $selectedMode;
         }
 
+        $selectedSetMode = $this->normalizeLookMode(data_get($referencePack, 'metadata.selected_looks.0.mode'));
+        if ($selectedSetMode !== null) {
+            return $selectedSetMode;
+        }
+
         if (data_get($referencePack, 'metadata.selected_look.collapse_workflow') === true) {
             return self::LOOK_MODE_STRICT_STORED;
         }
 
         return null;
+    }
+
+    private function resolvePrimarySelectedLook(array $selectedLooks): ?array
+    {
+        foreach ($selectedLooks as $selectedLook) {
+            if (($selectedLook['is_primary'] ?? false) === true) {
+                return $selectedLook;
+            }
+        }
+
+        return $selectedLooks[0] ?? null;
     }
 
     private function serializeSelectedLook(?array $selectedLook, string $lookMode): ?array
@@ -999,8 +1244,17 @@ class FalReferencePackGenerationService
             'instruction' => $selectedLook['instruction'] ?? null,
             'mode' => $lookMode,
             'collapse_workflow' => $lookMode === self::LOOK_MODE_STRICT_STORED,
+            'is_primary' => (bool) ($selectedLook['is_primary'] ?? false),
             'payload' => is_array($selectedLook['payload'] ?? null) ? $selectedLook['payload'] : [],
         ];
+    }
+
+    private function serializeSelectedLooks(array $selectedLooks, string $lookMode): array
+    {
+        return array_values(array_filter(array_map(
+            fn (array $selectedLook): ?array => $this->serializeSelectedLook($selectedLook, $lookMode),
+            $selectedLooks
+        )));
     }
 
     private function firstNonEmptyString(mixed ...$values): string

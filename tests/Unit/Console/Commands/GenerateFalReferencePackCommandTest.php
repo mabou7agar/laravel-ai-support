@@ -54,6 +54,8 @@ class GenerateFalReferencePackCommandTest extends TestCase
         $this->assertSame(0, $exitCode);
         $output = Artisan::output();
         $this->assertStringContainsString('"entity_type": "furniture"', $output);
+        $this->assertStringContainsString('"look_count": 1', $output);
+        $this->assertStringContainsString('"frames_per_look": 1', $output);
         $this->assertStringContainsString('"requested_views": 1', $output);
     }
 
@@ -173,5 +175,70 @@ class GenerateFalReferencePackCommandTest extends TestCase
 
         $this->assertSame(0, $exitCode);
         $this->assertStringContainsString('"job_id": "job-look-123"', Artisan::output());
+    }
+
+    public function test_command_accepts_selected_look_set_json(): void
+    {
+        $service = Mockery::mock(FalReferencePackGenerationService::class);
+        $service->shouldReceive('prepareWorkflow')
+            ->once()
+            ->withArgs(function (string $prompt, array $options, ?string $userId): bool {
+                $this->assertSame('Generate Mina set', $prompt);
+                $this->assertCount(2, $options['selected_looks']);
+                $this->assertSame('business-street-look', $options['selected_looks'][0]['id']);
+                $this->assertSame('airport-disguise', $options['selected_looks'][1]['id']);
+                $this->assertNull($userId);
+
+                return true;
+            })
+            ->andReturn([
+                [
+                    'step' => 1,
+                    'look_mode' => 'strict_selected_set',
+                    'look_index' => 1,
+                    'look_variant' => 'business-street-look',
+                    'view' => 'front',
+                    'label' => 'Look 1: Commercial Street Business Look / Front portrait',
+                    'model' => EntityEnum::FAL_NANO_BANANA_2,
+                    'parameters' => [
+                        'frame_count' => 1,
+                        'image_count' => 1,
+                    ],
+                ],
+            ]);
+        $service->shouldNotReceive('generateAndStore');
+
+        $asyncService = Mockery::mock(FalAsyncReferencePackGenerationService::class);
+        $asyncService->shouldReceive('submit')
+            ->once()
+            ->withArgs(function (string $prompt, array $options, ?string $userId): bool {
+                $this->assertCount(2, $options['selected_looks']);
+                $this->assertSame('business-street-look', $options['selected_looks'][0]['id']);
+                $this->assertSame('airport-disguise', $options['selected_looks'][1]['id']);
+                $this->assertNull($userId);
+
+                return true;
+            })
+            ->andReturn([
+                'job_id' => 'job-look-set-123',
+                'status' => [
+                    'job_id' => 'job-look-set-123',
+                    'status' => 'queued',
+                ],
+            ]);
+
+        $this->app->instance(FalReferencePackGenerationService::class, $service);
+        $this->app->instance(FalAsyncReferencePackGenerationService::class, $asyncService);
+
+        $exitCode = Artisan::call('ai-engine:generate-reference-pack', [
+            'prompt' => 'Generate Mina set',
+            '--look-set' => '[{"id":"business-street-look","name":"Commercial Street Business Look","instruction":"Keep the commercial business wardrobe locked."},{"id":"airport-disguise","name":"Airport Security Disguise","instruction":"Keep the airport disguise wardrobe locked."}]',
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $output = Artisan::output();
+        $this->assertStringContainsString('"look_count": 1', $output);
+        $this->assertStringContainsString('"selected_look_ids": [', $output);
+        $this->assertStringContainsString('"job_id": "job-look-set-123"', $output);
     }
 }

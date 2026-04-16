@@ -167,10 +167,12 @@ Use `generate-character` when the entity is a reusable person/performer. Use `ge
 
 Mode guidance:
 
+- `--look-mode=strict_selected_set`: deterministic multi-look pack from an exact ordered stored look set
 - `--look-mode=strict_stored`: production reference sheets from an app-approved look
 - `--look-mode=guided`: start from an approved look, then allow exploratory vendor variants
 - `--look-mode=vendor`: fully exploratory vendor-driven look progression
 - `--strict-stored-looks`: boolean shorthand for strict production mode
+- `--look-set='[...]'`: JSON array of exact stored looks for multi-look strict packs
 
 Examples:
 
@@ -193,4 +195,17 @@ php artisan ai-engine:generate-reference-pack \
   --frame-count=6 \
   --look-id=sku_4432_cream_boucle \
   --strict-stored-looks
+```
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina-scene-pack \
+  --frame-count=8 \
+  --look-mode=strict_selected_set \
+  --look-set='[
+    {"id":"business-street-look","name":"Commercial Street Business Look","instruction":"Keep the commercial business wardrobe locked.","is_primary":true},
+    {"id":"airport-disguise","name":"Airport Security Disguise","instruction":"Keep the airport disguise wardrobe locked."}
+  ]'
 ```

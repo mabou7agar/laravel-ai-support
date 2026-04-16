@@ -354,9 +354,11 @@ class FalReferencePackGenerationServiceTest extends TestCase
         $this->assertSame('Keep the blue styling direction consistent across every view.', $result['reference_pack']['metadata']['selected_look']['instruction']);
         $this->assertSame('strict_stored', $result['reference_pack']['metadata']['look_mode']);
         $this->assertSame(1, $result['reference_pack']['metadata']['look_size']);
+        $this->assertSame(2, $result['reference_pack']['metadata']['frames_per_look']);
         $this->assertSame('festival_blue', $result['response']->getMetadata()['selected_look']['id']);
         $this->assertSame('strict_stored', $result['response']->getMetadata()['look_mode']);
         $this->assertSame(1, $result['response']->getMetadata()['look_size']);
+        $this->assertSame(2, $result['response']->getMetadata()['frames_per_look']);
     }
 
     public function test_prepare_workflow_reuses_persisted_selected_look_when_expanding_saved_preview(): void
@@ -424,5 +426,204 @@ class FalReferencePackGenerationServiceTest extends TestCase
         $this->assertSame('strict_stored', $workflow[0]['look_mode']);
         $this->assertSame('festival_blue', $workflow[2]['look_variant']);
         $this->assertSame('side', $workflow[2]['view']);
+    }
+
+    public function test_prepare_workflow_uses_strict_selected_set_for_multiple_selected_looks(): void
+    {
+        $service = new FalReferencePackGenerationService(
+            Mockery::mock(AIEngineService::class),
+            app(FalCharacterStore::class)
+        );
+
+        $workflow = $service->prepareWorkflow('Generate Mina set', [
+            'entity_type' => 'character',
+            'frame_count' => 8,
+            'selected_looks' => [
+                [
+                    'id' => 'business-street-look',
+                    'name' => 'Commercial Street Business Look',
+                    'instruction' => 'Keep the commercial business wardrobe locked.',
+                    'is_primary' => true,
+                ],
+                [
+                    'id' => 'airport-disguise',
+                    'name' => 'Airport Security Disguise',
+                    'instruction' => 'Keep the airport disguise wardrobe locked.',
+                ],
+                [
+                    'id' => 'night-club-exit',
+                    'name' => 'Night Club Exit',
+                    'instruction' => 'Keep the nightclub exit look locked.',
+                ],
+            ],
+        ]);
+
+        $this->assertCount(8, $workflow);
+        $this->assertSame('strict_selected_set', $workflow[0]['look_mode']);
+        $this->assertSame('business-street-look', $workflow[0]['look_variant']);
+        $this->assertSame('front', $workflow[0]['view']);
+        $this->assertSame('business-street-look', $workflow[2]['look_variant']);
+        $this->assertSame('side', $workflow[2]['view']);
+        $this->assertSame('airport-disguise', $workflow[3]['look_variant']);
+        $this->assertSame('front', $workflow[3]['view']);
+        $this->assertSame('airport-disguise', $workflow[5]['look_variant']);
+        $this->assertSame('side', $workflow[5]['view']);
+        $this->assertSame('night-club-exit', $workflow[6]['look_variant']);
+        $this->assertSame('front', $workflow[6]['view']);
+        $this->assertSame('night-club-exit', $workflow[7]['look_variant']);
+        $this->assertSame('three_quarter', $workflow[7]['view']);
+        $this->assertSame('business-street-look', $workflow[7]['selected_look']['id']);
+        $this->assertCount(3, $workflow[7]['selected_looks']);
+        $this->assertNotContains('beauty_variant', array_column($workflow, 'look_variant'));
+        $this->assertNotContains('fashion_variant', array_column($workflow, 'look_variant'));
+    }
+
+    public function test_prepare_workflow_skips_only_first_view_of_first_selected_look_when_expanding_preview(): void
+    {
+        $store = app(FalCharacterStore::class);
+        $store->save([
+            'name' => 'Mina Strict Set Preview',
+            'frontal_image_url' => 'https://example.com/mina-preview.png',
+            'reference_image_urls' => [],
+            'metadata' => [
+                'entity_type' => 'character',
+                'look_mode' => 'strict_selected_set',
+                'selected_look' => [
+                    'id' => 'business-street-look',
+                    'variant' => 'business-street-look',
+                    'label' => 'Commercial Street Business Look',
+                    'instruction' => 'Keep the commercial business wardrobe locked.',
+                    'mode' => 'strict_selected_set',
+                    'payload' => [
+                        'id' => 'business-street-look',
+                        'name' => 'Commercial Street Business Look',
+                        'instruction' => 'Keep the commercial business wardrobe locked.',
+                        'is_primary' => true,
+                    ],
+                ],
+                'selected_looks' => [
+                    [
+                        'id' => 'business-street-look',
+                        'variant' => 'business-street-look',
+                        'label' => 'Commercial Street Business Look',
+                        'instruction' => 'Keep the commercial business wardrobe locked.',
+                        'mode' => 'strict_selected_set',
+                        'is_primary' => true,
+                        'payload' => [
+                            'id' => 'business-street-look',
+                            'name' => 'Commercial Street Business Look',
+                            'instruction' => 'Keep the commercial business wardrobe locked.',
+                            'is_primary' => true,
+                        ],
+                    ],
+                    [
+                        'id' => 'airport-disguise',
+                        'variant' => 'airport-disguise',
+                        'label' => 'Airport Security Disguise',
+                        'instruction' => 'Keep the airport disguise wardrobe locked.',
+                        'mode' => 'strict_selected_set',
+                        'payload' => [
+                            'id' => 'airport-disguise',
+                            'name' => 'Airport Security Disguise',
+                            'instruction' => 'Keep the airport disguise wardrobe locked.',
+                        ],
+                    ],
+                    [
+                        'id' => 'night-club-exit',
+                        'variant' => 'night-club-exit',
+                        'label' => 'Night Club Exit',
+                        'instruction' => 'Keep the nightclub exit look locked.',
+                        'mode' => 'strict_selected_set',
+                        'payload' => [
+                            'id' => 'night-club-exit',
+                            'name' => 'Night Club Exit',
+                            'instruction' => 'Keep the nightclub exit look locked.',
+                        ],
+                    ],
+                ],
+                'looks' => [[
+                    'look_index' => 1,
+                    'variant' => 'business-street-look',
+                    'label' => 'Commercial Street Business Look',
+                    'instruction' => 'Keep the commercial business wardrobe locked.',
+                ]],
+            ],
+        ], 'mina-strict-set-preview');
+
+        $service = new FalReferencePackGenerationService(
+            Mockery::mock(AIEngineService::class),
+            $store
+        );
+
+        $workflow = $service->prepareWorkflow('Expand Mina strict set', [
+            'entity_type' => 'character',
+            'from_reference_pack' => 'mina-strict-set-preview',
+            'frame_count' => 8,
+        ]);
+
+        $this->assertCount(7, $workflow);
+        $this->assertSame('strict_selected_set', $workflow[0]['look_mode']);
+        $this->assertSame('business-street-look', $workflow[0]['look_variant']);
+        $this->assertSame('three_quarter', $workflow[0]['view']);
+        $this->assertSame('business-street-look', $workflow[1]['look_variant']);
+        $this->assertSame('side', $workflow[1]['view']);
+        $this->assertSame('airport-disguise', $workflow[2]['look_variant']);
+        $this->assertSame('front', $workflow[2]['view']);
+    }
+
+    public function test_generate_and_store_persists_selected_look_set_metadata_without_vendor_variants(): void
+    {
+        $aiEngineService = Mockery::mock(AIEngineService::class);
+        $aiEngineService->shouldReceive('generateDirect')
+            ->times(4)
+            ->andReturn(
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2)->withMetadata([
+                    'images' => [['url' => 'https://example.com/look1-front.png']],
+                ]),
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2_EDIT)->withMetadata([
+                    'images' => [['url' => 'https://example.com/look1-three-quarter.png']],
+                ]),
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2_EDIT)->withMetadata([
+                    'images' => [['url' => 'https://example.com/look2-front.png']],
+                ]),
+                AIResponse::success('{"images":[]}', 'fal_ai', EntityEnum::FAL_NANO_BANANA_2_EDIT)->withMetadata([
+                    'images' => [['url' => 'https://example.com/look2-three-quarter.png']],
+                ]),
+            );
+
+        $service = new FalReferencePackGenerationService($aiEngineService, app(FalCharacterStore::class));
+
+        $result = $service->generateAndStore('Generate Mina strict set', [
+            'entity_type' => 'character',
+            'name' => 'Mina Strict Set',
+            'save_as' => 'mina-strict-set',
+            'frame_count' => 4,
+            'selected_looks' => [
+                [
+                    'id' => 'business-street-look',
+                    'name' => 'Commercial Street Business Look',
+                    'instruction' => 'Keep the commercial business wardrobe locked.',
+                    'is_primary' => true,
+                ],
+                [
+                    'id' => 'airport-disguise',
+                    'name' => 'Airport Security Disguise',
+                    'instruction' => 'Keep the airport disguise wardrobe locked.',
+                ],
+            ],
+        ], '42');
+
+        $this->assertSame('strict_selected_set', $result['reference_pack']['metadata']['look_mode']);
+        $this->assertSame(2, $result['reference_pack']['metadata']['look_count']);
+        $this->assertSame(2, $result['reference_pack']['metadata']['frames_per_look']);
+        $this->assertCount(2, $result['reference_pack']['metadata']['selected_looks']);
+        $this->assertSame('business-street-look', $result['reference_pack']['metadata']['selected_looks'][0]['id']);
+        $this->assertSame('airport-disguise', $result['reference_pack']['metadata']['selected_looks'][1]['id']);
+        $this->assertSame(['business-street-look', 'airport-disguise'], array_column($result['reference_pack']['metadata']['looks'], 'variant'));
+        $this->assertNotContains('beauty_variant', array_column($result['reference_pack']['metadata']['looks'], 'variant'));
+        $this->assertSame('strict_selected_set', $result['response']->getMetadata()['look_mode']);
+        $this->assertSame(2, $result['response']->getMetadata()['look_count']);
+        $this->assertSame(2, $result['response']->getMetadata()['frames_per_look']);
+        $this->assertCount(2, $result['response']->getMetadata()['selected_looks']);
     }
 }

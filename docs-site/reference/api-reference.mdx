@@ -64,16 +64,18 @@ Reference-pack specific payload fields:
 
 - `look_id`: the app-selected approved look identifier
 - `look_payload`: optional label/instruction overrides for that approved look
-- `look_mode`: `strict_stored`, `guided`, or `vendor`
+- `selected_looks`: ordered list of exact stored looks for deterministic multi-look packs
+- `look_mode`: `strict_selected_set`, `strict_stored`, `guided`, or `vendor`
 - `strict_stored_looks`: boolean alias for `look_mode=strict_stored`
 
 Reference-pack mode defaults:
 
 - no `look_id`: `vendor`
 - `look_id` with no explicit mode: `guided`
+- `selected_looks` with more than one item and no explicit mode: `strict_selected_set`
 - `strict_stored_looks=true`: `strict_stored`
 
-Use `strict_stored` for screenplay-driven production references, wardrobe/makeup continuity, and any app-selected canonical look. Use `guided` or `vendor` when exploration is the goal.
+Use `strict_stored` for one approved canonical look. Use `strict_selected_set` when one pack must cover multiple approved stored looks in exact order. Use `guided` or `vendor` when exploration is the goal.
 
 ### AI Catalog (`/api/v1/ai`)
 
@@ -158,6 +160,43 @@ Use this contract for infrastructure, not frontend apps.
   "look_mode": "strict_stored"
 }
 ```
+
+## Example: Strict Selected Set Reference Pack Request
+
+`POST /api/v1/ai/generate/reference-pack`
+
+```json
+{
+  "prompt": "Front-facing cinematic portrait of Mina, full body, clean background",
+  "entity_type": "character",
+  "name": "Mina Scene Pack",
+  "save_as": "mina-scene-pack",
+  "frame_count": 8,
+  "look_mode": "strict_selected_set",
+  "selected_looks": [
+    {
+      "id": "business-street-look",
+      "name": "Commercial Street Business Look",
+      "instruction": "Keep the charcoal business coat, white blouse, and practical day makeup locked.",
+      "scene_context": "Scene 12 exterior day",
+      "is_primary": true
+    },
+    {
+      "id": "airport-disguise",
+      "name": "Airport Security Disguise",
+      "instruction": "Keep the cap, oversized trench, muted palette, and surveillance-avoidance styling locked.",
+      "scene_context": "Scene 14 terminal surveillance"
+    }
+  ]
+}
+```
+
+The package response metadata now distinguishes:
+
+- `selected_looks`: what the app requested
+- `looks`: the grouped looks that were actually generated
+- `look_count`: how many stored looks were requested
+- `frames_per_look`: the target view allocation per look
 
 ```bash
 curl -X POST https://your-app.test/api/v1/ai/generate/reference-pack \
