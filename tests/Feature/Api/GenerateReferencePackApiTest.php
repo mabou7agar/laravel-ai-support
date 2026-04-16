@@ -79,6 +79,8 @@ class GenerateReferencePackApiTest extends TestCase
                 $this->assertSame('festival_blue', $options['look_id']);
                 $this->assertSame('Festival Blue', $options['look_payload']['label']);
                 $this->assertSame('Keep the blue styling direction consistent across every view.', $options['look_payload']['instruction']);
+                $this->assertSame('strict_stored', $options['look_mode']);
+                $this->assertTrue($options['strict_stored_looks']);
                 $this->assertNull($userId);
 
                 return true;
@@ -97,6 +99,8 @@ class GenerateReferencePackApiTest extends TestCase
         $response = $this->postJson('/api/v1/ai/generate/reference-pack', [
             'prompt' => 'Generate Mina',
             'look_id' => 'festival_blue',
+            'look_mode' => 'strict_stored',
+            'strict_stored_looks' => true,
             'look_payload' => [
                 'label' => 'Festival Blue',
                 'instruction' => 'Keep the blue styling direction consistent across every view.',

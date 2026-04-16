@@ -72,7 +72,7 @@ class FalReferencePackGenerationServiceTest extends TestCase
         $this->assertSame('front', $workflow[0]['view']);
     }
 
-    public function test_prepare_workflow_collapses_to_selected_look_when_look_id_is_provided(): void
+    public function test_prepare_workflow_uses_guided_mode_by_default_when_look_id_is_provided(): void
     {
         $service = new FalReferencePackGenerationService(
             Mockery::mock(AIEngineService::class),
@@ -91,6 +91,7 @@ class FalReferencePackGenerationServiceTest extends TestCase
         ]);
 
         $this->assertCount(6, $workflow);
+        $this->assertSame('guided', $workflow[0]['look_mode']);
         $this->assertSame('festival_blue', $workflow[0]['look_variant']);
         $this->assertSame('Festival Blue', $workflow[0]['look_label']);
         $this->assertSame('Keep the blue styling direction consistent across every view.', $workflow[0]['look_instruction']);
@@ -99,8 +100,38 @@ class FalReferencePackGenerationServiceTest extends TestCase
         $this->assertSame('three_quarter', $workflow[1]['view']);
         $this->assertSame('side', $workflow[2]['view']);
         $this->assertSame('full_body', $workflow[3]['view']);
-        $this->assertSame('view_5', $workflow[4]['view']);
+        $this->assertSame('beauty_variant', $workflow[4]['look_variant']);
+        $this->assertSame('front', $workflow[4]['view']);
         $this->assertSame('festival_blue', $workflow[5]['selected_look']['id']);
+        $this->assertSame('guided', $workflow[5]['selected_look']['mode']);
+    }
+
+    public function test_prepare_workflow_collapses_to_selected_look_in_strict_mode(): void
+    {
+        $service = new FalReferencePackGenerationService(
+            Mockery::mock(AIEngineService::class),
+            app(FalCharacterStore::class)
+        );
+
+        $workflow = $service->prepareWorkflow('Generate Mina', [
+            'entity_type' => 'character',
+            'frame_count' => 6,
+            'look_size' => 4,
+            'look_id' => 'festival_blue',
+            'look_mode' => 'strict_stored',
+            'look_payload' => [
+                'label' => 'Festival Blue',
+                'instruction' => 'Keep the blue styling direction consistent across every view.',
+            ],
+        ]);
+
+        $this->assertCount(6, $workflow);
+        $this->assertSame('strict_stored', $workflow[0]['look_mode']);
+        $this->assertSame('festival_blue', $workflow[0]['look_variant']);
+        $this->assertSame('festival_blue', $workflow[4]['look_variant']);
+        $this->assertSame('view_5', $workflow[4]['view']);
+        $this->assertSame(1, $workflow[4]['look_index']);
+        $this->assertSame('strict_stored', $workflow[0]['selected_look']['mode']);
     }
 
     public function test_generate_and_store_persists_grouped_reference_pack_from_response(): void
@@ -310,6 +341,7 @@ class FalReferencePackGenerationServiceTest extends TestCase
             'save_as' => 'mina-selected-look',
             'frame_count' => 2,
             'look_id' => 'festival_blue',
+            'look_mode' => 'strict_stored',
             'look_payload' => [
                 'label' => 'Festival Blue',
                 'instruction' => 'Keep the blue styling direction consistent across every view.',
@@ -317,10 +349,13 @@ class FalReferencePackGenerationServiceTest extends TestCase
         ], '42');
 
         $this->assertSame('festival_blue', $result['reference_pack']['selected_look']['id']);
+        $this->assertSame('strict_stored', $result['reference_pack']['selected_look']['mode']);
         $this->assertSame('Festival Blue', $result['reference_pack']['metadata']['selected_look']['label']);
         $this->assertSame('Keep the blue styling direction consistent across every view.', $result['reference_pack']['metadata']['selected_look']['instruction']);
+        $this->assertSame('strict_stored', $result['reference_pack']['metadata']['look_mode']);
         $this->assertSame(1, $result['reference_pack']['metadata']['look_size']);
         $this->assertSame('festival_blue', $result['response']->getMetadata()['selected_look']['id']);
+        $this->assertSame('strict_stored', $result['response']->getMetadata()['look_mode']);
         $this->assertSame(1, $result['response']->getMetadata()['look_size']);
     }
 
@@ -365,8 +400,29 @@ class FalReferencePackGenerationServiceTest extends TestCase
         ]);
 
         $this->assertCount(2, $workflow);
+        $this->assertSame('strict_stored', $workflow[0]['look_mode']);
         $this->assertSame('festival_blue', $workflow[0]['look_variant']);
         $this->assertSame('Festival Blue', $workflow[0]['look_label']);
         $this->assertSame('side', $workflow[1]['view']);
+    }
+
+    public function test_prepare_workflow_boolean_alias_enables_strict_stored_mode(): void
+    {
+        $service = new FalReferencePackGenerationService(
+            Mockery::mock(AIEngineService::class),
+            app(FalCharacterStore::class)
+        );
+
+        $workflow = $service->prepareWorkflow('Generate Mina', [
+            'entity_type' => 'character',
+            'frame_count' => 3,
+            'look_id' => 'festival_blue',
+            'strict_stored_looks' => true,
+        ]);
+
+        $this->assertCount(3, $workflow);
+        $this->assertSame('strict_stored', $workflow[0]['look_mode']);
+        $this->assertSame('festival_blue', $workflow[2]['look_variant']);
+        $this->assertSame('side', $workflow[2]['view']);
     }
 }

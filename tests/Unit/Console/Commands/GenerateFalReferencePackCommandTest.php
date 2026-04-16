@@ -117,6 +117,8 @@ class GenerateFalReferencePackCommandTest extends TestCase
                 $this->assertSame('festival_blue', $options['look_id']);
                 $this->assertSame('Festival Blue', $options['look_payload']['label']);
                 $this->assertSame('Keep the blue styling direction consistent across every view.', $options['look_payload']['instruction']);
+                $this->assertSame('strict_stored', $options['look_mode']);
+                $this->assertTrue($options['strict_stored_looks']);
                 $this->assertNull($userId);
 
                 return true;
@@ -124,6 +126,7 @@ class GenerateFalReferencePackCommandTest extends TestCase
             ->andReturn([
                 [
                     'step' => 1,
+                    'look_mode' => 'strict_stored',
                     'look_index' => 1,
                     'look_variant' => 'festival_blue',
                     'view' => 'front',
@@ -143,6 +146,8 @@ class GenerateFalReferencePackCommandTest extends TestCase
             ->withArgs(function (string $prompt, array $options, ?string $userId): bool {
                 $this->assertSame('festival_blue', $options['look_id']);
                 $this->assertSame('Festival Blue', $options['look_payload']['label']);
+                $this->assertSame('strict_stored', $options['look_mode']);
+                $this->assertTrue($options['strict_stored_looks']);
                 $this->assertNull($userId);
 
                 return true;
@@ -162,6 +167,8 @@ class GenerateFalReferencePackCommandTest extends TestCase
             'prompt' => 'Generate Mina',
             '--look-id' => 'festival_blue',
             '--look-payload' => '{"label":"Festival Blue","instruction":"Keep the blue styling direction consistent across every view."}',
+            '--look-mode' => 'strict_stored',
+            '--strict-stored-looks' => true,
         ]);
 
         $this->assertSame(0, $exitCode);

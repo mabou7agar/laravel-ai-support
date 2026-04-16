@@ -160,3 +160,37 @@ php artisan ai-engine:scaffold agent Invoice --model="App\\Models\\Invoice"
 php artisan ai-engine:scaffold collector Invoice
 php artisan ai-engine:scaffold tool LookupCustomer
 ```
+
+## Reference Pack Workflows
+
+Use `generate-character` when the entity is a reusable person/performer. Use `generate-reference-pack` for furniture, vehicles, props, products, creatures, or mixed non-character workflows.
+
+Mode guidance:
+
+- `--look-mode=strict_stored`: production reference sheets from an app-approved look
+- `--look-mode=guided`: start from an approved look, then allow exploratory vendor variants
+- `--look-mode=vendor`: fully exploratory vendor-driven look progression
+- `--strict-stored-looks`: boolean shorthand for strict production mode
+
+Examples:
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina-production \
+  --frame-count=8 \
+  --look-id=wardrobe_scene_12_a \
+  --look-payload='{"label":"Scene 12A hero wardrobe","instruction":"Keep the navy coat, silver jewelry, natural makeup, and pinned-back hair exactly consistent across all views."}' \
+  --look-mode=strict_stored
+```
+
+```bash
+php artisan ai-engine:generate-reference-pack \
+  "Modern curved couch, premium fabric, clean studio background" \
+  --entity-type=furniture \
+  --save-as=modern-couch-production \
+  --frame-count=6 \
+  --look-id=sku_4432_cream_boucle \
+  --strict-stored-looks
+```

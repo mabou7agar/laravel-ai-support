@@ -39,6 +39,31 @@ Common replacements:
 - `AIEngine::engine('openai')->model('gpt-4o')...` still works and now returns `EngineProxy`
 - constructor or service-container references to `AIEngineManager` should be replaced with `UnifiedEngineManager` or `AIEngineService`, depending on whether you need fluent orchestration or direct execution
 
+## Reference Pack Behavior Change
+
+Reference-pack workflows now support explicit look modes:
+
+- `vendor`
+- `guided`
+- `strict_stored`
+
+Upgrade note for host apps using `look_id`:
+
+- if you do not send `look_id`, behavior remains vendor-driven
+- if you send `look_id` without a mode, the package now defaults to `guided`
+- if you need deterministic production references from one approved script/app look, send `look_mode=strict_stored`
+- `strict_stored_looks=true` is supported as a boolean alias for `look_mode=strict_stored`
+
+Practical implication:
+
+- `guided` starts from your app-selected look, then may continue into vendor-generated variants
+- `strict_stored` keeps views changing while the look set stays fixed to the stored/app-provided look
+
+Recommended host-app default:
+
+- screenplay-driven characters, wardrobe, makeup, and production continuity sheets: `strict_stored`
+- ideation, exploration, and moodboard-style workflows: `guided` or `vendor`
+
 ## New Data Tables To Expect
 
 Recent refactors introduce these package tables:

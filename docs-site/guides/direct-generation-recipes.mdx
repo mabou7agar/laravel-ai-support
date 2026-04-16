@@ -371,6 +371,51 @@ php artisan ai-engine:generate-character \
 - the next look keeps the same identity but intentionally changes hair and makeup styling
 - each additional look continues introducing a new style variant while preserving the same identity
 
+Reference-pack workflows now support explicit look modes:
+
+- `vendor`: no stored/app-selected look is enforced; good for concept exploration and ideation
+- `guided`: use the stored/app-selected look for the first look, then allow vendor-generated variants after that
+- `strict_stored`: keep only the stored/app-selected look across all generated views; no vendor-invented beauty/fashion/material variants
+
+Default behavior:
+
+- no `look_id`: `vendor`
+- `look_id` present with no mode: `guided`
+- `strict_stored_looks=true`: shorthand for `look_mode=strict_stored`
+
+Recommended usage:
+
+- screenplay-driven characters, wardrobe, and makeup sheets: `strict_stored`
+- art-direction exploration from a script-selected base look: `guided`
+- moodboards, campaign discovery, and broad ideation: `vendor`
+
+Production reference example with one script-derived look held constant across views:
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina-production \
+  --frame-count=8 \
+  --look-id=wardrobe_scene_12_a \
+  --look-payload='{"label":"Scene 12A hero wardrobe","instruction":"Keep the navy coat, silver jewelry, natural makeup, and pinned-back hair exactly consistent across all views."}' \
+  --look-mode=strict_stored
+```
+
+Exploration example that starts from an approved look but still allows downstream vendor variants:
+
+```bash
+php artisan ai-engine:generate-character \
+  "Front-facing cinematic portrait of Mina, full body, clean background" \
+  --name=Mina \
+  --save-as=mina-guided \
+  --frame-count=8 \
+  --look-size=4 \
+  --look-id=wardrobe_scene_12_a \
+  --look-payload='{"label":"Scene 12A hero wardrobe","instruction":"Start from the approved navy coat and natural makeup look."}' \
+  --look-mode=guided
+```
+
 This stores:
 
 - first generated image as `frontal_image_url`
@@ -412,6 +457,19 @@ php artisan ai-engine:generate-reference-pack \
   --save-as=modern-couch-preview \
   --preview-only \
   --sync
+```
+
+Strict stored mode also works for generic reference packs when the host app already chose the approved look/material direction:
+
+```bash
+php artisan ai-engine:generate-reference-pack \
+  "Modern curved couch, premium fabric, clean studio background" \
+  --entity-type=furniture \
+  --save-as=modern-couch-production \
+  --frame-count=6 \
+  --look-id=sku_4432_cream_boucle \
+  --look-payload='{"label":"Cream boucle hero finish","instruction":"Keep the cream boucle upholstery, walnut legs, and approved silhouette exactly fixed across every view."}' \
+  --strict-stored-looks
 ```
 
 Queue a long character workflow instead of waiting in the terminal:

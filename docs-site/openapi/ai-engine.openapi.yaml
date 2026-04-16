@@ -466,6 +466,122 @@ paths:
         '500':
           $ref: '#/components/responses/GenericError'
 
+  /api/v1/ai/generate/preview:
+    post:
+      tags: [AI Generation]
+      summary: Submit a preview-only reference-pack job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ReferencePackRequest'
+                - type: object
+                  properties:
+                    preview_only:
+                      type: boolean
+                      default: true
+      responses:
+        '202':
+          description: Async preview job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '402':
+          $ref: '#/components/responses/InsufficientCredits'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/generate/preview/jobs/{jobId}:
+    get:
+      tags: [AI Generation]
+      summary: Get async preview job status
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: refresh
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Async preview job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/generate/reference-pack:
+    post:
+      tags: [AI Generation]
+      summary: Submit an async reference-pack job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReferencePackRequest'
+      responses:
+        '202':
+          description: Async reference-pack job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '402':
+          $ref: '#/components/responses/InsufficientCredits'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/generate/reference-pack/jobs/{jobId}:
+    get:
+      tags: [AI Generation]
+      summary: Get async reference-pack job status
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: refresh
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Async reference-pack job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardEnvelope'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
   /api/v1/ai/generate/video:
     post:
       tags: [AI Generation]
@@ -1698,6 +1814,70 @@ components:
           type: boolean
         parameters:
           $ref: '#/components/schemas/JsonObject'
+    ReferencePackRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+        entity_type:
+          type: string
+          enum: [character, object, furniture, vehicle, product, prop, creature]
+          default: character
+        name:
+          type: string
+        save_as:
+          type: string
+        from_reference_pack:
+          type: string
+        from_character:
+          type: string
+        frame_count:
+          type: integer
+          minimum: 1
+          maximum: 32
+        look_size:
+          type: integer
+          minimum: 1
+          maximum: 8
+        look_id:
+          type: string
+        look_payload:
+          $ref: '#/components/schemas/JsonObject'
+        look_mode:
+          type: string
+          enum: [strict_stored, guided, vendor]
+        strict_stored_looks:
+          type: boolean
+        aspect_ratio:
+          type: string
+        resolution:
+          type: string
+        seed:
+          type: integer
+        thinking_level:
+          type: string
+          enum: [minimal, high]
+        output_format:
+          type: string
+          enum: [jpeg, jpg, png, webp, gif]
+        preview_only:
+          type: boolean
+        voice_id:
+          type: string
+        voice_settings:
+          type: object
+          properties:
+            stability:
+              type: number
+            similarity_boost:
+              type: number
+            style:
+              type: number
+            use_speaker_boost:
+              type: boolean
+        use_webhook:
+          type: boolean
     CharacterSourceInput:
       type: object
       properties:

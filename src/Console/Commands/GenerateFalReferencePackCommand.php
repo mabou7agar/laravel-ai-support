@@ -21,6 +21,8 @@ class GenerateFalReferencePackCommand extends Command
                             {--look-size=4 : Number of consistent views per styling look before switching style}
                             {--look-id= : Selected look identifier from your app or entity data}
                             {--look-payload= : Optional JSON payload with look label/instruction overrides}
+                            {--look-mode= : Look workflow mode strict_stored|guided|vendor}
+                            {--strict-stored-looks : Force the workflow to use only the stored/app-provided look across all views}
                             {--aspect-ratio= : Aspect ratio like 9:16 or 16:9}
                             {--resolution= : Output resolution like 1K}
                             {--seed= : Optional generation seed}
@@ -188,6 +190,15 @@ class GenerateFalReferencePackCommand extends Command
             }
 
             $options['look_payload'] = $decoded;
+        }
+
+        $lookMode = $this->option('look-mode');
+        if (is_string($lookMode) && trim($lookMode) !== '') {
+            $options['look_mode'] = trim($lookMode);
+        }
+
+        if ((bool) $this->option('strict-stored-looks')) {
+            $options['strict_stored_looks'] = true;
         }
 
         foreach (['aspect-ratio' => 'aspect_ratio', 'resolution' => 'resolution', 'thinking-level' => 'thinking_level', 'output-format' => 'output_format'] as $option => $parameter) {

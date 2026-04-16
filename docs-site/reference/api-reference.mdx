@@ -49,10 +49,31 @@ For PHP runtime usage, the parallel entrypoints are:
 
 - `POST /text`
 - `POST /image`
+- `POST /preview`
+- `GET /preview/jobs/{jobId}`
+- `POST /reference-pack`
+- `GET /reference-pack/jobs/{jobId}`
+- `POST /video`
+- `GET /video/jobs/{jobId}`
 - `POST /transcribe`
 - `POST /tts`
 
 Authenticated calls to these endpoints are credit-enforced (including image/audio).
+
+Reference-pack specific payload fields:
+
+- `look_id`: the app-selected approved look identifier
+- `look_payload`: optional label/instruction overrides for that approved look
+- `look_mode`: `strict_stored`, `guided`, or `vendor`
+- `strict_stored_looks`: boolean alias for `look_mode=strict_stored`
+
+Reference-pack mode defaults:
+
+- no `look_id`: `vendor`
+- `look_id` with no explicit mode: `guided`
+- `strict_stored_looks=true`: `strict_stored`
+
+Use `strict_stored` for screenplay-driven production references, wardrobe/makeup continuity, and any app-selected canonical look. Use `guided` or `vendor` when exploration is the goal.
 
 ### AI Catalog (`/api/v1/ai`)
 
@@ -116,6 +137,45 @@ Use this contract for infrastructure, not frontend apps.
   "actions": true,
   "use_intelligent_rag": true
 }
+```
+
+## Example: Strict Stored Reference Pack Request
+
+`POST /api/v1/ai/generate/reference-pack`
+
+```json
+{
+  "prompt": "Front-facing cinematic portrait of Mina, full body, clean background",
+  "entity_type": "character",
+  "name": "Mina Production",
+  "save_as": "mina-production",
+  "frame_count": 8,
+  "look_id": "wardrobe_scene_12_a",
+  "look_payload": {
+    "label": "Scene 12A hero wardrobe",
+    "instruction": "Keep the navy coat, silver jewelry, natural makeup, and pinned-back hair exactly consistent across all views."
+  },
+  "look_mode": "strict_stored"
+}
+```
+
+```bash
+curl -X POST https://your-app.test/api/v1/ai/generate/reference-pack \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt":"Front-facing cinematic portrait of Mina, full body, clean background",
+    "entity_type":"character",
+    "name":"Mina Production",
+    "save_as":"mina-production",
+    "frame_count":8,
+    "look_id":"wardrobe_scene_12_a",
+    "look_payload":{
+      "label":"Scene 12A hero wardrobe",
+      "instruction":"Keep the navy coat, silver jewelry, natural makeup, and pinned-back hair exactly consistent across all views."
+    },
+    "look_mode":"strict_stored"
+  }'
 ```
 
 ```bash
