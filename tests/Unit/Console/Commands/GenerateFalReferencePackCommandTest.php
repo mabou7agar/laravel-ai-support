@@ -106,4 +106,65 @@ class GenerateFalReferencePackCommandTest extends TestCase
         $this->assertSame(0, $exitCode);
         $this->assertStringContainsString('"job_id": "job-456"', Artisan::output());
     }
+
+    public function test_command_accepts_selected_look_options(): void
+    {
+        $service = Mockery::mock(FalReferencePackGenerationService::class);
+        $service->shouldReceive('prepareWorkflow')
+            ->once()
+            ->withArgs(function (string $prompt, array $options, ?string $userId): bool {
+                $this->assertSame('Generate Mina', $prompt);
+                $this->assertSame('festival_blue', $options['look_id']);
+                $this->assertSame('Festival Blue', $options['look_payload']['label']);
+                $this->assertSame('Keep the blue styling direction consistent across every view.', $options['look_payload']['instruction']);
+                $this->assertNull($userId);
+
+                return true;
+            })
+            ->andReturn([
+                [
+                    'step' => 1,
+                    'look_index' => 1,
+                    'look_variant' => 'festival_blue',
+                    'view' => 'front',
+                    'label' => 'Look 1: Festival Blue / Front portrait',
+                    'model' => EntityEnum::FAL_NANO_BANANA_2,
+                    'parameters' => [
+                        'frame_count' => 1,
+                        'image_count' => 1,
+                    ],
+                ],
+            ]);
+        $service->shouldNotReceive('generateAndStore');
+
+        $asyncService = Mockery::mock(FalAsyncReferencePackGenerationService::class);
+        $asyncService->shouldReceive('submit')
+            ->once()
+            ->withArgs(function (string $prompt, array $options, ?string $userId): bool {
+                $this->assertSame('festival_blue', $options['look_id']);
+                $this->assertSame('Festival Blue', $options['look_payload']['label']);
+                $this->assertNull($userId);
+
+                return true;
+            })
+            ->andReturn([
+                'job_id' => 'job-look-123',
+                'status' => [
+                    'job_id' => 'job-look-123',
+                    'status' => 'queued',
+                ],
+            ]);
+
+        $this->app->instance(FalReferencePackGenerationService::class, $service);
+        $this->app->instance(FalAsyncReferencePackGenerationService::class, $asyncService);
+
+        $exitCode = Artisan::call('ai-engine:generate-reference-pack', [
+            'prompt' => 'Generate Mina',
+            '--look-id' => 'festival_blue',
+            '--look-payload' => '{"label":"Festival Blue","instruction":"Keep the blue styling direction consistent across every view."}',
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('"job_id": "job-look-123"', Artisan::output());
+    }
 }

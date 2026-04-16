@@ -69,6 +69,45 @@ class GenerateReferencePackApiTest extends TestCase
             ->assertJsonPath('data.status', 'processing');
     }
 
+    public function test_reference_pack_endpoint_accepts_selected_look_fields(): void
+    {
+        $service = Mockery::mock(FalAsyncReferencePackGenerationService::class);
+        $service->shouldReceive('submit')
+            ->once()
+            ->withArgs(function (string $prompt, array $options, ?string $userId): bool {
+                $this->assertSame('Generate Mina', $prompt);
+                $this->assertSame('festival_blue', $options['look_id']);
+                $this->assertSame('Festival Blue', $options['look_payload']['label']);
+                $this->assertSame('Keep the blue styling direction consistent across every view.', $options['look_payload']['instruction']);
+                $this->assertNull($userId);
+
+                return true;
+            })
+            ->andReturn([
+                'job_id' => 'reference-job-look-1',
+                'status' => [
+                    'job_id' => 'reference-job-look-1',
+                    'status' => 'queued',
+                ],
+                'webhook_url' => 'https://app.test/api/v1/ai/generate/reference-pack/fal/webhook?job_id=reference-job-look-1&token=secret',
+            ]);
+
+        $this->app->instance(FalAsyncReferencePackGenerationService::class, $service);
+
+        $response = $this->postJson('/api/v1/ai/generate/reference-pack', [
+            'prompt' => 'Generate Mina',
+            'look_id' => 'festival_blue',
+            'look_payload' => [
+                'label' => 'Festival Blue',
+                'instruction' => 'Keep the blue styling direction consistent across every view.',
+            ],
+        ]);
+
+        $response->assertStatus(202)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.job_id', 'reference-job-look-1');
+    }
+
     public function test_reference_pack_webhook_endpoint_accepts_completion_callback(): void
     {
         $service = Mockery::mock(FalAsyncReferencePackGenerationService::class);

@@ -19,6 +19,8 @@ class GenerateFalReferencePackCommand extends Command
                             {--user-id= : User ID used for credit checks and deductions}
                             {--frame-count=3 : Number of generated views/images}
                             {--look-size=4 : Number of consistent views per styling look before switching style}
+                            {--look-id= : Selected look identifier from your app or entity data}
+                            {--look-payload= : Optional JSON payload with look label/instruction overrides}
                             {--aspect-ratio= : Aspect ratio like 9:16 or 16:9}
                             {--resolution= : Output resolution like 1K}
                             {--seed= : Optional generation seed}
@@ -172,6 +174,21 @@ class GenerateFalReferencePackCommand extends Command
             'look_size' => max(1, (int) $this->option('look-size')),
             'preview_only' => (bool) $this->option('preview-only'),
         ];
+
+        $lookId = $this->option('look-id');
+        if (is_string($lookId) && trim($lookId) !== '') {
+            $options['look_id'] = trim($lookId);
+        }
+
+        $lookPayload = $this->option('look-payload');
+        if (is_string($lookPayload) && trim($lookPayload) !== '') {
+            $decoded = json_decode($lookPayload, true);
+            if (!is_array($decoded)) {
+                throw new \InvalidArgumentException('--look-payload must be valid JSON object or array.');
+            }
+
+            $options['look_payload'] = $decoded;
+        }
 
         foreach (['aspect-ratio' => 'aspect_ratio', 'resolution' => 'resolution', 'thinking-level' => 'thinking_level', 'output-format' => 'output_format'] as $option => $parameter) {
             $value = $this->option($option);
