@@ -57,6 +57,7 @@ class FalAsyncReferencePackGenerationService
             'progress_percentage' => 0,
             'progress_message' => 'Queued reference pack workflow.',
         ];
+        $metadata = $this->mergeWorkflowSummary($metadata);
 
         $status = $this->submitStep($jobId, $metadata, 0);
 
@@ -94,6 +95,7 @@ class FalAsyncReferencePackGenerationService
         }
 
         $metadata = is_array($status['metadata'] ?? null) ? $status['metadata'] : [];
+        $metadata = $this->mergeWorkflowSummary($metadata);
         $provider = is_array($metadata['provider'] ?? null) ? $metadata['provider'] : [];
         $statusUrl = $provider['status_url'] ?? null;
         if (!is_string($statusUrl) || trim($statusUrl) === '') {
@@ -185,6 +187,7 @@ class FalAsyncReferencePackGenerationService
         }
 
         $metadata = is_array($status['metadata'] ?? null) ? $status['metadata'] : [];
+        $metadata = $this->mergeWorkflowSummary($metadata);
         $expectedToken = $metadata['webhook']['token'] ?? null;
 
         if (!is_string($expectedToken) || !hash_equals($expectedToken, $token)) {
@@ -230,6 +233,7 @@ class FalAsyncReferencePackGenerationService
 
     private function submitStep(string $jobId, array $metadata, int $stepIndex, string $urlStrategy = 'stored', bool $skipCreditCharge = false): array
     {
+        $metadata = $this->mergeWorkflowSummary($metadata);
         $workflow = is_array($metadata['workflow'] ?? null) ? $metadata['workflow'] : [];
         $step = $workflow[$stepIndex] ?? null;
         if (!is_array($step)) {
@@ -303,6 +307,7 @@ class FalAsyncReferencePackGenerationService
 
     private function finalizeCurrentStep(string $jobId, array $metadata, array $payload): array
     {
+        $metadata = $this->mergeWorkflowSummary($metadata);
         $workflow = is_array($metadata['workflow'] ?? null) ? $metadata['workflow'] : [];
         $stepIndex = (int) ($metadata['current_step_index'] ?? 0);
         $step = $workflow[$stepIndex] ?? null;
@@ -343,6 +348,7 @@ class FalAsyncReferencePackGenerationService
 
     private function completeWorkflow(string $jobId, array $metadata): array
     {
+        $metadata = $this->mergeWorkflowSummary($metadata);
         $result = $this->referencePackGenerationService->finalizeStoredResult(
             is_array($metadata['generated_images'] ?? null) ? $metadata['generated_images'] : [],
             is_array($metadata['options'] ?? null) ? $metadata['options'] : [],
@@ -441,6 +447,7 @@ class FalAsyncReferencePackGenerationService
 
     private function failJob(string $jobId, array $metadata, string $error): array
     {
+        $metadata = $this->mergeWorkflowSummary($metadata);
         $metadata['failed_at'] = now()->toISOString();
         $metadata['error'] = $error;
         $metadata = $this->updateCurrentStepStatus($metadata, 'failed', ['error' => $error]);
@@ -464,6 +471,135 @@ class FalAsyncReferencePackGenerationService
         );
 
         return $metadata;
+    }
+
+    private function mergeWorkflowSummary(array $metadata): array
+    {
+        $workflow = is_array($metadata['workflow'] ?? null) ? $metadata['workflow'] : [];
+        $options = is_array($metadata['options'] ?? null) ? $metadata['options'] : [];
+        $summary = $this->buildWorkflowSummary($workflow, $options);
+
+        return array_merge($metadata, $summary);
+    }
+
+    private function buildWorkflowSummary(array $workflow, array $options = []): array
+    {
+        return [
+            'look_mode' => $this->resolveWorkflowLookMode($workflow, $options),
+            'look_count' => $this->resolveWorkflowLookCount($workflow, $options),
+            'frames_per_look' => $this->resolveWorkflowFramesPerLook($workflow, $options),
+            'selected_look_ids' => $this->resolveSelectedLookIds($workflow, $options),
+        ];
+    }
+
+    private function resolveWorkflowLookMode(array $workflow, array $options = []): ?string
+    {
+        foreach ($workflow as $step) {
+            if (is_array($step) && is_string($step['look_mode'] ?? null) && trim($step['look_mode']) !== '') {
+                return trim($step['look_mode']);
+            }
+        }
+
+        if (is_string($options['look_mode'] ?? null) && trim((string) $options['look_mode']) !== '') {
+            return trim((string) $options['look_mode']);
+        }
+
+        if (($options['strict_stored_looks'] ?? false) === true) {
+            return 'strict_stored';
+        }
+
+        return null;
+    }
+
+    private function resolveWorkflowLookCount(array $workflow, array $options = []): int
+    {
+        $selectedLookIds = $this->resolveSelectedLookIds($workflow, $options);
+        if ($selectedLookIds !== []) {
+            return count($selectedLookIds);
+        }
+
+        $lookIndexes = [];
+        foreach ($workflow as $step) {
+            if (!is_array($step) || !isset($step['look_index'])) {
+                continue;
+            }
+
+            $lookIndex = (int) $step['look_index'];
+            if ($lookIndex > 0) {
+                $lookIndexes[$lookIndex] = true;
+            }
+        }
+
+        if ($lookIndexes !== []) {
+            return count($lookIndexes);
+        }
+
+        return max(1, count($workflow));
+    }
+
+    private function resolveWorkflowFramesPerLook(array $workflow, array $options = []): int
+    {
+        $countsByLook = [];
+        foreach ($workflow as $step) {
+            if (!is_array($step)) {
+                continue;
+            }
+
+            $lookIndex = (int) ($step['look_index'] ?? 1);
+            $lookKey = $lookIndex > 0 ? $lookIndex : 1;
+            $countsByLook[$lookKey] = ($countsByLook[$lookKey] ?? 0) + 1;
+        }
+
+        if ($countsByLook !== []) {
+            return max($countsByLook);
+        }
+
+        return max(1, (int) ($options['frame_count'] ?? 1));
+    }
+
+    private function resolveSelectedLookIds(array $workflow, array $options = []): array
+    {
+        $selectedLookIds = [];
+
+        $appendId = static function (mixed $id) use (&$selectedLookIds): void {
+            if (!is_string($id) || trim($id) === '') {
+                return;
+            }
+
+            $normalized = trim($id);
+            if (!in_array($normalized, $selectedLookIds, true)) {
+                $selectedLookIds[] = $normalized;
+            }
+        };
+
+        foreach ($workflow as $step) {
+            if (!is_array($step)) {
+                continue;
+            }
+
+            $selectedLooks = is_array($step['selected_looks'] ?? null) ? $step['selected_looks'] : [];
+            foreach ($selectedLooks as $selectedLook) {
+                if (is_array($selectedLook)) {
+                    $appendId($selectedLook['id'] ?? null);
+                }
+            }
+
+            $selectedLook = is_array($step['selected_look'] ?? null) ? $step['selected_look'] : null;
+            if ($selectedLook !== null) {
+                $appendId($selectedLook['id'] ?? null);
+            }
+        }
+
+        $optionSelectedLooks = is_array($options['selected_looks'] ?? null) ? $options['selected_looks'] : [];
+        foreach ($optionSelectedLooks as $selectedLook) {
+            if (is_array($selectedLook)) {
+                $appendId($selectedLook['id'] ?? null);
+            }
+        }
+
+        $appendId($options['look_id'] ?? null);
+
+        return $selectedLookIds;
     }
 
     private function resolveUserId(?string $userId, array $options): ?string

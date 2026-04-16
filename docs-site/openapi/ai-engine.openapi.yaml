@@ -1844,9 +1844,13 @@ components:
           type: string
         look_payload:
           $ref: '#/components/schemas/JsonObject'
+        selected_looks:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
         look_mode:
           type: string
-          enum: [strict_stored, guided, vendor]
+          enum: [strict_selected_set, strict_stored, guided, vendor]
         strict_stored_looks:
           type: boolean
         aspect_ratio:

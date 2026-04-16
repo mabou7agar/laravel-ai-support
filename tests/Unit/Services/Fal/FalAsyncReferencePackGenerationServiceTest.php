@@ -20,14 +20,61 @@ class FalAsyncReferencePackGenerationServiceTest extends TestCase
     {
         config()->set('app.url', 'https://app.test');
 
+        $selectedLooks = [
+            [
+                'id' => 'business-street-look',
+                'name' => 'Commercial Street Business Look',
+                'instruction' => 'Tailored city business styling.',
+                'is_primary' => true,
+            ],
+            [
+                'id' => 'airport-disguise',
+                'name' => 'Airport Security Disguise',
+                'instruction' => 'Travel disguise styling.',
+            ],
+        ];
+
         $workflow = [
             [
                 'step' => 1,
                 'label' => 'Look 1: Signature / Front portrait',
                 'model' => EntityEnum::FAL_NANO_BANANA_2,
+                'look_mode' => 'strict_selected_set',
                 'look_index' => 1,
                 'look_label' => 'Signature look',
                 'look_variant' => 'signature',
+                'selected_look' => $selectedLooks[0],
+                'selected_looks' => $selectedLooks,
+                'view_index' => 1,
+                'view' => 'front',
+                'view_label' => 'Front portrait',
+                'entity_type' => 'character',
+            ],
+            [
+                'step' => 2,
+                'label' => 'Look 1: Signature / Side profile',
+                'model' => EntityEnum::FAL_NANO_BANANA_2_EDIT,
+                'look_mode' => 'strict_selected_set',
+                'look_index' => 1,
+                'look_label' => 'Signature look',
+                'look_variant' => 'signature',
+                'selected_look' => $selectedLooks[0],
+                'selected_looks' => $selectedLooks,
+                'view_index' => 2,
+                'view' => 'side',
+                'view_label' => 'Side profile',
+                'entity_type' => 'character',
+            ],
+            [
+                'step' => 3,
+                'label' => 'Look 2: Airport disguise / Front portrait',
+                'model' => EntityEnum::FAL_NANO_BANANA_2_EDIT,
+                'look_mode' => 'strict_selected_set',
+                'look_index' => 2,
+                'look_label' => 'Airport disguise',
+                'look_variant' => 'airport-disguise',
+                'selected_look' => $selectedLooks[1],
+                'selected_looks' => $selectedLooks,
                 'view_index' => 1,
                 'view' => 'front',
                 'view_label' => 'Front portrait',
@@ -96,6 +143,13 @@ class FalAsyncReferencePackGenerationServiceTest extends TestCase
         ]);
 
         $this->assertSame('queued', $submitted['status']['status']);
+        $this->assertSame('strict_selected_set', $submitted['status']['metadata']['look_mode']);
+        $this->assertSame(2, $submitted['status']['metadata']['look_count']);
+        $this->assertSame(2, $submitted['status']['metadata']['frames_per_look']);
+        $this->assertSame(
+            ['business-street-look', 'airport-disguise'],
+            $submitted['status']['metadata']['selected_look_ids']
+        );
         $this->assertSame('fal-image-1', $submitted['status']['metadata']['provider']['request_id']);
         $this->assertArrayNotHasKey('token', $submitted['status']['metadata']['webhook']);
     }
@@ -109,9 +163,22 @@ class FalAsyncReferencePackGenerationServiceTest extends TestCase
                 'step' => 1,
                 'label' => 'Look 1: Signature / Front portrait',
                 'model' => EntityEnum::FAL_NANO_BANANA_2,
+                'look_mode' => 'strict_stored',
                 'look_index' => 1,
                 'look_label' => 'Signature look',
                 'look_variant' => 'signature',
+                'selected_look' => [
+                    'id' => 'mina-signature',
+                    'name' => 'Mina Signature Look',
+                    'instruction' => 'Keep Mina in her signature styling.',
+                    'is_primary' => true,
+                ],
+                'selected_looks' => [[
+                    'id' => 'mina-signature',
+                    'name' => 'Mina Signature Look',
+                    'instruction' => 'Keep Mina in her signature styling.',
+                    'is_primary' => true,
+                ]],
                 'view_index' => 1,
                 'view' => 'front',
                 'view_label' => 'Front portrait',
@@ -121,9 +188,22 @@ class FalAsyncReferencePackGenerationServiceTest extends TestCase
                 'step' => 2,
                 'label' => 'Look 1: Signature / Side profile',
                 'model' => EntityEnum::FAL_NANO_BANANA_2_EDIT,
+                'look_mode' => 'strict_stored',
                 'look_index' => 1,
                 'look_label' => 'Signature look',
                 'look_variant' => 'signature',
+                'selected_look' => [
+                    'id' => 'mina-signature',
+                    'name' => 'Mina Signature Look',
+                    'instruction' => 'Keep Mina in her signature styling.',
+                    'is_primary' => true,
+                ],
+                'selected_looks' => [[
+                    'id' => 'mina-signature',
+                    'name' => 'Mina Signature Look',
+                    'instruction' => 'Keep Mina in her signature styling.',
+                    'is_primary' => true,
+                ]],
                 'view_index' => 2,
                 'view' => 'side',
                 'view_label' => 'Side profile',
@@ -326,6 +406,10 @@ class FalAsyncReferencePackGenerationServiceTest extends TestCase
         ]);
 
         $this->assertSame('completed', $completed['status']);
+        $this->assertSame('strict_stored', $completed['metadata']['look_mode']);
+        $this->assertSame(1, $completed['metadata']['look_count']);
+        $this->assertSame(2, $completed['metadata']['frames_per_look']);
+        $this->assertSame(['mina-signature'], $completed['metadata']['selected_look_ids']);
         $this->assertSame('mina-preview', $completed['metadata']['alias']);
         $this->assertSame('https://example.com/mina-front.png', $completed['metadata']['reference_pack']['frontal_image_url']);
         $this->assertSame('https://example.com/mina-side.png', $completed['metadata']['response']['metadata']['images'][1]['url']);
