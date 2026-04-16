@@ -54,6 +54,13 @@ The legacy `AIEngineManager` and `EngineBuilder` classes were removed. If your a
 - `LaravelAIEngine\\Services\\AIEngineService` for direct request execution
 - `LaravelAIEngine\\Services\\EngineProxy` as the fluent builder returned by `engine()` / `model()`
 
+Reference-pack upgrade note:
+
+- `look_id` without an explicit mode now defaults to `guided`
+- `guided` starts from your app-selected look, then can continue into vendor-generated variants
+- use `look_mode=strict_stored` if you need deterministic production references from one approved stored look
+- `strict_stored_looks=true` is supported as a shorthand for strict production mode
+
 ## Minimal Production Baseline
 
 ```env
