@@ -75,6 +75,35 @@ Override `getAllowedOperations(?int $userId)` to enforce authorization boundarie
 - return normalized arrays/models only
 - avoid hidden side effects inside handlers
 
+## Business Action Tools
+
+For app-wide write actions that are not owned by a single model config, register deterministic actions in `config/ai-agent.php`:
+
+```php
+'tools' => [
+    'business_action_catalog' => \LaravelAIEngine\Services\Agent\Tools\BusinessActionCatalogTool::class,
+    'prepare_business_action' => \LaravelAIEngine\Services\Agent\Tools\PrepareBusinessActionTool::class,
+    'execute_business_action' => \LaravelAIEngine\Services\Agent\Tools\ExecuteBusinessActionTool::class,
+    'suggest_business_action' => \LaravelAIEngine\Services\Agent\Tools\SuggestBusinessActionTool::class,
+],
+
+'business_actions' => [
+    'create_invoice' => [
+        'id' => 'create_invoice',
+        'module' => 'sales',
+        'label' => 'Create invoice',
+        'operation' => 'create',
+        'required' => ['customer_id', 'invoice_date', 'items'],
+        'confirmation_required' => true,
+        'prepare' => [\App\Services\AI\InvoiceActionService::class, 'prepareCreate'],
+        'handler' => [\App\Services\AI\InvoiceActionService::class, 'create'],
+        'suggest' => [\App\Services\AI\InvoiceActionService::class, 'suggest'],
+    ],
+],
+```
+
+The registry reads `ai-agent.business_actions`, the orchestrator validates required fields, `prepare_business_action` returns a draft without writing, and `execute_business_action` calls the handler only after confirmation when required.
+
 ## List UX Hooks Per Model
 
 For cleaner list responses, add model methods:

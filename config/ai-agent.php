@@ -119,15 +119,34 @@ return [
     | Tools
     |--------------------------------------------------------------------------
     |
-    | Available tools for agent mode.
-    | Tools will be implemented in Phase 3.
-    |
-    */
+     | Available tools for agent mode.
+    | Host applications can enable the built-in tools below or provide their
+    | own AgentTool implementations through the same registry.
+     |
+     */
     'tools' => [
         // 'validate_field' => \LaravelAIEngine\Services\Agent\Tools\ValidateFieldTool::class,
         // 'search_options' => \LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class,
         // 'suggest_value' => \LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class,
         // 'explain_field' => \LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class,
+        // 'business_action_catalog' => \LaravelAIEngine\Services\Agent\Tools\BusinessActionCatalogTool::class,
+        // 'prepare_business_action' => \LaravelAIEngine\Services\Agent\Tools\PrepareBusinessActionTool::class,
+        // 'execute_business_action' => \LaravelAIEngine\Services\Agent\Tools\ExecuteBusinessActionTool::class,
+        // 'suggest_business_action' => \LaravelAIEngine\Services\Agent\Tools\SuggestBusinessActionTool::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Business Actions
+    |--------------------------------------------------------------------------
+    |
+    | Deterministic write actions the agent may prepare, suggest, and execute.
+    | Each action should define id, module, operation, required fields,
+    | confirmation behavior, and prepare/handler/suggest callables as needed.
+    |
+    */
+    'business_actions' => [
+        //
     ],
 
     /*

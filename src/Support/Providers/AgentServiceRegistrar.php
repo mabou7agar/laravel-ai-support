@@ -50,6 +50,13 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\ContextManager::class, fn () => new \LaravelAIEngine\Services\Agent\ContextManager());
         $app->singleton(\LaravelAIEngine\Services\Agent\WorkflowDiscoveryService::class, fn () => new \LaravelAIEngine\Services\Agent\WorkflowDiscoveryService());
         $app->singleton(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class, fn () => new \LaravelAIEngine\Services\Agent\SelectedEntityContextService());
+        $app->singleton(\LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry::class, function () {
+            $registry = new \LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry();
+            $registry->registerBatch((array) config('ai-agent.business_actions', []));
+
+            return $registry;
+        });
+        $app->singleton(\LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator::class, fn ($app) => new \LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator($app->make(\LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\IntentRouter::class, fn ($app) => new \LaravelAIEngine\Services\Agent\IntentRouter($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class), $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class), $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class), $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentPlanner::class, fn () => new \LaravelAIEngine\Services\Agent\AgentPlanner());
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentResponseFinalizer($app->make(\LaravelAIEngine\Services\Agent\ContextManager::class)));
