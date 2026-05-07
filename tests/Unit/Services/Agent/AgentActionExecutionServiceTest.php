@@ -23,8 +23,98 @@ class AgentActionExecutionServiceCollectorStub
     }
 }
 
+class AgentActionExecutionServiceToolConfigStub
+{
+    public static function getName(): string
+    {
+        return 'stub_tools';
+    }
+
+    public static function getTools(): array
+    {
+        return [
+            'prepare_stub_action' => [
+                'parameters' => [],
+                'handler' => static fn (): array => [
+                    'success' => false,
+                    'message' => 'I need the customer and due date before I can prepare this.',
+                    'needs_user_input' => true,
+                    'missing_fields' => ['customer_id', 'due_date'],
+                ],
+            ],
+            'echo_stub_action' => [
+                'parameters' => [
+                    'payload' => ['type' => 'array', 'required' => true],
+                ],
+                'handler' => static fn (array $params): array => [
+                    'success' => true,
+                    'message' => 'Tool parameters received.',
+                    'data' => $params,
+                ],
+            ],
+        ];
+    }
+}
+
 class AgentActionExecutionServiceTest extends UnitTestCase
 {
+    public function test_execute_use_tool_preserves_needs_user_input_results(): void
+    {
+        $service = new AgentActionExecutionService(
+            $this->createMock(AutonomousCollectorRegistry::class),
+            $this->createMock(AutonomousCollectorDiscoveryService::class),
+            $this->createMock(AutonomousCollectorHandler::class),
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('tool-session', 1);
+
+        $response = $service->executeUseTool(
+            'prepare_stub_action',
+            'create an invoice',
+            $context,
+            ['model_configs' => [AgentActionExecutionServiceToolConfigStub::class]],
+            function () {
+                $this->fail('Fallback RAG should not be called for configured tool');
+            }
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertTrue($response->needsUserInput);
+        $this->assertFalse($response->isComplete);
+        $this->assertSame('I need the customer and due date before I can prepare this.', $response->message);
+        $this->assertSame(['customer_id', 'due_date'], $response->requiredInputs);
+    }
+
+    public function test_execute_use_tool_prefers_router_params_over_message_extraction(): void
+    {
+        $service = new AgentActionExecutionService(
+            $this->createMock(AutonomousCollectorRegistry::class),
+            $this->createMock(AutonomousCollectorDiscoveryService::class),
+            $this->createMock(AutonomousCollectorHandler::class),
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('tool-param-session', 1);
+
+        $response = $service->executeUseTool(
+            'echo_stub_action',
+            'create an invoice',
+            $context,
+            [
+                'model_configs' => [AgentActionExecutionServiceToolConfigStub::class],
+                'tool_params' => ['payload' => ['customer_id' => 10]],
+            ],
+            function () {
+                $this->fail('Fallback RAG should not be called for configured tool');
+            }
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertSame('Tool parameters received.', $response->message);
+        $this->assertSame(['customer_id' => 10], $response->data['data']['payload']);
+    }
+
     public function test_execute_resume_session_restores_last_paused_collector(): void
     {
         $service = new AgentActionExecutionService(

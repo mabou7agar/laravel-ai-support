@@ -24,6 +24,10 @@ class MessageRoutingClassifier
             return $this->decision('ask_ai', 'workflow_or_action', 'explicit mutation or workflow intent');
         }
 
+        if ($this->isExactLookup($normalized)) {
+            return $this->decision('ask_ai', 'exact_lookup', 'exact identifier lookup should use structured tools when available');
+        }
+
         if ($this->isContextualFollowUp($normalized, $signals)) {
             return $this->decision('search_rag', 'contextual_follow_up', 'follow-up refers to selected or visible context');
         }
@@ -112,6 +116,19 @@ class MessageRoutingClassifier
     protected function isActionWorkflow(string $normalized): bool
     {
         return preg_match('/^(create|add|new|update|edit|change|modify|delete|remove|cancel|approve|reject|submit|send|run|execute|trigger)\b/i', $normalized) === 1;
+    }
+
+    protected function isExactLookup(string $normalized): bool
+    {
+        if (preg_match('/\b(invoice|proposal|quote|order|ticket|contract|customer|employee|asset|booking|courier|warehouse)\s+(number|no|id|code|sku)\b/i', $normalized)) {
+            return true;
+        }
+
+        if (preg_match('/\b[A-Z]{2,}(?:-[A-Z0-9]+){2,}\b/', strtoupper($normalized))) {
+            return true;
+        }
+
+        return false;
     }
 
     protected function isStructuredQuery(string $normalized): bool

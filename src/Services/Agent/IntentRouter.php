@@ -307,9 +307,10 @@ Routing rules:
 2) Use route_to_node only when the requested domain belongs to a remote node.
 3) Never route_to_node for "local".
 4) Prefer search_rag for local viewing/search/listing questions.
-5) Use start_collector for create/update/delete requests.
-6) Use conversational for greetings/general chat.
-7) Use resume_session only for "resume/back".
+5) Use business_data_query through use_tool for exact local IDs, codes, invoice numbers, ticket numbers, SKUs, or other structured filters.
+6) Use start_collector for create/update/delete requests unless a more specific prepare/execute tool is available.
+7) Use conversational for greetings/general chat.
+8) Use resume_session only for "resume/back".
 
 Allowed actions:
 - start_collector
@@ -321,7 +322,7 @@ Allowed actions:
 - conversational
 
 Respond with JSON ONLY using this schema:
-{"action":"start_collector|use_tool|route_to_node|resume_session|pause_and_handle|search_rag|conversational","resource_name":"name or null","reasoning":"one short sentence"}
+{"action":"start_collector|use_tool|route_to_node|resume_session|pause_and_handle|search_rag|conversational","resource_name":"name or null","params":{"optional":"tool parameters"},"reasoning":"one short sentence"}
 PROMPT;
     }
 
@@ -512,6 +513,7 @@ PROMPT;
         return [
             'action' => $action,
             'resource_name' => $resourceName,
+            'params' => is_array($decoded['params'] ?? null) ? $decoded['params'] : [],
             'reasoning' => $reasoning !== '' ? $reasoning : 'AI routing decision',
             'decision_source' => 'router_ai',
         ];

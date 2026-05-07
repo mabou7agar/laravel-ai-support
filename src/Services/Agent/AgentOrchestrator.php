@@ -279,7 +279,9 @@ class AgentOrchestrator
             (string) ($decision['resource_name'] ?? ''),
             $message,
             $context,
-            $options,
+            array_merge($options, [
+                'tool_params' => is_array($decision['params'] ?? null) ? $decision['params'] : [],
+            ]),
             fn (string $searchMessage, UnifiedActionContext $searchContext, array $searchOptions) => $this->searchRag(
                 $searchMessage,
                 $searchContext,

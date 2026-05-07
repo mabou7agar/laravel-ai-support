@@ -35,6 +35,24 @@ class AgentPlannerTest extends TestCase
         $this->assertSame('billing', $result);
     }
 
+    public function test_plan_preserves_router_tool_params(): void
+    {
+        $planner = new AgentPlanner();
+
+        $plan = $planner->plan([
+            'action' => 'use_tool',
+            'resource_name' => 'business_data_query',
+            'params' => [
+                'model' => 'SalesInvoice',
+                'filters' => ['invoice_number' => 'INV-1'],
+            ],
+        ]);
+
+        $this->assertSame('business_data_query', $plan['resource_name']);
+        $this->assertSame('SalesInvoice', $plan['params']['model']);
+        $this->assertSame(['invoice_number' => 'INV-1'], $plan['params']['filters']);
+    }
+
     public function test_dispatch_uses_fallback_handler_for_unknown_action(): void
     {
         $planner = new AgentPlanner();

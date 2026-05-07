@@ -39,6 +39,16 @@ class MessageRoutingClassifierTest extends UnitTestCase
         $this->assertSame('structured_query', $decision['mode']);
     }
 
+    public function test_classifies_exact_identifier_lookup_for_router_tool_selection(): void
+    {
+        $classifier = new MessageRoutingClassifier();
+
+        $decision = $classifier->classify('please check invoice number AI-E2E-SINV-001');
+
+        $this->assertSame('ask_ai', $decision['route']);
+        $this->assertSame('exact_lookup', $decision['mode']);
+    }
+
     public function test_classifies_selected_entity_follow_up_as_contextual(): void
     {
         $classifier = new MessageRoutingClassifier();

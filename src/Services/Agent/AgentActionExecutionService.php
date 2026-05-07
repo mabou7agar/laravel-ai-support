@@ -64,12 +64,14 @@ class AgentActionExecutionService
                     continue;
                 }
 
-                $params = [];
+                $params = is_array($options['tool_params'] ?? null) ? $options['tool_params'] : [];
                 $suggestedActions = $context->metadata['suggested_actions'] ?? [];
-                foreach ($suggestedActions as $action) {
-                    if (($action['tool'] ?? $action['action'] ?? null) === $toolName) {
-                        $params = $action['params'] ?? [];
-                        break;
+                if (empty($params)) {
+                    foreach ($suggestedActions as $action) {
+                        if (($action['tool'] ?? $action['action'] ?? null) === $toolName) {
+                            $params = $action['params'] ?? [];
+                            break;
+                        }
                     }
                 }
 
@@ -100,6 +102,18 @@ class AgentActionExecutionService
                         ),
                         context: $context,
                         data: $result
+                    );
+                }
+
+                if ($result['needs_user_input'] ?? false) {
+                    return AgentResponse::needsUserInput(
+                        message: $result['message'] ?? $result['error'] ?? $this->runtimeText(
+                            'ai-engine::runtime.agent_action_execution.input_required',
+                            'More information is required.'
+                        ),
+                        data: $result,
+                        context: $context,
+                        requiredInputs: $result['missing_fields'] ?? null
                     );
                 }
 

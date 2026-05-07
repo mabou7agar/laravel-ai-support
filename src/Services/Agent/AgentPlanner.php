@@ -29,6 +29,7 @@ class AgentPlanner
         return [
             'action' => $action,
             'resource_name' => $resourceName,
+            'params' => is_array($decision['params'] ?? null) ? $decision['params'] : [],
             'reasoning' => $decision['reasoning'] ?? 'Default fallback',
         ];
     }
