@@ -10,6 +10,7 @@ use LaravelAIEngine\Drivers\Gemini\GeminiEngineDriver;
 use LaravelAIEngine\Drivers\StableDiffusion\StableDiffusionEngineDriver;
 use LaravelAIEngine\Drivers\ElevenLabs\ElevenLabsEngineDriver;
 use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
+use LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
 
@@ -36,6 +37,7 @@ class EngineEnum
     public const PEXELS = 'pexels';
     public const OPENROUTER = 'openrouter';
     public const OLLAMA = 'ollama';
+    public const NVIDIA_NIM = 'nvidia_nim';
 
     public string $value;
 
@@ -75,6 +77,8 @@ class EngineEnum
                 return OpenRouterEngineDriver::class;
             case self::OLLAMA:
                 return OllamaEngineDriver::class;
+            case self::NVIDIA_NIM:
+                return NvidiaNimEngineDriver::class;
             default:
                 throw new \InvalidArgumentException("Unknown engine: {$this->value}");
         }
@@ -120,6 +124,8 @@ class EngineEnum
                 return 'OpenRouter';
             case self::OLLAMA:
                 return 'Ollama (Local)';
+            case self::NVIDIA_NIM:
+                return 'NVIDIA NIM';
             default:
                 return ucfirst(str_replace('_', ' ', $this->value));
         }
@@ -173,6 +179,8 @@ class EngineEnum
                 return ['text', 'chat', 'images', 'vision', 'embeddings'];
             case self::OLLAMA:
                 return ['text', 'chat', 'embeddings'];
+            case self::NVIDIA_NIM:
+                return ['text', 'chat', 'streaming'];
             default:
                 return [];
         }
@@ -278,6 +286,12 @@ class EngineEnum
                     EntityEnum::OLLAMA_MISTRAL,
                     EntityEnum::OLLAMA_CODELLAMA,
                 ];
+            case self::NVIDIA_NIM:
+                return [
+                    EntityEnum::NVIDIA_NIM_NEMOTRON_70B,
+                    EntityEnum::NVIDIA_NIM_LLAMA_3_1_70B,
+                    EntityEnum::NVIDIA_NIM_LLAMA_3_1_8B,
+                ];
             default:
                 return [];
         }
@@ -306,6 +320,7 @@ class EngineEnum
             self::PEXELS,
             self::OPENROUTER,
             self::OLLAMA,
+            self::NVIDIA_NIM,
         ];
     }
 

@@ -31,5 +31,13 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
             ['gpt-5-mini', 'gpt-4o-mini', 'gpt-4o', 'dall-e-3', 'whisper-1'],
             array_keys($defaults['engines']['openai']['models'] ?? [])
         );
+        $this->assertSame(
+            'https://integrate.api.nvidia.com/v1',
+            $defaults['engines']['nvidia_nim']['base_url'] ?? null
+        );
+        $this->assertSame(
+            'nvidia/llama-3.1-nemotron-70b-instruct',
+            $defaults['engines']['nvidia_nim']['default_model'] ?? null
+        );
     }
 }

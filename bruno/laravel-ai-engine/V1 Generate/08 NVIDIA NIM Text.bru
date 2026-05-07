@@ -1,0 +1,32 @@
+meta {
+  name: NVIDIA NIM Text
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/generate/text
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "prompt": "Write a concise product description for an AI support desk.",
+    "engine": "nvidia_nim",
+    "model": "nvidia/llama-3.1-nemotron-70b-instruct",
+    "max_tokens": 160,
+    "temperature": 0.4,
+    "parameters": {
+      "top_p": 0.9
+    }
+  }
+}

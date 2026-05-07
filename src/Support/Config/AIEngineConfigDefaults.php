@@ -597,6 +597,19 @@ class AIEngineConfigDefaults
             ],
         ],
 
+        'nvidia_nim' => [
+            'driver' => 'nvidia_nim',
+            'api_key' => env('NVIDIA_NIM_API_KEY', env('NVIDIA_API_KEY')),
+            'base_url' => env('NVIDIA_NIM_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
+            'timeout' => env('NVIDIA_NIM_TIMEOUT', 60),
+            'default_model' => env('NVIDIA_NIM_DEFAULT_MODEL', 'nvidia/llama-3.1-nemotron-70b-instruct'),
+            'models' => [
+                'nvidia/llama-3.1-nemotron-70b-instruct' => ['enabled' => true, 'credit_index' => 1.0],
+                'meta/llama-3.1-70b-instruct' => ['enabled' => true, 'credit_index' => 0.8],
+                'meta/llama-3.1-8b-instruct' => ['enabled' => true, 'credit_index' => 0.3],
+            ],
+        ],
+
         'ollama' => [
             'driver' => 'ollama',
             'base_url' => env('OLLAMA_BASE_URL', 'http://localhost:11434'),
@@ -712,6 +725,7 @@ class AIEngineConfigDefaults
             'anthropic' => env('AI_ANTHROPIC_RATE', 3.0), // 3:1 ratio
             'gemini' => env('AI_GEMINI_RATE', 1.0),       // 1:1 ratio
             'openrouter' => env('AI_OPENROUTER_RATE', 2.5), // 2.5:1 ratio
+            'nvidia_nim' => env('AI_NVIDIA_NIM_RATE', 1.5), // 1.5:1 ratio
         ],
     ],
 
@@ -878,7 +892,7 @@ class AIEngineConfigDefaults
     'request_routing' => [
         'provider_priority' => self::csvEnv(
             'AI_ENGINE_REQUEST_PROVIDER_PRIORITY',
-            'native;openrouter;anthropic;gemini;deepseek;ollama'
+            'native;openrouter;anthropic;gemini;deepseek;nvidia_nim;ollama'
         ),
     ],
 

@@ -9,7 +9,7 @@ description: High-impact environment variables by domain.
 AI_ENGINE_DEFAULT=openai
 AI_ENGINE_DEFAULT_MODEL=gpt-4o
 AI_ORCHESTRATION_MODEL=gpt-4o-mini
-AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini;deepseek;ollama
+AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini;deepseek;nvidia_nim;ollama
 ```
 
 `AI_ENGINE_REQUEST_PROVIDER_PRIORITY` controls provider resolution for direct requests when callers omit `engine`. The special `native` token means "prefer the model's direct provider first", then try the rest in order.
@@ -22,6 +22,9 @@ ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
 DEEPSEEK_API_KEY=
 OPENROUTER_API_KEY=
+NVIDIA_NIM_API_KEY=
+NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_NIM_DEFAULT_MODEL=nvidia/llama-3.1-nemotron-70b-instruct
 ```
 
 Optional live provider matrices:

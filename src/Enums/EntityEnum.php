@@ -210,6 +210,11 @@ class EntityEnum
     public const OPENROUTER_PHI_3_MINI_FREE = 'microsoft/phi-3-mini-128k-instruct:free';
     public const OPENROUTER_OPENCHAT_3_5_FREE = 'openchat/openchat-3.5-1210:free';
 
+    // NVIDIA NIM Models (OpenAI-compatible hosted or self-hosted NIM)
+    public const NVIDIA_NIM_NEMOTRON_70B = 'nvidia/llama-3.1-nemotron-70b-instruct';
+    public const NVIDIA_NIM_LLAMA_3_1_70B = 'meta/llama-3.1-70b-instruct';
+    public const NVIDIA_NIM_LLAMA_3_1_8B = 'meta/llama-3.1-8b-instruct';
+
     public string $value;
 
     public function __construct(string $value)
@@ -391,6 +396,10 @@ class EntityEnum
             case self::OPENROUTER_PHI_3_MINI_FREE:
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return new EngineEnum(EngineEnum::OPENROUTER);
+            case self::NVIDIA_NIM_NEMOTRON_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_8B:
+                return new EngineEnum(EngineEnum::NVIDIA_NIM);
             default:
                 // Try to detect engine from model name pattern
                 return $this->detectEngineFromModelName();
@@ -527,6 +536,10 @@ class EntityEnum
                 return GPT4ODriver::class;
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return GPT4ODriver::class;
+            case self::NVIDIA_NIM_NEMOTRON_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_8B:
+                return \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class;
             default:
                 // For unknown models, use engine-based driver detection
                 return $this->detectDriverFromEngine();
@@ -548,6 +561,7 @@ class EntityEnum
             EngineEnum::OPENROUTER => OpenRouterDriver::class,
             EngineEnum::DEEPSEEK => DeepSeekDriver::class,
             EngineEnum::OLLAMA => OllamaDriver::class,
+            EngineEnum::NVIDIA_NIM => \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class,
             default => GPT4ODriver::class,
         };
     }
@@ -691,6 +705,12 @@ class EntityEnum
                 return 'Phi-3 Mini (Free)';
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return 'OpenChat 3.5 (Free)';
+            case self::NVIDIA_NIM_NEMOTRON_70B:
+                return 'Llama 3.1 Nemotron 70B (NVIDIA NIM)';
+            case self::NVIDIA_NIM_LLAMA_3_1_70B:
+                return 'Llama 3.1 70B (NVIDIA NIM)';
+            case self::NVIDIA_NIM_LLAMA_3_1_8B:
+                return 'Llama 3.1 8B (NVIDIA NIM)';
             default:
                 // Return model name as label for unknown models
                 return ucwords(str_replace(['-', '_', '/'], ' ', $this->value));
@@ -880,6 +900,12 @@ class EntityEnum
                 return 0.0;
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return 0.0;
+            case self::NVIDIA_NIM_NEMOTRON_70B:
+                return 1.0;
+            case self::NVIDIA_NIM_LLAMA_3_1_70B:
+                return 0.8;
+            case self::NVIDIA_NIM_LLAMA_3_1_8B:
+                return 0.3;
             default:
                 // Try to get credit index from config, default to 1.0
                 return $this->getCreditIndexFromConfig();
@@ -945,6 +971,9 @@ class EntityEnum
             case self::OPENROUTER_QWEN_2_5_7B_FREE:
             case self::OPENROUTER_PHI_3_MINI_FREE:
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
+            case self::NVIDIA_NIM_NEMOTRON_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return 'text';
             case self::DALL_E_3:
             case self::DALL_E_2:
@@ -1037,6 +1066,10 @@ class EntityEnum
                 return 32768;
             case self::DEEPSEEK_REASONER:
                 return 65536;
+            case self::NVIDIA_NIM_NEMOTRON_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_8B:
+                return 32768;
             default:
                 // Try to get max tokens from database
                 return $this->getMaxTokensFromDatabase();
@@ -1123,6 +1156,9 @@ class EntityEnum
             case self::GPT_5_NANO:
             case self::DEEPSEEK_CHAT:
             case self::DEEPSEEK_REASONER:
+            case self::NVIDIA_NIM_NEMOTRON_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_70B:
+            case self::NVIDIA_NIM_LLAMA_3_1_8B:
             case self::CLAUDE_3_5_SONNET:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
@@ -1303,6 +1339,9 @@ class EntityEnum
             self::OPENROUTER_GPT_5_MINI,
             self::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL,
             self::OPENROUTER_LLAMA_3_3_70B,
+            self::NVIDIA_NIM_NEMOTRON_70B,
+            self::NVIDIA_NIM_LLAMA_3_1_70B,
+            self::NVIDIA_NIM_LLAMA_3_1_8B,
         ];
     }
 

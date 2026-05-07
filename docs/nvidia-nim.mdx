@@ -1,0 +1,55 @@
+---
+title: NVIDIA NIM
+description: Configure NVIDIA NIM as an OpenAI-compatible text generation provider.
+---
+
+# NVIDIA NIM
+
+Laravel AI Engine supports NVIDIA NIM through the `nvidia_nim` engine. Hosted NIM uses NVIDIA's OpenAI-compatible API at `https://integrate.api.nvidia.com/v1`; self-hosted NIM deployments can use the same driver by overriding the base URL to the OpenAI-compatible `/v1` base.
+
+## Environment
+
+```dotenv
+NVIDIA_NIM_API_KEY=nvapi-...
+NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_NIM_DEFAULT_MODEL=nvidia/llama-3.1-nemotron-70b-instruct
+```
+
+`NVIDIA_API_KEY` is also accepted as a fallback for `NVIDIA_NIM_API_KEY`.
+
+## Direct generation API
+
+```http
+POST /api/v1/ai/generate/text
+Accept: application/json
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "prompt": "Write a concise product description for an AI support desk.",
+  "engine": "nvidia_nim",
+  "model": "nvidia/llama-3.1-nemotron-70b-instruct",
+  "max_tokens": 160,
+  "temperature": 0.4,
+  "parameters": {
+    "top_p": 0.9
+  }
+}
+```
+
+## Custom models
+
+NIM model IDs vary between the hosted catalog and self-hosted deployments. Add any model you use to `ai-engine.engines.nvidia_nim.models` so model routing resolves it to the NVIDIA driver:
+
+```php
+'nvidia_nim' => [
+    'api_key' => env('NVIDIA_NIM_API_KEY'),
+    'base_url' => env('NVIDIA_NIM_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
+    'default_model' => env('NVIDIA_NIM_DEFAULT_MODEL', 'nvidia/llama-3.1-nemotron-70b-instruct'),
+    'models' => [
+        'your-org/your-nim-model' => ['enabled' => true, 'credit_index' => 1.0],
+    ],
+],
+```
+
+The driver supports chat text generation, streaming, model listing via `/models`, and the common OpenAI-compatible parameters `top_p`, `frequency_penalty`, `presence_penalty`, `stop`, `seed`, `response_format`, `tools`, and `tool_choice`.

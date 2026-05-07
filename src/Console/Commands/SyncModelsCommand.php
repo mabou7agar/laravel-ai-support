@@ -84,6 +84,7 @@ class SyncModelsCommand extends Command
                 'openai' => $this->syncOpenAIModels(),
                 'anthropic' => $this->syncAnthropicModels(),
                 'openrouter' => $this->syncOpenRouterModels(),
+                'nvidia_nim' => $this->syncNvidiaNimModels(),
                 default => [],
             };
         } catch (\Exception $e) {
@@ -148,5 +149,26 @@ class SyncModelsCommand extends Command
             ->toArray();
 
         return $models;
+    }
+
+    private function syncNvidiaNimModels(): array
+    {
+        $apiKey = config('ai-engine.engines.nvidia_nim.api_key');
+        $baseUrl = rtrim((string) config('ai-engine.engines.nvidia_nim.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
+
+        $response = \Illuminate\Support\Facades\Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+        ])->get($baseUrl . '/models');
+
+        if (!$response->successful()) {
+            throw new \Exception('NVIDIA NIM API request failed: ' . $response->body());
+        }
+
+        return collect($response->json('data', []))
+            ->pluck('id')
+            ->filter()
+            ->sort()
+            ->values()
+            ->toArray();
     }
 }

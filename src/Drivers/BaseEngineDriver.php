@@ -362,7 +362,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     protected function extractTokenUsage(array $data, string $content, string $format = 'openai'): int
     {
         $tokens = match($format) {
-            'openai', 'deepseek', 'perplexity' => $data['usage']['total_tokens'] ?? null,
+            'openai', 'deepseek', 'perplexity', 'nvidia_nim' => $data['usage']['total_tokens'] ?? null,
             'anthropic' => ($data['usage']['input_tokens'] ?? 0) + ($data['usage']['output_tokens'] ?? 0),
             'gemini' => $data['usageMetadata']['totalTokenCount'] ?? null,
             default => null,
@@ -568,7 +568,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     protected function extractRequestId(array $data, string $format = 'openai'): ?string
     {
         return match($format) {
-            'openai', 'anthropic', 'deepseek', 'perplexity' => $data['id'] ?? null,
+            'openai', 'anthropic', 'deepseek', 'perplexity', 'nvidia_nim' => $data['id'] ?? null,
             'gemini' => $data['name'] ?? null,
             default => null,
         };
@@ -584,7 +584,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     protected function extractFinishReason(array $data, string $format = 'openai'): ?string
     {
         return match($format) {
-            'openai', 'deepseek', 'perplexity' => $data['choices'][0]['finish_reason'] ?? null,
+            'openai', 'deepseek', 'perplexity', 'nvidia_nim' => $data['choices'][0]['finish_reason'] ?? null,
             'anthropic' => $data['stop_reason'] ?? null,
             'gemini' => $data['candidates'][0]['finishReason'] ?? null,
             default => null,
@@ -601,7 +601,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     protected function extractDetailedUsage(array $data, string $format = 'openai'): ?array
     {
         $usage = match($format) {
-            'openai', 'deepseek', 'perplexity' => $data['usage'] ?? null,
+            'openai', 'deepseek', 'perplexity', 'nvidia_nim' => $data['usage'] ?? null,
             'anthropic' => $data['usage'] ?? null,
             'gemini' => $data['usageMetadata'] ?? null,
             default => null,
@@ -613,7 +613,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
         // Normalize to common format
         return match($format) {
-            'openai', 'deepseek', 'perplexity' => [
+            'openai', 'deepseek', 'perplexity', 'nvidia_nim' => [
                 'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
                 'completion_tokens' => $usage['completion_tokens'] ?? 0,
                 'total_tokens' => $usage['total_tokens'] ?? 0,

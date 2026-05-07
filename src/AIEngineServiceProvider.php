@@ -110,6 +110,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 \LaravelAIEngine\Enums\EngineEnum::ELEVEN_LABS,
                 \LaravelAIEngine\Enums\EngineEnum::FAL_AI,
                 \LaravelAIEngine\Enums\EngineEnum::OPENROUTER,
+                \LaravelAIEngine\Enums\EngineEnum::NVIDIA_NIM,
                 \LaravelAIEngine\Enums\EngineEnum::OLLAMA,
             ] as $engine) {
                 $registry->register($engine, function () use ($engine) {

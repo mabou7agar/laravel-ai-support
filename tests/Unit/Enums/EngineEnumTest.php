@@ -6,6 +6,7 @@ use LaravelAIEngine\Tests\TestCase;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
 use LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
+use LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver;
 
 class EngineEnumTest extends TestCase
 {
@@ -31,6 +32,7 @@ class EngineEnumTest extends TestCase
             'plagiarism_check',
             'unsplash',
             'pexels',
+            'nvidia_nim',
         ];
 
         $actualEngines = array_map(fn($case) => $case->value, EngineEnum::cases());
@@ -50,6 +52,11 @@ class EngineEnumTest extends TestCase
         $this->assertEquals(
             AnthropicEngineDriver::class,
             $this->engine(EngineEnum::ANTHROPIC)->driverClass()
+        );
+
+        $this->assertEquals(
+            NvidiaNimEngineDriver::class,
+            $this->engine(EngineEnum::NVIDIA_NIM)->driverClass()
         );
     }
 
