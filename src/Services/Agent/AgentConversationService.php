@@ -288,25 +288,51 @@ PROMPT;
 
     protected function sanitizeProfile(Authenticatable $user): array
     {
-        $profile = [];
+        $profile = [
+            'id' => $user->getAuthIdentifier(),
+        ];
 
-        if (method_exists($user, 'toArray')) {
-            $profile = (array) $user->toArray();
+        $allowedFields = [
+            'name',
+            'email',
+            'username',
+            'first_name',
+            'last_name',
+            'phone',
+            'mobile_no',
+            'type',
+            'role',
+            'lang',
+            'locale',
+            'timezone',
+            'created_by',
+            'creator_id',
+        ];
+
+        if (method_exists($user, 'getAttribute')) {
+            foreach ($allowedFields as $field) {
+                $value = $user->getAttribute($field);
+                if ($value !== null && !is_array($value) && !is_object($value)) {
+                    $profile[$field] = $value;
+                }
+            }
+
+            return $this->removeSensitiveFields(array_filter(
+                $profile,
+                static fn (mixed $value): bool => $value !== null && $value !== ''
+            ));
         }
 
-        if ($profile === []) {
-            $profile = [
-                'id' => $user->getAuthIdentifier(),
-            ];
-
-            foreach (['name', 'email', 'username', 'first_name', 'last_name', 'phone', 'role'] as $key) {
-                if (isset($user->{$key})) {
-                    $profile[$key] = $user->{$key};
-                }
+        foreach ($allowedFields as $field) {
+            if (isset($user->{$field}) && !is_array($user->{$field}) && !is_object($user->{$field})) {
+                $profile[$field] = $user->{$field};
             }
         }
 
-        return $this->removeSensitiveFields($profile);
+        return $this->removeSensitiveFields(array_filter(
+            $profile,
+            static fn (mixed $value): bool => $value !== null && $value !== ''
+        ));
     }
 
     protected function removeSensitiveFields(array $profile): array

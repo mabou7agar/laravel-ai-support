@@ -29,6 +29,9 @@ class AgentConversationServiceTest extends UnitTestCase
             'email' => 'john@example.com',
             'password' => 'secret-password',
         ]);
+        $user->setRelation('loaded_relation', collect([
+            ['name' => 'Large related record', 'body' => str_repeat('x', 10000)],
+        ]));
         auth()->setUser($user);
 
         $ai->shouldReceive('generate')
@@ -36,7 +39,9 @@ class AgentConversationServiceTest extends UnitTestCase
             ->with(Mockery::on(function ($request) {
                 return str_contains($request->prompt, '"name":"John Doe"')
                     && str_contains($request->prompt, '"email":"john@example.com"')
-                    && !str_contains($request->prompt, 'secret-password');
+                    && !str_contains($request->prompt, 'secret-password')
+                    && !str_contains($request->prompt, 'Large related record')
+                    && strlen($request->prompt) < 3000;
             }))
             ->andReturn(AIResponse::success('Your name is John Doe.', 'openai', 'gpt-4o-mini'));
 
