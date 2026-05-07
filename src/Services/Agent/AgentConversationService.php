@@ -159,8 +159,23 @@ PROMPT;
             temperature: 0.7,
         ));
 
+        if (!$aiResponse->isSuccessful()) {
+            return AgentResponse::failure(
+                message: $aiResponse->getError() ?: 'AI engine failed to generate a response.',
+                context: $context
+            );
+        }
+
+        $content = trim($aiResponse->getContent());
+        if ($content === '') {
+            return AgentResponse::failure(
+                message: 'AI engine returned an empty response.',
+                context: $context
+            );
+        }
+
         return AgentResponse::conversational(
-            message: $aiResponse->getContent(),
+            message: $content,
             context: $context
         );
     }

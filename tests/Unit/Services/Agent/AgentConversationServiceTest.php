@@ -56,6 +56,52 @@ class AgentConversationServiceTest extends UnitTestCase
         $this->assertSame('Your name is John Doe.', $response->message);
     }
 
+    public function test_execute_conversational_returns_failure_when_ai_engine_fails(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $rag = Mockery::mock(AutonomousRAGAgent::class);
+        $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
+        $selection = Mockery::mock(AgentSelectionService::class);
+
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::error('Provider authentication failed.', 'openai', 'gpt-4o-mini'));
+
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection);
+        $context = new UnifiedActionContext('session-ai-error', '42');
+
+        $response = $service->executeConversational('hi', $context, [
+            'engine' => 'openai',
+            'model' => 'gpt-4o-mini',
+        ]);
+
+        $this->assertFalse($response->success);
+        $this->assertSame('Provider authentication failed.', $response->message);
+    }
+
+    public function test_execute_conversational_returns_failure_when_ai_engine_returns_empty_content(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $rag = Mockery::mock(AutonomousRAGAgent::class);
+        $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
+        $selection = Mockery::mock(AgentSelectionService::class);
+
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success('', 'openai', 'gpt-4o-mini'));
+
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection);
+        $context = new UnifiedActionContext('session-empty-ai', '42');
+
+        $response = $service->executeConversational('hi', $context, [
+            'engine' => 'openai',
+            'model' => 'gpt-4o-mini',
+        ]);
+
+        $this->assertFalse($response->success);
+        $this->assertSame('AI engine returned an empty response.', $response->message);
+    }
+
     public function test_execute_search_rag_maps_remote_failure_to_user_friendly_message(): void
     {
         $ai = Mockery::mock(AIEngineService::class);
