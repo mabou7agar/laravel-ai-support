@@ -171,6 +171,18 @@ AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS=240
 
 Context compaction keeps recent chat turns verbatim and stores older turns in `metadata.conversation_summary`. The summary is reused in routing, conversational replies, and RAG context so long user sessions do not overflow provider context limits.
 
+## Business Action Payload Extraction
+
+```env
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENABLED=true
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENGINE=openai
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MODEL=gpt-4o
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS=1400
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE=0.1
+```
+
+These settings control the package service that extracts structured payload patches from conversational business-action intake.
+
 ## Entity Summaries
 
 ```env

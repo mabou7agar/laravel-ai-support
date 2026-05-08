@@ -104,6 +104,36 @@ For app-wide write actions that are not owned by a single model config, register
 
 The registry reads `ai-agent.business_actions`, the orchestrator validates required fields, `prepare_business_action` returns a draft without writing, and `execute_business_action` calls the handler only after confirmation when required.
 
+## AI Payload Extraction
+
+Use `LaravelAIEngine\Services\BusinessActions\BusinessActionPayloadExtractor` when a user provides business-action details conversationally instead of as a complete JSON payload. The service is package-owned and schema-driven: it receives an action definition, the latest message, the current draft payload, and recent history, then returns a sanitized payload patch.
+
+```php
+use LaravelAIEngine\Services\BusinessActions\BusinessActionPayloadExtractor;
+
+$patch = app(BusinessActionPayloadExtractor::class)->extract(
+    action: $action,
+    message: $message,
+    currentPayload: $draftPayload,
+    recentHistory: $history,
+    options: [
+        'instructions' => 'For invoices, split "5 Macbook and 4 iPhone" into separate items.',
+    ],
+);
+```
+
+The package handles prompt construction, JSON decoding, schema-based sanitization, model selection, and failure fallback. The host app should merge the returned patch into its draft and continue using deterministic validation, permission checks, relation resolution, confirmation, and writes.
+
+Configure it with:
+
+```env
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENABLED=true
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENGINE=openai
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MODEL=gpt-4o
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS=1400
+AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE=0.1
+```
+
 ## Capability Memory
 
 If users can ask for actions in many forms, publish action, query, and tool capabilities through an `AgentCapabilityProvider`. The package registry can then feed a host-app memory layer such as Qdrant, Redis, or Neo4j.

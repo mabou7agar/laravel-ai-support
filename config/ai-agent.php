@@ -213,6 +213,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Business Action Payload Extraction
+    |--------------------------------------------------------------------------
+    |
+    | Lets host apps ask the package to turn natural conversation turns into
+    | structured payload patches for registered business actions. The host app
+    | still owns validation, relation resolution, authorization, and writes.
+    |
+    */
+    'business_action_payload_extraction' => [
+        'enabled' => env('AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENABLED', true),
+        'engine' => env('AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENGINE', env('AI_ENGINE_DEFAULT')),
+        'model' => env('AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o'))),
+        'max_tokens' => env('AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS', 1400),
+        'temperature' => env('AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE', 0.1),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Explicit Agent Manifest
     |--------------------------------------------------------------------------
     |
