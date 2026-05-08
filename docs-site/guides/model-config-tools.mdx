@@ -104,6 +104,28 @@ For app-wide write actions that are not owned by a single model config, register
 
 The registry reads `ai-agent.business_actions`, the orchestrator validates required fields, `prepare_business_action` returns a draft without writing, and `execute_business_action` calls the handler only after confirmation when required.
 
+For larger apps, publish actions through package contracts instead of keeping one large config file:
+
+```php
+'business_action_providers' => [
+    \App\AI\Actions\SalesActionProvider::class,
+],
+
+'business_action_relation_resolvers' => [
+    \App\AI\Actions\BusinessRelationResolver::class,
+],
+```
+
+Available package contracts:
+
+- `LaravelAIEngine\Contracts\BusinessActionDefinitionProvider`
+- `LaravelAIEngine\Contracts\BusinessActionExecutor`
+- `LaravelAIEngine\Contracts\BusinessActionRelationResolver`
+- `LaravelAIEngine\Contracts\ConversationMemory`
+- `LaravelAIEngine\Contracts\AgentCapabilityProvider`
+
+`BusinessActionDefinitionProvider` returns action definitions, `BusinessActionExecutor` prepares/executes a domain action through app code, and `BusinessActionRelationResolver` resolves or creates related records around prepare/execute. The package also binds `ConversationMemory` to `CacheConversationMemory` by default, so multi-turn flows are not tied directly to Laravel's cache facade.
+
 ## Action Payload Extraction
 
 Use `LaravelAIEngine\Services\Actions\ActionPayloadExtractor` when a user provides action details conversationally instead of as a complete JSON payload. The service is package-owned and schema-driven: it receives an action definition, the latest message, the current draft payload, and recent history, then returns a sanitized payload patch.
@@ -124,7 +146,7 @@ $patch = app(ActionPayloadExtractor::class)->extract(
 
 The package handles prompt construction, JSON decoding, schema-based sanitization, model selection, and failure fallback. The host app should merge the returned patch into its draft and continue using deterministic validation, permission checks, relation resolution, confirmation, and writes.
 
-For full multi-turn intake, use `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`. It owns the reusable chat flow around cached intake payloads, draft payloads, payload extraction, prepare callbacks, execute-after-confirm callbacks, and relation-review hooks. Host apps provide callbacks for domain-specific merge behavior, validation/prepare, execute, and relation lookup.
+For full multi-turn intake, use `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`. It owns the reusable chat flow around conversation-memory-backed intake payloads, draft payloads, payload extraction, prepare callbacks, execute-after-confirm callbacks, and relation-review hooks. Host apps provide callbacks for domain-specific merge behavior, validation/prepare, execute, and relation lookup.
 
 Configure it with:
 

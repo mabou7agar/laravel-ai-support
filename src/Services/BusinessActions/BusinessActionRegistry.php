@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\BusinessActions;
 
 use InvalidArgumentException;
+use LaravelAIEngine\Contracts\BusinessActionDefinitionProvider;
 
 class BusinessActionRegistry
 {
@@ -48,6 +49,37 @@ class BusinessActionRegistry
             }
 
             $this->register($definition);
+        }
+    }
+
+    /**
+     * @param iterable<int|string, BusinessActionDefinitionProvider|string> $providers
+     */
+    public function registerProviders(iterable $providers): void
+    {
+        foreach ($providers as $provider) {
+            if (is_string($provider) && class_exists($provider)) {
+                $provider = app($provider);
+            }
+
+            if (!$provider instanceof BusinessActionDefinitionProvider) {
+                throw new InvalidArgumentException(sprintf(
+                    'Business action provider must implement %s.',
+                    BusinessActionDefinitionProvider::class
+                ));
+            }
+
+            foreach ($provider->actions() as $id => $definition) {
+                if (!is_array($definition)) {
+                    continue;
+                }
+
+                if (!isset($definition['id']) && is_string($id)) {
+                    $definition['id'] = $id;
+                }
+
+                $this->register($definition);
+            }
         }
     }
 

@@ -5,12 +5,21 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\BusinessActions;
 
 use Illuminate\Support\Arr;
+use InvalidArgumentException;
+use LaravelAIEngine\Contracts\BusinessActionExecutor;
+use LaravelAIEngine\Contracts\BusinessActionRelationResolver;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
 class BusinessActionOrchestrator
 {
-    public function __construct(protected BusinessActionRegistry $registry)
+    /**
+     * @param array<int, BusinessActionRelationResolver|string> $relationResolvers
+     */
+    public function __construct(
+        protected BusinessActionRegistry $registry,
+        protected array $relationResolvers = []
+    )
     {
     }
 
@@ -60,6 +69,9 @@ class BusinessActionOrchestrator
             return $error;
         }
 
+        $relationResolution = $this->resolveExistingRelations($actionId, $payload, $context, $action);
+        $payload = $relationResolution['payload'];
+
         $missing = $this->missingRequired($action, $payload);
         if ($missing !== []) {
             return [
@@ -69,6 +81,12 @@ class BusinessActionOrchestrator
                 'needs_user_input' => true,
                 'action' => Arr::only($action, ['id', 'module', 'label', 'operation']),
             ];
+        }
+
+        if ($executor = $this->executor($action['executor'] ?? null)) {
+            $prepared = $executor->prepare($payload, $context, $action);
+
+            return $this->normalizePreparedResult($actionId, $action, $prepared, $payload, $relationResolution);
         }
 
         $normalizer = $action['prepare'] ?? null;
@@ -84,7 +102,10 @@ class BusinessActionOrchestrator
             'draft' => [
                 'action_id' => $actionId,
                 'payload' => $payload,
-                'summary' => $this->summary($action, $payload),
+                'summary' => array_merge($this->summary($action, $payload), array_filter([
+                    'resolved_relations' => $relationResolution['resolved_relations'],
+                    'pending_relations' => $relationResolution['pending_relations'],
+                ])),
             ],
         ];
     }
@@ -125,26 +146,24 @@ class BusinessActionOrchestrator
             );
         }
 
+        $payload = $prepared['draft']['payload'];
+        $createdRelations = $this->createMissingRelations($actionId, $payload, $context, $action);
+        $payload = $createdRelations['payload'];
+
+        if ($executor = $this->executor($action['executor'] ?? null)) {
+            $result = $executor->execute($payload, $context, $action);
+
+            return $this->normalizeExecutionResult($result, $actionId, $action, $createdRelations['created_relations']);
+        }
+
         $handler = $action['handler'] ?? null;
         if (!$handler) {
             return ActionResult::failure("Action [{$actionId}] has no executable handler.");
         }
 
-        $result = $this->call($handler, [$prepared['draft']['payload'], $context, $action]);
+        $result = $this->call($handler, [$payload, $context, $action]);
 
-        if ($result instanceof ActionResult) {
-            return $result->withActionInfo($actionId, (string) ($action['operation'] ?? 'custom'));
-        }
-
-        if (is_array($result)) {
-            return ActionResult::fromArray(array_merge([
-                'success' => true,
-                'message' => 'Action executed.',
-            ], $result))->withActionInfo($actionId, (string) ($action['operation'] ?? 'custom'));
-        }
-
-        return ActionResult::success('Action executed.', $result)
-            ->withActionInfo($actionId, (string) ($action['operation'] ?? 'custom'));
+        return $this->normalizeExecutionResult($result, $actionId, $action, $createdRelations['created_relations']);
     }
 
     /**
@@ -218,6 +237,179 @@ class BusinessActionOrchestrator
         $fields = (array) ($action['summary_fields'] ?? array_keys($payload));
 
         return Arr::only($payload, $fields);
+    }
+
+    /**
+     * @param array<int, BusinessActionRelationResolver|string> $resolvers
+     */
+    public function setRelationResolvers(array $resolvers): void
+    {
+        $this->relationResolvers = $resolvers;
+    }
+
+    public function addRelationResolver(BusinessActionRelationResolver|string $resolver): void
+    {
+        $this->relationResolvers[] = $resolver;
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @param array<string, mixed> $payload
+     * @return array{payload: array<string, mixed>, resolved_relations: array<int, array<string, mixed>>, pending_relations: array<int, array<string, mixed>>}
+     */
+    protected function resolveExistingRelations(string $actionId, array $payload, ?UnifiedActionContext $context, array $action): array
+    {
+        $resolved = [];
+        $pending = [];
+
+        foreach ($this->relationResolvers($action) as $resolver) {
+            $result = $resolver->resolveExisting($actionId, $payload, $context, $action);
+            $payload = is_array($result['payload'] ?? null) ? $result['payload'] : $payload;
+            $resolved = array_merge($resolved, (array) ($result['resolved_relations'] ?? []));
+            $pending = array_merge($pending, (array) ($result['pending_relations'] ?? []));
+        }
+
+        return [
+            'payload' => $payload,
+            'resolved_relations' => $resolved,
+            'pending_relations' => $pending,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @param array<string, mixed> $payload
+     * @return array{payload: array<string, mixed>, created_relations: array<int, array<string, mixed>>}
+     */
+    protected function createMissingRelations(string $actionId, array $payload, ?UnifiedActionContext $context, array $action): array
+    {
+        $created = [];
+
+        foreach ($this->relationResolvers($action) as $resolver) {
+            $result = $resolver->createMissing($actionId, $payload, $context, $action);
+            $payload = is_array($result['payload'] ?? null) ? $result['payload'] : $payload;
+            $created = array_merge($created, (array) ($result['created_relations'] ?? []));
+        }
+
+        return [
+            'payload' => $payload,
+            'created_relations' => $created,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @return array<int, BusinessActionRelationResolver>
+     */
+    protected function relationResolvers(array $action): array
+    {
+        $resolvers = array_merge($this->relationResolvers, (array) ($action['relation_resolvers'] ?? []));
+
+        return array_values(array_map(function (mixed $resolver): BusinessActionRelationResolver {
+            if (is_string($resolver) && class_exists($resolver)) {
+                $resolver = app($resolver);
+            }
+
+            if (!$resolver instanceof BusinessActionRelationResolver) {
+                throw new InvalidArgumentException(sprintf(
+                    'Business action relation resolver must implement %s.',
+                    BusinessActionRelationResolver::class
+                ));
+            }
+
+            return $resolver;
+        }, $resolvers));
+    }
+
+    protected function executor(mixed $executor): ?BusinessActionExecutor
+    {
+        if (!$executor) {
+            return null;
+        }
+
+        if (is_string($executor) && class_exists($executor)) {
+            $executor = app($executor);
+        }
+
+        if (!$executor instanceof BusinessActionExecutor) {
+            throw new InvalidArgumentException(sprintf(
+                'Business action executor must implement %s.',
+                BusinessActionExecutor::class
+            ));
+        }
+
+        return $executor;
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @param array<string, mixed> $prepared
+     * @param array<string, mixed> $payload
+     * @param array{resolved_relations: array<int, array<string, mixed>>, pending_relations: array<int, array<string, mixed>>} $relationResolution
+     * @return array<string, mixed>
+     */
+    protected function normalizePreparedResult(
+        string $actionId,
+        array $action,
+        array $prepared,
+        array $payload,
+        array $relationResolution
+    ): array {
+        if (!($prepared['success'] ?? true)) {
+            return $prepared;
+        }
+
+        $draft = is_array($prepared['draft'] ?? null) ? $prepared['draft'] : [];
+        $draftPayload = is_array($draft['payload'] ?? null) ? $draft['payload'] : ($prepared['payload'] ?? $payload);
+        $summary = is_array($draft['summary'] ?? null) ? $draft['summary'] : ($prepared['summary'] ?? $this->summary($action, $draftPayload));
+
+        return array_merge([
+            'success' => true,
+            'message' => $prepared['message'] ?? $action['confirmation_message'] ?? 'Action is ready for confirmation.',
+            'requires_confirmation' => (bool) ($action['confirmation_required'] ?? true),
+            'action' => Arr::only($action, ['id', 'module', 'label', 'operation']),
+        ], $prepared, [
+            'draft' => [
+                'action_id' => $actionId,
+                'payload' => $draftPayload,
+                'summary' => array_merge($summary, array_filter([
+                    'resolved_relations' => $relationResolution['resolved_relations'],
+                    'pending_relations' => $relationResolution['pending_relations'],
+                ])),
+            ],
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @param array<int, array<string, mixed>> $createdRelations
+     */
+    protected function normalizeExecutionResult(mixed $result, string $actionId, array $action, array $createdRelations = []): ActionResult
+    {
+        if ($result instanceof ActionResult) {
+            if ($createdRelations !== []) {
+                $result->withMetadata('created_relations', $createdRelations);
+            }
+
+            return $result->withActionInfo($actionId, (string) ($action['operation'] ?? 'custom'));
+        }
+
+        if (is_array($result)) {
+            if ($createdRelations !== []) {
+                $result['metadata'] = array_merge((array) ($result['metadata'] ?? []), [
+                    'created_relations' => $createdRelations,
+                ]);
+            }
+
+            return ActionResult::fromArray(array_merge([
+                'success' => true,
+                'message' => 'Action executed.',
+            ], $result))->withActionInfo($actionId, (string) ($action['operation'] ?? 'custom'));
+        }
+
+        return ActionResult::success('Action executed.', $result, $createdRelations === [] ? [] : [
+            'created_relations' => $createdRelations,
+        ])->withActionInfo($actionId, (string) ($action['operation'] ?? 'custom'));
     }
 
     /**

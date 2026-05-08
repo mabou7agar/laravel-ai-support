@@ -252,13 +252,55 @@ Register providers in the host app:
 
 Then the host app can sync `AgentCapabilityRegistry::documents()` to Qdrant, Neo4j, Redis, or any other memory layer using its own command/service. Keep domain knowledge in the app provider; keep reusable contracts and registry behavior in this package.
 
+## Business Action Framework
+
+For app-wide CRUD/workflow actions, the package owns the reusable action framework and the host app owns domain services, permissions, DTOs, and database writes.
+
+Package contracts:
+
+- `LaravelAIEngine\Contracts\BusinessActionDefinitionProvider`
+- `LaravelAIEngine\Contracts\BusinessActionExecutor`
+- `LaravelAIEngine\Contracts\BusinessActionRelationResolver`
+- `LaravelAIEngine\Contracts\ConversationMemory`
+- `LaravelAIEngine\Contracts\AgentCapabilityProvider`
+
+Package services:
+
+- `LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry`
+- `LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator`
+- `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`
+- `LaravelAIEngine\Services\Memory\CacheConversationMemory`
+
+Register static definitions, provider classes, and relation resolvers in the host app:
+
+```php
+'business_actions' => [
+    'create_invoice' => [
+        'module' => 'sales',
+        'operation' => 'create',
+        'required' => ['customer_id', 'items'],
+        'executor' => \App\AI\Actions\CreateInvoiceExecutor::class,
+    ],
+],
+
+'business_action_providers' => [
+    \App\AI\Actions\SalesActionProvider::class,
+],
+
+'business_action_relation_resolvers' => [
+    \App\AI\Actions\BusinessRelationResolver::class,
+],
+```
+
+`BusinessActionDefinitionProvider` publishes action definitions. `BusinessActionExecutor` prepares and executes one action through app services. `BusinessActionRelationResolver` resolves or creates related records around prepare/execute. `ConversationMemory` lets package flows store pending payloads without hardcoding a storage backend.
+
 ## Action Payload Extraction
 
 The package provides `LaravelAIEngine\Services\Actions\ActionPayloadExtractor` for the reusable AI part of action intake. It converts the latest user turn, the current draft payload, and recent conversation history into a structured payload patch using the action's `parameters` schema.
 
 Host apps still own the domain-specific parts: action definitions, permissions, validation, relation resolution, confirmation, and database writes.
 
-For multi-turn action intake, use `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`. It combines payload extraction, cached intake payloads, draft payloads, prepare callbacks, execute-after-confirm callbacks, and relation-review hooks. Host apps pass callbacks for domain-specific merge, prepare, execute, and relation lookup behavior.
+For multi-turn action intake, use `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`. It combines payload extraction, conversation-memory-backed intake payloads, draft payloads, prepare callbacks, execute-after-confirm callbacks, and relation-review hooks. Host apps pass callbacks for domain-specific merge, prepare, execute, and relation lookup behavior.
 
 ```php
 use LaravelAIEngine\Services\Actions\ActionPayloadExtractor;

@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Actions;
 
-use Illuminate\Support\Facades\Cache;
+use DateInterval;
+use DateTimeInterface;
+use LaravelAIEngine\Contracts\ConversationMemory;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
 class ActionIntakeCoordinator
 {
-    public function __construct(protected ActionPayloadExtractor $payloadExtractor)
+    public function __construct(
+        protected ActionPayloadExtractor $payloadExtractor,
+        protected ?ConversationMemory $memory = null
+    )
     {
     }
 
@@ -127,46 +132,46 @@ class ActionIntakeCoordinator
 
     public function draftPayload(UnifiedActionContext $context, int|string $ownerKey, string $scope): ?array
     {
-        $payload = Cache::get($this->draftKey($context, $ownerKey, $scope));
+        $payload = $this->memory()->get('action-intake:draft', $this->draftKey($context, $ownerKey, $scope));
 
         return is_array($payload) ? $payload : null;
     }
 
     public function intakePayload(UnifiedActionContext $context, int|string $ownerKey, string $scope): ?array
     {
-        $payload = Cache::get($this->intakeKey($context, $ownerKey, $scope));
+        $payload = $this->memory()->get('action-intake:payload', $this->intakeKey($context, $ownerKey, $scope));
 
         return is_array($payload) ? $payload : null;
     }
 
-    public function putDraftPayload(UnifiedActionContext $context, int|string $ownerKey, string $scope, array $payload, mixed $ttl = null): void
+    public function putDraftPayload(UnifiedActionContext $context, int|string $ownerKey, string $scope, array $payload, DateTimeInterface|DateInterval|int|null $ttl = null): void
     {
-        Cache::put($this->draftKey($context, $ownerKey, $scope), $payload, $ttl ?? now()->addHours(2));
+        $this->memory()->put('action-intake:draft', $this->draftKey($context, $ownerKey, $scope), $payload, $ttl ?? now()->addHours(2));
     }
 
-    public function putIntakePayload(UnifiedActionContext $context, int|string $ownerKey, string $scope, array $payload, mixed $ttl = null): void
+    public function putIntakePayload(UnifiedActionContext $context, int|string $ownerKey, string $scope, array $payload, DateTimeInterface|DateInterval|int|null $ttl = null): void
     {
-        Cache::put($this->intakeKey($context, $ownerKey, $scope), $payload, $ttl ?? now()->addHours(2));
+        $this->memory()->put('action-intake:payload', $this->intakeKey($context, $ownerKey, $scope), $payload, $ttl ?? now()->addHours(2));
     }
 
     public function forgetDraftPayload(UnifiedActionContext $context, int|string $ownerKey, string $scope): void
     {
-        Cache::forget($this->draftKey($context, $ownerKey, $scope));
+        $this->memory()->forget('action-intake:draft', $this->draftKey($context, $ownerKey, $scope));
     }
 
     public function forgetIntakePayload(UnifiedActionContext $context, int|string $ownerKey, string $scope): void
     {
-        Cache::forget($this->intakeKey($context, $ownerKey, $scope));
+        $this->memory()->forget('action-intake:payload', $this->intakeKey($context, $ownerKey, $scope));
     }
 
     public function draftKey(UnifiedActionContext $context, int|string $ownerKey, string $scope): string
     {
-        return "ai-agent:action-intake:draft:{$ownerKey}:{$context->sessionId}:{$scope}";
+        return "{$ownerKey}:{$context->sessionId}:{$scope}";
     }
 
     public function intakeKey(UnifiedActionContext $context, int|string $ownerKey, string $scope): string
     {
-        return "ai-agent:action-intake:payload:{$ownerKey}:{$context->sessionId}:{$scope}";
+        return "{$ownerKey}:{$context->sessionId}:{$scope}";
     }
 
     /**
@@ -206,5 +211,10 @@ class ActionIntakeCoordinator
     protected function call(?callable $callback, array $arguments): mixed
     {
         return $callback ? $callback(...$arguments) : null;
+    }
+
+    protected function memory(): ConversationMemory
+    {
+        return $this->memory ??= app(ConversationMemory::class);
     }
 }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services\BusinessActions;
 
+use LaravelAIEngine\Contracts\BusinessActionDefinitionProvider;
+use LaravelAIEngine\Contracts\BusinessActionExecutor;
+use LaravelAIEngine\Contracts\BusinessActionRelationResolver;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator;
@@ -72,6 +75,48 @@ class BusinessActionOrchestratorTest extends UnitTestCase
         $this->assertSame('create_invoice', $result['suggestions'][0]['action_id']);
     }
 
+    public function test_registry_registers_action_definition_providers(): void
+    {
+        $registry = new BusinessActionRegistry();
+        $registry->registerProviders([new TestActionDefinitionProvider()]);
+
+        $this->assertTrue($registry->has('create_ticket'));
+        $this->assertSame('support', $registry->get('create_ticket')['module']);
+    }
+
+    public function test_orchestrator_uses_executor_and_relation_resolver_contracts(): void
+    {
+        $registry = new BusinessActionRegistry();
+        $registry->register([
+            'id' => 'create_ticket',
+            'module' => 'support',
+            'operation' => 'create',
+            'required' => ['category_id', 'title'],
+            'summary_fields' => ['category_id', 'title'],
+            'executor' => new TestBusinessActionExecutor(),
+        ]);
+
+        $orchestrator = new BusinessActionOrchestrator($registry, [new TestBusinessActionRelationResolver()]);
+        $prepared = $orchestrator->prepare('create_ticket', [
+            'category_name' => 'Billing',
+            'title' => 'Invoice question',
+        ]);
+
+        $this->assertTrue($prepared['success']);
+        $this->assertSame(55, $prepared['draft']['payload']['category_id']);
+        $this->assertSame('category_id', $prepared['draft']['summary']['resolved_relations'][0]['field']);
+
+        $executed = $orchestrator->execute('create_ticket', [
+            'category_name' => 'Billing',
+            'title' => 'Invoice question',
+        ], confirmed: true);
+
+        $this->assertTrue($executed->success);
+        $this->assertSame('Created ticket.', $executed->message);
+        $this->assertSame(55, $executed->data['category_id']);
+        $this->assertSame('create_ticket', $executed->actionId);
+    }
+
     protected function orchestrator(): BusinessActionOrchestrator
     {
         $registry = new BusinessActionRegistry();
@@ -92,5 +137,69 @@ class BusinessActionOrchestratorTest extends UnitTestCase
         ]);
 
         return new BusinessActionOrchestrator($registry);
+    }
+}
+
+class TestActionDefinitionProvider implements BusinessActionDefinitionProvider
+{
+    public function actions(): iterable
+    {
+        yield 'create_ticket' => [
+            'module' => 'support',
+            'operation' => 'create',
+            'required' => ['title'],
+        ];
+    }
+}
+
+class TestBusinessActionExecutor implements BusinessActionExecutor
+{
+    public function prepare(array $payload, ?UnifiedActionContext $context, array $action): array
+    {
+        return [
+            'success' => true,
+            'message' => 'Ticket ready.',
+            'payload' => $payload,
+            'summary' => [
+                'category_id' => $payload['category_id'],
+                'title' => $payload['title'],
+            ],
+        ];
+    }
+
+    public function execute(array $payload, ?UnifiedActionContext $context, array $action): mixed
+    {
+        return ActionResult::success('Created ticket.', [
+            'id' => 987,
+            'category_id' => $payload['category_id'],
+            'title' => $payload['title'],
+        ]);
+    }
+}
+
+class TestBusinessActionRelationResolver implements BusinessActionRelationResolver
+{
+    public function resolveExisting(string $actionId, array $payload, ?UnifiedActionContext $context, array $action): array
+    {
+        if (($payload['category_name'] ?? null) !== 'Billing') {
+            return ['payload' => $payload];
+        }
+
+        $payload['category_id'] = 55;
+
+        return [
+            'payload' => $payload,
+            'resolved_relations' => [[
+                'field' => 'category_id',
+                'source' => 'category_name',
+                'id' => 55,
+                'label' => 'Billing',
+            ]],
+        ];
+    }
+
+    public function createMissing(string $actionId, array $payload, ?UnifiedActionContext $context, array $action): array
+    {
+        return ['payload' => $payload];
     }
 }

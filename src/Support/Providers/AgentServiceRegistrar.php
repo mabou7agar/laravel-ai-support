@@ -21,6 +21,7 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentMode::class, fn () => new \LaravelAIEngine\Services\Agent\AgentMode());
         $app->singleton(\LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry($app));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentCapabilityRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentCapabilityRegistry($app));
+        $app->singleton(\LaravelAIEngine\Contracts\ConversationMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationMemory());
         $app->singleton(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class, fn () => new \LaravelAIEngine\Services\Agent\ConversationContextCompactor());
         $app->singleton(\LaravelAIEngine\Services\Agent\IntentAliasCacheService::class, fn () => new \LaravelAIEngine\Services\Agent\IntentAliasCacheService());
         $app->singleton(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class, fn () => new \LaravelAIEngine\Services\Agent\MessageRoutingClassifier());
@@ -57,10 +58,14 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry::class, function () {
             $registry = new \LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry();
             $registry->registerBatch((array) config('ai-agent.business_actions', []));
+            $registry->registerProviders((array) config('ai-agent.business_action_providers', []));
 
             return $registry;
         });
-        $app->singleton(\LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator::class, fn ($app) => new \LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator($app->make(\LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry::class)));
+        $app->singleton(\LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator::class, fn ($app) => new \LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator(
+            $app->make(\LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry::class),
+            (array) config('ai-agent.business_action_relation_resolvers', [])
+        ));
         $app->singleton(\LaravelAIEngine\Services\Agent\IntentRouter::class, fn ($app) => new \LaravelAIEngine\Services\Agent\IntentRouter($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class), $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class), $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class), $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentPlanner::class, fn () => new \LaravelAIEngine\Services\Agent\AgentPlanner());
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentResponseFinalizer($app->make(\LaravelAIEngine\Services\Agent\ContextManager::class), $app->make(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class)));
