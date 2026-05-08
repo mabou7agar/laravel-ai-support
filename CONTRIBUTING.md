@@ -10,6 +10,15 @@ This repository is a Laravel package, so proposed changes should keep package bo
 2. Run the test suite with `vendor/bin/phpunit`.
 3. Update docs when behavior, configuration, routes, or commands change.
 
+## Documentation Requirement
+
+Documentation is part of the change. When a public contract, config key, command, route, service workflow, or recommended integration pattern changes, update both:
+
+- `README.md` when the change affects installation, architecture, high-value usage, or upgrade guidance
+- `docs-site` when the change needs detailed implementation or operational guidance
+
+Keep package docs app-agnostic. If an example depends on a host app, mark the package-owned boundary and the host-app-owned boundary clearly.
+
 ## Pull Requests
 
 Please keep pull requests focused and include:

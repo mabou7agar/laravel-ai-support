@@ -18,6 +18,7 @@ Current codebase includes:
 - planner-driven graph retrieval with query-kind-aware traversal templates
 - scoped graph knowledge-base acceleration (plan cache, result cache, entity snapshots)
 - host-app background KB build workflow
+- host-app capability memory primitives for semantic tool/action/module routing
 
 ## Compatibility
 
@@ -202,6 +203,54 @@ List responses are model-driven:
 
 If `toRAGListPreview()` exists, it is preferred over fallback summary rendering in structured list responses.
 
+## Agent Capability Memory
+
+Capability memory stores what an agent can do, not business records. Use it when a host app needs semantic routing over available tools, CRUD actions, modules, relations, and query surfaces before deciding whether to call deterministic tools, RAG, or the LLM.
+
+Package-owned primitives:
+
+- `LaravelAIEngine\Contracts\AgentCapabilityProvider`
+- `LaravelAIEngine\DTOs\AgentCapabilityDocument`
+- `LaravelAIEngine\Services\Agent\AgentCapabilityRegistry`
+
+Host apps own the domain provider and vector sync command. A typical provider reads app-specific registries such as actions, model catalogs, and tool configs, then returns compact capability documents:
+
+```php
+use LaravelAIEngine\Contracts\AgentCapabilityProvider;
+use LaravelAIEngine\DTOs\AgentCapabilityDocument;
+
+class BusinessCapabilityProvider implements AgentCapabilityProvider
+{
+    public function capabilities(): iterable
+    {
+        yield new AgentCapabilityDocument(
+            id: 'business_action:create_invoice',
+            text: 'Create invoice. Requires customer, invoice date, due date, and line items. Use prepare then execute after confirmation.',
+            payload: [
+                'type' => 'agent_capability',
+                'capability_type' => 'business_action',
+                'action_id' => 'create_invoice',
+                'tools' => ['prepare_business_action', 'execute_business_action'],
+            ],
+            metadata: [
+                'model_class' => 'agent_capability',
+                'model_id' => 'business_action:create_invoice',
+            ]
+        );
+    }
+}
+```
+
+Register providers in the host app:
+
+```php
+'capability_providers' => [
+    'business' => \App\AI\Capabilities\BusinessCapabilityProvider::class,
+],
+```
+
+Then the host app can sync `AgentCapabilityRegistry::documents()` to Qdrant, Neo4j, Redis, or any other memory layer using its own command/service. Keep domain knowledge in the app provider; keep reusable contracts and registry behavior in this package.
+
 ## Search Document and Graph Contracts
 
 Legacy compatibility methods:
@@ -326,20 +375,21 @@ Recommended reading order:
 2. `guides/concepts`
 3. `guides/single-app-setup`
 4. `guides/model-config-tools`
-5. `guides/graph-relation-modeling`
-6. `guides/knowledge-base-security`
-7. `guides/direct-generation-recipes`
-8. `guides/entity-list-preview-ux`
-9. `guides/data-collectors`
-10. `guides/rag-indexing`
-11. `guides/graph-rag-neo4j`
-12. `guides/end-to-end-graph-walkthrough`
-13. `guides/copy-paste-playbooks`
-14. `guides/multi-app-federation`
-15. `guides/neo4j-ops-runbook`
-16. `guides/policy-learning`
-17. `guides/testing-playbook`
-18. `guides/troubleshooting`
+5. `guides/capability-memory`
+6. `guides/graph-relation-modeling`
+7. `guides/knowledge-base-security`
+8. `guides/direct-generation-recipes`
+9. `guides/entity-list-preview-ux`
+10. `guides/data-collectors`
+11. `guides/rag-indexing`
+12. `guides/graph-rag-neo4j`
+13. `guides/end-to-end-graph-walkthrough`
+14. `guides/copy-paste-playbooks`
+15. `guides/multi-app-federation`
+16. `guides/neo4j-ops-runbook`
+17. `guides/policy-learning`
+18. `guides/testing-playbook`
+19. `guides/troubleshooting`
 
 ## Upgrading Existing Installs
 

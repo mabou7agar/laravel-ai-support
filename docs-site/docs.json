@@ -28,6 +28,7 @@
               "guides/single-app-setup",
               "guides/configuration",
               "guides/model-config-tools",
+              "guides/capability-memory",
               "guides/graph-relation-modeling",
               "guides/knowledge-base-security",
               "guides/end-to-end-graph-walkthrough",

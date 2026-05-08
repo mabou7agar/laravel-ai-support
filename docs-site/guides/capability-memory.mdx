@@ -1,0 +1,162 @@
+---
+title: Capability Memory
+description: Publish agent tools, actions, modules, and relations as compact memory documents for semantic routing.
+---
+
+Capability memory stores what the agent can do. It is different from RAG record indexing, which stores business data.
+
+Use capability memory when a host app needs the agent to decide between available tools, CRUD actions, query modules, and relation-aware workflows from natural language.
+
+## Package Boundary
+
+The package owns reusable primitives:
+
+- `LaravelAIEngine\Contracts\AgentCapabilityProvider`
+- `LaravelAIEngine\DTOs\AgentCapabilityDocument`
+- `LaravelAIEngine\Services\Agent\AgentCapabilityRegistry`
+
+The host app owns domain knowledge:
+
+- which modules exist
+- which tools are registered
+- which CRUD actions are safe
+- which relations can be resolved or created
+- which vector, graph, or cache store receives the documents
+
+Do not hardcode app-specific modules inside the package. Put that logic in an app provider.
+
+## Provider Contract
+
+```php
+use LaravelAIEngine\Contracts\AgentCapabilityProvider;
+use LaravelAIEngine\DTOs\AgentCapabilityDocument;
+
+class BusinessCapabilityProvider implements AgentCapabilityProvider
+{
+    public function capabilities(): iterable
+    {
+        yield new AgentCapabilityDocument(
+            id: 'business_action:create_invoice',
+            text: implode("\n", [
+                'Capability type: business write action',
+                'Action ID: create_invoice',
+                'Module: sales',
+                'Operation: create',
+                'Required fields: customer_id, invoice_date, due_date, items',
+                'Relations: customer by email/name, products by SKU/name',
+                'Tool flow: prepare draft first, execute only after confirmation.',
+            ]),
+            payload: [
+                'type' => 'agent_capability',
+                'capability_type' => 'business_action',
+                'module' => 'sales',
+                'operation' => 'create',
+                'action_id' => 'create_invoice',
+                'tools' => ['prepare_business_action', 'execute_business_action'],
+                'supports_create_missing_relations' => true,
+            ],
+            metadata: [
+                'model_class' => 'agent_capability',
+                'model_id' => 'business_action:create_invoice',
+            ]
+        );
+    }
+}
+```
+
+## Registration
+
+Register host app providers in `config/ai-agent.php`:
+
+```php
+'capability_providers' => [
+    'business' => \App\AI\Capabilities\BusinessCapabilityProvider::class,
+],
+```
+
+Retrieve documents from the registry:
+
+```php
+use LaravelAIEngine\Services\Agent\AgentCapabilityRegistry;
+
+$documents = app(AgentCapabilityRegistry::class)->documents(['business']);
+```
+
+The registry deduplicates by document id and skips documents with empty ids or text.
+
+## What To Publish
+
+Good capability documents are small and explicit:
+
+- action id, module, operation, and label
+- required fields and optional parameters
+- tool flow, for example prepare then execute
+- confirmation requirements
+- relation rules, for example customer by email or product by SKU
+- safe aliases and multilingual phrases
+- queryable model/table names
+- permission metadata
+
+Avoid publishing:
+
+- customer data
+- secrets or credentials
+- full database rows
+- long generated docs
+- implementation details that the agent cannot use
+
+## Syncing To Memory
+
+This package intentionally does not ship an app-specific capability sync command because every host app has different modules and deployment topology.
+
+A host app can implement a command that:
+
+1. calls `AgentCapabilityRegistry::documents()`
+2. embeds each document text with `EmbeddingService`
+3. creates or updates a vector collection with `VectorDriverManager`
+4. upserts payloads with `type=agent_capability`
+5. optionally probes the collection with common user requests
+
+For Qdrant, reuse the existing vector services:
+
+```php
+$driver = app(\LaravelAIEngine\Services\Vector\VectorDriverManager::class)->driver('qdrant');
+$embeddings = app(\LaravelAIEngine\Services\Vector\EmbeddingService::class);
+
+$driver->createCollection('agent_capabilities', $embeddings->getDimensions());
+
+$driver->upsert('agent_capabilities', [[
+    'id' => $document->id,
+    'vector' => $embeddings->embed($document->text),
+    'metadata' => array_merge($document->payload, [
+        'type' => 'agent_capability',
+        'capability_id' => $document->id,
+        'content' => $document->text,
+    ]),
+]]);
+```
+
+For local tests without billed embeddings:
+
+```env
+AI_ENGINE_USE_FAKE_EMBEDDINGS=true
+```
+
+## Runtime Pattern
+
+Prefer this routing order for speed and safety:
+
+1. deterministic handlers and exact aliases
+2. Redis or cache-backed learned intent aliases
+3. capability memory search for new or ambiguous requests
+4. RAG over business records when the user asks about data
+5. LLM planning only when deterministic and memory routing are insufficient
+
+After the agent successfully routes a phrase, store a short safe alias in cache so repeated user language does not need another vector lookup.
+
+## Related Guides
+
+- `guides/model-config-tools`
+- `guides/rag-indexing`
+- `guides/graph-rag-neo4j`
+- `guides/knowledge-base-security`

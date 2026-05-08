@@ -104,6 +104,22 @@ For app-wide write actions that are not owned by a single model config, register
 
 The registry reads `ai-agent.business_actions`, the orchestrator validates required fields, `prepare_business_action` returns a draft without writing, and `execute_business_action` calls the handler only after confirmation when required.
 
+## Capability Memory
+
+If users can ask for actions in many forms, publish action, query, and tool capabilities through an `AgentCapabilityProvider`. The package registry can then feed a host-app memory layer such as Qdrant, Redis, or Neo4j.
+
+Use capability memory for:
+
+- semantic routing to write actions such as `create_invoice`
+- tool selection before LLM planning
+- module/query discovery
+- relation-aware hints such as customer by email or product by SKU
+- multilingual or domain-specific aliases
+
+The package provides the contract, DTO, and registry. The host app owns the provider and sync command because modules, permissions, and relations are domain-specific.
+
+See `guides/capability-memory` for the full pattern.
+
 ## List UX Hooks Per Model
 
 For cleaner list responses, add model methods:
