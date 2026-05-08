@@ -211,6 +211,26 @@ return [
         //
     ],
 
+    'business_action_providers' => [
+        \LaravelAIEngine\Services\BusinessActions\GenericModuleActionDefinitionProvider::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Generic Module Actions
+    |--------------------------------------------------------------------------
+    |
+    | Reusable metadata-driven CRUD action definitions. Host applications add
+    | module resources here; the package generates create/update action
+    | definitions and executes them through a confirmed, validated service.
+    | Keep app-specific model classes, permissions, and relation mappings in
+    | the host app config.
+    |
+    */
+    'generic_module_actions' => [
+        //
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Action Payload Extraction

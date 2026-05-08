@@ -259,7 +259,6 @@ For app-wide CRUD/workflow actions, the package owns the reusable action framewo
 Package contracts:
 
 - `LaravelAIEngine\Contracts\BusinessActionDefinitionProvider`
-- `LaravelAIEngine\Contracts\BusinessActionExecutor`
 - `LaravelAIEngine\Contracts\BusinessActionRelationResolver`
 - `LaravelAIEngine\Contracts\BusinessActionAuditLogger`
 - `LaravelAIEngine\Contracts\ConversationMemory`
@@ -269,6 +268,8 @@ Package services:
 
 - `LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry`
 - `LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator`
+- `LaravelAIEngine\Services\BusinessActions\GenericModuleActionService`
+- `LaravelAIEngine\Services\BusinessActions\GenericModuleActionDefinitionProvider`
 - `LaravelAIEngine\Services\BusinessActions\NullBusinessActionAuditLogger`
 - `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`
 - `LaravelAIEngine\Services\Memory\CacheConversationMemory`
@@ -281,7 +282,8 @@ Register static definitions, provider classes, and relation resolvers in the hos
         'module' => 'sales',
         'operation' => 'create',
         'required' => ['customer_id', 'items'],
-        'executor' => \App\AI\Actions\CreateInvoiceExecutor::class,
+        'prepare' => [\App\AI\Actions\CreateInvoiceAction::class, 'prepare'],
+        'handler' => [\App\AI\Actions\CreateInvoiceAction::class, 'execute'],
     ],
 ],
 
@@ -294,16 +296,51 @@ Register static definitions, provider classes, and relation resolvers in the hos
 ],
 ```
 
-`BusinessActionDefinitionProvider` publishes action definitions. `BusinessActionExecutor` prepares and executes one action through app services. `BusinessActionRelationResolver` resolves or creates related records around prepare/execute. `ConversationMemory` lets package flows store pending payloads without hardcoding a storage backend.
+`BusinessActionDefinitionProvider` publishes action definitions. `prepare` and `handler` callbacks prepare and execute one action through app services. `BusinessActionRelationResolver` resolves or creates related records around prepare/execute. `ConversationMemory` lets package flows store pending payloads without hardcoding a storage backend.
 
 Action definitions use a generic schema:
 
 - `operation`: `create`, `update`, `delete`, `status`, `convert`, or `custom`
 - `risk`: `low`, `medium`, `high`, or `destructive`
 - `confirmation_required`: optional; defaults from `risk`
-- `required`, `parameters`, `summary_fields`, `executor`, `handler`, `suggest`, and `relation_resolvers`
+- `required`, `parameters`, `summary_fields`, `prepare`, `handler`, `suggest`, and `relation_resolvers`
 
 Confirmed writes can include `_idempotency_key` or `idempotency_key` in the payload, or `metadata.idempotency_key` in the `UnifiedActionContext`. Successful results are replayed for the same user/action/key instead of executing again. Bind `BusinessActionAuditLogger` in the host app to persist prepare/execute audit records; the package uses `NullBusinessActionAuditLogger` by default.
+
+### Generic Module Actions
+
+For CRUD-like modules, host apps can register metadata instead of writing one action class per model. The package generates `create_{resource}` and `update_{resource}` definitions from `ai-agent.generic_module_actions`, validates payloads, resolves declared relations, applies safe defaults, scopes writes with common ownership fields, and filters writes to real database columns.
+
+```php
+'generic_module_actions' => [
+    'project_task' => [
+        'module' => 'projects',
+        'label' => 'project task',
+        'class' => \App\Models\ProjectTask::class,
+        'actions' => ['create', 'update'],
+        'permissions' => ['create' => 'manage-ai-agent', 'update' => 'manage-ai-agent'],
+        'lookup' => ['id', 'title'],
+        'create_required' => ['project_id', 'title'],
+        'defaults' => ['priority' => 'Medium'],
+        'fields' => [
+            'project_id' => 'integer',
+            'title' => 'string',
+            'priority' => 'string',
+            'description' => 'string',
+        ],
+        'relations' => [
+            [
+                'field' => 'project_id',
+                'label' => 'project',
+                'class' => \App\Models\Project::class,
+                'lookup' => ['project_name' => 'name'],
+            ],
+        ],
+    ],
+],
+```
+
+This generic layer is package-level. The module list, model classes, permissions, sensitive-field allowlist, and relation lookup names remain app-specific.
 
 ## Action Payload Extraction
 
