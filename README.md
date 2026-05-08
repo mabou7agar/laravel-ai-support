@@ -252,16 +252,16 @@ Register providers in the host app:
 
 Then the host app can sync `AgentCapabilityRegistry::documents()` to Qdrant, Neo4j, Redis, or any other memory layer using its own command/service. Keep domain knowledge in the app provider; keep reusable contracts and registry behavior in this package.
 
-## Business Action Payload Extraction
+## Action Payload Extraction
 
-The package provides `LaravelAIEngine\Services\BusinessActions\BusinessActionPayloadExtractor` for the reusable AI part of business-action intake. It converts the latest user turn, the current draft payload, and recent conversation history into a structured payload patch using the action's `parameters` schema.
+The package provides `LaravelAIEngine\Services\Actions\ActionPayloadExtractor` for the reusable AI part of action intake. It converts the latest user turn, the current draft payload, and recent conversation history into a structured payload patch using the action's `parameters` schema.
 
 Host apps still own the domain-specific parts: action definitions, permissions, validation, relation resolution, confirmation, and database writes.
 
 ```php
-use LaravelAIEngine\Services\BusinessActions\BusinessActionPayloadExtractor;
+use LaravelAIEngine\Services\Actions\ActionPayloadExtractor;
 
-$patch = app(BusinessActionPayloadExtractor::class)->extract(
+$patch = app(ActionPayloadExtractor::class)->extract(
     action: $actionDefinition,
     message: '5 Macbook Pro and 4 iPhone',
     currentPayload: $draftPayload,
@@ -275,10 +275,10 @@ $patch = app(BusinessActionPayloadExtractor::class)->extract(
 Relevant environment settings:
 
 ```env
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENABLED=true
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MODEL=gpt-4o
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS=1400
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE=0.1
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_ENABLED=true
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MODEL=gpt-4o
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS=1400
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE=0.1
 ```
 
 ## Agent Conversation Context Compaction

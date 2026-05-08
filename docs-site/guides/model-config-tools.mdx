@@ -104,14 +104,14 @@ For app-wide write actions that are not owned by a single model config, register
 
 The registry reads `ai-agent.business_actions`, the orchestrator validates required fields, `prepare_business_action` returns a draft without writing, and `execute_business_action` calls the handler only after confirmation when required.
 
-## AI Payload Extraction
+## Action Payload Extraction
 
-Use `LaravelAIEngine\Services\BusinessActions\BusinessActionPayloadExtractor` when a user provides business-action details conversationally instead of as a complete JSON payload. The service is package-owned and schema-driven: it receives an action definition, the latest message, the current draft payload, and recent history, then returns a sanitized payload patch.
+Use `LaravelAIEngine\Services\Actions\ActionPayloadExtractor` when a user provides action details conversationally instead of as a complete JSON payload. The service is package-owned and schema-driven: it receives an action definition, the latest message, the current draft payload, and recent history, then returns a sanitized payload patch.
 
 ```php
-use LaravelAIEngine\Services\BusinessActions\BusinessActionPayloadExtractor;
+use LaravelAIEngine\Services\Actions\ActionPayloadExtractor;
 
-$patch = app(BusinessActionPayloadExtractor::class)->extract(
+$patch = app(ActionPayloadExtractor::class)->extract(
     action: $action,
     message: $message,
     currentPayload: $draftPayload,
@@ -127,11 +127,11 @@ The package handles prompt construction, JSON decoding, schema-based sanitizatio
 Configure it with:
 
 ```env
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENABLED=true
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_ENGINE=openai
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MODEL=gpt-4o
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS=1400
-AI_AGENT_BUSINESS_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE=0.1
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_ENABLED=true
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_ENGINE=openai
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MODEL=gpt-4o
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS=1400
+AI_AGENT_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE=0.1
 ```
 
 ## Capability Memory
