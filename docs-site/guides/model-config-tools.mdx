@@ -75,6 +75,32 @@ Override `getAllowedOperations(?int $userId)` to enforce authorization boundarie
 - return normalized arrays/models only
 - avoid hidden side effects inside handlers
 
+## Tool Handler Context
+
+Model-config tool handlers are called with the selected parameters and the current `UnifiedActionContext`:
+
+```php
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+'update_invoice_draft' => [
+    'description' => 'Patch and validate the current invoice draft',
+    'parameters' => [
+        'payload_patch' => ['type' => 'array', 'required' => true],
+    ],
+    'handler' => function (array $params, UnifiedActionContext $context): array {
+        return app(\App\Services\AI\InvoiceDraftService::class)->patchAndPrepare(
+            sessionId: $context->sessionId,
+            userId: (int) $context->userId,
+            patch: (array) ($params['payload_patch'] ?? []),
+        );
+    },
+],
+```
+
+Use the context for session-scoped drafts, selected entities, user ownership, idempotency metadata, and multi-turn workflows. Existing one-argument handlers remain compatible in PHP, but new write tools should prefer the context-aware signature instead of relying on global auth state.
+
+Handlers may return `metadata.agent_strategy`; the package copies it to the `AgentResponse` strategy and response metadata. This is useful when a host app wants stable response intents such as `business_action_needs_input`, `business_action_prepare`, or `business_action_execute`.
+
 ## Business Action Tools
 
 For app-wide write actions that are not owned by a single model config, register deterministic actions in `config/ai-agent.php`:

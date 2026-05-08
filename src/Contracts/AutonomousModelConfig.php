@@ -46,7 +46,7 @@ abstract class AutonomousModelConfig
      *   'create_invoice' => [
      *     'description' => 'Create a new invoice',
      *     'parameters' => ['customer_id', 'items', ...],
-     *     'handler' => function($data) { ... },
+     *     'handler' => function(array $data, ?\LaravelAIEngine\DTOs\UnifiedActionContext $context = null) { ... },
      *     'requires_confirmation' => true,
      *   ],
      *   'update_invoice' => [...],

@@ -92,10 +92,10 @@ class AgentActionExecutionService
                     $tool['parameters'] ?? []
                 );
 
-                $result = $handler($params);
+                $result = $handler($params, $context);
 
                 if ($result['success'] ?? false) {
-                    return AgentResponse::success(
+                    $response = AgentResponse::success(
                         message: $result['message'] ?? $this->runtimeText(
                             'ai-engine::runtime.agent_action_execution.operation_completed',
                             'Operation completed successfully'
@@ -103,10 +103,18 @@ class AgentActionExecutionService
                         context: $context,
                         data: $result
                     );
+                    $response->strategy = $result['metadata']['agent_strategy'] ?? $result['agent_strategy'] ?? null;
+                    $response->metadata = array_filter([
+                        'agent_strategy' => $response->strategy,
+                        'workflow_data' => $result,
+                        'tool_name' => $toolName,
+                    ]);
+
+                    return $response;
                 }
 
                 if ($result['needs_user_input'] ?? false) {
-                    return AgentResponse::needsUserInput(
+                    $response = AgentResponse::needsUserInput(
                         message: $result['message'] ?? $result['error'] ?? $this->runtimeText(
                             'ai-engine::runtime.agent_action_execution.input_required',
                             'More information is required.'
@@ -115,6 +123,14 @@ class AgentActionExecutionService
                         context: $context,
                         requiredInputs: $result['missing_fields'] ?? null
                     );
+                    $response->strategy = $result['metadata']['agent_strategy'] ?? $result['agent_strategy'] ?? null;
+                    $response->metadata = array_filter([
+                        'agent_strategy' => $response->strategy,
+                        'workflow_data' => $result,
+                        'tool_name' => $toolName,
+                    ]);
+
+                    return $response;
                 }
 
                 return AgentResponse::failure(

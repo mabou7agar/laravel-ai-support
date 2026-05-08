@@ -327,6 +327,22 @@ $patch = app(ActionPayloadExtractor::class)->extract(
 );
 ```
 
+Model-config tool handlers receive both the selected parameters and the current `UnifiedActionContext`, so host apps can keep drafts scoped to the active user/session and avoid global auth assumptions:
+
+```php
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+'handler' => function (array $params, UnifiedActionContext $context): array {
+    return app(\App\Services\AI\DraftService::class)->patch(
+        sessionId: $context->sessionId,
+        userId: (int) $context->userId,
+        patch: (array) ($params['payload_patch'] ?? [])
+    );
+},
+```
+
+If a handler returns `metadata.agent_strategy`, the agent response preserves that strategy and includes the tool result in response metadata. This lets host apps expose stable intents such as `business_action_needs_input`, `business_action_prepare`, and `business_action_execute` while the model still decides which tool to call next.
+
 Relevant environment settings:
 
 ```env

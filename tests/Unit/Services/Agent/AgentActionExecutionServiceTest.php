@@ -52,6 +52,20 @@ class AgentActionExecutionServiceToolConfigStub
                     'data' => $params,
                 ],
             ],
+            'context_stub_action' => [
+                'parameters' => [],
+                'handler' => static fn (array $params, UnifiedActionContext $context): array => [
+                    'success' => true,
+                    'message' => 'Context received.',
+                    'data' => [
+                        'session_id' => $context->sessionId,
+                        'user_id' => $context->userId,
+                    ],
+                    'metadata' => [
+                        'agent_strategy' => 'context_tool_strategy',
+                    ],
+                ],
+            ],
         ];
     }
 }
@@ -113,6 +127,36 @@ class AgentActionExecutionServiceTest extends UnitTestCase
         $this->assertTrue($response->success);
         $this->assertSame('Tool parameters received.', $response->message);
         $this->assertSame(['customer_id' => 10], $response->data['data']['payload']);
+    }
+
+    public function test_execute_use_tool_passes_context_to_model_config_handler(): void
+    {
+        $service = new AgentActionExecutionService(
+            $this->createMock(AutonomousCollectorRegistry::class),
+            $this->createMock(AutonomousCollectorDiscoveryService::class),
+            $this->createMock(AutonomousCollectorHandler::class),
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('context-tool-session', 42);
+
+        $response = $service->executeUseTool(
+            'context_stub_action',
+            'run context tool',
+            $context,
+            ['model_configs' => [AgentActionExecutionServiceToolConfigStub::class]],
+            function () {
+                $this->fail('Fallback RAG should not be called for configured tool');
+            }
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertSame('Context received.', $response->message);
+        $this->assertSame('context-tool-session', $response->data['data']['session_id']);
+        $this->assertSame(42, $response->data['data']['user_id']);
+        $this->assertSame('context_tool_strategy', $response->strategy);
+        $this->assertSame('context_tool_strategy', $response->metadata['agent_strategy']);
+        $this->assertSame('context_stub_action', $response->metadata['tool_name']);
     }
 
     public function test_execute_resume_session_restores_last_paused_collector(): void
