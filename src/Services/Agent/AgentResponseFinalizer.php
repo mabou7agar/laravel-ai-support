@@ -7,8 +7,20 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 
 class AgentResponseFinalizer
 {
-    public function __construct(protected ContextManager $contextManager)
+    public function __construct(
+        protected ContextManager $contextManager,
+        protected ?ConversationContextCompactor $compactor = null
+    )
     {
+        if ($this->compactor === null) {
+            try {
+                $this->compactor = app()->bound(ConversationContextCompactor::class)
+                    ? app(ConversationContextCompactor::class)
+                    : new ConversationContextCompactor();
+            } catch (\Throwable) {
+                $this->compactor = new ConversationContextCompactor();
+            }
+        }
     }
 
     public function finalize(UnifiedActionContext $context, AgentResponse $response): AgentResponse
@@ -21,6 +33,7 @@ class AgentResponseFinalizer
         }
 
         $this->appendAssistantMessageIfNew($context, $response->message, $metadata);
+        $this->compactor->compact($context);
         $this->contextManager->save($context);
 
         return $response;
@@ -29,6 +42,7 @@ class AgentResponseFinalizer
     public function persistMessage(UnifiedActionContext $context, string $message, array $metadata = []): void
     {
         $this->appendAssistantMessageIfNew($context, $message, $metadata);
+        $this->compactor->compact($context);
         $this->contextManager->save($context);
     }
 

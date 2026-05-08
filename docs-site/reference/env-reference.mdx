@@ -157,6 +157,20 @@ INTELLIGENT_RAG_DECISION_LANGUAGE_MODE=hybrid
 AI_ENGINE_INJECT_USER_CONTEXT=true
 ```
 
+## Agent Conversation Context
+
+```env
+AI_AGENT_CONTEXT_COMPACTION_ENABLED=true
+AI_AGENT_CONTEXT_MAX_MESSAGES=12
+AI_AGENT_CONTEXT_KEEP_RECENT_MESSAGES=6
+AI_AGENT_CONTEXT_MAX_MESSAGE_CHARS=2000
+AI_AGENT_CONTEXT_MAX_TOTAL_CHARS=12000
+AI_AGENT_CONTEXT_MAX_SUMMARY_CHARS=4000
+AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS=240
+```
+
+Context compaction keeps recent chat turns verbatim and stores older turns in `metadata.conversation_summary`. The summary is reused in routing, conversational replies, and RAG context so long user sessions do not overflow provider context limits.
+
 ## Entity Summaries
 
 ```env

@@ -19,6 +19,7 @@ Current codebase includes:
 - scoped graph knowledge-base acceleration (plan cache, result cache, entity snapshots)
 - host-app background KB build workflow
 - host-app capability memory primitives for semantic tool/action/module routing
+- compacted agent conversation memory for long chat sessions
 
 ## Compatibility
 
@@ -250,6 +251,24 @@ Register providers in the host app:
 ```
 
 Then the host app can sync `AgentCapabilityRegistry::documents()` to Qdrant, Neo4j, Redis, or any other memory layer using its own command/service. Keep domain knowledge in the app provider; keep reusable contracts and registry behavior in this package.
+
+## Agent Conversation Context Compaction
+
+Agent chat history is compacted before persistence and prompt construction so long sessions keep useful context without sending every old turn back to the model. The package keeps recent messages verbatim, folds older messages into `metadata.conversation_summary`, and reuses that summary in conversational prompts, intent routing, and autonomous RAG context.
+
+Default settings are conservative:
+
+```env
+AI_AGENT_CONTEXT_COMPACTION_ENABLED=true
+AI_AGENT_CONTEXT_MAX_MESSAGES=12
+AI_AGENT_CONTEXT_KEEP_RECENT_MESSAGES=6
+AI_AGENT_CONTEXT_MAX_MESSAGE_CHARS=2000
+AI_AGENT_CONTEXT_MAX_TOTAL_CHARS=12000
+AI_AGENT_CONTEXT_MAX_SUMMARY_CHARS=4000
+AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS=240
+```
+
+This memory is for conversation state only. Business records and capability documents should still be indexed through the host app's RAG, graph, or capability-memory sync pipeline.
 
 ## Search Document and Graph Contracts
 

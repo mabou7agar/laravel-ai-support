@@ -33,6 +33,31 @@ It is resolved in this order:
 3. first user message
 4. latest message fallback
 
+## Long-Running Chat Context
+
+Agent sessions support context compaction. When a conversation grows beyond the configured limits, the package keeps the newest messages in `conversation_history` and folds older turns into `metadata.conversation_summary`.
+
+That compact summary is reused by:
+
+- conversational responses
+- intent routing
+- autonomous RAG context building
+- later compaction passes
+
+This lets a user continue a workflow naturally without sending the whole historical transcript to the model. The compact summary is conversation memory, not business-record memory. Invoices, customers, products, and other domain data should still be read through deterministic tools, RAG indexes, or graph queries.
+
+Tune the behavior with:
+
+```env
+AI_AGENT_CONTEXT_COMPACTION_ENABLED=true
+AI_AGENT_CONTEXT_MAX_MESSAGES=12
+AI_AGENT_CONTEXT_KEEP_RECENT_MESSAGES=6
+AI_AGENT_CONTEXT_MAX_MESSAGE_CHARS=2000
+AI_AGENT_CONTEXT_MAX_TOTAL_CHARS=12000
+AI_AGENT_CONTEXT_MAX_SUMMARY_CHARS=4000
+AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS=240
+```
+
 ## Example Response
 
 ```json

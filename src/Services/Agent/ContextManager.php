@@ -8,6 +8,19 @@ use Illuminate\Support\Facades\Log;
 
 class ContextManager
 {
+    public function __construct(protected ?ConversationContextCompactor $compactor = null)
+    {
+        if ($this->compactor === null) {
+            try {
+                $this->compactor = app()->bound(ConversationContextCompactor::class)
+                    ? app(ConversationContextCompactor::class)
+                    : new ConversationContextCompactor();
+            } catch (\Throwable) {
+                $this->compactor = new ConversationContextCompactor();
+            }
+        }
+    }
+
     public function getOrCreate(string $sessionId, $userId): UnifiedActionContext
     {
         $context = UnifiedActionContext::load($sessionId, $userId);
@@ -31,12 +44,15 @@ class ContextManager
                 'workflow_state_keys' => array_keys($context->workflowState),
             ]);
         }
+
+        $this->compactor->compact($context);
         
         return $context;
     }
 
     public function save(UnifiedActionContext $context): void
     {
+        $this->compactor->compact($context);
         $context->persist();
         
         Log::channel('ai-engine')->info('Agent context saved to cache', [

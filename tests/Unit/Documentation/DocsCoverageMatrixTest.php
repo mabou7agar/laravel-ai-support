@@ -25,6 +25,9 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Services/UnifiedEngineManagerTest.php',
             'tests/Unit/AIEngineServiceProviderConfigMergeTest.php',
         ],
+        'guides/capability-memory' => [
+            'tests/Unit/Services/Agent/AgentCapabilityRegistryTest.php',
+        ],
         'guides/chat-flow-examples' => [
             'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
             'tests/Unit/Services/Agent/AgentOrchestratorFollowUpTest.php',

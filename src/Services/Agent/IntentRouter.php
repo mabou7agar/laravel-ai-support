@@ -367,13 +367,18 @@ PROMPT;
     protected function formatHistory(UnifiedActionContext $context): string
     {
         $messages = $context->conversationHistory;
+        $summary = trim((string) ($context->metadata['conversation_summary'] ?? ''));
 
         if (empty($messages) || count($messages) <= 1) {
-            return '(New conversation)';
+            return $summary !== ''
+                ? "Earlier conversation summary:\n{$summary}"
+                : '(New conversation)';
         }
 
         $recent = array_slice($messages, -5);
-        $lines = [];
+        $lines = $summary !== ''
+            ? ["Earlier conversation summary:\n{$summary}", 'Recent conversation:']
+            : [];
 
         foreach ($recent as $msg) {
             $role = ucfirst($msg['role']);

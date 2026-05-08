@@ -166,6 +166,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Context Compaction
+    |--------------------------------------------------------------------------
+    |
+    | Agent memory keeps recent turns verbatim and compacts older turns into a
+    | bounded summary. This prevents prompt/context growth while preserving
+    | long-running conversation intent.
+    |
+    */
+    'context_compaction' => [
+        'enabled' => env('AI_AGENT_CONTEXT_COMPACTION_ENABLED', true),
+        'max_messages' => env('AI_AGENT_CONTEXT_MAX_MESSAGES', 12),
+        'keep_recent_messages' => env('AI_AGENT_CONTEXT_KEEP_RECENT_MESSAGES', 6),
+        'max_message_chars' => env('AI_AGENT_CONTEXT_MAX_MESSAGE_CHARS', 2000),
+        'max_total_chars' => env('AI_AGENT_CONTEXT_MAX_TOTAL_CHARS', 12000),
+        'max_summary_chars' => env('AI_AGENT_CONTEXT_MAX_SUMMARY_CHARS', 4000),
+        'summary_message_chars' => env('AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS', 240),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Capability Providers
     |--------------------------------------------------------------------------
     |

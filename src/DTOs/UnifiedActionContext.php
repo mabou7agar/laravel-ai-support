@@ -28,36 +28,36 @@ class UnifiedActionContext
 
     public function addUserMessage(string $message): void
     {
-        // Limit message length to prevent memory bloat
-        $truncatedMessage = strlen($message) > 1000 ? substr($message, 0, 1000) . '...' : $message;
-
         $this->conversationHistory[] = [
             'role' => 'user',
-            'content' => $truncatedMessage,
+            'content' => $this->truncateMessage($message),
             'timestamp' => now()->toIso8601String(),
         ];
-
-        // Keep only last 10 messages to prevent memory issues
-        if (count($this->conversationHistory) > 10) {
-            $this->conversationHistory = array_slice($this->conversationHistory, -10);
-        }
     }
 
     public function addAssistantMessage(string $message, array $metadata = []): void
     {
-        // Limit message length to prevent memory bloat
-        $truncatedMessage = strlen($message) > 1000 ? substr($message, 0, 1000) . '...' : $message;
-
         $this->conversationHistory[] = [
             'role' => 'assistant',
-            'content' => $truncatedMessage,
+            'content' => $this->truncateMessage($message),
             'metadata' => $metadata,
             'timestamp' => now()->toIso8601String(),
         ];
+    }
 
-        // Keep only last 10 messages to prevent memory issues
-        if (count($this->conversationHistory) > 10) {
-            $this->conversationHistory = array_slice($this->conversationHistory, -10);
+    protected function truncateMessage(string $message): string
+    {
+        $limit = $this->conversationMessageLimit();
+
+        return mb_strlen($message) > $limit ? mb_substr($message, 0, $limit) . '...' : $message;
+    }
+
+    protected function conversationMessageLimit(): int
+    {
+        try {
+            return max(200, (int) config('ai-agent.context_compaction.max_message_chars', 2000));
+        } catch (\Throwable) {
+            return 2000;
         }
     }
 

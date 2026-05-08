@@ -54,6 +54,13 @@ class RoutingContextResolver
             $options['last_entity_list'] = $signals['last_entity_list'];
         }
 
+        if (!isset($options['conversation_summary']) && is_string($context->metadata['conversation_summary'] ?? null)) {
+            $summary = trim($context->metadata['conversation_summary']);
+            if ($summary !== '') {
+                $options['conversation_summary'] = $summary;
+            }
+        }
+
         return $options;
     }
 }

@@ -29,7 +29,10 @@ class AutonomousRAGContextService
         );
 
         return [
-            'conversation' => $this->summarizeConversation($conversationHistory),
+            'conversation' => $this->summarizeConversation(
+                $conversationHistory,
+                is_string($options['conversation_summary'] ?? null) ? $options['conversation_summary'] : null
+            ),
             'models' => $models,
             'nodes' => $nodes,
             'session_id' => $options['session_id'] ?? null,
@@ -44,13 +47,21 @@ class AutonomousRAGContextService
         ];
     }
 
-    public function summarizeConversation(array $history): string
+    public function summarizeConversation(array $history, ?string $compactSummary = null): string
     {
+        $compactSummary = trim((string) $compactSummary);
+
         if (empty($history)) {
+            if ($compactSummary !== '') {
+                return "Earlier conversation summary:\n{$compactSummary}";
+            }
+
             return 'No previous conversation.';
         }
 
-        $summary = "Recent conversation:\n";
+        $summary = $compactSummary !== ''
+            ? "Earlier conversation summary:\n{$compactSummary}\n\nRecent conversation:\n"
+            : "Recent conversation:\n";
         foreach (array_slice($history, -$this->policy->conversationSummaryMessageLimit()) as $message) {
             $content = $message['content'] ?? '';
             $limit = $this->policy->conversationSummaryExcerptLimit();

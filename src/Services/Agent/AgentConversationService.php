@@ -118,6 +118,11 @@ class AgentConversationService
 
         $conversationHistory = $context->conversationHistory ?? [];
         $historyText = '';
+        $conversationSummary = trim((string) ($context->metadata['conversation_summary'] ?? $options['conversation_summary'] ?? ''));
+        if ($conversationSummary !== '') {
+            $historyText .= "Earlier conversation summary:\n{$conversationSummary}\n\n";
+        }
+
         foreach (array_slice($conversationHistory, -3) as $msg) {
             $historyText .= "{$msg['role']}: {$msg['content']}\n";
         }
