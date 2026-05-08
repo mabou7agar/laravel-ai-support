@@ -166,6 +166,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Capability Providers
+    |--------------------------------------------------------------------------
+    |
+    | Host applications can expose agent capabilities as compact documents for
+    | vector sync, persistent memory, and semantic tool/module routing.
+    |
+    */
+    'capability_providers' => [
+        // \App\AI\Capabilities\BusinessCapabilityProvider::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Business Actions
     |--------------------------------------------------------------------------
     |
