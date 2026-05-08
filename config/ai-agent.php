@@ -152,6 +152,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Intent Alias Cache
+    |--------------------------------------------------------------------------
+    |
+    | High-confidence tool decisions may store short, safe user phrases as
+    | routing hints. The cache does not store final answers or bypass domain
+    | validation; it only speeds up future routing before RAG/AI is needed.
+    |
+    */
+    'intent_alias_cache' => [
+        'ttl_days' => env('AI_AGENT_INTENT_ALIAS_TTL_DAYS', 30),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Business Actions
     |--------------------------------------------------------------------------
     |

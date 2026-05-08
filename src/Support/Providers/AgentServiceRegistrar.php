@@ -20,6 +20,7 @@ class AgentServiceRegistrar
 
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentMode::class, fn () => new \LaravelAIEngine\Services\Agent\AgentMode());
         $app->singleton(\LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry($app));
+        $app->singleton(\LaravelAIEngine\Services\Agent\IntentAliasCacheService::class, fn () => new \LaravelAIEngine\Services\Agent\IntentAliasCacheService());
         $app->singleton(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class, fn () => new \LaravelAIEngine\Services\Agent\MessageRoutingClassifier());
         $app->singleton(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class, fn ($app) => new \LaravelAIEngine\Services\Agent\RoutingContextResolver($app->make(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class, function () {
