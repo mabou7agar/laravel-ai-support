@@ -115,7 +115,8 @@ class MessageRoutingClassifier
 
     protected function isActionWorkflow(string $normalized): bool
     {
-        return preg_match('/^(create|add|new|update|edit|change|modify|delete|remove|cancel|approve|reject|submit|send|run|execute|trigger)\b/i', $normalized) === 1;
+        return preg_match('/^(please\s+)?(prepare|draft|create|add|new|make|generate|update|edit|change|modify|delete|remove|cancel|approve|reject|submit|send|run|execute|trigger)\b/i', $normalized) === 1
+            || preg_match('/\b(prepare|draft|create|add|make|generate)\b.+\b(invoice|proposal|quote|order|ticket|customer|product|warehouse|project|contract|employee)\b/i', $normalized) === 1;
     }
 
     protected function isExactLookup(string $normalized): bool
