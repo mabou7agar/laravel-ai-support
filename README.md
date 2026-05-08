@@ -342,11 +342,11 @@ For CRUD-like modules, host apps can register metadata instead of writing one ac
 
 This generic layer is package-level. The module list, model classes, permissions, sensitive-field allowlist, and relation lookup names remain app-specific.
 
-Ownership is intentionally host-configurable. By default the package checks common actor fields in this order: `created_by`, `creator_id`, `owner_id`, then the actor id. Apps with a different tenant or organization model can provide a callable:
+Ownership is intentionally host-configurable. By default the package checks common actor fields in this order: `created_by`, `creator_id`, `owner_id`, `user_id`, then the actor id. Apps with a different tenant or organization model can provide a callable:
 
 ```php
 'generic_module_actions_ownership' => [
-    'owner_fields' => ['created_by', 'creator_id', 'owner_id'],
+    'owner_fields' => ['created_by', 'creator_id', 'owner_id', 'user_id'],
     'owner_id_resolver' => fn ($actor) => $actor->tenant_owner_id ?? $actor->id,
 ],
 ```

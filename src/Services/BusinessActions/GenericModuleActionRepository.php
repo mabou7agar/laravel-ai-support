@@ -161,7 +161,7 @@ class GenericModuleActionRepository
             return $resolved ? (int) $resolved : null;
         }
 
-        foreach ((array) config('ai-agent.generic_module_actions_ownership.owner_fields', ['created_by', 'creator_id', 'owner_id']) as $field) {
+        foreach ((array) config('ai-agent.generic_module_actions_ownership.owner_fields', ['created_by', 'creator_id', 'owner_id', 'user_id']) as $field) {
             $value = $actor->{$field} ?? null;
             if ($value) {
                 return (int) $value;

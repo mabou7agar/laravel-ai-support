@@ -242,7 +242,7 @@ return [
     |
     */
     'generic_module_actions_ownership' => [
-        'owner_fields' => ['created_by', 'creator_id', 'owner_id'],
+        'owner_fields' => ['created_by', 'creator_id', 'owner_id', 'user_id'],
         'owner_id_resolver' => null,
     ],
 
