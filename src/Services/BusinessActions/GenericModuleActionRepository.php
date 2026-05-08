@@ -154,12 +154,21 @@ class GenericModuleActionRepository
             return null;
         }
 
-        $type = (string) ($actor->type ?? '');
-        if (in_array($type, ['superadmin', 'company'], true)) {
-            return $this->actorId($actor);
+        $resolver = config('ai-agent.generic_module_actions_ownership.owner_id_resolver');
+        if (is_callable($resolver)) {
+            $resolved = $resolver($actor);
+
+            return $resolved ? (int) $resolved : null;
         }
 
-        return (int) ($actor->created_by ?? $actor->creator_id ?? $this->actorId($actor) ?? 0) ?: null;
+        foreach ((array) config('ai-agent.generic_module_actions_ownership.owner_fields', ['created_by', 'creator_id', 'owner_id']) as $field) {
+            $value = $actor->{$field} ?? null;
+            if ($value) {
+                return (int) $value;
+            }
+        }
+
+        return $this->actorId($actor);
     }
 
     private function actorId(?object $actor): ?int

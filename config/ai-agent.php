@@ -233,6 +233,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Generic Module Action Ownership
+    |--------------------------------------------------------------------------
+    |
+    | The generic writer can populate common ownership columns such as
+    | creator_id, created_by, and workspace_id. Host apps can override owner
+    | resolution with a callable if their tenant/organization/user model differs.
+    |
+    */
+    'generic_module_actions_ownership' => [
+        'owner_fields' => ['created_by', 'creator_id', 'owner_id'],
+        'owner_id_resolver' => null,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Action Payload Extraction
     |--------------------------------------------------------------------------
     |

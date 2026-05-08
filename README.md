@@ -309,7 +309,7 @@ Confirmed writes can include `_idempotency_key` or `idempotency_key` in the payl
 
 ### Generic Module Actions
 
-For CRUD-like modules, host apps can register metadata instead of writing one action class per model. The package generates `create_{resource}` and `update_{resource}` definitions from `ai-agent.generic_module_actions`, validates payloads, resolves declared relations, applies safe defaults, scopes writes with common ownership fields, and filters writes to real database columns.
+For CRUD-like modules, host apps can register metadata instead of writing one action class per model. The package generates `create_{resource}` and `update_{resource}` definitions from `ai-agent.generic_module_actions`, validates payloads, resolves declared relations, applies safe defaults, scopes writes with configurable ownership fields, and filters writes to real database columns.
 
 ```php
 'generic_module_actions' => [
@@ -341,6 +341,15 @@ For CRUD-like modules, host apps can register metadata instead of writing one ac
 ```
 
 This generic layer is package-level. The module list, model classes, permissions, sensitive-field allowlist, and relation lookup names remain app-specific.
+
+Ownership is intentionally host-configurable. By default the package checks common actor fields in this order: `created_by`, `creator_id`, `owner_id`, then the actor id. Apps with a different tenant or organization model can provide a callable:
+
+```php
+'generic_module_actions_ownership' => [
+    'owner_fields' => ['created_by', 'creator_id', 'owner_id'],
+    'owner_id_resolver' => fn ($actor) => $actor->tenant_owner_id ?? $actor->id,
+],
+```
 
 ## Action Payload Extraction
 
