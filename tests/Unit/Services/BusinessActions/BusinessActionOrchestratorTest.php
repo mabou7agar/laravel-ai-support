@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Tests\Unit\Services\BusinessActions;
 
 use LaravelAIEngine\Contracts\BusinessActionDefinitionProvider;
+use LaravelAIEngine\Contracts\BusinessActionAuditLogger;
 use LaravelAIEngine\Contracts\BusinessActionExecutor;
 use LaravelAIEngine\Contracts\BusinessActionRelationResolver;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Enums\BusinessActionOperation;
 use LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator;
 use LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry;
 use LaravelAIEngine\Tests\UnitTestCase;
@@ -84,6 +86,22 @@ class BusinessActionOrchestratorTest extends UnitTestCase
         $this->assertSame('support', $registry->get('create_ticket')['module']);
     }
 
+    public function test_registry_normalizes_schema_operation_risk_and_confirmation_policy(): void
+    {
+        $registry = new BusinessActionRegistry();
+        $registry->register([
+            'id' => 'preview_report',
+            'operation' => 'unsupported',
+            'risk' => 'low',
+        ]);
+
+        $action = $registry->get('preview_report');
+
+        $this->assertSame(BusinessActionOperation::CUSTOM->value, $action['operation']);
+        $this->assertSame('low', $action['risk']);
+        $this->assertFalse($action['confirmation_required']);
+    }
+
     public function test_orchestrator_uses_executor_and_relation_resolver_contracts(): void
     {
         $registry = new BusinessActionRegistry();
@@ -115,6 +133,56 @@ class BusinessActionOrchestratorTest extends UnitTestCase
         $this->assertSame('Created ticket.', $executed->message);
         $this->assertSame(55, $executed->data['category_id']);
         $this->assertSame('create_ticket', $executed->actionId);
+    }
+
+    public function test_execute_replays_successful_result_for_same_idempotency_key(): void
+    {
+        $calls = 0;
+        $registry = new BusinessActionRegistry();
+        $registry->register([
+            'id' => 'create_invoice',
+            'module' => 'sales',
+            'operation' => 'create',
+            'required' => ['customer_id', '_idempotency_key'],
+            'handler' => function () use (&$calls): ActionResult {
+                $calls++;
+
+                return ActionResult::success('Created invoice.', ['id' => $calls]);
+            },
+        ]);
+
+        $orchestrator = new BusinessActionOrchestrator($registry);
+        $payload = ['customer_id' => 10, '_idempotency_key' => 'same-request'];
+
+        $first = $orchestrator->execute('create_invoice', $payload, confirmed: true);
+        $second = $orchestrator->execute('create_invoice', $payload, confirmed: true);
+
+        $this->assertTrue($first->success);
+        $this->assertTrue($second->success);
+        $this->assertSame(1, $calls);
+        $this->assertSame(1, $second->data['id']);
+        $this->assertTrue($second->metadata['idempotent_replay']);
+    }
+
+    public function test_orchestrator_writes_prepare_and_execute_audit_events(): void
+    {
+        $registry = new BusinessActionRegistry();
+        $registry->register([
+            'id' => 'create_note',
+            'operation' => 'create',
+            'required' => ['title'],
+            'handler' => fn (array $payload): ActionResult => ActionResult::success('Created note.', $payload),
+        ]);
+        $audit = new TestBusinessActionAuditLogger();
+        $orchestrator = new BusinessActionOrchestrator($registry, [], null, $audit);
+
+        $prepared = $orchestrator->prepare('create_note', ['title' => 'Follow up']);
+        $executed = $orchestrator->execute('create_note', ['title' => 'Follow up'], confirmed: true);
+
+        $this->assertTrue($prepared['success']);
+        $this->assertTrue($executed->success);
+        $this->assertSame(['create_note', 'create_note'], $audit->prepared);
+        $this->assertSame(['create_note'], $audit->executed);
     }
 
     protected function orchestrator(): BusinessActionOrchestrator
@@ -201,5 +269,22 @@ class TestBusinessActionRelationResolver implements BusinessActionRelationResolv
     public function createMissing(string $actionId, array $payload, ?UnifiedActionContext $context, array $action): array
     {
         return ['payload' => $payload];
+    }
+}
+
+class TestBusinessActionAuditLogger implements BusinessActionAuditLogger
+{
+    public array $prepared = [];
+
+    public array $executed = [];
+
+    public function prepared(string $actionId, array $action, array $payload, array $result, ?UnifiedActionContext $context): void
+    {
+        $this->prepared[] = $actionId;
+    }
+
+    public function executed(string $actionId, array $action, array $payload, ActionResult $result, ?UnifiedActionContext $context): void
+    {
+        $this->executed[] = $actionId;
     }
 }

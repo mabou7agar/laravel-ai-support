@@ -121,10 +121,20 @@ Available package contracts:
 - `LaravelAIEngine\Contracts\BusinessActionDefinitionProvider`
 - `LaravelAIEngine\Contracts\BusinessActionExecutor`
 - `LaravelAIEngine\Contracts\BusinessActionRelationResolver`
+- `LaravelAIEngine\Contracts\BusinessActionAuditLogger`
 - `LaravelAIEngine\Contracts\ConversationMemory`
 - `LaravelAIEngine\Contracts\AgentCapabilityProvider`
 
 `BusinessActionDefinitionProvider` returns action definitions, `BusinessActionExecutor` prepares/executes a domain action through app code, and `BusinessActionRelationResolver` resolves or creates related records around prepare/execute. The package also binds `ConversationMemory` to `CacheConversationMemory` by default, so multi-turn flows are not tied directly to Laravel's cache facade.
+
+Action definitions share the same generic schema for CRUD/workflow operations:
+
+- `operation`: `create`, `update`, `delete`, `status`, `convert`, or `custom`
+- `risk`: `low`, `medium`, `high`, or `destructive`
+- `confirmation_required`: optional; defaults from `risk`
+- `required`, `parameters`, `summary_fields`, `executor`, `handler`, `suggest`, and `relation_resolvers`
+
+For duplicate-submit protection, include `_idempotency_key` or `idempotency_key` in confirmed write payloads, or pass `metadata.idempotency_key` in `UnifiedActionContext`. Bind `BusinessActionAuditLogger` to persist prepare/execute audit records; the default logger is a no-op.
 
 ## Action Payload Extraction
 

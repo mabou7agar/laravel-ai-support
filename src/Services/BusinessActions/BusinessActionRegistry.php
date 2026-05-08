@@ -6,6 +6,8 @@ namespace LaravelAIEngine\Services\BusinessActions;
 
 use InvalidArgumentException;
 use LaravelAIEngine\Contracts\BusinessActionDefinitionProvider;
+use LaravelAIEngine\Enums\BusinessActionOperation;
+use LaravelAIEngine\Enums\BusinessActionRisk;
 
 class BusinessActionRegistry
 {
@@ -25,13 +27,19 @@ class BusinessActionRegistry
             throw new InvalidArgumentException('Business action definition must include a non-empty id.');
         }
 
-        $this->actions[$id] = array_merge([
+        $definition = array_merge([
             'enabled' => true,
             'operation' => 'custom',
+            'risk' => 'medium',
             'parameters' => [],
             'required' => [],
-            'confirmation_required' => true,
         ], $definition, ['id' => $id]);
+
+        $definition['operation'] = BusinessActionOperation::normalize((string) ($definition['operation'] ?? 'custom'));
+        $definition['risk'] = BusinessActionRisk::normalize((string) ($definition['risk'] ?? 'medium'));
+        $definition['confirmation_required'] ??= BusinessActionRisk::requiresConfirmation((string) $definition['risk']);
+
+        $this->actions[$id] = $definition;
     }
 
     /**

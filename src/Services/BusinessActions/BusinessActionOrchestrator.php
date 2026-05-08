@@ -6,8 +6,10 @@ namespace LaravelAIEngine\Services\BusinessActions;
 
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
+use LaravelAIEngine\Contracts\BusinessActionAuditLogger;
 use LaravelAIEngine\Contracts\BusinessActionExecutor;
 use LaravelAIEngine\Contracts\BusinessActionRelationResolver;
+use LaravelAIEngine\Contracts\ConversationMemory;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
@@ -18,7 +20,9 @@ class BusinessActionOrchestrator
      */
     public function __construct(
         protected BusinessActionRegistry $registry,
-        protected array $relationResolvers = []
+        protected array $relationResolvers = [],
+        protected ?ConversationMemory $memory = null,
+        protected ?BusinessActionAuditLogger $auditLogger = null
     )
     {
     }
@@ -74,19 +78,26 @@ class BusinessActionOrchestrator
 
         $missing = $this->missingRequired($action, $payload);
         if ($missing !== []) {
-            return [
+            $result = [
                 'success' => false,
                 'message' => 'More information is required before this action can run.',
                 'missing_fields' => $missing,
                 'needs_user_input' => true,
                 'action' => Arr::only($action, ['id', 'module', 'label', 'operation']),
             ];
+
+            $this->auditLogger()?->prepared($actionId, $action, $payload, $result, $context);
+
+            return $result;
         }
 
         if ($executor = $this->executor($action['executor'] ?? null)) {
             $prepared = $executor->prepare($payload, $context, $action);
 
-            return $this->normalizePreparedResult($actionId, $action, $prepared, $payload, $relationResolution);
+            $result = $this->normalizePreparedResult($actionId, $action, $prepared, $payload, $relationResolution);
+            $this->auditLogger()?->prepared($actionId, $action, $payload, $result, $context);
+
+            return $result;
         }
 
         $normalizer = $action['prepare'] ?? null;
@@ -94,7 +105,7 @@ class BusinessActionOrchestrator
             $payload = $this->call($normalizer, [$payload, $context, $action]);
         }
 
-        return [
+        $result = [
             'success' => true,
             'message' => $action['confirmation_message'] ?? 'Action is ready for confirmation.',
             'requires_confirmation' => (bool) ($action['confirmation_required'] ?? true),
@@ -108,6 +119,10 @@ class BusinessActionOrchestrator
                 ])),
             ],
         ];
+
+        $this->auditLogger()?->prepared($actionId, $action, $payload, $result, $context);
+
+        return $result;
     }
 
     /**
@@ -146,6 +161,16 @@ class BusinessActionOrchestrator
             );
         }
 
+        $idempotencyKey = $this->idempotencyKey($actionId, $action, $payload, $context);
+        if ($idempotencyKey !== null) {
+            $cached = $this->memory()?->get('business-action:idempotency', $idempotencyKey);
+            if (is_array($cached)) {
+                return ActionResult::fromArray($cached)
+                    ->withMetadata('idempotent_replay', true)
+                    ->withActionInfo($actionId, (string) ($action['operation'] ?? 'custom'));
+            }
+        }
+
         $payload = $prepared['draft']['payload'];
         $createdRelations = $this->createMissingRelations($actionId, $payload, $context, $action);
         $payload = $createdRelations['payload'];
@@ -153,7 +178,7 @@ class BusinessActionOrchestrator
         if ($executor = $this->executor($action['executor'] ?? null)) {
             $result = $executor->execute($payload, $context, $action);
 
-            return $this->normalizeExecutionResult($result, $actionId, $action, $createdRelations['created_relations']);
+            return $this->finalizeExecutionResult($result, $actionId, $action, $payload, $context, $createdRelations['created_relations'], $idempotencyKey);
         }
 
         $handler = $action['handler'] ?? null;
@@ -163,7 +188,7 @@ class BusinessActionOrchestrator
 
         $result = $this->call($handler, [$payload, $context, $action]);
 
-        return $this->normalizeExecutionResult($result, $actionId, $action, $createdRelations['created_relations']);
+        return $this->finalizeExecutionResult($result, $actionId, $action, $payload, $context, $createdRelations['created_relations'], $idempotencyKey);
     }
 
     /**
@@ -410,6 +435,73 @@ class BusinessActionOrchestrator
         return ActionResult::success('Action executed.', $result, $createdRelations === [] ? [] : [
             'created_relations' => $createdRelations,
         ])->withActionInfo($actionId, (string) ($action['operation'] ?? 'custom'));
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @param array<string, mixed> $payload
+     * @param array<int, array<string, mixed>> $createdRelations
+     */
+    protected function finalizeExecutionResult(
+        mixed $result,
+        string $actionId,
+        array $action,
+        array $payload,
+        ?UnifiedActionContext $context,
+        array $createdRelations = [],
+        ?string $idempotencyKey = null
+    ): ActionResult {
+        $actionResult = $this->normalizeExecutionResult($result, $actionId, $action, $createdRelations);
+
+        if ($actionResult->success && $idempotencyKey !== null) {
+            $this->memory()?->put('business-action:idempotency', $idempotencyKey, $actionResult->toArray(), now()->addDay());
+        }
+
+        $this->auditLogger()?->executed($actionId, $action, $payload, $actionResult, $context);
+
+        return $actionResult;
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @param array<string, mixed> $payload
+     */
+    protected function idempotencyKey(string $actionId, array $action, array $payload, ?UnifiedActionContext $context): ?string
+    {
+        $key = $payload['_idempotency_key']
+            ?? $payload['idempotency_key']
+            ?? $context?->metadata['idempotency_key']
+            ?? null;
+
+        if (!is_scalar($key) || trim((string) $key) === '') {
+            return null;
+        }
+
+        $owner = $context?->userId ?: 'guest';
+
+        return $owner . ':' . $actionId . ':' . sha1((string) $key);
+    }
+
+    protected function memory(): ?ConversationMemory
+    {
+        if ($this->memory instanceof ConversationMemory) {
+            return $this->memory;
+        }
+
+        return $this->memory = app()->bound(ConversationMemory::class)
+            ? app(ConversationMemory::class)
+            : null;
+    }
+
+    protected function auditLogger(): ?BusinessActionAuditLogger
+    {
+        if ($this->auditLogger instanceof BusinessActionAuditLogger) {
+            return $this->auditLogger;
+        }
+
+        return $this->auditLogger = app()->bound(BusinessActionAuditLogger::class)
+            ? app(BusinessActionAuditLogger::class)
+            : null;
     }
 
     /**

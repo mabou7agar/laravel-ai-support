@@ -261,6 +261,7 @@ Package contracts:
 - `LaravelAIEngine\Contracts\BusinessActionDefinitionProvider`
 - `LaravelAIEngine\Contracts\BusinessActionExecutor`
 - `LaravelAIEngine\Contracts\BusinessActionRelationResolver`
+- `LaravelAIEngine\Contracts\BusinessActionAuditLogger`
 - `LaravelAIEngine\Contracts\ConversationMemory`
 - `LaravelAIEngine\Contracts\AgentCapabilityProvider`
 
@@ -268,6 +269,7 @@ Package services:
 
 - `LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry`
 - `LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator`
+- `LaravelAIEngine\Services\BusinessActions\NullBusinessActionAuditLogger`
 - `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`
 - `LaravelAIEngine\Services\Memory\CacheConversationMemory`
 
@@ -293,6 +295,15 @@ Register static definitions, provider classes, and relation resolvers in the hos
 ```
 
 `BusinessActionDefinitionProvider` publishes action definitions. `BusinessActionExecutor` prepares and executes one action through app services. `BusinessActionRelationResolver` resolves or creates related records around prepare/execute. `ConversationMemory` lets package flows store pending payloads without hardcoding a storage backend.
+
+Action definitions use a generic schema:
+
+- `operation`: `create`, `update`, `delete`, `status`, `convert`, or `custom`
+- `risk`: `low`, `medium`, `high`, or `destructive`
+- `confirmation_required`: optional; defaults from `risk`
+- `required`, `parameters`, `summary_fields`, `executor`, `handler`, `suggest`, and `relation_resolvers`
+
+Confirmed writes can include `_idempotency_key` or `idempotency_key` in the payload, or `metadata.idempotency_key` in the `UnifiedActionContext`. Successful results are replayed for the same user/action/key instead of executing again. Bind `BusinessActionAuditLogger` in the host app to persist prepare/execute audit records; the package uses `NullBusinessActionAuditLogger` by default.
 
 ## Action Payload Extraction
 
