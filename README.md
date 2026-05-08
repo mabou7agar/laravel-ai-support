@@ -258,6 +258,8 @@ The package provides `LaravelAIEngine\Services\Actions\ActionPayloadExtractor` f
 
 Host apps still own the domain-specific parts: action definitions, permissions, validation, relation resolution, confirmation, and database writes.
 
+For multi-turn action intake, use `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`. It combines payload extraction, cached intake payloads, draft payloads, prepare callbacks, execute-after-confirm callbacks, and relation-review hooks. Host apps pass callbacks for domain-specific merge, prepare, execute, and relation lookup behavior.
+
 ```php
 use LaravelAIEngine\Services\Actions\ActionPayloadExtractor;
 

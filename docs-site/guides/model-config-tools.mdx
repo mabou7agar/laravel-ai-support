@@ -124,6 +124,8 @@ $patch = app(ActionPayloadExtractor::class)->extract(
 
 The package handles prompt construction, JSON decoding, schema-based sanitization, model selection, and failure fallback. The host app should merge the returned patch into its draft and continue using deterministic validation, permission checks, relation resolution, confirmation, and writes.
 
+For full multi-turn intake, use `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`. It owns the reusable chat flow around cached intake payloads, draft payloads, payload extraction, prepare callbacks, execute-after-confirm callbacks, and relation-review hooks. Host apps provide callbacks for domain-specific merge behavior, validation/prepare, execute, and relation lookup.
+
 Configure it with:
 
 ```env
