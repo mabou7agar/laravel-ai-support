@@ -137,6 +137,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Deterministic Agent Handlers
+    |--------------------------------------------------------------------------
+    |
+    | Host applications can register small, high-confidence handlers that run
+    | before model routing. Use these for deterministic business commands,
+    | multilingual aliases, or compliance-critical flows. Handlers must
+    | implement LaravelAIEngine\Contracts\DeterministicAgentHandler.
+    |
+    */
+    'deterministic_handlers' => [
+        // \App\AI\Handlers\CreateInvoiceIntentHandler::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Business Actions
     |--------------------------------------------------------------------------
     |

@@ -25,7 +25,8 @@ class AgentOrchestrator
         protected AgentSelectionService $selectionService,
         protected AgentExecutionFacade $execution,
         protected ?MessageRoutingClassifier $messageClassifier = null,
-        protected ?RoutingContextResolver $routingContextResolver = null
+        protected ?RoutingContextResolver $routingContextResolver = null,
+        protected ?DeterministicAgentHandlerRegistry $deterministicHandlers = null
     ) {
         $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
             ? app(MessageRoutingClassifier::class)
@@ -33,6 +34,9 @@ class AgentOrchestrator
         $this->routingContextResolver ??= app()->bound(RoutingContextResolver::class)
             ? app(RoutingContextResolver::class)
             : new RoutingContextResolver();
+        $this->deterministicHandlers ??= app()->bound(DeterministicAgentHandlerRegistry::class)
+            ? app(DeterministicAgentHandlerRegistry::class)
+            : null;
     }
 
     public function process(
@@ -49,6 +53,19 @@ class AgentOrchestrator
 
         $context = $this->contextManager->getOrCreate($sessionId, $userId);
         $context->addUserMessage($message);
+
+        if ($this->deterministicHandlers) {
+            $deterministicResponse = $this->deterministicHandlers->handle($message, $context, $options);
+            if ($deterministicResponse) {
+                Log::channel('ai-engine')->debug('Deterministic agent handler matched', [
+                    'session_id' => $sessionId,
+                    'user_id' => $userId,
+                    'strategy' => $deterministicResponse->strategy,
+                ]);
+
+                return $this->finalizeDirect($context, $deterministicResponse);
+            }
+        }
 
         // RULE 0: Check for option selection from previous message
         // This must come before other routing to avoid treating "1" as a position query
