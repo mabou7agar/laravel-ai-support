@@ -211,9 +211,6 @@ class ActionPayloadExtractor
 
     protected function configValue(string $key, mixed $default = null): mixed
     {
-        return config(
-            "ai-agent.action_payload_extraction.{$key}",
-            config("ai-agent.business_action_payload_extraction.{$key}", $default)
-        );
+        return config("ai-agent.action_payload_extraction.{$key}", $default);
     }
 }
