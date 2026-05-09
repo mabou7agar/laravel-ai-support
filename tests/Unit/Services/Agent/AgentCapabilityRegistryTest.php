@@ -21,9 +21,9 @@ class AgentCapabilityRegistryTest extends UnitTestCase
         $documents = app(AgentCapabilityRegistry::class)->documents();
 
         $this->assertCount(2, $documents);
-        $this->assertSame('business_action:create_invoice', $documents[0]->id);
+        $this->assertSame('action:create_invoice', $documents[0]->id);
         $this->assertSame('Create invoice replacement from second provider row.', $documents[0]->text);
-        $this->assertSame('business_action:query_invoices', $documents[1]->id);
+        $this->assertSame('action:query_invoices', $documents[1]->id);
         $this->assertSame('query', $documents[1]->payload['operation']);
     }
 
@@ -60,13 +60,13 @@ class TestBusinessCapabilityProvider implements AgentCapabilityProvider
     public function capabilities(): iterable
     {
         yield new AgentCapabilityDocument(
-            id: 'business_action:create_invoice',
+            id: 'action:create_invoice',
             text: 'Create invoice from customer and line items.',
             payload: ['operation' => 'create']
         );
 
         yield [
-            'id' => 'business_action:query_invoices',
+            'id' => 'action:query_invoices',
             'text' => 'Query invoices by customer, status, due date, or amount.',
             'payload' => ['operation' => 'query'],
         ];
@@ -77,12 +77,12 @@ class TestBusinessCapabilityProvider implements AgentCapabilityProvider
         ];
 
         yield [
-            'id' => 'business_action:ignored_empty_text',
+            'id' => 'action:ignored_empty_text',
             'text' => '',
         ];
 
         yield new AgentCapabilityDocument(
-            id: 'business_action:create_invoice',
+            id: 'action:create_invoice',
             text: 'Create invoice replacement from second provider row.',
             payload: ['operation' => 'create']
         );

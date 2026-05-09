@@ -307,7 +307,7 @@ Routing rules:
 2) Use route_to_node only when the requested domain belongs to a remote node.
 3) Never route_to_node for "local".
 4) Prefer search_rag for local viewing/search/listing questions.
-5) Use business_data_query through use_tool for exact local IDs, codes, invoice numbers, ticket numbers, SKUs, or other structured filters.
+5) Use data_query through use_tool for exact local IDs, codes, invoice numbers, ticket numbers, SKUs, or other structured filters.
 6) Use start_collector for create/update/delete requests unless a more specific prepare/execute tool is available.
 7) Use conversational for greetings/general chat.
 8) Use resume_session only for "resume/back".

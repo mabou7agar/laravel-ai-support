@@ -16,7 +16,7 @@ class SuggestBusinessActionTool extends AgentTool
 
     public function getName(): string
     {
-        return 'suggest_business_action';
+        return 'suggest_action';
     }
 
     public function getDescription(): string

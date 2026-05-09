@@ -10,10 +10,13 @@ class ConversationContextCompactor
 {
     public function compact(UnifiedActionContext $context): void
     {
+        $beforeChars = $this->historyChars($context->conversationHistory);
+
         if (!$this->enabled()) {
             $context->conversationHistory = $this->sanitizeMessages(
                 array_slice($context->conversationHistory, -$this->maxMessages())
             );
+            $this->storeMetrics($context, $beforeChars);
 
             return;
         }
@@ -24,6 +27,7 @@ class ConversationContextCompactor
 
         if (!$shouldCompact) {
             $context->conversationHistory = $history;
+            $this->storeMetrics($context, $beforeChars);
             return;
         }
 
@@ -38,11 +42,31 @@ class ConversationContextCompactor
         $context->metadata['conversation_compacted_messages'] = (int) ($context->metadata['conversation_compacted_messages'] ?? 0) + count($older);
         $context->metadata['conversation_last_compacted_at'] = now()->toIso8601String();
         $context->conversationHistory = $recent;
+        $this->storeMetrics($context, $beforeChars);
     }
 
     public function summaryForPrompt(UnifiedActionContext $context): string
     {
         return trim((string) ($context->metadata['conversation_summary'] ?? ''));
+    }
+
+    /**
+     * @return array{prompt_size_chars:int,summary_size_chars:int,recent_memory_size_chars:int,retrieved_memory_size_chars:int,total_context_size_chars:int,compacted_messages:int}
+     */
+    public function metrics(UnifiedActionContext $context): array
+    {
+        $summarySize = strlen($this->summaryForPrompt($context));
+        $recentSize = $this->historyChars($context->conversationHistory);
+        $retrievedSize = strlen((string) ($context->metadata['retrieved_memory'] ?? ''));
+
+        return [
+            'prompt_size_chars' => $summarySize + $recentSize + $retrievedSize,
+            'summary_size_chars' => $summarySize,
+            'recent_memory_size_chars' => $recentSize,
+            'retrieved_memory_size_chars' => $retrievedSize,
+            'total_context_size_chars' => $summarySize + $recentSize + $retrievedSize,
+            'compacted_messages' => (int) ($context->metadata['conversation_compacted_messages'] ?? 0),
+        ];
     }
 
     private function enabled(): bool
@@ -158,6 +182,13 @@ class ConversationContextCompactor
         }
 
         return mb_substr($summary, -$limit);
+    }
+
+    private function storeMetrics(UnifiedActionContext $context, int $beforeChars): void
+    {
+        $metrics = $this->metrics($context);
+        $metrics['pre_compaction_history_size_chars'] = $beforeChars;
+        $context->metadata['conversation_context_metrics'] = $metrics;
     }
 
     private function config(string $key, mixed $default): mixed

@@ -33,6 +33,13 @@ class ActionIntakeCoordinator
         array $callbacks,
         array $options = []
     ): AgentResponse {
+        $previousScope = $this->activeScope($context, $ownerKey);
+        $switchedScope = $previousScope !== null && $previousScope !== $scope;
+        if ($switchedScope) {
+            $this->forgetDraftPayload($context, $ownerKey, $previousScope);
+            $this->forgetIntakePayload($context, $ownerKey, $previousScope);
+        }
+
         $cachedPayload = $this->cachedPayload($context, $ownerKey, $scope);
 
         $incomingPayload = $this->extractPayload($action, $message, $cachedPayload, $context, $callbacks, $options);
@@ -56,6 +63,8 @@ class ActionIntakeCoordinator
             $this->putIntakePayload($context, $ownerKey, $scope, $payload);
         }
 
+        $this->putActiveScope($context, $ownerKey, $scope);
+
         $message = (string) ($this->call($callbacks['format_prepare_reply'] ?? null, [$result]) ?? ($result['message'] ?? $result['error'] ?? 'More information is required.'));
 
         return new AgentResponse(
@@ -70,6 +79,8 @@ class ActionIntakeCoordinator
                     : (string) ($options['needs_input_strategy'] ?? 'action_needs_input'),
                 'decision_source' => 'action_intake_coordinator',
                 'workflow_data' => $result,
+                'action_switched' => $switchedScope,
+                'previous_action_scope' => $switchedScope ? $previousScope : null,
             ],
             isComplete: true
         );
@@ -99,6 +110,7 @@ class ActionIntakeCoordinator
         if ($result['success'] ?? false) {
             $this->forgetDraftPayload($context, $ownerKey, $scope);
             $this->forgetIntakePayload($context, $ownerKey, $scope);
+            $this->forgetActiveScope($context, $ownerKey, $scope);
         }
 
         return new AgentResponse(
@@ -164,6 +176,27 @@ class ActionIntakeCoordinator
         $this->memory()->forget('action-intake:payload', $this->intakeKey($context, $ownerKey, $scope));
     }
 
+    public function activeScope(UnifiedActionContext $context, int|string $ownerKey): ?string
+    {
+        $scope = $this->memory()->get('action-intake:active-scope', $this->activeScopeKey($context, $ownerKey));
+
+        return is_string($scope) && $scope !== '' ? $scope : null;
+    }
+
+    public function putActiveScope(UnifiedActionContext $context, int|string $ownerKey, string $scope, DateTimeInterface|DateInterval|int|null $ttl = null): void
+    {
+        $this->memory()->put('action-intake:active-scope', $this->activeScopeKey($context, $ownerKey), $scope, $ttl ?? now()->addHours(2));
+    }
+
+    public function forgetActiveScope(UnifiedActionContext $context, int|string $ownerKey, ?string $scope = null): void
+    {
+        if ($scope !== null && $this->activeScope($context, $ownerKey) !== $scope) {
+            return;
+        }
+
+        $this->memory()->forget('action-intake:active-scope', $this->activeScopeKey($context, $ownerKey));
+    }
+
     public function draftKey(UnifiedActionContext $context, int|string $ownerKey, string $scope): string
     {
         return "{$ownerKey}:{$context->sessionId}:{$scope}";
@@ -172,6 +205,11 @@ class ActionIntakeCoordinator
     public function intakeKey(UnifiedActionContext $context, int|string $ownerKey, string $scope): string
     {
         return "{$ownerKey}:{$context->sessionId}:{$scope}";
+    }
+
+    public function activeScopeKey(UnifiedActionContext $context, int|string $ownerKey): string
+    {
+        return "{$ownerKey}:{$context->sessionId}";
     }
 
     /**

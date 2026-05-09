@@ -16,7 +16,7 @@ class ExecuteBusinessActionTool extends AgentTool
 
     public function getName(): string
     {
-        return 'execute_business_action';
+        return 'execute_action';
     }
 
     public function getDescription(): string

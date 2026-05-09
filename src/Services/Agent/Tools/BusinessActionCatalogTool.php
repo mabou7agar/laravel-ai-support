@@ -16,7 +16,7 @@ class BusinessActionCatalogTool extends AgentTool
 
     public function getName(): string
     {
-        return 'business_action_catalog';
+        return 'action_catalog';
     }
 
     public function getDescription(): string

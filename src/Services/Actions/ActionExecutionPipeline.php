@@ -74,8 +74,7 @@ class ActionExecutionPipeline
             ]);
             
             return ActionResult::failure(
-                error: 'Action execution failed: ' . $e->getMessage(),
-                metadata: ['exception' => get_class($e)]
+                error: 'Action execution failed. Please try again.'
             )->withDuration($durationMs);
         }
     }
@@ -225,7 +224,7 @@ class ActionExecutionPipeline
             
         } catch (\Exception $e) {
             return ActionResult::failure(
-                error: 'Model execution failed: ' . $e->getMessage(),
+                error: 'Model execution failed. Please try again.',
                 metadata: ['model_class' => $modelClass]
             );
         }
@@ -281,7 +280,7 @@ class ActionExecutionPipeline
             
         } catch (\Exception $e) {
             return ActionResult::failure(
-                error: 'Remote execution failed: ' . $e->getMessage(),
+                error: 'Remote execution failed. Please try again.',
                 metadata: ['node' => $nodeName]
             );
         }
@@ -420,7 +419,7 @@ class ActionExecutionPipeline
             ]);
             
             return ActionResult::failure(
-                error: 'Workflow execution failed: ' . $e->getMessage(),
+                error: 'Workflow execution failed. Please try again.',
                 metadata: ['workflow_class' => $workflowClass]
             );
         }
@@ -453,7 +452,7 @@ class ActionExecutionPipeline
                 }
             } catch (\Exception $e) {
                 return ActionResult::failure(
-                    error: 'Custom executor failed: ' . $e->getMessage()
+                    error: 'Custom executor failed. Please try again.'
                 );
             }
         }

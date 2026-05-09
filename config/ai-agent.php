@@ -129,10 +129,10 @@ return [
         // 'search_options' => \LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class,
         // 'suggest_value' => \LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class,
         // 'explain_field' => \LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class,
-        // 'business_action_catalog' => \LaravelAIEngine\Services\Agent\Tools\BusinessActionCatalogTool::class,
-        // 'prepare_business_action' => \LaravelAIEngine\Services\Agent\Tools\PrepareBusinessActionTool::class,
-        // 'execute_business_action' => \LaravelAIEngine\Services\Agent\Tools\ExecuteBusinessActionTool::class,
-        // 'suggest_business_action' => \LaravelAIEngine\Services\Agent\Tools\SuggestBusinessActionTool::class,
+        // 'action_catalog' => \LaravelAIEngine\Services\Agent\Tools\BusinessActionCatalogTool::class,
+        // 'prepare_action' => \LaravelAIEngine\Services\Agent\Tools\PrepareBusinessActionTool::class,
+        // 'execute_action' => \LaravelAIEngine\Services\Agent\Tools\ExecuteBusinessActionTool::class,
+        // 'suggest_action' => \LaravelAIEngine\Services\Agent\Tools\SuggestBusinessActionTool::class,
     ],
 
     /*

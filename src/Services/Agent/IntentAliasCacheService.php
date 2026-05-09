@@ -19,7 +19,7 @@ class IntentAliasCacheService
         string $source = 'tool_decision'
     ): void {
         $this->remember($scope, $locale, $phrase, [
-            'type' => 'business_action',
+            'type' => 'action',
             'action_id' => $actionId,
         ], $confidence, $source);
     }
@@ -33,7 +33,7 @@ class IntentAliasCacheService
         string $source = 'tool_decision'
     ): void {
         $this->remember($scope, $locale, $phrase, [
-            'type' => 'business_query',
+            'type' => 'data_query',
             'model' => $route['model'] ?? null,
             'table' => $route['table'] ?? null,
         ], $confidence, $source);

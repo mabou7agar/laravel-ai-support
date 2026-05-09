@@ -41,14 +41,14 @@ class AgentPlannerTest extends TestCase
 
         $plan = $planner->plan([
             'action' => 'use_tool',
-            'resource_name' => 'business_data_query',
+            'resource_name' => 'data_query',
             'params' => [
                 'model' => 'SalesInvoice',
                 'filters' => ['invoice_number' => 'INV-1'],
             ],
         ]);
 
-        $this->assertSame('business_data_query', $plan['resource_name']);
+        $this->assertSame('data_query', $plan['resource_name']);
         $this->assertSame('SalesInvoice', $plan['params']['model']);
         $this->assertSame(['invoice_number' => 'INV-1'], $plan['params']['filters']);
     }

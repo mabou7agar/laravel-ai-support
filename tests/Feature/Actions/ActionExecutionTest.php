@@ -108,6 +108,24 @@ class ActionExecutionTest extends ActionTestCase
         $this->assertActionSuccess($result);
         $this->assertEquals(123, $result->data['id']);
     }
+
+    public function test_action_execution_failure_uses_safe_public_error()
+    {
+        $this->registerTestAction('throwing_action', [
+            'executor' => ThrowingActionExecutor::class,
+        ]);
+
+        $result = $this->actionManager->executeById(
+            actionId: 'throwing_action',
+            params: [],
+            userId: 1
+        );
+
+        $this->assertActionFailure($result);
+        $this->assertSame('Custom executor failed. Please try again.', $result->error);
+        $this->assertStringNotContainsString('database password leaked', $result->error);
+        $this->assertStringNotContainsString(ThrowingActionExecutor::class, $result->error);
+    }
     
     /**
      * Test action with spy
@@ -155,5 +173,13 @@ class ActionExecutionTest extends ActionTestCase
         
         // Assert
         $this->assertActionHasMetadata($result, 'node');
+    }
+}
+
+class ThrowingActionExecutor
+{
+    public function execute(array $params, $userId): ActionResult
+    {
+        throw new \RuntimeException('database password leaked');
     }
 }

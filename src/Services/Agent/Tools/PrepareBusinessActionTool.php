@@ -16,7 +16,7 @@ class PrepareBusinessActionTool extends AgentTool
 
     public function getName(): string
     {
-        return 'prepare_business_action';
+        return 'prepare_action';
     }
 
     public function getDescription(): string
