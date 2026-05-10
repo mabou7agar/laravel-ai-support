@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Enums;
 
-enum BusinessActionOperation: string
+enum ActionOperation: string
 {
     case CREATE = 'create';
     case UPDATE = 'update';
@@ -18,4 +18,3 @@ enum BusinessActionOperation: string
         return self::tryFrom($operation)?->value ?? self::CUSTOM->value;
     }
 }
-

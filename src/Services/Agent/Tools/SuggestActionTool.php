@@ -6,11 +6,11 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator;
+use LaravelAIEngine\Contracts\ActionWorkflowHandler;
 
-class SuggestBusinessActionTool extends AgentTool
+class SuggestActionTool extends AgentTool
 {
-    public function __construct(protected BusinessActionOrchestrator $actions)
+    public function __construct(protected ActionWorkflowHandler $actions)
     {
     }
 
@@ -21,20 +21,20 @@ class SuggestBusinessActionTool extends AgentTool
 
     public function getDescription(): string
     {
-        return 'Suggests possible next business actions from provided data. It does not persist data.';
+        return 'Suggests possible next actions from provided data. It does not persist data.';
     }
 
     public function getParameters(): array
     {
         return [
-            'context' => ['type' => 'object', 'required' => false, 'description' => 'Business records or user intent used for suggestions.'],
+            'context' => ['type' => 'object', 'required' => false, 'description' => 'Records or user intent used for suggestions.'],
         ];
     }
 
     public function execute(array $parameters, UnifiedActionContext $context): ActionResult
     {
         return ActionResult::success(
-            'Business action suggestions generated.',
+            'Action suggestions generated.',
             $this->actions->suggest((array) ($parameters['context'] ?? []), $context)
         );
     }

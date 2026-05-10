@@ -40,83 +40,31 @@ class ActionFlowGuideService
      */
     public function flow(string $actionId, array $action): array
     {
-        if (in_array($actionId, ['create_sales_invoice', 'create_sales_proposal'], true)) {
-            return [
-                [
-                    'step' => 'select_action',
-                    'instruction' => 'Identify the requested action and start or continue the current session draft.',
-                    'tool' => 'update_action_draft',
-                    'required_payload' => [
-                        'create_missing_relations' => true,
-                    ],
-                ],
-                [
-                    'step' => 'collect_core_fields',
-                    'instruction' => 'Collect dates, type, related party reference, and line item intent. Use reasonable defaults for dates only when the user did not specify them.',
-                    'required_fields' => array_values((array) ($action['required'] ?? [])),
-                ],
-                [
-                    'step' => 'review_customer_relation',
-                    'instruction' => 'If customer is missing, ask whether to create it before moving on. Do not treat final action confirmation as customer creation approval.',
-                    'relation' => 'customer',
-                    'lookup_fields' => ['customer_id', 'customer_email', 'customer_name'],
-                    'safe_create' => true,
-                    'create_required_fields' => ['customer_name', 'customer_email'],
-                    'approval_payload' => ['approved_missing_relations' => ['customer_id']],
-                    'user_must_confirm_relation_create' => true,
-                ],
-                [
-                    'step' => 'review_product_relations',
-                    'instruction' => 'For every line item, resolve existing product by product_id, product_sku, or product_name. If missing, ask whether to create the product and collect required product fields before moving on.',
-                    'relation' => 'product',
-                    'lookup_fields' => ['items.*.product_id', 'items.*.product_sku', 'items.*.product_name'],
-                    'safe_create' => true,
-                    'create_required_fields' => ['items.*.product_name', 'items.*.product_sku', 'items.*.quantity', 'items.*.unit_price'],
-                    'approval_payload' => ['approved_missing_relations' => ['items.{index}.product_id']],
-                    'user_must_confirm_relation_create' => true,
-                ],
-                [
-                    'step' => 'review_warehouse_relation',
-                    'instruction' => 'For actions that need a warehouse, resolve existing warehouse or ask whether to create one.',
-                    'relation' => 'warehouse',
-                    'lookup_fields' => ['warehouse_id', 'warehouse_name'],
-                    'safe_create' => true,
-                    'create_required_fields' => ['warehouse_name', 'warehouse_address', 'warehouse_city', 'warehouse_zip_code'],
-                    'approval_payload' => ['approved_missing_relations' => ['warehouse_id']],
-                    'user_must_confirm_relation_create' => true,
-                ],
-                [
-                    'step' => 'prepare_draft',
-                    'instruction' => 'Call update_action_draft after each user answer. When it returns success, summarize the draft, resolved relations, and approved relation records that will be created.',
-                    'tool' => 'update_action_draft',
-                ],
-                [
-                    'step' => 'final_confirmation',
-                    'instruction' => 'Execute only after the user confirms the final action draft. Final confirmation must mention the main record and approved missing relations that will be created.',
-                    'tool' => 'execute_action',
-                    'requires_confirmed_true' => true,
-                ],
-            ];
-        }
-
-        return [
+        $flow = [
             [
                 'step' => 'collect_required_fields',
                 'instruction' => 'Collect required fields from the action schema. Ask concise follow-up questions for missing fields.',
                 'required_fields' => array_values((array) ($action['required'] ?? [])),
             ],
-            [
+        ];
+
+        foreach ($this->relationSteps($action) as $step) {
+            $flow[] = $step;
+        }
+
+        $flow[] = [
                 'step' => 'prepare_draft',
-                'instruction' => 'Call update_action_draft after each user answer and inspect missing_fields/current_payload.',
+                'instruction' => 'Call update_action_draft after each user answer and inspect missing_fields, current_payload, relation_review, and next_options.',
                 'tool' => 'update_action_draft',
-            ],
-            [
+        ];
+        $flow[] = [
                 'step' => 'final_confirmation',
-                'instruction' => 'Execute only after explicit user confirmation.',
+                'instruction' => 'Execute only after explicit user confirmation of the final prepared draft.',
                 'tool' => 'execute_action',
                 'requires_confirmed_true' => true,
-            ],
         ];
+
+        return $flow;
     }
 
     /**
@@ -127,10 +75,38 @@ class ActionFlowGuideService
         return [
             'Do not write data from conversation text alone.',
             'Never set execute_action.confirmed=true unless the user explicitly confirms the final prepared draft.',
-            'When a related customer, product, warehouse, category, account, employee, project, asset, or vendor is missing, ask whether to create it and collect that relation create schema before continuing.',
+            'When a configured related record is missing and marked safe to create, ask whether to create it and collect its configured create fields before continuing.',
             'If multiple relation matches exist, ask the user to choose one by ID or unique label.',
             'Use update_action_draft after each user answer; trust its missing_fields, pending_relations, resolved_relations, and current_payload as the source of truth.',
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @return array<int, array<string, mixed>>
+     */
+    private function relationSteps(array $action): array
+    {
+        return collect($action['relation_creates'] ?? $action['relations'] ?? [])
+            ->filter(fn (mixed $relation): bool => is_array($relation))
+            ->map(function (array $relation): array {
+                $field = (string) ($relation['field'] ?? 'record');
+                $type = (string) ($relation['relation_type'] ?? trim(str_replace(['_id', '_'], ['', ' '], $field)) ?: 'record');
+
+                return array_filter([
+                    'step' => 'review_' . str_replace(['.', '*'], '_', $field) . '_relation',
+                    'instruction' => 'Resolve the related record. If it is missing and safe_create is true, ask whether to create it and collect create_required_fields before final confirmation.',
+                    'relation' => $type,
+                    'field' => $field,
+                    'lookup_fields' => array_values((array) ($relation['lookup_fields'] ?? [])),
+                    'safe_create' => (bool) ($relation['safe_create'] ?? true),
+                    'create_required_fields' => array_values((array) ($relation['create_required_fields'] ?? $relation['required_fields'] ?? [])),
+                    'approval_payload' => ['approved_missing_relations' => [$relation['approval_key'] ?? $field]],
+                    'user_must_confirm_relation_create' => true,
+                ], fn (mixed $value): bool => $value !== null && $value !== []);
+            })
+            ->values()
+            ->all();
     }
 
     private function message(string $message): string

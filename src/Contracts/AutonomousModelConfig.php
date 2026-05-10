@@ -43,14 +43,14 @@ abstract class AutonomousModelConfig
      * Get CRUD tools that AI can use
      * 
      * @return array [
-     *   'create_invoice' => [
-     *     'description' => 'Create a new invoice',
-     *     'parameters' => ['customer_id', 'items', ...],
+     *   'create_record' => [
+     *     'description' => 'Create a new record',
+     *     'parameters' => ['related_record_id', 'line_items', ...],
      *     'handler' => function(array $data, ?\LaravelAIEngine\DTOs\UnifiedActionContext $context = null) { ... },
      *     'requires_confirmation' => true,
      *   ],
-     *   'update_invoice' => [...],
-     *   'delete_invoice' => [...],
+     *   'update_record' => [...],
+     *   'delete_record' => [...],
      * ]
      */
     public static function getTools(): array

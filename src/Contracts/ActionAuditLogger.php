@@ -7,7 +7,7 @@ namespace LaravelAIEngine\Contracts;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
-interface BusinessActionAuditLogger
+interface ActionAuditLogger
 {
     /**
      * @param array<string, mixed> $action

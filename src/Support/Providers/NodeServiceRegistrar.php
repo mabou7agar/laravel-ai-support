@@ -37,7 +37,9 @@ class NodeServiceRegistrar
 
     protected static function registerActionServices($app): void
     {
-        $app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
+        if (!$app->bound(\LaravelAIEngine\Services\Actions\ActionRegistry::class)) {
+            $app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
+        }
         $app->singleton(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class, fn () => new \LaravelAIEngine\Services\Actions\ActionParameterExtractor());
         $app->singleton(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class, fn ($app) => new \LaravelAIEngine\Services\Actions\ActionExecutionPipeline($app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class), $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class)));
         $app->singleton(\LaravelAIEngine\Services\Actions\ActionManager::class, fn ($app) => new \LaravelAIEngine\Services\Actions\ActionManager($app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class), $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class), $app->make(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class)));

@@ -9,22 +9,31 @@ class ActionRelationReviewService
      * @param array<int, mixed> $pendingRelations
      * @return array<string, mixed>
      */
-    public function review(string $actionId, array $payload, array $pendingRelations): array
+    public function review(string $actionId, array $payload, array $pendingRelations, array $action = []): array
     {
         $approved = array_flip(array_map('strval', (array) ($payload['approved_missing_relations'] ?? [])));
 
         $pendingCreates = collect($pendingRelations)
             ->filter(fn (mixed $relation): bool => is_array($relation) && (bool) ($relation['will_create'] ?? false))
-            ->map(function (array $relation) use ($actionId, $payload, $approved): array {
+            ->map(function (array $relation) use ($payload, $approved, $action): array {
                 $field = (string) ($relation['field'] ?? 'record');
-                $requiredFields = $this->requiredFields($actionId, $field);
+                $rule = $this->relationRule($field, $action);
+                $requiredFields = array_values((array) (
+                    $relation['all_required_fields']
+                    ?? $relation['create_required_fields']
+                    ?? $relation['required_fields']
+                    ?? $rule['create_required_fields']
+                    ?? $rule['required_fields']
+                    ?? []
+                ));
+                $approvalKey = (string) ($relation['approval_key'] ?? $rule['approval_key'] ?? $field);
 
                 return [
                     'field' => $field,
-                    'relation_type' => $this->relationType($field),
+                    'relation_type' => (string) ($relation['relation_type'] ?? $rule['relation_type'] ?? $this->relationType($field)),
                     'label' => (string) ($relation['label'] ?? 'record'),
-                    'approval_key' => $field,
-                    'approved' => isset($approved[$field]),
+                    'approval_key' => $approvalKey,
+                    'approved' => isset($approved[$approvalKey]),
                     'required_fields' => $this->missingRequiredFields($payload, $requiredFields),
                     'all_required_fields' => $requiredFields,
                     'instruction' => $this->message('Ask the user before creating this missing related record and collect required fields.'),
@@ -44,52 +53,36 @@ class ActionRelationReviewService
      * @param array<string, mixed> $payload
      * @return array<int, array<string, mixed>>
      */
-    public function createCandidates(string $actionId, array $payload): array
+    public function createCandidates(string $actionId, array $payload, array $action = []): array
     {
         if (!($payload['create_missing_relations'] ?? false)) {
             return [];
         }
 
         $candidates = [];
-
-        if (in_array($actionId, ['create_sales_invoice', 'create_sales_proposal'], true)) {
-            if (empty($payload['customer_id']) && !empty($payload['customer_name'])) {
-                $candidates[] = [
-                    'field' => 'customer_id',
-                    'label' => (string) $payload['customer_name'],
-                    'will_create' => true,
-                ];
+        foreach ($this->relationRules($action) as $rule) {
+            $field = (string) ($rule['field'] ?? '');
+            if ($field === '' || data_get($payload, $field) !== null) {
+                continue;
             }
 
-            if (empty($payload['warehouse_id']) && !empty($payload['warehouse_name'])) {
-                $candidates[] = [
-                    'field' => 'warehouse_id',
-                    'label' => (string) $payload['warehouse_name'],
-                    'will_create' => true,
-                ];
+            $label = $this->firstPayloadValue($payload, (array) ($rule['label_fields'] ?? $rule['lookup_fields'] ?? []));
+            if ($label === null && isset($rule['label'])) {
+                $label = (string) $rule['label'];
             }
 
-            foreach ((array) ($payload['items'] ?? []) as $index => $item) {
-                if (!is_array($item) || !empty($item['product_id'])) {
-                    continue;
-                }
-
-                if (!empty($item['product_name']) || !empty($item['product_sku'])) {
-                    $candidates[] = [
-                        'field' => "items.{$index}.product_id",
-                        'label' => (string) ($item['product_name'] ?? $item['product_sku']),
-                        'will_create' => true,
-                    ];
-                }
+            if ($label === null || trim($label) === '') {
+                continue;
             }
-        }
 
-        if ($actionId === 'create_helpdesk_ticket' && empty($payload['category_id']) && !empty($payload['category_name'])) {
-            $candidates[] = [
-                'field' => 'category_id',
-                'label' => (string) $payload['category_name'],
+            $candidates[] = array_filter([
+                'field' => $field,
+                'label' => $label,
+                'relation_type' => $rule['relation_type'] ?? $this->relationType($field),
+                'approval_key' => $rule['approval_key'] ?? $field,
+                'all_required_fields' => $rule['create_required_fields'] ?? $rule['required_fields'] ?? [],
                 'will_create' => true,
-            ];
+            ], fn (mixed $value): bool => $value !== null && $value !== []);
         }
 
         return $candidates;
@@ -140,18 +133,11 @@ class ActionRelationReviewService
 
     public function relationType(string $field): string
     {
-        return match (true) {
-            $field === 'customer_id' => 'customer',
-            $field === 'vendor_id' => 'vendor',
-            $field === 'warehouse_id' => 'warehouse',
-            $field === 'category_id' => 'category',
-            $field === 'account_id' => 'account',
-            $field === 'employee_id' => 'employee',
-            $field === 'project_id' => 'project',
-            $field === 'asset_id' => 'asset',
-            str_contains($field, 'product_id') => 'product',
-            default => trim(str_replace(['_id', '_', '.'], ['', ' ', ' '], $field)),
-        };
+        $segment = collect(explode('.', $field))
+            ->reject(fn (string $part): bool => $part === '*' || ctype_digit($part))
+            ->last() ?: $field;
+
+        return trim(str_replace(['_id', '_'], ['', ' '], $segment)) ?: 'record';
     }
 
     /**
@@ -159,23 +145,54 @@ class ActionRelationReviewService
      */
     public function requiredFields(string $actionId, string $field): array
     {
-        return match (true) {
-            $field === 'customer_id' => ['customer_name', 'customer_email'],
-            $field === 'vendor_id' => ['vendor_name', 'vendor_email'],
-            $field === 'warehouse_id' => ['warehouse_name', 'warehouse_address', 'warehouse_city', 'warehouse_zip_code'],
-            $field === 'category_id' => ['category_name'],
-            $field === 'account_id' => ['account_name'],
-            $field === 'employee_id' => ['employee_name', 'employee_email'],
-            $field === 'project_id' => ['project_name'],
-            $field === 'asset_id' => ['asset_name'],
-            str_contains($field, 'product_id') => [
-                str_replace('product_id', 'product_name', $field),
-                str_replace('product_id', 'product_sku', $field),
-                str_replace('product_id', 'quantity', $field),
-                str_replace('product_id', 'unit_price', $field),
-            ],
-            default => [],
-        };
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @return array<int, array<string, mixed>>
+     */
+    private function relationRules(array $action): array
+    {
+        return collect($action['relation_creates'] ?? $action['relations'] ?? [])
+            ->filter(fn (mixed $rule): bool => is_array($rule))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @return array<string, mixed>
+     */
+    private function relationRule(string $field, array $action): array
+    {
+        foreach ($this->relationRules($action) as $rule) {
+            if (($rule['field'] ?? null) === $field) {
+                return $rule;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param array<int, string> $fields
+     */
+    private function firstPayloadValue(array $payload, array $fields): ?string
+    {
+        foreach ($fields as $field) {
+            if (!is_string($field) || $field === '') {
+                continue;
+            }
+
+            $value = data_get($payload, $field);
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                return (string) $value;
+            }
+        }
+
+        return null;
     }
 
     /**

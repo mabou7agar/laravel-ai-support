@@ -92,6 +92,7 @@ class AgentActionExecutionService
                     $tool['parameters'] ?? []
                 );
 
+                $context->metadata['latest_user_message'] = $message;
                 $result = $handler($params, $context);
 
                 if ($result['success'] ?? false) {

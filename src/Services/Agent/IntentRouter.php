@@ -64,7 +64,13 @@ class IntentRouter
         ]);
 
         return $this->enforceForwardedRequestPolicy(
-            $this->parseDecision($rawResponse, $message, $context, $options),
+            $this->enforceStructuredQueryToolPolicy(
+                $this->enforceActiveActionWorkflowPolicy($this->parseDecision($rawResponse, $message, $context, $options), $message, $context),
+                $message,
+                $context,
+                $options,
+                $resources
+            ),
             $options
         );
     }
@@ -73,6 +79,7 @@ class IntentRouter
     {
         return [
             'tools' => $this->discoverTools($options),
+            'action_workflows' => $this->discoverActionWorkflows(),
             'collectors' => $this->discoverCollectors($options),
             'nodes' => $this->discoverNodes($options),
         ];
@@ -99,6 +106,7 @@ class IntentRouter
                         'name' => $toolName,
                         'model' => $modelName,
                         'description' => $toolDef['description'] ?? '',
+                        'parameters' => is_array($toolDef['parameters'] ?? null) ? $toolDef['parameters'] : [],
                     ];
                 }
             } catch (\Exception $e) {
@@ -109,6 +117,38 @@ class IntentRouter
         }
 
         return $tools;
+    }
+
+    protected function discoverActionWorkflows(): array
+    {
+        if (!app()->bound(\LaravelAIEngine\Services\Actions\ActionRegistry::class)) {
+            return [];
+        }
+
+        try {
+            $registry = app(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
+
+            return collect($registry->all(true))
+                ->map(fn (array $action): array => [
+                    'id' => (string) ($action['id'] ?? ''),
+                    'label' => (string) ($action['label'] ?? $action['id'] ?? ''),
+                    'module' => (string) ($action['module'] ?? 'default'),
+                    'operation' => (string) ($action['operation'] ?? 'custom'),
+                    'description' => (string) ($action['description'] ?? ''),
+                    'required' => array_values((array) ($action['required'] ?? [])),
+                    'parameters' => array_keys((array) ($action['parameters'] ?? [])),
+                    'initial_payload' => (array) ($action['initial_payload'] ?? []),
+                ])
+                ->filter(fn (array $action): bool => $action['id'] !== '')
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            Log::channel('ai-engine')->warning('Failed to discover action workflows', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
     }
 
     protected function discoverCollectors(array $options = []): array
@@ -266,6 +306,7 @@ class IntentRouter
         $selectedEntityContext = $this->formatSelectedEntityContext($context);
         $userProfile = $this->getUserProfile($context->userId);
         $entityContext = $this->formatEntityMetadata($context);
+        $actionWorkflowContext = $this->formatActionWorkflowContext($context);
 
         return <<<PROMPT
 You are an intent router. Choose exactly one action for the user's message.
@@ -277,6 +318,9 @@ RECENT CONVERSATION:
 {$history}
 
 {$entityContext}
+
+ACTIVE ACTION WORKFLOW:
+{$actionWorkflowContext}
 
 SELECTED ENTITY CONTEXT:
 {$selectedEntityContext}
@@ -294,6 +338,9 @@ Local Collections:
 Model Tools:
 {$this->formatTools($resources['tools'])}
 
+Action Workflows:
+{$this->formatActionWorkflows($resources['action_workflows'] ?? [])}
+
 Remote Nodes:
 {$this->formatNodes($resources['nodes'])}
 
@@ -306,11 +353,15 @@ Routing rules:
 1) Preserve follow-up context. If user refers to "first/second/it", use selected/entity context.
 2) Use route_to_node only when the requested domain belongs to a remote node.
 3) Never route_to_node for "local".
-4) Prefer search_rag for local viewing/search/listing questions.
+4) Use data_query through use_tool for local list/show/count/filter questions when a target entity/table/model is named. Pass the original query if exact model/table parameters are uncertain.
 5) Use data_query through use_tool for exact local IDs, codes, invoice numbers, ticket numbers, SKUs, or other structured filters.
-6) Use start_collector for create/update/delete requests unless a more specific prepare/execute tool is available.
-7) Use conversational for greetings/general chat.
-8) Use resume_session only for "resume/back".
+6) For Action Workflows, use use_tool with update_action_draft to start or continue draft collection. Params must include action_id, payload_patch, and reset=true only when starting a new workflow. Use initial_payload when provided by the workflow.
+7) If ACTIVE ACTION WORKFLOW has relation_next_steps or next_options with relation_create_confirmation and the user confirms/proceeds/approves that relation, continue the active draft using update_action_draft with params {"action_id":"the active action_id","payload_patch":{"approved_missing_relations":["the approval_key"]}}. Do not start a standalone action for that related record.
+8) If ACTIVE ACTION WORKFLOW exists and the user provides more details, corrections, dates, item details, relation details, or relation approval, continue the active action_id with update_action_draft unless the user explicitly says to cancel, restart, or switch to a different action instead.
+9) If ACTIVE ACTION WORKFLOW awaits_final_confirmation=true and the user confirms/proceeds/approves creating it, use use_tool with execute_action and params {"action_id":"the active action_id","confirmed":true}. If the user corrects or adds details instead, use update_action_draft.
+10) Use start_collector only when a named Autonomous Collector exists and no Action Workflow or Model Tool fits. If no collectors are listed, do not choose start_collector.
+11) Use conversational for greetings/general chat.
+12) Use resume_session only for "resume/back".
 
 Allowed actions:
 - start_collector
@@ -422,6 +473,104 @@ PROMPT;
         return '';
     }
 
+    protected function formatActionWorkflowContext(UnifiedActionContext $context): string
+    {
+        $workflow = $context->metadata['last_action_workflow'] ?? null;
+        if (!is_array($workflow) || empty($workflow['action_id'])) {
+            return '(none)';
+        }
+
+        return json_encode($workflow, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    protected function enforceActiveActionWorkflowPolicy(array $decision, string $message, UnifiedActionContext $context): array
+    {
+        $workflow = $context->metadata['last_action_workflow'] ?? null;
+        if (!is_array($workflow) || empty($workflow['action_id'])) {
+            return $decision;
+        }
+
+        $relationOption = collect($workflow['next_options'] ?? $workflow['relation_next_steps'] ?? [])
+            ->first(fn (mixed $option): bool => is_array($option) && ($option['type'] ?? null) === 'relation_create_confirmation');
+        if (!is_array($relationOption) || !$this->looksLikeApproval($message)) {
+            return $decision;
+        }
+
+        return [
+            'action' => 'use_tool',
+            'resource_name' => 'update_action_draft',
+            'params' => [
+                'action_id' => (string) $workflow['action_id'],
+                'payload_patch' => [
+                    'approved_missing_relations' => [
+                        (string) ($relationOption['approval_key'] ?? $relationOption['field'] ?? true),
+                    ],
+                ],
+            ],
+            'reasoning' => 'The user approved a pending relation in the active action draft.',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $decision
+     * @param array<string, mixed> $options
+     * @param array<string, mixed> $resources
+     * @return array<string, mixed>
+     */
+    protected function enforceStructuredQueryToolPolicy(array $decision, string $message, UnifiedActionContext $context, array $options, array $resources): array
+    {
+        if (($decision['action'] ?? null) === 'use_tool') {
+            return $decision;
+        }
+
+        if (!$this->hasTool($resources, 'data_query')) {
+            return $decision;
+        }
+
+        $classification = $this->messageClassifier->classify(
+            $message,
+            $this->routingContextResolver->signalsFromContext($context, $options)
+        );
+
+        if (($classification['mode'] ?? null) !== 'structured_query') {
+            return $decision;
+        }
+
+        return [
+            'action' => 'use_tool',
+            'resource_name' => 'data_query',
+            'params' => [
+                'query' => $message,
+                'limit' => 10,
+            ],
+            'reasoning' => 'Structured local data request should use the query tool before semantic retrieval.',
+            'decision_source' => 'structured_query_policy',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $resources
+     */
+    protected function hasTool(array $resources, string $toolName): bool
+    {
+        return collect($resources['tools'] ?? [])
+            ->contains(fn (mixed $tool): bool => is_array($tool) && ($tool['name'] ?? null) === $toolName);
+    }
+
+    protected function looksLikeApproval(string $message): bool
+    {
+        $normalized = mb_strtolower(trim($message));
+        if ($normalized === '') {
+            return false;
+        }
+
+        if (preg_match('/\b(no|not|don\'t|do not|cancel|stop|instead)\b/u', $normalized) === 1) {
+            return false;
+        }
+
+        return preg_match('/\b(yes|approve|approved|confirm|create|add|go ahead|proceed|ok|okay|sure)\b/u', $normalized) === 1;
+    }
+
     protected function formatPausedSessions(array $sessions): string
     {
         if (empty($sessions)) {
@@ -456,7 +605,29 @@ PROMPT;
 
         $lines = [];
         foreach ($tools as $tool) {
-            $lines[] = "   - {$tool['name']} ({$tool['model']}): {$tool['description']}";
+            $parameters = isset($tool['parameters']) && is_array($tool['parameters'])
+                ? ' Params: ' . implode(', ', array_keys($tool['parameters']))
+                : '';
+            $lines[] = "   - {$tool['name']} ({$tool['model']}): {$tool['description']}{$parameters}";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    protected function formatActionWorkflows(array $actions): string
+    {
+        if (empty($actions)) {
+            return '   (No action workflows available)';
+        }
+
+        $lines = [];
+        foreach ($actions as $action) {
+            $required = implode(', ', (array) ($action['required'] ?? []));
+            $parameters = implode(', ', (array) ($action['parameters'] ?? []));
+            $initialPayload = !empty($action['initial_payload'])
+                ? ' Initial payload: ' . json_encode($action['initial_payload'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                : '';
+            $lines[] = "   - {$action['id']} ({$action['operation']} {$action['module']}): {$action['label']}. {$action['description']} Required: {$required}. Parameters: {$parameters}.{$initialPayload}";
         }
 
         return implode("\n", $lines);

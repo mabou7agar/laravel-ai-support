@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace LaravelAIEngine\Services\BusinessActions;
+namespace LaravelAIEngine\Services\Actions;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;

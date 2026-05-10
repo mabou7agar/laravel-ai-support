@@ -2,27 +2,28 @@
 
 declare(strict_types=1);
 
-namespace LaravelAIEngine\Services\BusinessActions;
+namespace LaravelAIEngine\Services\Actions;
 
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
-use LaravelAIEngine\Contracts\BusinessActionAuditLogger;
-use LaravelAIEngine\Contracts\BusinessActionExecutor;
-use LaravelAIEngine\Contracts\BusinessActionRelationResolver;
+use LaravelAIEngine\Contracts\ActionAuditLogger;
+use LaravelAIEngine\Contracts\ActionExecutor;
+use LaravelAIEngine\Contracts\ActionRelationResolver;
 use LaravelAIEngine\Contracts\ConversationMemory;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Actions\ActionRegistry;
 
-class BusinessActionOrchestrator
+class ActionOrchestrator
 {
     /**
-     * @param array<int, BusinessActionRelationResolver|string> $relationResolvers
+     * @param array<int, ActionRelationResolver|string> $relationResolvers
      */
     public function __construct(
-        protected BusinessActionRegistry $registry,
+        protected ActionRegistry $registry,
         protected array $relationResolvers = [],
         protected ?ConversationMemory $memory = null,
-        protected ?BusinessActionAuditLogger $auditLogger = null
+        protected ?ActionAuditLogger $auditLogger = null
     )
     {
     }
@@ -163,7 +164,7 @@ class BusinessActionOrchestrator
 
         $idempotencyKey = $this->idempotencyKey($actionId, $action, $payload, $context);
         if ($idempotencyKey !== null) {
-            $cached = $this->memory()?->get('business-action:idempotency', $idempotencyKey);
+            $cached = $this->memory()?->get('action:idempotency', $idempotencyKey);
             if (is_array($cached)) {
                 return ActionResult::fromArray($cached)
                     ->withMetadata('idempotent_replay', true)
@@ -265,14 +266,14 @@ class BusinessActionOrchestrator
     }
 
     /**
-     * @param array<int, BusinessActionRelationResolver|string> $resolvers
+     * @param array<int, ActionRelationResolver|string> $resolvers
      */
     public function setRelationResolvers(array $resolvers): void
     {
         $this->relationResolvers = $resolvers;
     }
 
-    public function addRelationResolver(BusinessActionRelationResolver|string $resolver): void
+    public function addRelationResolver(ActionRelationResolver|string $resolver): void
     {
         $this->relationResolvers[] = $resolver;
     }
@@ -324,21 +325,21 @@ class BusinessActionOrchestrator
 
     /**
      * @param array<string, mixed> $action
-     * @return array<int, BusinessActionRelationResolver>
+     * @return array<int, ActionRelationResolver>
      */
     protected function relationResolvers(array $action): array
     {
         $resolvers = array_merge($this->relationResolvers, (array) ($action['relation_resolvers'] ?? []));
 
-        return array_values(array_map(function (mixed $resolver): BusinessActionRelationResolver {
+        return array_values(array_map(function (mixed $resolver): ActionRelationResolver {
             if (is_string($resolver) && class_exists($resolver)) {
                 $resolver = app($resolver);
             }
 
-            if (!$resolver instanceof BusinessActionRelationResolver) {
+            if (!$resolver instanceof ActionRelationResolver) {
                 throw new InvalidArgumentException(sprintf(
-                    'Business action relation resolver must implement %s.',
-                    BusinessActionRelationResolver::class
+                    'Action relation resolver must implement %s.',
+                    ActionRelationResolver::class
                 ));
             }
 
@@ -346,7 +347,7 @@ class BusinessActionOrchestrator
         }, $resolvers));
     }
 
-    protected function executor(mixed $executor): ?BusinessActionExecutor
+    protected function executor(mixed $executor): ?ActionExecutor
     {
         if (!$executor) {
             return null;
@@ -356,10 +357,10 @@ class BusinessActionOrchestrator
             $executor = app($executor);
         }
 
-        if (!$executor instanceof BusinessActionExecutor) {
+        if (!$executor instanceof ActionExecutor) {
             throw new InvalidArgumentException(sprintf(
-                'Business action executor must implement %s.',
-                BusinessActionExecutor::class
+                'Action executor must implement %s.',
+                ActionExecutor::class
             ));
         }
 
@@ -454,7 +455,7 @@ class BusinessActionOrchestrator
         $actionResult = $this->normalizeExecutionResult($result, $actionId, $action, $createdRelations);
 
         if ($actionResult->success && $idempotencyKey !== null) {
-            $this->memory()?->put('business-action:idempotency', $idempotencyKey, $actionResult->toArray(), now()->addDay());
+            $this->memory()?->put('action:idempotency', $idempotencyKey, $actionResult->toArray(), now()->addDay());
         }
 
         $this->auditLogger()?->executed($actionId, $action, $payload, $actionResult, $context);
@@ -493,14 +494,14 @@ class BusinessActionOrchestrator
             : null;
     }
 
-    protected function auditLogger(): ?BusinessActionAuditLogger
+    protected function auditLogger(): ?ActionAuditLogger
     {
-        if ($this->auditLogger instanceof BusinessActionAuditLogger) {
+        if ($this->auditLogger instanceof ActionAuditLogger) {
             return $this->auditLogger;
         }
 
-        return $this->auditLogger = app()->bound(BusinessActionAuditLogger::class)
-            ? app(BusinessActionAuditLogger::class)
+        return $this->auditLogger = app()->bound(ActionAuditLogger::class)
+            ? app(ActionAuditLogger::class)
             : null;
     }
 

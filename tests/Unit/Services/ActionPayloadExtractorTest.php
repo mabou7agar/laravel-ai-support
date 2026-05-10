@@ -76,6 +76,123 @@ class ActionPayloadExtractorTest extends TestCase
         $this->assertNull($extractor->extract($this->invoiceAction(), 'create invoice'));
     }
 
+    public function test_does_not_accept_relation_approval_from_non_approval_message(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                'payload_patch' => [
+                    'customer_email' => 'mohamed@example.test',
+                    'approved_missing_relations' => ['customer_id'],
+                ],
+            ]), 'openai', 'gpt-4o'));
+
+        $extractor = new ActionPayloadExtractor($ai);
+
+        $payload = $extractor->extract($this->invoiceActionWithRelationApproval(), 'mohamed@example.test', [
+            'customer_name' => 'Mohamed Abou Hagar',
+        ]);
+
+        $this->assertSame([
+            'customer_email' => 'mohamed@example.test',
+        ], $payload);
+    }
+
+    public function test_accepts_relation_approval_from_approval_message(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                'payload_patch' => [
+                    'approved_missing_relations' => ['customer_id'],
+                ],
+            ]), 'openai', 'gpt-4o'));
+
+        $extractor = new ActionPayloadExtractor($ai);
+
+        $payload = $extractor->extract($this->invoiceActionWithRelationApproval(), 'yes create customer', [
+            'customer_name' => 'Mohamed Abou Hagar',
+            'customer_email' => 'mohamed@example.test',
+        ]);
+
+        $this->assertSame([
+            'approved_missing_relations' => ['customer_id'],
+        ], $payload);
+    }
+
+    public function test_normalizes_numeric_dates_using_configured_order(): void
+    {
+        config()->set('ai-agent.action_payload_extraction.numeric_date_order', 'dmy');
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                'payload_patch' => [
+                    'invoice_date' => '2026-08-05',
+                ],
+            ]), 'openai', 'gpt-4o'));
+
+        $extractor = new ActionPayloadExtractor($ai);
+
+        $payload = $extractor->extract($this->invoiceActionWithDates(), 'change date to 08-05-2026');
+
+        $this->assertSame(['invoice_date' => '2026-05-08'], $payload);
+    }
+
+    public function test_preserves_sanitized_array_operations_for_append_messages(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->withArgs(fn ($request): bool => str_contains($request->getPrompt(), '_array_ops')
+                && str_contains($request->getPrompt(), 'add iPhone 13 Pro Max'))
+            ->andReturn(AIResponse::success(json_encode([
+                'payload_patch' => [
+                    '_array_ops' => [
+                        [
+                            'op' => 'append',
+                            'path' => 'items',
+                            'value' => [
+                                'product_name' => 'iPhone 13 Pro Max',
+                                'quantity' => 1,
+                                'ignored_item_field' => 'remove me',
+                            ],
+                        ],
+                        [
+                            'op' => 'append',
+                            'path' => 'unknown_items',
+                            'value' => ['name' => 'unsafe'],
+                        ],
+                    ],
+                    'ignored_field' => 'remove me',
+                ],
+            ]), 'openai', 'gpt-4o'));
+
+        $extractor = new ActionPayloadExtractor($ai);
+
+        $payload = $extractor->extract($this->invoiceAction(), 'add iPhone 13 Pro Max', [
+            'items' => [
+                ['product_name' => 'MacBook Pro', 'quantity' => 2],
+            ],
+        ]);
+
+        $this->assertSame([
+            '_array_ops' => [
+                [
+                    'op' => 'append',
+                    'path' => 'items',
+                    'value' => [
+                        'product_name' => 'iPhone 13 Pro Max',
+                        'quantity' => 1,
+                    ],
+                ],
+            ],
+        ], $payload);
+    }
+
     private function invoiceAction(): array
     {
         return [
@@ -92,5 +209,23 @@ class ActionPayloadExtractorTest extends TestCase
                 'items.*.unit_price' => ['type' => 'number', 'required' => true],
             ],
         ];
+    }
+
+    private function invoiceActionWithRelationApproval(): array
+    {
+        $action = $this->invoiceAction();
+        $action['parameters']['customer_email'] = ['type' => 'email', 'required' => false];
+        $action['parameters']['approved_missing_relations'] = ['type' => 'array', 'required' => false];
+
+        return $action;
+    }
+
+    private function invoiceActionWithDates(): array
+    {
+        $action = $this->invoiceAction();
+        $action['parameters']['invoice_date'] = ['type' => 'date', 'required' => true];
+        $action['parameters']['due_date'] = ['type' => 'date', 'required' => true];
+
+        return $action;
     }
 }

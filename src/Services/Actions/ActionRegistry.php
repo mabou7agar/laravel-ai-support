@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Actions;
 
 use InvalidArgumentException;
+use LaravelAIEngine\Contracts\ActionDefinitionProvider;
+use LaravelAIEngine\Enums\ActionOperation;
+use LaravelAIEngine\Enums\ActionRisk;
 
 class ActionRegistry
 {
@@ -75,7 +78,7 @@ class ActionRegistry
         if (is_string($definition)) {
             $payload = $legacyDefinition ?? [];
             $payload['id'] = $payload['id'] ?? $definition;
-            $this->actions[$payload['id']] = $payload;
+            $this->actions[$payload['id']] = $this->normalize($payload);
 
             return;
         }
@@ -84,7 +87,7 @@ class ActionRegistry
             throw new InvalidArgumentException('Action definition must include a non-empty string id.');
         }
 
-        $this->actions[$definition['id']] = $definition;
+        $this->actions[$definition['id']] = $this->normalize($definition);
     }
 
     /**
@@ -104,11 +107,46 @@ class ActionRegistry
     }
 
     /**
+     * @param iterable<int|string, ActionDefinitionProvider|string> $providers
+     */
+    public function registerProviders(iterable $providers): void
+    {
+        foreach ($providers as $provider) {
+            if (is_string($provider) && class_exists($provider)) {
+                $provider = app($provider);
+            }
+
+            if (!$provider instanceof ActionDefinitionProvider) {
+                throw new InvalidArgumentException(sprintf(
+                    'Action provider must implement %s.',
+                    ActionDefinitionProvider::class
+                ));
+            }
+
+            foreach ($provider->actions() as $id => $definition) {
+                if (!is_array($definition)) {
+                    continue;
+                }
+
+                if (!isset($definition['id']) && is_string($id)) {
+                    $definition['id'] = $id;
+                }
+
+                $this->register($definition);
+            }
+        }
+    }
+
+    /**
      * Get all registered actions
      */
-    public function all(): array
+    public function all(bool $enabledOnly = false): array
     {
-        return $this->actions;
+        if (!$enabledOnly) {
+            return $this->actions;
+        }
+
+        return $this->getEnabled();
     }
 
     public function has(string $id): bool
@@ -246,6 +284,33 @@ class ActionRegistry
             'executors' => count($this->executors),
             'by_type' => $byType,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $definition
+     * @return array<string, mixed>
+     */
+    private function normalize(array $definition): array
+    {
+        $definition = array_merge([
+            'enabled' => true,
+            'operation' => 'custom',
+            'risk' => 'medium',
+            'parameters' => [],
+            'required' => [],
+        ], $definition);
+
+        if (isset($definition['operation'])) {
+            $definition['operation'] = ActionOperation::normalize((string) $definition['operation']);
+        }
+
+        if (isset($definition['risk'])) {
+            $definition['risk'] = ActionRisk::normalize((string) $definition['risk']);
+        }
+
+        $definition['confirmation_required'] ??= ActionRisk::requiresConfirmation((string) ($definition['risk'] ?? 'medium'));
+
+        return $definition;
     }
 
     /**

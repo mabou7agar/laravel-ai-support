@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace LaravelAIEngine\Services\BusinessActions;
+namespace LaravelAIEngine\Services\Actions;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
@@ -102,7 +102,7 @@ class GenericModuleActionService
     {
         $definition = $this->resourceDefinition($actionId);
         if (!$definition) {
-            throw ValidationException::withMessages(['action_id' => __('Business action is not available.')]);
+            throw ValidationException::withMessages(['action_id' => __('Action is not available.')]);
         }
 
         return $definition;
@@ -123,7 +123,7 @@ class GenericModuleActionService
                 'id' => $actionId,
                 'resource_key' => $key,
                 'resource' => $resource,
-                'module' => $resource['module'] ?? 'business',
+                'module' => $resource['module'] ?? 'default',
                 'label' => $this->labelFor($operation, $resource),
                 'description' => $this->descriptionFor($operation, $resource),
                 'operation' => $operation,

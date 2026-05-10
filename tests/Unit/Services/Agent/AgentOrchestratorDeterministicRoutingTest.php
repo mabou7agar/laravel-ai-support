@@ -120,7 +120,7 @@ class AgentOrchestratorDeterministicRoutingTest extends UnitTestCase
         $this->assertSame('Hello there.', $response->message);
     }
 
-    public function test_structured_query_bypasses_intent_router_and_marks_structured_mode(): void
+    public function test_structured_query_uses_intent_router_for_tool_selection(): void
     {
         $context = new UnifiedActionContext('session-structured', 8);
 
@@ -131,21 +131,33 @@ class AgentOrchestratorDeterministicRoutingTest extends UnitTestCase
             ->andReturn($context);
 
         $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldNotReceive('route');
+        $intentRouter->shouldReceive('route')
+            ->once()
+            ->with('list all open tasks', $context, Mockery::on(function (array $options): bool {
+                return ($options['rag_collections'] ?? null) === ['App\\Models\\Task'];
+            }))
+            ->andReturn([
+                'action' => 'use_tool',
+                'resource_name' => 'data_query',
+                'params' => ['query' => 'list all open tasks'],
+                'reasoning' => 'structured list query',
+                'decision_source' => 'router_ai',
+            ]);
 
         $selection = Mockery::mock(AgentSelectionService::class);
         $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
         $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
 
         $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldReceive('executeSearchRag')
+        $execution->shouldReceive('executeUseTool')
             ->once()
-            ->withArgs(function (string $message, UnifiedActionContext $ctx, array $options, $reroute) use ($context) {
+            ->withArgs(function (string $toolName, string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context) {
                 return $message === 'list all open tasks'
                     && $ctx === $context
-                    && ($options['preclassified_route_mode'] ?? null) === 'structured_query'
-                    && ($options['decision_path'] ?? null) === 'heuristic_structured_query'
-                    && is_callable($reroute);
+                    && $toolName === 'data_query'
+                    && ($options['tool_params']['query'] ?? null) === 'list all open tasks'
+                    && ($options['decision_path'] ?? null) === 'router_ai_use_tool'
+                    && is_callable($searchRag);
             })
             ->andReturn(AgentResponse::conversational(
                 message: 'Open tasks found.',

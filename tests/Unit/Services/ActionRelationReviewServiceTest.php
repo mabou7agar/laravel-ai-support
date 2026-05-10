@@ -17,7 +17,13 @@ class ActionRelationReviewServiceTest extends TestCase
             'customer_name' => 'Smoke Customer',
             'create_missing_relations' => true,
         ], [
-            ['field' => 'customer_id', 'label' => 'Smoke Customer', 'will_create' => true],
+            [
+                'field' => 'customer_id',
+                'relation_type' => 'customer',
+                'label' => 'Smoke Customer',
+                'all_required_fields' => ['customer_name', 'customer_email'],
+                'will_create' => true,
+            ],
         ]);
 
         $this->assertTrue($review['requires_relation_approval']);
@@ -34,14 +40,21 @@ class ActionRelationReviewServiceTest extends TestCase
     {
         $service = new ActionRelationReviewService();
 
-        $candidates = $service->createCandidates('create_sales_invoice', [
+        $candidates = $service->createCandidates('create_record', [
             'create_missing_relations' => true,
-            'customer_name' => 'Smoke Customer',
-            'items' => [
-                ['product_name' => 'Smoke Product'],
+            'related_name' => 'Smoke Record',
+        ], [
+            'relation_creates' => [
+                [
+                    'field' => 'related_id',
+                    'relation_type' => 'related record',
+                    'label_fields' => ['related_name'],
+                    'create_required_fields' => ['related_name', 'related_email'],
+                ],
             ],
         ]);
 
-        $this->assertSame(['customer_id', 'items.0.product_id'], collect($candidates)->pluck('field')->all());
+        $this->assertSame(['related_id'], collect($candidates)->pluck('field')->all());
+        $this->assertSame('related record', $candidates[0]['relation_type']);
     }
 }

@@ -10,7 +10,7 @@ class IntentAliasCacheService
 {
     private const DEFAULT_TTL_DAYS = 30;
 
-    public function rememberBusinessAction(
+    public function rememberAction(
         string|int $scope,
         string $locale,
         string $phrase,
@@ -24,7 +24,7 @@ class IntentAliasCacheService
         ], $confidence, $source);
     }
 
-    public function rememberBusinessQuery(
+    public function rememberQuery(
         string|int $scope,
         string $locale,
         string $phrase,

@@ -6,7 +6,7 @@ namespace LaravelAIEngine\Contracts;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
-interface BusinessActionRelationResolver
+interface ActionRelationResolver
 {
     /**
      * Resolve existing related records from natural keys before validation.

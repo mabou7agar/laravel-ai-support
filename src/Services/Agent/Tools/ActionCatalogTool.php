@@ -6,11 +6,11 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator;
+use LaravelAIEngine\Contracts\ActionWorkflowHandler;
 
-class BusinessActionCatalogTool extends AgentTool
+class ActionCatalogTool extends AgentTool
 {
-    public function __construct(protected BusinessActionOrchestrator $actions)
+    public function __construct(protected ActionWorkflowHandler $actions)
     {
     }
 
@@ -21,7 +21,7 @@ class BusinessActionCatalogTool extends AgentTool
 
     public function getDescription(): string
     {
-        return 'Lists confirmed business actions the application has explicitly exposed to the AI agent.';
+        return 'Lists confirmed actions the application has explicitly exposed to the AI agent.';
     }
 
     public function getParameters(): array
@@ -33,9 +33,11 @@ class BusinessActionCatalogTool extends AgentTool
 
     public function execute(array $parameters, UnifiedActionContext $context): ActionResult
     {
+        $module = $parameters['module'] ?? null;
+
         return ActionResult::success(
-            'Business action catalog loaded.',
-            $this->actions->catalog($parameters['module'] ?? null)
+            'Action catalog loaded.',
+            $this->actions->catalog($context, is_scalar($module) ? (string) $module : null)
         );
     }
 }

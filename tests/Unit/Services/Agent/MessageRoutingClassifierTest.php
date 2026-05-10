@@ -35,7 +35,7 @@ class MessageRoutingClassifierTest extends UnitTestCase
 
         $decision = $classifier->classify('list all open tasks');
 
-        $this->assertSame('search_rag', $decision['route']);
+        $this->assertSame('ask_ai', $decision['route']);
         $this->assertSame('structured_query', $decision['mode']);
     }
 

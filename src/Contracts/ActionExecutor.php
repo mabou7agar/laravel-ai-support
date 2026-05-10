@@ -6,7 +6,7 @@ namespace LaravelAIEngine\Contracts;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
-interface BusinessActionExecutor
+interface ActionExecutor
 {
     /**
      * @param array<string, mixed> $payload

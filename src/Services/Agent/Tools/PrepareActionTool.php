@@ -6,22 +6,22 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator;
+use LaravelAIEngine\Contracts\ActionWorkflowHandler;
 
-class ExecuteBusinessActionTool extends AgentTool
+class PrepareActionTool extends AgentTool
 {
-    public function __construct(protected BusinessActionOrchestrator $actions)
+    public function __construct(protected ActionWorkflowHandler $actions)
     {
     }
 
     public function getName(): string
     {
-        return 'execute_action';
+        return 'prepare_action';
     }
 
     public function getDescription(): string
     {
-        return 'Executes a previously prepared business action only when confirmation is present.';
+        return 'Validates and drafts a write action. This does not persist data.';
     }
 
     public function getParameters(): array
@@ -29,17 +29,24 @@ class ExecuteBusinessActionTool extends AgentTool
         return [
             'action_id' => ['type' => 'string', 'required' => true],
             'payload' => ['type' => 'object', 'required' => true],
-            'confirmed' => ['type' => 'boolean', 'required' => true],
         ];
     }
 
     public function execute(array $parameters, UnifiedActionContext $context): ActionResult
     {
-        return $this->actions->execute(
+        $result = $this->actions->prepare(
             (string) ($parameters['action_id'] ?? ''),
             (array) ($parameters['payload'] ?? []),
-            (bool) ($parameters['confirmed'] ?? false),
             $context
+        );
+
+        if ($result['success'] ?? false) {
+            return ActionResult::success($result['message'] ?? 'Action prepared.', $result);
+        }
+
+        return ActionResult::needsUserInput(
+            $result['message'] ?? $result['error'] ?? 'Action needs more information.',
+            $result
         );
     }
 }

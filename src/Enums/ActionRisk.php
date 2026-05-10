@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Enums;
 
-enum BusinessActionRisk: string
+enum ActionRisk: string
 {
     case LOW = 'low';
     case MEDIUM = 'medium';
@@ -25,4 +25,3 @@ enum BusinessActionRisk: string
         ], true);
     }
 }
-

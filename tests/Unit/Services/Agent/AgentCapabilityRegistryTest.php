@@ -15,7 +15,7 @@ class AgentCapabilityRegistryTest extends UnitTestCase
     public function test_it_resolves_configured_capability_providers_and_deduplicates_documents(): void
     {
         config()->set('ai-agent.capability_providers', [
-            'business' => TestBusinessCapabilityProvider::class,
+            'app' => TestCapabilityProvider::class,
         ]);
 
         $documents = app(AgentCapabilityRegistry::class)->documents();
@@ -30,11 +30,11 @@ class AgentCapabilityRegistryTest extends UnitTestCase
     public function test_it_filters_providers_by_name_or_class(): void
     {
         config()->set('ai-agent.capability_providers', [
-            'business' => TestBusinessCapabilityProvider::class,
+            'app' => TestCapabilityProvider::class,
         ]);
 
-        $byName = app(AgentCapabilityRegistry::class)->documents(['business']);
-        $byClass = app(AgentCapabilityRegistry::class)->documents([TestBusinessCapabilityProvider::class]);
+        $byName = app(AgentCapabilityRegistry::class)->documents(['app']);
+        $byClass = app(AgentCapabilityRegistry::class)->documents([TestCapabilityProvider::class]);
         $missing = app(AgentCapabilityRegistry::class)->documents(['missing']);
 
         $this->assertCount(2, $byName);
@@ -55,7 +55,7 @@ class AgentCapabilityRegistryTest extends UnitTestCase
     }
 }
 
-class TestBusinessCapabilityProvider implements AgentCapabilityProvider
+class TestCapabilityProvider implements AgentCapabilityProvider
 {
     public function capabilities(): iterable
     {

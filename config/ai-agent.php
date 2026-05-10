@@ -129,10 +129,27 @@ return [
         // 'search_options' => \LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class,
         // 'suggest_value' => \LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class,
         // 'explain_field' => \LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class,
-        // 'action_catalog' => \LaravelAIEngine\Services\Agent\Tools\BusinessActionCatalogTool::class,
-        // 'prepare_action' => \LaravelAIEngine\Services\Agent\Tools\PrepareBusinessActionTool::class,
-        // 'execute_action' => \LaravelAIEngine\Services\Agent\Tools\ExecuteBusinessActionTool::class,
-        // 'suggest_action' => \LaravelAIEngine\Services\Agent\Tools\SuggestBusinessActionTool::class,
+        // 'action_catalog' => \LaravelAIEngine\Services\Agent\Tools\ActionCatalogTool::class,
+        // 'action_flow_guide' => \LaravelAIEngine\Services\Agent\Tools\ActionFlowGuideTool::class,
+        // 'update_action_draft' => \LaravelAIEngine\Services\Agent\Tools\UpdateActionDraftTool::class,
+        // 'get_action_draft' => \LaravelAIEngine\Services\Agent\Tools\GetActionDraftTool::class,
+        // 'clear_action_draft' => \LaravelAIEngine\Services\Agent\Tools\ClearActionDraftTool::class,
+        // 'prepare_action' => \LaravelAIEngine\Services\Agent\Tools\PrepareActionTool::class,
+        // 'execute_action' => \LaravelAIEngine\Services\Agent\Tools\ExecuteActionTool::class,
+        // 'generate_action_reply' => \LaravelAIEngine\Services\Agent\Tools\GenerateActionReplyTool::class,
+        // 'suggest_action' => \LaravelAIEngine\Services\Agent\Tools\SuggestActionTool::class,
+    ],
+
+    'workflow_reply' => [
+        'ai_enabled' => env('AI_AGENT_WORKFLOW_REPLY_AI_ENABLED', true),
+        'enhancer' => null,
+        'mcp' => [
+            'enabled' => env('AI_AGENT_WORKFLOW_REPLY_MCP_ENABLED', false),
+            'url' => env('AI_AGENT_WORKFLOW_REPLY_MCP_URL'),
+            'tool_name' => env('AI_AGENT_WORKFLOW_REPLY_MCP_TOOL_NAME', 'humanize_text'),
+            'timeout' => (int) env('AI_AGENT_WORKFLOW_REPLY_MCP_TIMEOUT', 8),
+            'max_chars' => (int) env('AI_AGENT_WORKFLOW_REPLY_MCP_MAX_CHARS', 4000),
+        ],
     ],
 
     /*
@@ -141,7 +158,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | Host applications can register small, high-confidence handlers that run
-    | before model routing. Use these for deterministic business commands,
+    | before model routing. Use these for deterministic domain commands,
     | multilingual aliases, or compliance-critical flows. Handlers must
     | implement LaravelAIEngine\Contracts\DeterministicAgentHandler.
     |
@@ -194,12 +211,12 @@ return [
     |
     */
     'capability_providers' => [
-        // \App\AI\Capabilities\BusinessCapabilityProvider::class,
+        // \App\AI\Capabilities\AppCapabilityProvider::class,
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | Business Actions
+    | Actions
     |--------------------------------------------------------------------------
     |
     | Deterministic write actions the agent may prepare, suggest, and execute.
@@ -207,12 +224,12 @@ return [
     | confirmation behavior, and prepare/handler/suggest callables as needed.
     |
     */
-    'business_actions' => [
+    'actions' => [
         //
     ],
 
-    'business_action_providers' => [
-        \LaravelAIEngine\Services\BusinessActions\GenericModuleActionDefinitionProvider::class,
+    'action_providers' => [
+        \LaravelAIEngine\Services\Actions\GenericModuleActionDefinitionProvider::class,
     ],
 
     /*
@@ -262,6 +279,7 @@ return [
         'model' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o'))),
         'max_tokens' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS', 1400),
         'temperature' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE', 0.1),
+        'numeric_date_order' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_DATE_ORDER', 'dmy'),
     ],
 
     /*

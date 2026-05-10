@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace LaravelAIEngine\Services\BusinessActions;
+namespace LaravelAIEngine\Services\Actions;
 
-use LaravelAIEngine\Contracts\BusinessActionDefinitionProvider;
+use LaravelAIEngine\Contracts\ActionDefinitionProvider;
 
-class GenericModuleActionDefinitionProvider implements BusinessActionDefinitionProvider
+class GenericModuleActionDefinitionProvider implements ActionDefinitionProvider
 {
     public function __construct(private readonly GenericModuleActionService $actions)
     {

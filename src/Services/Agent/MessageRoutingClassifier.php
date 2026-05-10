@@ -33,7 +33,7 @@ class MessageRoutingClassifier
         }
 
         if ($this->isStructuredQuery($normalized)) {
-            return $this->decision('search_rag', 'structured_query', 'explicit list/count/filter query');
+            return $this->decision('ask_ai', 'structured_query', 'explicit list/count/filter query should use structured tools when available');
         }
 
         if ($this->isSemanticRetrieval($message, $normalized, $signals)) {

@@ -195,7 +195,7 @@ class AutonomousRAGStructuredDataService
                     } elseif (method_exists($item, '__toString')) {
                         $response .= "{$num}. " . $item->__toString() . "\n\n";
                     } else {
-                        $response .= "{$num}. " . json_encode($item->toArray()) . "\n\n";
+                        $response .= "{$num}. " . $this->formatModelPreview($item) . "\n\n";
                     }
                 }
             }
@@ -276,6 +276,92 @@ class AutonomousRAGStructuredDataService
         }
 
         return $formatted;
+    }
+
+    protected function formatModelPreview(mixed $item): string
+    {
+        $values = method_exists($item, 'toArray') ? (array) $item->toArray() : (array) $item;
+        $values = $this->flattenPreviewValues($values);
+
+        if ($values === []) {
+            return class_basename(is_object($item) ? $item::class : 'record');
+        }
+
+        return collect($values)
+            ->take(6)
+            ->map(fn (mixed $value, string|int $key): string => Str::headline((string) $key) . ': ' . $this->previewValue($value))
+            ->implode('; ');
+    }
+
+    /**
+     * @param array<string|int, mixed> $values
+     * @return array<string|int, mixed>
+     */
+    protected function flattenPreviewValues(array $values): array
+    {
+        $preferred = [
+            'invoice_number',
+            'proposal_number',
+            'ticket_id',
+            'code',
+            'sku',
+            'name',
+            'title',
+            'company_name',
+            'status',
+            'invoice_date',
+            'due_date',
+            'total_amount',
+            'balance_amount',
+            'created_at',
+        ];
+
+        $result = [];
+        foreach ($preferred as $key) {
+            if (array_key_exists($key, $values) && $this->isPreviewScalar($values[$key])) {
+                $result[$key] = $values[$key];
+            }
+        }
+
+        foreach ($values as $key => $value) {
+            if (isset($result[$key]) || !$this->isPreviewScalar($value)) {
+                continue;
+            }
+
+            $keyString = (string) $key;
+            if (preg_match('/(password|secret|token|key|credential|remember)/i', $keyString) === 1) {
+                continue;
+            }
+
+            $result[$key] = $value;
+            if (count($result) >= 6) {
+                break;
+            }
+        }
+
+        return $result;
+    }
+
+    protected function isPreviewScalar(mixed $value): bool
+    {
+        return $value === null || is_scalar($value) || $value instanceof \DateTimeInterface;
+    }
+
+    protected function previewValue(mixed $value): string
+    {
+        if ($value === null) {
+            return '-';
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'yes' : 'no';
+        }
+
+        return Str::limit((string) $value, 80);
     }
 
     protected function shouldEnrichWithGraph(?string $message, array $options): bool
