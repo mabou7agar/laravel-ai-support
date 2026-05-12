@@ -161,6 +161,27 @@ curl -X POST https://your-app.test/api/v1/ai/generate/video \
   }'
 ```
 
+## 5b) Seedance 2.0 dance or motion reference video (HTTP)
+
+Use `reference_video_urls` when you want Seedance to follow motion, choreography, timing, or animation from one or more short reference videos. `animation_reference_url` is accepted as a single-video alias.
+
+```bash
+curl -X POST https://your-app.test/api/v1/ai/generate/video \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt":"Make the character perform the same dance timing as @Video1",
+    "engine":"fal_ai",
+    "model":"bytedance/seedance-2.0/reference-to-video",
+    "reference_video_urls":["https://cdn.example.com/dance-reference.mp4"],
+    "duration":"5",
+    "resolution":"720p",
+    "generate_audio":true
+  }'
+```
+
+You can also send `reference_audio_urls` with at least one image or video reference when the rhythm or audio should guide the result.
+
 ## 6) Async video submission (HTTP)
 
 Use this for long-running Kling or Seedance jobs so your app gets a local `job_id` immediately and polls later.

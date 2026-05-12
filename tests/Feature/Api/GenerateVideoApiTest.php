@@ -75,6 +75,79 @@ class GenerateVideoApiTest extends TestCase
             ->assertJsonPath('data.model', EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO);
     }
 
+    public function test_video_endpoint_defaults_to_seedance_reference_when_animation_reference_is_present(): void
+    {
+        $service = Mockery::mock(AIEngineService::class);
+        $service->shouldReceive('generateDirect')
+            ->once()
+            ->withArgs(function (AIRequest $request): bool {
+                $this->assertSame(EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO, $request->getModel()->value);
+                $this->assertSame(['https://example.com/dance-reference.mp4'], $request->getParameters()['reference_video_urls']);
+                $this->assertSame(['https://example.com/dance-reference.mp4'], $request->getParameters()['video_urls']);
+
+                return true;
+            })
+            ->andReturn(AIResponse::success(
+                '{"video":{"url":"https://example.com/out.mp4"}}',
+                'fal_ai',
+                EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO
+            ));
+
+        $this->app->instance(AIEngineService::class, $service);
+
+        $response = $this->postJson('/api/v1/ai/generate/video', [
+            'prompt' => 'Make the character perform this dance',
+            'animation_reference_url' => 'https://example.com/dance-reference.mp4',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.model', EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO);
+    }
+
+    public function test_video_endpoint_passes_reference_audio_urls_with_seedance_reference_model(): void
+    {
+        $service = Mockery::mock(AIEngineService::class);
+        $service->shouldReceive('generateDirect')
+            ->once()
+            ->withArgs(function (AIRequest $request): bool {
+                $this->assertSame(EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO, $request->getModel()->value);
+                $this->assertSame(['https://example.com/motion.mp4'], $request->getParameters()['video_urls']);
+                $this->assertSame(['https://example.com/beat.mp3'], $request->getParameters()['audio_urls']);
+
+                return true;
+            })
+            ->andReturn(AIResponse::success(
+                '{"video":{"url":"https://example.com/out.mp4"}}',
+                'fal_ai',
+                EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO
+            ));
+
+        $this->app->instance(AIEngineService::class, $service);
+
+        $response = $this->postJson('/api/v1/ai/generate/video', [
+            'prompt' => 'Use the dance and beat as timing references',
+            'reference_video_urls' => ['https://example.com/motion.mp4'],
+            'reference_audio_urls' => ['https://example.com/beat.mp3'],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.model', EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO);
+    }
+
+    public function test_video_endpoint_rejects_audio_reference_without_visual_or_video_reference(): void
+    {
+        $response = $this->postJson('/api/v1/ai/generate/video', [
+            'prompt' => 'Use this beat',
+            'reference_audio_urls' => ['https://example.com/beat.mp3'],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error.message', 'This video model requires reference_image_urls, reference_video_urls, or character_sources.');
+    }
+
     public function test_image_endpoint_defaults_to_nano_banana_edit_when_source_images_are_present(): void
     {
         $service = Mockery::mock(AIEngineService::class);
@@ -126,7 +199,7 @@ class GenerateVideoApiTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonPath('success', false)
-            ->assertJsonPath('error.message', 'This video model requires reference_image_urls or character_sources.');
+            ->assertJsonPath('error.message', 'This video model requires reference_image_urls, reference_video_urls, or character_sources.');
     }
 
     public function test_video_endpoint_can_submit_async_job(): void

@@ -170,6 +170,90 @@ class FalAIEngineDriverTest extends TestCase
         $this->assertSame(42, $response->getMetadata()['video']['seed']);
     }
 
+    public function test_seedance_reference_to_video_maps_animation_reference_videos(): void
+    {
+        $client = Mockery::mock(Client::class);
+        $client->shouldReceive('post')
+            ->once()
+            ->withArgs(function (string $endpoint, array $options): bool {
+                $this->assertSame('bytedance/seedance-2.0/reference-to-video', $endpoint);
+                $this->assertSame(['https://example.com/dance-reference.mp4'], $options['json']['video_urls']);
+                $this->assertSame('720p', $options['json']['resolution']);
+                $this->assertStringContainsString('@Video1 is the motion or animation reference', $options['json']['prompt']);
+                $this->assertArrayNotHasKey('image_urls', $options['json']);
+
+                return true;
+            })
+            ->andReturn(new Response(200, [], json_encode([
+                'output' => 'https://example.com/seedance-dance.mp4',
+                'seed' => 12345,
+                'duration' => 5.0,
+                'width' => 1280,
+                'height' => 720,
+            ])));
+
+        $driver = new FalAIEngineDriver([
+            'api_key' => 'test-fal-key',
+            'base_url' => 'https://fal.run',
+            'timeout' => 60,
+        ], $client);
+
+        $response = $driver->generate(new AIRequest(
+            prompt: 'Make the character perform the same dance timing',
+            engine: EngineEnum::FAL_AI,
+            model: EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO,
+            parameters: [
+                'reference_video_urls' => ['https://example.com/dance-reference.mp4'],
+                'resolution' => '720p',
+                'duration' => '5',
+            ]
+        ));
+
+        $this->assertTrue($response->isSuccess());
+        $this->assertSame(EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO, $response->getMetadata()['resolved_model']);
+        $this->assertSame('https://example.com/seedance-dance.mp4', $response->getMetadata()['video']['url']);
+        $this->assertSame(1280, $response->getMetadata()['video']['width']);
+        $this->assertSame(720, $response->getMetadata()['video']['height']);
+    }
+
+    public function test_seedance_reference_to_video_maps_audio_reference_with_visual_reference(): void
+    {
+        $client = Mockery::mock(Client::class);
+        $client->shouldReceive('post')
+            ->once()
+            ->withArgs(function (string $endpoint, array $options): bool {
+                $this->assertSame('bytedance/seedance-2.0/reference-to-video', $endpoint);
+                $this->assertSame(['https://example.com/pose.png'], $options['json']['image_urls']);
+                $this->assertSame(['https://example.com/beat.mp3'], $options['json']['audio_urls']);
+                $this->assertStringContainsString('@Audio1 is the audio reference', $options['json']['prompt']);
+
+                return true;
+            })
+            ->andReturn(new Response(200, [], json_encode([
+                'output' => 'https://example.com/seedance-audio.mp4',
+                'seed' => 12345,
+            ])));
+
+        $driver = new FalAIEngineDriver([
+            'api_key' => 'test-fal-key',
+            'base_url' => 'https://fal.run',
+            'timeout' => 60,
+        ], $client);
+
+        $response = $driver->generate(new AIRequest(
+            prompt: 'Use the beat as timing guidance',
+            engine: EngineEnum::FAL_AI,
+            model: EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO,
+            parameters: [
+                'reference_image_urls' => ['https://example.com/pose.png'],
+                'reference_audio_urls' => ['https://example.com/beat.mp3'],
+            ]
+        ));
+
+        $this->assertTrue($response->isSuccess());
+        $this->assertSame('https://example.com/seedance-audio.mp4', $response->getMetadata()['video']['url']);
+    }
+
     public function test_submit_image_async_uses_queue_endpoint_and_webhook_query(): void
     {
         $syncClient = Mockery::mock(Client::class);

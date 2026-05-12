@@ -60,6 +60,38 @@ class FalMediaWorkflowServiceTest extends TestCase
         $this->assertNull($request->getUserId());
     }
 
+    public function test_prepare_request_uses_seedance_reference_for_animation_reference(): void
+    {
+        $service = new FalMediaWorkflowService(
+            Mockery::mock(AIEngineService::class),
+            app(FalCharacterStore::class)
+        );
+
+        $request = $service->prepareRequest('Use the same dance motion', [
+            'animation_reference_url' => 'https://example.com/dance-reference.mp4',
+        ]);
+
+        $this->assertSame(EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO, $request->getModel()->value);
+        $this->assertSame(['https://example.com/dance-reference.mp4'], $request->getParameters()['reference_video_urls']);
+        $this->assertSame(['https://example.com/dance-reference.mp4'], $request->getParameters()['video_urls']);
+    }
+
+    public function test_prepare_request_maps_reference_audio_urls(): void
+    {
+        $service = new FalMediaWorkflowService(
+            Mockery::mock(AIEngineService::class),
+            app(FalCharacterStore::class)
+        );
+
+        $request = $service->prepareRequest('Use this rhythm', [
+            'reference_video_urls' => ['https://example.com/motion.mp4'],
+            'reference_audio_urls' => ['https://example.com/beat.mp3'],
+        ]);
+
+        $this->assertSame(EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO, $request->getModel()->value);
+        $this->assertSame(['https://example.com/beat.mp3'], $request->getParameters()['audio_urls']);
+    }
+
     public function test_generate_calls_ai_engine_service_with_explicit_user_id(): void
     {
         $aiEngineService = Mockery::mock(AIEngineService::class);

@@ -50,6 +50,8 @@ class FalMediaWorkflowService
 
         $sourceImages = $this->normalizeStringArray($options['source_images'] ?? []);
         $referenceImageUrls = $this->normalizeStringArray($options['reference_image_urls'] ?? []);
+        $referenceVideoUrls = $this->resolveReferenceVideoUrls($options);
+        $referenceAudioUrls = $this->resolveReferenceAudioUrls($options);
         $rawCharacters = is_array($options['character_sources'] ?? null) ? $options['character_sources'] : [];
         $useCharacters = $this->normalizeStringArray($options['use_characters'] ?? []);
         $useLastCharacter = (bool) ($options['use_last_character'] ?? false);
@@ -59,6 +61,10 @@ class FalMediaWorkflowService
 
         if ($mode === 'edit' || $sourceImages !== []) {
             return EntityEnum::FAL_NANO_BANANA_2_EDIT;
+        }
+
+        if ($referenceVideoUrls !== [] || $referenceAudioUrls !== []) {
+            return EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO;
         }
 
         if ($referenceImageUrls !== [] || $rawCharacters !== [] || $useCharacters !== [] || $useLastCharacter) {
@@ -113,6 +119,18 @@ class FalMediaWorkflowService
         $referenceImageUrls = $this->normalizeStringArray($options['reference_image_urls'] ?? []);
         if ($referenceImageUrls !== []) {
             $parameters['reference_image_urls'] = $referenceImageUrls;
+        }
+
+        $referenceVideoUrls = $this->resolveReferenceVideoUrls($options);
+        if ($referenceVideoUrls !== []) {
+            $parameters['reference_video_urls'] = $referenceVideoUrls;
+            $parameters['video_urls'] = $referenceVideoUrls;
+        }
+
+        $referenceAudioUrls = $this->resolveReferenceAudioUrls($options);
+        if ($referenceAudioUrls !== []) {
+            $parameters['reference_audio_urls'] = $referenceAudioUrls;
+            $parameters['audio_urls'] = $referenceAudioUrls;
         }
 
         $characters = array_merge(
@@ -240,6 +258,24 @@ class FalMediaWorkflowService
 
             return $trimmed !== '' ? $trimmed : null;
         }, $values)));
+    }
+
+    private function resolveReferenceVideoUrls(array $options): array
+    {
+        return array_values(array_unique(array_merge(
+            $this->normalizeStringArray($options['reference_video_urls'] ?? []),
+            $this->normalizeStringArray($options['animation_reference_urls'] ?? []),
+            $this->normalizeStringArray($options['video_urls'] ?? []),
+            $this->normalizeStringArray(isset($options['animation_reference_url']) ? [$options['animation_reference_url']] : [])
+        )));
+    }
+
+    private function resolveReferenceAudioUrls(array $options): array
+    {
+        return array_values(array_unique(array_merge(
+            $this->normalizeStringArray($options['reference_audio_urls'] ?? []),
+            $this->normalizeStringArray($options['audio_urls'] ?? [])
+        )));
     }
 
     private function resolveUserId(?string $userId, array $options = []): ?string

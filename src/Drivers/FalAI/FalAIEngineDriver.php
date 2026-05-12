@@ -73,7 +73,10 @@ class FalAIEngineDriver extends BaseEngineDriver
         if ($request->isVideoGeneration()) {
             $hasPrompt = trim($request->getPrompt()) !== '' || !empty($parameters['multi_prompt']);
             $hasStartImage = !empty($parameters['start_image_url']) || !empty($parameters['image_url']);
-            $hasReferences = !empty($parameters['reference_image_urls']) || !empty($parameters['character_sources']);
+            $hasReferences = !empty($parameters['reference_image_urls'])
+                || !empty($parameters['character_sources'])
+                || !empty($parameters['reference_video_urls'])
+                || !empty($parameters['video_urls']);
             $isTextToVideo = $model === EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO;
 
             if ($isTextToVideo && !$hasPrompt) {
@@ -320,6 +323,14 @@ class FalAIEngineDriver extends BaseEngineDriver
         $parameters = $request->getParameters();
         $characterSources = $this->normalizeCharacterSources($parameters['character_sources'] ?? []);
         $referenceImageUrls = $this->normalizeStringList($parameters['reference_image_urls'] ?? []);
+        $referenceVideoUrls = array_values(array_unique(array_merge(
+            $this->normalizeStringList($parameters['reference_video_urls'] ?? []),
+            $this->normalizeStringList($parameters['video_urls'] ?? [])
+        )));
+        $referenceAudioUrls = array_values(array_unique(array_merge(
+            $this->normalizeStringList($parameters['reference_audio_urls'] ?? []),
+            $this->normalizeStringList($parameters['audio_urls'] ?? [])
+        )));
         $multiPrompt = $this->normalizeMultiPrompt($parameters['multi_prompt'] ?? []);
         $requestedModel = $request->getModel()->value;
 
@@ -330,6 +341,10 @@ class FalAIEngineDriver extends BaseEngineDriver
         }
 
         if ($requestedModel === EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO) {
+            if ($characterSources === [] && $referenceImageUrls === []) {
+                throw new AIEngineException('Kling reference-to-video requires reference_image_urls or character_sources');
+            }
+
             $payload = [
                 'prompt' => $this->augmentPromptWithCharacterReferences($request->getPrompt(), $characterSources, $referenceImageUrls),
                 'duration' => (string) ($parameters['duration'] ?? '5'),
@@ -442,18 +457,29 @@ class FalAIEngineDriver extends BaseEngineDriver
                 $this->collectCharacterSourceImages($characterSources)
             )));
 
-            if ($imageUrls === []) {
-                throw new AIEngineException('Seedance reference-to-video requires reference_image_urls or character_sources');
+            if ($imageUrls === [] && $referenceVideoUrls === []) {
+                throw new AIEngineException('Seedance reference-to-video requires reference_image_urls, reference_video_urls, or character_sources');
             }
 
             $payload = [
-                'prompt' => $this->augmentPromptWithCharacterSources($request->getPrompt(), $characterSources),
+                'prompt' => $this->augmentPromptWithSeedanceReferences($request->getPrompt(), $characterSources, $referenceImageUrls, $referenceVideoUrls, $referenceAudioUrls),
                 'image_urls' => $imageUrls,
+                'video_urls' => $referenceVideoUrls,
+                'audio_urls' => $referenceAudioUrls,
                 'duration' => (string) ($parameters['duration'] ?? 'auto'),
                 'aspect_ratio' => $parameters['aspect_ratio'] ?? '16:9',
                 'resolution' => $parameters['resolution'] ?? '720p',
                 'generate_audio' => $parameters['generate_audio'] ?? true,
             ];
+            if ($referenceAudioUrls === []) {
+                unset($payload['audio_urls']);
+            }
+            if ($referenceVideoUrls === []) {
+                unset($payload['video_urls']);
+            }
+            if ($imageUrls === []) {
+                unset($payload['image_urls']);
+            }
             if (isset($parameters['seed'])) {
                 $payload['seed'] = (int) $parameters['seed'];
             }
@@ -647,6 +673,15 @@ class FalAIEngineDriver extends BaseEngineDriver
     private function normalizeVideoResult(array $data): ?array
     {
         $videoData = $data['video'] ?? null;
+        if (!is_array($videoData) && is_string($data['output'] ?? null) && trim((string) $data['output']) !== '') {
+            $videoData = [
+                'url' => trim((string) $data['output']),
+                'duration' => $data['duration'] ?? null,
+                'width' => $data['width'] ?? null,
+                'height' => $data['height'] ?? null,
+            ];
+        }
+
         if (!is_array($videoData) || !isset($videoData['url'])) {
             return null;
         }
@@ -669,6 +704,8 @@ class FalAIEngineDriver extends BaseEngineDriver
             'disk' => $stored['disk'] ?? null,
             'duration' => $data['duration'] ?? $videoData['duration'] ?? null,
             'resolution' => $data['resolution'] ?? $videoData['resolution'] ?? null,
+            'width' => $data['width'] ?? $videoData['width'] ?? null,
+            'height' => $data['height'] ?? $videoData['height'] ?? null,
             'fps' => $data['fps'] ?? $videoData['fps'] ?? null,
             'seed' => $data['seed'] ?? null,
             'content_type' => $videoData['content_type'] ?? 'video/mp4',
@@ -836,6 +873,40 @@ class FalAIEngineDriver extends BaseEngineDriver
 
         foreach (array_values($referenceImageUrls) as $index => $imageUrl) {
             $segments[] = '@Image' . ($index + 1) . ' is a reference scene/style image';
+        }
+
+        return trim(implode(". ", array_filter($segments)));
+    }
+
+    private function augmentPromptWithSeedanceReferences(
+        string $prompt,
+        array $characterSources,
+        array $referenceImageUrls,
+        array $referenceVideoUrls,
+        array $referenceAudioUrls
+    ): string {
+        $segments = [];
+        if (trim($prompt) !== '') {
+            $segments[] = trim($prompt);
+        }
+
+        foreach (array_values($characterSources) as $index => $source) {
+            $name = $source['name'] ?? ('character ' . ($index + 1));
+            $description = $source['description'] ?? null;
+            $segments[] = '@Image' . ($index + 1) . ' shows ' . $name . ($description ? " ({$description})" : '');
+        }
+
+        $imageOffset = count($characterSources);
+        foreach (array_values($referenceImageUrls) as $index => $imageUrl) {
+            $segments[] = '@Image' . ($imageOffset + $index + 1) . ' is a visual reference';
+        }
+
+        foreach (array_values($referenceVideoUrls) as $index => $videoUrl) {
+            $segments[] = '@Video' . ($index + 1) . ' is the motion or animation reference';
+        }
+
+        foreach (array_values($referenceAudioUrls) as $index => $audioUrl) {
+            $segments[] = '@Audio' . ($index + 1) . ' is the audio reference';
         }
 
         return trim(implode(". ", array_filter($segments)));

@@ -10,6 +10,7 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
+use LaravelAIEngine\Http\Requests\GenerateVideoRequest;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService;
 use LaravelAIEngine\Services\Fal\FalAsyncVideoService;
@@ -281,6 +282,10 @@ class GenerateApiController extends Controller
      * @bodyParam start_image_url string Optional start frame URL.
      * @bodyParam end_image_url string Optional end frame URL.
      * @bodyParam reference_image_urls array Optional reference image URLs.
+     * @bodyParam reference_video_urls array Optional reference video URLs for Seedance motion/animation guidance.
+     * @bodyParam animation_reference_url string Optional single reference video URL alias for Seedance motion/animation guidance.
+     * @bodyParam animation_reference_urls array Optional reference video URL aliases for Seedance motion/animation guidance.
+     * @bodyParam reference_audio_urls array Optional reference audio URLs for Seedance reference-to-video.
      * @bodyParam character_sources array Optional package-level character source objects.
      * @bodyParam generate_audio boolean Optional native audio generation flag.
      * @bodyParam multi_prompt array Optional multi-shot prompt blocks.
@@ -288,35 +293,9 @@ class GenerateApiController extends Controller
      * @bodyParam use_webhook boolean Optional enable provider webhook completion when async=true.
      * @bodyParam parameters object Optional provider-specific parameters.
      */
-    public function video(Request $request): JsonResponse
+    public function video(GenerateVideoRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'prompt' => 'nullable|string|max:4000',
-            'engine' => 'nullable|string|max:100',
-            'model' => 'nullable|string|max:200',
-            'duration' => 'nullable',
-            'aspect_ratio' => 'nullable|string|max:20',
-            'resolution' => 'nullable|string|max:20',
-            'seed' => 'nullable|integer',
-            'start_image_url' => 'nullable|url|max:2048',
-            'end_image_url' => 'nullable|url|max:2048',
-            'reference_image_urls' => 'nullable|array|max:8',
-            'reference_image_urls.*' => 'nullable|url|max:2048',
-            'character_sources' => 'nullable|array|max:4',
-            'character_sources.*.name' => 'nullable|string|max:120',
-            'character_sources.*.description' => 'nullable|string|max:500',
-            'character_sources.*.frontal_image_url' => 'nullable|url|max:2048',
-            'character_sources.*.reference_image_urls' => 'nullable|array|max:4',
-            'character_sources.*.reference_image_urls.*' => 'nullable|url|max:2048',
-            'character_sources.*.metadata' => 'nullable|array',
-            'generate_audio' => 'nullable|boolean',
-            'multi_prompt' => 'nullable|array|max:8',
-            'multi_prompt.*.prompt' => 'nullable|string|max:2000',
-            'multi_prompt.*.duration' => 'nullable',
-            'async' => 'nullable|boolean',
-            'use_webhook' => 'nullable|boolean',
-            'parameters' => 'nullable|array',
-        ]);
+        $validated = $request->validated();
 
         try {
             $engine = (string) ($validated['engine'] ?? 'fal_ai');
@@ -345,6 +324,16 @@ class GenerateApiController extends Controller
             }
             if (!empty($validated['reference_image_urls'])) {
                 $parameters['reference_image_urls'] = $validated['reference_image_urls'];
+            }
+            $referenceVideoUrls = $this->resolveReferenceVideoUrls($validated);
+            if ($referenceVideoUrls !== []) {
+                $parameters['reference_video_urls'] = $referenceVideoUrls;
+                $parameters['video_urls'] = $referenceVideoUrls;
+            }
+            $referenceAudioUrls = $this->resolveReferenceAudioUrls($validated);
+            if ($referenceAudioUrls !== []) {
+                $parameters['reference_audio_urls'] = $referenceAudioUrls;
+                $parameters['audio_urls'] = $referenceAudioUrls;
             }
             if (!empty($validated['character_sources'])) {
                 $parameters['character_sources'] = $validated['character_sources'];
@@ -1091,7 +1080,12 @@ class GenerateApiController extends Controller
 
     private function resolveDefaultVideoModel(array $validated): string
     {
-        if (!empty($validated['character_sources']) || !empty($validated['reference_image_urls'])) {
+        if ($this->resolveReferenceVideoUrls($validated) !== [] || $this->resolveReferenceAudioUrls($validated) !== []) {
+            return EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO;
+        }
+
+        if (!empty($validated['character_sources'])
+            || !empty($validated['reference_image_urls'])) {
             return EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO;
         }
 
@@ -1139,15 +1133,49 @@ class GenerateApiController extends Controller
         if (in_array($model, [
             EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO,
             EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO,
-        ], true) && empty($parameters['reference_image_urls']) && empty($parameters['character_sources'])) {
+        ], true) && empty($parameters['reference_image_urls'])
+            && empty($parameters['character_sources'])
+            && empty($parameters['reference_video_urls'])
+            && empty($parameters['video_urls'])) {
             return $this->envelope(
                 success: false,
-                message: 'This video model requires reference_image_urls or character_sources.',
-                error: ['message' => 'This video model requires reference_image_urls or character_sources.'],
+                message: 'This video model requires reference_image_urls, reference_video_urls, or character_sources.',
+                error: ['message' => 'This video model requires reference_image_urls, reference_video_urls, or character_sources.'],
                 status: 422
             );
         }
 
         return null;
+    }
+
+    private function resolveReferenceVideoUrls(array $validated): array
+    {
+        return $this->uniqueStringList(array_merge(
+            $validated['reference_video_urls'] ?? [],
+            $validated['animation_reference_urls'] ?? [],
+            $validated['video_urls'] ?? [],
+            isset($validated['animation_reference_url']) ? [(string) $validated['animation_reference_url']] : []
+        ));
+    }
+
+    private function resolveReferenceAudioUrls(array $validated): array
+    {
+        return $this->uniqueStringList(array_merge(
+            $validated['reference_audio_urls'] ?? [],
+            $validated['audio_urls'] ?? []
+        ));
+    }
+
+    private function uniqueStringList(array $values): array
+    {
+        return array_values(array_unique(array_filter(array_map(static function ($value): ?string {
+            if (!is_string($value)) {
+                return null;
+            }
+
+            $trimmed = trim($value);
+
+            return $trimmed !== '' ? $trimmed : null;
+        }, $values))));
     }
 }

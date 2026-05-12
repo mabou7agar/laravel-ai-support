@@ -77,6 +77,13 @@ Reference-pack mode defaults:
 
 Use `strict_stored` for one approved canonical look. Use `strict_selected_set` when one pack must cover multiple approved stored looks in exact order. Use `guided` or `vendor` when exploration is the goal.
 
+Video generation accepts Seedance motion reference fields:
+
+- `reference_video_urls`: up to 3 reference video URLs, forwarded to fal.ai as `video_urls`
+- `animation_reference_url`: single-video alias for `reference_video_urls`
+- `animation_reference_urls`: multi-video alias for `reference_video_urls`
+- `reference_audio_urls`: up to 3 reference audio URLs, forwarded as `audio_urls`; fal.ai requires at least one image or video reference when audio is provided
+
 ### AI Catalog (`/api/v1/ai`)
 
 - `GET /models`

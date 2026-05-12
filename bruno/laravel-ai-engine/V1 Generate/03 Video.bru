@@ -20,9 +20,13 @@ headers {
 
 body:json {
   {
-    "prompt": "A slow cinematic pan across a modern office",
-    "duration": 5,
-    "aspect_ratio": "16:9",
+    "prompt": "Make the character perform the same dance timing as @Video1",
+    "model": "bytedance/seedance-2.0/reference-to-video",
+    "reference_video_urls": [
+      "https://cdn.example.com/dance-reference.mp4"
+    ],
+    "duration": "5",
+    "resolution": "720p",
     "async": true
   }
 }
