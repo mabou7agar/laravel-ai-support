@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Services\Graph;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use LaravelAIEngine\DTOs\GraphVectorLink;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
 use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
 
@@ -225,18 +226,30 @@ CYPHER,
         $accessScope = $document->accessScope;
 
         $chunks = [];
-        foreach ($document->normalizedChunks() as $chunk) {
+        $normalizedChunks = $document->normalizedChunks();
+        $totalChunks = count($normalizedChunks);
+        foreach ($normalizedChunks as $chunk) {
             $chunkText = trim((string) ($chunk['content'] ?? ''));
             if ($chunkText === '') {
                 continue;
             }
 
             $chunkIndex = is_numeric($chunk['index'] ?? null) ? (int) $chunk['index'] : count($chunks);
+            $link = GraphVectorLink::fromSearchDocument(
+                $document,
+                $chunkIndex,
+                null,
+                GraphVectorLink::pointId($document->modelId, $chunkIndex, $totalChunks > 1)
+            );
             $chunks[] = [
                 'chunk_key' => $entityKey . '#chunk:' . $chunkIndex,
                 'chunk_index' => $chunkIndex,
                 'content' => $chunkText,
                 'content_preview' => Str::limit($chunkText, 240, '...'),
+                'vector_collection' => $link->vectorCollection,
+                'vector_point_id' => $link->vectorPointId,
+                'qdrant_collection' => $link->vectorCollection,
+                'qdrant_point_id' => $link->vectorPointId,
             ];
         }
 
@@ -293,6 +306,10 @@ CYPHER,
                 'content_preview' => Str::limit($document->content, 320, '...'),
                 'object_json' => json_encode($document->object, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'access_scope_json' => json_encode($document->accessScope, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'vector_collection' => GraphVectorLink::collectionName($document->modelClass),
+                'vector_point_id' => GraphVectorLink::pointId($document->modelId),
+                'qdrant_collection' => GraphVectorLink::collectionName($document->modelClass),
+                'qdrant_point_id' => GraphVectorLink::pointId($document->modelId),
                 'updated_at' => $document->metadata['updated_at'] ?? null,
             ], static fn ($value) => $value !== null && $value !== ''),
             'chunks' => $chunks,

@@ -34,6 +34,9 @@ class EntityEnum
     public const GPT_5 = 'gpt-5';
     public const GPT_5_MINI = 'gpt-5-mini';
     public const GPT_5_NANO = 'gpt-5-nano';
+    public const GPT_IMAGE_1_5 = 'gpt-image-1.5';
+    public const GPT_IMAGE_1 = 'gpt-image-1';
+    public const GPT_IMAGE_1_MINI = 'gpt-image-1-mini';
     public const DALL_E_3 = 'dall-e-3';
     public const DALL_E_2 = 'dall-e-2';
     public const WHISPER_1 = 'whisper-1';
@@ -328,6 +331,9 @@ class EntityEnum
             case self::GPT_5:
             case self::GPT_5_MINI:
             case self::GPT_5_NANO:
+            case self::GPT_IMAGE_1_5:
+            case self::GPT_IMAGE_1:
+            case self::GPT_IMAGE_1_MINI:
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::WHISPER_1:
@@ -428,6 +434,9 @@ class EntityEnum
             case self::GPT_5_NANO:
                 // GPT-5 models use the same driver as GPT-4O for now
                 return GPT4ODriver::class;
+            case self::GPT_IMAGE_1_5:
+            case self::GPT_IMAGE_1:
+            case self::GPT_IMAGE_1_MINI:
             case self::DALL_E_3:
                 return DallE3Driver::class;
             case self::DALL_E_2:
@@ -589,6 +598,12 @@ class EntityEnum
                 return 'GPT-5 Mini';
             case self::GPT_5_NANO:
                 return 'GPT-5 Nano';
+            case self::GPT_IMAGE_1_5:
+                return 'GPT Image 1.5';
+            case self::GPT_IMAGE_1:
+                return 'GPT Image 1';
+            case self::GPT_IMAGE_1_MINI:
+                return 'GPT Image 1 Mini';
             case self::DALL_E_3:
                 return 'DALL-E 3';
             case self::DALL_E_2:
@@ -740,6 +755,12 @@ class EntityEnum
                 return 0.7;  // Between GPT-4o-mini and GPT-4o
             case self::GPT_5_NANO:
                 return 0.4;  // Similar to GPT-3.5-turbo
+            case self::GPT_IMAGE_1_5:
+                return 6.0;
+            case self::GPT_IMAGE_1:
+                return 5.0;
+            case self::GPT_IMAGE_1_MINI:
+                return 2.0;
             case self::DALL_E_3:
                 return 5.0;
             case self::DALL_E_2:
@@ -975,6 +996,9 @@ class EntityEnum
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return 'text';
+            case self::GPT_IMAGE_1_5:
+            case self::GPT_IMAGE_1:
+            case self::GPT_IMAGE_1_MINI:
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::FAL_FLUX_PRO:
@@ -1163,6 +1187,9 @@ class EntityEnum
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
                 return true;
+            case self::GPT_IMAGE_1_5:
+            case self::GPT_IMAGE_1:
+            case self::GPT_IMAGE_1_MINI:
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::MIDJOURNEY_V6:
@@ -1282,6 +1309,9 @@ class EntityEnum
             self::GPT_4O,
             self::GPT_4O_MINI,
             self::GPT_3_5_TURBO,
+            self::GPT_IMAGE_1_5,
+            self::GPT_IMAGE_1,
+            self::GPT_IMAGE_1_MINI,
             self::DALL_E_3,
             self::DALL_E_2,
             self::WHISPER_1,

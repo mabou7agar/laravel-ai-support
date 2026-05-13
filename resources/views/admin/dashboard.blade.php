@@ -31,6 +31,7 @@
         | <a href="{{ route('ai-engine.admin.nodes') }}">Nodes</a>
         | <a href="{{ route('ai-engine.admin.health') }}">Health</a>
         | <a href="{{ route('ai-engine.admin.policies') }}">Policies</a>
+        | <a href="{{ route('ai-engine.admin.provider-tools') }}">Provider Tools</a>
     </p>
 
     <div class="grid">

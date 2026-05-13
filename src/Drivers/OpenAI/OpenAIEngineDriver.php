@@ -6,6 +6,8 @@ namespace LaravelAIEngine\Drivers\OpenAI;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use LaravelAIEngine\Drivers\BaseEngineDriver;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
@@ -13,6 +15,8 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\AIEngineException;
 use LaravelAIEngine\Services\AIMediaManager;
+use LaravelAIEngine\Services\ProviderTools\HostedArtifactService;
+use LaravelAIEngine\Services\ProviderTools\ProviderToolRunService;
 use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 use OpenAI;
 
@@ -81,6 +85,9 @@ class OpenAIEngineDriver extends BaseEngineDriver
             EntityEnum::GPT_4O,
             EntityEnum::GPT_4O_MINI,
             EntityEnum::GPT_3_5_TURBO,
+            EntityEnum::GPT_IMAGE_1_5,
+            EntityEnum::GPT_IMAGE_1,
+            EntityEnum::GPT_IMAGE_1_MINI,
             EntityEnum::DALL_E_3,
             EntityEnum::DALL_E_2,
             EntityEnum::WHISPER_1,
@@ -209,23 +216,62 @@ class OpenAIEngineDriver extends BaseEngineDriver
             'metadata' => $request->getMetadata(),
         ], static fn ($value): bool => $value !== null && $value !== []);
 
-        $response = $this->httpClient->post(rtrim($this->getBaseUrl(), '/') . '/responses', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $this->getApiKey(),
-                'Content-Type' => 'application/json',
-            ],
-            'json' => $payload,
-        ]);
+        $toolRunResult = null;
+        if ((bool) config('ai-engine.provider_tools.lifecycle.enabled', true)
+            && Schema::hasTable('ai_provider_tool_runs')
+            && $split['tools'] !== []) {
+            $toolRunResult = app(ProviderToolRunService::class)->prepare('openai', $request, $request->getFunctions(), $payload);
+            if (!$toolRunResult->canExecute()) {
+                return AIResponse::success(
+                    'Provider tool run requires approval before execution.',
+                    $request->getEngine(),
+                    $request->getModel(),
+                    ['provider_tool_lifecycle' => $toolRunResult->jsonSerialize()],
+                    [[
+                        'type' => 'provider_tool_approval',
+                        'label' => 'Approve provider tools',
+                        'payload' => $toolRunResult->jsonSerialize(),
+                    ]]
+                );
+            }
+        }
 
-        $data = $this->parseJsonResponse($response->getBody()->getContents());
-        $content = $data['output_text'] ?? $this->extractResponsesOutputText((array) ($data['output'] ?? []));
+        try {
+            $response = $this->httpClient->post(rtrim($this->getBaseUrl(), '/') . '/responses', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $this->getApiKey(),
+                    'Content-Type' => 'application/json',
+                ],
+                'json' => $payload,
+            ]);
 
-        return $this->buildSuccessResponse(
-            (string) $content,
-            $request,
-            is_array($data) ? $data : [],
-            'openai'
-        );
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
+            $content = $data['output_text'] ?? $this->extractResponsesOutputText((array) ($data['output'] ?? []));
+
+            $metadata = ['openai_response' => is_array($data) ? $data : []];
+            if ($toolRunResult !== null) {
+                $run = app(ProviderToolRunService::class)->complete($toolRunResult->run, is_array($data) ? $data : []);
+                $artifacts = app(HostedArtifactService::class)->recordFromProviderResponse($run, is_array($data) ? $data : [], [
+                    'provider_api' => 'responses',
+                ]);
+                $metadata['provider_tool_lifecycle'] = $toolRunResult->jsonSerialize();
+                $metadata['provider_tool_lifecycle']['run']['status'] = $run->status;
+                $metadata['hosted_artifacts'] = array_map(static fn ($artifact): array => $artifact->toArray(), $artifacts);
+            }
+
+            return $this->buildSuccessResponse(
+                (string) $content,
+                $request,
+                is_array($data) ? $data : [],
+                'openai'
+            )->withMetadata($metadata);
+        } catch (\Throwable $e) {
+            if ($toolRunResult !== null) {
+                app(ProviderToolRunService::class)->fail($toolRunResult->run, $e->getMessage());
+            }
+
+            throw $e;
+        }
     }
 
     protected function extractResponsesOutputText(array $output): string
@@ -278,10 +324,11 @@ class OpenAIEngineDriver extends BaseEngineDriver
         try {
             $imageCount = $request->getParameters()['image_count'] ?? 1;
             $size = $request->getParameters()['size'] ?? '1024x1024';
-            $quality = $request->getParameters()['quality'] ?? 'standard';
+            $model = $request->getModel()->value;
+            $quality = $request->getParameters()['quality'] ?? $this->defaultImageQuality($model);
 
             $response = $this->openAIClient->images()->create([
-                'model' => $request->getModel()->value,
+                'model' => $model,
                 'prompt' => $request->getPrompt(),
                 'n' => $imageCount,
                 'size' => $size,
@@ -289,13 +336,34 @@ class OpenAIEngineDriver extends BaseEngineDriver
             ]);
 
             $storedImages = array_map(function ($image) use ($request) {
-                return app(AIMediaManager::class)->storeRemoteFile($image->url, [
+                $attributes = [
                     'engine' => $request->getEngine()->value,
                     'ai_model' => $request->getModel()->value,
                     'content_type' => 'image',
                     'collection_name' => 'generated-images',
                     'name' => 'openai-image',
-                ]);
+                    'extension' => 'png',
+                    'mime_type' => 'image/png',
+                ];
+
+                if (($image->url ?? '') !== '') {
+                    return app(AIMediaManager::class)->storeRemoteFile($image->url, $attributes);
+                }
+
+                if (($image->b64_json ?? '') !== '') {
+                    $contents = base64_decode($image->b64_json, true);
+                    if ($contents === false) {
+                        throw new \RuntimeException('OpenAI image response included an invalid base64 image payload.');
+                    }
+
+                    return app(AIMediaManager::class)->storeBinary(
+                        $contents,
+                        'openai-image-' . Str::uuid() . '.png',
+                        $attributes
+                    );
+                }
+
+                throw new \RuntimeException('OpenAI image response did not include a URL or base64 image payload.');
             }, $response->data);
 
             $imageUrls = array_values(array_filter(array_map(
@@ -316,6 +384,11 @@ class OpenAIEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             throw new \RuntimeException('OpenAI image generation error: ' . $e->getMessage(), 0, $e);
         }
+    }
+
+    private function defaultImageQuality(string $model): string
+    {
+        return str_starts_with($model, 'gpt-image-') ? 'low' : 'standard';
     }
 
     /**

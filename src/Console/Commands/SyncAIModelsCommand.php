@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\AIModelRegistry;
 class SyncAIModelsCommand extends Command
 {
     protected $signature = 'ai-engine:sync-models
-                            {--provider= : Sync specific provider (openai, anthropic, google, deepseek, openrouter, all)}
+                            {--provider= : Sync specific provider (openai, anthropic, google, gemini, deepseek, openrouter, fal_ai, fal, all)}
                             {--auto-discover : Auto-discover new models from APIs}';
 
     protected $description = 'Sync AI models from providers and auto-discover new models';
@@ -38,6 +38,10 @@ class SyncAIModelsCommand extends Command
 
         if ($provider === 'all' || $provider === 'openrouter') {
             $this->syncOpenRouter($registry);
+        }
+
+        if ($provider === 'all' || $provider === 'fal_ai' || $provider === 'fal') {
+            $this->syncFal($registry);
         }
 
         $this->newLine();
@@ -136,6 +140,34 @@ class SyncAIModelsCommand extends Command
                     $this->line("   - {$modelId}");
                 }
             }
+        }
+    }
+
+    protected function syncFal(AIModelRegistry $registry): void
+    {
+        $this->line('📡 Syncing FAL models...');
+
+        $result = $registry->syncFalModels();
+
+        if (isset($result['error'])) {
+            $this->error("❌ {$result['error']}");
+            return;
+        }
+
+        $this->info("✅ Synced {$result['total']} FAL models");
+
+        if (($result['new'] ?? 0) > 0) {
+            $this->warn("🆕 Discovered {$result['new']} new FAL models");
+            foreach (array_slice($result['new_models'] ?? [], 0, 10) as $modelId) {
+                $this->line("   - {$modelId}");
+            }
+            if (($result['new'] ?? 0) > 10) {
+                $this->line("   (Showing first 10 of {$result['new']} new models)");
+            }
+        }
+
+        if (($result['truncated'] ?? false) === true) {
+            $this->warn('⚠️  FAL sync stopped at the configured page limit.');
         }
     }
 

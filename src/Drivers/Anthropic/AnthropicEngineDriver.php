@@ -6,12 +6,15 @@ namespace LaravelAIEngine\Drivers\Anthropic;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
+use Illuminate\Support\Facades\Schema;
 use LaravelAIEngine\Drivers\BaseEngineDriver;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Services\ProviderTools\HostedArtifactService;
+use LaravelAIEngine\Services\ProviderTools\ProviderToolRunService;
 use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 
 class AnthropicEngineDriver extends BaseEngineDriver
@@ -111,6 +114,8 @@ class AnthropicEngineDriver extends BaseEngineDriver
      */
     public function generateText(AIRequest $request): AIResponse
     {
+        $toolRunResult = null;
+
         try {
             $this->logApiRequest('generateText', $request);
             
@@ -122,6 +127,26 @@ class AnthropicEngineDriver extends BaseEngineDriver
             }
 
             $this->applyStreamingToolPayload($payload, $request);
+            $providerTools = array_merge($payload['tools'] ?? [], $payload['mcp_servers'] ?? []);
+
+            if ((bool) config('ai-engine.provider_tools.lifecycle.enabled', true)
+                && Schema::hasTable('ai_provider_tool_runs')
+                && $providerTools !== []) {
+                $toolRunResult = app(ProviderToolRunService::class)->prepare('anthropic', $request, $request->getFunctions(), $payload);
+                if (!$toolRunResult->canExecute()) {
+                    return AIResponse::success(
+                        'Provider tool run requires approval before execution.',
+                        $request->getEngine(),
+                        $request->getModel(),
+                        ['provider_tool_lifecycle' => $toolRunResult->jsonSerialize()],
+                        [[
+                            'type' => 'provider_tool_approval',
+                            'label' => 'Approve provider tools',
+                            'payload' => $toolRunResult->jsonSerialize(),
+                        ]]
+                    );
+                }
+            }
 
             $response = $this->httpClient->post('/v1/messages', [
                 'json' => $payload,
@@ -131,14 +156,34 @@ class AnthropicEngineDriver extends BaseEngineDriver
             $data = $this->parseJsonResponse($response->getBody()->getContents());
             $content = $data['content'][0]['text'] ?? '';
 
-            return $this->buildSuccessResponse(
+            $aiResponse = $this->buildSuccessResponse(
                 $content,
                 $request,
                 $data,
                 'anthropic'
             );
 
+            if ($toolRunResult !== null) {
+                $run = app(ProviderToolRunService::class)->complete($toolRunResult->run, is_array($data) ? $data : []);
+                $artifacts = app(HostedArtifactService::class)->recordFromProviderResponse($run, is_array($data) ? $data : [], [
+                    'provider_api' => 'messages',
+                ]);
+
+                $lifecycle = $toolRunResult->jsonSerialize();
+                $lifecycle['run']['status'] = $run->status;
+                $aiResponse = $aiResponse->withMetadata([
+                    'provider_tool_lifecycle' => $lifecycle,
+                    'hosted_artifacts' => array_map(static fn ($artifact): array => $artifact->toArray(), $artifacts),
+                ]);
+            }
+
+            return $aiResponse;
+
         } catch (\Exception $e) {
+            if ($toolRunResult !== null) {
+                app(ProviderToolRunService::class)->fail($toolRunResult->run, $e->getMessage());
+            }
+
             return $this->handleApiError($e, $request, 'text generation');
         }
     }

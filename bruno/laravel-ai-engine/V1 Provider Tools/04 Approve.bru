@@ -1,0 +1,26 @@
+meta {
+  name: Approve
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/provider-tools/approvals/{{providerToolApprovalKey}}/approve
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "reason": "Approved from Bruno",
+    "continue": false
+  }
+}

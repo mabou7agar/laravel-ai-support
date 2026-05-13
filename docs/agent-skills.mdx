@@ -71,6 +71,14 @@ php artisan ai-engine:manifest:doctor --json
 
 The doctor reports disabled draft skills, non-executable skills, and skills that reference missing actions, tools, or workflows.
 
+Use the orchestration validator when skills also link to sub-agents through `metadata.sub_agents`:
+
+```bash
+php artisan ai-engine:test-orchestration
+```
+
+It validates skill-to-tool and skill-to-sub-agent links, then can run the focused orchestration tests.
+
 ## Manifest entries
 
 ```php

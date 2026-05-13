@@ -14,7 +14,9 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Repositories\AIModelRepository;
 use LaravelAIEngine\Services\AIMediaManager;
+use LaravelAIEngine\Services\Fal\FalCatalogExecutionService;
 
 class FalAIEngineDriver extends BaseEngineDriver
 {
@@ -42,6 +44,11 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     public function generate(AIRequest $request): AIResponse
     {
+        $model = $request->getModel()->value;
+        if ($this->isCatalogModel($model) && !$this->isDriverManagedModel($model)) {
+            return app(FalCatalogExecutionService::class)->executeRequest($request);
+        }
+
         return match ($request->getContentType()) {
             'image' => $this->generateImage($request),
             'video' => $this->generateVideo($request),
@@ -61,8 +68,12 @@ class FalAIEngineDriver extends BaseEngineDriver
         }
 
         $model = $request->getModel()->value;
-        if (!isset($this->getAvailableModels()[$model]) && !$this->isLegacyAlias($model)) {
+        if (!$this->isDriverManagedModel($model) && !$this->isCatalogModel($model)) {
             throw new AIEngineException("Model {$model} is not supported by FAL AI driver");
+        }
+
+        if ($this->isCatalogModel($model) && !$this->isDriverManagedModel($model)) {
+            return true;
         }
 
         $parameters = $request->getParameters();
@@ -601,6 +612,17 @@ class FalAIEngineDriver extends BaseEngineDriver
             EntityEnum::LUMA_DREAM_MACHINE => 'fal-ai/luma-ai/dream-machine',
             default => $model,
         };
+    }
+
+    private function isDriverManagedModel(string $model): bool
+    {
+        return isset($this->getAvailableModels()[$model]) || $this->isLegacyAlias($model);
+    }
+
+    private function isCatalogModel(string $model): bool
+    {
+        return app(AIModelRepository::class)->findActiveByProviderAndModel('fal_ai', $model) !== null
+            || app(AIModelRepository::class)->findActiveByProviderAndModel('fal', $model) !== null;
     }
 
     private function postToEndpoint(string $endpoint, array $payload): array

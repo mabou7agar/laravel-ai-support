@@ -132,6 +132,41 @@ class AIEngineConfigDefaults
 
     /*
     |--------------------------------------------------------------------------
+    | Provider Tool Lifecycle
+    |--------------------------------------------------------------------------
+    |
+    | Tracks provider-hosted tools such as OpenAI/Anthropic computer use,
+    | code execution, MCP tools, web/file search, and generated artifacts.
+    |
+    */
+    'provider_tools' => [
+        'lifecycle' => [
+            'enabled' => env('AI_ENGINE_PROVIDER_TOOL_LIFECYCLE_ENABLED', true),
+            'store_payloads' => env('AI_ENGINE_PROVIDER_TOOL_STORE_PAYLOADS', true),
+        ],
+        'approvals' => [
+            'enabled' => env('AI_ENGINE_PROVIDER_TOOL_APPROVALS_ENABLED', true),
+            'require_for' => ['computer_use', 'mcp_server', 'code_interpreter'],
+            'risk_levels' => [
+                'computer_use' => 'high',
+                'mcp_server' => 'medium',
+                'code_interpreter' => 'medium',
+                'file_search' => 'low',
+                'web_search' => 'low',
+            ],
+        ],
+        'audit' => [
+            'enabled' => env('AI_ENGINE_PROVIDER_TOOL_AUDIT_ENABLED', true),
+        ],
+        'artifacts' => [
+            'enabled' => env('AI_ENGINE_PROVIDER_TOOL_ARTIFACTS_ENABLED', true),
+            'persist_remote_files' => env('AI_ENGINE_PROVIDER_TOOL_PERSIST_REMOTE_ARTIFACTS', true),
+            'max_per_run' => (int) env('AI_ENGINE_PROVIDER_TOOL_MAX_ARTIFACTS', 100),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Localization
     |--------------------------------------------------------------------------
     |
@@ -480,6 +515,9 @@ class AIEngineConfigDefaults
                 'gpt-5-mini' => ['enabled' => true, 'credit_index' => 1.0],
                 'gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.5],
                 'gpt-4o' => ['enabled' => true, 'credit_index' => 2.0],
+                'gpt-image-1.5' => ['enabled' => true, 'credit_index' => 6.0],
+                'gpt-image-1' => ['enabled' => true, 'credit_index' => 5.0],
+                'gpt-image-1-mini' => ['enabled' => true, 'credit_index' => 2.0],
                 'dall-e-3' => ['enabled' => true, 'credit_index' => 5.0],
                 'whisper-1' => ['enabled' => true, 'credit_index' => 1.0],
             ],
@@ -562,6 +600,14 @@ class AIEngineConfigDefaults
             'async' => [
                 'webhook_url' => env('FAL_ASYNC_WEBHOOK_URL'),
                 'reference_pack_webhook_url' => env('FAL_REFERENCE_PACK_WEBHOOK_URL'),
+            ],
+            'catalog_sync' => [
+                'limit' => env('FAL_CATALOG_SYNC_LIMIT', 100),
+                'max_pages' => env('FAL_CATALOG_SYNC_MAX_PAGES', 50),
+                'status' => env('FAL_CATALOG_SYNC_STATUS', 'active'),
+            ],
+            'catalog_execution' => [
+                'validate_schema' => env('FAL_CATALOG_EXECUTION_VALIDATE_SCHEMA', true),
             ],
             'models' => [
                 'fal-flux-pro' => ['enabled' => true, 'credit_index' => 3.5],
@@ -1271,6 +1317,30 @@ class AIEngineConfigDefaults
             'restricted_collections' => [],
             'accessible_collections' => [],
             'collection_access' => [],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Shared RAG Retrieval Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Cross-cutting retrieval settings used by vector, graph, and hybrid RAG.
+    |
+    */
+    'rag' => [
+        'user_scope_fields' => ['user_id', 'created_by', 'owner_id'],
+        'hybrid' => [
+            'enabled' => env('AI_ENGINE_HYBRID_RAG_ENABLED', false),
+            'strategy' => env('AI_ENGINE_HYBRID_RAG_STRATEGY', 'vector_then_graph'),
+            'vector_driver' => env('AI_ENGINE_HYBRID_RAG_VECTOR_DRIVER', env('VECTOR_DB_DRIVER', 'qdrant')),
+            'graph_driver' => env('AI_ENGINE_HYBRID_RAG_GRAPH_DRIVER', env('AI_ENGINE_GRAPH_BACKEND', 'neo4j')),
+            'vector_limit' => (int) env('AI_ENGINE_HYBRID_RAG_VECTOR_LIMIT', 10),
+            'graph_limit' => (int) env('AI_ENGINE_HYBRID_RAG_GRAPH_LIMIT', 10),
+            'vector_weight' => (float) env('AI_ENGINE_HYBRID_RAG_VECTOR_WEIGHT', 0.6),
+            'graph_weight' => (float) env('AI_ENGINE_HYBRID_RAG_GRAPH_WEIGHT', 0.4),
+            'rrf_k' => (int) env('AI_ENGINE_HYBRID_RAG_RRF_K', 60),
+            'disable_graph_only_fallback' => env('AI_ENGINE_HYBRID_RAG_DISABLE_GRAPH_ONLY_FALLBACK', false),
         ],
     ],
 

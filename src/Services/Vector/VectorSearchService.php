@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Services\Vector;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\DTOs\GraphVectorLink;
 use LaravelAIEngine\DTOs\SearchDocument;
 use LaravelAIEngine\Services\Vector\VectorDriverManager;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
@@ -1054,6 +1055,13 @@ class VectorSearchService
         int $chunkIndex,
         int $totalChunks
     ): array {
+        $link = GraphVectorLink::fromSearchDocument(
+            $document,
+            $chunkIndex,
+            $this->getCollectionName(get_class($model)),
+            GraphVectorLink::pointId($document->modelId, $chunkIndex, $totalChunks > 1)
+        );
+
         return array_merge(
             $document->metadata,
             [
@@ -1071,6 +1079,13 @@ class VectorSearchService
                 'scope_type' => $document->scopeType,
                 'scope_id' => $document->scopeId,
                 'scope_label' => $document->scopeLabel,
+                'graph_node_id' => $link->graphNodeId,
+                'graph_chunk_id' => $link->graphChunkId,
+                'vector_collection' => $link->vectorCollection,
+                'vector_point_id' => $link->vectorPointId,
+                'qdrant_collection' => $link->vectorCollection,
+                'qdrant_point_id' => $link->vectorPointId,
+                'graph_vector_link' => $link->toArray(),
             ]
         );
     }

@@ -129,6 +129,11 @@ return [
         'enabled' => env('AI_AGENT_GOAL_ENABLED', true),
         'max_sub_agents' => env('AI_AGENT_GOAL_MAX_SUB_AGENTS', 5),
         'stop_on_failure' => env('AI_AGENT_GOAL_STOP_ON_FAILURE', true),
+        'register_sub_agent_tool' => env('AI_AGENT_REGISTER_SUB_AGENT_TOOL', true),
+    ],
+
+    'orchestration' => [
+        'max_complexity' => (int) env('AI_AGENT_ORCHESTRATION_MAX_COMPLEXITY', 80),
     ],
 
     'sub_agents' => [
@@ -138,6 +143,8 @@ return [
             'description' => 'Handles general reasoning, synthesis, and follow-up work for a target.',
             'capabilities' => ['general', 'summarize', 'synthesize', 'plan'],
             'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class,
+            // 'tools' => ['search_options', 'generate_action_reply'],
+            // 'sub_agents' => ['writer'],
         ],
     ],
 

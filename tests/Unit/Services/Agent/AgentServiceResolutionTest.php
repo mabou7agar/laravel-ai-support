@@ -11,6 +11,7 @@ use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\AgentManifestDoctor;
+use LaravelAIEngine\Services\Agent\AgentOrchestrationInspector;
 use LaravelAIEngine\Services\Agent\AgentOrchestrator;
 use LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner;
 use LaravelAIEngine\Services\Agent\AgentSkillMatcher;
@@ -20,6 +21,7 @@ use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
 use LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService;
 use LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner;
 use LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry;
+use LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler;
 use LaravelAIEngine\Tests\UnitTestCase;
 
 class AgentServiceResolutionTest extends UnitTestCase
@@ -79,6 +81,7 @@ class AgentServiceResolutionTest extends UnitTestCase
         $this->assertInstanceOf(SubAgentRegistry::class, $this->app->make(SubAgentRegistry::class));
         $this->assertInstanceOf(SubAgentPlanner::class, $this->app->make(SubAgentPlanner::class));
         $this->assertInstanceOf(SubAgentExecutionService::class, $this->app->make(SubAgentExecutionService::class));
+        $this->assertInstanceOf(ToolCallingSubAgentHandler::class, $this->app->make(ToolCallingSubAgentHandler::class));
         $this->assertInstanceOf(GoalAgentService::class, $this->app->make(GoalAgentService::class));
     }
 
@@ -88,5 +91,6 @@ class AgentServiceResolutionTest extends UnitTestCase
         $this->assertInstanceOf(AgentSkillMatcher::class, $this->app->make(AgentSkillMatcher::class));
         $this->assertInstanceOf(AgentSkillExecutionPlanner::class, $this->app->make(AgentSkillExecutionPlanner::class));
         $this->assertInstanceOf(AgentManifestDoctor::class, $this->app->make(AgentManifestDoctor::class));
+        $this->assertInstanceOf(AgentOrchestrationInspector::class, $this->app->make(AgentOrchestrationInspector::class));
     }
 }

@@ -24,11 +24,16 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
         $this->assertIsArray($defaults['nodes'] ?? null);
         $this->assertIsArray($defaults['workflow'] ?? null);
         $this->assertIsArray($defaults['infrastructure'] ?? null);
+        $this->assertSame(['computer_use', 'mcp_server', 'code_interpreter'], $defaults['provider_tools']['approvals']['require_for'] ?? null);
         $this->assertSame(true, $defaults['intelligent_rag']['autonomous_mode'] ?? null);
+        $this->assertSame(false, $defaults['rag']['hybrid']['enabled'] ?? null);
+        $this->assertSame('vector_then_graph', $defaults['rag']['hybrid']['strategy'] ?? null);
+        $this->assertSame('qdrant', $defaults['rag']['hybrid']['vector_driver'] ?? null);
+        $this->assertSame('neo4j', $defaults['rag']['hybrid']['graph_driver'] ?? null);
         $this->assertIsArray($defaults['intelligent_rag']['decision'] ?? null);
         $this->assertSame(true, $defaults['intelligent_rag']['decision']['adaptive_feedback']['enabled'] ?? null);
         $this->assertSame(
-            ['gpt-5-mini', 'gpt-4o-mini', 'gpt-4o', 'dall-e-3', 'whisper-1'],
+            ['gpt-5-mini', 'gpt-4o-mini', 'gpt-4o', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'dall-e-3', 'whisper-1'],
             array_keys($defaults['engines']['openai']['models'] ?? [])
         );
         $this->assertSame(

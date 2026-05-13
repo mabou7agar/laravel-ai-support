@@ -296,10 +296,15 @@ class LiveFeatureMatrixTest extends TestCase
                 'count' => 1,
             ]);
 
-            $response->assertOk()->assertJsonPath('success', true);
+            $payload = $response->json();
+            if ($response->getStatusCode() !== 200) {
+                throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            }
 
-            $files = $response->json('data.files') ?? [];
-            $this->assertNotEmpty($files, json_encode($response->json(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $response->assertJsonPath('success', true);
+
+            $files = $payload['data']['files'] ?? [];
+            $this->assertNotEmpty($files, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
             $details[] = [
                 'engine' => $engine,
                 'model' => $model,
@@ -641,7 +646,7 @@ class LiveFeatureMatrixTest extends TestCase
 
         if (is_string($preferredEngine) && trim($preferredEngine) !== '') {
             return $this->resolveProviderPair(trim($preferredEngine), $preferredModel ?: match ($preferredEngine) {
-                'openai' => 'dall-e-3',
+                'openai' => 'gpt-image-1-mini',
                 'fal_ai' => 'fal-ai/nano-banana-2',
                 default => null,
             });
@@ -649,7 +654,7 @@ class LiveFeatureMatrixTest extends TestCase
 
         foreach ([
             ['fal_ai', 'fal-ai/nano-banana-2'],
-            ['openai', 'dall-e-3'],
+            ['openai', 'gpt-image-1-mini'],
         ] as [$engine, $model]) {
             [$resolvedEngine, $resolvedModel] = $this->resolveProviderPair($engine, $model);
             if ($resolvedEngine !== null && $resolvedModel !== null) {

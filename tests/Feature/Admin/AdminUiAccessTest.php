@@ -62,6 +62,11 @@ class AdminUiAccessTest extends UnitTestCase
             ->get('/ai-engine/admin/policies')
             ->assertOk()
             ->assertSee('Prompt Policies');
+
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
+            ->get('/ai-engine/admin/provider-tools')
+            ->assertOk()
+            ->assertSee('Provider Tools');
     }
 
     public function test_allows_access_for_allowed_authenticated_user(): void

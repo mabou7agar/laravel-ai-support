@@ -63,6 +63,7 @@ abstract class TestCase extends Orchestra
     protected function setUpConfig(): void
     {
         Config::set('ai-engine.default', 'openai');
+        Config::set('ai-engine.default_model', 'gpt-4o');
         Config::set('ai-engine.credits.enabled', true);
         Config::set('ai-engine.credits.default_balance', 100.0);
         Config::set('ai-engine.cache.enabled', true);

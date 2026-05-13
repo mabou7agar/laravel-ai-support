@@ -41,6 +41,10 @@ class SubAgentRegistry
         }
 
         $handler = $definition['handler'] ?? null;
+        if (($handler === null && !empty($definition['tools'])) || in_array($handler, ['tool', 'tools'], true)) {
+            return $this->container->make(ToolCallingSubAgentHandler::class);
+        }
+
         if ($handler === null) {
             return null;
         }

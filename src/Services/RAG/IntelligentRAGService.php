@@ -33,6 +33,7 @@ class IntelligentRAGService
     protected $federatedSearch = null;
     protected $nodeRouter = null;
     protected $graphRetrieval = null;
+    protected $hybridRetrieval = null;
 
     public function __construct(
         VectorSearchService $vectorSearch,
@@ -63,6 +64,10 @@ class IntelligentRAGService
         }
         if (class_exists(\LaravelAIEngine\Services\Graph\Neo4jRetrievalService::class)) {
             $this->graphRetrieval = app(\LaravelAIEngine\Services\Graph\Neo4jRetrievalService::class);
+        }
+        if (class_exists(\LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService::class)
+            && app()->bound(\LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService::class)) {
+            $this->hybridRetrieval = app(\LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService::class);
         }
     }
 
@@ -1222,6 +1227,21 @@ PROMPT;
         $allResults = collect();
         $maxResults = $options['max_context'] ?? $this->config['max_context_items'] ?? 5;
         $threshold = $options['min_score'] ?? $this->config['min_relevance_score'] ?? 0.3;
+
+        if ($this->hybridRetrieval && $this->hybridRetrieval->enabled()) {
+            $hybrid = $this->hybridRetrieval->retrieveRelevantContext(
+                $searchQueries,
+                $collections,
+                $maxResults,
+                $threshold,
+                $options,
+                $userId
+            );
+
+            if ($hybrid->isNotEmpty() || (bool) config('ai-engine.rag.hybrid.disable_graph_only_fallback', false)) {
+                return $hybrid;
+            }
+        }
 
         if ($this->graphRetrieval && $this->graphRetrieval->enabled()) {
             return $this->graphRetrieval->retrieveRelevantContext(

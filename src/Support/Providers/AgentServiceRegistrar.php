@@ -33,13 +33,18 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry($app));
         $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner($app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService($app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class)));
+        $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler($app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class), $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler($app->make(\LaravelAIEngine\Services\Agent\AgentConversationService::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\GoalAgentService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\GoalAgentService($app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner::class), $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class, function () {
             $registry = new \LaravelAIEngine\Services\Agent\Tools\ToolRegistry();
             $registry->discoverFromConfig();
+            if ((bool) config('ai-agent.goal_agent.register_sub_agent_tool', true) && !$registry->has('run_sub_agent')) {
+                $registry->register('run_sub_agent', new \LaravelAIEngine\Services\Agent\Tools\RunSubAgentTool());
+            }
             return $registry;
         });
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentOrchestrationInspector::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentOrchestrationInspector($app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class), $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class), $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class)));
 
         $app->singleton(\LaravelAIEngine\Services\Agent\Tools\ValidateFieldTool::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class);

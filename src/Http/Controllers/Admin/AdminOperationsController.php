@@ -7,18 +7,144 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use LaravelAIEngine\Http\Requests\AdminProviderToolApprovalActionRequest;
+use LaravelAIEngine\Http\Requests\AdminProviderToolRunActionRequest;
+use LaravelAIEngine\Jobs\ContinueProviderToolRunJob;
 use LaravelAIEngine\Repositories\AIPromptPolicyVersionRepository;
+use LaravelAIEngine\Repositories\ProviderToolApprovalRepository;
+use LaravelAIEngine\Repositories\ProviderToolArtifactRepository;
+use LaravelAIEngine\Repositories\ProviderToolRunRepository;
 use LaravelAIEngine\Services\Admin\NodeAdminService;
+use LaravelAIEngine\Services\JobStatusTracker;
 use LaravelAIEngine\Services\Node\NodeBulkSyncService;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
+use LaravelAIEngine\Services\ProviderTools\ProviderToolApprovalService;
+use LaravelAIEngine\Services\ProviderTools\ProviderToolContinuationService;
 use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
 use LaravelAIEngine\Services\RAG\AutonomousRAGPromptPolicyService;
 use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class AdminOperationsController extends Controller
 {
+    public function providerTools(
+        ProviderToolRunRepository $runs,
+        ProviderToolApprovalRepository $approvals,
+        ProviderToolArtifactRepository $artifacts
+    ): View {
+        $tableExists = $this->providerToolTablesAvailable();
+
+        return view('ai-engine::admin.provider-tools', [
+            'table_exists' => $tableExists,
+            'runs' => $tableExists ? $runs->paginate(['status' => request('status')], 10) : null,
+            'approvals' => $tableExists ? $approvals->paginate(['status' => request('approval_status', 'pending')], 10) : null,
+            'artifacts' => $tableExists ? $artifacts->paginate([], 10) : null,
+            'api_base' => url('/api/v1/ai/provider-tools'),
+        ]);
+    }
+
+    public function approveProviderTool(
+        AdminProviderToolApprovalActionRequest $request,
+        ProviderToolApprovalService $approvals,
+        ProviderToolContinuationService $continuations,
+        JobStatusTracker $jobs
+    ): RedirectResponse {
+        if (!$this->providerToolTablesAvailable()) {
+            return back()->withErrors(['provider_tools' => 'Provider tool tables are missing. Run package migrations first.']);
+        }
+
+        $validated = $request->validated();
+
+        try {
+            $approval = $approvals->approve(
+                (string) $validated['approval_key'],
+                $this->providerToolActorId($validated),
+                $validated['reason'] ?? null,
+                ['source' => 'admin_ui']
+            );
+
+            if ((bool) ($validated['continue'] ?? false)) {
+                if ((bool) ($validated['async'] ?? true)) {
+                    $jobId = (string) Str::uuid();
+                    ContinueProviderToolRunJob::dispatch($jobId, $approval->tool_run_id, $validated['options'] ?? []);
+                    $jobs->updateStatus($jobId, 'queued', [
+                        'provider_tool_run_id' => $approval->tool_run_id,
+                        'queued_at' => now()->toISOString(),
+                        'source' => 'admin_ui',
+                    ]);
+
+                    return back()->with('status', 'Approved provider tool request and queued continuation job ' . $jobId . '.');
+                }
+
+                $continuations->continueRun($approval->tool_run_id, $validated['options'] ?? []);
+
+                return back()->with('status', 'Approved provider tool request and continued run.');
+            }
+
+            return back()->with('status', 'Approved provider tool request.');
+        } catch (\Throwable $e) {
+            return back()->withErrors(['provider_tools' => $e->getMessage()]);
+        }
+    }
+
+    public function rejectProviderTool(
+        AdminProviderToolApprovalActionRequest $request,
+        ProviderToolApprovalService $approvals
+    ): RedirectResponse {
+        if (!$this->providerToolTablesAvailable()) {
+            return back()->withErrors(['provider_tools' => 'Provider tool tables are missing. Run package migrations first.']);
+        }
+
+        $validated = $request->validated();
+
+        try {
+            $approvals->reject(
+                (string) $validated['approval_key'],
+                $this->providerToolActorId($validated),
+                $validated['reason'] ?? null,
+                ['source' => 'admin_ui']
+            );
+
+            return back()->with('status', 'Rejected provider tool request.');
+        } catch (\Throwable $e) {
+            return back()->withErrors(['provider_tools' => $e->getMessage()]);
+        }
+    }
+
+    public function continueProviderToolRun(
+        AdminProviderToolRunActionRequest $request,
+        ProviderToolContinuationService $continuations,
+        JobStatusTracker $jobs
+    ): RedirectResponse {
+        if (!$this->providerToolTablesAvailable()) {
+            return back()->withErrors(['provider_tools' => 'Provider tool tables are missing. Run package migrations first.']);
+        }
+
+        $validated = $request->validated();
+
+        try {
+            if ((bool) ($validated['async'] ?? true)) {
+                $jobId = (string) Str::uuid();
+                ContinueProviderToolRunJob::dispatch($jobId, (string) $validated['run'], $validated['options'] ?? []);
+                $jobs->updateStatus($jobId, 'queued', [
+                    'provider_tool_run_id' => (string) $validated['run'],
+                    'queued_at' => now()->toISOString(),
+                    'source' => 'admin_ui',
+                ]);
+
+                return back()->with('status', 'Queued provider tool continuation job ' . $jobId . '.');
+            }
+
+            $continuations->continueRun((string) $validated['run'], $validated['options'] ?? []);
+
+            return back()->with('status', 'Continued provider tool run.');
+        } catch (\Throwable $e) {
+            return back()->withErrors(['provider_tools' => $e->getMessage()]);
+        }
+    }
+
     public function nodes(NodeRegistryService $registry, NodeAdminService $nodeAdmin): View
     {
         $tableExists = Schema::hasTable('ai_nodes');
@@ -604,6 +730,22 @@ class AdminOperationsController extends Controller
     protected function isMasterNode(): bool
     {
         return (bool) config('ai-engine.nodes.is_master', true);
+    }
+
+    protected function providerToolTablesAvailable(): bool
+    {
+        return Schema::hasTable('ai_provider_tool_runs')
+            && Schema::hasTable('ai_provider_tool_approvals')
+            && Schema::hasTable('ai_provider_tool_artifacts');
+    }
+
+    protected function providerToolActorId(array $validated): ?string
+    {
+        if (isset($validated['actor_id']) && trim((string) $validated['actor_id']) !== '') {
+            return trim((string) $validated['actor_id']);
+        }
+
+        return auth()->id() !== null ? (string) auth()->id() : null;
     }
 
     protected function resolveBulkSyncPayload(Request $request, array $validated): ?string

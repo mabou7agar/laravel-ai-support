@@ -204,6 +204,7 @@ class EngineEnum
                 return [
                     EntityEnum::GPT_4O,
                     EntityEnum::GPT_4O_MINI,
+                    EntityEnum::GPT_IMAGE_1_MINI,
                     EntityEnum::DALL_E_3,
                     EntityEnum::WHISPER_1,
                 ];

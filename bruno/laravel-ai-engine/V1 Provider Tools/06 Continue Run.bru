@@ -1,0 +1,25 @@
+meta {
+  name: Continue Run
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/provider-tools/runs/{{providerToolRunId}}/continue
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "async": true
+  }
+}

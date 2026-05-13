@@ -13,4 +13,14 @@ class AIModelRepository
     {
         return AIModel::active()->get();
     }
+
+    public function findActiveByProviderAndModel(string $provider, string $modelId): ?AIModel
+    {
+        return AIModel::query()
+            ->where('provider', $provider)
+            ->where('model_id', $modelId)
+            ->where('is_active', true)
+            ->where('is_deprecated', false)
+            ->first();
+    }
 }

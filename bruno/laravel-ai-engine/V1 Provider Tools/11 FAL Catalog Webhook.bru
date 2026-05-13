@@ -1,0 +1,34 @@
+meta {
+  name: FAL Catalog Webhook
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/provider-tools/fal/catalog/webhook
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "provider_tool_run_id": "{{providerToolRunId}}",
+    "status": "OK",
+    "payload": {
+      "request_id": "{{falRequestId}}",
+      "images": [
+        {
+          "url": "https://example.com/generated.png"
+        }
+      ]
+    }
+  }
+}

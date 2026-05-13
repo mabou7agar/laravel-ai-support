@@ -1,0 +1,29 @@
+meta {
+  name: FAL Catalog Execute
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/provider-tools/fal/catalog/execute
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "model": "{{falCatalogModel}}",
+    "prompt": "A clean product render on a white background",
+    "input": {
+      "image_size": "square_hd"
+    }
+  }
+}

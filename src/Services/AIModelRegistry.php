@@ -287,7 +287,11 @@ class AIModelRegistry
                     preg_match('/-\d{4}-/', $modelId) ||               // Date in middle
                     str_ends_with($modelId, '-preview') ||             // Preview variants
                     str_ends_with($modelId, '-16k') ||                 // 16k context variants
-                    str_ends_with($modelId, '-mini') && !str_contains($modelId, 'gpt-4') && !str_contains($modelId, 'gpt-5') && !str_contains($modelId, 'o3') || // Mini variants except main ones
+                    str_ends_with($modelId, '-mini')
+                        && !str_contains($modelId, 'gpt-4')
+                        && !str_contains($modelId, 'gpt-5')
+                        && !str_contains($modelId, 'gpt-image')
+                        && !str_contains($modelId, 'o3') || // Mini variants except main ones
                     str_contains($modelId, '-chat-latest') ||          // Chat latest aliases
                     str_contains($modelId, '-codex') ||                // Codex variants
                     str_contains($modelId, '-transcribe') ||           // Transcribe variants
@@ -295,8 +299,7 @@ class AIModelRegistry
                     str_contains($modelId, '-diarize') ||              // Diarize variants
                     str_contains($modelId, '-search-') ||              // Search variants
                     str_starts_with($modelId, 'gpt-audio') ||          // Audio models
-                    str_starts_with($modelId, 'gpt-realtime') ||       // Realtime models
-                    str_starts_with($modelId, 'gpt-image')) {          // Image models (use dall-e instead)
+                    str_starts_with($modelId, 'gpt-realtime')) {       // Realtime models
                     continue;
                 }
 
@@ -312,12 +315,10 @@ class AIModelRegistry
                         'name' => $this->formatModelName($modelId),
                         'description' => 'Auto-discovered OpenAI model',
                         'capabilities' => $capabilities,
-                        'supports_streaming' => true,
-                        'supports_vision' => str_contains($modelId, 'vision')
-                            || str_contains($modelId, 'gpt-4')
-                            || str_contains($modelId, 'gpt-5'),
-                        'supports_function_calling' => !str_starts_with($modelId, 'o1')
-                            && !str_starts_with($modelId, 'o3'),
+                        'supports_streaming' => !str_starts_with($modelId, 'gpt-image'),
+                        'supports_vision' => in_array('vision', $capabilities, true),
+                        'supports_function_calling' => in_array('function_calling', $capabilities, true),
+                        'supports_json_mode' => in_array('json_mode', $capabilities, true),
                         'is_active' => true,
                         'released_at' => now(),
                         'metadata' => $modelData,
@@ -695,6 +696,117 @@ class AIModelRegistry
     }
 
     /**
+     * Sync models from the FAL Platform model catalog.
+     */
+    public function syncFalModels(): array
+    {
+        try {
+            $synced = [];
+            $newModels = [];
+            $updatedModels = [];
+            $cursor = null;
+            $page = 0;
+            $maxPages = max(1, (int) config('ai-engine.engines.fal_ai.catalog_sync.max_pages', 50));
+            $limit = max(1, min(100, (int) config('ai-engine.engines.fal_ai.catalog_sync.limit', 100)));
+
+            do {
+                $page++;
+
+                $query = array_filter([
+                    'limit' => $limit,
+                    'cursor' => $cursor,
+                    'status' => config('ai-engine.engines.fal_ai.catalog_sync.status', 'active'),
+                ], static fn ($value): bool => $value !== null && $value !== '');
+
+                $response = Http::withHeaders($this->falPlatformHeaders())
+                    ->get('https://api.fal.ai/v1/models', $query);
+
+                if (!$response->successful()) {
+                    return ['error' => 'Failed to fetch models from FAL: '.$response->body()];
+                }
+
+                $payload = $response->json();
+                $models = (array) ($payload['models'] ?? []);
+
+                foreach ($models as $modelData) {
+                    if (!is_array($modelData)) {
+                        continue;
+                    }
+
+                    $modelId = (string) ($modelData['endpoint_id'] ?? $modelData['id'] ?? '');
+                    if ($modelId === '') {
+                        continue;
+                    }
+
+                    $metadata = (array) ($modelData['metadata'] ?? []);
+                    $capabilities = $this->detectFalCapabilities($modelId, $metadata);
+                    $status = strtolower((string) ($metadata['status'] ?? 'active'));
+                    $isDeprecated = $status === 'deprecated';
+
+                    $attributes = [
+                        'provider' => 'fal_ai',
+                        'model_id' => $modelId,
+                        'name' => (string) ($metadata['display_name'] ?? $metadata['name'] ?? $this->formatFalModelName($modelId)),
+                        'version' => $this->inferFalVersion($modelId),
+                        'description' => $metadata['description'] ?? 'FAL model endpoint',
+                        'capabilities' => $capabilities,
+                        'context_window' => null,
+                        'pricing' => isset($modelData['pricing']) && is_array($modelData['pricing']) ? $modelData['pricing'] : null,
+                        'max_tokens' => null,
+                        'supports_streaming' => in_array('streaming', $capabilities, true) || in_array('realtime', $capabilities, true),
+                        'supports_vision' => in_array('vision', $capabilities, true),
+                        'supports_function_calling' => false,
+                        'supports_json_mode' => false,
+                        'is_active' => !$isDeprecated,
+                        'is_deprecated' => $isDeprecated,
+                        'released_at' => $metadata['date'] ?? null,
+                        'deprecated_at' => $isDeprecated ? now() : null,
+                        'metadata' => $modelData,
+                    ];
+
+                    $existing = AIModel::withTrashed()
+                        ->where('model_id', $modelId)
+                        ->first();
+
+                    if ($existing) {
+                        $existing->fill($attributes);
+                        if (method_exists($existing, 'restore') && $existing->trashed()) {
+                            $existing->restore();
+                        }
+                        $existing->save();
+                        $updatedModels[] = $modelId;
+                    } else {
+                        AIModel::create($attributes);
+                        $newModels[] = $modelId;
+                    }
+
+                    $synced[] = $modelId;
+                }
+
+                $cursor = $payload['next_cursor'] ?? null;
+                $hasMore = (bool) ($payload['has_more'] ?? false);
+            } while ($hasMore && $cursor !== null && $page < $maxPages);
+
+            return [
+                'success' => true,
+                'total' => count(array_unique($synced)),
+                'new' => count(array_unique($newModels)),
+                'updated' => count(array_unique($updatedModels)),
+                'new_models' => array_values(array_unique($newModels)),
+                'updated_models' => array_values(array_unique($updatedModels)),
+                'pages' => $page,
+                'truncated' => isset($hasMore) && $hasMore && $page >= $maxPages,
+            ];
+        } catch (\Exception $e) {
+            Log::error('Failed to sync FAL models', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    /**
      * Sync all providers
      */
     public function syncAllModels(): array
@@ -706,8 +818,141 @@ class AIModelRegistry
         $results['google'] = $this->syncGeminiModels();
         $results['deepseek'] = $this->syncDeepSeekModels();
         $results['openrouter'] = $this->syncOpenRouterModels();
+        $results['fal_ai'] = $this->syncFalModels();
 
         return $results;
+    }
+
+    protected function falPlatformHeaders(): array
+    {
+        $headers = [
+            'Accept' => 'application/json',
+        ];
+
+        $apiKey = trim((string) config('ai-engine.engines.fal_ai.api_key', ''));
+        if ($apiKey !== '') {
+            $headers['Authorization'] = str_starts_with($apiKey, 'Key ')
+                ? $apiKey
+                : 'Key '.$apiKey;
+        }
+
+        return $headers;
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     * @return array<int, string>
+     */
+    protected function detectFalCapabilities(string $modelId, array $metadata): array
+    {
+        $category = strtolower((string) ($metadata['category'] ?? ''));
+        $haystack = strtolower(implode(' ', array_filter([
+            $modelId,
+            $metadata['display_name'] ?? '',
+            $metadata['description'] ?? '',
+            $category,
+            implode(' ', array_map('strval', (array) ($metadata['tags'] ?? []))),
+        ])));
+
+        $capabilities = ['inference'];
+
+        if (str_contains($category, 'text-to-image') || str_contains($haystack, 'text-to-image')) {
+            $capabilities[] = 'image_generation';
+            $capabilities[] = 'text_to_image';
+        }
+
+        if (str_contains($category, 'image-to-image')
+            || str_contains($category, 'image-edit')
+            || str_contains($haystack, 'edit image')
+            || str_contains($haystack, 'image edit')) {
+            $capabilities[] = 'image_generation';
+            $capabilities[] = 'image_editing';
+            $capabilities[] = 'vision';
+        }
+
+        if (str_contains($category, 'text-to-video') || str_contains($haystack, 'text-to-video')) {
+            $capabilities[] = 'video_generation';
+            $capabilities[] = 'text_to_video';
+        }
+
+        if (str_contains($category, 'image-to-video') || str_contains($haystack, 'image-to-video')) {
+            $capabilities[] = 'video_generation';
+            $capabilities[] = 'image_to_video';
+            $capabilities[] = 'vision';
+        }
+
+        if (str_contains($category, 'reference-to-video') || str_contains($haystack, 'reference-to-video')) {
+            $capabilities[] = 'video_generation';
+            $capabilities[] = 'reference_to_video';
+            $capabilities[] = 'vision';
+        }
+
+        if (str_contains($category, 'video') || str_contains($haystack, 'video generation')) {
+            $capabilities[] = 'video_generation';
+        }
+
+        if (str_contains($category, 'vision')
+            || str_contains($haystack, 'visual question')
+            || str_contains($haystack, 'captioning')
+            || str_contains($haystack, 'object detection')) {
+            $capabilities[] = 'vision';
+            $capabilities[] = 'image_analysis';
+        }
+
+        if (str_contains($category, 'text-to-speech') || str_contains($haystack, 'text-to-speech')) {
+            $capabilities[] = 'tts';
+            $capabilities[] = 'audio_generation';
+        }
+
+        if (str_contains($category, 'speech-to-text') || str_contains($haystack, 'speech-to-text')) {
+            $capabilities[] = 'transcription';
+            $capabilities[] = 'audio';
+        }
+
+        if (str_contains($category, 'audio') || str_contains($haystack, 'music generation')) {
+            $capabilities[] = 'audio';
+        }
+
+        if (str_contains($category, '3d') || str_contains($haystack, '3d')) {
+            $capabilities[] = '3d_generation';
+        }
+
+        if (str_contains($category, 'training') || str_contains($haystack, 'fine-tun')) {
+            $capabilities[] = 'training';
+        }
+
+        if (str_contains($haystack, 'upscale')) {
+            $capabilities[] = 'image_upscaling';
+            $capabilities[] = 'vision';
+        }
+
+        if (str_contains($haystack, 'background removal') || str_contains($haystack, 'remove background') || str_contains($modelId, 'rembg')) {
+            $capabilities[] = 'background_removal';
+            $capabilities[] = 'vision';
+        }
+
+        if (str_contains($haystack, 'streaming') || str_contains($haystack, 'websocket') || str_contains($haystack, 'real-time')) {
+            $capabilities[] = 'streaming';
+            $capabilities[] = 'realtime';
+        }
+
+        return array_values(array_unique($capabilities));
+    }
+
+    protected function formatFalModelName(string $modelId): string
+    {
+        $name = str_replace(['fal-ai/', '/', '-'], ['', ' ', ' '], $modelId);
+
+        return trim(ucwords($name)) ?: $modelId;
+    }
+
+    protected function inferFalVersion(string $modelId): ?string
+    {
+        if (preg_match('/(?:^|[-\/])v?(\d+(?:\.\d+)*[a-z0-9-]*)/i', $modelId, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
     }
 
     /**
@@ -746,6 +991,10 @@ class AIModelRegistry
      */
     protected function detectCapabilities(string $modelId): array
     {
+        if (str_starts_with($modelId, 'gpt-image')) {
+            return ['image_generation', 'image_editing', 'vision'];
+        }
+
         $capabilities = ['chat'];
 
         // Vision support
@@ -767,6 +1016,7 @@ class AIModelRegistry
             && !str_starts_with($modelId, 'o1')
             && !str_starts_with($modelId, 'o3')) {
             $capabilities[] = 'function_calling';
+            $capabilities[] = 'json_mode';
         }
 
         // Coding capabilities

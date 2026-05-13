@@ -99,6 +99,19 @@ class CoreServiceRegistrar
         });
 
         $app->singleton(\LaravelAIEngine\Services\AIModelRegistry::class, fn () => new \LaravelAIEngine\Services\AIModelRegistry());
+        $app->singleton(\LaravelAIEngine\Repositories\AIModelRepository::class);
+        $app->singleton(\LaravelAIEngine\Repositories\ProviderToolRunRepository::class);
+        $app->singleton(\LaravelAIEngine\Repositories\ProviderToolApprovalRepository::class);
+        $app->singleton(\LaravelAIEngine\Repositories\ProviderToolArtifactRepository::class);
+        $app->singleton(\LaravelAIEngine\Repositories\ProviderToolAuditRepository::class);
+        $app->singleton(\LaravelAIEngine\Services\ProviderTools\ProviderToolPolicyService::class);
+        $app->singleton(\LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService::class);
+        $app->singleton(\LaravelAIEngine\Services\ProviderTools\ProviderToolApprovalService::class);
+        $app->singleton(\LaravelAIEngine\Services\ProviderTools\ProviderToolRunService::class);
+        $app->singleton(\LaravelAIEngine\Services\ProviderTools\HostedArtifactService::class);
+        $app->singleton(\LaravelAIEngine\Services\ProviderTools\ProviderToolContinuationService::class);
+        $app->singleton(\LaravelAIEngine\Services\ProviderTools\ProviderFileDownloadService::class);
+        $app->singleton(\LaravelAIEngine\Services\Fal\FalCatalogExecutionService::class);
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, fn () => new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery());
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class, fn () => new \LaravelAIEngine\Services\RAG\AutonomousRAGPolicy());
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class)));

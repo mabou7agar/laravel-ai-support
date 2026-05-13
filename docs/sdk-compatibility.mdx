@@ -45,6 +45,12 @@ Provider-style tools are serializable and can be passed through `EngineProxy::wi
 Drivers receive these as request functions, preserving backward compatibility with the existing function-calling path.
 OpenAI, Anthropic, and Gemini drivers map supported provider tools to native provider payloads where possible, while custom functions remain on the existing function-calling path.
 
+Provider-hosted tool calls are tracked through the provider tool lifecycle tables. Computer use, MCP servers, and code execution require approval by default; web search and file search are audited without a blocking approval unless an app marks the tool with `requires_approval`.
+
+Generated files, provider file IDs, containers, and citations are recorded as hosted artifacts. Downloadable generated files are linked to `ai_media` when the media library is enabled.
+
+Apps can expose approvals, audit history, continuations, and artifacts through the built-in `/api/v1/ai/provider-tools` API group. The same group includes direct and queued generic FAL catalog execution for models synced into `ai_models`.
+
 ## Structured Output
 
 ```php

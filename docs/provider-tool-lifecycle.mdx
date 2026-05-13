@@ -1,0 +1,53 @@
+# Provider Tool Lifecycle
+
+Laravel AI Engine records provider-hosted tool work in four reusable tables:
+
+- `ai_provider_tool_runs` tracks OpenAI/Anthropic hosted tool runs, continuations, and FAL catalog executions.
+- `ai_provider_tool_approvals` stores pending/approved/rejected tool approvals.
+- `ai_provider_tool_artifacts` stores generated files, provider file IDs, containers, and citations.
+- `ai_provider_tool_audit_events` stores approval and run lifecycle events.
+
+Tools such as `computer_use`, `mcp_server`, and `code_interpreter` require approval by default. Apps can approve a pending request with `ProviderToolApprovalService::approve($approvalKey)` and retry the AI request with:
+
+```php
+$request = $request->withMetadata([
+    'provider_tool_run_id' => $runUuid,
+    'provider_tool_approval_keys' => [$approvalKey],
+]);
+```
+
+Hosted artifacts are extracted from provider responses and linked to `ai_media` when a downloadable file URL is returned. Citation URLs are audited without downloading the source page.
+
+Generic FAL catalog models synced into `ai_models` can execute through the FAL driver. The request parameters become the endpoint payload, and the prompt is mapped to `prompt` unless the synced schema declares another prompt-like field.
+
+## API Surface
+
+The package exposes versioned app APIs under `/api/v1/ai/provider-tools`:
+
+- `GET /runs`
+- `GET /runs/{run}`
+- `POST /runs/{run}/continue`
+- `GET /approvals`
+- `POST /approvals/{approvalKey}/approve`
+- `POST /approvals/{approvalKey}/reject`
+- `GET /artifacts`
+- `GET /artifacts/{artifact}/download`
+- `POST /fal/catalog/execute`
+- `POST /fal/catalog/webhook`
+
+Approving with `"continue": true` queues a continuation job. Calling `/runs/{run}/continue` can run immediately or queue with `"async": true`.
+
+FAL catalog execution supports direct and queued modes:
+
+```json
+{
+  "model": "fal-ai/flux/dev",
+  "prompt": "A clean product render",
+  "input": {
+    "image_size": "square_hd"
+  },
+  "async": false
+}
+```
+
+Queued FAL catalog jobs persist the provider run and can be completed by posting webhook payloads back to `/fal/catalog/webhook`.

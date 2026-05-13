@@ -10,6 +10,8 @@ php artisan ai-engine:test-package
 php artisan ai-engine:test-everything
 php artisan ai-engine:test-everything --profile=graph
 php artisan ai-engine:test-everything --profile=all --root-path=/path/to/root/app
+php artisan ai-engine:test-orchestration
+php artisan ai-engine:test-orchestration --no-phpunit --json
 php artisan ai-engine:backend-status
 php artisan ai-engine:model-status "App\\Models\\Project"
 php artisan ai-engine:model-status "App\\Models\\Project" --id=15
@@ -26,6 +28,8 @@ Profiles:
 - `all`: full plus billed live provider matrix
 
 Use `--stop-on-failure` to halt after the first failed stage and `--json` for machine-readable summaries.
+
+`ai-engine:test-orchestration` validates registered tools, sub-agents, skill links, and graph complexity. By default it also runs the focused package orchestration PHPUnit stage. Use `--max-complexity=120` to override the graph complexity limit and `--fail-on-warning` when warnings should fail CI.
 
 Use `php artisan ai-engine:backend-status` to see whether the app is currently reading from `neo4j_graph` or falling back to `vector_qdrant`.
 Use `php artisan ai-engine:model-status "App\\Models\\Project"` to inspect whether one model is actually ready for indexing, graph publishing, and chat retrieval. Add `--id=15` to inspect a real record instead of a blank model instance, and use `--json` if you want the raw diagnostic payload.
@@ -70,6 +74,9 @@ Safe workflow:
 ## Vector and RAG
 
 ```bash
+php artisan ai-engine:sync-models --provider=openai
+php artisan ai-engine:sync-models --provider=fal_ai
+php artisan ai-engine:sync-models --provider=all
 php artisan ai-engine:list-models
 php artisan ai-engine:analyze-model "App\\Models\\Invoice"
 php artisan ai-engine:vector-index "App\\Models\\Invoice" --with-relationships

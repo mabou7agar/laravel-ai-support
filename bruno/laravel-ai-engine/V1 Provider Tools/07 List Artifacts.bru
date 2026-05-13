@@ -1,0 +1,19 @@
+meta {
+  name: List Artifacts
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/provider-tools/artifacts?tool_run_id={{providerToolRunNumericId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

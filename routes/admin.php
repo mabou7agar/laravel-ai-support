@@ -37,6 +37,10 @@ Route::prefix(config('ai-engine.admin_ui.route_prefix', 'ai-engine/admin'))
         Route::post('/nodes/bulk-sync/apply', [AdminOperationsController::class, 'applyBulkSync'])->name('nodes.bulk-sync.apply');
         Route::get('/health', [AdminOperationsController::class, 'health'])->name('health');
         Route::get('/policies', [AdminOperationsController::class, 'policies'])->name('policies');
+        Route::get('/provider-tools', [AdminOperationsController::class, 'providerTools'])->name('provider-tools');
+        Route::post('/provider-tools/approvals/approve', [AdminOperationsController::class, 'approveProviderTool'])->name('provider-tools.approvals.approve');
+        Route::post('/provider-tools/approvals/reject', [AdminOperationsController::class, 'rejectProviderTool'])->name('provider-tools.approvals.reject');
+        Route::post('/provider-tools/runs/continue', [AdminOperationsController::class, 'continueProviderToolRun'])->name('provider-tools.runs.continue');
         Route::post('/policies/create', [AdminOperationsController::class, 'createPolicy'])->name('policies.create');
         Route::post('/policies/activate', [AdminOperationsController::class, 'activatePolicy'])->name('policies.activate');
 

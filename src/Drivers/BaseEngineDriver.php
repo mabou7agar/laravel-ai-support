@@ -233,7 +233,9 @@ abstract class BaseEngineDriver implements EngineDriverInterface
      */
     protected function getTimeout(): int
     {
-        return $this->config['timeout'] ?? 30;
+        $timeout = $this->config['timeout'] ?? 30;
+
+        return is_numeric($timeout) ? max(1, (int) $timeout) : 30;
     }
 
     /**

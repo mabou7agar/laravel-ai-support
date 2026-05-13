@@ -9,6 +9,7 @@ use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\ActionExecutionController;
 use LaravelAIEngine\Http\Controllers\Api\ModelRecommendationController;
 use LaravelAIEngine\Http\Controllers\DataCollectorController;
+use LaravelAIEngine\Http\Controllers\Api\ProviderToolController;
 use LaravelAIEngine\Http\Controllers\AutonomousCollectorController;
 use LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware;
 use LaravelAIEngine\Http\Middleware\StandardizeApiResponseMiddleware;
@@ -202,6 +203,32 @@ Route::prefix('api/v1/ai')
 
         Route::get('/engines-with-models', [EngineCatalogController::class, 'enginesWithModels'])
             ->name('engines-with-models');
+    });
+
+Route::prefix('api/v1/ai/provider-tools')
+    ->middleware($resolveApiMiddleware('generate'))
+    ->name('ai-engine.provider-tools.api.')
+    ->group(function () {
+        Route::get('/runs', [ProviderToolController::class, 'runs'])
+            ->name('runs.index');
+        Route::get('/runs/{run}', [ProviderToolController::class, 'showRun'])
+            ->name('runs.show');
+        Route::post('/runs/{run}/continue', [ProviderToolController::class, 'continueRun'])
+            ->name('runs.continue');
+        Route::get('/approvals', [ProviderToolController::class, 'approvals'])
+            ->name('approvals.index');
+        Route::post('/approvals/{approvalKey}/approve', [ProviderToolController::class, 'approve'])
+            ->name('approvals.approve');
+        Route::post('/approvals/{approvalKey}/reject', [ProviderToolController::class, 'reject'])
+            ->name('approvals.reject');
+        Route::get('/artifacts', [ProviderToolController::class, 'artifacts'])
+            ->name('artifacts.index');
+        Route::get('/artifacts/{artifact}/download', [ProviderToolController::class, 'downloadArtifact'])
+            ->name('artifacts.download');
+        Route::post('/fal/catalog/execute', [ProviderToolController::class, 'executeFalCatalog'])
+            ->name('fal.catalog.execute');
+        Route::post('/fal/catalog/webhook', [ProviderToolController::class, 'falCatalogWebhook'])
+            ->name('fal.catalog.webhook');
     });
 
 // Data Collector Chat Routes (v1)

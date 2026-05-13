@@ -97,6 +97,10 @@ class EnterpriseServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class),
             $app->make(\LaravelAIEngine\Services\Vector\ChunkingService::class),
         ));
+        $app->singleton(\LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService(
+            $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+            $app->make(\LaravelAIEngine\Services\Graph\Neo4jRetrievalService::class),
+        ));
 
         $app->singleton(\LaravelAIEngine\Services\Media\VisionService::class, fn ($app) => new \LaravelAIEngine\Services\Media\VisionService($app->make(\OpenAI\Client::class), $app->make(CreditManager::class)));
         $app->singleton(\LaravelAIEngine\Services\Media\AudioService::class, fn ($app) => new \LaravelAIEngine\Services\Media\AudioService($app->make(\OpenAI\Client::class), $app->make(CreditManager::class)));

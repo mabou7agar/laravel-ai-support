@@ -1,0 +1,67 @@
+# Hybrid Graph + Vector RAG
+
+Laravel AI Engine can use Qdrant and Neo4j together for retrieval.
+
+Qdrant remains the fast semantic candidate store. Neo4j stores entities, chunks, access scopes, and relationships for GraphRAG expansion. The hybrid layer merges both result sets so applications can answer semantic questions and relationship questions with the same package APIs.
+
+## Enable
+
+```env
+AI_ENGINE_HYBRID_RAG_ENABLED=true
+AI_ENGINE_HYBRID_RAG_STRATEGY=vector_then_graph
+AI_ENGINE_HYBRID_RAG_VECTOR_DRIVER=qdrant
+AI_ENGINE_HYBRID_RAG_GRAPH_DRIVER=neo4j
+```
+
+Supported strategies:
+
+- `vector_then_graph`: search Qdrant first, seed Neo4j with the vector hits, then merge related graph context.
+- `graph_then_vector`: query Neo4j first, then backfill semantic matches from Qdrant.
+- `reciprocal_rank`: query both stores and merge with reciprocal rank fusion.
+
+## Cross-store links
+
+Indexed Qdrant points now include stable graph references:
+
+```json
+{
+  "graph_node_id": "local:App\\Models\\Document:42",
+  "graph_chunk_id": "local:App\\Models\\Document:42#chunk:0",
+  "vector_collection": "vec_documents",
+  "vector_point_id": "42",
+  "qdrant_collection": "vec_documents",
+  "qdrant_point_id": "42"
+}
+```
+
+Neo4j entity and chunk nodes also receive the matching Qdrant collection and point ids. This lets tools, agents, and citations move from a vector hit to the graph neighborhood, or from a graph node back to the vector payload.
+
+## Usage
+
+Existing intelligent RAG calls use the hybrid service automatically when `AI_ENGINE_HYBRID_RAG_ENABLED=true`.
+
+For direct usage:
+
+```php
+use LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService;
+
+$results = app(HybridGraphVectorSearchService::class)->retrieveRelevantContext(
+    searchQueries: ['Which invoice belongs to this customer?'],
+    collections: [App\Models\Invoice::class],
+    maxResults: 5,
+    threshold: 0.3,
+    options: ['hybrid_strategy' => 'vector_then_graph'],
+    userId: auth()->id()
+);
+```
+
+The returned objects keep the normal RAG shape and add:
+
+- `vector_metadata.hybrid_score`
+- `vector_metadata.hybrid_sources`
+- `vector_metadata.vector_score`
+- `vector_metadata.graph_score`
+
+## Deployment Notes
+
+Keep `AI_ENGINE_GRAPH_SYNC_ON_INDEX=true` when you want every vector-indexed model to publish into Neo4j as well. Existing Qdrant-only installs can leave hybrid disabled and continue using vector search unchanged.

@@ -1,0 +1,19 @@
+meta {
+  name: Download Artifact
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/provider-tools/artifacts/{{providerToolArtifactId}}/download
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/octet-stream
+}

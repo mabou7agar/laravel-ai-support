@@ -57,7 +57,7 @@ class DynamicModelResolver
             'google', 'gemini' => EngineEnum::GEMINI,
             'stability', 'stable-diffusion' => EngineEnum::STABLE_DIFFUSION,
             'elevenlabs' => EngineEnum::ELEVENLABS,
-            'fal', 'fal-ai' => EngineEnum::FAL_AI,
+            'fal', 'fal-ai', 'fal_ai' => EngineEnum::FAL_AI,
             'deepseek' => EngineEnum::DEEPSEEK,
             'perplexity' => EngineEnum::PERPLEXITY,
             'openrouter' => EngineEnum::OPENROUTER,
@@ -221,6 +221,19 @@ class DynamicModelResolver
      */
     protected function getContentType(AIModel $model): string
     {
+        $capabilities = array_map('strtolower', array_map('strval', (array) ($model->capabilities ?? [])));
+        if (array_intersect($capabilities, ['video_generation', 'text_to_video', 'image_to_video', 'reference_to_video'])) {
+            return 'video';
+        }
+
+        if (array_intersect($capabilities, ['image_generation', 'image_editing', 'text_to_image'])) {
+            return 'image';
+        }
+
+        if (array_intersect($capabilities, ['audio_generation', 'tts', 'transcription', 'speech_to_text', 'text_to_speech'])) {
+            return 'audio';
+        }
+
         $modelId = strtolower($model->model_id);
         
         if (str_contains($modelId, 'dall-e') || str_contains($modelId, 'stable-diffusion') || 

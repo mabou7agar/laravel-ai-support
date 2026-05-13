@@ -1,0 +1,25 @@
+meta {
+  name: Reject
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/provider-tools/approvals/{{providerToolApprovalKey}}/reject
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "reason": "Rejected from Bruno"
+  }
+}
