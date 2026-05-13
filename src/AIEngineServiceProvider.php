@@ -260,6 +260,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\GraphBenchmarkHistoryCommand::class,
                 Console\Commands\GraphRankingFeedbackReportCommand::class,
                 Console\Commands\ScaffoldAgentArtifactCommand::class,
+                Console\Commands\DiscoverAgentSkillsCommand::class,
             ]);
 
             // Node Management Commands

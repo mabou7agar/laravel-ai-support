@@ -21,6 +21,7 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentMode::class, fn () => new \LaravelAIEngine\Services\Agent\AgentMode());
         $app->singleton(\LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry($app));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentCapabilityRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentCapabilityRegistry($app));
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentSkillRegistry($app, $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class)));
         $app->singleton(\LaravelAIEngine\Contracts\ConversationMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationMemory());
         $app->singleton(\LaravelAIEngine\Contracts\ActionAuditLogger::class, fn () => new \LaravelAIEngine\Services\Actions\NullActionAuditLogger());
         $app->singleton(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class, fn () => new \LaravelAIEngine\Services\Agent\ConversationContextCompactor());
@@ -42,6 +43,11 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\ProjectAbilityScanner::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ProjectAbilityScanner(
+            $app->make(\LaravelAIEngine\Services\Agent\AgentCollectionAdapter::class),
+            $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class)
+        ));
 
         $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGAgent::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\AutonomousRAGAgent(

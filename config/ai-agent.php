@@ -243,6 +243,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Skills
+    |--------------------------------------------------------------------------
+    |
+    | Skills are user-facing abilities that group triggers, required data,
+    | tools, actions, workflows, and confirmation policy. They do not replace
+    | tools. They describe and route complete business capabilities while the
+    | actual work remains in services, repositories, actions, and workflows.
+    |
+    */
+    'skills' => [
+        'enabled' => env('AI_AGENT_SKILLS_ENABLED', true),
+        'expose_as_capabilities' => env('AI_AGENT_SKILLS_EXPOSE_AS_CAPABILITIES', true),
+    ],
+
+    'skill_providers' => [
+        // \App\AI\Skills\AppSkillProvider::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Actions
     |--------------------------------------------------------------------------
     |

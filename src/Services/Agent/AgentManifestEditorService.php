@@ -13,7 +13,7 @@ class AgentManifestEditorService
     }
 
     /**
-     * @return array{model_configs:array<int,string>,collectors:array<string,string>,tools:array<string,string>,filters:array<string,string>}
+     * @return array{model_configs:array<int,string>,collectors:array<string,string>,tools:array<string,string>,filters:array<string,string>,skill_providers:array<string,string>,skills:array<string,array<string,mixed>>}
      */
     public function read(): array
     {
@@ -24,6 +24,8 @@ class AgentManifestEditorService
             'collectors' => [],
             'tools' => [],
             'filters' => [],
+            'skill_providers' => [],
+            'skills' => [],
         ];
 
         if (!is_file($path)) {
@@ -43,7 +45,7 @@ class AgentManifestEditorService
                 (array) ($manifest['model_configs'] ?? [])
             )));
 
-            foreach (['collectors', 'tools', 'filters'] as $section) {
+            foreach (['collectors', 'tools', 'filters', 'skill_providers'] as $section) {
                 $normalized = [];
                 foreach ((array) ($manifest[$section] ?? []) as $key => $class) {
                     $entryKey = trim((string) $key);
@@ -55,6 +57,8 @@ class AgentManifestEditorService
                 }
                 $manifest[$section] = $normalized;
             }
+
+            $manifest['skills'] = $this->normalizeSkillDefinitions((array) ($manifest['skills'] ?? []));
 
             return $manifest;
         } catch (\Throwable) {
@@ -117,7 +121,7 @@ class AgentManifestEditorService
 
     public function putMappedEntry(string $section, string $key, string $className): bool
     {
-        if (!in_array($section, ['collectors', 'tools', 'filters'], true)) {
+        if (!in_array($section, ['collectors', 'tools', 'filters', 'skill_providers'], true)) {
             return false;
         }
 
@@ -145,7 +149,7 @@ class AgentManifestEditorService
 
     public function replaceMappedEntry(string $section, string $oldKey, string $newKey, string $className): bool
     {
-        if (!in_array($section, ['collectors', 'tools', 'filters'], true)) {
+        if (!in_array($section, ['collectors', 'tools', 'filters', 'skill_providers'], true)) {
             return false;
         }
 
@@ -203,7 +207,7 @@ class AgentManifestEditorService
 
     public function removeMappedEntry(string $section, string $key): bool
     {
-        if (!in_array($section, ['collectors', 'tools', 'filters'], true)) {
+        if (!in_array($section, ['collectors', 'tools', 'filters', 'skill_providers'], true)) {
             return false;
         }
 
@@ -239,6 +243,40 @@ class AgentManifestEditorService
     }
 
     /**
+     * @param array<string, array<string, mixed>> $skills
+     */
+    public function putSkillDefinitions(array $skills): int
+    {
+        $manifest = $this->read();
+        $written = 0;
+
+        foreach ($skills as $id => $definition) {
+            $normalizedId = trim((string) ($definition['id'] ?? $id));
+            if ($normalizedId === '') {
+                continue;
+            }
+
+            $definition['id'] = $normalizedId;
+            $normalized = $this->normalizeSkillDefinitions([$normalizedId => $definition]);
+            if (!isset($normalized[$normalizedId])) {
+                continue;
+            }
+
+            if (($manifest['skills'][$normalizedId] ?? null) !== $normalized[$normalizedId]) {
+                $manifest['skills'][$normalizedId] = $normalized[$normalizedId];
+                $written++;
+            }
+        }
+
+        if ($written > 0) {
+            ksort($manifest['skills']);
+            $this->write($manifest);
+        }
+
+        return $written;
+    }
+
+    /**
      * @param array<mixed> $manifest
      */
     public function replaceAll(array $manifest): void
@@ -248,6 +286,8 @@ class AgentManifestEditorService
             'collectors' => [],
             'tools' => [],
             'filters' => [],
+            'skill_providers' => [],
+            'skills' => [],
         ];
 
         foreach ((array) ($manifest['model_configs'] ?? []) as $className) {
@@ -258,7 +298,7 @@ class AgentManifestEditorService
         }
         $normalized['model_configs'] = array_values(array_unique($normalized['model_configs']));
 
-        foreach (['collectors', 'tools', 'filters'] as $section) {
+        foreach (['collectors', 'tools', 'filters', 'skill_providers'] as $section) {
             foreach ((array) ($manifest[$section] ?? []) as $key => $className) {
                 $normalizedKey = trim((string) $key);
                 $normalizedClass = $this->normalizeClass((string) $className);
@@ -270,11 +310,13 @@ class AgentManifestEditorService
             ksort($normalized[$section]);
         }
 
+        $normalized['skills'] = $this->normalizeSkillDefinitions((array) ($manifest['skills'] ?? []));
+
         $this->write($normalized);
     }
 
     /**
-     * @param array{model_configs:array<int,string>,collectors:array<string,string>,tools:array<string,string>,filters:array<string,string>} $manifest
+     * @param array{model_configs:array<int,string>,collectors:array<string,string>,tools:array<string,string>,filters:array<string,string>,skill_providers?:array<string,string>,skills?:array<string,array<string,mixed>>} $manifest
      */
     protected function write(array $manifest): void
     {
@@ -286,6 +328,8 @@ class AgentManifestEditorService
             'collectors' => $manifest['collectors'],
             'tools' => $manifest['tools'],
             'filters' => $manifest['filters'],
+            'skill_providers' => $manifest['skill_providers'] ?? [],
+            'skills' => $manifest['skills'] ?? [],
         ], true) . ";\n";
 
         File::put($path, $content);
@@ -302,5 +346,65 @@ class AgentManifestEditorService
         $className = preg_replace('/::class$/', '', $className) ?? $className;
 
         return ltrim($className, '\\');
+    }
+
+    /**
+     * @param array<string|int, mixed> $skills
+     * @return array<string, array<string, mixed>>
+     */
+    protected function normalizeSkillDefinitions(array $skills): array
+    {
+        $normalized = [];
+
+        foreach ($skills as $key => $definition) {
+            if (!is_array($definition)) {
+                continue;
+            }
+
+            $id = trim((string) ($definition['id'] ?? (is_string($key) ? $key : '')));
+            $name = trim((string) ($definition['name'] ?? ''));
+            $description = trim((string) ($definition['description'] ?? ''));
+
+            if ($id === '' || $name === '' || $description === '') {
+                continue;
+            }
+
+            $definition['id'] = $id;
+            $definition['name'] = $name;
+            $definition['description'] = $description;
+            $definition['triggers'] = $this->normalizeStringList($definition['triggers'] ?? []);
+            $definition['required_data'] = $this->normalizeStringList($definition['required_data'] ?? $definition['requiredData'] ?? []);
+            $definition['tools'] = $this->normalizeStringList($definition['tools'] ?? []);
+            $definition['actions'] = $this->normalizeStringList($definition['actions'] ?? []);
+            $definition['workflows'] = $this->normalizeStringList($definition['workflows'] ?? []);
+            $definition['capabilities'] = $this->normalizeStringList($definition['capabilities'] ?? []);
+            $definition['requires_confirmation'] = (bool) ($definition['requires_confirmation'] ?? $definition['requiresConfirmation'] ?? true);
+            $definition['enabled'] = (bool) ($definition['enabled'] ?? false);
+            $definition['metadata'] = (array) ($definition['metadata'] ?? []);
+
+            unset($definition['requiredData'], $definition['requiresConfirmation']);
+
+            $normalized[$id] = $definition;
+        }
+
+        ksort($normalized);
+
+        return $normalized;
+    }
+
+    /**
+     * @param mixed $value
+     * @return array<int, string>
+     */
+    protected function normalizeStringList(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn (mixed $item): string => trim((string) $item),
+            $value
+        )));
     }
 }

@@ -10,14 +10,14 @@ use LaravelAIEngine\Services\Agent\AgentManifestService;
 class ScaffoldAgentArtifactCommand extends Command
 {
     protected $signature = 'ai-engine:scaffold
-                            {type? : agent|collector|filter|tool}
+                            {type? : agent|collector|filter|tool|skill}
                             {name? : Class name (e.g. Invoice)}
                             {--model= : Model class for agent/collector (e.g. App\\Models\\Invoice)}
                             {--description= : Description text used in generated class}
                             {--force : Overwrite file if it already exists}
                             {--no-register : Skip automatic manifest registration}';
 
-    protected $description = 'Scaffold AI agent artifacts (agent config, collector, filter, tool)';
+    protected $description = 'Scaffold AI agent artifacts (agent config, collector, filter, tool, skill)';
 
     /**
      * @var array<string, array{namespace:string,directory:string,suffix:string,manifest:string,map:bool}>
@@ -49,6 +49,13 @@ class ScaffoldAgentArtifactCommand extends Command
             'directory' => 'AI/Tools',
             'suffix' => 'Tool',
             'manifest' => 'tools',
+            'map' => true,
+        ],
+        'skill' => [
+            'namespace' => 'App\\AI\\Skills',
+            'directory' => 'AI/Skills',
+            'suffix' => 'Skill',
+            'manifest' => 'skill_providers',
             'map' => true,
         ],
     ];
@@ -136,7 +143,7 @@ class ScaffoldAgentArtifactCommand extends Command
         }
 
         if (!array_key_exists($type, $this->types)) {
-            $this->error('Invalid type. Allowed: agent, collector, filter, tool.');
+            $this->error('Invalid type. Allowed: agent, collector, filter, tool, skill.');
             return null;
         }
 
@@ -192,7 +199,7 @@ class ScaffoldAgentArtifactCommand extends Command
 
     protected function artifactKey(string $className): string
     {
-        $key = preg_replace('/(Config|Collector|Filter|Tool)$/', '', $className) ?? $className;
+        $key = preg_replace('/(Config|Collector|Filter|Tool|Skill)$/', '', $className) ?? $className;
         $key = Str::snake($key);
 
         return $key !== '' ? $key : Str::snake($className);
@@ -205,6 +212,7 @@ class ScaffoldAgentArtifactCommand extends Command
             'collector' => $this->buildCollectorTemplate($namespace, $className),
             'filter' => $this->buildFilterTemplate($namespace, $className),
             'tool' => $this->buildToolTemplate($namespace, $className),
+            'skill' => $this->buildSkillTemplate($namespace, $className),
             default => throw new \InvalidArgumentException("Unsupported scaffold type: {$type}"),
         };
     }
@@ -398,6 +406,63 @@ class {$className} extends AgentTool
 PHP;
     }
 
+    protected function buildSkillTemplate(string $namespace, string $className): string
+    {
+        $base = Str::beforeLast($className, 'Skill');
+        $id = Str::snake($base);
+        $id = $id !== '' ? $id : Str::snake($className);
+        $name = ucwords(str_replace('_', ' ', Str::snake($base !== '' ? $base : $className)));
+        $description = trim((string) ($this->option('description') ?? ''));
+        $description = $description !== '' ? $description : "Handle {$name} requests using configured tools, actions, and workflows.";
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Contracts\AgentSkillProvider;
+use LaravelAIEngine\DTOs\AgentSkillDefinition;
+
+class {$className} implements AgentSkillProvider
+{
+    public function skills(): iterable
+    {
+        yield new AgentSkillDefinition(
+            id: '{$id}',
+            name: '{$this->escapeSingleQuotes($name)}',
+            description: '{$this->escapeSingleQuotes($description)}',
+            triggers: [
+                '{$id}',
+            ],
+            requiredData: [
+                // 'customer_id',
+                // 'items',
+            ],
+            tools: [
+                // 'find_customer',
+                // 'calculate_totals',
+            ],
+            actions: [
+                // '{$id}.create',
+            ],
+            workflows: [
+                // \\App\\AI\\Workflows\\{$base}Workflow::class,
+            ],
+            capabilities: [
+                '{$id}',
+            ],
+            requiresConfirmation: true,
+            enabled: false,
+            metadata: [
+                'source' => 'scaffold',
+                'review_required' => true,
+            ],
+        );
+    }
+}
+PHP;
+    }
+
     protected function loadManifest(string $path): array
     {
         $default = [
@@ -405,6 +470,8 @@ PHP;
             'collectors' => [],
             'tools' => [],
             'filters' => [],
+            'skill_providers' => [],
+            'skills' => [],
         ];
 
         if (!is_file($path)) {
@@ -430,6 +497,8 @@ PHP;
             'collectors' => (array) ($manifest['collectors'] ?? []),
             'tools' => (array) ($manifest['tools'] ?? []),
             'filters' => (array) ($manifest['filters'] ?? []),
+            'skill_providers' => (array) ($manifest['skill_providers'] ?? []),
+            'skills' => (array) ($manifest['skills'] ?? []),
         ];
 
         return "<?php\n\nreturn " . var_export($normalized, true) . ";\n";

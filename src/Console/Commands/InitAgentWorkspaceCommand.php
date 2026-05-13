@@ -25,6 +25,7 @@ class InitAgentWorkspaceCommand extends Command
             app_path('AI/Configs'),
             app_path('AI/Collectors'),
             app_path('AI/Filters'),
+            app_path('AI/Skills'),
             app_path('AI/Tools'),
             app_path('AI/Workflows'),
         ];
@@ -76,6 +77,7 @@ class InitAgentWorkspaceCommand extends Command
         $this->line('1) php artisan ai-engine:scaffold agent Invoice --model="App\\Models\\Invoice"');
         $this->line('2) php artisan ai-engine:scaffold filter TenantScope');
         $this->line('3) php artisan ai-engine:scaffold tool LookupCustomer');
+        $this->line('4) php artisan ai-engine:scaffold skill CreateInvoice');
 
         return self::SUCCESS;
     }
@@ -122,6 +124,21 @@ return [
 
     'filters' => [
         // 'tenant_scope' => App\AI\Filters\TenantScopeFilter::class,
+    ],
+
+    'skill_providers' => [
+        // 'create_invoice' => App\AI\Skills\CreateInvoiceSkill::class,
+    ],
+
+    'skills' => [
+        // 'create_invoice' => [
+        //     'name' => 'Create Invoice',
+        //     'description' => 'Create invoices through approved actions and workflows.',
+        //     'triggers' => ['create invoice', 'new invoice'],
+        //     'actions' => ['invoices.create'],
+        //     'requires_confirmation' => true,
+        //     'enabled' => false,
+        // ],
     ],
 ];
 PHP;

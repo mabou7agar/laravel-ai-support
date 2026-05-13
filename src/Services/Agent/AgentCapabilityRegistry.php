@@ -37,6 +37,14 @@ class AgentCapabilityRegistry
             }
         }
 
+        foreach ($this->skillDocuments($only) as $document) {
+            if ($document->id === '' || trim($document->text) === '') {
+                continue;
+            }
+
+            $documents[$document->id] = $document;
+        }
+
         return array_values($documents);
     }
 
@@ -71,5 +79,24 @@ class AgentCapabilityRegistry
         }
 
         return $providers;
+    }
+
+    /**
+     * @param array<int, string> $only
+     * @return array<int, AgentCapabilityDocument>
+     */
+    protected function skillDocuments(array $only): array
+    {
+        if (!(bool) config('ai-agent.skills.expose_as_capabilities', true)) {
+            return [];
+        }
+
+        try {
+            return $this->container
+                ->make(AgentSkillRegistry::class)
+                ->capabilityDocuments($only);
+        } catch (\Throwable) {
+            return [];
+        }
     }
 }

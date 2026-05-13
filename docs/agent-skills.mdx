@@ -1,0 +1,80 @@
+---
+title: Agent Skills
+description: Package user-facing agent abilities from tools, actions, workflows, collectors, and capability documents.
+---
+
+# Agent Skills
+
+Skills are a lightweight orchestration layer above existing agent primitives.
+
+A tool is an atomic callable operation. A skill is a user-facing ability that describes when to use tools, actions, workflows, required data, and confirmation rules.
+
+## Structure
+
+```php
+use LaravelAIEngine\DTOs\AgentSkillDefinition;
+
+new AgentSkillDefinition(
+    id: 'create_invoice',
+    name: 'Create Invoice',
+    description: 'Create invoices through approved services and actions.',
+    triggers: ['create invoice', 'new invoice'],
+    requiredData: ['customer_id', 'items'],
+    tools: ['find_customer', 'calculate_totals'],
+    actions: ['invoices.create'],
+    workflows: [App\AI\Workflows\CreateInvoiceWorkflow::class],
+    capabilities: ['invoice', 'create'],
+    requiresConfirmation: true,
+    enabled: true,
+);
+```
+
+Keep business writes in host application services and repositories. A skill should reference an action or workflow that validates, authorizes, confirms, and executes the write.
+
+## Scaffold a skill
+
+```bash
+php artisan ai-engine:scaffold skill CreateInvoice
+```
+
+This creates an `App\AI\Skills\CreateInvoiceSkill` provider and registers it in the agent manifest under `skill_providers`.
+
+Generated skills are disabled by default and marked as review-required.
+
+## Scan project abilities
+
+```bash
+php artisan ai-engine:skills:discover
+php artisan ai-engine:skills:discover --json
+php artisan ai-engine:skills:discover --write
+```
+
+The scanner proposes draft skills from registered actions, workflows, autonomous collectors, and model discovery metadata.
+
+Use `--write` to add draft definitions to `app/AI/agent-manifest.php`. Draft skills are disabled unless `--enable` is passed.
+
+## Manifest entries
+
+```php
+return [
+    'skill_providers' => [
+        'create_invoice' => App\AI\Skills\CreateInvoiceSkill::class,
+    ],
+
+    'skills' => [
+        'create_invoice' => [
+            'name' => 'Create Invoice',
+            'description' => 'Create invoices through approved actions.',
+            'triggers' => ['create invoice', 'new invoice'],
+            'required_data' => ['customer_id', 'items'],
+            'actions' => ['invoices.create'],
+            'requires_confirmation' => true,
+            'enabled' => false,
+        ],
+    ],
+];
+```
+
+## Routing
+
+When `ai-agent.skills.expose_as_capabilities` is enabled, skills are exposed as capability documents through the existing capability registry. This lets semantic routing discover complete abilities without exposing every low-level tool directly.

@@ -59,6 +59,61 @@ class AgentManifestService
     }
 
     /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function skills(): array
+    {
+        $manifest = $this->manifest();
+        $skills = $manifest['skills'] ?? [];
+        if (!is_array($skills)) {
+            return [];
+        }
+
+        $resolved = [];
+        foreach ($skills as $id => $definition) {
+            if (!is_string($id) || trim($id) === '') {
+                continue;
+            }
+
+            if (!is_array($definition)) {
+                continue;
+            }
+
+            $resolved[$id] = $definition;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function skillProviders(): array
+    {
+        $manifest = $this->manifest();
+        $providers = $manifest['skill_providers'] ?? [];
+        if (!is_array($providers)) {
+            return [];
+        }
+
+        $resolved = [];
+        foreach ($providers as $name => $className) {
+            if (!is_string($name) || trim($name) === '') {
+                continue;
+            }
+            if (!is_string($className) || trim($className) === '') {
+                continue;
+            }
+            if (!class_exists($className)) {
+                continue;
+            }
+            $resolved[$name] = $className;
+        }
+
+        return $resolved;
+    }
+
+    /**
      * @return array<string, array{class:string,description:string,priority:int}>
      */
     public function collectors(): array
@@ -171,4 +226,3 @@ class AgentManifestService
         return $this->manifest;
     }
 }
-
