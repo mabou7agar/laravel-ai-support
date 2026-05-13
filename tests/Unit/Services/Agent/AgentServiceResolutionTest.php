@@ -8,10 +8,14 @@ use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
+use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\AgentOrchestrator;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
+use LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService;
+use LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner;
+use LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry;
 use LaravelAIEngine\Tests\UnitTestCase;
 
 class AgentServiceResolutionTest extends UnitTestCase
@@ -64,5 +68,13 @@ class AgentServiceResolutionTest extends UnitTestCase
     public function test_agent_execution_facade_resolves_from_container(): void
     {
         $this->assertInstanceOf(AgentExecutionFacade::class, $this->app->make(AgentExecutionFacade::class));
+    }
+
+    public function test_goal_agent_services_resolve_from_container(): void
+    {
+        $this->assertInstanceOf(SubAgentRegistry::class, $this->app->make(SubAgentRegistry::class));
+        $this->assertInstanceOf(SubAgentPlanner::class, $this->app->make(SubAgentPlanner::class));
+        $this->assertInstanceOf(SubAgentExecutionService::class, $this->app->make(SubAgentExecutionService::class));
+        $this->assertInstanceOf(GoalAgentService::class, $this->app->make(GoalAgentService::class));
     }
 }

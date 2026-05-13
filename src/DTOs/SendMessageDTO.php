@@ -16,7 +16,11 @@ class SendMessageDTO
         public readonly bool $intelligentRag = false,
         public readonly bool $forceRag = false,
         public readonly ?array $ragCollections = null,
-        public readonly ?string $searchInstructions = null
+        public readonly ?string $searchInstructions = null,
+        public readonly bool $agentGoal = false,
+        public readonly ?string $target = null,
+        public readonly ?array $subAgents = null,
+        public readonly ?array $goalAgent = null
     ) {}
 
     public function toArray(): array
@@ -34,6 +38,20 @@ class SendMessageDTO
             'force_rag' => $this->forceRag,
             'rag_collections' => $this->ragCollections,
             'search_instructions' => $this->searchInstructions,
+            'agent_goal' => $this->agentGoal,
+            'target' => $this->target,
+            'sub_agents' => $this->subAgents,
+            'goal_agent' => $this->goalAgent,
         ];
+    }
+
+    public function agentOptions(): array
+    {
+        return array_filter([
+            'agent_goal' => $this->agentGoal,
+            'target' => $this->target,
+            'sub_agents' => $this->subAgents,
+            'goal_agent' => $this->goalAgent,
+        ], static fn ($value) => $value !== null && $value !== false && $value !== []);
     }
 }

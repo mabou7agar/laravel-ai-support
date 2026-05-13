@@ -8,6 +8,8 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
+use LaravelAIEngine\Services\Agent\Tools\AgentTool;
+use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
 use LaravelAIEngine\Tests\UnitTestCase;
@@ -67,6 +69,38 @@ class AgentActionExecutionServiceToolConfigStub
                 ],
             ],
         ];
+    }
+}
+
+class AgentActionExecutionRegistryToolStub extends AgentTool
+{
+    public function getName(): string
+    {
+        return 'registry_echo';
+    }
+
+    public function getDescription(): string
+    {
+        return 'Echoes registry tool parameters.';
+    }
+
+    public function getParameters(): array
+    {
+        return [
+            'value' => ['type' => 'string', 'required' => true],
+        ];
+    }
+
+    public function execute(array $parameters, UnifiedActionContext $context): \LaravelAIEngine\DTOs\ActionResult
+    {
+        return \LaravelAIEngine\DTOs\ActionResult::success(
+            message: 'Registry tool executed.',
+            data: [
+                'value' => $parameters['value'],
+                'session_id' => $context->sessionId,
+            ],
+            metadata: ['agent_strategy' => 'registry_tool_strategy']
+        );
     }
 }
 
@@ -157,6 +191,41 @@ class AgentActionExecutionServiceTest extends UnitTestCase
         $this->assertSame('context_tool_strategy', $response->strategy);
         $this->assertSame('context_tool_strategy', $response->metadata['agent_strategy']);
         $this->assertSame('context_stub_action', $response->metadata['tool_name']);
+    }
+
+    public function test_execute_use_tool_runs_agent_tool_registry_when_model_config_does_not_match(): void
+    {
+        $toolRegistry = new ToolRegistry();
+        $toolRegistry->register('registry_echo', new AgentActionExecutionRegistryToolStub());
+
+        $service = new AgentActionExecutionService(
+            $this->createMock(AutonomousCollectorRegistry::class),
+            $this->createMock(AutonomousCollectorDiscoveryService::class),
+            $this->createMock(AutonomousCollectorHandler::class),
+            new SelectedEntityContextService(),
+            null,
+            null,
+            $toolRegistry
+        );
+
+        $context = new UnifiedActionContext('registry-tool-session', 99);
+
+        $response = $service->executeUseTool(
+            'registry_echo',
+            'run registry tool',
+            $context,
+            ['model_configs' => [], 'tool_params' => ['value' => 'abc']],
+            function () {
+                $this->fail('Fallback RAG should not be called for registered AgentTool');
+            }
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertSame('Registry tool executed.', $response->message);
+        $this->assertSame('abc', $response->data['value']);
+        $this->assertSame('registry-tool-session', $response->data['session_id']);
+        $this->assertSame('registry_tool_strategy', $response->strategy);
+        $this->assertSame('registry_echo', $response->metadata['tool_name']);
     }
 
     public function test_execute_resume_session_restores_last_paused_collector(): void

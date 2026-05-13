@@ -132,9 +132,11 @@ Use this contract for infrastructure, not frontend apps.
 - `DELETE /api/ai-chat/history/{session_id}`
 - `GET /api/ai-chat/engines`
 
-## Example: Chat Request
+## Example: Agent Chat Request
 
-`POST /api/v1/rag/chat`
+`POST /api/v1/agent/chat`
+
+`POST /api/v1/rag/chat` remains available as a backward-compatible alias for existing clients.
 
 ```json
 {
@@ -225,7 +227,7 @@ curl -X POST https://your-app.test/api/v1/ai/generate/reference-pack \
 ```
 
 ```bash
-curl -X POST https://your-app.test/api/v1/rag/chat \
+curl -X POST https://your-app.test/api/v1/agent/chat \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{

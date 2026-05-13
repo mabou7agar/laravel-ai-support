@@ -26,7 +26,8 @@ class AgentOrchestrator
         protected AgentExecutionFacade $execution,
         protected ?MessageRoutingClassifier $messageClassifier = null,
         protected ?RoutingContextResolver $routingContextResolver = null,
-        protected ?DeterministicAgentHandlerRegistry $deterministicHandlers = null
+        protected ?DeterministicAgentHandlerRegistry $deterministicHandlers = null,
+        protected ?GoalAgentService $goalAgent = null
     ) {
         $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
             ? app(MessageRoutingClassifier::class)
@@ -53,6 +54,17 @@ class AgentOrchestrator
 
         $context = $this->contextManager->getOrCreate($sessionId, $userId);
         $context->addUserMessage($message);
+
+        if ($this->shouldUseGoalAgent($options)) {
+            return $this->finalizeDirect(
+                $context,
+                $this->goalAgent()->execute(
+                    (string) ($options['target'] ?? $message),
+                    $context,
+                    $options
+                )
+            );
+        }
 
         if ($this->deterministicHandlers) {
             $deterministicResponse = $this->deterministicHandlers->handle($message, $context, $options);
@@ -456,6 +468,26 @@ class AgentOrchestrator
     protected function finalizeDirect(UnifiedActionContext $context, AgentResponse $response): AgentResponse
     {
         return $this->responseFinalizer->finalize($context, $response);
+    }
+
+    protected function shouldUseGoalAgent(array $options): bool
+    {
+        if (!config('ai-agent.goal_agent.enabled', true)) {
+            return false;
+        }
+
+        return !empty($options['agent_goal'])
+            || !empty($options['goal_agent'])
+            || !empty($options['sub_agents']);
+    }
+
+    protected function goalAgent(): GoalAgentService
+    {
+        if ($this->goalAgent === null) {
+            $this->goalAgent = app(GoalAgentService::class);
+        }
+
+        return $this->goalAgent;
     }
 
 }

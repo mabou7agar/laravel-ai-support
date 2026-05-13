@@ -10,6 +10,7 @@ use LaravelAIEngine\Services\Agent\Handlers\ToolParameterExtractor;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
 use LaravelAIEngine\Services\Agent\AgentManifestService;
+use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 class AgentActionExecutionService
@@ -20,7 +21,8 @@ class AgentActionExecutionService
         protected AutonomousCollectorHandler $collectorHandler,
         protected SelectedEntityContextService $selectedEntityContext,
         protected ?LocaleResourceService $localeResources = null,
-        protected ?AgentManifestService $manifestService = null
+        protected ?AgentManifestService $manifestService = null,
+        protected ?ToolRegistry $toolRegistry = null
     ) {
     }
 
@@ -149,11 +151,73 @@ class AgentActionExecutionService
             }
         }
 
-        Log::channel('ai-engine')->warning('Tool not found in configs, routing to RAG', [
+        $registryResponse = $this->executeRegistryTool($toolName, $message, $context, $options);
+        if ($registryResponse) {
+            return $registryResponse;
+        }
+
+        Log::channel('ai-engine')->warning('Tool not found in configs or registry, routing to RAG', [
             'tool_name' => $toolName,
         ]);
 
         return $searchRag($message, $context, $options);
+    }
+
+    protected function executeRegistryTool(
+        string $toolName,
+        string $message,
+        UnifiedActionContext $context,
+        array $options
+    ): ?AgentResponse {
+        $tool = $this->toolRegistry()->get($toolName);
+        if (!$tool) {
+            return null;
+        }
+
+        $params = is_array($options['tool_params'] ?? null) ? $options['tool_params'] : [];
+        if (empty($params)) {
+            $params = ToolParameterExtractor::extractWithMetadata(
+                $message,
+                $context,
+                $tool->getParameters(),
+                $toolName
+            );
+        }
+
+        $errors = $tool->validate($params);
+        if ($errors !== []) {
+            return AgentResponse::needsUserInput(
+                message: implode("\n", $errors),
+                data: ['tool_name' => $toolName, 'validation_errors' => $errors],
+                context: $context,
+                requiredInputs: $errors
+            );
+        }
+
+        $result = $tool->execute($params, $context);
+        $response = AgentResponse::fromActionResult($result, $context);
+        $response->strategy = $result->metadata['agent_strategy'] ?? 'tool';
+        $response->metadata = array_filter([
+            'agent_strategy' => $response->strategy,
+            'workflow_data' => $result->toArray(),
+            'tool_name' => $toolName,
+        ]);
+
+        if ($result->requiresUserInput()) {
+            $response->needsUserInput = true;
+            $response->isComplete = false;
+        }
+
+        return $response;
+    }
+
+    protected function toolRegistry(): ToolRegistry
+    {
+        if ($this->toolRegistry === null) {
+            $this->toolRegistry = app(ToolRegistry::class);
+        }
+
+        return $this->toolRegistry;
     }
 
     public function executeStartCollector(

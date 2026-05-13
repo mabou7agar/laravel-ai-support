@@ -36,6 +36,11 @@ class SendMessageRequest extends FormRequest
             'async' => 'sometimes|boolean',
             'auto_select_model' => 'sometimes|boolean',
             'task_type' => 'sometimes|string|in:vision,coding,reasoning,fast,cheap,quality,default',
+            'agent_goal' => 'sometimes|boolean',
+            'target' => 'sometimes|string|max:4000',
+            'sub_agents' => 'sometimes|array',
+            'sub_agents.*' => 'sometimes',
+            'goal_agent' => 'sometimes|array',
         ];
     }
 
@@ -71,7 +76,11 @@ class SendMessageRequest extends FormRequest
             intelligentRag: $validated['intelligent_rag'] ?? false,
             forceRag: $validated['force_rag'] ?? false,
             ragCollections: $validated['rag_collections'] ?? null,
-            searchInstructions: $validated['search_instructions'] ?? null
+            searchInstructions: $validated['search_instructions'] ?? null,
+            agentGoal: $validated['agent_goal'] ?? false,
+            target: $validated['target'] ?? null,
+            subAgents: $validated['sub_agents'] ?? null,
+            goalAgent: $validated['goal_agent'] ?? null
         );
     }
 }

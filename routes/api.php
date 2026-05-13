@@ -49,7 +49,16 @@ $resolveApiMiddleware = static function (string $group) use ($normalizeMiddlewar
     return array_values(array_unique($normalizeMiddleware($stack)));
 };
 
-// RAG Chat API Routes (v1)
+// Agent Chat API Routes (v1)
+Route::prefix('api/v1/agent')
+    ->middleware($resolveApiMiddleware('agent'))
+    ->name('ai-engine.agent.api.')
+    ->group(function () {
+        Route::post('/chat', [RagChatApiController::class, 'sendMessage'])
+            ->name('chat.send');
+    });
+
+// RAG Chat API Routes (v1, legacy chat alias plus retrieval endpoints)
 Route::prefix('api/v1/rag')
     ->middleware($resolveApiMiddleware('rag'))
     ->name('ai-engine.rag.api.')

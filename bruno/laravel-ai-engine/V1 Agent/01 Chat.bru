@@ -1,0 +1,29 @@
+meta {
+  name: Chat
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/agent/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "message": "List invoices",
+    "session_id": "{{agentSessionId}}",
+    "memory": true,
+    "actions": true,
+    "use_intelligent_rag": true
+  }
+}

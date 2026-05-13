@@ -1,0 +1,93 @@
+---
+title: Agent Goals and Sub-Agents
+description: Build target-oriented agents that delegate work to reusable sub-agent handlers.
+---
+
+# Agent Goals and Sub-Agents
+
+The package includes a reusable goal-agent runtime for agentic workflows that need more than one step.
+
+Use it when a request has a target and should be split across specialized handlers such as research, retrieval, validation, writing, auditing, or execution.
+
+## Configure sub-agents
+
+Register sub-agents in `config/ai-agent.php`:
+
+```php
+'sub_agents' => [
+    'research' => [
+        'name' => 'Research sub-agent',
+        'description' => 'Finds relevant facts and source context.',
+        'capabilities' => ['research', 'find', 'source'],
+        'handler' => \App\AI\SubAgents\ResearchSubAgent::class,
+    ],
+    'writer' => [
+        'name' => 'Writer sub-agent',
+        'description' => 'Turns prior sub-agent results into a final response.',
+        'capabilities' => ['write', 'summarize', 'synthesize'],
+        'handler' => \App\AI\SubAgents\WriterSubAgent::class,
+    ],
+],
+```
+
+Handlers implement `LaravelAIEngine\Contracts\SubAgentHandler`:
+
+```php
+use LaravelAIEngine\Contracts\SubAgentHandler;
+use LaravelAIEngine\DTOs\SubAgentResult;
+use LaravelAIEngine\DTOs\SubAgentTask;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+class ResearchSubAgent implements SubAgentHandler
+{
+    public function handle(
+        SubAgentTask $task,
+        UnifiedActionContext $context,
+        array $previousResults = [],
+        array $options = []
+    ): SubAgentResult {
+        return SubAgentResult::success(
+            taskId: $task->id,
+            agentId: $task->agentId,
+            message: 'Research complete.',
+            data: ['facts' => []]
+        );
+    }
+}
+```
+
+## Call through chat
+
+Send `agent_goal=true` to `POST /api/v1/agent/chat` with a `target`. You can let the planner match configured sub-agents by capabilities, or pass an explicit sub-agent plan.
+
+`POST /api/v1/rag/chat` remains available as a backward-compatible alias for existing clients, but new agentic workflows should use `/api/v1/agent/chat`.
+
+```json
+{
+  "message": "Create a launch plan for the new product",
+  "session_id": "launch-001",
+  "agent_goal": true,
+  "target": "Create a launch plan for the new product",
+  "sub_agents": [
+    {
+      "id": "research_task",
+      "agent_id": "research",
+      "objective": "Collect launch facts and constraints"
+    },
+    {
+      "id": "write_task",
+      "agent_id": "writer",
+      "objective": "Write the final launch plan",
+      "depends_on": ["research_task"]
+    }
+  ]
+}
+```
+
+The response uses the normal agent envelope. `metadata.goal_agent` contains the target, generated plan, and each sub-agent result.
+
+## Safety model
+
+Keep write operations inside app services. Sub-agent handlers should call repositories/services, enforce permissions, and return `SubAgentResult::needsUserInput()` when confirmation or missing data is required.
+
+For destructive or high-risk actions, use the existing action framework and confirmation flow rather than writing directly from a sub-agent handler.

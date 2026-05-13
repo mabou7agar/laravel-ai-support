@@ -178,9 +178,9 @@ class AIChatController extends Controller
                 ragCollections: $dto->ragCollections ?? [],
                 userId: $dto->userId,
                 searchInstructions: $dto->searchInstructions,
-                extraOptions: [
+                extraOptions: array_merge($dto->agentOptions(), [
                     'force_rag' => $dto->forceRag,
-                ]
+                ])
             );
 
             // Get RAG metadata

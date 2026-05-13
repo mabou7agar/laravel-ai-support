@@ -13,8 +13,10 @@ servers:
   - url: http://127.0.0.1:8000
     description: Laravel artisan serve
 tags:
+  - name: Agent Chat
+    description: Primary agent orchestration endpoint for chat, tools, actions, RAG, collectors, and goal/sub-agent workflows.
   - name: RAG Chat
-    description: Chat, retrieval, collections, and conversation endpoints.
+    description: Retrieval, collections, conversation endpoints, and legacy chat compatibility.
   - name: Actions
     description: Interactive action execution endpoints.
   - name: AI Catalog
@@ -28,11 +30,34 @@ tags:
   - name: Federation
     description: Node-to-node infrastructure contract.
 paths:
+  /api/v1/agent/chat:
+    post:
+      tags: [Agent Chat]
+      summary: Send an agent chat message
+      description: Primary chat endpoint. Routes through the agent orchestrator for conversation, tools, actions, RAG, collectors, node routing, and goal/sub-agent workflows.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagChatRequest'
+      responses:
+        '200':
+          description: Agent response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagChatResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
   /api/v1/rag/chat:
     post:
       tags: [RAG Chat]
-      summary: Send a chat message
-      description: Processes a message with memory, actions, and intelligent RAG.
+      summary: Send a chat message (legacy alias)
+      description: Backward-compatible alias for /api/v1/agent/chat. New clients should use the agent endpoint.
       requestBody:
         required: true
         content:
@@ -1345,6 +1370,23 @@ components:
         task_type:
           type: string
           enum: [vision, coding, reasoning, fast, cheap, quality, default]
+        agent_goal:
+          type: boolean
+          description: Enable target-oriented goal-agent execution.
+        target:
+          type: string
+          maxLength: 4000
+          description: Goal target for agent_goal requests. Defaults to message when omitted.
+        sub_agents:
+          type: array
+          description: Optional explicit sub-agent plan.
+          items:
+            type: object
+            additionalProperties: true
+        goal_agent:
+          type: object
+          additionalProperties: true
+          description: Optional goal-agent options, including sub_agents.
     RagChatResponse:
       type: object
       properties:

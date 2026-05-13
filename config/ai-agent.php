@@ -116,6 +116,33 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Goal Agent / Sub-Agents
+    |--------------------------------------------------------------------------
+    |
+    | A reusable target-oriented runtime. Host applications can register
+    | sub-agents here, then call chat with agent_goal=true and an optional
+    | target/sub_agents plan. Each sub-agent delegates work to a handler class
+    | or callable, keeping domain logic in the host app.
+    |
+    */
+    'goal_agent' => [
+        'enabled' => env('AI_AGENT_GOAL_ENABLED', true),
+        'max_sub_agents' => env('AI_AGENT_GOAL_MAX_SUB_AGENTS', 5),
+        'stop_on_failure' => env('AI_AGENT_GOAL_STOP_ON_FAILURE', true),
+    ],
+
+    'sub_agents' => [
+        'general' => [
+            'enabled' => env('AI_AGENT_GENERAL_SUB_AGENT_ENABLED', true),
+            'name' => 'General sub-agent',
+            'description' => 'Handles general reasoning, synthesis, and follow-up work for a target.',
+            'capabilities' => ['general', 'summarize', 'synthesize', 'plan'],
+            'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Tools
     |--------------------------------------------------------------------------
     |

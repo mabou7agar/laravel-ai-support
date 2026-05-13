@@ -1,0 +1,43 @@
+meta {
+  name: Goal Agent
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/v1/agent/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "message": "Create a launch plan for the new product",
+    "session_id": "{{ragSessionId}}",
+    "memory": true,
+    "actions": true,
+    "agent_goal": true,
+    "target": "Create a launch plan for the new product",
+    "sub_agents": [
+      {
+        "id": "research_task",
+        "agent_id": "research",
+        "objective": "Collect launch facts and constraints"
+      },
+      {
+        "id": "write_task",
+        "agent_id": "writer",
+        "objective": "Write the final launch plan",
+        "depends_on": ["research_task"]
+      }
+    ]
+  }
+}
