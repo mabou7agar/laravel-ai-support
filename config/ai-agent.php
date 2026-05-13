@@ -255,6 +255,7 @@ return [
     'skills' => [
         'enabled' => env('AI_AGENT_SKILLS_ENABLED', true),
         'expose_as_capabilities' => env('AI_AGENT_SKILLS_EXPOSE_AS_CAPABILITIES', true),
+        'prefer_deterministic_matches' => env('AI_AGENT_SKILLS_PREFER_DETERMINISTIC_MATCHES', true),
     ],
 
     'skill_providers' => [

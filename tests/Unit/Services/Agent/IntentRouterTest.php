@@ -10,8 +10,12 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
+use LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner;
+use LaravelAIEngine\Services\Agent\AgentSkillMatcher;
+use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
+use LaravelAIEngine\DTOs\AgentSkillDefinition;
 use Mockery;
 use Orchestra\Testbench\TestCase;
 
@@ -188,6 +192,47 @@ class IntentRouterTest extends TestCase
         $this->assertSame('search_rag', $decision['action']);
         $this->assertStringContainsString('Remote Nodes', $capturedPrompt);
         $this->assertStringContainsString('(No nodes available)', $capturedPrompt);
+    }
+
+    public function test_enabled_skill_match_bypasses_ai_router_and_returns_existing_plan(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')->never();
+
+        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes->shouldReceive('getActiveNodes')->never();
+
+        $skillRegistry = Mockery::mock(AgentSkillRegistry::class);
+        $skillRegistry->shouldReceive('skills')->twice()->andReturn([
+            new AgentSkillDefinition(
+                id: 'create_invoice',
+                name: 'Create Invoice',
+                description: 'Create invoices.',
+                triggers: ['create invoice'],
+                actions: ['invoices.create']
+            ),
+        ]);
+
+        $router = new IntentRouter(
+            $ai,
+            $nodes,
+            new SelectedEntityContextService(),
+            null,
+            null,
+            null,
+            $skillRegistry,
+            new AgentSkillMatcher($skillRegistry),
+            new AgentSkillExecutionPlanner()
+        );
+
+        $decision = $router->route('create invoice for ACME', new UnifiedActionContext('session-skill', null), [
+            'local_only' => true,
+        ]);
+
+        $this->assertSame('use_tool', $decision['action']);
+        $this->assertSame('update_action_draft', $decision['resource_name']);
+        $this->assertSame('invoices.create', $decision['params']['action_id']);
+        $this->assertSame('skill_match', $decision['decision_source']);
     }
 }
 

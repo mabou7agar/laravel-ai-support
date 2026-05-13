@@ -266,6 +266,7 @@ class AgentOrchestrator
             $decisionOptions = array_merge($options, [
                 'decision_path' => 'router_ai_' . ($decision['action'] ?? 'unknown'),
                 'decision_source' => $decision['decision_source'] ?? 'router_ai',
+                'matched_skill' => $decision['metadata'] ?? null,
             ]);
 
             Log::channel('ai-engine')->debug('AI orchestration decision', [

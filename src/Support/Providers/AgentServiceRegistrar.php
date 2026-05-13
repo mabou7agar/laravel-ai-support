@@ -22,6 +22,8 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry($app));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentCapabilityRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentCapabilityRegistry($app));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentSkillRegistry($app, $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class)));
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentSkillMatcher::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentSkillMatcher($app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class)));
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner::class, fn () => new \LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner());
         $app->singleton(\LaravelAIEngine\Contracts\ConversationMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationMemory());
         $app->singleton(\LaravelAIEngine\Contracts\ActionAuditLogger::class, fn () => new \LaravelAIEngine\Services\Actions\NullActionAuditLogger());
         $app->singleton(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class, fn () => new \LaravelAIEngine\Services\Agent\ConversationContextCompactor());
@@ -45,6 +47,11 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\ProjectAbilityScanner::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ProjectAbilityScanner(
             $app->make(\LaravelAIEngine\Services\Agent\AgentCollectionAdapter::class),
+            $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentManifestDoctor::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentManifestDoctor(
+            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class),
             $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
             $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class)
         ));
@@ -88,7 +95,7 @@ class AgentServiceRegistrar
             $app->make(\LaravelAIEngine\Contracts\ActionWorkflowHandler::class),
             $app->make(\LaravelAIEngine\Contracts\ConversationMemory::class)
         ));
-        $app->singleton(\LaravelAIEngine\Services\Agent\IntentRouter::class, fn ($app) => new \LaravelAIEngine\Services\Agent\IntentRouter($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class), $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class), $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class), $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class)));
+        $app->singleton(\LaravelAIEngine\Services\Agent\IntentRouter::class, fn ($app) => new \LaravelAIEngine\Services\Agent\IntentRouter($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class), $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class), $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class), $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class), $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class), $app->make(\LaravelAIEngine\Services\Agent\AgentSkillMatcher::class), $app->make(\LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentPlanner::class, fn () => new \LaravelAIEngine\Services\Agent\AgentPlanner());
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentResponseFinalizer($app->make(\LaravelAIEngine\Services\Agent\ContextManager::class), $app->make(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class)));
         $app->singleton(\LaravelAIEngine\Services\Agent\NodeSessionManager::class, fn ($app) => new \LaravelAIEngine\Services\Agent\NodeSessionManager($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Node\NodeRouterService::class), $app->make(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class)));

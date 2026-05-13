@@ -20,12 +20,18 @@ class IntentRouter
         protected SelectedEntityContextService $selectedEntityContext,
         protected ?AgentManifestService $manifestService = null,
         protected ?MessageRoutingClassifier $messageClassifier = null,
-        protected ?RoutingContextResolver $routingContextResolver = null
+        protected ?RoutingContextResolver $routingContextResolver = null,
+        protected ?AgentSkillRegistry $skillRegistry = null,
+        protected ?AgentSkillMatcher $skillMatcher = null,
+        protected ?AgentSkillExecutionPlanner $skillPlanner = null
     ) {
         $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
             ? app(MessageRoutingClassifier::class)
             : new MessageRoutingClassifier();
         $this->routingContextResolver ??= new RoutingContextResolver($this->selectedEntityContext);
+        $this->skillRegistry ??= app()->bound(AgentSkillRegistry::class) ? app(AgentSkillRegistry::class) : null;
+        $this->skillMatcher ??= app()->bound(AgentSkillMatcher::class) ? app(AgentSkillMatcher::class) : null;
+        $this->skillPlanner ??= app()->bound(AgentSkillExecutionPlanner::class) ? app(AgentSkillExecutionPlanner::class) : null;
     }
 
     public function route(string $message, UnifiedActionContext $context, array $options = []): array
@@ -35,9 +41,15 @@ class IntentRouter
         Log::channel('ai-engine')->info('IntentRouter resources discovered', [
             'collectors_count' => count($resources['collectors']),
             'collectors' => array_map(fn ($collector) => $collector['name'], $resources['collectors']),
+            'skills_count' => count($resources['skills']),
             'tools_count' => count($resources['tools']),
             'nodes_count' => count($resources['nodes']),
         ]);
+
+        $skillDecision = $this->matchSkillBeforeAi($message, $context);
+        if ($skillDecision !== null) {
+            return $this->enforceForwardedRequestPolicy($skillDecision, $options);
+        }
 
         $prompt = $this->buildPrompt($message, $resources, $context);
 
@@ -79,10 +91,60 @@ class IntentRouter
     {
         return [
             'tools' => $this->discoverTools($options),
+            'skills' => $this->discoverSkills(),
             'action_workflows' => $this->discoverActionWorkflows(),
             'collectors' => $this->discoverCollectors($options),
             'nodes' => $this->discoverNodes($options),
         ];
+    }
+
+    protected function discoverSkills(): array
+    {
+        if ($this->skillRegistry === null) {
+            return [];
+        }
+
+        try {
+            return array_map(static fn ($skill): array => $skill->toArray(), $this->skillRegistry->skills());
+        } catch (\Throwable $e) {
+            Log::channel('ai-engine')->warning('Failed to discover skills', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    protected function matchSkillBeforeAi(string $message, UnifiedActionContext $context): ?array
+    {
+        if (!(bool) config('ai-agent.skills.prefer_deterministic_matches', true)) {
+            return null;
+        }
+
+        if ($this->skillMatcher === null || $this->skillPlanner === null) {
+            return null;
+        }
+
+        if (is_array($context->metadata['last_action_workflow'] ?? null)) {
+            return null;
+        }
+
+        $match = $this->skillMatcher->match($message);
+        if ($match === null) {
+            return null;
+        }
+
+        $decision = $this->skillPlanner->plan($match['skill'], $message, $context, $match);
+
+        Log::channel('ai-engine')->debug('IntentRouter matched skill before AI routing', [
+            'skill_id' => $match['skill']->id,
+            'score' => $match['score'],
+            'trigger' => $match['trigger'],
+            'action' => $decision['action'] ?? null,
+            'resource_name' => $decision['resource_name'] ?? null,
+        ]);
+
+        return $decision;
     }
 
     protected function discoverTools(array $options): array
@@ -329,6 +391,9 @@ PAUSED SESSIONS: {$this->formatPausedSessions($pausedSessions)}
 
 AVAILABLE RESOURCES:
 
+Agent Skills:
+{$this->formatSkills($resources['skills'] ?? [])}
+
 Autonomous Collectors:
 {$this->formatCollectors($resources['collectors'])}
 
@@ -359,9 +424,10 @@ Routing rules:
 7) If ACTIVE ACTION WORKFLOW has relation_next_steps or next_options with relation_create_confirmation and the user confirms/proceeds/approves that relation, continue the active draft using update_action_draft with params {"action_id":"the active action_id","payload_patch":{"approved_missing_relations":["the approval_key"]}}. Do not start a standalone action for that related record.
 8) If ACTIVE ACTION WORKFLOW exists and the user provides more details, corrections, dates, item details, relation details, or relation approval, continue the active action_id with update_action_draft unless the user explicitly says to cancel, restart, or switch to a different action instead.
 9) If ACTIVE ACTION WORKFLOW awaits_final_confirmation=true and the user confirms/proceeds/approves creating it, use use_tool with execute_action and params {"action_id":"the active action_id","confirmed":true}. If the user corrects or adds details instead, use update_action_draft.
-10) Use start_collector only when a named Autonomous Collector exists and no Action Workflow or Model Tool fits. If no collectors are listed, do not choose start_collector.
-11) Use conversational for greetings/general chat.
-12) Use resume_session only for "resume/back".
+10) Prefer Agent Skills when a skill trigger matches the request. A skill describes the complete user-facing ability; use its first action with update_action_draft, first tool with use_tool, or its collector if listed.
+11) Use start_collector only when a named Autonomous Collector exists and no Action Workflow, Agent Skill, or Model Tool fits. If no collectors are listed, do not choose start_collector.
+12) Use conversational for greetings/general chat.
+13) Use resume_session only for "resume/back".
 
 Allowed actions:
 - start_collector
@@ -595,6 +661,29 @@ PROMPT;
         }
 
         return implode("\n", $lines);
+    }
+
+    protected function formatSkills(array $skills): string
+    {
+        if (empty($skills)) {
+            return '   (No skills available)';
+        }
+
+        $lines = [];
+        foreach ($skills as $skill) {
+            if (!is_array($skill)) {
+                continue;
+            }
+
+            $triggers = implode(', ', array_slice((array) ($skill['triggers'] ?? []), 0, 5));
+            $required = implode(', ', (array) ($skill['required_data'] ?? []));
+            $actions = implode(', ', (array) ($skill['actions'] ?? []));
+            $tools = implode(', ', (array) ($skill['tools'] ?? []));
+            $workflows = implode(', ', (array) ($skill['workflows'] ?? []));
+            $lines[] = "   - {$skill['id']}: {$skill['name']}. {$skill['description']} Triggers: {$triggers}. Required: {$required}. Actions: {$actions}. Tools: {$tools}. Workflows: {$workflows}.";
+        }
+
+        return $lines !== [] ? implode("\n", $lines) : '   (No skills available)';
     }
 
     protected function formatTools(array $tools): string

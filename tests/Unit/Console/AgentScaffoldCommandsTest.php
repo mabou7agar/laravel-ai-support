@@ -135,6 +135,63 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertFalse($manifest['skills']['invoices_create']['enabled'] ?? true);
     }
 
+    public function test_skill_test_command_outputs_match_for_enabled_manifest_skill(): void
+    {
+        File::ensureDirectoryExists(dirname($this->manifestPath));
+        File::put($this->manifestPath, "<?php\n\nreturn " . var_export([
+            'skills' => [
+                'create_invoice' => [
+                    'name' => 'Create Invoice',
+                    'description' => 'Create invoices through approved services.',
+                    'triggers' => ['create invoice'],
+                    'actions' => ['invoices.create'],
+                    'enabled' => true,
+                ],
+            ],
+        ], true) . ";\n");
+        app(\LaravelAIEngine\Services\Agent\AgentManifestService::class)->refresh();
+
+        $exitCode = Artisan::call('ai-engine:skills:test', [
+            'message' => 'create invoice for ACME',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertTrue($payload['matched']);
+        $this->assertSame('create_invoice', $payload['skill']['id']);
+        $this->assertSame('update_action_draft', $payload['plan']['resource_name']);
+    }
+
+    public function test_manifest_doctor_reports_missing_skill_references(): void
+    {
+        File::ensureDirectoryExists(dirname($this->manifestPath));
+        File::put($this->manifestPath, "<?php\n\nreturn " . var_export([
+            'skills' => [
+                'create_invoice' => [
+                    'name' => 'Create Invoice',
+                    'description' => 'Create invoices through approved services.',
+                    'triggers' => ['create invoice'],
+                    'actions' => ['missing.action'],
+                    'tools' => ['missing_tool'],
+                    'enabled' => true,
+                ],
+            ],
+        ], true) . ";\n");
+        app(\LaravelAIEngine\Services\Agent\AgentManifestService::class)->refresh();
+
+        $exitCode = Artisan::call('ai-engine:manifest:doctor', [
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertFalse($payload['ok']);
+        $this->assertGreaterThanOrEqual(2, $payload['summary']['errors']);
+    }
+
     protected function tearDown(): void
     {
         File::deleteDirectory(app_path('AI'));

@@ -263,6 +263,8 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\GraphRankingFeedbackReportCommand::class,
                 Console\Commands\ScaffoldAgentArtifactCommand::class,
                 Console\Commands\DiscoverAgentSkillsCommand::class,
+                Console\Commands\TestAgentSkillCommand::class,
+                Console\Commands\AgentManifestDoctorCommand::class,
             ]);
 
             // Node Management Commands

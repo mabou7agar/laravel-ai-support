@@ -53,6 +53,24 @@ The scanner proposes draft skills from registered actions, workflows, autonomous
 
 Use `--write` to add draft definitions to `app/AI/agent-manifest.php`. Draft skills are disabled unless `--enable` is passed.
 
+## Test a skill match
+
+```bash
+php artisan ai-engine:skills:test "create invoice for ACME"
+php artisan ai-engine:skills:test "create invoice for ACME" --include-disabled --json
+```
+
+The command shows the matched skill, score, trigger, and compiled execution plan. Action-backed skills compile to the existing `update_action_draft` tool so validation, confirmation, and execution stay inside the existing action workflow.
+
+## Diagnose the manifest
+
+```bash
+php artisan ai-engine:manifest:doctor
+php artisan ai-engine:manifest:doctor --json
+```
+
+The doctor reports disabled draft skills, non-executable skills, and skills that reference missing actions, tools, or workflows.
+
 ## Manifest entries
 
 ```php
@@ -78,3 +96,5 @@ return [
 ## Routing
 
 When `ai-agent.skills.expose_as_capabilities` is enabled, skills are exposed as capability documents through the existing capability registry. This lets semantic routing discover complete abilities without exposing every low-level tool directly.
+
+When `ai-agent.skills.prefer_deterministic_matches` is enabled, exact or strong trigger matches are compiled before the LLM router runs. This keeps common business requests deterministic while still using the existing tools, actions, workflows, and RAG fallback paths.
