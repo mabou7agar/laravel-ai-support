@@ -95,6 +95,8 @@ class AIEngineServiceProvider extends ServiceProvider
     protected function registerCoreServices(): void
     {
         CoreServiceRegistrar::register($this->app);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\RerankingService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\VectorStoreService::class);
         $this->registerDriverRegistry();
         AgentServiceRegistrar::register($this->app);
     }

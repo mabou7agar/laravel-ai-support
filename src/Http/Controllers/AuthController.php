@@ -5,9 +5,7 @@ namespace LaravelAIEngine\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
-use Illuminate\Support\Facades\Hash;
-use App\Models\User;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use LaravelAIEngine\Services\Auth\AuthTokenService;
 
 class AuthController extends Controller
 {
@@ -17,48 +15,19 @@ class AuthController extends Controller
      * @param Request $request
      * @return JsonResponse
      */
-    public function generateToken(Request $request): JsonResponse
+    public function generateToken(Request $request, AuthTokenService $tokens): JsonResponse
     {
         $request->validate([
             'user_id' => 'required|string|max:255',
         ]);
 
-        $userId = $request->input('user_id');
-
         try {
-            // Try to find user by ID
-            $user = User::find($userId);
-
-            // If user doesn't exist, try to find by email or create a demo user
-            if (!$user) {
-                // Check if it's an email
-                if (filter_var($userId, FILTER_VALIDATE_EMAIL)) {
-                    $user = User::where('email', $userId)->first();
-                }
-
-                // If still no user, create a demo/guest user
-                if (!$user) {
-                    $user = $this->createDemoUser($userId);
-                }
-            }
-
-            // Check if Sanctum is available
-            if (method_exists($user, 'createToken')) {
-                // Use Sanctum to create token
-                $token = \Tymon\JWTAuth\Facades\JWTAuth::fromUser($user);
-            } else {
-                // Fallback: Generate a simple token
-                $token = base64_encode($user->id . ':' . now()->timestamp . ':' . Hash::make($user->id));
-            }
+            $issued = $tokens->issueDemoToken((string) $request->input('user_id'));
 
             return response()->json([
                 'success' => true,
-                'token' => $token,
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name ?? 'Demo User',
-                    'email' => $user->email ?? null,
-                ],
+                'token' => $issued['token'],
+                'user' => $issued['user'],
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -69,46 +38,12 @@ class AuthController extends Controller
     }
 
     /**
-     * Create a demo user for testing
-     *
-     * @param string $userId
-     * @return User
-     */
-    protected function createDemoUser(string $userId): User
-    {
-        // Check if User model has required fields
-        $email = filter_var($userId, FILTER_VALIDATE_EMAIL)
-            ? $userId
-            : "demo_{$userId}@example.com";
-
-        try {
-            return User::firstOrCreate(
-                ['email' => $email],
-                [
-                    'name' => "Demo User {$userId}",
-                    'password' => Hash::make('password'),
-                    'email_verified_at' => now(),
-                ]
-            );
-        } catch (\Exception $e) {
-            // If creation fails, try to find any user
-            $user = User::first();
-
-            if (!$user) {
-                throw new \Exception('No users available and cannot create demo user');
-            }
-
-            return $user;
-        }
-    }
-
-    /**
      * Validate token (optional endpoint)
      *
      * @param Request $request
      * @return JsonResponse
      */
-    public function validateToken(Request $request): JsonResponse
+    public function validateToken(Request $request, AuthTokenService $tokens): JsonResponse
     {
         $user = $request->user();
 
@@ -121,11 +56,7 @@ class AuthController extends Controller
 
         return response()->json([
             'success' => true,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name ?? 'Demo User',
-                'email' => $user->email ?? null,
-            ],
+            'user' => $tokens->serializeUser($user),
         ]);
     }
 

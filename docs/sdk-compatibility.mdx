@@ -1,0 +1,67 @@
+# SDK Compatibility Primitives
+
+Laravel AI Engine keeps its orchestration, RAG, GraphRAG, credit, and node-federation features independent from the official `laravel/ai` package so it can continue supporting older Laravel applications.
+
+The package now exposes compatible extension points for common SDK workflows without requiring PHP 8.3 or Laravel 12:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+use LaravelAIEngine\Tools\Provider\WebSearch;
+
+$response = Engine::engine('openai')
+    ->model('gpt-4o')
+    ->withTools([
+        (new WebSearch())->max(3)->allow(['laravel.com']),
+    ])
+    ->generate('Find the relevant Laravel AI documentation.');
+```
+
+## Reranking
+
+```php
+$results = Engine::rerank('invoice automation', [
+    'Create invoices from approved orders.',
+    'Reset user passwords.',
+]);
+```
+
+The default reranker is deterministic and local. Applications can wrap or replace `LaravelAIEngine\Services\SDK\RerankingService` when they need a provider-backed reranker.
+
+## Provider Tools
+
+Provider-style tools are serializable and can be passed through `EngineProxy::withTools()`:
+
+- `LaravelAIEngine\Tools\Provider\WebSearch`
+- `LaravelAIEngine\Tools\Provider\WebFetch`
+- `LaravelAIEngine\Tools\Provider\FileSearch`
+- `LaravelAIEngine\Tools\SimilaritySearch`
+
+Drivers receive these as request functions, preserving backward compatibility with the existing function-calling path.
+
+## Documents and Vector Stores
+
+```php
+use LaravelAIEngine\Files\Document;
+use LaravelAIEngine\Facades\Engine;
+
+$store = Engine::vectorStores()->create('Knowledge Base');
+
+Engine::vectorStores()->add(
+    $store['id'],
+    Document::fromStorage('manual.pdf', 'local')
+);
+```
+
+This is intentionally a lightweight package-level abstraction. Provider-specific uploads or persistent vector stores should be implemented by replacing `VectorStoreService` or adapting it to the host application's vector backend.
+
+## Testing
+
+```php
+$fake = Engine::fake(['Done']);
+
+Engine::generatePrompt('Summarize this');
+
+$fake->assertPrompted(fn (array $request) => $request['prompt'] === 'Summarize this');
+```
+
+The fake records prompt, request, and message calls and returns queued `AIResponse` objects, arrays, or strings.

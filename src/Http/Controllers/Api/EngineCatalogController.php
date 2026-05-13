@@ -8,38 +8,27 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use LaravelAIEngine\Enums\EngineEnum;
-use LaravelAIEngine\Models\AIModel;
+use LaravelAIEngine\Services\Catalog\EngineCatalogService;
 
 class EngineCatalogController extends Controller
 {
+    public function __construct(protected EngineCatalogService $catalog)
+    {
+    }
+
     public function models(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'engine' => 'nullable|string',
         ]);
 
-        $catalog = $this->buildCatalog();
         $engine = isset($validated['engine']) ? trim((string) $validated['engine']) : null;
-
-        if ($engine !== null && $engine !== '') {
-            $catalog = array_filter($catalog, static fn (array $item): bool => $item['engine'] === $engine);
-        }
-
-        $models = [];
-        foreach ($catalog as $engineEntry) {
-            foreach ($engineEntry['models'] as $model) {
-                $models[] = $model;
-            }
-        }
-
-        usort($models, static function (array $left, array $right): int {
-            return [$left['engine'], $left['model_id']] <=> [$right['engine'], $right['model_id']];
-        });
+        $models = $this->catalog->flatModels($engine);
 
         return response()->json([
             'success' => true,
             'data' => [
-                'models' => array_values($models),
+                'models' => $models,
                 'count' => count($models),
                 'engine' => $engine,
             ],
@@ -48,18 +37,7 @@ class EngineCatalogController extends Controller
 
     public function engines(): JsonResponse
     {
-        $catalog = $this->buildCatalog();
-
-        $engines = array_map(static function (array $entry): array {
-            return [
-                'engine' => $entry['engine'],
-                'name' => $entry['name'],
-                'capabilities' => $entry['capabilities'],
-                'configured' => $entry['configured'],
-                'model_count' => count($entry['models']),
-                'default_model' => $entry['default_model'],
-            ];
-        }, array_values($catalog));
+        $engines = $this->catalog->engines();
 
         return response()->json([
             'success' => true,
@@ -74,146 +52,16 @@ class EngineCatalogController extends Controller
 
     public function enginesWithModels(): JsonResponse
     {
-        $catalog = $this->buildCatalog();
+        $catalog = $this->catalog->catalog();
 
         return response()->json([
             'success' => true,
             'data' => [
-                'engines' => array_values($catalog),
+                'engines' => $catalog,
                 'count' => count($catalog),
                 'default_engine' => config('ai-engine.default', EngineEnum::OPENAI),
                 'default_model' => config('ai-engine.default_model', 'gpt-4o'),
             ],
         ]);
-    }
-
-    /**
-     * @return array<int, array{
-     *     engine:string,
-     *     name:string,
-     *     capabilities:array<int,string>,
-     *     configured:bool,
-     *     default_model:?string,
-     *     models:array<int, array<string,mixed>>
-     * }>
-     */
-    protected function buildCatalog(): array
-    {
-        $catalog = [];
-
-        foreach (EngineEnum::cases() as $engine) {
-            $catalog[$engine->value] = [
-                'engine' => $engine->value,
-                'name' => $engine->label(),
-                'capabilities' => $engine->capabilities(),
-                'configured' => $this->isEngineConfigured($engine->value),
-                'default_model' => $this->defaultModelForEngine($engine->value),
-                'models' => [],
-            ];
-
-            foreach ((array) config("ai-engine.engines.{$engine->value}.models", []) as $modelId => $config) {
-                if (!$this->isModelEnabled($config)) {
-                    continue;
-                }
-
-                $catalog[$engine->value]['models'][$modelId] = [
-                    'engine' => $engine->value,
-                    'provider' => $this->engineToProvider($engine->value),
-                    'model_id' => (string) $modelId,
-                    'name' => (string) $modelId,
-                    'source' => 'config',
-                    'capabilities' => [],
-                    'supports_streaming' => null,
-                    'supports_vision' => null,
-                    'supports_function_calling' => null,
-                ];
-            }
-        }
-
-        foreach (AIModel::active()->get() as $model) {
-            $engine = $this->providerToEngine((string) $model->provider);
-            if ($engine === null || !isset($catalog[$engine])) {
-                continue;
-            }
-
-            $catalog[$engine]['models'][$model->model_id] = [
-                'engine' => $engine,
-                'provider' => (string) $model->provider,
-                'model_id' => (string) $model->model_id,
-                'name' => (string) ($model->name ?: $model->model_id),
-                'source' => 'database',
-                'capabilities' => $model->capabilities ?? [],
-                'supports_streaming' => $model->supports_streaming,
-                'supports_vision' => $model->supports_vision,
-                'supports_function_calling' => $model->supports_function_calling,
-            ];
-        }
-
-        foreach ($catalog as &$engineEntry) {
-            ksort($engineEntry['models']);
-            $engineEntry['models'] = array_values($engineEntry['models']);
-        }
-        unset($engineEntry);
-
-        return array_values($catalog);
-    }
-
-    protected function isEngineConfigured(string $engine): bool
-    {
-        $config = (array) config("ai-engine.engines.{$engine}", []);
-
-        if ($engine === EngineEnum::OLLAMA) {
-            return !empty($config['base_url']);
-        }
-
-        return trim((string) ($config['api_key'] ?? '')) !== '';
-    }
-
-    protected function defaultModelForEngine(string $engine): ?string
-    {
-        $default = config("ai-engine.engines.{$engine}.default_model");
-        if (is_string($default) && $default !== '') {
-            return $default;
-        }
-
-        $models = (array) config("ai-engine.engines.{$engine}.models", []);
-        if ($models !== []) {
-            $first = array_key_first($models);
-            return is_string($first) ? $first : null;
-        }
-
-        return null;
-    }
-
-    protected function isModelEnabled(mixed $config): bool
-    {
-        if (!is_array($config)) {
-            return true;
-        }
-
-        return (bool) ($config['enabled'] ?? true);
-    }
-
-    protected function providerToEngine(string $provider): ?string
-    {
-        return match ($provider) {
-            'google' => EngineEnum::GEMINI,
-            'stability', 'stability_ai' => EngineEnum::STABLE_DIFFUSION,
-            'elevenlabs' => EngineEnum::ELEVEN_LABS,
-            'fal', 'falai', 'fal_ai' => EngineEnum::FAL_AI,
-            'openai', 'anthropic', 'deepseek', 'perplexity', 'midjourney', 'azure', 'google_tts', 'serper', 'plagiarism_check', 'unsplash', 'pexels', 'openrouter', 'ollama' => $provider,
-            default => null,
-        };
-    }
-
-    protected function engineToProvider(string $engine): string
-    {
-        return match ($engine) {
-            EngineEnum::GEMINI => 'google',
-            EngineEnum::STABLE_DIFFUSION => 'stability',
-            EngineEnum::ELEVEN_LABS => 'elevenlabs',
-            EngineEnum::FAL_AI => 'fal_ai',
-            default => $engine,
-        };
     }
 }

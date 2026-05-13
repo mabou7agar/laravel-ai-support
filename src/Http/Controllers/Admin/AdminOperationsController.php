@@ -9,8 +9,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
-use LaravelAIEngine\Models\AINode;
-use LaravelAIEngine\Models\AIPromptPolicyVersion;
+use LaravelAIEngine\Repositories\AIPromptPolicyVersionRepository;
+use LaravelAIEngine\Services\Admin\NodeAdminService;
 use LaravelAIEngine\Services\Node\NodeBulkSyncService;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
@@ -19,7 +19,7 @@ use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class AdminOperationsController extends Controller
 {
-    public function nodes(NodeRegistryService $registry): View
+    public function nodes(NodeRegistryService $registry, NodeAdminService $nodeAdmin): View
     {
         $tableExists = Schema::hasTable('ai_nodes');
 
@@ -36,7 +36,7 @@ class AdminOperationsController extends Controller
             ];
 
         $nodes = $tableExists
-            ? AINode::query()->orderByDesc('updated_at')->limit(100)->get()
+            ? $nodeAdmin->recentNodes()
             : collect();
 
         return view('ai-engine::admin.nodes', [
@@ -90,14 +90,14 @@ class AdminOperationsController extends Controller
         return back()->with('status', 'Node `' . $node->slug . '` registered.');
     }
 
-    public function updateNode(Request $request, NodeRegistryService $registry): RedirectResponse
+    public function updateNode(Request $request, NodeAdminService $nodeAdmin): RedirectResponse
     {
         if (!Schema::hasTable('ai_nodes')) {
             return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
         }
 
         $nodeId = (int) $request->input('node_id');
-        $node = AINode::query()->find($nodeId);
+        $node = $nodeAdmin->findNode($nodeId);
 
         if (!$node) {
             return back()->withErrors(['nodes' => 'Node not found.']);
@@ -122,36 +122,12 @@ class AdminOperationsController extends Controller
             'status' => 'required|string|in:active,inactive,error',
         ]);
 
-        $node->fill([
-            'name' => $validated['name'],
-            'slug' => $validated['slug'],
-            'type' => $validated['type'],
-            'url' => $validated['url'],
-            'description' => $validated['description'] ?? null,
-            'capabilities' => $this->parseCsvList(
-                $validated['capabilities'] ?? null,
-                (array) ($node->capabilities ?? config('ai-engine.nodes.capabilities', ['search', 'actions', 'rag']))
-            ),
-            'weight' => (int) ($validated['weight'] ?? 1),
-        ]);
-
-        $apiKey = $this->normalizeNullableString($validated['api_key'] ?? null);
-        if ($apiKey !== null) {
-            $node->api_key = $apiKey;
-        }
-
-        if ($node->isDirty()) {
-            $node->save();
-        }
-
-        if ($node->status !== $validated['status']) {
-            $registry->updateStatus($node, (string) $validated['status']);
-        }
+        $node = $nodeAdmin->updateNode($nodeId, $validated);
 
         return back()->with('status', 'Node `' . $node->slug . '` updated.');
     }
 
-    public function updateNodeStatus(Request $request, NodeRegistryService $registry): RedirectResponse
+    public function updateNodeStatus(Request $request, NodeAdminService $nodeAdmin): RedirectResponse
     {
         if (!Schema::hasTable('ai_nodes')) {
             return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
@@ -162,17 +138,15 @@ class AdminOperationsController extends Controller
             'status' => 'required|string|in:active,inactive,error',
         ]);
 
-        $node = AINode::query()->find((int) $validated['node_id']);
+        $node = $nodeAdmin->setStatus((int) $validated['node_id'], (string) $validated['status']);
         if (!$node) {
             return back()->withErrors(['nodes' => 'Node not found.']);
         }
 
-        $registry->updateStatus($node, (string) $validated['status']);
-
         return back()->with('status', 'Node `' . $node->slug . '` status set to `' . $validated['status'] . '`.');
     }
 
-    public function pingNode(Request $request, NodeRegistryService $registry): RedirectResponse
+    public function pingNode(Request $request, NodeAdminService $nodeAdmin): RedirectResponse
     {
         if (!Schema::hasTable('ai_nodes')) {
             return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
@@ -182,13 +156,13 @@ class AdminOperationsController extends Controller
             'node_id' => 'required|integer|min:1',
         ]);
 
-        $node = AINode::query()->find((int) $validated['node_id']);
-        if (!$node) {
+        $result = $nodeAdmin->ping((int) $validated['node_id']);
+        if (!$result) {
             return back()->withErrors(['nodes' => 'Node not found.']);
         }
 
-        $success = $registry->ping($node);
-        $node->refresh();
+        $node = $result['node'];
+        $success = (bool) $result['success'];
 
         return back()->with('status', $success
             ? ('Ping succeeded for `' . $node->slug . '`.')
@@ -209,7 +183,7 @@ class AdminOperationsController extends Controller
         return back()->with('status', 'Pinged ' . $total . ' node(s): ' . $successCount . ' healthy, ' . ($total - $successCount) . ' failed.');
     }
 
-    public function deleteNode(Request $request, NodeRegistryService $registry): RedirectResponse
+    public function deleteNode(Request $request, NodeAdminService $nodeAdmin): RedirectResponse
     {
         if (!Schema::hasTable('ai_nodes')) {
             return back()->withErrors(['nodes' => '`ai_nodes` table is missing. Run package migrations first.']);
@@ -219,13 +193,10 @@ class AdminOperationsController extends Controller
             'node_id' => 'required|integer|min:1',
         ]);
 
-        $node = AINode::query()->find((int) $validated['node_id']);
-        if (!$node) {
+        $slug = $nodeAdmin->delete((int) $validated['node_id']);
+        if ($slug === null) {
             return back()->withErrors(['nodes' => 'Node not found.']);
         }
-
-        $slug = $node->slug;
-        $registry->unregister($node);
 
         return back()->with('status', 'Node `' . $slug . '` removed.');
     }
@@ -523,11 +494,14 @@ class AdminOperationsController extends Controller
         ]);
     }
 
-    public function policies(AutonomousRAGPromptPolicyService $policyService): View
+    public function policies(
+        AutonomousRAGPromptPolicyService $policyService,
+        AIPromptPolicyVersionRepository $policyVersions
+    ): View
     {
         $storeAvailable = $policyService->storeAvailable();
         $policies = $storeAvailable
-            ? AIPromptPolicyVersion::query()->orderByDesc('created_at')->limit(100)->get()
+            ? $policyVersions->recent()
             : collect();
 
         return view('ai-engine::admin.policies', [

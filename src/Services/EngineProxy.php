@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services;
 
+use LaravelAIEngine\Contracts\ProviderToolInterface;
 use LaravelAIEngine\DTOs\AIResponse;
 
 class EngineProxy
@@ -122,6 +123,33 @@ class EngineProxy
     {
         $existing = $this->options['files'] ?? [];
         $this->options['files'] = array_merge(is_array($existing) ? $existing : [], $files);
+
+        return $this;
+    }
+
+    public function withTools(array $tools): self
+    {
+        $serialized = array_map(function ($tool): array {
+            if ($tool instanceof ProviderToolInterface) {
+                return $tool->toArray();
+            }
+
+            if (is_object($tool) && method_exists($tool, 'toArray')) {
+                return (array) $tool->toArray();
+            }
+
+            return (array) $tool;
+        }, $tools);
+
+        $existing = $this->options['functions'] ?? [];
+        $this->options['functions'] = array_merge(is_array($existing) ? $existing : [], $serialized);
+
+        return $this;
+    }
+
+    public function withFunctionCall(?array $functionCall): self
+    {
+        $this->options['function_call'] = $functionCall;
 
         return $this;
     }

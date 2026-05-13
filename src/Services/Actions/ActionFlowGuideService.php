@@ -45,6 +45,7 @@ class ActionFlowGuideService
                 'step' => 'collect_required_fields',
                 'instruction' => 'Collect required fields from the action schema. Ask concise follow-up questions for missing fields.',
                 'required_fields' => array_values((array) ($action['required'] ?? [])),
+                'tool' => 'update_action_draft',
             ],
         ];
 
@@ -56,6 +57,21 @@ class ActionFlowGuideService
                 'step' => 'prepare_draft',
                 'instruction' => 'Call update_action_draft after each user answer and inspect missing_fields, current_payload, relation_review, and next_options.',
                 'tool' => 'update_action_draft',
+        ];
+        $flow[] = [
+                'step' => 'review_missing_fields',
+                'instruction' => 'If update_action_draft returns missing_fields, ask for only the next required missing value.',
+                'tool' => 'update_action_draft',
+        ];
+        $flow[] = [
+                'step' => 'review_relation_options',
+                'instruction' => 'If next_options includes relation choices or create confirmation, ask the user to choose or approve before continuing.',
+                'tool' => 'update_action_draft',
+        ];
+        $flow[] = [
+                'step' => 'summarize_final_draft',
+                'instruction' => 'Summarize the prepared draft and ask for explicit final confirmation.',
+                'tool' => 'get_action_draft',
         ];
         $flow[] = [
                 'step' => 'final_confirmation',
@@ -87,7 +103,9 @@ class ActionFlowGuideService
      */
     private function relationSteps(array $action): array
     {
-        return collect($action['relation_creates'] ?? $action['relations'] ?? [])
+        $relations = $action['relation_creates'] ?? $action['relations'] ?? $this->inferRelationsFromRequiredFields($action);
+
+        return collect($relations)
             ->filter(fn (mixed $relation): bool => is_array($relation))
             ->map(function (array $relation): array {
                 $field = (string) ($relation['field'] ?? 'record');
@@ -107,6 +125,34 @@ class ActionFlowGuideService
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @param array<string, mixed> $action
+     * @return array<int, array<string, mixed>>
+     */
+    private function inferRelationsFromRequiredFields(array $action): array
+    {
+        $required = array_values((array) ($action['required'] ?? []));
+        $relations = [];
+
+        foreach ($required as $field) {
+            $field = (string) $field;
+            if (!preg_match('/(^|_)(customer|client|user|vendor|supplier|account|contact)(_id|_name)?$/', $field, $matches)) {
+                continue;
+            }
+
+            $base = $matches[2] ?? trim(str_replace(['_id', '_name'], '', $field), '_');
+            $relations[] = [
+                'field' => $base,
+                'relation_type' => $base,
+                'lookup_fields' => [$field],
+                'safe_create' => true,
+                'approval_key' => $base,
+            ];
+        }
+
+        return $relations;
     }
 
     private function message(string $message): string

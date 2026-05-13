@@ -10,6 +10,9 @@ use LaravelAIEngine\Services\UnifiedEngineManager;
 /**
  * @method static \LaravelAIEngine\Services\EngineProxy engine(string $engine)
  * @method static \LaravelAIEngine\Services\EngineProxy model(string $model)
+ * @method static \LaravelAIEngine\Testing\AIEngineFake fake(array $responses = [])
+ * @method static array rerank(string $query, array $documents, int $limit = 10)
+ * @method static \LaravelAIEngine\Services\SDK\VectorStoreService vectorStores()
  * @method static array getAvailableEngines()
  * @method static array getAvailableModels(string $engine = null)
  * @method static \LaravelAIEngine\Services\BatchProcessor batch()

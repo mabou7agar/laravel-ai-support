@@ -11,7 +11,10 @@ use LaravelAIEngine\DTOs\InteractiveAction;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\Memory\MemoryManager;
+use LaravelAIEngine\Services\SDK\RerankingService;
+use LaravelAIEngine\Services\SDK\VectorStoreService;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
+use LaravelAIEngine\Testing\AIEngineFake;
 
 class UnifiedEngineManager
 {
@@ -39,6 +42,19 @@ class UnifiedEngineManager
         }
 
         return $proxy;
+    }
+
+    public function fake(array $responses = []): AIEngineFake
+    {
+        $fake = new AIEngineFake($responses);
+
+        if (function_exists('app')) {
+            app()->instance(self::class, $fake);
+            app()->instance('ai-engine', $fake);
+            app()->instance('unified-engine', $fake);
+        }
+
+        return $fake;
     }
 
     public function send(array $messages, array $options = []): AIResponse
@@ -127,6 +143,16 @@ class UnifiedEngineManager
     public function generateEmbeddings(AIRequest $request): AIResponse
     {
         return $this->aiEngineService->generateEmbeddings($request);
+    }
+
+    public function rerank(string $query, array $documents, int $limit = 10): array
+    {
+        return app(RerankingService::class)->rerank($query, $documents, $limit);
+    }
+
+    public function vectorStores(): VectorStoreService
+    {
+        return app(VectorStoreService::class);
     }
 
     public function generateAudio(AIRequest $request): AIResponse
@@ -324,7 +350,9 @@ class UnifiedEngineManager
             stream: $stream,
             maxTokens: isset($options['max_tokens']) ? (int) $options['max_tokens'] : null,
             temperature: isset($options['temperature']) ? (float) $options['temperature'] : null,
-            metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : []
+            metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : [],
+            functions: is_array($options['functions'] ?? null) ? $options['functions'] : [],
+            functionCall: is_array($options['function_call'] ?? null) ? $options['function_call'] : null
         );
     }
 
@@ -345,7 +373,9 @@ class UnifiedEngineManager
             maxTokens: isset($options['max_tokens']) ? (int) $options['max_tokens'] : null,
             temperature: isset($options['temperature']) ? (float) $options['temperature'] : null,
             seed: isset($options['seed']) ? (int) $options['seed'] : null,
-            metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : []
+            metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : [],
+            functions: is_array($options['functions'] ?? null) ? $options['functions'] : [],
+            functionCall: is_array($options['function_call'] ?? null) ? $options['function_call'] : null
         );
     }
 
