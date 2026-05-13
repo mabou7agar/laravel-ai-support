@@ -364,6 +364,10 @@ class GeminiEngineDriver extends BaseEngineDriver
                 )),
             ]]);
         }
+
+        if (!empty($split['tool_config'])) {
+            $payload = array_replace_recursive($payload, $split['tool_config']);
+        }
     }
 
     private function mapFunctionDeclaration(array $function): array

@@ -13,6 +13,7 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\AIEngineException;
 use LaravelAIEngine\Services\AIMediaManager;
+use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 use OpenAI;
 
 class OpenAIEngineDriver extends BaseEngineDriver
@@ -128,6 +129,10 @@ class OpenAIEngineDriver extends BaseEngineDriver
             $this->logApiRequest('generateText', $request);
             
             $messages = $this->buildMessages($request);
+            if ($this->shouldUseResponsesApi($request)) {
+                return $this->generateTextWithResponsesApi($request, $messages);
+            }
+
             $payload = $this->buildChatPayload($request, $messages, [
                 'seed' => $request->seed,
             ]);
@@ -166,6 +171,76 @@ class OpenAIEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return $this->handleApiError($e, $request, 'text generation');
         }
+    }
+
+    protected function shouldUseResponsesApi(AIRequest $request): bool
+    {
+        foreach ($request->getFunctions() as $function) {
+            $type = is_array($function) ? (string) ($function['type'] ?? '') : '';
+            if (in_array($type, [
+                'web_search',
+                'file_search',
+                'code_interpreter',
+                'computer_use',
+                'mcp_server',
+                'image_generation',
+                'tool_search',
+            ], true)) {
+                return true;
+            }
+        }
+
+        return (bool) (($request->getMetadata()['openai_responses_api'] ?? false) === true);
+    }
+
+    protected function generateTextWithResponsesApi(AIRequest $request, array $messages): AIResponse
+    {
+        $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
+            EngineEnum::OPENAI,
+            $request->getFunctions()
+        );
+
+        $payload = array_filter([
+            'model' => $request->getModel()->value,
+            'input' => $messages,
+            'tools' => $split['tools'],
+            'temperature' => $request->getTemperature(),
+            'max_output_tokens' => $request->getMaxTokens(),
+            'metadata' => $request->getMetadata(),
+        ], static fn ($value): bool => $value !== null && $value !== []);
+
+        $response = $this->httpClient->post(rtrim($this->getBaseUrl(), '/') . '/responses', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $this->getApiKey(),
+                'Content-Type' => 'application/json',
+            ],
+            'json' => $payload,
+        ]);
+
+        $data = $this->parseJsonResponse($response->getBody()->getContents());
+        $content = $data['output_text'] ?? $this->extractResponsesOutputText((array) ($data['output'] ?? []));
+
+        return $this->buildSuccessResponse(
+            (string) $content,
+            $request,
+            is_array($data) ? $data : [],
+            'openai'
+        );
+    }
+
+    protected function extractResponsesOutputText(array $output): string
+    {
+        $text = '';
+
+        foreach ($output as $item) {
+            foreach ((array) ($item['content'] ?? []) as $content) {
+                if (($content['type'] ?? null) === 'output_text') {
+                    $text .= (string) ($content['text'] ?? '');
+                }
+            }
+        }
+
+        return $text;
     }
 
     /**

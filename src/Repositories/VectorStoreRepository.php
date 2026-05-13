@@ -50,4 +50,13 @@ class VectorStoreRepository
 
         return $store->fresh('documents');
     }
+
+    public function delete(string $storeId): bool
+    {
+        $store = AIVectorStore::query()
+            ->where('store_id', $storeId)
+            ->first();
+
+        return $store ? (bool) $store->delete() : false;
+    }
 }

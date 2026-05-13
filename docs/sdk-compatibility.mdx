@@ -34,6 +34,12 @@ Provider-style tools are serializable and can be passed through `EngineProxy::wi
 - `LaravelAIEngine\Tools\Provider\WebSearch`
 - `LaravelAIEngine\Tools\Provider\WebFetch`
 - `LaravelAIEngine\Tools\Provider\FileSearch`
+- `LaravelAIEngine\Tools\Provider\CodeInterpreter`
+- `LaravelAIEngine\Tools\Provider\ComputerUse`
+- `LaravelAIEngine\Tools\Provider\McpServer`
+- `LaravelAIEngine\Tools\Provider\GoogleMapsGrounding`
+- `LaravelAIEngine\Tools\Provider\ImageGenerationTool`
+- `LaravelAIEngine\Tools\Provider\ToolSearch`
 - `LaravelAIEngine\Tools\SimilaritySearch`
 
 Drivers receive these as request functions, preserving backward compatibility with the existing function-calling path.
@@ -71,6 +77,46 @@ Engine::vectorStores()->add(
 ```
 
 When the package migrations are loaded, vector stores and document references are persisted in `ai_vector_stores` and `ai_vector_store_documents`. If those tables are unavailable, the service falls back to its in-memory store for lightweight tests and custom host adapters.
+
+Hosted provider storage is available through drivers:
+
+```php
+$file = Engine::fileStores()
+    ->provider('openai')
+    ->upload(Document::fromStorage('manual.pdf', 'local'));
+
+$store = Engine::vectorStores()
+    ->provider('openai')
+    ->create('Support Docs');
+
+Engine::vectorStores()
+    ->provider('openai')
+    ->add($store['id'], Document::fromPath('/tmp/manual.pdf'));
+```
+
+Local storage remains the default. Hosted provider drivers are opt-in to avoid vendor lock-in and unexpected storage costs.
+
+## Realtime, Tracing, and Evaluations
+
+```php
+use LaravelAIEngine\DTOs\RealtimeSessionConfig;
+
+$session = Engine::realtime()->create(
+    RealtimeSessionConfig::make('openai', 'gpt-4o-realtime-preview')
+        ->withVoice('alloy')
+);
+
+$span = Engine::traces()->start('support-agent.run');
+Engine::traces()->end($span, metadata: ['tokens' => 420]);
+
+Engine::evaluations()->assertPassed(
+    'contains source',
+    'Answer [1]',
+    assertion: fn (string $answer) => str_contains($answer, '[')
+);
+```
+
+Realtime support returns provider-specific session descriptors so host applications can attach their own WebSocket/WebRTC clients. Tracing and evaluation services provide package-level recording primitives that can be exported to a provider or observability backend.
 
 ## Scaffolding
 

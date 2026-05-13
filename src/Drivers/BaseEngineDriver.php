@@ -404,6 +404,10 @@ abstract class BaseEngineDriver implements EngineDriverInterface
                 $payload['tools'] = $split['tools'];
             }
 
+            if (!empty($split['mcp_servers'])) {
+                $payload['mcp_servers'] = $split['mcp_servers'];
+            }
+
             if ($request->getFunctionCall() !== null) {
                 $payload['function_call'] = $request->getFunctionCall();
             }

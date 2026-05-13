@@ -12,6 +12,10 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\Memory\MemoryManager;
 use LaravelAIEngine\Services\SDK\RerankingService;
+use LaravelAIEngine\Services\SDK\FileStoreService;
+use LaravelAIEngine\Services\SDK\EvaluationService;
+use LaravelAIEngine\Services\SDK\RealtimeSessionService;
+use LaravelAIEngine\Services\SDK\TraceRecorderService;
 use LaravelAIEngine\Services\SDK\VectorStoreService;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
 use LaravelAIEngine\Testing\AIEngineFake;
@@ -153,6 +157,26 @@ class UnifiedEngineManager
     public function vectorStores(): VectorStoreService
     {
         return app(VectorStoreService::class);
+    }
+
+    public function fileStores(): FileStoreService
+    {
+        return app(FileStoreService::class);
+    }
+
+    public function realtime(): RealtimeSessionService
+    {
+        return app(RealtimeSessionService::class);
+    }
+
+    public function traces(): TraceRecorderService
+    {
+        return app(TraceRecorderService::class);
+    }
+
+    public function evaluations(): EvaluationService
+    {
+        return app(EvaluationService::class);
     }
 
     public function generateAudio(AIRequest $request): AIResponse

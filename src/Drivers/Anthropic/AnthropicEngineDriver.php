@@ -125,6 +125,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
 
             $response = $this->httpClient->post('/v1/messages', [
                 'json' => $payload,
+                'headers' => $this->buildRequestHeaders($request),
             ]);
 
             $data = $this->parseJsonResponse($response->getBody()->getContents());
@@ -165,6 +166,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
             $response = $this->httpClient->post('/v1/messages', [
                 'json' => $payload,
                 'stream' => true,
+                'headers' => $this->buildRequestHeaders($request),
             ]);
 
             $stream = $response->getBody();
@@ -277,5 +279,29 @@ class AnthropicEngineDriver extends BaseEngineDriver
         if (!empty($split['tools'])) {
             $payload['tools'] = $split['tools'];
         }
+
+        if (!empty($split['mcp_servers'])) {
+            $payload['mcp_servers'] = $split['mcp_servers'];
+        }
+    }
+
+    private function buildRequestHeaders(AIRequest $request): array
+    {
+        if (empty($request->getFunctions())) {
+            return [];
+        }
+
+        $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
+            EngineEnum::ANTHROPIC,
+            $request->getFunctions()
+        );
+
+        if (empty($split['beta_headers'])) {
+            return [];
+        }
+
+        return [
+            'anthropic-beta' => implode(',', $split['beta_headers']),
+        ];
     }
 }

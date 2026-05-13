@@ -4,84 +4,65 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\SDK;
 
+use GuzzleHttp\Client;
+use LaravelAIEngine\Contracts\VectorStoreDriverInterface;
 use LaravelAIEngine\Files\Document;
 use LaravelAIEngine\Repositories\VectorStoreRepository;
+use LaravelAIEngine\Services\SDK\VectorStores\LocalVectorStoreDriver;
+use LaravelAIEngine\Services\SDK\VectorStores\OpenAIVectorStoreDriver;
 
 class VectorStoreService
 {
-    protected array $stores = [];
+    protected VectorStoreDriverInterface $driver;
 
-    public function __construct(protected ?VectorStoreRepository $repository = null)
+    public function __construct(
+        protected ?VectorStoreRepository $repository = null,
+        ?VectorStoreDriverInterface $driver = null
+    )
     {
         $this->repository = $repository ?? (function_exists('app') ? app(VectorStoreRepository::class) : null);
+        $this->driver = $driver ?? new LocalVectorStoreDriver($this->repository);
     }
 
     public function create(string $name, array $metadata = []): array
     {
-        $id = 'store_' . hash('sha256', $name . serialize($metadata) . microtime(true));
-
-        if ($this->repository?->available()) {
-            return $this->serializeStore(
-                $this->repository->create($id, $name, $metadata)
-            );
-        }
-
-        return $this->stores[$id] = [
-            'id' => $id,
-            'name' => $name,
-            'metadata' => $metadata,
-            'documents' => [],
-        ];
+        return $this->driver->create($name, $metadata);
     }
 
     public function add(string $storeId, Document|string $document, array $metadata = []): array
     {
-        if (!isset($this->stores[$storeId])) {
-            if (!$this->repository?->available() || $this->repository->findByStoreId($storeId) === null) {
-                throw new \InvalidArgumentException("Vector store [{$storeId}] does not exist.");
-            }
-        }
-
-        $document = $document instanceof Document
-            ? $document
-            : Document::fromPath($document, $metadata);
-
-        if ($this->repository?->available()) {
-            return $this->serializeStore(
-                $this->repository->addDocument($storeId, $document)
-            );
-        }
-
-        $this->stores[$storeId]['documents'][] = $document->toArray();
-
-        return $this->stores[$storeId];
+        return $this->driver->add($storeId, $document, $metadata);
     }
 
     public function get(string $storeId): ?array
     {
-        if ($this->repository?->available()) {
-            $store = $this->repository->findByStoreId($storeId);
-
-            return $store ? $this->serializeStore($store) : null;
-        }
-
-        return $this->stores[$storeId] ?? null;
+        return $this->driver->get($storeId);
     }
 
-    protected function serializeStore(object $store): array
+    public function delete(string $storeId): bool
     {
-        return [
-            'id' => (string) $store->store_id,
-            'name' => (string) $store->name,
-            'metadata' => (array) ($store->metadata ?? []),
-            'documents' => $store->relationLoaded('documents')
-                ? $store->documents->map(fn ($document): array => [
-                    'id' => (string) $document->document_id,
-                    'source' => (string) $document->source,
-                    'disk' => $document->disk,
-                    'metadata' => (array) ($document->metadata ?? []),
-                ])->values()->all()
-                : [],
-        ];
+        return $this->driver->delete($storeId);
+    }
+
+    public function local(): self
+    {
+        return new self($this->repository, new LocalVectorStoreDriver($this->repository));
+    }
+
+    public function provider(string $provider, array $config = [], ?Client $client = null): self
+    {
+        return new self($this->repository, $this->makeDriver($provider, $config, $client));
+    }
+
+    protected function makeDriver(string $provider, array $config = [], ?Client $client = null): VectorStoreDriverInterface
+    {
+        return match (strtolower($provider)) {
+            'local' => new LocalVectorStoreDriver($this->repository),
+            'openai' => new OpenAIVectorStoreDriver(
+                array_replace_recursive((array) config('ai-engine.engines.openai', []), $config),
+                $client
+            ),
+            default => throw new \InvalidArgumentException("Vector store provider [{$provider}] is not supported."),
+        };
     }
 }

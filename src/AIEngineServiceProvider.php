@@ -97,6 +97,10 @@ class AIEngineServiceProvider extends ServiceProvider
         CoreServiceRegistrar::register($this->app);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\RerankingService::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\FileStoreService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\RealtimeSessionService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\TraceRecorderService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\EvaluationService::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\VectorStoreService::class);
         $this->registerDriverRegistry();
         AgentServiceRegistrar::register($this->app);

@@ -7,7 +7,11 @@ namespace LaravelAIEngine\Tests\Unit\Services\SDK;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 use LaravelAIEngine\Tests\UnitTestCase;
+use LaravelAIEngine\Tools\Provider\CodeInterpreter;
+use LaravelAIEngine\Tools\Provider\ComputerUse;
 use LaravelAIEngine\Tools\Provider\FileSearch;
+use LaravelAIEngine\Tools\Provider\GoogleMapsGrounding;
+use LaravelAIEngine\Tools\Provider\McpServer;
 use LaravelAIEngine\Tools\Provider\WebFetch;
 use LaravelAIEngine\Tools\Provider\WebSearch;
 
@@ -52,5 +56,40 @@ class ProviderToolPayloadMapperTest extends UnitTestCase
 
         $this->assertArrayHasKey('googleSearch', $gemini['tools'][0]);
         $this->assertArrayHasKey('urlContext', $gemini['tools'][1]);
+    }
+
+    public function test_maps_code_computer_mcp_and_maps_tools(): void
+    {
+        $mapper = new ProviderToolPayloadMapper();
+
+        $openai = $mapper->splitForProvider(EngineEnum::OPENAI, [
+            (new CodeInterpreter())->withFiles(['file_1'])->toArray(),
+            (new ComputerUse())->display(1440, 900)->toArray(),
+            (new McpServer('github', 'https://api.githubcopilot.com/mcp/'))->toArray(),
+        ]);
+
+        $this->assertSame('code_interpreter', $openai['tools'][0]['type']);
+        $this->assertSame(['file_1'], $openai['tools'][0]['container']['file_ids']);
+        $this->assertSame('computer_use_preview', $openai['tools'][1]['type']);
+        $this->assertSame('mcp', $openai['tools'][2]['type']);
+
+        $anthropic = $mapper->splitForProvider(EngineEnum::ANTHROPIC, [
+            (new CodeInterpreter())->toArray(),
+            (new ComputerUse())->toArray(),
+            (new McpServer('linear', 'https://mcp.linear.app/sse'))->authorizationToken('token')->toArray(),
+        ]);
+
+        $this->assertSame('code_execution_20250825', $anthropic['tools'][0]['type']);
+        $this->assertSame('computer_20250124', $anthropic['tools'][1]['type']);
+        $this->assertSame('linear', $anthropic['mcp_servers'][0]['name']);
+        $this->assertContains('mcp-client-2025-04-04', $anthropic['beta_headers']);
+
+        $gemini = $mapper->splitForProvider(EngineEnum::GEMINI, [
+            (new GoogleMapsGrounding())->widget()->location(30.0444, 31.2357)->toArray(),
+        ]);
+
+        $this->assertArrayHasKey('googleMaps', $gemini['tools'][0]);
+        $this->assertTrue($gemini['tools'][0]['googleMaps']['enableWidget']);
+        $this->assertSame(30.0444, $gemini['tool_config']['toolConfig']['retrievalConfig']['latLng']['latitude']);
     }
 }
