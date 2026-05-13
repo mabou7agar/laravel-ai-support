@@ -37,6 +37,24 @@ Provider-style tools are serializable and can be passed through `EngineProxy::wi
 - `LaravelAIEngine\Tools\SimilaritySearch`
 
 Drivers receive these as request functions, preserving backward compatibility with the existing function-calling path.
+OpenAI, Anthropic, and Gemini drivers map supported provider tools to native provider payloads where possible, while custom functions remain on the existing function-calling path.
+
+## Structured Output
+
+```php
+$response = Engine::engine('openai')
+    ->withStructuredOutput([
+        'type' => 'object',
+        'properties' => [
+            'answer' => ['type' => 'string'],
+        ],
+        'required' => ['answer'],
+        'additionalProperties' => false,
+    ], name: 'answer_payload')
+    ->generate('Return a short answer.');
+```
+
+`withStructuredOutput()` accepts a JSON schema array or `LaravelAIEngine\DTOs\StructuredOutputSchema`. OpenAI-compatible drivers emit a native `response_format` JSON schema payload; Gemini emits `responseMimeType` and `responseSchema`.
 
 ## Documents and Vector Stores
 
@@ -52,7 +70,16 @@ Engine::vectorStores()->add(
 );
 ```
 
-This is intentionally a lightweight package-level abstraction. Provider-specific uploads or persistent vector stores should be implemented by replacing `VectorStoreService` or adapting it to the host application's vector backend.
+When the package migrations are loaded, vector stores and document references are persisted in `ai_vector_stores` and `ai_vector_store_documents`. If those tables are unavailable, the service falls back to its in-memory store for lightweight tests and custom host adapters.
+
+## Scaffolding
+
+```bash
+php artisan ai-engine:make-agent Invoice --model="App\\Models\\Invoice"
+php artisan ai-engine:make-tool LookupCustomer
+```
+
+These commands reuse the generic `ai-engine:scaffold` implementation and register generated classes in the agent manifest unless `--no-register` is passed.
 
 ## Testing
 

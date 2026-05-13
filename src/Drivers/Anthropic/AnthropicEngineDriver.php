@@ -12,6 +12,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 
 class AnthropicEngineDriver extends BaseEngineDriver
 {
@@ -119,6 +120,8 @@ class AnthropicEngineDriver extends BaseEngineDriver
             if ($request->getSystemPrompt()) {
                 $payload['system'] = $request->getSystemPrompt();
             }
+
+            $this->applyStreamingToolPayload($payload, $request);
 
             $response = $this->httpClient->post('/v1/messages', [
                 'json' => $payload,
@@ -258,5 +261,21 @@ class AnthropicEngineDriver extends BaseEngineDriver
     {
         // Use centralized method (Anthropic doesn't include system in messages array)
         return $this->buildStandardMessages($request, includeSystemPrompt: false);
+    }
+
+    private function applyStreamingToolPayload(array &$payload, AIRequest $request): void
+    {
+        if (empty($request->getFunctions())) {
+            return;
+        }
+
+        $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
+            EngineEnum::ANTHROPIC,
+            $request->getFunctions()
+        );
+
+        if (!empty($split['tools'])) {
+            $payload['tools'] = $split['tools'];
+        }
     }
 }

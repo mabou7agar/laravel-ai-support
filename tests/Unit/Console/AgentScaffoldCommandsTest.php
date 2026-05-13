@@ -81,6 +81,29 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertStringContainsString('return \\App\\Models\\Invoice::class;', $agentFile);
     }
 
+    public function test_make_agent_and_make_tool_aliases_reuse_scaffold_registration(): void
+    {
+        $agentExitCode = Artisan::call('ai-engine:make-agent', [
+            'name' => 'Project',
+            '--model' => 'App\\Models\\Project',
+        ]);
+
+        $toolExitCode = Artisan::call('ai-engine:make-tool', [
+            'name' => 'LookupCustomer',
+        ]);
+
+        $this->assertSame(0, $agentExitCode);
+        $this->assertSame(0, $toolExitCode);
+
+        $this->assertFileExists(app_path('AI/Configs/ProjectConfig.php'));
+        $this->assertFileExists(app_path('AI/Tools/LookupCustomerTool.php'));
+
+        $manifest = require $this->manifestPath;
+
+        $this->assertContains('App\\AI\\Configs\\ProjectConfig', $manifest['model_configs']);
+        $this->assertSame('App\\AI\\Tools\\LookupCustomerTool', $manifest['tools']['lookup_customer'] ?? null);
+    }
+
     public function test_scaffold_skill_registers_manifest_provider(): void
     {
         $exitCode = Artisan::call('ai-engine:scaffold', [

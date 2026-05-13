@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\Contracts\ProviderToolInterface;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\StructuredOutputSchema;
 
 class EngineProxy
 {
@@ -152,6 +153,17 @@ class EngineProxy
         $this->options['function_call'] = $functionCall;
 
         return $this;
+    }
+
+    public function withStructuredOutput(StructuredOutputSchema|array $schema, string $name = 'response', bool $strict = true): self
+    {
+        $definition = $schema instanceof StructuredOutputSchema
+            ? $schema->toArray()
+            : StructuredOutputSchema::make($schema, $name, $strict)->toArray();
+
+        return $this->withMetadata([
+            'structured_output' => $definition,
+        ]);
     }
 
     public function withRetry(int $maxAttempts = 3, string $backoff = 'exponential'): self

@@ -9,6 +9,7 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 
 abstract class BaseEngineDriver implements EngineDriverInterface
 {
@@ -388,14 +389,27 @@ abstract class BaseEngineDriver implements EngineDriverInterface
             'messages' => $messages,
         ];
 
-        // Add function calling parameters if present
+        // Add function calling and provider-native tools if present.
         if (!empty($request->getFunctions())) {
-            $payload['functions'] = $request->getFunctions();
-            
+            $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
+                $this->getEngineEnum()->value,
+                $request->getFunctions()
+            );
+
+            if (!empty($split['functions'])) {
+                $payload['functions'] = $split['functions'];
+            }
+
+            if (!empty($split['tools'])) {
+                $payload['tools'] = $split['tools'];
+            }
+
             if ($request->getFunctionCall() !== null) {
                 $payload['function_call'] = $request->getFunctionCall();
             }
         }
+
+        $payload = $this->applyStructuredOutputPayload($payload, $request);
 
         // GPT-5 family models have different parameter requirements
         if ($this->isGpt5FamilyModel($model)) {
@@ -414,6 +428,39 @@ abstract class BaseEngineDriver implements EngineDriverInterface
         }
 
         return array_merge($payload, $additionalParams);
+    }
+
+    protected function applyStructuredOutputPayload(array $payload, AIRequest $request): array
+    {
+        $metadata = $request->getMetadata();
+        $definition = $metadata['structured_output'] ?? null;
+
+        if (!is_array($definition) || !is_array($definition['schema'] ?? null)) {
+            return $payload;
+        }
+
+        $provider = $this->getEngineEnum()->value;
+        if (!in_array($provider, [
+            EngineEnum::OPENAI,
+            EngineEnum::DEEPSEEK,
+            EngineEnum::PERPLEXITY,
+            EngineEnum::OPENROUTER,
+            EngineEnum::NVIDIA_NIM,
+            EngineEnum::OLLAMA,
+        ], true)) {
+            return $payload;
+        }
+
+        $payload['response_format'] = [
+            'type' => 'json_schema',
+            'json_schema' => [
+                'name' => (string) ($definition['name'] ?? 'response'),
+                'schema' => $definition['schema'],
+                'strict' => (bool) ($definition['strict'] ?? true),
+            ],
+        ];
+
+        return $payload;
     }
 
     /**

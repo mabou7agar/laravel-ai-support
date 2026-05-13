@@ -323,21 +323,23 @@ class AIRequest
     public function withSystemPrompt(string $systemPrompt): self
     {
         return new self(
-            $this->prompt,
-            $this->engine,
-            $this->model,
-            $this->parameters,
-            $this->userId,
-            $this->conversationId,
-            $this->context,
-            $this->files,
-            $this->stream,
-            $systemPrompt,
-            $this->messages,
-            $this->maxTokens,
-            $this->temperature,
-            $this->seed,
-            $this->metadata
+            prompt: $this->prompt,
+            engine: $this->engine,
+            model: $this->model,
+            parameters: $this->parameters,
+            userId: $this->userId,
+            conversationId: $this->conversationId,
+            context: $this->context,
+            files: $this->files,
+            stream: $this->stream,
+            systemPrompt: $systemPrompt,
+            messages: $this->messages,
+            maxTokens: $this->maxTokens,
+            temperature: $this->temperature,
+            seed: $this->seed,
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -361,7 +363,9 @@ class AIRequest
             maxTokens: $this->maxTokens,
             temperature: $this->temperature,
             seed: $this->seed,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            functions: $this->functions,
+            functionCall: $this->functionCall
         );
     }
 
@@ -570,6 +574,17 @@ class AIRequest
             $functions,
             $functionCall
         );
+    }
+
+    public function withStructuredOutput(StructuredOutputSchema|array $schema, string $name = 'response', bool $strict = true): self
+    {
+        $definition = $schema instanceof StructuredOutputSchema
+            ? $schema->toArray()
+            : StructuredOutputSchema::make($schema, $name, $strict)->toArray();
+
+        return $this->withMetadata([
+            'structured_output' => $definition,
+        ]);
     }
 
     /**

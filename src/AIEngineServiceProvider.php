@@ -96,6 +96,7 @@ class AIEngineServiceProvider extends ServiceProvider
     {
         CoreServiceRegistrar::register($this->app);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\RerankingService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\VectorStoreService::class);
         $this->registerDriverRegistry();
         AgentServiceRegistrar::register($this->app);
@@ -262,6 +263,8 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\GraphBenchmarkHistoryCommand::class,
                 Console\Commands\GraphRankingFeedbackReportCommand::class,
                 Console\Commands\ScaffoldAgentArtifactCommand::class,
+                Console\Commands\MakeAgentCommand::class,
+                Console\Commands\MakeToolCommand::class,
                 Console\Commands\DiscoverAgentSkillsCommand::class,
                 Console\Commands\TestAgentSkillCommand::class,
                 Console\Commands\AgentManifestDoctorCommand::class,

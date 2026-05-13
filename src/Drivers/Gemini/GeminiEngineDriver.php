@@ -11,6 +11,7 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 
 class GeminiEngineDriver extends BaseEngineDriver
 {
@@ -123,6 +124,9 @@ class GeminiEngineDriver extends BaseEngineDriver
                 ];
             }
 
+            $this->applyToolPayload($payload, $request);
+            $this->applyGeminiStructuredOutputPayload($payload, $request);
+
             $url = "/v1beta/models/{$request->getModel()->value}:generateContent";
             $response = $this->httpClient->post($url, [
                 'json' => $payload,
@@ -165,6 +169,9 @@ class GeminiEngineDriver extends BaseEngineDriver
                     'parts' => [['text' => $request->getSystemPrompt()]]
                 ];
             }
+
+            $this->applyToolPayload($payload, $request);
+            $this->applyGeminiStructuredOutputPayload($payload, $request);
 
             $url = "/v1beta/models/{$request->getModel()->value}:streamGenerateContent";
             $response = $this->httpClient->post($url, [
@@ -332,5 +339,57 @@ class GeminiEngineDriver extends BaseEngineDriver
         ];
 
         return $contents;
+    }
+
+    private function applyToolPayload(array &$payload, AIRequest $request): void
+    {
+        if (empty($request->getFunctions())) {
+            return;
+        }
+
+        $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
+            EngineEnum::GEMINI,
+            $request->getFunctions()
+        );
+
+        if (!empty($split['tools'])) {
+            $payload['tools'] = $split['tools'];
+        }
+
+        if (!empty($split['functions'])) {
+            $payload['tools'] = array_merge($payload['tools'] ?? [], [[
+                'functionDeclarations' => array_values(array_map(
+                    fn (array $function): array => $this->mapFunctionDeclaration($function),
+                    $split['functions']
+                )),
+            ]]);
+        }
+    }
+
+    private function mapFunctionDeclaration(array $function): array
+    {
+        return [
+            'name' => (string) ($function['name'] ?? 'tool'),
+            'description' => (string) ($function['description'] ?? ''),
+            'parameters' => (array) ($function['parameters'] ?? [
+                'type' => 'object',
+                'properties' => (object) [],
+            ]),
+        ];
+    }
+
+    private function applyGeminiStructuredOutputPayload(array &$payload, AIRequest $request): void
+    {
+        $metadata = $request->getMetadata();
+        $definition = $metadata['structured_output'] ?? null;
+
+        if (!is_array($definition) || !is_array($definition['schema'] ?? null)) {
+            return;
+        }
+
+        $payload['generationConfig'] = array_merge($payload['generationConfig'] ?? [], [
+            'responseMimeType' => 'application/json',
+            'responseSchema' => $definition['schema'],
+        ]);
     }
 }
