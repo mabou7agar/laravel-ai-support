@@ -47,8 +47,7 @@ class DriverRegistry
         }
 
         if (!isset($this->drivers[$engineName])) {
-            // Try default resolution handling (legacy support)
-            // If the enum has a driverClass() method, try to instantiate it
+            // If the enum has a driverClass() method, resolve the default driver directly.
             if ($engine instanceof EngineEnum) {
                 try {
                     $driverClass = $engine->driverClass();

@@ -7,7 +7,7 @@ interface AIActionResponse
     /**
      * Check if the action was successful
      */
-    public function isSuccess(): bool;
+    public function isSuccessful(): bool;
 
     /**
      * Get the response data

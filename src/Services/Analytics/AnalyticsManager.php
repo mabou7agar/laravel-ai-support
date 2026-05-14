@@ -134,7 +134,7 @@ class AnalyticsManager
     }
 
     /**
-     * Track error events (legacy compatibility API).
+     * Track error events.
      */
     public function trackError(array $data): bool
     {
@@ -326,14 +326,6 @@ class AnalyticsManager
     }
 
     /**
-     * Legacy alias for extend().
-     */
-    public function registerDriver(string $name, AnalyticsDriverInterface $driver): void
-    {
-        $this->extend($name, $driver);
-    }
-
-    /**
      * Set active analytics driver name.
      */
     public function setDriver(string $name): void
@@ -372,7 +364,7 @@ class AnalyticsManager
     }
 
     /**
-     * Legacy insights API.
+     * Get usage insights.
      */
     public function getUsageInsights(array $filters = []): array
     {
@@ -384,19 +376,7 @@ class AnalyticsManager
     }
 
     /**
-     * Legacy cost analysis API.
-     */
-    public function getCostAnalysis(array $filters = []): array
-    {
-        if (is_callable([$this->driver(), 'query'])) {
-            return $this->driver()->query('cost_analysis', $filters);
-        }
-
-        return $this->getCostAnalytics($filters);
-    }
-
-    /**
-     * Legacy cleanup API.
+     * Clean up old analytics data.
      */
     public function cleanupOldData(int $retentionDays): int
     {
@@ -408,7 +388,7 @@ class AnalyticsManager
     }
 
     /**
-     * Legacy export API.
+     * Export analytics data.
      */
     public function exportData(array $filters = [], string $format = 'json'): mixed
     {
@@ -424,7 +404,7 @@ class AnalyticsManager
         try {
             $this->metricsCollector->{$method}(...$arguments);
         } catch (\Throwable) {
-            // Metrics collector may not implement legacy methods.
+            // Metrics drivers can expose different optional metric methods.
         }
     }
 

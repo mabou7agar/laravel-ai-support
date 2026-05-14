@@ -184,12 +184,11 @@ class IntentAnalysisService
         $prompt .= "4. 'provide_data': Providing values. Map input to field (e.g. 'John' -> customer_id).\n";
         $prompt .= "5. 'question': General Qs.\n";
         $prompt .= "6. 'retrieval': Find/View/Get data. (NOT create).\n";
-        $prompt .= "7. 'new_workflow': Create/Add entity via workflow (e.g., 'create invoice', 'add customer', 'make product').\n";
-        $prompt .= "8. 'new_request': Generic creation request (fallback if not workflow).\n";
+        $prompt .= "7. 'new_request': Create/Add entity request (e.g., 'create invoice', 'add customer', 'make product').\n";
+        $prompt .= "8. 'complex_task': Multi-step task that needs guided skills/tools.\n";
         $prompt .= "9. 'greeting': Hi/Hello.\n";
-        $prompt .= "10. 'complex_task': Multi-step workflows, 'onboarding', 'troubleshooting', or vague goals requiring guidance.\n\n";
-        $prompt .= "CRITICAL: Use 'new_workflow' for explicit entity creation (create invoice, add customer, new product).\n";
-        $prompt .= "Use 'new_request' only for non-workflow creation requests.\n\n";
+        $prompt .= "10. 'question': General question or clarification.\n\n";
+        $prompt .= "CRITICAL: Use 'new_request' for explicit entity creation (create invoice, add customer, new product).\n\n";
 
         // Document Type Analysis
         $this->appendDocumentAnalysisContext($prompt, $message);

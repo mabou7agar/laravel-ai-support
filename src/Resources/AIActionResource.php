@@ -26,7 +26,7 @@ class AIActionResource implements AIActionResponse
     /**
      * Check if the action was successful
      */
-    public function isSuccess(): bool
+    public function isSuccessful(): bool
     {
         return $this->success;
     }
@@ -102,9 +102,6 @@ class AIActionResource implements AIActionResponse
         );
     }
 
-    /**
-     * Create from array (for backward compatibility)
-     */
     public static function fromArray(array $data): self
     {
         return new self(
@@ -115,9 +112,6 @@ class AIActionResource implements AIActionResponse
         );
     }
 
-    /**
-     * Magic method to allow array access
-     */
     public function __get(string $key): mixed
     {
         return match($key) {

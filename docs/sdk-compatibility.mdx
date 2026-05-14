@@ -42,7 +42,7 @@ Provider-style tools are serializable and can be passed through `EngineProxy::wi
 - `LaravelAIEngine\Tools\Provider\ToolSearch`
 - `LaravelAIEngine\Tools\SimilaritySearch`
 
-Drivers receive these as request functions, preserving backward compatibility with the existing function-calling path.
+Drivers receive these as request functions and keep custom functions on the existing function-calling path.
 OpenAI, Anthropic, and Gemini drivers map supported provider tools to native provider payloads where possible, while custom functions remain on the existing function-calling path.
 
 Provider-hosted tool calls are tracked through the provider tool lifecycle tables. Computer use, MCP servers, and code execution require approval by default; web search and file search are audited without a blocking approval unless an app marks the tool with `requires_approval`.

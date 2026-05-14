@@ -13,54 +13,28 @@ use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
  * All-in-one trait for vector search, RAG, and AI chat capabilities.
  * Combines functionality from: Vectorizable, HasVectorSearch, HasVectorChat, RAGgable
  *
- * IMPORTANT: Models using this trait should implement VectorizableInterface
- * to ensure all required methods are properly defined.
- *
- * Required methods to override for proper functionality:
- * - getVectorContent(): Returns the text content to be embedded
- * - getVectorMetadata(): Returns metadata for filtering in vector DB
- *
  * Optional but recommended to override:
  * - toSearchDocument(): Returns the canonical searchable document
  * - toGraphObject(): Returns a sanitized object payload for retrieval responses
  * - toRAGSummary(): Returns compact list/summary text
  * - toRAGDetail(): Returns detailed human-readable RAG content
  * - toRAGListPreview(): Returns compact list preview text
- * - toRAGContent(): Legacy formatted content for RAG responses
  * - shouldBeIndexed(): Whether this record should be indexed
  * - getQdrantIndexes(): Custom Qdrant indexes for filtering
  *
  * Usage:
  * ```php
  * use LaravelAIEngine\Traits\Vectorizable;
- * use LaravelAIEngine\Contracts\VectorizableInterface;
- *
- * class Document extends Model implements VectorizableInterface
+ * class Document extends Model
  * {
  *     use Vectorizable;
  *
- *     public function getVectorContent(): string
+ *     public function toSearchDocument(): SearchDocument
  *     {
- *         return "{$this->title}\n\n{$this->content}";
- *     }
- *
- *     public function getVectorMetadata(): array
- *     {
- *         return [
- *             'user_id' => $this->user_id,
- *             'category_id' => $this->category_id,
- *             'status' => $this->status,
- *         ];
- *     }
- *
- *     public function toRAGContent(): string
- *     {
- *         return "**{$this->title}**\n{$this->content}";
+ *         return app(SearchDocumentBuilder::class)->build($this);
  *     }
  * }
  * ```
- *
- * @see \LaravelAIEngine\Contracts\VectorizableInterface
  */
 trait Vectorizable
 {
@@ -165,7 +139,6 @@ trait Vectorizable
         $strategy = config('ai-engine.vectorization.strategy', 'split');
 
         if ($strategy === 'truncate') {
-            // Return single chunk for backward compatibility
             return [$this->getVectorContent()];
         }
 
@@ -1100,23 +1073,23 @@ PROMPT;
     /**
      * Build the canonical search document for this model.
      *
-     * Override this in new code instead of extending getVectorContent().
+     * Override this in new code instead of relying on inferred fields().
      */
     public function toSearchDocument(): SearchDocument|array
     {
-        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this);
+        return app(SearchDocumentBuilder::class)->buildFromModelDefaults($this);
     }
 
     /**
      * Return a sanitized object payload for retrieval responses and follow-up actions.
      *
-     * Override this in new code instead of overloading getVectorMetadata().
+     * Override this in new code instead of relying on inferred metadata().
      *
      * @return array<string, mixed>
      */
     public function toGraphObject(): array
     {
-        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->object;
+        return app(SearchDocumentBuilder::class)->buildFromModelDefaults($this)->object;
     }
 
     /**
@@ -1136,7 +1109,7 @@ PROMPT;
      */
     public function getAccessScope(): array
     {
-        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->accessScope;
+        return app(SearchDocumentBuilder::class)->buildFromModelDefaults($this)->accessScope;
     }
 
     /**
@@ -1144,7 +1117,7 @@ PROMPT;
      */
     public function toRAGSummary(): string
     {
-        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->ragSummary ?? $this->toRAGContent();
+        return app(SearchDocumentBuilder::class)->buildFromModelDefaults($this)->ragSummary ?? $this->toRAGContent();
     }
 
     /**
@@ -1152,7 +1125,7 @@ PROMPT;
      */
     public function toRAGDetail(): string
     {
-        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->ragDetail ?? $this->toRAGContent();
+        return app(SearchDocumentBuilder::class)->buildFromModelDefaults($this)->ragDetail ?? $this->toRAGContent();
     }
 
     /**
@@ -1160,7 +1133,7 @@ PROMPT;
      */
     public function toRAGListPreview(?string $locale = null): string
     {
-        return app(SearchDocumentBuilder::class)->buildFromLegacyModel($this)->listPreview ?? $this->toRAGSummary();
+        return app(SearchDocumentBuilder::class)->buildFromModelDefaults($this)->listPreview ?? $this->toRAGSummary();
     }
 
     /**

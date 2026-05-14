@@ -220,7 +220,7 @@ class GraphRAGAcceptanceTest extends UnitTestCase
             $user->id
         );
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertStringContainsString('delayed until Friday', $response->getContent());
         $this->assertTrue((bool) ($response->getMetadata()['graph_planned'] ?? false));
         $this->assertSame('semantic_graph_planner', $response->getMetadata()['planner_strategy'] ?? null);

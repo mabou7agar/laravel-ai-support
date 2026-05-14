@@ -58,11 +58,11 @@ class NodeApiRoutesTest extends UnitTestCase
     {
         $this->getJson('/api/ai-engine/health')
             ->assertOk()
-            ->assertJsonPath('status', 'healthy');
+            ->assertJsonPath('data.status', 'healthy');
 
         $this->getJson('/api/ai-engine/manifest')
             ->assertOk()
-            ->assertJsonPath('node.slug', 'billing');
+            ->assertJsonPath('data.node.slug', 'billing');
     }
 
     public function test_tool_execution_uses_explicit_tool_endpoint(): void
@@ -102,7 +102,7 @@ class NodeApiRoutesTest extends UnitTestCase
         $this->assertSame(true, $response->getData(true)['result']['opened']);
     }
 
-    public function test_legacy_generic_execute_route_is_removed(): void
+    public function test_generic_execute_route_is_removed(): void
     {
         $this->withoutMiddleware([NodeAuthMiddleware::class, NodeRateLimitMiddleware::class]);
 
@@ -125,7 +125,7 @@ class NodeApiRoutesTest extends UnitTestCase
         $this->assertSame(NodeApiController::class . '@chat', $chatRoute->getActionName());
     }
 
-    public function test_legacy_node_management_routes_are_removed_from_public_api(): void
+    public function test_node_management_routes_are_removed_from_public_api(): void
     {
         $this->withoutMiddleware([NodeAuthMiddleware::class, NodeRateLimitMiddleware::class]);
 

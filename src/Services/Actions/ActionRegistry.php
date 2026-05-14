@@ -17,9 +17,6 @@ class ActionRegistry
     /** @var array<string, callable> */
     protected array $executors = [];
 
-    /**
-     * Register a legacy action handler
-     */
     public function registerHandler(string $actionType, callable $handler): void
     {
         $this->handlers[$actionType] = $handler;
@@ -72,17 +69,8 @@ class ActionRegistry
     /**
      * Register an action definition
      */
-    public function register(array|string $definition, ?array $legacyDefinition = null): void
+    public function register(array $definition): void
     {
-        // Backward compatibility: register('action_id', [...])
-        if (is_string($definition)) {
-            $payload = $legacyDefinition ?? [];
-            $payload['id'] = $payload['id'] ?? $definition;
-            $this->actions[$payload['id']] = $this->normalize($payload);
-
-            return;
-        }
-
         if (!isset($definition['id']) || !is_string($definition['id']) || trim($definition['id']) === '') {
             throw new InvalidArgumentException('Action definition must include a non-empty string id.');
         }
@@ -319,13 +307,5 @@ class ActionRegistry
     public function clearCache(): void
     {
         $this->actions = [];
-    }
-
-    /**
-     * Backward-compatible alias.
-     */
-    public function clear(): void
-    {
-        $this->clearCache();
     }
 }

@@ -135,8 +135,24 @@ class TestAgentOrchestrationCommand extends Command
      */
     protected function buildShellCommand(array $commandParts): string
     {
+        $commandParts = $this->withPhpBinaryForPhpunit($commandParts);
         $command = implode(' ', array_map('escapeshellarg', $commandParts));
 
         return sprintf('bash -lc %s', escapeshellarg('set -e; '.$command));
+    }
+
+    /**
+     * @param  array<int, string>  $commandParts
+     * @return array<int, string>
+     */
+    protected function withPhpBinaryForPhpunit(array $commandParts): array
+    {
+        $binary = (string) ($commandParts[0] ?? '');
+
+        if ($binary !== '' && preg_match('#(^|/)phpunit(\\.phar)?$#', $binary) === 1) {
+            array_unshift($commandParts, PHP_BINARY);
+        }
+
+        return $commandParts;
     }
 }

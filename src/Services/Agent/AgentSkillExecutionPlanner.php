@@ -21,6 +21,21 @@ class AgentSkillExecutionPlanner
             'skill_match_trigger' => $match['trigger'] ?? null,
         ];
 
+        if ($this->shouldRunWithSkillToolPlanner($skill)) {
+            return [
+                'action' => 'use_tool',
+                'resource_name' => 'run_skill',
+                'params' => [
+                    'skill_id' => $skill->id,
+                    'message' => $message,
+                    'reset' => true,
+                ],
+                'reasoning' => "Matched skill [{$skill->name}] and selected AI skill tool planner.",
+                'decision_source' => 'skill_match',
+                'metadata' => $metadata,
+            ];
+        }
+
         if ($skill->actions !== []) {
             return [
                 'action' => 'use_tool',
@@ -30,7 +45,7 @@ class AgentSkillExecutionPlanner
                     'payload_patch' => [],
                     'reset' => true,
                 ],
-                'reasoning' => "Matched skill [{$skill->name}] and selected action workflow [{$skill->actions[0]}].",
+                'reasoning' => "Matched skill [{$skill->name}] and selected action flow [{$skill->actions[0]}].",
                 'decision_source' => 'skill_match',
                 'metadata' => $metadata,
             ];
@@ -59,28 +74,31 @@ class AgentSkillExecutionPlanner
             ];
         }
 
-        if ($skill->workflows !== []) {
-            return [
-                'action' => 'search_rag',
-                'resource_name' => null,
-                'params' => [
-                    'workflow' => $skill->workflows[0],
-                ],
-                'reasoning' => "Matched skill [{$skill->name}] for workflow [{$skill->workflows[0]}].",
-                'decision_source' => 'skill_match',
-                'metadata' => $metadata,
-            ];
-        }
-
         return [
             'action' => 'search_rag',
             'resource_name' => null,
             'params' => [
                 'query' => $message,
             ],
-            'reasoning' => "Matched skill [{$skill->name}] but no executable action, tool, collector, or workflow is configured.",
+            'reasoning' => "Matched skill [{$skill->name}] but no executable action, tool, or collector is configured.",
             'decision_source' => 'skill_match',
             'metadata' => $metadata,
         ];
+    }
+
+    protected function shouldRunWithSkillToolPlanner(AgentSkillDefinition $skill): bool
+    {
+        if (!(bool) config('ai-agent.skill_tool_planner.enabled', true)) {
+            return false;
+        }
+
+        $planner = $skill->metadata['planner'] ?? null;
+        if (is_string($planner) && in_array($planner, ['skill_tool_auto', 'tool_planner', 'ai_tool_planner'], true)) {
+            return true;
+        }
+
+        return $skill->actions === []
+            && $skill->tools !== []
+            && ($skill->metadata['target_json'] ?? null) !== null;
     }
 }

@@ -21,16 +21,16 @@ class ConversationContextCompactorTest extends UnitTestCase
         for ($i = 1; $i <= 8; $i++) {
             $context->conversationHistory[] = [
                 'role' => $i % 2 === 0 ? 'assistant' : 'user',
-                'content' => "message {$i} about customer invoice workflow",
+                'content' => "message {$i} about customer invoice flow",
             ];
         }
 
         app(ConversationContextCompactor::class)->compact($context);
 
         $this->assertCount(4, $context->conversationHistory);
-        $this->assertSame('message 5 about customer invoice workflow', $context->conversationHistory[0]['content']);
-        $this->assertStringContainsString('message 1 about customer invoice workflow', $context->metadata['conversation_summary']);
-        $this->assertStringContainsString('message 4 about customer invoice workflow', $context->metadata['conversation_summary']);
+        $this->assertSame('message 5 about customer invoice flow', $context->conversationHistory[0]['content']);
+        $this->assertStringContainsString('message 1 about customer invoice flow', $context->metadata['conversation_summary']);
+        $this->assertStringContainsString('message 4 about customer invoice flow', $context->metadata['conversation_summary']);
         $this->assertSame(4, $context->metadata['conversation_compacted_messages']);
         $this->assertLessThanOrEqual(2000 + 4 * 500, $context->metadata['conversation_context_metrics']['prompt_size_chars']);
         $this->assertSame(4, $context->metadata['conversation_context_metrics']['compacted_messages']);

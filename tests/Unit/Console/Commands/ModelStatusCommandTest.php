@@ -6,7 +6,6 @@ namespace LaravelAIEngine\Tests\Unit\Console\Commands;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Artisan;
-use LaravelAIEngine\Contracts\VectorizableInterface;
 use LaravelAIEngine\Tests\UnitTestCase;
 use LaravelAIEngine\Traits\Vectorizable;
 
@@ -25,17 +24,16 @@ class ModelStatusCommandTest extends UnitTestCase
         $this->assertStringContainsString('"graph_payload_ready": "yes"', $output);
     }
 
-    public function test_it_reports_legacy_vectorizable_models_using_trait_defaults(): void
+    public function test_it_reports_models_without_search_document_contract_as_not_supported(): void
     {
         Artisan::call('ai-engine:model-status', [
-            'model' => LegacyVectorModel::class,
+            'model' => DefaultVectorModel::class,
             '--json' => true,
         ]);
 
         $output = Artisan::output();
-        $this->assertStringContainsString('"preferred_contract": "legacy_vectorizable"', $output);
+        $this->assertStringContainsString('"preferred_contract": "no_supported_contract"', $output);
         $this->assertStringContainsString('"indexing_ready": "yes"', $output);
-        $this->assertStringContainsString('"toSearchDocument": "trait_default"', $output);
     }
 
     public function test_it_supports_json_output(): void
@@ -89,30 +87,15 @@ class CanonicalVectorModel extends Model
     }
 }
 
-class LegacyVectorModel extends Model implements VectorizableInterface
+class DefaultVectorModel extends Model
 {
     use Vectorizable;
 
-    protected $table = 'legacy_vectors';
+    protected $table = 'default_vectors';
 
     public $id = 9;
-    public $title = 'Legacy Apollo';
-    public $body = 'Legacy vector body';
-
-    public function getVectorContent(): string
-    {
-        return $this->title."\n\n".$this->body;
-    }
-
-    public function getVectorMetadata(): array
-    {
-        return ['status' => 'active'];
-    }
-
-    public function toRAGContent(): string
-    {
-        return $this->getVectorContent();
-    }
+    public $title = 'Default Apollo';
+    public $body = 'Default vector body';
 
     public function shouldBeIndexed(): bool
     {

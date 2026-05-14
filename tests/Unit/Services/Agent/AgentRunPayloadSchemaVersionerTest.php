@@ -9,21 +9,19 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class AgentRunPayloadSchemaVersionerTest extends UnitTestCase
 {
-    public function test_legacy_run_payloads_are_upgraded_to_current_schema(): void
+    public function test_run_payloads_are_normalized_to_current_schema(): void
     {
         $attributes = (new AgentRunPayloadSchemaVersioner())->normalizeRunAttributes([
-            'schema_version' => 0,
-            'trace' => '[{"stage":"legacy"}]',
-            'response' => '{"message":"done"}',
+            'schema_version' => 1,
+            'routing_trace' => '[{"stage":"route"}]',
+            'final_response' => '{"message":"done"}',
             'input' => '{"message":"hello"}',
         ]);
 
         $this->assertSame(AgentRunPayloadSchemaVersioner::CURRENT_VERSION, $attributes['schema_version']);
-        $this->assertSame([['stage' => 'legacy']], $attributes['routing_trace']);
+        $this->assertSame([['stage' => 'route']], $attributes['routing_trace']);
         $this->assertSame(['message' => 'done'], $attributes['final_response']);
         $this->assertSame(['message' => 'hello'], $attributes['input']);
-        $this->assertArrayNotHasKey('trace', $attributes);
-        $this->assertArrayNotHasKey('response', $attributes);
     }
 
     public function test_step_payloads_are_tagged_with_schema_version(): void

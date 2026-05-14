@@ -33,8 +33,8 @@ class ChatServiceTest extends UnitTestCase
 
         $this->assertFalse($response->success);
         $this->assertSame('Runtime is blocked by policy.', $response->content);
-        $this->assertNull($response->metadata['workflow_class']);
-        $this->assertTrue($response->metadata['workflow_completed']);
+        $this->assertFalse($response->metadata['runtime_active']);
+        $this->assertTrue($response->metadata['runtime_completed']);
     }
 
     public function test_process_message_preserves_runtime_actions_and_input_metadata(): void

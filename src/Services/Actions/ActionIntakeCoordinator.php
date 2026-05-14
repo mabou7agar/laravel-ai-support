@@ -78,7 +78,7 @@ class ActionIntakeCoordinator
                     ? (string) ($options['prepared_strategy'] ?? 'action_prepare')
                     : (string) ($options['needs_input_strategy'] ?? 'action_needs_input'),
                 'decision_source' => 'action_intake_coordinator',
-                'workflow_data' => $result,
+                'flow_data' => $result,
                 'action_switched' => $switchedScope,
                 'previous_action_scope' => $switchedScope ? $previousScope : null,
             ],
@@ -124,7 +124,7 @@ class ActionIntakeCoordinator
                     ? (string) ($options['executed_strategy'] ?? 'action_execute')
                     : (string) ($options['failed_strategy'] ?? 'action_failed'),
                 'decision_source' => 'action_intake_coordinator',
-                'workflow_data' => $result,
+                'flow_data' => $result,
             ],
             isComplete: true
         );

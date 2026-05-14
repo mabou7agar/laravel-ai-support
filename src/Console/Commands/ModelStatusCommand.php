@@ -10,7 +10,6 @@ use LaravelAIEngine\Contracts\AccessScopeProviderInterface;
 use LaravelAIEngine\Contracts\GraphObjectInterface;
 use LaravelAIEngine\Contracts\GraphRelationProviderInterface;
 use LaravelAIEngine\Contracts\SearchDocumentInterface;
-use LaravelAIEngine\Contracts\VectorizableInterface;
 use LaravelAIEngine\Services\Graph\GraphBackendResolver;
 use LaravelAIEngine\Services\Graph\Neo4jGraphSyncService;
 use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
@@ -67,7 +66,6 @@ class ModelStatusCommand extends Command
         $this->table(['Check', 'Value'], [
             ['resolved_record', $status['resolved_record']],
             ['uses_vectorizable_trait', $status['uses_vectorizable_trait']],
-            ['implements_vectorizable_interface', $status['implements_vectorizable_interface']],
             ['preferred_contract', $status['preferred_contract']],
             ['indexing_ready', $status['indexing_ready']],
             ['graph_payload_ready', $status['graph_payload_ready']],
@@ -153,7 +151,6 @@ class ModelStatusCommand extends Command
             'model_class' => $model::class,
             'resolved_record' => $recordId !== null && $recordId !== '' ? 'loaded' : 'new_instance',
             'uses_vectorizable_trait' => $this->usesVectorizableTrait($reflection) ? 'yes' : 'no',
-            'implements_vectorizable_interface' => $model instanceof VectorizableInterface ? 'yes' : 'no',
             'preferred_contract' => $this->preferredContract($model),
             'indexing_ready' => $document !== null && trim($document->content) !== '' ? 'yes' : 'no',
             'graph_payload_ready' => $graphPayload !== null ? 'yes' : 'no',
@@ -172,15 +169,12 @@ class ModelStatusCommand extends Command
             'graph_payload_error' => $graphPayloadError,
             'method_status' => [
                 'toSearchDocument' => $this->methodStatus($reflection, 'toSearchDocument'),
-                'getVectorContent' => $this->methodStatus($reflection, 'getVectorContent'),
-                'getVectorMetadata' => $this->methodStatus($reflection, 'getVectorMetadata'),
                 'toGraphObject' => $this->methodStatus($reflection, 'toGraphObject'),
                 'getAccessScope' => $this->methodStatus($reflection, 'getAccessScope'),
                 'getGraphRelations' => $this->methodStatus($reflection, 'getGraphRelations'),
                 'toRAGSummary' => $this->methodStatus($reflection, 'toRAGSummary'),
                 'toRAGDetail' => $this->methodStatus($reflection, 'toRAGDetail'),
                 'toRAGListPreview' => $this->methodStatus($reflection, 'toRAGListPreview'),
-                'toRAGContent' => $this->methodStatus($reflection, 'toRAGContent'),
                 'shouldBeIndexed' => $this->methodStatus($reflection, 'shouldBeIndexed'),
             ],
             'warnings' => array_values(array_unique($warnings)),
@@ -191,10 +185,6 @@ class ModelStatusCommand extends Command
     {
         if ($model instanceof SearchDocumentInterface || $this->hasCustomMethod($model, 'toSearchDocument')) {
             return 'canonical_search_document';
-        }
-
-        if (method_exists($model, 'getVectorContent')) {
-            return 'legacy_vectorizable';
         }
 
         return 'no_supported_contract';

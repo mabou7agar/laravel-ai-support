@@ -193,6 +193,90 @@ class ActionPayloadExtractorTest extends TestCase
         ], $payload);
     }
 
+    public function test_preserves_sanitized_numeric_array_operations(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                'payload_patch' => [
+                    '_array_ops' => [
+                        [
+                            'op' => 'decrement',
+                            'path' => 'items',
+                            'match' => ['product_name' => 'iPhone', 'ignored_item_field' => 'remove me'],
+                            'field' => 'quantity',
+                            'amount' => 1,
+                            'ignored_operation_field' => 'remove me',
+                        ],
+                        [
+                            'op' => 'decrement',
+                            'path' => 'items',
+                            'match' => ['product_name' => 'iPhone'],
+                            'field' => 'unsafe_field',
+                            'amount' => 1,
+                        ],
+                    ],
+                ],
+            ]), 'openai', 'gpt-4o'));
+
+        $extractor = new ActionPayloadExtractor($ai);
+
+        $payload = $extractor->extract($this->invoiceAction(), 'remove 1 iPhone', [
+            'items' => [
+                ['product_name' => 'iPhone', 'quantity' => 3],
+            ],
+        ]);
+
+        $this->assertSame([
+            '_array_ops' => [
+                [
+                    'op' => 'decrement',
+                    'path' => 'items',
+                    'match' => ['product_name' => 'iPhone'],
+                    'field' => 'quantity',
+                    'amount' => 1.0,
+                ],
+                [
+                    'op' => 'decrement',
+                    'path' => 'items',
+                    'match' => ['product_name' => 'iPhone'],
+                    'amount' => 1.0,
+                ],
+            ],
+        ], $payload);
+    }
+
+    public function test_invalidates_ready_for_confirmation_when_draft_payload_changes(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                'payload_patch' => [
+                    '_array_ops' => [[
+                        'op' => 'append',
+                        'path' => 'items',
+                        'value' => ['product_name' => 'iPad', 'quantity' => 1],
+                    ]],
+                    'ready_for_confirmation' => true,
+                ],
+            ]), 'openai', 'gpt-4o'));
+
+        $action = $this->invoiceAction();
+        $action['parameters']['ready_for_confirmation'] = ['type' => 'boolean', 'required' => false];
+
+        $extractor = new ActionPayloadExtractor($ai);
+        $payload = $extractor->extract($action, 'add 1 iPad', [
+            'items' => [
+                ['product_name' => 'iPhone', 'quantity' => 2],
+            ],
+            'ready_for_confirmation' => true,
+        ]);
+
+        $this->assertFalse($payload['ready_for_confirmation']);
+    }
+
     private function invoiceAction(): array
     {
         return [

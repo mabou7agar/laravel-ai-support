@@ -15,19 +15,19 @@ class ActionReplyGeneratorService
     }
 
     /**
-     * @param  array<string, mixed>  $workflowResult
+     * @param  array<string, mixed>  $actionResult
      * @param  array{enhancer?: callable|null, ai_enabled?: bool|null}  $options
      * @return array{text: string, metadata: array<string, mixed>}
      */
-    public function generate(array $workflowResult, array $options = []): array
+    public function generate(array $actionResult, array $options = []): array
     {
-        $brief = $this->brief($workflowResult);
-        $preserveTerms = $this->preserveTerms($workflowResult);
+        $brief = $this->brief($actionResult);
+        $preserveTerms = $this->preserveTerms($actionResult);
 
         $enhanced = $this->generateWithEnhancer(
             $brief,
             $preserveTerms,
-            $workflowResult,
+            $actionResult,
             $options['enhancer'] ?? $this->configuredEnhancer()
         );
         if (is_array($enhanced)) {
@@ -39,17 +39,17 @@ class ActionReplyGeneratorService
             return [
                 'text' => $aiText,
                 'metadata' => [
-                    'workflow_reply_provider' => 'ai',
-                    'workflow_reply_generated' => true,
+                    'action_reply_provider' => 'ai',
+                    'action_reply_generated' => true,
                 ],
             ];
         }
 
         return [
-            'text' => $this->emergencyReply($workflowResult),
+            'text' => $this->emergencyReply($actionResult),
             'metadata' => [
-                'workflow_reply_provider' => 'emergency_fallback',
-                'workflow_reply_generated' => false,
+                'action_reply_provider' => 'emergency_fallback',
+                'action_reply_generated' => false,
             ],
         ];
     }
@@ -57,13 +57,13 @@ class ActionReplyGeneratorService
     /**
      * @param  array<string, mixed>  $brief
      * @param  array<int, string>  $preserveTerms
-     * @param  array<string, mixed>  $workflowResult
+     * @param  array<string, mixed>  $actionResult
      * @return array{text: string, metadata: array<string, mixed>}|null
      */
     private function generateWithEnhancer(
         array $brief,
         array $preserveTerms,
-        array $workflowResult,
+        array $actionResult,
         mixed $enhancer
     ): ?array {
         if (!is_callable($enhancer)) {
@@ -72,9 +72,9 @@ class ActionReplyGeneratorService
 
         try {
             $result = $enhancer($this->humanizerPrompt($brief), [
-                'style' => 'workflow_reply',
+                'style' => 'action_reply',
                 'preserve_terms' => $preserveTerms,
-                'workflow_result' => $workflowResult,
+                'action_result' => $actionResult,
                 'brief' => $brief,
             ]);
         } catch (Throwable) {
@@ -92,8 +92,8 @@ class ActionReplyGeneratorService
         return [
             'text' => $text,
             'metadata' => [
-                'workflow_reply_provider' => $provider,
-                'workflow_reply_generated' => true,
+                'action_reply_provider' => $provider,
+                'action_reply_generated' => true,
             ] + $metadata,
         ];
     }
@@ -113,7 +113,7 @@ class ActionReplyGeneratorService
                 prompt: $this->aiPrompt($brief),
                 maxTokens: 180,
                 temperature: 0.45,
-                metadata: ['purpose' => 'agent_workflow_reply']
+                metadata: ['purpose' => 'agent_action_reply']
             ));
 
             if (!$response->isSuccessful()) {
@@ -128,11 +128,11 @@ class ActionReplyGeneratorService
 
     private function aiReplyEnabled(?bool $enabledOverride = null): bool
     {
-        if ($enabledOverride === false || ($enabledOverride === null && !(bool) config('ai-agent.workflow_reply.ai_enabled', true))) {
+        if ($enabledOverride === false || ($enabledOverride === null && !(bool) config('ai-agent.action_reply.ai_enabled', true))) {
             return false;
         }
 
-        $engine = (string) config('ai-engine.default', config('ai-engine.default_engine', 'openai'));
+        $engine = (string) config('ai-engine.default', 'openai');
         if (in_array($engine, ['ollama'], true)) {
             return true;
         }
@@ -149,7 +149,7 @@ class ActionReplyGeneratorService
 
     private function configuredEnhancer(): mixed
     {
-        $enhancer = config('ai-agent.workflow_reply.enhancer');
+        $enhancer = config('ai-agent.action_reply.enhancer');
         if (is_callable($enhancer)) {
             return $enhancer;
         }
@@ -167,22 +167,22 @@ class ActionReplyGeneratorService
         }
     }
 
-    /** @param array<string, mixed> $workflowResult */
-    private function emergencyReply(array $workflowResult): string
+    /** @param array<string, mixed> $actionResult */
+    private function emergencyReply(array $actionResult): string
     {
-        $message = ($workflowResult['success'] ?? false) === true && is_string($workflowResult['message'] ?? null)
-            ? trim((string) $workflowResult['message'])
+        $message = ($actionResult['success'] ?? false) === true && is_string($actionResult['message'] ?? null)
+            ? trim((string) $actionResult['message'])
             : '';
 
-        if ($message === '' && is_string($workflowResult['error'] ?? null) && trim((string) $workflowResult['error']) !== '') {
-            $message = trim((string) $workflowResult['error']);
+        if ($message === '' && is_string($actionResult['error'] ?? null) && trim((string) $actionResult['error']) !== '') {
+            $message = trim((string) $actionResult['error']);
         }
 
         if ($message !== '') {
             return $message;
         }
 
-        if (($workflowResult['success'] ?? false) === true) {
+        if (($actionResult['success'] ?? false) === true) {
             return $this->message('Done.');
         }
 
@@ -190,29 +190,30 @@ class ActionReplyGeneratorService
     }
 
     /**
-     * @param  array<string, mixed>  $workflowResult
+     * @param  array<string, mixed>  $actionResult
      * @return array<string, mixed>
      */
-    private function brief(array $workflowResult): array
+    private function brief(array $actionResult): array
     {
-        $relationNextSteps = $this->relationNextSteps((array) ($workflowResult['next_options'] ?? []));
+        $relationNextSteps = $this->relationNextSteps((array) ($actionResult['next_options'] ?? []));
 
         return [
-            'status' => ($workflowResult['success'] ?? false) ? 'success' : 'needs_more_information',
-            'needs_user_input' => (bool) ($workflowResult['needs_user_input'] ?? false),
-            'message' => is_string($workflowResult['message'] ?? null) ? $workflowResult['message'] : null,
-            'error' => is_string($workflowResult['error'] ?? null) ? $workflowResult['error'] : null,
+            'status' => ($actionResult['success'] ?? false) ? 'success' : 'needs_more_information',
+            'needs_user_input' => (bool) ($actionResult['needs_user_input'] ?? false),
+            'message' => is_string($actionResult['message'] ?? null) ? $actionResult['message'] : null,
+            'error' => is_string($actionResult['error'] ?? null) ? $actionResult['error'] : null,
             'missing_fields' => $this->shouldFocusRelationStep($relationNextSteps)
                 ? []
-                : collect($workflowResult['missing_fields'] ?? [])
+                : collect($actionResult['missing_fields'] ?? [])
                 ->map(fn (string $field): string => $this->fieldLabel($field))
                 ->values()
                 ->all(),
             'relation_next_steps' => $relationNextSteps,
-            'draft_summary' => $workflowResult['draft']['summary'] ?? null,
-            'current_values' => $workflowResult['current_payload'] ?? ($workflowResult['draft']['payload'] ?? null),
-            'relation_review' => $this->relationReviewBrief((array) ($workflowResult['relation_review'] ?? [])),
-            'action' => $workflowResult['action'] ?? null,
+            'draft_summary' => $actionResult['draft']['summary'] ?? null,
+            'current_values' => $actionResult['current_payload'] ?? ($actionResult['draft']['payload'] ?? null),
+            'target_json' => $actionResult['target_json'] ?? ($actionResult['draft']['target_json'] ?? null),
+            'relation_review' => $this->relationReviewBrief((array) ($actionResult['relation_review'] ?? [])),
+            'action' => $actionResult['action'] ?? null,
         ];
     }
 
@@ -279,10 +280,10 @@ class ActionReplyGeneratorService
     private function humanizerPrompt(array $brief): string
     {
         return implode("\n", [
-            'Generate one concise user-facing assistant reply from these workflow facts.',
+            'Generate one concise user-facing assistant reply from these action facts.',
             'Rules:',
-            '- Do not expose internal words like next_options, relation_review, payload, approval_key, tool, or strategy.',
-            '- Do not ask again for facts already present in the workflow facts.',
+            '- Do not expose internal words like next_options, relation_review, payload, target_json, approval_key, tool, or strategy.',
+            '- Do not ask again for facts already present in the action facts.',
             '- If a missing relation has some missing_required_fields, ask only for those fields.',
             '- If relation_next_steps is not empty, ask only for those relation steps; do not ask for fields that are not listed in missing_required_fields.',
             '- A relation_create_confirmation is approval for that related record only, not final confirmation for the main action.',
@@ -293,7 +294,7 @@ class ActionReplyGeneratorService
             '- Keep it short and natural, like a human teammate continuing the chat.',
             '- Avoid sounding like a fixed template; choose wording freely while keeping the next required step clear.',
             '',
-            'Workflow facts JSON:',
+            'Action facts JSON:',
             json_encode($brief, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
         ]);
     }
@@ -302,13 +303,13 @@ class ActionReplyGeneratorService
     private function aiPrompt(array $brief): string
     {
         return implode("\n", [
-            'AGENT_WORKFLOW_REPLY',
-            'Write the final assistant reply for this workflow state.',
-            'Use the workflow facts as the only source of truth.',
+            'AGENT_ACTION_REPLY',
+            'Write the final assistant reply for this action state.',
+            'Use the action facts as the only source of truth.',
             'Phrase the answer naturally, like a human teammate continuing the chat; do not copy system status or validation wording.',
             'Use short bullet points when the reply includes several fields, totals, or records.',
             'Before asking the user to create/confirm the final action, summarize the draft and any related records that will be created.',
-            'Do not expose internal words like next_options, relation_review, payload, approval_key, tool, strategy, or workflow facts.',
+            'Do not expose internal words like next_options, relation_review, payload, target_json, approval_key, tool, strategy, or action facts.',
             'Do not ask for data already present. If a relation only misses email, ask only for email.',
             'If relation_next_steps is not empty, ask only for those relation steps; do not ask for fields that are not listed in missing_required_fields.',
             'A relation_create_confirmation is approval for that related record only, not final confirmation for the main action.',
@@ -317,7 +318,7 @@ class ActionReplyGeneratorService
             'Preserve names, emails, dates, amounts, IDs, SKUs, and quoted labels exactly.',
             'Return only the reply text. No JSON. No markdown table.',
             '',
-            'Workflow facts JSON:',
+            'Action facts JSON:',
             json_encode($brief, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
         ]);
     }
@@ -375,13 +376,13 @@ class ActionReplyGeneratorService
     }
 
     /**
-     * @param  array<string, mixed>  $workflowResult
+     * @param  array<string, mixed>  $actionResult
      * @return array<int, string>
      */
-    private function preserveTerms(array $workflowResult): array
+    private function preserveTerms(array $actionResult): array
     {
         $terms = [];
-        array_walk_recursive($workflowResult, function (mixed $value) use (&$terms): void {
+        array_walk_recursive($actionResult, function (mixed $value) use (&$terms): void {
             if (!is_string($value)) {
                 return;
             }

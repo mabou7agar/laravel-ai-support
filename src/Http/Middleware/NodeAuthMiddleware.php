@@ -133,7 +133,7 @@ class NodeAuthMiddleware
             return $nodeToken;
         }
         
-        // Try Authorization header as fallback (Bearer token) for backward compatibility
+        // Accept standard Authorization bearer tokens for node-to-node calls.
         $authHeader = $request->header('Authorization');
         
         if ($authHeader && str_starts_with($authHeader, 'Bearer ')) {

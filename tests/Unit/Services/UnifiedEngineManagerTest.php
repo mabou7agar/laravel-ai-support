@@ -102,7 +102,7 @@ class UnifiedEngineManagerTest extends TestCase
                            $request->model->value === EntityEnum::CLAUDE_3_5_SONNET &&
                            $request->temperature === 0.8 &&
                            $request->maxTokens === 1000 &&
-                           $request->user === 'user-123';
+                           $request->getUserId() === 'user-123';
                 })
             )
             ->once()

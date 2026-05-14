@@ -2,8 +2,11 @@
 
 namespace LaravelAIEngine\Services\Media;
 
-use OpenAI\Client as OpenAIClient;
+use OpenAI\Contracts\ClientContract as OpenAIClient;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Services\CreditManager;
 
 class AudioService
@@ -40,6 +43,14 @@ class AudioService
                 throw new \InvalidArgumentException("Audio file too large. Maximum size is 25MB.");
             }
 
+            $duration = $this->estimateAudioDuration($audioPath);
+            $creditRequest = $this->buildCreditRequest($userId, 'audio_transcription', [
+                'audio_seconds' => $duration,
+                'audio_minutes' => max(1 / 60, $duration / 60),
+            ]);
+            $credits = $this->creditManager->calculateCredits($creditRequest);
+            $this->assertCreditsAvailable($userId, $creditRequest, $credits);
+
             // Transcribe using Whisper API
             $response = $this->client->audio()->transcribe([
                 'model' => $this->model,
@@ -52,13 +63,7 @@ class AudioService
 
             $transcription = is_string($response) ? $response : $response->text;
 
-            // Estimate credits (Whisper is $0.006 per minute)
-            $duration = $this->estimateAudioDuration($audioPath);
-            $credits = (int) ceil($duration / 60 * 6); // Rough estimate
-            if ($userId) {
-                // TODO: Integrate with proper credit system
-                // $this->creditManager->deductCredits($userId, $credits, 'audio_transcription');
-            }
+            $this->chargeCredits($userId, $creditRequest, $credits);
 
             Log::info('Audio transcribed with Whisper', [
                 'audio_path' => $audioPath,
@@ -85,6 +90,19 @@ class AudioService
         ?string $userId = null
     ): array {
         try {
+            if (!file_exists($audioPath)) {
+                throw new \InvalidArgumentException("Audio file not found: {$audioPath}");
+            }
+
+            $duration = $this->estimateAudioDuration($audioPath);
+            $creditRequest = $this->buildCreditRequest($userId, 'audio_transcription', [
+                'audio_seconds' => $duration,
+                'audio_minutes' => max(1 / 60, $duration / 60),
+                'timestamps' => true,
+            ]);
+            $credits = $this->creditManager->calculateCredits($creditRequest);
+            $this->assertCreditsAvailable($userId, $creditRequest, $credits);
+
             $response = $this->client->audio()->transcribe([
                 'model' => $this->model,
                 'file' => fopen($audioPath, 'r'),
@@ -92,13 +110,7 @@ class AudioService
                 'timestamp_granularities' => ['segment'],
             ]);
 
-            // Track credits
-            $duration = $this->estimateAudioDuration($audioPath);
-            $credits = (int) ceil($duration / 60 * 6);
-            if ($userId) {
-                // TODO: Integrate with proper credit system
-                // $this->creditManager->deductCredits($userId, $credits, 'audio_transcription');
-            }
+            $this->chargeCredits($userId, $creditRequest, $credits);
 
             return [
                 'text' => $response->text,
@@ -127,6 +139,14 @@ class AudioService
                 throw new \InvalidArgumentException("Audio file not found: {$audioPath}");
             }
 
+            $duration = $this->estimateAudioDuration($audioPath);
+            $creditRequest = $this->buildCreditRequest($userId, 'audio_translation', [
+                'audio_seconds' => $duration,
+                'audio_minutes' => max(1 / 60, $duration / 60),
+            ]);
+            $credits = $this->creditManager->calculateCredits($creditRequest);
+            $this->assertCreditsAvailable($userId, $creditRequest, $credits);
+
             $response = $this->client->audio()->translate([
                 'model' => $this->model,
                 'file' => fopen($audioPath, 'r'),
@@ -135,13 +155,7 @@ class AudioService
 
             $translation = is_string($response) ? $response : $response->text;
 
-            // Track credits
-            $duration = $this->estimateAudioDuration($audioPath);
-            $credits = (int) ceil($duration / 60 * 6);
-            if ($userId) {
-                // TODO: Integrate with proper credit system
-                // $this->creditManager->deductCredits($userId, $credits, 'audio_translation');
-            }
+            $this->chargeCredits($userId, $creditRequest, $credits);
 
             Log::info('Audio translated with Whisper', [
                 'audio_path' => $audioPath,
@@ -190,13 +204,29 @@ class AudioService
     public function detectLanguage(string $audioPath, ?string $userId = null): ?string
     {
         try {
+            if (!file_exists($audioPath)) {
+                throw new \InvalidArgumentException("Audio file not found: {$audioPath}");
+            }
+
+            $duration = $this->estimateAudioDuration($audioPath);
+            $creditRequest = $this->buildCreditRequest($userId, 'audio_language_detection', [
+                'audio_seconds' => $duration,
+                'audio_minutes' => max(1 / 60, $duration / 60),
+            ]);
+            $credits = $this->creditManager->calculateCredits($creditRequest);
+            $this->assertCreditsAvailable($userId, $creditRequest, $credits);
+
             $response = $this->client->audio()->transcribe([
                 'model' => $this->model,
                 'file' => fopen($audioPath, 'r'),
                 'response_format' => 'verbose_json',
             ]);
 
+            $this->chargeCredits($userId, $creditRequest, $credits);
+
             return $response->language ?? null;
+        } catch (InsufficientCreditsException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Language detection failed', [
                 'audio_path' => $audioPath,
@@ -241,6 +271,42 @@ class AudioService
         $duration = (int) ($fileSize * 8 / ($bitrate * 1000));
 
         return max(1, $duration); // At least 1 second
+    }
+
+    protected function buildCreditRequest(?string $userId, string $operation, array $parameters = []): AIRequest
+    {
+        return new AIRequest(
+            prompt: $operation,
+            engine: EngineEnum::OPENAI,
+            model: $this->model,
+            parameters: $parameters,
+            userId: $userId,
+            metadata: [
+                'source' => 'media.audio',
+                'operation' => $operation,
+            ]
+        );
+    }
+
+    protected function assertCreditsAvailable(?string $userId, AIRequest $request, float $credits): void
+    {
+        if ($userId === null || $credits <= 0) {
+            return;
+        }
+
+        if (!$this->creditManager->hasCreditsForAmount($userId, $request, $credits)) {
+            throw new InsufficientCreditsException("Insufficient credits. Required: {$credits}");
+        }
+    }
+
+    protected function chargeCredits(?string $userId, AIRequest $request, float $credits): void
+    {
+        if ($userId === null || $credits <= 0) {
+            return;
+        }
+
+        $this->creditManager->deductCredits($userId, $request, $credits);
+        CreditManager::accumulate($credits);
     }
 
     /**

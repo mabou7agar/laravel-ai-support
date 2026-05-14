@@ -13,7 +13,6 @@ use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ContextManager;
-use LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\IntentRouter;
@@ -36,7 +35,6 @@ class LaravelAgentProcessor
         protected AgentExecutionFacade $execution,
         protected ?MessageRoutingClassifier $messageClassifier = null,
         protected ?RoutingContextResolver $routingContextResolver = null,
-        protected ?DeterministicAgentHandlerRegistry $deterministicHandlers = null,
         protected ?GoalAgentService $goalAgent = null,
         protected ?AgentExecutionDispatcher $executionDispatcher = null,
         protected ?RoutingPipeline $routingPipeline = null
@@ -47,9 +45,6 @@ class LaravelAgentProcessor
         $this->routingContextResolver ??= app()->bound(RoutingContextResolver::class)
             ? app(RoutingContextResolver::class)
             : new RoutingContextResolver();
-        $this->deterministicHandlers ??= app()->bound(DeterministicAgentHandlerRegistry::class)
-            ? app(DeterministicAgentHandlerRegistry::class)
-            : null;
         $this->executionDispatcher ??= new AgentExecutionDispatcher($this->execution, $this->goalAgent());
     }
 
@@ -108,7 +103,7 @@ class LaravelAgentProcessor
 
                         $context->forget('routed_to_node');
                         $context->forget('remote_pending_action');
-                        if (is_array($context->pendingAction) && ($context->pendingAction['type'] ?? null) === 'remote_node_workflow') {
+                        if (is_array($context->pendingAction) && ($context->pendingAction['type'] ?? null) === 'remote_node_session') {
                             $context->pendingAction = null;
                         }
                         $fallback = $this->searchRag($message, $context, array_merge($options, [
@@ -131,7 +126,7 @@ class LaravelAgentProcessor
             ]);
             $context->forget('routed_to_node');
             $context->forget('remote_pending_action');
-            if (is_array($context->pendingAction) && ($context->pendingAction['type'] ?? null) === 'remote_node_workflow') {
+            if (is_array($context->pendingAction) && ($context->pendingAction['type'] ?? null) === 'remote_node_session') {
                 $context->pendingAction = null;
             }
         }
@@ -210,7 +205,7 @@ class LaravelAgentProcessor
         array $options
     ): AgentResponse {
         if (!$this->routingPipeline instanceof RoutingPipeline) {
-            return $this->legacyHeuristicRoute($message, $context, $options);
+            return $this->heuristicRoute($message, $context, $options);
         }
 
         try {
@@ -251,7 +246,7 @@ class LaravelAgentProcessor
         }
     }
 
-    protected function legacyHeuristicRoute(
+    protected function heuristicRoute(
         string $message,
         UnifiedActionContext $context,
         array $options

@@ -72,7 +72,7 @@ class FalAIEngineDriverTest extends TestCase
             ]
         ));
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame(EntityEnum::FAL_NANO_BANANA_2, $response->getMetadata()['resolved_model']);
         $this->assertCount(1, $response->getMetadata()['images']);
     }
@@ -123,7 +123,7 @@ class FalAIEngineDriverTest extends TestCase
             ]
         ));
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame(EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO, $response->getMetadata()['resolved_model']);
         $this->assertSame('https://example.com/output.mp4', $response->getMetadata()['video']['url']);
     }
@@ -165,7 +165,7 @@ class FalAIEngineDriverTest extends TestCase
             ]
         ));
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame(EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO, $response->getMetadata()['resolved_model']);
         $this->assertSame(42, $response->getMetadata()['video']['seed']);
     }
@@ -209,7 +209,7 @@ class FalAIEngineDriverTest extends TestCase
             ]
         ));
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame(EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO, $response->getMetadata()['resolved_model']);
         $this->assertSame('https://example.com/seedance-dance.mp4', $response->getMetadata()['video']['url']);
         $this->assertSame(1280, $response->getMetadata()['video']['width']);
@@ -250,7 +250,7 @@ class FalAIEngineDriverTest extends TestCase
             ]
         ));
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame('https://example.com/seedance-audio.mp4', $response->getMetadata()['video']['url']);
     }
 

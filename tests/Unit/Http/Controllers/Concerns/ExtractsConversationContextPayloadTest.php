@@ -90,8 +90,8 @@ class ExtractsConversationContextPayloadTest extends UnitTestCase
         };
 
         $payload = $extractor->extract([
-            'workflow_class' => 'App\\Workflows\\CreateInvoiceWorkflow',
-            'workflow_data' => [
+            'flow_name' => 'CreateInvoiceFlow',
+            'runtime_data' => [
                 'collected_data' => [
                     'id' => 999,
                     'invoice_number' => 'DRAFT-1',
@@ -115,6 +115,6 @@ class ExtractsConversationContextPayloadTest extends UnitTestCase
         $this->assertSame('DRAFT-1', $payload['focused_entity']['invoice_number']);
         $this->assertArrayNotHasKey('id', $payload['focused_entity']['items'][0]);
         $this->assertArrayNotHasKey('product_id', $payload['focused_entity']['items'][0]);
-        $this->assertSame('workflow_summary', $payload['conversation_about']['selected_via']);
+        $this->assertSame('draft_summary', $payload['conversation_about']['selected_via']);
     }
 }

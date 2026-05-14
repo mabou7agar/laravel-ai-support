@@ -19,7 +19,7 @@ use LaravelAIEngine\Services\Agent\Collectors\CollectorToolCallParser;
 use LaravelAIEngine\Services\Agent\Collectors\CollectorToolExecutionService;
 use LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
+use LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -69,7 +69,7 @@ class AutonomousCollectorHandlerFlowTest extends UnitTestCase
             },
         );
 
-        $service = new AutonomousCollectorService($ai);
+        $service = new AutonomousCollectorSessionService($ai);
         $handler = $this->handler($service, $ai);
         $context = new UnifiedActionContext('handler-flow-test');
 
@@ -95,7 +95,7 @@ class AutonomousCollectorHandlerFlowTest extends UnitTestCase
         $this->assertSame(99, $done->data['result']['id'] ?? null);
     }
 
-    protected function handler(AutonomousCollectorService $service, AIEngineService $ai): AutonomousCollectorHandler
+    protected function handler(AutonomousCollectorSessionService $service, AIEngineService $ai): AutonomousCollectorHandler
     {
         $locale = app(LocaleResourceService::class);
         $processor = new AutonomousCollectorTurnProcessor(

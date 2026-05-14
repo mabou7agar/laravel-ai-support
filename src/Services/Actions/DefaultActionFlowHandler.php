@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Actions;
 
-use LaravelAIEngine\Contracts\ActionWorkflowHandler;
+use LaravelAIEngine\Contracts\ActionFlowHandler;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
-class DefaultActionWorkflowHandler implements ActionWorkflowHandler
+class DefaultActionFlowHandler implements ActionFlowHandler
 {
     public function __construct(
         private readonly ActionRegistry $registry,

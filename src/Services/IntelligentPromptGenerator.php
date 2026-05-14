@@ -74,15 +74,15 @@ class IntelligentPromptGenerator
             return 'provide_data';
         }
 
-        // If we have active workflow and current step, user is providing data
-        if (!empty($context->currentWorkflow) && !empty($context->currentStep)) {
+        // If we have an active guided step, user is providing data.
+        if (!empty($context->currentStep) || !empty($context->metadata['last_skill_flow'])) {
             return 'provide_data';
         }
 
         // PRIORITY 2: Message pattern analysis (language-agnostic)
 
-        // Very short messages in workflow context are likely confirmations
-        if (!empty($context->currentWorkflow)) {
+        // Very short messages in active collection context are likely confirmations.
+        if (!empty($context->currentStep) || !empty($context->metadata['last_skill_flow'])) {
             $messageLength = mb_strlen(trim($message));
             if ($messageLength <= 5) {
                 return 'confirm'; // "yes", "ok", "да", "نعم", etc.
@@ -92,8 +92,8 @@ class IntelligentPromptGenerator
 
         // PRIORITY 3: Default based on context state
 
-        // No active workflow = likely starting new action
-        if (empty($context->currentWorkflow)) {
+        // No active collection = likely starting new action
+        if (empty($context->currentStep) && empty($context->metadata['last_skill_flow'])) {
             return 'create';
         }
 

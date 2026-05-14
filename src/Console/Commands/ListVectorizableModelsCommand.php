@@ -60,7 +60,7 @@ class ListVectorizableModelsCommand extends Command
         
         foreach ($models as $modelClass) {
             try {
-                $analysis = $analyzer->analyzeModel($modelClass);
+                $analysis = $analyzer->analyze($modelClass);
                 
                 $textFieldCount = count($analysis['text_fields'] ?? []);
                 $relationshipCount = count($analysis['relationships'] ?? []);
@@ -96,7 +96,7 @@ class ListVectorizableModelsCommand extends Command
             $this->line("<fg=cyan>" . ($index + 1) . ". {$modelClass}</>");
             
             try {
-                $analysis = $analyzer->analyzeModel($modelClass);
+                $analysis = $analyzer->analyze($modelClass);
                 
                 // Text fields
                 $textFields = $analysis['text_fields'] ?? [];

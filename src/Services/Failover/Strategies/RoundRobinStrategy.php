@@ -14,14 +14,6 @@ class RoundRobinStrategy implements FailoverStrategyInterface
     protected string $cacheKey = 'ai_engine.round_robin.index';
 
     /**
-    * Backward-compatible entrypoint used by older tests/services.
-    */
-    public function orderProviders(array $providers, array $healthData = []): array
-    {
-        return $this->getProviderOrder($providers, $healthData);
-    }
-
-    /**
      * Get ordered list of providers based on round-robin rotation
      */
     public function getProviderOrder(array $providers, array $healthData): array

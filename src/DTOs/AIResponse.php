@@ -114,18 +114,6 @@ class AIResponse implements \JsonSerializable
     }
 
     /**
-     * Backward-compatible alias for error responses.
-     */
-    public static function failure(
-        string $error,
-        mixed $engine = null,
-        mixed $model = null,
-        array $metadata = []
-    ): self {
-        return self::error($error, $engine, $model, $metadata);
-    }
-
-    /**
      * Add usage information
      */
     public function withUsage(
@@ -356,14 +344,6 @@ class AIResponse implements \JsonSerializable
     public function isSuccessful(): bool
     {
         return $this->success;
-    }
-
-    /**
-     * Alias for isSuccessful() for compatibility
-     */
-    public function isSuccess(): bool
-    {
-        return $this->isSuccessful();
     }
 
     /**
@@ -666,9 +646,6 @@ class AIResponse implements \JsonSerializable
         return $this->functionCall;
     }
 
-    /**
-     * Magic getter for backward compatibility
-     */
     public function __get(string $name)
     {
         $getter = 'get' . ucfirst($name);

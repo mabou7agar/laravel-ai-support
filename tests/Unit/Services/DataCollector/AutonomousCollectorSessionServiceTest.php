@@ -7,11 +7,11 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
+use LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
-class AutonomousCollectorServiceTest extends UnitTestCase
+class AutonomousCollectorSessionServiceTest extends UnitTestCase
 {
     protected function setUp(): void
     {
@@ -48,14 +48,14 @@ class AutonomousCollectorServiceTest extends UnitTestCase
             outputSchema: ['customer_id' => 'integer|required'],
         );
 
-        $serviceA = new AutonomousCollectorService($ai);
+        $serviceA = new AutonomousCollectorSessionService($ai);
         $start = $serviceA->start('ac-session-1', $config);
 
         $this->assertTrue($start->success);
         $this->assertSame('collecting', $start->status);
 
         // New service instance simulates a fresh request lifecycle.
-        $serviceB = new AutonomousCollectorService($ai);
+        $serviceB = new AutonomousCollectorSessionService($ai);
         $response = $serviceB->process('ac-session-1', 'Continue please');
 
         $this->assertTrue($response->success);
@@ -82,13 +82,13 @@ class AutonomousCollectorServiceTest extends UnitTestCase
             outputSchema: ['customer_id' => 'integer|required'],
         );
 
-        $serviceA = new AutonomousCollectorService($ai);
+        $serviceA = new AutonomousCollectorSessionService($ai);
         $serviceA->start('ac-session-2', $config);
 
         // Simulate app restart where static registry has not been rebuilt yet.
         AutonomousCollectorRegistry::clear();
 
-        $serviceB = new AutonomousCollectorService($ai);
+        $serviceB = new AutonomousCollectorSessionService($ai);
         $response = $serviceB->process('ac-session-2', 'Continue please');
 
         $this->assertFalse($response->success);

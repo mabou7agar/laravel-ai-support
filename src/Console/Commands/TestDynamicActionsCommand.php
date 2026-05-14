@@ -237,7 +237,7 @@ class TestDynamicActionsCommand extends Command
         $this->info('Usage:');
         $this->line('  php artisan ai:test-dynamic-actions --discover');
         $this->line('  php artisan ai:test-dynamic-actions --query="create a blog post"');
-        $this->line('  php artisan ai:test-dynamic-actions --execute=create_post');
+        $this->line('  php artisan ai:test-dynamic-actions --execute=create_item');
         $this->line('  php artisan ai:test-dynamic-actions --chat');
         $this->newLine();
         

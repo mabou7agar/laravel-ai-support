@@ -139,7 +139,7 @@ trait ExtractsConversationContextPayload
             return [
                 'conversation_about' => array_filter([
                     'type' => $draftFallback['focused_entity_type'] ?? null,
-                    'selected_via' => 'workflow_summary',
+                    'selected_via' => 'draft_summary',
                 ], static fn ($value) => $value !== null),
             ];
         }
@@ -149,7 +149,7 @@ trait ExtractsConversationContextPayload
                 'conversation_about' => array_filter([
                     'type' => $createdFallback['focused_entity_type'] ?? null,
                     'id' => $createdFallback['focused_entity_id'] ?? null,
-                    'selected_via' => 'workflow_result',
+                    'selected_via' => 'runtime_result',
                 ], static fn ($value) => $value !== null),
             ];
         }
@@ -159,8 +159,8 @@ trait ExtractsConversationContextPayload
 
     protected function buildDraftFocusPayload(array $metadata): array
     {
-        $workflowData = is_array($metadata['workflow_data'] ?? null) ? $metadata['workflow_data'] : [];
-        $draft = $workflowData['collected_data'] ?? null;
+        $runtimeData = is_array($metadata['runtime_data'] ?? null) ? $metadata['runtime_data'] : [];
+        $draft = $runtimeData['collected_data'] ?? null;
 
         if (!is_array($draft) || $draft === []) {
             return [];
@@ -173,19 +173,19 @@ trait ExtractsConversationContextPayload
 
         return array_filter([
             'focused_entity' => $sanitizedDraft,
-            'focused_entity_type' => $this->inferWorkflowEntityType($metadata),
+            'focused_entity_type' => $this->inferFlowEntityType($metadata),
         ], static fn ($value) => $value !== null && $value !== []);
     }
 
     protected function buildCreatedFocusPayload(array $metadata): array
     {
-        $workflowData = is_array($metadata['workflow_data'] ?? null) ? $metadata['workflow_data'] : [];
-        $entity = $workflowData['entity'] ?? ($metadata['created_entity'] ?? null);
-        $entityId = $workflowData['entity_id'] ?? ($metadata['created_entity_id'] ?? null);
+        $runtimeData = is_array($metadata['runtime_data'] ?? null) ? $metadata['runtime_data'] : [];
+        $entity = $runtimeData['entity'] ?? ($metadata['created_entity'] ?? null);
+        $entityId = $runtimeData['entity_id'] ?? ($metadata['created_entity_id'] ?? null);
         $entityType = is_string($metadata['created_entity_type'] ?? null) ? $metadata['created_entity_type'] : null;
 
         if ($entity === null) {
-            foreach ($workflowData as $key => $value) {
+            foreach ($runtimeData as $key => $value) {
                 if ($key === 'entity' || str_ends_with((string) $key, '_id')) {
                     continue;
                 }
@@ -199,7 +199,7 @@ trait ExtractsConversationContextPayload
         }
 
         if ($entityId === null) {
-            foreach ($workflowData as $key => $value) {
+            foreach ($runtimeData as $key => $value) {
                 if (($key === 'entity_id' || str_ends_with((string) $key, '_id')) && (is_scalar($value) || $value instanceof Stringable)) {
                     $entityId = $value;
                     if ($entityType === null && $key !== 'entity_id') {
@@ -226,18 +226,18 @@ trait ExtractsConversationContextPayload
         ], static fn ($value) => $value !== null);
     }
 
-    protected function inferWorkflowEntityType(array $metadata): ?string
+    protected function inferFlowEntityType(array $metadata): ?string
     {
-        $workflowClass = $metadata['workflow_class']
-            ?? $metadata['current_workflow']
-            ?? ($metadata['metadata']['current_workflow'] ?? null);
+        $flowName = $metadata['flow_name']
+            ?? $metadata['current_flow']
+            ?? ($metadata['metadata']['current_flow'] ?? null);
 
-        if (!is_string($workflowClass) || trim($workflowClass) === '') {
+        if (!is_string($flowName) || trim($flowName) === '') {
             return null;
         }
 
-        $base = class_basename($workflowClass);
-        $base = preg_replace('/Workflow$/', '', $base) ?? $base;
+        $base = class_basename($flowName);
+        $base = preg_replace('/Flow$/', '', $base) ?? $base;
         $base = preg_replace('/^(Create|Update|Delete|Manage|Review|Confirm)/', '', $base) ?? $base;
         $base = trim((string) $base);
 

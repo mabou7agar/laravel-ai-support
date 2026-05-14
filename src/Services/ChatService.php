@@ -88,7 +88,7 @@ class ChatService
         );
         $agentResponse = $this->agentRuntime->process($message, $sessionId, $userId, $options);
 
-        $this->updateWorkflowSessionNode($sessionId, $agentResponse);
+        $this->updateSessionNode($sessionId, $agentResponse);
 
         return $this->toAIResponse($agentResponse, $engine, $model, $conversationId);
     }
@@ -139,13 +139,14 @@ class ChatService
         }
     }
 
-    protected function updateWorkflowSessionNode(string $sessionId, AgentResponse $agentResponse): void
+    protected function updateSessionNode(string $sessionId, AgentResponse $agentResponse): void
     {
-        $context = $agentResponse->context;
-        if ($context !== null && !empty($context->currentWorkflow)) {
+        $routedNode = $agentResponse->context?->toArray()['routed_to_node'] ?? null;
+
+        if (!empty($routedNode)) {
             Cache::put(
                 "session_node:{$sessionId}",
-                $context->toArray()['routed_to_node'] ?? null,
+                $routedNode,
                 now()->addHours(1)
             );
 
@@ -179,10 +180,9 @@ class ChatService
             engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
             model: \LaravelAIEngine\Enums\EntityEnum::from($model),
             metadata: array_merge($contextData, $agentResponse->metadata ?? [], $entityTracking, [
-                'workflow_active' => !$agentResponse->isComplete,
-                'workflow_class' => $context?->currentWorkflow,
-                'workflow_data' => $agentResponse->data ?? [],
-                'workflow_completed' => $agentResponse->isComplete,
+                'runtime_active' => !$agentResponse->isComplete,
+                'runtime_data' => $agentResponse->data ?? [],
+                'runtime_completed' => $agentResponse->isComplete,
                 'agent_strategy' => $agentResponse->strategy,
                 'needs_user_input' => $agentResponse->needsUserInput,
                 'is_complete' => $agentResponse->isComplete,

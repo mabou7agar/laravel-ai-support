@@ -47,7 +47,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     public function generate(AIRequest $request): AIResponse
     {
         try {
-            switch ($request->entity) {
+            switch ($request->getModel()) {
                 case EntityEnum::MIDJOURNEY_V6:
                     return $this->generateImage($request, 'v6');
                 case EntityEnum::MIDJOURNEY_V5:
@@ -55,7 +55,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
                 case EntityEnum::MIDJOURNEY_NIJI:
                     return $this->generateImage($request, 'niji');
                 default:
-                    throw new AIEngineException("Entity {$request->entity->value} not supported by Midjourney driver");
+                    throw new AIEngineException("Entity {$request->getModel()->value} not supported by Midjourney driver");
             }
         } catch (RequestException $e) {
             throw new AIEngineException('Midjourney API request failed: ' . $e->getMessage());
@@ -77,10 +77,10 @@ class MidjourneyEngineDriver implements EngineDriverInterface
             content: json_encode($images),
             usage: [
                 'images_generated' => count($images),
-                'total_cost' => $request->entity->creditIndex(),
+                'total_cost' => $request->getModel()->creditIndex(),
             ],
             metadata: [
-                'model' => $request->entity->value,
+                'model' => $request->getModel()->value,
                 'engine' => EngineEnum::MIDJOURNEY->value,
                 'version' => $version,
                 'job_id' => $jobId,
@@ -340,12 +340,12 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     public function validateRequest(AIRequest $request): bool
     {
         // Check if model is supported
-        if (!in_array($request->entity, [
+        if (!in_array($request->getModel(), [
             EntityEnum::MIDJOURNEY_V6,
             EntityEnum::MIDJOURNEY_V5,
             EntityEnum::MIDJOURNEY_NIJI,
         ])) {
-            throw new AIEngineException("Model {$request->entity->value} is not supported by Midjourney driver");
+            throw new AIEngineException("Model {$request->getModel()->value} is not supported by Midjourney driver");
         }
 
         // Validate prompt

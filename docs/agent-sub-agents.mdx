@@ -66,7 +66,7 @@ class ResearchSubAgent implements SubAgentHandler
 
 Send `agent_goal=true` to `POST /api/v1/agent/chat` with a `target`. You can let the planner match configured sub-agents by capabilities, or pass an explicit sub-agent plan.
 
-`POST /api/v1/rag/chat` remains available as a backward-compatible alias for existing clients, but new agentic workflows should use `/api/v1/agent/chat`.
+Use `POST /api/v1/agent/chat` for new agentic flows.
 
 ```json
 {

@@ -1,6 +1,6 @@
 {
     "name": "m-tech-stack/laravel-ai-engine",
-    "description": "Laravel AI agent engine for orchestration, structured tools, RAG, and deterministic node federation across Laravel apps.",
+    "description": "Laravel AI agent engine for orchestration, structured tools, RAG, and node federation across Laravel apps.",
     "type": "library",
     "license": "MIT",
     "keywords": [

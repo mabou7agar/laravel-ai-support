@@ -7,10 +7,14 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Actions\ActionDraftService;
+use LaravelAIEngine\Services\Actions\ActionReplyGeneratorService;
 
 class ExecuteActionTool extends AgentTool
 {
-    public function __construct(protected ActionDraftService $drafts)
+    public function __construct(
+        protected ActionDraftService $drafts,
+        protected ActionReplyGeneratorService $replies
+    )
     {
     }
 
@@ -49,18 +53,22 @@ class ExecuteActionTool extends AgentTool
         );
 
         if ($result['success'] ?? false) {
+            $reply = $this->replies->generate($result);
+
             return ActionResult::success(
-                $result['message'] ?? 'Action executed.',
+                $reply['text'],
                 $result['data'] ?? $result,
-                array_merge($result['metadata'] ?? [], ['agent_strategy' => 'action_execute'])
+                array_merge($result['metadata'] ?? [], ['agent_strategy' => 'action_execute'], $reply['metadata'])
             );
         }
 
         if (($result['needs_user_input'] ?? false) || ($result['requires_confirmation'] ?? false)) {
+            $reply = $this->replies->generate($result);
+
             return ActionResult::needsUserInput(
-                $result['message'] ?? $result['error'] ?? 'Action needs user input.',
+                $reply['text'],
                 $result,
-                ['agent_strategy' => 'action_needs_input']
+                ['agent_strategy' => 'action_needs_input'] + $reply['metadata']
             );
         }
 

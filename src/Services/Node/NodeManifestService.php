@@ -52,7 +52,6 @@ class NodeManifestService
             'data_types' => array_values($metadata['data_types'] ?? []),
             'keywords' => array_values($metadata['keywords'] ?? []),
             'collections' => $collections,
-            'workflows' => array_values($metadata['workflows'] ?? []),
             'autonomous_collectors' => $collectors,
             'ownership' => [
                 'collections' => array_values(array_unique(array_map(

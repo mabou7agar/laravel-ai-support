@@ -39,15 +39,15 @@ class SearchDocumentBuilder
             }
         }
 
-        return $this->buildFromLegacyModel($model);
+        return $this->buildFromModelDefaults($model);
     }
 
-    public function buildFromLegacyModel(object $model): SearchDocument
+    public function buildFromModelDefaults(object $model): SearchDocument
     {
         $modelClass = get_class($model);
         $modelId = $model->id ?? null;
-        $content = $this->extractLegacyContent($model);
-        $metadata = $this->extractLegacyMetadata($model);
+        $content = $this->extractContent($model);
+        $metadata = $this->extractMetadata($model);
         $title = $this->resolveTitle($model);
         $detail = $this->resolveRagDetail($model, $content);
         $summary = $this->resolveRagSummary($model, $detail);
@@ -174,12 +174,8 @@ class SearchDocumentBuilder
         return $document;
     }
 
-    protected function extractLegacyContent(object $model): string
+    protected function extractContent(object $model): string
     {
-        if (method_exists($model, 'getVectorContent')) {
-            return trim((string) $model->getVectorContent());
-        }
-
         $parts = [];
         $vectorizable = $this->readArrayProperty($model, 'vectorizable');
         $fields = $vectorizable !== []
@@ -205,22 +201,9 @@ class SearchDocumentBuilder
     /**
      * @return array<string, mixed>
      */
-    protected function extractLegacyMetadata(object $model): array
+    protected function extractMetadata(object $model): array
     {
-        $metadata = $this->extractBaseMetadata($model);
-
-        if (method_exists($model, 'getVectorMetadata')) {
-            foreach ((array) $model->getVectorMetadata() as $key => $value) {
-                if ($value instanceof \DateTimeInterface) {
-                    $metadata[$key] = $value->format('Y-m-d\TH:i:sP');
-                    $metadata[$key . '_ts'] = $value->getTimestamp();
-                } else {
-                    $metadata[$key] = $value;
-                }
-            }
-        }
-
-        return $metadata;
+        return $this->extractBaseMetadata($model);
     }
 
     /**
@@ -257,13 +240,6 @@ class SearchDocumentBuilder
 
     protected function resolveRagContent(object $model, string $detail, string $content): string
     {
-        if (method_exists($model, 'toRAGContent')) {
-            $ragContent = trim((string) $model->toRAGContent());
-            if ($ragContent !== '') {
-                return $ragContent;
-            }
-        }
-
         return $detail !== '' ? $detail : $content;
     }
 
@@ -271,13 +247,6 @@ class SearchDocumentBuilder
     {
         if ($this->hasCustomMethod($model, 'toRAGDetail')) {
             $detail = trim((string) $model->toRAGDetail());
-            if ($detail !== '') {
-                return $detail;
-            }
-        }
-
-        if (method_exists($model, 'toRAGContent')) {
-            $detail = trim((string) $model->toRAGContent());
             if ($detail !== '') {
                 return $detail;
             }
@@ -711,18 +680,6 @@ class SearchDocumentBuilder
             $value = trim((string) $relatedModel->getSourceNode());
             if ($value !== '') {
                 return $value;
-            }
-        }
-
-        if (method_exists($relatedModel, 'getVectorMetadata')) {
-            try {
-                $metadata = (array) $relatedModel->getVectorMetadata();
-                $sourceNode = trim((string) ($metadata['source_node'] ?? ''));
-                if ($sourceNode !== '') {
-                    return $sourceNode;
-                }
-            } catch (\Throwable) {
-                // Ignore relation metadata lookup failures and fall back to local node.
             }
         }
 

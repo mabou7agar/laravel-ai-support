@@ -296,6 +296,7 @@ class TestEverythingCommand extends Command
      */
     protected function buildShellCommand(string $workdir, array $commandParts, array $env = [], ?string $envFile = null): string
     {
+        $commandParts = $this->withPhpBinaryForPhpunit($commandParts);
         $exports = '';
 
         foreach ($env as $key => $value) {
@@ -317,6 +318,21 @@ class TestEverythingCommand extends Command
             'bash -lc %s',
             escapeshellarg($prefix.$exports.$command)
         );
+    }
+
+    /**
+     * @param  array<int, string>  $commandParts
+     * @return array<int, string>
+     */
+    protected function withPhpBinaryForPhpunit(array $commandParts): array
+    {
+        $binary = (string) ($commandParts[0] ?? '');
+
+        if ($binary !== '' && preg_match('#(^|/)phpunit(\\.phar)?$#', $binary) === 1) {
+            array_unshift($commandParts, PHP_BINARY);
+        }
+
+        return $commandParts;
     }
 
     /**

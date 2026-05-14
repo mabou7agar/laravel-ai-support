@@ -147,7 +147,6 @@ class ActionExecutionPipeline
         return match($executor) {
             'model.dynamic' => $this->executeModelAction($definition, $params, $userId),
             'model.remote' => $this->executeRemoteModelAction($definition, $params, $userId),
-            'workflow' => $this->executeWorkflow($definition, $params, $userId, $sessionId),
             'email.reply' => $this->executeEmailAction($definition, $params, $userId),
             'calendar.create' => $this->executeCalendarAction($definition, $params, $userId),
             'task.create' => $this->executeTaskAction($definition, $params, $userId),
@@ -158,8 +157,7 @@ class ActionExecutionPipeline
     /**
      * Execute local model action
      * 
-     * Centralized execution: checks if model has a workflow configured,
-     * if so, uses the workflow. Otherwise falls back to executeAI.
+     * Centralized execution for model-backed actions.
      */
     protected function executeModelAction(array $definition, array $params, $userId): ActionResult
     {
@@ -170,27 +168,10 @@ class ActionExecutionPipeline
         }
         
         try {
-            // Check if model has AI config with workflow
             $reflection = new \ReflectionClass($modelClass);
-            
-            if ($reflection->hasMethod('initializeAI')) {
-                $method = $reflection->getMethod('initializeAI');
-                $aiConfig = $method->isStatic() 
-                    ? $modelClass::initializeAI() 
-                    : (new $modelClass())->initializeAI();
-                
-                // If workflow is specified, use it instead of executeAI
-                if (isset($aiConfig['workflow']) && class_exists($aiConfig['workflow'])) {
-                    return $this->executeWorkflow([
-                        'workflow_class' => $aiConfig['workflow'],
-                        'model_class' => $modelClass,
-                    ], $params, $userId, null);
-                }
-            }
-            
-            // No workflow - fall back to executeAI
+
             if (!$reflection->hasMethod('executeAI')) {
-                return ActionResult::failure("Model does not have executeAI method or workflow");
+                return ActionResult::failure('Model does not have executeAI method');
             }
             
             // Add user_id to params
@@ -291,7 +272,7 @@ class ActionExecutionPipeline
      */
     protected function executeEmailAction(array $definition, array $params, $userId): ActionResult
     {
-        // TODO: Integrate with email service
+        // Package default: return a draft payload; apps can route this executor to a mail service.
         return ActionResult::success(
             message: '✉️ Email reply drafted successfully!',
             data: $params
@@ -303,7 +284,7 @@ class ActionExecutionPipeline
      */
     protected function executeCalendarAction(array $definition, array $params, $userId): ActionResult
     {
-        // TODO: Integrate with calendar service
+        // Package default: return the event payload; apps can route this executor to a calendar service.
         return ActionResult::success(
             message: '📅 Calendar event created!',
             data: $params
@@ -315,114 +296,11 @@ class ActionExecutionPipeline
      */
     protected function executeTaskAction(array $definition, array $params, $userId): ActionResult
     {
-        // TODO: Integrate with task service
+        // Package default: return the task payload; apps can route this executor to a task service.
         return ActionResult::success(
             message: '✅ Task created successfully!',
             data: $params
         );
-    }
-    
-    /**
-     * Execute workflow action
-     */
-    protected function executeWorkflow(
-        array $definition,
-        array $params,
-        $userId,
-        ?string $sessionId
-    ): ActionResult {
-        $workflowClass = $definition['workflow_class'] ?? null;
-        
-        if (!$workflowClass || !class_exists($workflowClass)) {
-            return ActionResult::failure('Invalid workflow class');
-        }
-        
-        try {
-            $agentMode = app(\LaravelAIEngine\Services\Agent\AgentMode::class);
-            
-            // Load existing context from cache or create new one
-            $sessionId = $sessionId ?? uniqid('workflow_');
-            $context = \LaravelAIEngine\DTOs\UnifiedActionContext::fromCache($sessionId, $userId);
-            
-            // Get the message from params
-            $message = $params['message'] ?? $params['user_message'] ?? '';
-            
-            // Check if workflow is already active for this session
-            if ($context->currentWorkflow === $workflowClass) {
-                Log::channel('ai-engine')->info('Continuing existing workflow', [
-                    'workflow' => $workflowClass,
-                    'session_id' => $sessionId,
-                    'current_step' => $context->currentStep,
-                ]);
-                
-                $response = $agentMode->continueWorkflow($message, $context);
-            } else {
-                Log::channel('ai-engine')->info('Starting new workflow', [
-                    'workflow' => $workflowClass,
-                    'session_id' => $sessionId,
-                    'message' => substr($message, 0, 100),
-                ]);
-                
-                $response = $agentMode->startWorkflow($workflowClass, $context, $message);
-            }
-            
-            // Convert AgentResponse to ActionResult
-            if ($response->needsUserInput) {
-                return ActionResult::needsUserInput(
-                    message: $response->message,
-                    data: [
-                        'workflow_active' => true,
-                        'current_step' => $context->currentStep,
-                        'workflow_state' => $context->workflowState,
-                    ],
-                    metadata: [
-                        'workflow_class' => $workflowClass,
-                        'session_id' => $sessionId,
-                    ]
-                );
-            }
-            
-            if ($response->isComplete) {
-                return ActionResult::success(
-                    message: $response->message,
-                    data: [
-                        'workflow_completed' => true,
-                        'final_state' => $context->workflowState,
-                    ],
-                    metadata: [
-                        'workflow_class' => $workflowClass,
-                        'session_id' => $sessionId,
-                    ]
-                );
-            }
-            
-            if (!$response->success) {
-                return ActionResult::failure(
-                    error: $response->message,
-                    data: [
-                        'workflow_failed' => true,
-                        'current_step' => $context->currentStep,
-                    ]
-                );
-            }
-            
-            return ActionResult::success(
-                message: $response->message,
-                data: ['workflow_state' => $context->workflowState]
-            );
-            
-        } catch (\Exception $e) {
-            Log::channel('ai-engine')->error('Workflow execution failed', [
-                'workflow' => $workflowClass,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            
-            return ActionResult::failure(
-                error: 'Workflow execution failed. Please try again.',
-                metadata: ['workflow_class' => $workflowClass]
-            );
-        }
     }
     
     /**

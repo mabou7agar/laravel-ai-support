@@ -215,7 +215,7 @@ class DocumentProcessor
             );
             
             $response = $aiEngine->generateEmbeddings($request);
-            if ($response->isSuccess()) {
+            if ($response->isSuccessful()) {
                 $embeddings[] = json_decode($response->content, true);
             }
         }
@@ -238,7 +238,7 @@ class DocumentProcessor
         
         $response = $aiEngine->generateEmbeddings($request);
         
-        if ($response->isSuccess()) {
+        if ($response->isSuccessful()) {
             return json_decode($response->content, true);
         }
         

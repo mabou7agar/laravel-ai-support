@@ -92,8 +92,7 @@ class NodeSessionManagerTest extends UnitTestCase
                 'success' => true,
                 'response' => 'Let\'s proceed with the "Google" product. Please specify more details.',
                 'metadata' => [
-                    'workflow_active' => true,
-                    'workflow_class' => 'App\\AI\\Workflows\\InvoiceWorkflow',
+                    'session_active' => true,
                     'current_step' => 'resolve_products',
                 ],
             ]);
@@ -119,10 +118,10 @@ class NodeSessionManagerTest extends UnitTestCase
         $this->assertSame('product', $pending['pending_entity_slot']['entity'] ?? null);
         $this->assertSame('Google', $pending['pending_entity_slot']['value'] ?? null);
         $this->assertIsArray($context->pendingAction);
-        $this->assertSame('remote_node_workflow', $context->pendingAction['type'] ?? null);
+        $this->assertSame('remote_node_session', $context->pendingAction['type'] ?? null);
     }
 
-    public function test_continue_session_clears_remote_pending_state_when_workflow_completes(): void
+    public function test_continue_session_clears_remote_pending_state_when_session_completes(): void
     {
         $node = new AINode();
         $node->slug = 'inbusiness';
@@ -139,8 +138,8 @@ class NodeSessionManagerTest extends UnitTestCase
                 'success' => true,
                 'response' => 'Product created successfully.',
                 'metadata' => [
-                    'workflow_active' => false,
-                    'workflow_completed' => true,
+                    'session_active' => false,
+                    'session_completed' => true,
                 ],
             ]);
 
@@ -162,7 +161,7 @@ class NodeSessionManagerTest extends UnitTestCase
             'node_slug' => 'inbusiness',
         ]);
         $context->pendingAction = [
-            'type' => 'remote_node_workflow',
+            'type' => 'remote_node_session',
         ];
 
         $response = $manager->continueSession('yes', $context, []);

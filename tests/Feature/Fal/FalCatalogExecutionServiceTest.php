@@ -65,7 +65,7 @@ class FalCatalogExecutionServiceTest extends TestCase
 
         $response = (new FalAIEngineDriver(config('ai-engine.engines.fal_ai')))->generate($request);
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame(['https://cdn.example.test/fal.png'], $response->getFiles());
         $this->assertDatabaseHas('ai_provider_tool_runs', [
             'provider' => 'fal_ai',

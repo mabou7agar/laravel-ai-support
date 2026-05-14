@@ -36,7 +36,7 @@ class DocsCoverageMatrixTest extends TestCase
         'guides/concepts' => [
             'tests/Unit/Services/Agent/IntentRouterTest.php',
             'tests/Unit/Services/Agent/AgentPlannerTest.php',
-            'tests/Unit/Services/DataCollector/AutonomousCollectorServiceTest.php',
+            'tests/Unit/Services/DataCollector/AutonomousCollectorSessionServiceTest.php',
             'tests/Unit/Services/RAG/RAGPlannerServiceTest.php',
         ],
         'guides/configuration' => [
@@ -60,7 +60,7 @@ class DocsCoverageMatrixTest extends TestCase
         ],
         'guides/data-collectors' => [
             'tests/Feature/DataCollector/AutonomousCollectorApiTest.php',
-            'tests/Unit/Services/DataCollector/AutonomousCollectorServiceTest.php',
+            'tests/Unit/Services/DataCollector/AutonomousCollectorSessionServiceTest.php',
             'tests/Unit/Services/Agent/AutonomousCollectorHandlerSummaryTest.php',
         ],
         'guides/direct-generation-recipes' => [

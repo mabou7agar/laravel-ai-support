@@ -19,9 +19,9 @@ class ActionService
             $actions = array_merge($actions, $ragMetadata['smart_actions']);
         }
         
-        // If workflow is active, only return workflow actions (no default UI actions)
-        $isWorkflowActive = $ragMetadata['workflow_active'] ?? false;
-        if ($isWorkflowActive) {
+        // If a runtime turn is active, only return runtime actions (no default UI actions).
+        $isRuntimeActive = $ragMetadata['runtime_active'] ?? false;
+        if ($isRuntimeActive) {
             return $actions;
         }
         
@@ -256,7 +256,6 @@ class ActionService
                 return $this->handleViewSource($data);
             
             case 'create_item':
-            case 'create_post':  // Backward compatibility
                 return $this->handleCreateItem($data);
             
             case 'find_similar':

@@ -183,7 +183,7 @@ class FalReferencePackGenerationService
                 $generatedImages,
                 $request
             );
-            if (!$response->isSuccess()) {
+            if (!$response->isSuccessful()) {
                 throw new AIEngineException($response->getError() ?? 'Reference pack generation failed.');
             }
 
@@ -327,7 +327,7 @@ class FalReferencePackGenerationService
     ): AIResponse {
         $response = $this->aiEngineService->generateDirect($request);
 
-        if ($response->isSuccess()) {
+        if ($response->isSuccessful()) {
             return $response;
         }
 

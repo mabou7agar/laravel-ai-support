@@ -132,7 +132,7 @@ class Neo4jGraphSyncServiceTest extends TestCase
         )));
         $this->assertTrue($statements->contains(fn (string $statement) => str_contains(
             $statement,
-            'legacy:User {user_email_normalized: $user_email_normalized}',
+            'duplicate:User {user_email_normalized: $user_email_normalized}',
         )));
         $this->assertTrue($statements->contains(fn (string $statement) => str_contains(
             $statement,
@@ -174,7 +174,7 @@ class Neo4jGraphSyncServiceTest extends TestCase
         $this->assertSame('IN_PROJECT', $payload['relations'][0]['type']);
         $this->assertSame('project', $payload['relations'][0]['name']);
         $this->assertSame(
-            'projects:' . GraphSyncProjectModel::class . ':77',
+            'local:' . GraphSyncProjectModel::class . ':77',
             $payload['relations'][0]['target_entity_key']
         );
     }

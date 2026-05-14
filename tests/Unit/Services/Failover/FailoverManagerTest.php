@@ -146,16 +146,17 @@ class FailoverManagerTest extends TestCase
 
     public function test_priority_strategy_orders_by_priority()
     {
-        $providers = [
-            'openai' => ['priority' => 2],
-            'anthropic' => ['priority' => 1],
-            'gemini' => ['priority' => 3]
-        ];
+        $providers = ['openai', 'anthropic', 'gemini'];
+        config()->set('ai-engine.failover.provider_priorities', [
+            'openai' => 20,
+            'anthropic' => 10,
+            'gemini' => 30,
+        ]);
 
         $strategy = new PriorityStrategy();
-        $ordered = $strategy->orderProviders($providers, []);
+        $ordered = $strategy->getProviderOrder($providers, []);
         
-        $this->assertEquals(['anthropic', 'openai', 'gemini'], $ordered);
+        $this->assertEquals(['gemini', 'openai', 'anthropic'], $ordered);
     }
 
     public function test_round_robin_strategy_rotates_providers()
@@ -163,8 +164,8 @@ class FailoverManagerTest extends TestCase
         $providers = ['openai', 'anthropic', 'gemini'];
         $strategy = new RoundRobinStrategy();
         
-        $first = $strategy->orderProviders($providers, []);
-        $second = $strategy->orderProviders($providers, []);
+        $first = $strategy->getProviderOrder($providers, []);
+        $second = $strategy->getProviderOrder($providers, []);
         
         // Should rotate the order
         $this->assertNotEquals($first, $second);

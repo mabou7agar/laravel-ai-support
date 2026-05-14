@@ -6,15 +6,11 @@ namespace LaravelAIEngine\Tests\Unit\Services\Agent\Routing;
 
 use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\RoutingDecisionSource;
-use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Contracts\DeterministicAgentHandler;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\MessageRoutingClassifier;
-use LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry;
 use LaravelAIEngine\Services\Agent\Routing\Stages\ActiveRunContinuationStage;
 use LaravelAIEngine\Services\Agent\Routing\Stages\AIRouterStage;
-use LaravelAIEngine\Services\Agent\Routing\Stages\DeterministicCommandStage;
 use LaravelAIEngine\Services\Agent\Routing\Stages\ExplicitModeStage;
 use LaravelAIEngine\Services\Agent\Routing\Stages\FallbackConversationalStage;
 use LaravelAIEngine\Services\Agent\Routing\Stages\MessageClassificationStage;
@@ -107,22 +103,6 @@ class RoutingStagesTest extends UnitTestCase
         $this->assertSame('positional_reference', $position->payload['selection_type']);
     }
 
-    public function test_deterministic_stage_reports_candidates_without_executing_handlers(): void
-    {
-        $registry = new DeterministicAgentHandlerRegistry($this->app);
-        $handler = new TestDeterministicHandler();
-        $registry->register($handler);
-
-        $decision = (new DeterministicCommandStage($registry))
-            ->decide('deterministic command', new UnifiedActionContext('deterministic-session'));
-
-        $this->assertSame(RoutingDecisionAction::RUN_DETERMINISTIC, $decision->action);
-        $this->assertSame(RoutingDecisionSource::DETERMINISTIC, $decision->source);
-        $this->assertSame('high', $decision->confidence);
-        $this->assertSame([TestDeterministicHandler::class], $decision->payload['handler_candidates']);
-        $this->assertFalse($handler->executed);
-    }
-
     public function test_ai_router_stage_maps_router_decisions_to_routing_decisions(): void
     {
         $router = Mockery::mock(IntentRouter::class);
@@ -152,17 +132,5 @@ class RoutingStagesTest extends UnitTestCase
 
         $this->assertSame(RoutingDecisionAction::CONVERSATIONAL, $decision->action);
         $this->assertSame(RoutingDecisionSource::FALLBACK, $decision->source);
-    }
-}
-
-class TestDeterministicHandler implements DeterministicAgentHandler
-{
-    public bool $executed = false;
-
-    public function handle(string $message, UnifiedActionContext $context, array $options = []): ?AgentResponse
-    {
-        $this->executed = true;
-
-        return AgentResponse::conversational('handled', $context);
     }
 }

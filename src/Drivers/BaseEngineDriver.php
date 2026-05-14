@@ -61,7 +61,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
             );
 
             $response = $this->generateText($testRequest);
-            return $response->isSuccess();
+            return $response->isSuccessful();
         } catch (\Exception $e) {
             return false;
         }
@@ -345,7 +345,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     {
         try {
             $response = $testCallback($testRequest);
-            return $response instanceof AIResponse ? $response->isSuccess() : (bool) $response;
+            return $response instanceof AIResponse ? $response->isSuccessful() : (bool) $response;
         } catch (\Exception $e) {
             \Log::warning("Connection test failed for {$this->getEngineEnum()->value}: {$e->getMessage()}");
             return false;

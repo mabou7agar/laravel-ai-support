@@ -6,11 +6,11 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Contracts\ActionWorkflowHandler;
+use LaravelAIEngine\Contracts\ActionFlowHandler;
 
 class PrepareActionTool extends AgentTool
 {
-    public function __construct(protected ActionWorkflowHandler $actions)
+    public function __construct(protected ActionFlowHandler $actions)
     {
     }
 

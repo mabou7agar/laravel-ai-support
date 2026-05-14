@@ -24,7 +24,6 @@ class MemoryProxy
     {
         $this->driver = $driver;
 
-        // Keep compatibility with legacy tests and with runtime driver switching.
         // Some mocked MemoryManager instances do not define this expectation.
         try {
             $this->memoryManager->driver($driver);

@@ -4,24 +4,9 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
-use LaravelAIEngine\Contracts\DeterministicAgentHandler;
-use LaravelAIEngine\DTOs\AgentResponse;
-use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeConfigValidator;
 use LaravelAIEngine\Services\Agent\Tools\RunSubAgentTool;
 use LaravelAIEngine\Tests\UnitTestCase;
-
-class ValidDeterministicHandler implements DeterministicAgentHandler
-{
-    public function handle(string $message, UnifiedActionContext $context, array $options = []): ?AgentResponse
-    {
-        return null;
-    }
-}
-
-class InvalidDeterministicHandler
-{
-}
 
 class AgentRuntimeConfigValidatorTest extends UnitTestCase
 {
@@ -64,18 +49,4 @@ class AgentRuntimeConfigValidatorTest extends UnitTestCase
         $this->assertContains('missing_routing_stage', array_column($report['issues'], 'code'));
     }
 
-    public function test_validator_checks_dispatcher_handlers(): void
-    {
-        config()->set('ai-agent.deterministic_handlers', [
-            ValidDeterministicHandler::class,
-            InvalidDeterministicHandler::class,
-            'App\\MissingDeterministicHandler',
-        ]);
-
-        $report = (new AgentRuntimeConfigValidator())->validate();
-
-        $this->assertFalse($report['passed']);
-        $this->assertContains('invalid_dispatcher_handler_contract', array_column($report['issues'], 'code'));
-        $this->assertContains('missing_dispatcher_handler', array_column($report['issues'], 'code'));
-    }
 }

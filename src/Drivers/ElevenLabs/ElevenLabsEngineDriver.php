@@ -95,7 +95,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
             );
             
             $response = $this->generateAudio($testRequest);
-            return $response->isSuccess();
+            return $response->isSuccessful();
         } catch (\Exception $e) {
             return false;
         }

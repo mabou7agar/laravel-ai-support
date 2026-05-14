@@ -12,13 +12,13 @@ use ReflectionMethod;
 
 class AIEngineServiceProviderConfigMergeTest extends UnitTestCase
 {
-    public function test_nested_config_merge_restores_new_engine_sections_for_older_configs(): void
+    public function test_nested_config_merge_preserves_published_engine_values(): void
     {
         config()->set('ai-engine', [
             'default' => 'openai',
             'engines' => [
                 'openai' => [
-                    'api_key' => 'legacy-openai-key',
+                    'api_key' => 'custom-openai-key',
                 ],
             ],
         ]);
@@ -28,7 +28,7 @@ class AIEngineServiceProviderConfigMergeTest extends UnitTestCase
         $method->setAccessible(true);
         $method->invoke($provider, 'ai-engine', AIEngineConfigDefaults::defaults());
 
-        $this->assertSame('legacy-openai-key', config('ai-engine.engines.openai.api_key'));
+        $this->assertSame('custom-openai-key', config('ai-engine.engines.openai.api_key'));
         $this->assertSame('https://fal.run', config('ai-engine.engines.fal_ai.base_url'));
         $this->assertTrue(config('ai-engine.engines.fal_ai.models.fal-ai/nano-banana-2.enabled'));
     }

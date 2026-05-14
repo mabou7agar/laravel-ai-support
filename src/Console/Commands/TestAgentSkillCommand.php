@@ -14,6 +14,8 @@ class TestAgentSkillCommand extends Command
     protected $signature = 'ai-engine:skills:test
                             {message : User message to match against enabled skills}
                             {--include-disabled : Include disabled draft skills}
+                            {--smart : Use AI intent matching when deterministic triggers do not match}
+                            {--history=* : Recent conversation entries as role:content}
                             {--json : Output the match and execution plan as JSON}';
 
     protected $description = 'Test skill matching and show the compiled execution plan for a message';
@@ -21,7 +23,15 @@ class TestAgentSkillCommand extends Command
     public function handle(AgentSkillMatcher $matcher, AgentSkillExecutionPlanner $planner): int
     {
         $message = (string) $this->argument('message');
-        $match = $matcher->match($message, (bool) $this->option('include-disabled'));
+        $context = new UnifiedActionContext(
+            sessionId: 'skill-test-' . uniqid(),
+            userId: null,
+            conversationHistory: $this->history()
+        );
+        $includeDisabled = (bool) $this->option('include-disabled');
+        $match = ((bool) $this->option('smart') || $context->conversationHistory !== [])
+            ? $matcher->matchIntent($message, $context, $includeDisabled)
+            : $matcher->match($message, $includeDisabled);
 
         if ($match === null) {
             if ($this->option('json')) {
@@ -35,11 +45,6 @@ class TestAgentSkillCommand extends Command
 
             return self::SUCCESS;
         }
-
-        $context = new UnifiedActionContext(
-            sessionId: 'skill-test-' . uniqid(),
-            userId: null
-        );
 
         $plan = $planner->plan($match['skill'], $message, $context, $match);
         $payload = [
@@ -71,5 +76,33 @@ class TestAgentSkillCommand extends Command
         );
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array<int, array{role:string,content:string}>
+     */
+    protected function history(): array
+    {
+        return collect((array) $this->option('history'))
+            ->map(function (mixed $entry): ?array {
+                $entry = trim((string) $entry);
+                if ($entry === '') {
+                    return null;
+                }
+
+                [$role, $content] = str_contains($entry, ':')
+                    ? explode(':', $entry, 2)
+                    : ['user', $entry];
+
+                $role = strtolower(trim($role));
+
+                return [
+                    'role' => in_array($role, ['system', 'assistant', 'user'], true) ? $role : 'user',
+                    'content' => trim($content),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 }

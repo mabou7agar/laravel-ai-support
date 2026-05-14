@@ -220,14 +220,13 @@ class AIChatController extends Controller
                 'actions' => array_map(fn($action) => is_array($action) ? $action : $action->toArray(), $actions),
                 'usage' => $response->getUsage() ?? [],
                 'session_id' => $dto->sessionId,
-                // Runtime metadata includes RAG, workflow, actions, trace, and route data.
+                // Runtime metadata includes RAG, actions, trace, and route data.
                 'metadata' => $metadata,
                 ...$this->extractConversationContextPayload($metadata),
-                // Legacy fields for backward compatibility
                 'rag_enabled' => $metadata['rag_enabled'] ?? false,
                 'sources' => $metadata['sources'] ?? [],
-                'workflow_active' => $metadata['workflow_active'] ?? false,
-                'workflow_completed' => $metadata['workflow_completed'] ?? false,
+                'runtime_active' => $metadata['runtime_active'] ?? false,
+                'runtime_completed' => $metadata['runtime_completed'] ?? false,
             ]);
 
         } catch (\Exception $e) {
@@ -470,7 +469,7 @@ class AIChatController extends Controller
     /**
      * Handle streaming request
      * Note: Streaming is handled directly by Engine for now.
-     * TODO: Integrate provider token streams with runtime events.
+     * Agent runtime streaming paths emit their own events.
      */
     protected function handleStreamingRequest(AIRequest $aiRequest, array $validated): JsonResponse
     {

@@ -37,7 +37,7 @@ trait HasAIFeatures
     use AutoResolvesRelationships;
     
     /**
-     * Get AI configuration statically (for WorkflowConfigBuilder)
+     * Get AI configuration statically.
      */
     public static function getAIConfig(): array
     {

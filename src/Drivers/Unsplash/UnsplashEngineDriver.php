@@ -84,7 +84,7 @@ class UnsplashEngineDriver extends BaseEngineDriver
             );
             
             $response = $this->searchImages($testRequest);
-            return $response->isSuccess();
+            return $response->isSuccessful();
         } catch (\Exception $e) {
             return false;
         }

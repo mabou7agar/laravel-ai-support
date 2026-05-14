@@ -88,7 +88,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
             );
             
             $response = $this->generateText($testRequest);
-            return $response->isSuccess();
+            return $response->isSuccessful();
         } catch (\Exception $e) {
             return false;
         }

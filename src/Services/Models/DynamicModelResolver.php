@@ -226,7 +226,7 @@ class DynamicModelResolver
             return 'video';
         }
 
-        if (array_intersect($capabilities, ['image_generation', 'image_editing', 'text_to_image'])) {
+        if (array_intersect($capabilities, ['image_generation', 'image_editing', 'text_to_image', 'vision', 'image_analysis'])) {
             return 'image';
         }
 

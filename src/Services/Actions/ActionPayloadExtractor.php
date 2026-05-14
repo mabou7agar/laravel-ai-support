@@ -77,7 +77,7 @@ class ActionPayloadExtractor
 
         $payload = $this->normalizeNumericDateValues(
             $this->guardRelationApprovalPatch(
-                $this->sanitizePayload($payload, $action),
+                $this->invalidateConfirmationWhenDraftChanges($this->sanitizePayload($payload, $action), $action),
                 $message
             ),
             $action,
@@ -116,8 +116,8 @@ class ActionPayloadExtractor
             'Interpret numeric dates using this date order unless the user is explicit: ' . $this->numericDateOrder() . '.',
             'If a related record name is already present and the user sends only an email, assign that email to the matching related email parameter rather than asking for the name again.',
             'For array fields, parse natural multi-item phrases into separate objects when the schema supports an array.',
-            'For array fields, use _array_ops when the latest message means append, prepend, update, or remove rather than replace.',
-            'Examples: "add iPhone" => {"_array_ops":[{"op":"append","path":"items","value":{"product_name":"iPhone","quantity":1}}]}; "also add" means append; "replace items with" means a normal array field patch; "remove Macbook" means op remove with match.',
+            'For array fields, use _array_ops when the latest message means append, prepend, update, remove, increment, or decrement rather than replace.',
+            'Examples: "add iPhone" => {"_array_ops":[{"op":"append","path":"items","value":{"product_name":"iPhone","quantity":1}}]}; "also add" means append; "replace items with" means a normal array field patch; "remove Macbook" means op remove with match; "remove 1 iPhone" means op decrement with match, field, and amount.',
             'For price-only or correction updates, return partial item patches and omit unchanged fields.',
             $instructions,
             'Action ID: ' . ($action['id'] ?? ''),
@@ -128,7 +128,7 @@ class ActionPayloadExtractor
             'Current draft payload: ' . json_encode($currentPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Recent conversation: ' . json_encode(array_slice($recentHistory, -6), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Latest user message: ' . $message,
-            'JSON shape: {"payload_patch": {"field": "value", "array_field": [{"field": "value"}], "_array_ops": [{"op": "append|prepend|update|remove|replace", "path": "array_field", "value": {"field": "value"}, "match": {"field": "value"}, "index": 0}]}, "confidence": 0.0}',
+            'JSON shape: {"payload_patch": {"field": "value", "array_field": [{"field": "value"}], "_array_ops": [{"op": "append|prepend|update|remove|replace|increment|decrement", "path": "array_field", "value": {"field": "value"}, "match": {"field": "value"}, "index": 0, "field": "quantity", "amount": 1}]}, "confidence": 0.0}',
         ], static fn (string $line): bool => trim($line) !== ''));
     }
 
@@ -190,7 +190,7 @@ class ActionPayloadExtractor
      */
     protected function sanitizeArrayOperations(array $operations, array $allowedArrays): array
     {
-        $allowedOps = ['append', 'add', 'prepend', 'update', 'remove', 'delete', 'replace'];
+        $allowedOps = ['append', 'add', 'prepend', 'update', 'remove', 'delete', 'replace', 'increment', 'decrement'];
 
         return collect($operations)
             ->filter(fn (mixed $operation): bool => is_array($operation))
@@ -217,6 +217,17 @@ class ActionPayloadExtractor
                         : Arr::only($operation['match'], $itemFields);
                 }
 
+                if (isset($operation['field']) && is_string($operation['field'])) {
+                    $field = trim($operation['field']);
+                    if ($field !== '' && ($itemFields === [] || in_array($field, $itemFields, true))) {
+                        $sanitized['field'] = $field;
+                    }
+                }
+
+                if (isset($operation['amount']) && is_numeric($operation['amount'])) {
+                    $sanitized['amount'] = (float) $operation['amount'];
+                }
+
                 if (array_key_exists('value', $operation)) {
                     $sanitized['value'] = is_array($operation['value']) && $itemFields !== []
                         ? Arr::only($operation['value'], $itemFields)
@@ -236,6 +247,28 @@ class ActionPayloadExtractor
             ->filter(fn (array $operation): bool => $operation !== [])
             ->values()
             ->all();
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $action
+     * @return array<string, mixed>
+     */
+    protected function invalidateConfirmationWhenDraftChanges(array $payload, array $action): array
+    {
+        $parameters = (array) ($action['parameters'] ?? []);
+        if (!array_key_exists('ready_for_confirmation', $parameters)) {
+            return $payload;
+        }
+
+        $changedFields = array_diff(array_keys($payload), ['ready_for_confirmation', 'approved_missing_relations']);
+        if ($changedFields === []) {
+            return $payload;
+        }
+
+        $payload['ready_for_confirmation'] = false;
+
+        return $payload;
     }
 
     /**

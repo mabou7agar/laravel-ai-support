@@ -287,7 +287,7 @@ class EngineProxy
     public function estimateCost(string $prompt): array
     {
         $finalOptions = $this->releaseOptions();
-        $engine = $finalOptions['engine'] ?? config('ai-engine.default', config('ai-engine.default_engine', 'openai'));
+        $engine = $finalOptions['engine'] ?? config('ai-engine.default', 'openai');
         $model = $finalOptions['model'] ?? config('ai-engine.default_model', 'gpt-4o');
 
         return $this->manager->estimateCost([[

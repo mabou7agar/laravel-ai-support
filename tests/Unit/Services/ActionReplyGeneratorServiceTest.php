@@ -18,11 +18,11 @@ class ActionReplyGeneratorServiceTest extends TestCase
         $ai = Mockery::mock(AIEngineService::class);
         $ai->shouldNotReceive('generate');
 
-        $reply = (new ActionReplyGeneratorService($ai))->generate($this->missingCustomerWorkflow(), [
+        $reply = (new ActionReplyGeneratorService($ai))->generate($this->missingCustomerAction(), [
             'enhancer' => function (string $prompt, array $context): array {
-                $this->assertStringContainsString('Workflow facts JSON', $prompt);
+                $this->assertStringContainsString('Action facts JSON', $prompt);
                 $this->assertStringNotContainsString('Fallback meaning', $prompt);
-                $this->assertSame('workflow_reply', $context['style']);
+                $this->assertSame('action_reply', $context['style']);
                 $this->assertContains('Smoke Customer', $context['preserve_terms']);
                 $this->assertArrayNotHasKey('fallback', $context);
 
@@ -35,21 +35,21 @@ class ActionReplyGeneratorServiceTest extends TestCase
         ]);
 
         $this->assertSame('I have the customer name "Smoke Customer". Please send the customer email.', $reply['text']);
-        $this->assertTrue($reply['metadata']['workflow_reply_generated']);
-        $this->assertSame('mcp', $reply['metadata']['workflow_reply_provider']);
+        $this->assertTrue($reply['metadata']['action_reply_generated']);
+        $this->assertSame('mcp', $reply['metadata']['action_reply_provider']);
         $this->assertSame('mcp-1', $reply['metadata']['request_id']);
     }
 
     public function test_configured_ai_generates_reply_and_preserves_quoted_relation_name(): void
     {
-        config()->set('ai-agent.workflow_reply.ai_enabled', true);
+        config()->set('ai-agent.action_reply.ai_enabled', true);
         config()->set('ai-engine.default', 'openai');
         config()->set('ai-engine.engines.openai.api_key', 'test-key');
 
         $ai = Mockery::mock(AIEngineService::class);
         $ai->shouldReceive('generate')
             ->once()
-            ->with(Mockery::on(fn (AIRequest $request): bool => str_contains($request->getPrompt(), 'AGENT_WORKFLOW_REPLY')
+            ->with(Mockery::on(fn (AIRequest $request): bool => str_contains($request->getPrompt(), 'AGENT_ACTION_REPLY')
                 && str_contains($request->getPrompt(), 'customer email')
                 && str_contains($request->getPrompt(), 'Smoke Customer')
                 && str_contains($request->getPrompt(), 'Use short bullet points when the reply includes several fields')
@@ -61,32 +61,32 @@ class ActionReplyGeneratorServiceTest extends TestCase
                 'gpt-4o'
             ));
 
-        $reply = (new ActionReplyGeneratorService($ai))->generate($this->missingCustomerWorkflow());
+        $reply = (new ActionReplyGeneratorService($ai))->generate($this->missingCustomerAction());
 
         $this->assertSame('I have the customer name "Smoke Customer". What email should I use for this customer?', $reply['text']);
-        $this->assertTrue($reply['metadata']['workflow_reply_generated']);
-        $this->assertSame('ai', $reply['metadata']['workflow_reply_provider']);
+        $this->assertTrue($reply['metadata']['action_reply_generated']);
+        $this->assertSame('ai', $reply['metadata']['action_reply_provider']);
     }
 
     public function test_configured_enhancer_class_can_generate_reply(): void
     {
-        config()->set('ai-agent.workflow_reply.enhancer', ActionReplyGeneratorTestEnhancer::class);
+        config()->set('ai-agent.action_reply.enhancer', ActionReplyGeneratorTestEnhancer::class);
 
         $ai = Mockery::mock(AIEngineService::class);
         $ai->shouldNotReceive('generate');
 
-        $reply = (new ActionReplyGeneratorService($ai))->generate($this->missingCustomerWorkflow());
+        $reply = (new ActionReplyGeneratorService($ai))->generate($this->missingCustomerAction());
 
         $this->assertSame('Configured enhancer generated the reply for "Smoke Customer".', $reply['text']);
-        $this->assertSame('configured-test', $reply['metadata']['workflow_reply_provider']);
+        $this->assertSame('configured-test', $reply['metadata']['action_reply_provider']);
     }
 
-    public function test_emergency_fallback_does_not_compose_workflow_specific_reply_when_ai_is_disabled(): void
+    public function test_emergency_fallback_does_not_compose_action_specific_reply_when_ai_is_disabled(): void
     {
         $ai = Mockery::mock(AIEngineService::class);
         $ai->shouldNotReceive('generate');
 
-        $reply = (new ActionReplyGeneratorService($ai))->generate($this->missingCustomerWorkflow(), [
+        $reply = (new ActionReplyGeneratorService($ai))->generate($this->missingCustomerAction(), [
             'ai_enabled' => false,
         ]);
 
@@ -94,11 +94,11 @@ class ActionReplyGeneratorServiceTest extends TestCase
             'I need a little more information to continue.',
             $reply['text']
         );
-        $this->assertFalse($reply['metadata']['workflow_reply_generated']);
-        $this->assertSame('emergency_fallback', $reply['metadata']['workflow_reply_provider']);
+        $this->assertFalse($reply['metadata']['action_reply_generated']);
+        $this->assertSame('emergency_fallback', $reply['metadata']['action_reply_provider']);
     }
 
-    private function missingCustomerWorkflow(): array
+    private function missingCustomerAction(): array
     {
         return [
             'success' => false,

@@ -13,8 +13,8 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Events\AgentRunStreamed;
 use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
 use LaravelAIEngine\Services\Agent\Routing\Stages\ActiveRunContinuationStage;
+use LaravelAIEngine\Services\Agent\Routing\Stages\AgentSkillMatchStage;
 use LaravelAIEngine\Services\Agent\Routing\Stages\AIRouterStage;
-use LaravelAIEngine\Services\Agent\Routing\Stages\DeterministicCommandStage;
 use LaravelAIEngine\Services\Agent\Routing\Stages\ExplicitModeStage;
 use LaravelAIEngine\Services\Agent\Routing\Stages\FallbackConversationalStage;
 use LaravelAIEngine\Services\Agent\Routing\Stages\MessageClassificationStage;
@@ -77,7 +77,7 @@ class RoutingPipelineTest extends UnitTestCase
             ActiveRunContinuationStage::class,
             ExplicitModeStage::class,
             SelectionReferenceStage::class,
-            DeterministicCommandStage::class,
+            AgentSkillMatchStage::class,
             MessageClassificationStage::class,
             AIRouterStage::class,
             FallbackConversationalStage::class,

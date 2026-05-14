@@ -401,14 +401,14 @@ CYPHER,
                 $statements[] = [
                     'statement' => <<<'CYPHER'
 MATCH (u:User {canonical_user_id: $canonical_user_id})
-OPTIONAL MATCH (legacy:User {user_email_normalized: $user_email_normalized})
-WHERE legacy.canonical_user_id IS NULL AND legacy <> u
-OPTIONAL MATCH (legacy)-[:CAN_ACCESS]->(accessible:Entity)
-OPTIONAL MATCH (legacy)-[:CAN_ACCESS]->(legacy_scope:Scope)
-WITH u, legacy, collect(DISTINCT accessible) AS accessible_entities, collect(DISTINCT legacy_scope) AS accessible_scopes
+OPTIONAL MATCH (duplicate:User {user_email_normalized: $user_email_normalized})
+WHERE duplicate.canonical_user_id IS NULL AND duplicate <> u
+OPTIONAL MATCH (duplicate)-[:CAN_ACCESS]->(accessible:Entity)
+OPTIONAL MATCH (duplicate)-[:CAN_ACCESS]->(duplicate_scope:Scope)
+WITH u, duplicate, collect(DISTINCT accessible) AS accessible_entities, collect(DISTINCT duplicate_scope) AS accessible_scopes
 FOREACH (entity IN accessible_entities | MERGE (u)-[:CAN_ACCESS]->(entity))
 FOREACH (scope IN accessible_scopes | MERGE (u)-[:CAN_ACCESS]->(scope))
-FOREACH (_ IN CASE WHEN legacy IS NULL THEN [] ELSE [1] END | DETACH DELETE legacy)
+FOREACH (_ IN CASE WHEN duplicate IS NULL THEN [] ELSE [1] END | DETACH DELETE duplicate)
 CYPHER,
                     'parameters' => [
                         'canonical_user_id' => $payload['canonical_user_id'],

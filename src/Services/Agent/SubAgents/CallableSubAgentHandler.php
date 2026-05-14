@@ -34,6 +34,10 @@ class CallableSubAgentHandler implements SubAgentHandler
         }
 
         if ($result instanceof ActionResult) {
+            if ($result->requiresUserInput()) {
+                return SubAgentResult::needsUserInput($task->id, $task->agentId, $result->message, $result->data, $result->metadata);
+            }
+
             return $result->success
                 ? SubAgentResult::success($task->id, $task->agentId, $result->message, $result->data, $result->metadata)
                 : SubAgentResult::failure($task->id, $task->agentId, $result->error ?? 'Sub-agent action failed.', $result->data, $result->metadata);

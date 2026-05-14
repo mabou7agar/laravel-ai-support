@@ -43,7 +43,7 @@ class AzureEngineDriver implements EngineDriverInterface
     public function generate(AIRequest $request): AIResponse
     {
         try {
-            switch ($request->entity) {
+            switch ($request->getModel()) {
                 case EntityEnum::AZURE_TTS:
                     return $this->generateSpeech($request);
                 case EntityEnum::AZURE_STT:
@@ -55,7 +55,7 @@ class AzureEngineDriver implements EngineDriverInterface
                 case EntityEnum::AZURE_COMPUTER_VISION:
                     return $this->analyzeImage($request);
                 default:
-                    throw new AIEngineException("Entity {$request->entity->value} not supported by Azure driver");
+                    throw new AIEngineException("Entity {$request->getModel()->value} not supported by Azure driver");
             }
         } catch (RequestException $e) {
             throw new AIEngineException('Azure Cognitive Services API request failed: ' . $e->getMessage());
@@ -101,10 +101,10 @@ class AzureEngineDriver implements EngineDriverInterface
             usage: [
                 'characters_processed' => strlen($request->getPrompt()),
                 'audio_duration' => $audioData['duration'],
-                'total_cost' => $request->entity->creditIndex(),
+                'total_cost' => $request->getModel()->creditIndex(),
             ],
             metadata: [
-                'model' => $request->entity->value,
+                'model' => $request->getModel()->value,
                 'engine' => EngineEnum::AZURE->value,
                 'service' => 'text_to_speech',
                 'audio' => $audioData,
@@ -141,10 +141,10 @@ class AzureEngineDriver implements EngineDriverInterface
             content: $transcriptionData['text'],
             usage: [
                 'audio_duration' => $transcriptionData['duration'],
-                'total_cost' => $request->entity->creditIndex(),
+                'total_cost' => $request->getModel()->creditIndex(),
             ],
             metadata: [
-                'model' => $request->entity->value,
+                'model' => $request->getModel()->value,
                 'engine' => EngineEnum::AZURE->value,
                 'service' => 'speech_to_text',
                 'transcription' => $transcriptionData,
@@ -187,10 +187,10 @@ class AzureEngineDriver implements EngineDriverInterface
             content: $translationData['translated_text'],
             usage: [
                 'characters_translated' => strlen($request->getPrompt()),
-                'total_cost' => $request->entity->creditIndex(),
+                'total_cost' => $request->getModel()->creditIndex(),
             ],
             metadata: [
-                'model' => $request->entity->value,
+                'model' => $request->getModel()->value,
                 'engine' => EngineEnum::AZURE->value,
                 'service' => 'translator',
                 'translation' => $translationData,
@@ -237,10 +237,10 @@ class AzureEngineDriver implements EngineDriverInterface
             content: json_encode($analysisData),
             usage: [
                 'characters_analyzed' => strlen($request->getPrompt()),
-                'total_cost' => $request->entity->creditIndex(),
+                'total_cost' => $request->getModel()->creditIndex(),
             ],
             metadata: [
-                'model' => $request->entity->value,
+                'model' => $request->getModel()->value,
                 'engine' => EngineEnum::AZURE->value,
                 'service' => 'text_analytics',
                 'analysis' => $analysisData,
@@ -290,10 +290,10 @@ class AzureEngineDriver implements EngineDriverInterface
             content: json_encode($visionData),
             usage: [
                 'images_analyzed' => 1,
-                'total_cost' => $request->entity->creditIndex(),
+                'total_cost' => $request->getModel()->creditIndex(),
             ],
             metadata: [
-                'model' => $request->entity->value,
+                'model' => $request->getModel()->value,
                 'engine' => EngineEnum::AZURE->value,
                 'service' => 'computer_vision',
                 'vision' => $visionData,
@@ -380,18 +380,18 @@ class AzureEngineDriver implements EngineDriverInterface
     public function validateRequest(AIRequest $request): bool
     {
         // Check if model is supported
-        if (!in_array($request->entity, [
+        if (!in_array($request->getModel(), [
             EntityEnum::AZURE_TTS,
             EntityEnum::AZURE_STT,
             EntityEnum::AZURE_TRANSLATOR,
             EntityEnum::AZURE_TEXT_ANALYTICS,
             EntityEnum::AZURE_COMPUTER_VISION,
         ])) {
-            throw new AIEngineException("Model {$request->entity->value} is not supported by Azure driver");
+            throw new AIEngineException("Model {$request->getModel()->value} is not supported by Azure driver");
         }
 
         // Validate based on service type
-        switch ($request->entity) {
+        switch ($request->getModel()) {
             case EntityEnum::AZURE_TTS:
                 if (empty($request->getPrompt())) {
                     throw new AIEngineException('Text is required for text-to-speech');

@@ -376,7 +376,6 @@ class AgentManifestEditorService
             $definition['required_data'] = $this->normalizeStringList($definition['required_data'] ?? $definition['requiredData'] ?? []);
             $definition['tools'] = $this->normalizeStringList($definition['tools'] ?? []);
             $definition['actions'] = $this->normalizeStringList($definition['actions'] ?? []);
-            $definition['workflows'] = $this->normalizeStringList($definition['workflows'] ?? []);
             $definition['capabilities'] = $this->normalizeStringList($definition['capabilities'] ?? []);
             $definition['requires_confirmation'] = (bool) ($definition['requires_confirmation'] ?? $definition['requiresConfirmation'] ?? true);
             $definition['enabled'] = (bool) ($definition['enabled'] ?? false);

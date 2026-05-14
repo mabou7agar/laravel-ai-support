@@ -168,7 +168,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
             ],
         ]);
 
-        app(\LaravelAIEngine\Services\Actions\ActionRegistry::class)->clear();
+        app(\LaravelAIEngine\Services\Actions\ActionRegistry::class)->clearCache();
         app(\LaravelAIEngine\Services\Actions\ActionRegistry::class)->registerBatch((array) config('ai-agent.actions', []));
 
         $exitCode = Artisan::call('ai-engine:skills:discover', [

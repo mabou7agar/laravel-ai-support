@@ -41,7 +41,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     public function generate(AIRequest $request): AIResponse
     {
         try {
-            switch ($request->entity) {
+            switch ($request->getModel()) {
                 case EntityEnum::PLAGIARISM_BASIC:
                     return $this->checkPlagiarismBasic($request);
                 case EntityEnum::PLAGIARISM_ADVANCED:
@@ -49,7 +49,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
                 case EntityEnum::PLAGIARISM_ACADEMIC:
                     return $this->checkPlagiarismAcademic($request);
                 default:
-                    throw new AIEngineException("Entity {$request->entity->value} not supported by Plagiarism Check driver");
+                    throw new AIEngineException("Entity {$request->getModel()->value} not supported by Plagiarism Check driver");
             }
         } catch (RequestException $e) {
             throw new AIEngineException('Plagiarism Check API request failed: ' . $e->getMessage());
@@ -143,10 +143,10 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
             usage: [
                 'words_checked' => $results['word_count'],
                 'sources_scanned' => $results['total_sources_found'],
-                'total_cost' => $request->entity->creditIndex(),
+                'total_cost' => $request->getModel()->creditIndex(),
             ],
             metadata: [
-                'model' => $request->entity->value,
+                'model' => $request->getModel()->value,
                 'engine' => EngineEnum::PLAGIARISM_CHECK->value,
                 'check_type' => $request->getParameters()['check_type'] ?? 'basic',
                 'language' => $request->getParameters()['language'] ?? 'en',
@@ -248,12 +248,12 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     public function validateRequest(AIRequest $request): bool
     {
         // Check if model is supported
-        if (!in_array($request->entity, [
+        if (!in_array($request->getModel(), [
             EntityEnum::PLAGIARISM_BASIC,
             EntityEnum::PLAGIARISM_ADVANCED,
             EntityEnum::PLAGIARISM_ACADEMIC,
         ])) {
-            throw new AIEngineException("Model {$request->entity->value} is not supported by Plagiarism Check driver");
+            throw new AIEngineException("Model {$request->getModel()->value} is not supported by Plagiarism Check driver");
         }
 
         // Validate text content
@@ -263,10 +263,10 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
 
         // Check word count limits
         $wordCount = str_word_count($request->getPrompt());
-        $maxWords = $this->getMaxWordsForModel($request->entity);
+        $maxWords = $this->getMaxWordsForModel($request->getModel());
 
         if ($wordCount > $maxWords) {
-            throw new AIEngineException("Text exceeds maximum word limit of {$maxWords} words for {$request->entity->value}");
+            throw new AIEngineException("Text exceeds maximum word limit of {$maxWords} words for {$request->getModel()->value}");
         }
 
         return true;

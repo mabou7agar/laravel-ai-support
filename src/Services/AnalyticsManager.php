@@ -136,7 +136,7 @@ class AnalyticsManager
         return [
             'usage' => $this->getUsageStats($filters),
             'performance' => $this->getPerformanceMetrics($filters),
-            'costs' => $this->getCostAnalysis($filters),
+            'costs' => $this->getCostAnalytics($filters),
         ];
     }
 
@@ -182,9 +182,9 @@ class AnalyticsManager
     }
 
     /**
-     * Get cost analysis
+     * Get cost analytics
      */
-    public function getCostAnalysis(array $filters = []): array
+    public function getCostAnalytics(array $filters = []): array
     {
         $query = DB::table('ai_requests');
 

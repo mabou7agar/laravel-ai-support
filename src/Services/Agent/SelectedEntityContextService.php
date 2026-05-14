@@ -13,17 +13,6 @@ class SelectedEntityContextService
             return $selected;
         }
 
-        $legacy = $context->metadata['last_selected_option'] ?? null;
-        if (is_array($legacy) && !empty($legacy['entity_id'])) {
-            return [
-                'entity_id' => (int) $legacy['entity_id'],
-                'entity_type' => $legacy['entity_type'] ?? null,
-                'model_class' => $legacy['model_class'] ?? null,
-                'source_node' => $legacy['source_node'] ?? null,
-                'selected_via' => 'numbered_option',
-            ];
-        }
-
         return null;
     }
 

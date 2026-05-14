@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
  * Intelligent CRUD Handler
  *
  * Detects CRUD operations (Create, Read, Update, Delete) from natural language
- * and handles them intelligently without requiring separate workflows for each operation.
+ * and handles them intelligently without requiring separate handlers for each operation.
  */
 class IntelligentCRUDHandler
 {
@@ -520,12 +520,12 @@ class IntelligentCRUDHandler
      */
     protected function getModelClass(string $entity): ?string
     {
-        // Try to discover from registered workflows
-        $workflowRegistry = $this->discoverWorkflowEntities();
+        // Try to discover from registered AI model metadata.
+        $modelRegistry = $this->discoverModelEntities();
 
         $entityLower = strtolower($entity);
-        if (isset($workflowRegistry[$entityLower])) {
-            return $workflowRegistry[$entityLower];
+        if (isset($modelRegistry[$entityLower])) {
+            return $modelRegistry[$entityLower];
         }
 
         // Fallback: Try common Laravel model locations
@@ -559,7 +559,7 @@ class IntelligentCRUDHandler
     /**
      * Discover entity models from AI config (using AgentCollectionAdapter like RAG)
      */
-    protected function discoverWorkflowEntities(): array
+    protected function discoverModelEntities(): array
     {
         static $cache = null;
 
@@ -574,8 +574,8 @@ class IntelligentCRUDHandler
             $models = $this->agentAdapter->discoverForAgent(true); // use cache
 
             foreach ($models as $model) {
-                // Only include models with agent_mode strategy (workflows)
-                if (($model['strategy'] ?? '') === 'agent_mode') {
+                // Include models intended for guided collection.
+                if (in_array(($model['strategy'] ?? ''), ['guided_flow', 'quick_action'], true)) {
                     $entityName = $model['name']; // e.g., "Product", "Customer"
                     $entityKey = strtolower($entityName);
                     $modelClass = $model['class'];
@@ -618,8 +618,8 @@ class IntelligentCRUDHandler
             $models = $this->agentAdapter->discoverForAgent(true);
 
             foreach ($models as $model) {
-                // Only include models with agent_mode strategy (workflows)
-                if (($model['strategy'] ?? '') === 'agent_mode') {
+                // Include models intended for guided collection.
+                if (in_array(($model['strategy'] ?? ''), ['guided_flow', 'quick_action'], true)) {
                     $entityName = $model['name'];
                     $entityKey = strtolower($entityName);
 

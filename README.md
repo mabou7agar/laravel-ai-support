@@ -17,7 +17,7 @@ Current codebase includes:
 - central Neo4j graph sync and read path
 - planner-driven graph retrieval with query-kind-aware traversal templates
 - scoped graph knowledge-base acceleration (plan cache, result cache, entity snapshots)
-- host-app background KB build workflow
+- host-app background KB build flow
 - host-app capability memory primitives for semantic tool/action/module routing
 - compacted agent conversation memory for long chat sessions
 
@@ -50,7 +50,7 @@ php artisan migrate
 
 ## Breaking Upgrade Note
 
-The legacy `AIEngineManager` and `EngineBuilder` classes were removed. If your application instantiated or type-hinted them directly, migrate to:
+`AIEngineManager` and `EngineBuilder` were removed. If your application instantiated or type-hinted them directly, migrate to:
 
 - `LaravelAIEngine\\Services\\UnifiedEngineManager` for fluent facade-style usage
 - `LaravelAIEngine\\Services\\AIEngineService` for direct request execution
@@ -74,7 +74,6 @@ AI_ORCHESTRATION_MODEL=gpt-4o-mini
 OPENAI_API_KEY=your_key
 
 AI_ENGINE_STANDARDIZE_API_RESPONSES=true
-AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY=true
 
 AI_ENGINE_INJECT_USER_CONTEXT=true
 AI_ENGINE_LOCALIZATION_ENABLED=true
@@ -155,7 +154,7 @@ php artisan ai-engine:infra-health
 
 `ai-engine:model-status "App\\Models\\Project"` shows whether a model is ready for indexing, graph publishing, and chat retrieval. Use `--id=<record>` to inspect a real row instead of a blank instance, which is useful when a model only becomes indexable after required attributes are populated.
 
-### Federation (Safe Workflow)
+### Federation (Safe Flow)
 
 ```bash
 php artisan ai-engine:node-list
@@ -254,7 +253,7 @@ Then the host app can sync `AgentCapabilityRegistry::documents()` to Qdrant, Neo
 
 ## Business Action Framework
 
-For app-wide CRUD/workflow actions, the package owns the reusable action framework and the host app owns domain services, permissions, DTOs, and database writes.
+For app-wide CRUD and action flows, the package owns the reusable action framework and the host app owns domain services, permissions, DTOs, and database writes.
 
 Package contracts:
 
@@ -418,13 +417,7 @@ This memory is for conversation state only. Business records and capability docu
 
 ## Search Document and Graph Contracts
 
-Legacy compatibility methods:
-
-- `getVectorContent()`
-- `getVectorMetadata()`
-- `toRAGContent()`
-
-Preferred contracts for new work:
+Use explicit contracts for indexed and graph-aware models:
 
 - `toSearchDocument()`
 - `toGraphObject()`
@@ -499,6 +492,21 @@ Built-in direct generation endpoints:
 For consistent TTS per saved character, store `voice_id` and optional ElevenLabs voice settings when you save the character, then call `/api/v1/ai/generate/tts` with `use_character` or `use_last_character`.
 
 Authenticated calls are credit-enforced (same policy as chat/RAG), including image/audio endpoints.
+
+FAL output units are charged through the model `credit_index` and engine rate. Apps that also need to charge provider input media, such as reference/start/end images for image-to-video or vision endpoints, can opt in with `ai-engine.credits.additional_input_unit_rates`. Defaults are zero to keep existing package behavior unchanged:
+
+```php
+'additional_input_unit_rates' => [
+    'fal_ai' => [
+        'default' => ['image' => 0.0],
+        'models' => [
+            'fal-ai/kling-video/o3/standard/reference-to-video' => [
+                'image' => 0.5,
+            ],
+        ],
+    ],
+],
+```
 
 When direct requests omit `engine`, the package can resolve the provider from the requested model and configured availability. By default it prefers the model's native provider first, then OpenRouter-compatible fallbacks. Tune this with `AI_ENGINE_REQUEST_PROVIDER_PRIORITY`.
 

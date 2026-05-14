@@ -35,8 +35,8 @@ class AgentManifestDoctor
                 $issues[] = $this->issue('warning', 'disabled_skill', "Skill [{$skill->id}] is disabled.", ['skill_id' => $skill->id]);
             }
 
-            if ($skill->actions === [] && $skill->tools === [] && $skill->workflows === [] && empty($skill->metadata['collector'])) {
-                $issues[] = $this->issue('warning', 'non_executable_skill', "Skill [{$skill->id}] has no executable action, tool, workflow, or collector.", ['skill_id' => $skill->id]);
+            if ($skill->actions === [] && $skill->tools === [] && empty($skill->metadata['collector'])) {
+                $issues[] = $this->issue('warning', 'non_executable_skill', "Skill [{$skill->id}] has no executable action, tool, or collector.", ['skill_id' => $skill->id]);
             }
 
             foreach ($skill->actions as $actionId) {
@@ -57,14 +57,6 @@ class AgentManifestDoctor
                 }
             }
 
-            foreach ($skill->workflows as $workflowClass) {
-                if (!class_exists($workflowClass)) {
-                    $issues[] = $this->issue('error', 'missing_workflow', "Skill [{$skill->id}] references missing workflow [{$workflowClass}].", [
-                        'skill_id' => $skill->id,
-                        'workflow' => $workflowClass,
-                    ]);
-                }
-            }
         }
 
         $errors = count(array_filter($issues, static fn (array $issue): bool => ($issue['severity'] ?? null) === 'error'));

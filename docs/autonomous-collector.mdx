@@ -20,7 +20,7 @@ The collector runtime is split into small services:
 - `CollectorInputSchemaBuilder` extracts optional UI input metadata.
 - `CollectorReroutePolicy` decides when an active collector should exit and let the agent router handle the message.
 
-The old standalone collector engine is no longer duplicated inside the session service; the service delegates into the same turn processor used by agents. `AutonomousCollectorService` remains as a thin alias for existing apps.
+The collector session service delegates into the same turn processor used by agents.
 
 ## Configuration
 

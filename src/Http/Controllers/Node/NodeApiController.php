@@ -292,9 +292,8 @@ class NodeApiController extends Controller
             $duration = (microtime(true) - $startTime) * 1000;
             $fullMetadata = $response->getMetadata();
             $essentialMetadata = [
-                'workflow_active' => $fullMetadata['workflow_active'] ?? false,
-                'workflow_class' => $fullMetadata['workflow_class'] ?? null,
-                'workflow_completed' => $fullMetadata['workflow_completed'] ?? false,
+                'session_active' => $fullMetadata['runtime_active'] ?? $fullMetadata['session_active'] ?? false,
+                'session_completed' => $fullMetadata['runtime_completed'] ?? $fullMetadata['session_completed'] ?? false,
                 'current_step' => $fullMetadata['current_step'] ?? null,
                 'agent_strategy' => $fullMetadata['agent_strategy'] ?? null,
                 'entity_ids' => $fullMetadata['entity_ids'] ?? null,
@@ -366,14 +365,6 @@ class NodeApiController extends Controller
         }
     }
 
-    /**
-     * Backward-compatible wrapper for older node clients.
-     */
-    public function executeAction(Request $request)
-    {
-        return $this->executeTool($request);
-    }
-
     public function register(Request $request, NodeRegistryService $registry, NodeAuthService $authService)
     {
         $validated = $request->validate([
@@ -441,10 +432,6 @@ class NodeApiController extends Controller
 
         if (method_exists($model, 'toRAGDetail')) {
             return $model->toRAGDetail();
-        }
-
-        if (method_exists($model, 'getVectorContent')) {
-            return $model->getVectorContent();
         }
 
         $fields = ['content', 'body', 'description', 'text', 'title', 'name'];

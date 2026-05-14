@@ -26,8 +26,8 @@ class AnalyticsManagerTest extends TestCase
         $this->mockRedisDriver = Mockery::mock(RedisAnalyticsDriver::class);
         
         $this->analyticsManager = new AnalyticsManager($this->mockMetricsCollector);
-        $this->analyticsManager->registerDriver('database', $this->mockDatabaseDriver);
-        $this->analyticsManager->registerDriver('redis', $this->mockRedisDriver);
+        $this->analyticsManager->extend('database', $this->mockDatabaseDriver);
+        $this->analyticsManager->extend('redis', $this->mockRedisDriver);
     }
 
     public function test_can_track_request()
@@ -221,7 +221,7 @@ class AnalyticsManagerTest extends TestCase
         $this->assertEquals($expectedInsights, $result);
     }
 
-    public function test_can_get_cost_analysis()
+    public function test_can_get_cost_analytics()
     {
         $filters = ['engine' => 'openai'];
         $expectedAnalysis = [
@@ -232,12 +232,12 @@ class AnalyticsManagerTest extends TestCase
         ];
 
         $this->mockDatabaseDriver
-            ->shouldReceive('query')
+            ->shouldReceive('getCostAnalytics')
             ->once()
-            ->with('cost_analysis', $filters)
+            ->with($filters)
             ->andReturn($expectedAnalysis);
 
-        $result = $this->analyticsManager->getCostAnalysis($filters);
+        $result = $this->analyticsManager->getCostAnalytics($filters);
         
         $this->assertEquals($expectedAnalysis, $result);
     }
@@ -263,11 +263,11 @@ class AnalyticsManagerTest extends TestCase
         $this->assertEquals($expectedMetrics, $result);
     }
 
-    public function test_can_register_driver()
+    public function test_can_extend_driver()
     {
         $customDriver = Mockery::mock(DatabaseAnalyticsDriver::class);
         
-        $this->analyticsManager->registerDriver('custom', $customDriver);
+        $this->analyticsManager->extend('custom', $customDriver);
         
         $drivers = $this->analyticsManager->getAvailableDrivers();
         $this->assertArrayHasKey('custom', $drivers);

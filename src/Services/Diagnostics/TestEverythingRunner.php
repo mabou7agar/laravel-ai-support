@@ -43,7 +43,7 @@ class TestEverythingRunner
         ];
 
         $process = proc_open(
-            $stage['command'],
+            $this->normalizeCommand($stage['command']),
             $descriptors,
             $pipes,
             $stage['workdir']
@@ -81,5 +81,15 @@ class TestEverythingRunner
             'duration_ms' => (microtime(true) - $startedAt) * 1000,
             'output' => $output,
         ];
+    }
+
+    protected function normalizeCommand(string $command): string
+    {
+        return (string) preg_replace(
+            '/^\s*php(?=\s|$)/',
+            escapeshellarg(PHP_BINARY),
+            $command,
+            1
+        );
     }
 }

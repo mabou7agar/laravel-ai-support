@@ -13,7 +13,6 @@ use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
-use LaravelAIEngine\Services\Agent\DeterministicAgentHandlerRegistry;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
 
@@ -24,8 +23,7 @@ class AgentExecutionDispatcher
         protected GoalAgentService $goalAgent,
         protected ?ProviderToolAuditService $audit = null,
         protected ?AgentExecutionPolicyService $policy = null,
-        protected ?AgentSelectionService $selectionService = null,
-        protected ?DeterministicAgentHandlerRegistry $deterministicHandlers = null
+        protected ?AgentSelectionService $selectionService = null
     ) {
     }
 
@@ -41,7 +39,6 @@ class AgentExecutionDispatcher
         return match ($decision->action) {
             RoutingDecisionAction::CONVERSATIONAL => $this->execution->executeConversational($message, $context, $options),
             RoutingDecisionAction::HANDLE_SELECTION => $this->executeSelection($decision, $message, $context, $options),
-            RoutingDecisionAction::RUN_DETERMINISTIC => $this->executeDeterministic($message, $context, $options, $reroute),
             RoutingDecisionAction::SEARCH_RAG => $this->executeSearchRag($message, $context, $options, $reroute),
             RoutingDecisionAction::USE_TOOL => $this->executeTool($decision, $message, $context, $options),
             RoutingDecisionAction::RUN_SUB_AGENT => $this->executeSubAgent($decision, $message, $context, $options),
@@ -125,26 +122,6 @@ class AgentExecutionDispatcher
                 null
             )
         );
-    }
-
-    protected function executeDeterministic(
-        string $message,
-        UnifiedActionContext $context,
-        array $options,
-        ?callable $reroute
-    ): AgentResponse {
-        $response = $this->deterministicHandlers()->handle($message, $context, $options);
-        if ($response instanceof AgentResponse) {
-            return $response;
-        }
-
-        if ($reroute !== null) {
-            return $reroute($message, $context->sessionId, $context->userId, array_merge($options, [
-                'skip_deterministic_handlers' => true,
-            ]));
-        }
-
-        return $this->execution->executeConversational($message, $context, $options);
     }
 
     protected function executeSearchRag(
@@ -466,11 +443,6 @@ class AgentExecutionDispatcher
     protected function selectionService(): AgentSelectionService
     {
         return $this->selectionService ??= app(AgentSelectionService::class);
-    }
-
-    protected function deterministicHandlers(): DeterministicAgentHandlerRegistry
-    {
-        return $this->deterministicHandlers ??= app(DeterministicAgentHandlerRegistry::class);
     }
 
     /**

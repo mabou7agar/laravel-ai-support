@@ -153,20 +153,6 @@ class DataCollectorField
         return $info;
     }
     
-    /**
-     * Get the AI prompt for collecting this field (for backward compatibility)
-     * @deprecated Use getFieldInfo() instead and let AI generate the prompt
-     */
-    public function getCollectionPrompt(): string
-    {
-        if ($this->prompt) {
-            return $this->prompt;
-        }
-
-        // Return just the description - AI will handle the rest
-        return $this->description ?: $this->name;
-    }
-
 
     /**
      * Validate a value against this field's rules

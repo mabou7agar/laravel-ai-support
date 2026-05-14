@@ -108,16 +108,12 @@ class RAGChatService
         try {
             $options = $this->scopeOptions?->merge($userId, $options) ?? $options;
 
-            // Normalize collections: extract class strings from array format
+            // Normalize collections: extract class strings from structured entries
             $normalizedCollections = [];
             foreach ($availableCollections as $collection) {
-                if (is_array($collection)) {
-                    // New format: extract class
-                    $normalizedCollections[] = $collection['class'] ?? '';
-                } else {
-                    // Legacy format: already a class string
-                    $normalizedCollections[] = $collection;
-                }
+                $normalizedCollections[] = is_array($collection)
+                    ? ($collection['class'] ?? '')
+                    : $collection;
             }
             $availableCollections = array_filter($normalizedCollections); // Remove empty strings
 
@@ -527,7 +523,7 @@ class RAGChatService
      * @param array $conversationHistory Optional conversation history
      * @param array $options Additional options
      * @param string|int|null $userId User ID for access control
-     * @return array Legacy format for backward compatibility
+     * @return array Streaming response payload
      */
     public function processMessageStream(
         string $message,
@@ -733,7 +729,7 @@ class RAGChatService
             $normalizedCollections = [];
 
             foreach ($availableCollections as $collection) {
-                // Handle new format (array with metadata) or legacy format (class string)
+                // Support structured collection metadata and direct class-string entries.
                 if (is_array($collection)) {
                     $name = $collection['name'] ?? 'unknown';
                     $description = $collection['description'] ?? '';
@@ -1121,65 +1117,6 @@ PROMPT;
     }
 
     /**
-     * Build conversation context summary
-     */
-    protected function buildConversationContext(array $conversationHistory): string
-    {
-        if (empty($conversationHistory)) {
-            return "No previous conversation.";
-        }
-
-        // Get recent messages (configurable window)
-        $contextWindow = $this->config['context_window'] ?? 5;
-        $recentMessages = array_slice($conversationHistory, -$contextWindow);
-
-        $context = "Recent conversation:\n";
-        foreach ($recentMessages as $msg) {
-            $role = ucfirst($msg['role'] ?? 'user');
-            $content = substr($msg['content'] ?? '', 0, 200);
-            $context .= "{$role}: {$content}\n";
-        }
-
-        // Extract topics from conversation
-        $topics = $this->extractTopicsFromConversation($conversationHistory);
-        if (!empty($topics)) {
-            $context .= "\nTopics discussed: " . implode(', ', $topics) . "\n";
-        }
-
-        return $context;
-    }
-
-    /**
-     * Extract topics from conversation history
-     * Returns the main subjects discussed based on user queries
-     */
-    protected function extractTopicsFromConversation(array $conversationHistory): array
-    {
-        $topics = [];
-
-        foreach ($conversationHistory as $msg) {
-            // Only extract from user messages
-            if (($msg['role'] ?? '') !== 'user') {
-                continue;
-            }
-
-            $content = trim($msg['content'] ?? '');
-
-            // Skip short/empty messages
-            if (strlen($content) < 5) {
-                continue;
-            }
-
-            if (!in_array($content, $topics)) {
-                $topics[] = $content;
-            }
-        }
-
-        // Return last 3 topics (most recent)
-        return array_slice($topics, -3);
-    }
-
-    /**
      * Extract actions from AI response
      * Format: ACTION:TYPE|param1=value1|param2=value2
      */
@@ -1273,7 +1210,7 @@ PROMPT;
             return $this->retrieveWithRouting($searchQueries, $collections, $maxResults, $threshold, $options, $userId);
         }
 
-        // Use federated search if available and enabled (legacy/complex mode)
+        // Use federated search if available and enabled.
         $useFederatedSearch = $this->federatedSearch && $nodesEnabled && $searchMode === 'federated';
 
         Log::channel('ai-engine')->info('retrieveRelevantContext decision', [
@@ -1879,7 +1816,7 @@ PROMPT;
             if (!empty($availableCollections)) {
                 $prompt .= "AVAILABLE DATA SOURCES (for reference only):\n";
                 foreach ($availableCollections as $collection) {
-                    // Handle new format (array with metadata) or legacy format (class string)
+                    // Support structured collection metadata and direct class-string entries.
                     if (is_array($collection)) {
                         $name = $collection['name'] ?? 'unknown';
                         $description = $collection['description'] ?? '';
@@ -2765,7 +2702,7 @@ PROMPT;
         $aggregateData = [];
 
         foreach ($collections as $collection) {
-            // Handle new format (array with metadata) or legacy format (class string)
+            // Support structured collection metadata and direct class-string entries.
             $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
 
             if (!class_exists($collectionClass)) {
@@ -2997,7 +2934,7 @@ PROMPT;
         $aggregateData = [];
 
         foreach ($collections as $collection) {
-            // Handle new format (array with metadata) or legacy format (class string)
+            // Support structured collection metadata and direct class-string entries.
             $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
 
             if (!class_exists($collectionClass)) {
@@ -3192,7 +3129,7 @@ PROMPT;
         $instructions = [];
 
         foreach ($collections as $collection) {
-            // Handle new format (array with metadata) or legacy format (class string)
+            // Support structured collection metadata and direct class-string entries.
             $collectionClass = is_array($collection) ? ($collection['class'] ?? '') : $collection;
 
             if (!class_exists($collectionClass)) {

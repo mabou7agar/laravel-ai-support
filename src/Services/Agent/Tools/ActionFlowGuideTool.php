@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent\Tools;
 
-use LaravelAIEngine\Contracts\ActionWorkflowHandler;
+use LaravelAIEngine\Contracts\ActionFlowHandler;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Actions\ActionFlowGuideService;
@@ -12,7 +12,7 @@ use LaravelAIEngine\Services\Actions\ActionFlowGuideService;
 class ActionFlowGuideTool extends AgentTool
 {
     public function __construct(
-        private readonly ActionWorkflowHandler $actions,
+        private readonly ActionFlowHandler $actions,
         private readonly ActionFlowGuideService $flows
     ) {
     }

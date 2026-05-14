@@ -75,14 +75,6 @@ class AgentCollectionAdapter
             'score' => $this->calculateScore($analysis),
         ];
         
-        // Add workflow_class if strategy is agent_mode
-        if ($strategy === 'agent_mode') {
-            $workflowClass = $this->getWorkflowClass($modelClass);
-            if ($workflowClass) {
-                $result['workflow_class'] = $workflowClass;
-            }
-        }
-        
         return $result;
     }
     
@@ -192,20 +184,15 @@ class AgentCollectionAdapter
     }
     
     /**
-     * Determine strategy based on complexity and workflow configuration
+     * Determine strategy based on complexity.
      */
     protected function determineStrategy(string $complexity, array $analysis, string $modelClass): string
     {
-        // Check if model has a workflow explicitly configured
-        if ($this->hasWorkflowConfigured($modelClass)) {
-            return 'agent_mode';
-        }
-        
         $relationships = $analysis['relationships']['relationships'] ?? [];
         
-        // HIGH complexity with relationships = agent_mode
+        // Complex models should use the generic guided collection path.
         if ($complexity === 'HIGH' && count($relationships) > 0) {
-            return 'agent_mode';
+            return 'guided_flow';
         }
         
         // MEDIUM = guided_flow
@@ -215,45 +202,6 @@ class AgentCollectionAdapter
         
         // SIMPLE = quick_action
         return 'quick_action';
-    }
-    
-    /**
-     * Check if model has a workflow configured in initializeAI
-     */
-    protected function hasWorkflowConfigured(string $modelClass): bool
-    {
-        try {
-            if (!method_exists($modelClass, 'initializeAI')) {
-                return false;
-            }
-            
-            $instance = new $modelClass();
-            $config = $instance->initializeAI();
-            
-            // Check if workflow is configured
-            return !empty($config['workflow']);
-        } catch (\Exception $e) {
-            return false;
-        }
-    }
-    
-    /**
-     * Get workflow class from model's initializeAI configuration
-     */
-    protected function getWorkflowClass(string $modelClass): ?string
-    {
-        try {
-            if (!method_exists($modelClass, 'initializeAI')) {
-                return null;
-            }
-            
-            $instance = new $modelClass();
-            $config = $instance->initializeAI();
-            
-            return $config['workflow'] ?? null;
-        } catch (\Exception $e) {
-            return null;
-        }
     }
     
     /**
@@ -315,7 +263,6 @@ class AgentCollectionAdapter
             'medium' => count($medium),
             'simple' => count($simple),
             'by_strategy' => [
-                'agent_mode' => count(array_filter($models, fn($m) => $m['strategy'] === 'agent_mode')),
                 'guided_flow' => count(array_filter($models, fn($m) => $m['strategy'] === 'guided_flow')),
                 'quick_action' => count(array_filter($models, fn($m) => $m['strategy'] === 'quick_action')),
             ],

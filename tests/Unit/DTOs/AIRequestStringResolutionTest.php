@@ -5,7 +5,7 @@ namespace LaravelAIEngine\Tests\Unit\DTOs;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Tests\UnitTestCase;
 
-class AIRequestBackCompatTest extends UnitTestCase
+class AIRequestStringResolutionTest extends UnitTestCase
 {
     public function test_constructor_accepts_string_engine_and_model(): void
     {

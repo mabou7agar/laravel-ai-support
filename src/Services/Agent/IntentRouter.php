@@ -11,6 +11,7 @@ use LaravelAIEngine\Services\Agent\AgentManifestService;
 use LaravelAIEngine\Services\Node\NodeMetadataDiscovery;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
+use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 use Illuminate\Support\Facades\Log;
 
 class IntentRouter
@@ -83,7 +84,7 @@ class IntentRouter
 
         return $this->withPromptPolicyMetadata($this->enforceForwardedRequestPolicy(
             $this->enforceStructuredQueryToolPolicy(
-                $this->enforceActiveActionWorkflowPolicy($this->parseDecision($rawResponse, $message, $context, $options), $message, $context),
+                $this->enforceActiveActionFlowPolicy($this->parseDecision($rawResponse, $message, $context, $options), $message, $context),
                 $message,
                 $context,
                 $options,
@@ -98,7 +99,7 @@ class IntentRouter
         return [
             'tools' => $this->discoverTools($options),
             'skills' => $this->discoverSkills(),
-            'action_workflows' => $this->discoverActionWorkflows(),
+            'action_flows' => $this->discoverActionFlows(),
             'collectors' => $this->discoverCollectors($options),
             'nodes' => $this->discoverNodes($options),
         ];
@@ -131,11 +132,16 @@ class IntentRouter
             return null;
         }
 
-        if (is_array($context->metadata['last_action_workflow'] ?? null)) {
+        $activeSkill = $this->activeSkillFlowDecision($message, $context);
+        if ($activeSkill !== null) {
+            return $activeSkill;
+        }
+
+        if (is_array($context->metadata['last_action_flow'] ?? null)) {
             return null;
         }
 
-        $match = $this->skillMatcher->match($message);
+        $match = $this->skillMatcher->matchIntent($message, $context);
         if ($match === null) {
             return null;
         }
@@ -151,6 +157,36 @@ class IntentRouter
         ]);
 
         return $decision;
+    }
+
+    protected function activeSkillFlowDecision(string $message, UnifiedActionContext $context): ?array
+    {
+        $flow = $context->metadata['last_skill_flow'] ?? null;
+        if (!is_array($flow) || empty($flow['skill_id'])) {
+            return null;
+        }
+
+        if (($flow['status'] ?? null) === 'completed') {
+            unset($context->metadata['last_skill_flow']);
+
+            return null;
+        }
+
+        return [
+            'action' => 'use_tool',
+            'resource_name' => 'run_skill',
+            'params' => [
+                'skill_id' => (string) $flow['skill_id'],
+                'message' => $message,
+                'reset' => false,
+            ],
+            'reasoning' => 'Continue the active skill tool flow.',
+            'decision_source' => 'active_skill_flow',
+            'metadata' => [
+                'skill_id' => (string) $flow['skill_id'],
+                'skill_name' => $flow['skill_name'] ?? null,
+            ],
+        ];
     }
 
     protected function discoverTools(array $options): array
@@ -184,10 +220,31 @@ class IntentRouter
             }
         }
 
+        try {
+            foreach (app(ToolRegistry::class)->getToolDefinitions() as $tool) {
+                $name = (string) ($tool['name'] ?? '');
+                if ($name === '' || collect($tools)->contains(fn (array $existing): bool => ($existing['name'] ?? null) === $name)) {
+                    continue;
+                }
+
+                $tools[] = [
+                    'name' => $name,
+                    'model' => 'agent_tool',
+                    'description' => (string) ($tool['description'] ?? ''),
+                    'parameters' => is_array($tool['parameters'] ?? null) ? $tool['parameters'] : [],
+                    'requires_confirmation' => (bool) ($tool['requires_confirmation'] ?? false),
+                ];
+            }
+        } catch (\Throwable $e) {
+            Log::channel('ai-engine')->debug('Failed to get tools from registry', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return $tools;
     }
 
-    protected function discoverActionWorkflows(): array
+    protected function discoverActionFlows(): array
     {
         if (!app()->bound(\LaravelAIEngine\Services\Actions\ActionRegistry::class)) {
             return [];
@@ -211,7 +268,7 @@ class IntentRouter
                 ->values()
                 ->all();
         } catch (\Throwable $e) {
-            Log::channel('ai-engine')->warning('Failed to discover action workflows', [
+            Log::channel('ai-engine')->warning('Failed to discover action flows', [
                 'error' => $e->getMessage(),
             ]);
 
@@ -374,7 +431,7 @@ class IntentRouter
         $selectedEntityContext = $this->formatSelectedEntityContext($context);
         $userProfile = $this->getUserProfile($context->userId);
         $entityContext = $this->formatEntityMetadata($context);
-        $actionWorkflowContext = $this->formatActionWorkflowContext($context);
+        $actionFlowContext = $this->formatActionFlowContext($context);
         $policyContext = $this->formatPromptPolicy($promptPolicy);
 
         return <<<PROMPT
@@ -391,8 +448,8 @@ RECENT CONVERSATION:
 
 {$entityContext}
 
-ACTIVE ACTION WORKFLOW:
-{$actionWorkflowContext}
+ACTIVE ACTION FLOW:
+{$actionFlowContext}
 
 SELECTED ENTITY CONTEXT:
 {$selectedEntityContext}
@@ -413,8 +470,8 @@ Local Collections:
 Model Tools:
 {$this->formatTools($resources['tools'])}
 
-Action Workflows:
-{$this->formatActionWorkflows($resources['action_workflows'] ?? [])}
+Action Flows:
+{$this->formatActionFlows($resources['action_flows'] ?? [])}
 
 Remote Nodes:
 {$this->formatNodes($resources['nodes'])}
@@ -430,12 +487,12 @@ Routing rules:
 3) Never route_to_node for "local".
 4) Use data_query through use_tool for local list/show/count/filter questions when a target entity/table/model is named. Pass the original query if exact model/table parameters are uncertain.
 5) Use data_query through use_tool for exact local IDs, codes, invoice numbers, ticket numbers, SKUs, or other structured filters.
-6) For Action Workflows, use use_tool with update_action_draft to start or continue draft collection. Params must include action_id, payload_patch, and reset=true only when starting a new workflow. Use initial_payload when provided by the workflow.
-7) If ACTIVE ACTION WORKFLOW has relation_next_steps or next_options with relation_create_confirmation and the user confirms/proceeds/approves that relation, continue the active draft using update_action_draft with params {"action_id":"the active action_id","payload_patch":{"approved_missing_relations":["the approval_key"]}}. Do not start a standalone action for that related record.
-8) If ACTIVE ACTION WORKFLOW exists and the user provides more details, corrections, dates, item details, relation details, or relation approval, continue the active action_id with update_action_draft unless the user explicitly says to cancel, restart, or switch to a different action instead.
-9) If ACTIVE ACTION WORKFLOW awaits_final_confirmation=true and the user confirms/proceeds/approves creating it, use use_tool with execute_action and params {"action_id":"the active action_id","confirmed":true}. If the user corrects or adds details instead, use update_action_draft.
+6) For Action Flows, use use_tool with update_action_draft to start or continue draft collection. Params must include action_id, payload_patch, and reset=true only when starting a new flow. Use initial_payload when provided by the flow.
+7) If ACTIVE ACTION FLOW has relation_next_steps or next_options with relation_create_confirmation and the user confirms/proceeds/approves that relation, continue the active draft using update_action_draft with params {"action_id":"the active action_id","payload_patch":{"approved_missing_relations":["the approval_key"]}}. Do not start a standalone action for that related record.
+8) If ACTIVE ACTION FLOW exists and the user provides more details, corrections, dates, item details, relation details, or relation approval, continue the active action_id with update_action_draft unless the user explicitly says to cancel, restart, or switch to a different action instead.
+9) If ACTIVE ACTION FLOW awaits_final_confirmation=true and the user confirms/proceeds/approves creating it, use use_tool with execute_action and params {"action_id":"the active action_id","confirmed":true}. If the user corrects or adds details instead, use update_action_draft.
 10) Prefer Agent Skills when a skill trigger matches the request. A skill describes the complete user-facing ability; use its first action with update_action_draft, first tool with use_tool, or its collector if listed.
-11) Use start_collector only when a named Autonomous Collector exists and no Action Workflow, Agent Skill, or Model Tool fits. If no collectors are listed, do not choose start_collector.
+11) Use start_collector only when a named Autonomous Collector exists and no Action Flow, Agent Skill, or Model Tool fits. If no collectors are listed, do not choose start_collector.
 12) Use conversational for greetings/general chat.
 13) Use resume_session only for "resume/back".
 
@@ -637,26 +694,46 @@ PROMPT;
         return '';
     }
 
-    protected function formatActionWorkflowContext(UnifiedActionContext $context): string
+    protected function formatActionFlowContext(UnifiedActionContext $context): string
     {
-        $workflow = $context->metadata['last_action_workflow'] ?? null;
-        if (!is_array($workflow) || empty($workflow['action_id'])) {
+        $flow = $context->metadata['last_action_flow'] ?? null;
+        if (!is_array($flow) || empty($flow['action_id'])) {
             return '(none)';
         }
 
-        return json_encode($workflow, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return json_encode($flow, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
-    protected function enforceActiveActionWorkflowPolicy(array $decision, string $message, UnifiedActionContext $context): array
+    protected function enforceActiveActionFlowPolicy(array $decision, string $message, UnifiedActionContext $context): array
     {
-        $workflow = $context->metadata['last_action_workflow'] ?? null;
-        if (!is_array($workflow) || empty($workflow['action_id'])) {
+        $flow = $context->metadata['last_action_flow'] ?? null;
+        if (!is_array($flow) || empty($flow['action_id'])) {
             return $decision;
         }
 
-        $relationOption = collect($workflow['next_options'] ?? $workflow['relation_next_steps'] ?? [])
+        $relationOption = collect($flow['next_options'] ?? $flow['relation_next_steps'] ?? [])
             ->first(fn (mixed $option): bool => is_array($option) && ($option['type'] ?? null) === 'relation_create_confirmation');
         if (!is_array($relationOption) || !$this->looksLikeApproval($message)) {
+            if (
+                ($flow['awaits_final_confirmation'] ?? false) !== true
+                && $this->looksLikeApproval($message)
+                && collect($flow['next_options'] ?? [])->contains(
+                    fn (mixed $option): bool => is_array($option) && ($option['type'] ?? null) === 'draft_review'
+                )
+            ) {
+                return [
+                    'action' => 'use_tool',
+                    'resource_name' => 'update_action_draft',
+                    'params' => [
+                        'action_id' => (string) ($flow['action_id'] ?? ''),
+                        'payload_patch' => [
+                            'ready_for_confirmation' => true,
+                        ],
+                    ],
+                    'reasoning' => 'The user requested final review for the active action draft.',
+                ];
+            }
+
             return $decision;
         }
 
@@ -664,7 +741,7 @@ PROMPT;
             'action' => 'use_tool',
             'resource_name' => 'update_action_draft',
             'params' => [
-                'action_id' => (string) $workflow['action_id'],
+                'action_id' => (string) $flow['action_id'],
                 'payload_patch' => [
                     'approved_missing_relations' => [
                         (string) ($relationOption['approval_key'] ?? $relationOption['field'] ?? true),
@@ -777,8 +854,7 @@ PROMPT;
             $required = implode(', ', (array) ($skill['required_data'] ?? []));
             $actions = implode(', ', (array) ($skill['actions'] ?? []));
             $tools = implode(', ', (array) ($skill['tools'] ?? []));
-            $workflows = implode(', ', (array) ($skill['workflows'] ?? []));
-            $lines[] = "   - {$skill['id']}: {$skill['name']}. {$skill['description']} Triggers: {$triggers}. Required: {$required}. Actions: {$actions}. Tools: {$tools}. Workflows: {$workflows}.";
+            $lines[] = "   - {$skill['id']}: {$skill['name']}. {$skill['description']} Triggers: {$triggers}. Required: {$required}. Actions: {$actions}. Tools: {$tools}.";
         }
 
         return $lines !== [] ? implode("\n", $lines) : '   (No skills available)';
@@ -801,10 +877,10 @@ PROMPT;
         return implode("\n", $lines);
     }
 
-    protected function formatActionWorkflows(array $actions): string
+    protected function formatActionFlows(array $actions): string
     {
         if (empty($actions)) {
-            return '   (No action workflows available)';
+            return '   (No action flows available)';
         }
 
         $lines = [];

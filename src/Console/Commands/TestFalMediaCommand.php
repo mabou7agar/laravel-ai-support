@@ -130,7 +130,7 @@ class TestFalMediaCommand extends Command
             );
             $response = $result['response'];
 
-            if (!$response->isSuccess()) {
+            if (!$response->isSuccessful()) {
                 $this->components->error($response->getError() ?? 'FAL media request failed.');
                 return self::FAILURE;
             }

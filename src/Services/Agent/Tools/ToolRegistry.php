@@ -45,11 +45,11 @@ class ToolRegistry
         try {
             $manifestTools = app(AgentManifestService::class)->tools();
             if (!empty($manifestTools)) {
-                // Manifest entries override legacy config entries.
+                // Manifest entries override config entries.
                 $toolClasses = array_merge($toolClasses, $manifestTools);
             }
         } catch (\Throwable) {
-            // Ignore manifest loading failures and keep legacy config path.
+            // Ignore manifest loading failures and keep configured tools.
         }
         
         foreach ($toolClasses as $name => $class) {

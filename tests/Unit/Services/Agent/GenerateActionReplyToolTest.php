@@ -12,7 +12,7 @@ use Mockery;
 
 class GenerateActionReplyToolTest extends TestCase
 {
-    public function test_tool_generates_reply_from_workflow_result(): void
+    public function test_tool_generates_reply_from_action_result(): void
     {
         $replies = Mockery::mock(ActionReplyGeneratorService::class);
         $replies->shouldReceive('generate')
@@ -21,13 +21,13 @@ class GenerateActionReplyToolTest extends TestCase
             ->andReturn([
                 'text' => 'Please send the customer email.',
                 'metadata' => [
-                    'workflow_reply_provider' => 'ai',
-                    'workflow_reply_generated' => true,
+                    'action_reply_provider' => 'ai',
+                    'action_reply_generated' => true,
                 ],
             ]);
 
         $result = (new GenerateActionReplyTool($replies))->execute(
-            ['workflow_result' => ['message' => 'Needs email.']],
+            ['action_result' => ['message' => 'Needs email.']],
             new UnifiedActionContext('reply-tool-test')
         );
 
@@ -38,15 +38,15 @@ class GenerateActionReplyToolTest extends TestCase
         $this->assertTrue($result->metadata['generated']);
     }
 
-    public function test_tool_rejects_non_object_workflow_result(): void
+    public function test_tool_rejects_non_object_action_result(): void
     {
         $result = (new GenerateActionReplyTool(Mockery::mock(ActionReplyGeneratorService::class)))->execute(
-            ['workflow_result' => 'not-an-object'],
+            ['action_result' => 'not-an-object'],
             new UnifiedActionContext('reply-tool-test')
         );
 
         $this->assertFalse($result->success);
-        $this->assertSame('workflow_result must be an object.', $result->error);
+        $this->assertSame('action_result must be an object.', $result->error);
         $this->assertSame('generate_action_reply', $result->metadata['agent_strategy']);
     }
 }

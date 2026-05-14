@@ -48,13 +48,13 @@ abstract class ActionTestCase extends \LaravelAIEngine\Tests\TestCase
             'optional_params' => [],
         ], $definition);
 
-        $this->actionRegistry->register($id, $payload);
+        $payload['id'] = $payload['id'] ?? $id;
+        $this->actionRegistry->register($payload);
 
-        // Compatibility: model actions are commonly referenced by create_{model}.
         if (!empty($payload['model_class'])) {
             $modelAlias = 'create_' . strtolower(class_basename($payload['model_class']));
             if ($modelAlias !== $id && $this->actionRegistry->get($modelAlias) === null) {
-                $this->actionRegistry->register($modelAlias, $payload);
+                $this->actionRegistry->register(array_merge($payload, ['id' => $modelAlias]));
             }
         }
     }
@@ -67,7 +67,8 @@ abstract class ActionTestCase extends \LaravelAIEngine\Tests\TestCase
         $modelName = class_basename($modelClass);
         $actionId = 'create_' . strtolower($modelName);
         
-        $this->actionRegistry->register($actionId, array_merge([
+        $this->actionRegistry->register(array_merge([
+            'id' => $actionId,
             'label' => "Create {$modelName}",
             'description' => "Create a new {$modelName}",
             'executor' => 'model.dynamic',

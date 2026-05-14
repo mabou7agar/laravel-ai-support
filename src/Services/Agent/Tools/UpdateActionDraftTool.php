@@ -6,16 +6,18 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Contracts\ActionWorkflowHandler;
+use LaravelAIEngine\Contracts\ActionFlowHandler;
 use LaravelAIEngine\Services\Actions\ActionDraftService;
 use LaravelAIEngine\Services\Actions\ActionPayloadExtractor;
+use LaravelAIEngine\Services\Actions\ActionReplyGeneratorService;
 
 class UpdateActionDraftTool extends AgentTool
 {
     public function __construct(
         private readonly ActionDraftService $drafts,
-        private readonly ActionWorkflowHandler $actions,
-        private readonly ActionPayloadExtractor $payloadExtractor
+        private readonly ActionFlowHandler $actions,
+        private readonly ActionPayloadExtractor $payloadExtractor,
+        private readonly ActionReplyGeneratorService $replies
     ) {
     }
 
@@ -52,18 +54,31 @@ class UpdateActionDraftTool extends AgentTool
         );
 
         if (($result['success'] ?? false) && !$this->requiresRelationInput($result)) {
+            $reply = $this->reply($result);
+
             return ActionResult::success(
-                $result['message'] ?? 'Action draft is ready for confirmation.',
+                $reply['text'],
                 $result,
-                ['agent_strategy' => 'action_prepare']
+                ['agent_strategy' => 'action_prepare'] + $reply['metadata']
             );
         }
 
+        $reply = $this->reply($result);
+
         return ActionResult::needsUserInput(
-            $result['message'] ?? $result['error'] ?? 'Action draft requires user input.',
+            $reply['text'],
             $result,
-            ['agent_strategy' => 'action_needs_input']
+            ['agent_strategy' => 'action_needs_input'] + $reply['metadata']
         );
+    }
+
+    /**
+     * @param array<string, mixed> $actionResult
+     * @return array{text:string,metadata:array<string,mixed>}
+     */
+    private function reply(array $actionResult): array
+    {
+        return $this->replies->generate($actionResult);
     }
 
     /**
@@ -101,9 +116,9 @@ class UpdateActionDraftTool extends AgentTool
                 'instructions' => implode("\n", [
                     'The user is continuing an existing action draft through update_action_draft.',
                     'Return a payload patch for the latest user message.',
-                    'If the message confirms a pending relation create, return approved_missing_relations using the matching approval key from current workflow facts.',
+                    'If the message confirms a pending relation create, return approved_missing_relations using the matching approval key from current action facts.',
                     'If the message corrects a field, return the corrected field value.',
-                    'Current workflow facts: ' . json_encode([
+                    'Current action facts: ' . json_encode([
                         'current_payload' => $currentPayload,
                     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 ]),

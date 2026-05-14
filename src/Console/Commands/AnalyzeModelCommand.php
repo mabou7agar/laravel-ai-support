@@ -31,7 +31,7 @@ class AnalyzeModelCommand extends Command
             $this->info("📊 Analyzing {$modelClass}...");
             $this->newLine();
             
-            $analysis = $analyzer->analyzeModel($modelClass);
+            $analysis = $analyzer->analyze($modelClass);
             
             $this->displayAnalysis($analysis);
             
@@ -59,7 +59,7 @@ class AnalyzeModelCommand extends Command
         
         foreach ($models as $modelClass) {
             try {
-                $analysis = $analyzer->analyzeModel($modelClass);
+                $analysis = $analyzer->analyze($modelClass);
                 $this->displayAnalysis($analysis, false);
                 $this->newLine();
             } catch (\Exception $e) {

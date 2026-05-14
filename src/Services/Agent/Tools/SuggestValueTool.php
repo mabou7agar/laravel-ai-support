@@ -77,7 +77,7 @@ class SuggestValueTool extends AgentTool
         array $additionalContext,
         UnifiedActionContext $context
     ): ?string {
-        $collectedData = $context->workflowState;
+        $collectedData = $context->runtimeState;
 
         $prompt = "Suggest an appropriate value for the field '{$fieldName}'.\n\n";
         $prompt .= "Field Type: {$fieldType}\n\n";

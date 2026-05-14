@@ -27,7 +27,6 @@ class InitAgentWorkspaceCommand extends Command
             app_path('AI/Filters'),
             app_path('AI/Skills'),
             app_path('AI/Tools'),
-            app_path('AI/Workflows'),
         ];
 
         $manifestPath = $this->normalizePath($manifestService->manifestPath());
@@ -133,7 +132,7 @@ return [
     'skills' => [
         // 'create_invoice' => [
         //     'name' => 'Create Invoice',
-        //     'description' => 'Create invoices through approved actions and workflows.',
+        //     'description' => 'Create invoices through approved actions and tools.',
         //     'triggers' => ['create invoice', 'new invoice'],
         //     'actions' => ['invoices.create'],
         //     'requires_confirmation' => true,

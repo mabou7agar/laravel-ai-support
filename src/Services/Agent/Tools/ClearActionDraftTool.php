@@ -21,7 +21,7 @@ class ClearActionDraftTool extends AgentTool
 
     public function getDescription(): string
     {
-        return 'Clear the current session action draft when the user cancels, restarts, or abandons a workflow.';
+        return 'Clear the current session action draft when the user cancels, restarts, or abandons an action flow.';
     }
 
     public function getParameters(): array

@@ -145,7 +145,7 @@ class CreditManager
         $engineRate = $this->getEngineRate($request->engine);
 
         // Calculate engine credits then convert to MyCredits
-        $engineCredits = $inputCount * $creditIndex;
+        $engineCredits = ($inputCount * $creditIndex) + $this->getAdditionalInputUnitEngineCredits($request);
         return $engineCredits * $engineRate;
     }
 
@@ -163,6 +163,14 @@ class CreditManager
      */
     public function hasCredits(string $userId, AIRequest $request): bool
     {
+        return $this->hasCreditsForAmount($userId, $request, $this->calculateCredits($request));
+    }
+
+    /**
+     * Check if user has enough MyCredits for a known credit amount.
+     */
+    public function hasCreditsForAmount(string $userId, AIRequest $request, float $requiredCredits): bool
+    {
         $user = $this->getUserModel($userId);
 
         if ($this->usesEntityCreditLedger($user)) {
@@ -171,14 +179,13 @@ class CreditManager
                 return true;
             }
 
-            $requiredCredits = $this->calculateCredits($request);
             return ((float) ($entry['balance'] ?? 0.0)) >= $requiredCredits;
         }
         
         // Use custom lifecycle handler if configured
         $handler = $this->getLifecycleHandler();
         if ($handler) {
-            return $handler->hasCredits($user, $request);
+            return $handler->getAvailableCredits($user) >= $requiredCredits || $handler->hasCredits($user, $request);
         }
 
         if (!$this->supportsScalarCreditFields($user)) {
@@ -191,7 +198,6 @@ class CreditManager
             return true;
         }
         
-        $requiredCredits = $this->calculateCredits($request);
         return $this->readScalarCreditBalance($user) >= $requiredCredits;
     }
 
@@ -257,10 +263,17 @@ class CreditManager
     /**
      * Add MyCredits to user
      */
-    public function addCredits(string $userId, mixed ...$args): bool
+    public function addCredits(
+        string $userId,
+        float $credits,
+        array $metadata = [],
+        EngineEnum|string|null $engine = null,
+        EntityEnum|string|null $model = null
+    ): bool
     {
         $user = $this->getUserModel($userId);
-        [$engine, $model, $credits, $metadata] = $this->parseCreditMutationArguments($args);
+        $engine = $engine === null ? null : $this->resolveEngine($engine);
+        $model = $model === null ? null : $this->resolveModel($model);
 
         if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
             $entry = $this->getEntityCreditEntry($user, $engine, $model);
@@ -289,10 +302,16 @@ class CreditManager
     /**
      * Set user MyCredits balance
      */
-    public function setCredits(string $userId, mixed ...$args): bool
+    public function setCredits(
+        string $userId,
+        float $credits,
+        EngineEnum|string|null $engine = null,
+        EntityEnum|string|null $model = null
+    ): bool
     {
         $user = $this->getUserModel($userId);
-        [$engine, $model, $credits] = $this->parseCreditSetArguments($args);
+        $engine = $engine === null ? null : $this->resolveEngine($engine);
+        $model = $model === null ? null : $this->resolveModel($model);
 
         if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
             $this->setEntityCreditEntry($user, $engine, $model, $credits, false);
@@ -306,11 +325,17 @@ class CreditManager
     /**
      * Set unlimited credits for user
      */
-    public function setUnlimitedCredits(string $userId, mixed ...$args): bool
+    public function setUnlimitedCredits(
+        string $userId,
+        bool $unlimited = true,
+        EngineEnum|string|null $engine = null,
+        EntityEnum|string|null $model = null
+    ): bool
     {
         $user = $this->getUserModel($userId);
 
-        [$engine, $model, $unlimited] = $this->parseUnlimitedArguments($args);
+        $engine = $engine === null ? null : $this->resolveEngine($engine);
+        $model = $model === null ? null : $this->resolveModel($model);
         if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
             $entry = $this->getEntityCreditEntry($user, $engine, $model);
             $this->setEntityCreditEntry(
@@ -655,11 +680,128 @@ class CreditManager
         return match ($request->model->calculationMethod()) {
             'words' => $this->countWords($request->prompt),
             'characters' => $this->countCharacters($request->prompt),
-            'images' => $request->parameters['image_count'] ?? 1,
-            'videos' => $request->parameters['video_count'] ?? 1,
-            'minutes' => $request->parameters['audio_minutes'] ?? 1,
+            'images' => $this->firstNumericParameter($request, ['image_count', 'num_images', 'frame_count'], 1),
+            'videos' => $this->firstNumericParameter($request, ['video_count', 'num_videos'], 1),
+            'minutes' => $this->firstNumericParameter($request, ['audio_minutes', 'duration_minutes'], 1),
             default => 1,
         };
+    }
+
+    private function firstNumericParameter(AIRequest $request, array $keys, float $default): float
+    {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $request->parameters)) {
+                continue;
+            }
+
+            $value = $request->parameters[$key];
+            if (is_numeric($value)) {
+                return max(0.0, (float) $value);
+            }
+        }
+
+        return $default;
+    }
+
+    private function getAdditionalInputUnitEngineCredits(AIRequest $request): float
+    {
+        $engine = $request->engine->value;
+        $model = $request->model->value;
+        $policy = config("ai-engine.credits.additional_input_unit_rates.{$engine}", []);
+
+        if (!is_array($policy) || $policy === []) {
+            return 0.0;
+        }
+
+        $rates = array_replace(
+            $policy['default'] ?? [],
+            $policy['models'][$model] ?? []
+        );
+
+        if (!is_array($rates) || $rates === []) {
+            return 0.0;
+        }
+
+        $engineCredits = 0.0;
+
+        foreach ($rates as $unit => $rate) {
+            if (!is_numeric($rate) || (float) $rate <= 0) {
+                continue;
+            }
+
+            $engineCredits += $this->countAdditionalInputUnits($request, (string) $unit) * (float) $rate;
+        }
+
+        return $engineCredits;
+    }
+
+    private function countAdditionalInputUnits(AIRequest $request, string $unit): float
+    {
+        return match ($unit) {
+            'image', 'images' => $this->countInputMediaUnits($request->parameters, [
+                'image_url',
+                'image_urls',
+                'input_image',
+                'input_images',
+                'reference_image',
+                'reference_images',
+                'reference_image_url',
+                'reference_image_urls',
+                'start_image',
+                'start_image_url',
+                'end_image',
+                'end_image_url',
+                'mask_image',
+                'mask_image_url',
+                'init_image',
+                'init_images',
+                'source_image',
+                'source_images',
+            ]),
+            default => 0.0,
+        };
+    }
+
+    private function countInputMediaUnits(array $parameters, array $keys): float
+    {
+        $count = 0.0;
+
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $parameters)) {
+                continue;
+            }
+
+            $count += $this->countMediaValue($parameters[$key]);
+        }
+
+        return $count;
+    }
+
+    private function countMediaValue(mixed $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        if (is_string($value)) {
+            return 1.0;
+        }
+
+        if (!is_array($value)) {
+            return 0.0;
+        }
+
+        if (array_is_list($value)) {
+            return array_sum(array_map(fn (mixed $item): float => $this->countMediaValue($item), $value));
+        }
+
+        foreach (['url', 'image_url', 'path', 'file_id'] as $mediaKey) {
+            if (isset($value[$mediaKey]) && $value[$mediaKey] !== '') {
+                return 1.0;
+            }
+        }
+
+        return array_sum(array_map(fn (mixed $item): float => $this->countMediaValue($item), $value));
     }
 
     /**
@@ -814,82 +956,6 @@ class CreditManager
             'balance' => $total,
             'is_unlimited' => $total === PHP_FLOAT_MAX,
         ];
-    }
-
-    /**
-     * Parse addCredits args supporting legacy (engine, model, credits) and modern (credits, metadata) signatures.
-     *
-     * @return array{0:?EngineEnum,1:?EntityEnum,2:float,3:array}
-     */
-    private function parseCreditMutationArguments(array $args): array
-    {
-        if ($args === []) {
-            throw new \InvalidArgumentException('addCredits requires at least one argument.');
-        }
-
-        if (is_numeric($args[0])) {
-            $credits = (float) $args[0];
-            $metadata = (isset($args[1]) && is_array($args[1])) ? $args[1] : [];
-            return [null, null, $credits, $metadata];
-        }
-
-        $engine = $this->resolveEngine($args[0] ?? null);
-        $model = $this->resolveModel($args[1] ?? null);
-        $credits = (float) ($args[2] ?? 0);
-        $metadata = (isset($args[3]) && is_array($args[3])) ? $args[3] : [];
-
-        return [$engine, $model, $credits, $metadata];
-    }
-
-    /**
-     * Parse setCredits args supporting legacy (engine, model, credits) and modern (credits) signatures.
-     *
-     * @return array{0:?EngineEnum,1:?EntityEnum,2:float}
-     */
-    private function parseCreditSetArguments(array $args): array
-    {
-        if ($args === []) {
-            throw new \InvalidArgumentException('setCredits requires at least one argument.');
-        }
-
-        if (is_numeric($args[0])) {
-            return [null, null, (float) $args[0]];
-        }
-
-        $engine = $this->resolveEngine($args[0] ?? null);
-        $model = $this->resolveModel($args[1] ?? null);
-        $credits = (float) ($args[2] ?? 0);
-
-        return [$engine, $model, $credits];
-    }
-
-    /**
-     * Parse setUnlimitedCredits args supporting legacy and modern signatures.
-     *
-     * @return array{0:?EngineEnum,1:?EntityEnum,2:bool}
-     */
-    private function parseUnlimitedArguments(array $args): array
-    {
-        if ($args === []) {
-            return [null, null, true];
-        }
-
-        if (is_bool($args[0])) {
-            return [null, null, (bool) $args[0]];
-        }
-
-        $engine = $this->resolveEngine($args[0] ?? null);
-        $model = $this->resolveModel($args[1] ?? null);
-
-        if (isset($args[2]) && is_bool($args[2])) {
-            return [$engine, $model, (bool) $args[2]];
-        }
-
-        if (isset($args[3]) && is_bool($args[3])) {
-            return [$engine, $model, (bool) $args[3]];
-        }
-
-        return [$engine, $model, true];
     }
 
     private function resolveEngine(mixed $engine): EngineEnum

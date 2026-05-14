@@ -40,7 +40,6 @@ class RoutingDecisionTest extends UnitTestCase
             RoutingDecisionAction::CONTINUE_COLLECTOR,
             RoutingDecisionAction::CONTINUE_NODE,
             RoutingDecisionAction::HANDLE_SELECTION,
-            RoutingDecisionAction::RUN_DETERMINISTIC,
             RoutingDecisionAction::SEARCH_RAG,
             RoutingDecisionAction::USE_TOOL,
             RoutingDecisionAction::RUN_SUB_AGENT,

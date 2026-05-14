@@ -4,7 +4,7 @@ namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
 use LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
+use LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService;
 use LaravelAIEngine\Tests\UnitTestCase;
 
 class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
@@ -12,7 +12,7 @@ class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
     public function test_generate_summary_hides_empty_fields_and_formats_user_friendly_items(): void
     {
         $handler = new AutonomousCollectorHandler(
-            $this->createMock(AutonomousCollectorService::class)
+            $this->createMock(AutonomousCollectorSessionService::class)
         );
 
         $config = new AutonomousCollectorConfig(
@@ -93,7 +93,7 @@ class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
     public function test_build_success_message_uses_product_name_for_line_items(): void
     {
         $handler = new AutonomousCollectorHandler(
-            $this->createMock(AutonomousCollectorService::class)
+            $this->createMock(AutonomousCollectorSessionService::class)
         );
 
         $config = new AutonomousCollectorConfig(goal: 'Create invoice');
@@ -128,7 +128,7 @@ class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
     public function test_write_tools_require_explicit_confirmation_before_execution(): void
     {
         $handler = new AutonomousCollectorHandler(
-            $this->createMock(AutonomousCollectorService::class)
+            $this->createMock(AutonomousCollectorSessionService::class)
         );
 
         $config = new AutonomousCollectorConfig(

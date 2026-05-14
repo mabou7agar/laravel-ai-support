@@ -11,7 +11,7 @@ class NodeDiscoverCommand extends Command
                             {--sync : Sync discovered metadata with master node}
                             {--json : Output as JSON}';
 
-    protected $description = 'Discover node metadata from workflows, models, and capabilities';
+    protected $description = 'Discover node metadata from models, tools, and capabilities';
 
     public function handle(): int
     {
@@ -80,17 +80,6 @@ class NodeDiscoverCommand extends Command
         if (!empty($metadata['collections'])) {
             foreach ($metadata['collections'] as $collection) {
                 $this->line("  • {$collection}");
-            }
-        } else {
-            $this->line('  (none discovered)');
-        }
-        $this->info('');
-
-        // Workflows
-        $this->line('<fg=cyan>Workflows:</>');
-        if (!empty($metadata['workflows'])) {
-            foreach ($metadata['workflows'] as $workflow) {
-                $this->line("  • {$workflow}");
             }
         } else {
             $this->line('  (none discovered)');

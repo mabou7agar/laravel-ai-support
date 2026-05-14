@@ -97,7 +97,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
             );
             
             $response = $this->generateImage($testRequest);
-            return $response->isSuccess();
+            return $response->isSuccessful();
         } catch (\Exception $e) {
             return false;
         }

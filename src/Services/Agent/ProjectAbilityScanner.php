@@ -30,10 +30,6 @@ class ProjectAbilityScanner
             $skills[$skill->id] = $skill;
         }
 
-        foreach ($this->discoverWorkflowSkills() as $skill) {
-            $skills[$skill->id] = $skill;
-        }
-
         foreach ($this->discoverCollectorSkills() as $skill) {
             $skills[$skill->id] = $skill;
         }
@@ -105,40 +101,6 @@ class ProjectAbilityScanner
     /**
      * @return array<int, AgentSkillDefinition>
      */
-    protected function discoverWorkflowSkills(): array
-    {
-        $skills = [];
-
-        foreach ((array) config('ai-agent.workflows', []) as $workflowClass => $triggers) {
-            if (!is_string($workflowClass) || trim($workflowClass) === '') {
-                continue;
-            }
-
-            $id = $this->skillId(class_basename($workflowClass));
-            $name = $this->headline(preg_replace('/Workflow$/', '', class_basename($workflowClass)) ?: class_basename($workflowClass));
-
-            $skills[] = new AgentSkillDefinition(
-                id: $id,
-                name: $name,
-                description: "Run the {$name} workflow.",
-                triggers: $this->stringList((array) $triggers),
-                workflows: [$workflowClass],
-                capabilities: ['workflow'],
-                requiresConfirmation: true,
-                enabled: false,
-                metadata: [
-                    'source' => 'workflow_config',
-                    'review_required' => true,
-                ]
-            );
-        }
-
-        return $skills;
-    }
-
-    /**
-     * @return array<int, AgentSkillDefinition>
-     */
     protected function discoverCollectorSkills(): array
     {
         $skills = [];
@@ -198,11 +160,9 @@ class ProjectAbilityScanner
             }
 
             $id = $this->skillId($name);
-            $operation = match ((string) ($model['strategy'] ?? 'quick_action')) {
-                'agent_mode' => 'manage_complex_model',
-                'guided_flow' => 'collect_model_data',
-                default => 'manage_model',
-            };
+            $operation = ((string) ($model['strategy'] ?? 'quick_action')) === 'guided_flow'
+                ? 'collect_model_data'
+                : 'manage_model';
 
             $skills[] = new AgentSkillDefinition(
                 id: $id,
@@ -214,7 +174,6 @@ class ProjectAbilityScanner
                     Str::lower("create {$name}"),
                 ],
                 tools: $toolNames,
-                workflows: array_values(array_filter([(string) ($model['workflow_class'] ?? '')])),
                 capabilities: ['model', $operation],
                 requiresConfirmation: true,
                 enabled: false,
@@ -253,7 +212,7 @@ class ProjectAbilityScanner
 
     protected function skillId(string $value): string
     {
-        $id = Str::snake(preg_replace('/Skill$|Workflow$/', '', $value) ?: $value);
+        $id = Str::snake(preg_replace('/Skill$/', '', $value) ?: $value);
         $id = preg_replace('/[^a-z0-9_]+/', '_', Str::lower($id)) ?? $id;
         $id = trim($id, '_');
 

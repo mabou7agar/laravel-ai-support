@@ -40,7 +40,7 @@ class OpenAIResponsesApiToolTest extends UnitTestCase
                 ->withFunctions([(new CodeInterpreter())->toArray()])
         );
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame('done', $response->content);
     }
 }

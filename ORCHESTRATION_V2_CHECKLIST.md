@@ -541,9 +541,9 @@ Enhance existing services first. Add new services only when these cannot reasona
 
 RAG services:
 
-- [x] Avoid adding more behavior to legacy broad RAG chat services.
+- [x] Avoid adding more behavior to broad RAG chat services.
 - [x] Move behavior into the new RAG pipeline services.
-- [x] Delete the legacy RAG facade once call sites are migrated.
+- [x] Delete the old RAG facade once call sites are migrated.
 
 `AgentOrchestrationInspector`:
 

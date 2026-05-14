@@ -10,7 +10,6 @@ class EntityFieldConfig
         public ?\Closure $filters = null,
         public bool $checkDuplicates = false,
         public bool $askOnDuplicate = false,
-        public ?string $subflow = null,
         public bool $multiple = false,
         public bool $required = true,
         public ?string $description = null,
@@ -64,15 +63,6 @@ class EntityFieldConfig
     {
         $this->checkDuplicates = true;
         $this->askOnDuplicate = $askOnDuplicate;
-        return $this;
-    }
-
-    /**
-     * Set subflow for entity creation
-     */
-    public function subflow(string $subflowClass): self
-    {
-        $this->subflow = $subflowClass;
         return $this;
     }
 
@@ -252,7 +242,7 @@ class EntityFieldConfig
      * Set custom parser function for this field
      * Parser receives: (string $input) and returns parsed array
      * Example: fn($input) => parseProductList($input)
-     * Use when AI extraction needs workflow-specific parsing logic
+     * Use when AI extraction needs field-specific parsing logic
      */
     public function customParser(\Closure $parser): self
     {
@@ -271,7 +261,6 @@ class EntityFieldConfig
             'filters' => $this->filters,
             'check_duplicates' => $this->checkDuplicates ?: null,
             'ask_on_duplicate' => $this->askOnDuplicate ?: null,
-            'subflow' => $this->subflow,
             'multiple' => $this->multiple ?: null,
             'required' => $this->required,
             'description' => $this->description,
@@ -304,7 +293,6 @@ class EntityFieldConfig
             filters: $config['filters'] ?? null,
             checkDuplicates: $config['check_duplicates'] ?? false,
             askOnDuplicate: $config['ask_on_duplicate'] ?? false,
-            subflow: $config['subflow'] ?? null,
             multiple: $config['multiple'] ?? false,
             required: $config['required'] ?? true,
             description: $config['description'] ?? null,

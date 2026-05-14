@@ -70,7 +70,7 @@ class GenerateApiController extends Controller
                 ], static fn ($value): bool => $value !== null && $value !== ''),
             ));
 
-            if (!$response->isSuccess()) {
+            if (!$response->isSuccessful()) {
                 return $this->envelope(
                     success: false,
                     message: $response->getError() ?? 'Text generation failed.',
@@ -222,7 +222,7 @@ class GenerateApiController extends Controller
                 userId: $this->resolveAuthenticatedUserId(),
             ));
 
-            if (!$response->isSuccess()) {
+            if (!$response->isSuccessful()) {
                 return $this->envelope(
                     success: false,
                     message: $response->getError() ?? 'Image generation failed.',
@@ -380,7 +380,7 @@ class GenerateApiController extends Controller
                 userId: $this->resolveAuthenticatedUserId(),
             ));
 
-            if (!$response->isSuccess()) {
+            if (!$response->isSuccessful()) {
                 return $this->envelope(
                     success: false,
                     message: $response->getError() ?? 'Video generation failed.',
@@ -747,7 +747,7 @@ class GenerateApiController extends Controller
                 userId: $this->resolveAuthenticatedUserId(),
             ));
 
-            if (!$response->isSuccess()) {
+            if (!$response->isSuccessful()) {
                 return $this->envelope(
                     success: false,
                     message: $response->getError() ?? 'Audio transcription failed.',
@@ -864,7 +864,7 @@ class GenerateApiController extends Controller
                 userId: $this->resolveAuthenticatedUserId(),
             ));
 
-            if (!$response->isSuccess()) {
+            if (!$response->isSuccessful()) {
                 return $this->envelope(
                     success: false,
                     message: $response->getError() ?? 'Text-to-speech generation failed.',

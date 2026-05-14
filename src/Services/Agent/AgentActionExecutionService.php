@@ -109,7 +109,7 @@ class AgentActionExecutionService
                     $response->strategy = $result['metadata']['agent_strategy'] ?? $result['agent_strategy'] ?? null;
                     $response->metadata = array_filter([
                         'agent_strategy' => $response->strategy,
-                        'workflow_data' => $result,
+                        'flow_data' => $result,
                         'tool_name' => $toolName,
                     ]);
 
@@ -129,7 +129,7 @@ class AgentActionExecutionService
                     $response->strategy = $result['metadata']['agent_strategy'] ?? $result['agent_strategy'] ?? null;
                     $response->metadata = array_filter([
                         'agent_strategy' => $response->strategy,
-                        'workflow_data' => $result,
+                        'flow_data' => $result,
                         'tool_name' => $toolName,
                     ]);
 
@@ -201,6 +201,8 @@ class AgentActionExecutionService
             );
         }
 
+        $context->metadata['latest_user_message'] = $message;
+
         $errors = $tool->validate($params);
         if ($errors !== []) {
             return AgentResponse::needsUserInput(
@@ -216,7 +218,7 @@ class AgentActionExecutionService
         $response->strategy = $result->metadata['agent_strategy'] ?? 'tool';
         $response->metadata = array_filter([
             'agent_strategy' => $response->strategy,
-            'workflow_data' => $result->toArray(),
+            'flow_data' => $result->toArray(),
             'tool_name' => $toolName,
         ]);
 

@@ -21,7 +21,7 @@ class ActionReplyMcpEnhancer
             return null;
         }
 
-        $maxChars = max(200, (int) config('ai-agent.workflow_reply.mcp.max_chars', config('ai-agent.humanize.max_chars', 4000)));
+        $maxChars = max(200, (int) config('ai-agent.action_reply.mcp.max_chars', config('ai-agent.humanize.max_chars', 4000)));
         if (mb_strlen($prompt) > $maxChars) {
             return null;
         }
@@ -31,7 +31,7 @@ class ActionReplyMcpEnhancer
             is_array($context['preserve_terms'] ?? null) ? $context['preserve_terms'] : []
         );
 
-        $text = $this->callMcp($protectedPrompt, (string) ($context['style'] ?? 'workflow_reply'));
+        $text = $this->callMcp($protectedPrompt, (string) ($context['style'] ?? 'action_reply'));
         if (!is_string($text) || trim($text) === '') {
             return null;
         }
@@ -41,7 +41,7 @@ class ActionReplyMcpEnhancer
             'provider' => 'mcp',
             'metadata' => [
                 'protected_terms_count' => count($replacements),
-                'style' => $context['style'] ?? 'workflow_reply',
+                'style' => $context['style'] ?? 'action_reply',
             ],
         ];
     }
@@ -52,7 +52,7 @@ class ActionReplyMcpEnhancer
 
         return $url !== ''
             && (
-                (bool) config('ai-agent.workflow_reply.mcp.enabled', false)
+                (bool) config('ai-agent.action_reply.mcp.enabled', false)
                 || (bool) config('ai-agent.humanize.enabled', false)
             );
     }
@@ -60,7 +60,7 @@ class ActionReplyMcpEnhancer
     private function callMcp(string $text, string $style): ?string
     {
         try {
-            $response = Http::timeout(max(1, (int) config('ai-agent.workflow_reply.mcp.timeout', config('ai-agent.humanize.timeout', 8))))
+            $response = Http::timeout(max(1, (int) config('ai-agent.action_reply.mcp.timeout', config('ai-agent.humanize.timeout', 8))))
                 ->acceptJson()
                 ->post($this->url(), [
                     'jsonrpc' => '2.0',
@@ -163,7 +163,7 @@ class ActionReplyMcpEnhancer
 
     private function url(): string
     {
-        $url = config('ai-agent.workflow_reply.mcp.url');
+        $url = config('ai-agent.action_reply.mcp.url');
         if (!is_string($url) || trim($url) === '') {
             $url = config('ai-agent.humanize.mcp_url');
         }
@@ -173,7 +173,7 @@ class ActionReplyMcpEnhancer
 
     private function toolName(): string
     {
-        $toolName = config('ai-agent.workflow_reply.mcp.tool_name');
+        $toolName = config('ai-agent.action_reply.mcp.tool_name');
         if (!is_string($toolName) || trim($toolName) === '') {
             $toolName = config('ai-agent.humanize.tool_name', 'humanize_text');
         }

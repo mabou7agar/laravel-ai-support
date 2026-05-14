@@ -7,8 +7,7 @@ use Illuminate\Support\Str;
 use ReflectionClass;
 
 /**
- * Auto-discover node metadata from application structure
- * Scans for workflows, models, and capabilities
+ * Auto-discover node metadata from application structure.
  */
 class NodeMetadataDiscovery
 {
@@ -24,7 +23,6 @@ class NodeMetadataDiscovery
             'data_types' => $this->discoverDataTypes(),
             'keywords' => $this->discoverKeywords(),
             'collections' => $this->discoverCollections(),
-            'workflows' => $this->discoverWorkflows(),
         ];
     }
 
@@ -33,34 +31,18 @@ class NodeMetadataDiscovery
      */
     protected function generateDescription(): string
     {
-        $workflows = $this->discoverWorkflows();
         $models = $this->discoverCollections();
         
-        if (empty($workflows) && empty($models)) {
+        if (empty($models)) {
             return config('ai-engine.nodes.description', '');
         }
 
         $parts = [];
         
-        // Extract entity types from workflows
         $entities = [];
-        foreach ($workflows as $workflow) {
-            $className = class_basename($workflow);
-            // Extract entity from workflow name (e.g., CreateInvoiceWorkflow -> invoice)
-            if (preg_match('/(Create|Update|Delete|Manage)(\w+)Workflow/i', $className, $matches)) {
-                $entities[] = strtolower($matches[2]);
-            }
-        }
-        
-        // Extract entity types from models
+
         foreach ($models as $model) {
-            // Handle new format (array with metadata) or legacy format (class string)
-            if (is_array($model)) {
-                $entities[] = $model['name']; // Already lowercase from discovery
-            } else {
-                $className = class_basename($model);
-                $entities[] = strtolower(Str::snake($className));
-            }
+            $entities[] = $model['name'];
         }
         
         $entities = array_values(array_unique($entities));
@@ -70,18 +52,10 @@ class NodeMetadataDiscovery
             $parts[] = "Manages {$entityList}";
         }
         
-        if (!empty($workflows)) {
-            $parts[] = "Provides " . count($workflows) . " automated workflows";
-        }
-        
         // Add search capability if vectorizable models exist
         if (!empty($models)) {
             $searchableEntities = array_map(function($m) {
-                // Handle new format (array with metadata) or legacy format (class string)
-                if (is_array($m)) {
-                    return $m['name'];
-                }
-                return strtolower(class_basename($m));
+                return $m['name'];
             }, $models);
             $parts[] = "Supports semantic search across " . $this->formatList($searchableEntities);
         }
@@ -97,11 +71,6 @@ class NodeMetadataDiscovery
     protected function discoverCapabilities(): array
     {
         $capabilities = [];
-        
-        // Check for workflows
-        if (!empty($this->discoverWorkflows())) {
-            $capabilities[] = 'workflows';
-        }
         
         // Check for vectorizable models
         if (!empty($this->discoverCollections())) {
@@ -146,8 +115,7 @@ class NodeMetadataDiscovery
         ];
         
         foreach ($models as $model) {
-            // Handle new format (array with metadata) or legacy format (class string)
-            $modelName = is_array($model) ? $model['name'] : strtolower(class_basename($model));
+            $modelName = $model['name'];
             if (isset($domainMap[$modelName])) {
                 $domains = array_merge($domains, $domainMap[$modelName]);
             }
@@ -168,13 +136,7 @@ class NodeMetadataDiscovery
         $models = $this->discoverCollections();
         
         foreach ($models as $model) {
-            // Handle new format (array with metadata) or legacy format (class string)
-            if (is_array($model)) {
-                $dataTypes[] = $model['name'];
-            } else {
-                $modelName = class_basename($model);
-                $dataTypes[] = strtolower(Str::snake($modelName));
-            }
+            $dataTypes[] = $model['name'];
         }
         
         return array_values(array_unique(array_merge(
@@ -184,7 +146,7 @@ class NodeMetadataDiscovery
     }
 
     /**
-     * Discover keywords from models and workflows
+     * Discover keywords from models.
      */
     protected function discoverKeywords(): array
     {
@@ -193,26 +155,8 @@ class NodeMetadataDiscovery
         // Add model names
         $models = $this->discoverCollections();
         foreach ($models as $model) {
-            // Handle new format (array with metadata) or legacy format (class string)
-            if (is_array($model)) {
-                $keywords[] = $model['name'];
-                $keywords[] = strtolower(Str::plural($model['name']));
-            } else {
-                $modelName = class_basename($model);
-                $keywords[] = strtolower($modelName);
-                $keywords[] = strtolower(Str::plural($modelName));
-            }
-        }
-        
-        // Add workflow action keywords
-        $workflows = $this->discoverWorkflows();
-        foreach ($workflows as $workflow) {
-            $className = class_basename($workflow);
-            // Extract action and entity
-            if (preg_match('/(Create|Update|Delete|Manage|Search|List)(\w+)/i', $className, $matches)) {
-                $keywords[] = strtolower($matches[1]); // action
-                $keywords[] = strtolower($matches[2]); // entity
-            }
+            $keywords[] = $model['name'];
+            $keywords[] = strtolower(Str::plural($model['name']));
         }
         
         return array_values(array_unique(array_merge(
@@ -348,39 +292,6 @@ class NodeMetadataDiscovery
     }
 
     /**
-     * Discover workflow classes
-     */
-    protected function discoverWorkflows(): array
-    {
-        $workflows = [];
-        
-        // Check common workflow paths
-        $paths = [
-            app_path('AI/Workflows'),
-            app_path('Workflows'),
-            app_path('Domain/Workflows'),
-        ];
-        
-        foreach ($paths as $path) {
-            if (!File::exists($path)) {
-                continue;
-            }
-            
-            $files = File::allFiles($path);
-            
-            foreach ($files as $file) {
-                $className = $this->getClassFromFile($file->getPathname());
-                
-                if ($className && $this->isWorkflow($className)) {
-                    $workflows[] = $className;
-                }
-            }
-        }
-        
-        return array_values(array_unique($workflows));
-    }
-
-    /**
      * Check if application has actions
      */
     protected function hasActions(): bool
@@ -435,28 +346,6 @@ class NodeMetadataDiscovery
             
             return in_array('LaravelAIEngine\Traits\Vectorizable', $traits) ||
                    in_array('LaravelAIEngine\Traits\HasVectorSearch', $traits);
-        } catch (\Exception $e) {
-            return false;
-        }
-    }
-
-    /**
-     * Check if class is a workflow
-     */
-    protected function isWorkflow(string $className): bool
-    {
-        if (!class_exists($className)) {
-            return false;
-        }
-        
-        try {
-            $reflection = new ReflectionClass($className);
-            
-            // Check if it implements BaseWorkflow or has workflow-like methods
-            return $reflection->hasMethod('handle') || 
-                   $reflection->hasMethod('execute') ||
-                   $reflection->hasMethod('process') ||
-                   Str::endsWith($className, 'Workflow');
         } catch (\Exception $e) {
             return false;
         }

@@ -14,7 +14,6 @@ class AgentRuntimeConfigValidator
         $issues = array_merge(
             $this->runtimeIssues(),
             $this->routingStageIssues(),
-            $this->dispatcherHandlerIssues(),
             $this->toolIssues()
         );
 
@@ -149,49 +148,6 @@ class AgentRuntimeConfigValidator
                     'invalid_routing_stage_contract',
                     "Routing stage [{$stage}] must implement RoutingStageContract.",
                     "ai-agent.routing_pipeline.stages.{$index}"
-                );
-            }
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @return array<int,array{severity:string,code:string,message:string,subject:string}>
-     */
-    protected function dispatcherHandlerIssues(): array
-    {
-        $issues = [];
-
-        foreach ((array) config('ai-agent.deterministic_handlers', []) as $index => $handler) {
-            if (!is_string($handler) || trim($handler) === '') {
-                $issues[] = $this->issue(
-                    'error',
-                    'invalid_dispatcher_handler',
-                    "Deterministic handler at index [{$index}] must be a class name.",
-                    "ai-agent.deterministic_handlers.{$index}"
-                );
-
-                continue;
-            }
-
-            if (!class_exists($handler)) {
-                $issues[] = $this->issue(
-                    'error',
-                    'missing_dispatcher_handler',
-                    "Deterministic handler [{$handler}] does not exist.",
-                    "ai-agent.deterministic_handlers.{$index}"
-                );
-
-                continue;
-            }
-
-            if (!is_subclass_of($handler, \LaravelAIEngine\Contracts\DeterministicAgentHandler::class)) {
-                $issues[] = $this->issue(
-                    'error',
-                    'invalid_dispatcher_handler_contract',
-                    "Deterministic handler [{$handler}] must implement DeterministicAgentHandler.",
-                    "ai-agent.deterministic_handlers.{$index}"
                 );
             }
         }

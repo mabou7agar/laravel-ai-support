@@ -15,7 +15,7 @@ class ActionRegistryTest extends ActionTestCase
         parent::setUp();
         
         // Clear registry for clean tests
-        $this->actionRegistry->clear();
+        $this->actionRegistry->clearCache();
     }
     
     /**
@@ -163,7 +163,6 @@ class ActionRegistryTest extends ActionTestCase
         
         // Act
         $this->actionRegistry->clearCache();
-        $this->actionRegistry->clear();
         
         // Assert: Should be able to discover again
         $this->actionRegistry->discoverFromModels();

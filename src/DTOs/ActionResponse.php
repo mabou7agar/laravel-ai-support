@@ -318,9 +318,6 @@ class ActionResponse
         return $this->metadata;
     }
 
-    /**
-     * Magic getter for backward compatibility
-     */
     public function __get(string $name)
     {
         $getter = 'get' . ucfirst($name);

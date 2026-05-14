@@ -93,14 +93,6 @@ class BatchProcessor
     }
 
     /**
-     * Process requests concurrently (legacy method - now uses queues)
-     */
-    public function processConcurrently(?string $callbackUrl = null): string
-    {
-        return $this->processAsync($callbackUrl);
-    }
-
-    /**
      * Get total estimated cost for batch
      */
     public function estimateTotalCost(): float

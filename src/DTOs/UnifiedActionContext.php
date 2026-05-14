@@ -7,7 +7,7 @@ use LaravelAIEngine\Enums\EntityState;
 
 class UnifiedActionContext
 {
-    public array $workflowStack = [];
+    public array $flowStack = [];
 
     public function __construct(
         public string $sessionId,
@@ -20,9 +20,9 @@ class UnifiedActionContext
         public string $currentStrategy = 'conversational',
         public ?array $intentAnalysis = null,
         public array $metadata = [],
-        public ?string $currentWorkflow = null,
+        public ?string $currentFlow = null,
         public ?string $currentStep = null,
-        public array $workflowState = []
+        public array $runtimeState = []
     ) {
     }
 
@@ -94,7 +94,7 @@ class UnifiedActionContext
 
     public function set(string $key, $value): void
     {
-        $this->workflowState[$key] = $value;
+        $this->runtimeState[$key] = $value;
     }
 
     /**
@@ -107,10 +107,10 @@ class UnifiedActionContext
     public function setEntityState(string $entity, EntityState $state, $value): void
     {
         $key = $state->getKey($entity);
-        $this->workflowState[$key] = $value;
+        $this->runtimeState[$key] = $value;
 
         // Track entity state metadata
-        $this->workflowState["_entity_states"][$entity] = [
+        $this->runtimeState["_entity_states"][$entity] = [
             'state' => $state->value,
             'updated_at' => now()->toIso8601String(),
         ];
@@ -126,7 +126,7 @@ class UnifiedActionContext
     public function getEntityState(string $entity, EntityState $state, $default = null)
     {
         $key = $state->getKey($entity);
-        return $this->workflowState[$key] ?? $default;
+        return $this->runtimeState[$key] ?? $default;
     }
 
     /**
@@ -138,7 +138,7 @@ class UnifiedActionContext
     public function hasEntityState(string $entity, EntityState $state): bool
     {
         $key = $state->getKey($entity);
-        return isset($this->workflowState[$key]);
+        return isset($this->runtimeState[$key]);
     }
 
     /**
@@ -149,7 +149,7 @@ class UnifiedActionContext
      */
     public function getCurrentEntityState(string $entity): ?EntityState
     {
-        $stateValue = $this->workflowState["_entity_states"][$entity]['state'] ?? null;
+        $stateValue = $this->runtimeState["_entity_states"][$entity]['state'] ?? null;
 
         if (!$stateValue) {
             return null;
@@ -160,45 +160,44 @@ class UnifiedActionContext
 
     public function get(string $key, $default = null)
     {
-        return $this->workflowState[$key] ?? $default;
+        return $this->runtimeState[$key] ?? $default;
     }
 
     public function has(string $key): bool
     {
-        return isset($this->workflowState[$key]);
+        return isset($this->runtimeState[$key]);
     }
 
     public function forget(string $key): void
     {
-        unset($this->workflowState[$key]);
+        unset($this->runtimeState[$key]);
     }
 
     /**
-     * Push current workflow onto stack and start new workflow
+     * Push current flow onto stack and start a child flow.
      */
-    public function pushWorkflow(string $workflowClass, ?string $step = null, array $state = []): void
+    public function pushFlow(string $flow, ?string $step = null, array $state = []): void
     {
-        $this->workflowStack[] = [
-            'workflow' => $this->currentWorkflow,
+        $this->flowStack[] = [
+            'flow' => $this->currentFlow,
             'step' => $this->currentStep,
-            'state' => $this->workflowState,
+            'state' => $this->runtimeState,
         ];
 
-        $this->currentWorkflow = $workflowClass;
+        $this->currentFlow = $flow;
         $this->currentStep = $step;
         // Merge the new state with existing state (don't replace)
-        $this->workflowState = array_merge($this->workflowState, $state);
+        $this->runtimeState = array_merge($this->runtimeState, $state);
 
         $this->saveToCache();
     }
 
     /**
-     * Create an isolated subcontext for subworkflow execution
-     * This prevents parent workflow data from polluting subworkflow
+     * Create an isolated child context.
      */
-    public function createSubContext(array $initialData = []): self
+    public function createChildContext(array $initialData = []): self
     {
-        $subContext = new self(
+        $childContext = new self(
             sessionId: $this->sessionId,
             userId: $this->userId,
             conversationHistory: $this->conversationHistory, // Share conversation
@@ -206,48 +205,42 @@ class UnifiedActionContext
             intentAnalysis: $this->intentAnalysis,
         );
 
-        // Initialize with only the data needed for subworkflow
-        $subContext->workflowState = $initialData;
+        $childContext->runtimeState = $initialData;
 
-        // Mark as subworkflow
-        $subContext->metadata['is_subworkflow'] = true;
-        $subContext->metadata['parent_workflow'] = $this->currentWorkflow;
+        $childContext->metadata['is_child_flow'] = true;
+        $childContext->metadata['parent_flow'] = $this->currentFlow;
 
-        return $subContext;
+        return $childContext;
     }
 
     /**
-     * Merge subworkflow result back into parent context
-     * Only merges the final result, not intermediate data
+     * Merge child result back into parent context.
      */
-    public function mergeSubworkflowResult(array $result): void
+    public function mergeChildResult(array $result): void
     {
-        // Only merge specific result data, not all workflow state
         if (isset($result['entity_id'])) {
-            $this->workflowState['created_entity_id'] = $result['entity_id'];
+            $this->runtimeState['created_entity_id'] = $result['entity_id'];
         }
 
         if (isset($result['entity'])) {
-            $this->workflowState['created_entity'] = $result['entity'];
+            $this->runtimeState['created_entity'] = $result['entity'];
         }
-
-        // Don't merge collected_data or other intermediate state
     }
 
     /**
-     * Pop workflow from stack and restore parent workflow
+     * Pop flow from stack and restore parent flow.
      */
-    public function popWorkflow(): ?array
+    public function popFlow(): ?array
     {
-        if (empty($this->workflowStack)) {
+        if (empty($this->flowStack)) {
             return null;
         }
 
-        $parent = array_pop($this->workflowStack);
+        $parent = array_pop($this->flowStack);
 
-        $this->currentWorkflow = $parent['workflow'];
+        $this->currentFlow = $parent['flow'];
         $this->currentStep = $parent['step'];
-        $this->workflowState = $parent['state'];
+        $this->runtimeState = $parent['state'];
 
         return $parent;
     }
@@ -262,23 +255,23 @@ class UnifiedActionContext
     }
 
     /**
-     * Check if we're in a subworkflow
+     * Check if we're in a child flow.
      */
-    public function isInSubworkflow(): bool
+    public function isInChildFlow(): bool
     {
-        return !empty($this->workflowStack);
+        return !empty($this->flowStack);
     }
 
     /**
-     * Get parent workflow info without popping
+     * Get parent flow info without popping.
      */
-    public function getParentWorkflow(): ?array
+    public function getParentFlow(): ?array
     {
-        if (empty($this->workflowStack)) {
+        if (empty($this->flowStack)) {
             return null;
         }
 
-        return end($this->workflowStack);
+        return end($this->flowStack);
     }
 
     public function toArray(): array
@@ -294,10 +287,10 @@ class UnifiedActionContext
             'current_strategy' => $this->currentStrategy,
             'intent_analysis' => $this->intentAnalysis,
             'metadata' => $this->metadata,
-            'current_workflow' => $this->currentWorkflow,
+            'current_flow' => $this->currentFlow,
             'current_step' => $this->currentStep,
-            'workflow_state' => $this->stripClosures($this->workflowState),
-            'workflow_stack' => $this->stripClosures($this->workflowStack),
+            'runtime_state' => $this->stripClosures($this->runtimeState),
+            'flow_stack' => $this->stripClosures($this->flowStack),
         ];
     }
 
@@ -344,12 +337,12 @@ class UnifiedActionContext
             currentStrategy: $data['current_strategy'] ?? 'conversational',
             intentAnalysis: $data['intent_analysis'] ?? null,
             metadata: $data['metadata'] ?? [],
-            currentWorkflow: $data['current_workflow'] ?? null,
+            currentFlow: $data['current_flow'] ?? null,
             currentStep: $data['current_step'] ?? null,
-            workflowState: $data['workflow_state'] ?? []
+            runtimeState: $data['runtime_state'] ?? []
         );
 
-        $context->workflowStack = $data['workflow_stack'] ?? [];
+        $context->flowStack = $data['flow_stack'] ?? [];
 
         return $context;
     }
@@ -385,8 +378,8 @@ class UnifiedActionContext
             \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('Context loaded from cache', [
                 'session_id' => $sessionId,
                 'conversation_history_count' => count($cached->conversationHistory),
-                'workflow_state_keys' => array_keys($cached->workflowState),
-                'current_workflow' => $cached->currentWorkflow,
+                'runtime_state_keys' => array_keys($cached->runtimeState),
+                'current_flow' => $cached->currentFlow,
                 'current_step' => $cached->currentStep,
             ]);
 

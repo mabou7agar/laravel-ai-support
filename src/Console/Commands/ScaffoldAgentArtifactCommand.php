@@ -453,7 +453,7 @@ PHP;
         $id = $id !== '' ? $id : Str::snake($className);
         $name = ucwords(str_replace('_', ' ', Str::snake($base !== '' ? $base : $className)));
         $description = trim((string) ($this->option('description') ?? ''));
-        $description = $description !== '' ? $description : "Handle {$name} requests using configured tools, actions, and workflows.";
+        $description = $description !== '' ? $description : "Handle {$name} requests using configured tools and actions.";
 
         return <<<PHP
 <?php
@@ -484,9 +484,6 @@ class {$className} implements AgentSkillProvider
             ],
             actions: [
                 // '{$id}.create',
-            ],
-            workflows: [
-                // \\App\\AI\\Workflows\\{$base}Workflow::class,
             ],
             capabilities: [
                 '{$id}',

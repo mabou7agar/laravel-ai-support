@@ -263,7 +263,7 @@ class NodeAuthService
     }
     
     /**
-     * Validate node by API key (fallback for backward compatibility)
+     * Validate node by API key.
      */
     public function validateApiKey(string $apiKey): ?AINode
     {

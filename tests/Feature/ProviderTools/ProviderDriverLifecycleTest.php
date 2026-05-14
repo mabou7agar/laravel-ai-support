@@ -32,7 +32,7 @@ class ProviderDriverLifecycleTest extends TestCase
             ]]
         ));
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame('Provider tool run requires approval before execution.', $response->getContent());
         $this->assertDatabaseHas('ai_provider_tool_approvals', [
             'provider' => 'openai',
@@ -56,7 +56,7 @@ class ProviderDriverLifecycleTest extends TestCase
             ]]
         ));
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame('Provider tool run requires approval before execution.', $response->getContent());
         $this->assertDatabaseHas('ai_provider_tool_approvals', [
             'provider' => 'anthropic',

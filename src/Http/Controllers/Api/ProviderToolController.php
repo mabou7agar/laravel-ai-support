@@ -236,16 +236,16 @@ class ProviderToolController extends Controller
         }
 
         return response()->json([
-            'success' => $response->isSuccess(),
-            'message' => $response->isSuccess() ? 'FAL catalog execution completed.' : 'FAL catalog execution failed.',
+            'success' => $response->isSuccessful(),
+            'message' => $response->isSuccessful() ? 'FAL catalog execution completed.' : 'FAL catalog execution failed.',
             'data' => [
                 'content' => $response->getContent(),
                 'files' => $response->getFiles(),
                 'metadata' => $response->getMetadata(),
             ],
-            'error' => $response->isSuccess() ? null : ['message' => $response->getError()],
+            'error' => $response->isSuccessful() ? null : ['message' => $response->getError()],
             'meta' => ['schema' => 'ai-engine.v1'],
-        ], $response->isSuccess() ? 200 : 422);
+        ], $response->isSuccessful() ? 200 : 422);
     }
 
     public function falCatalogWebhook(FalCatalogWebhookRequest $request): JsonResponse

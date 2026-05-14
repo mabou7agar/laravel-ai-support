@@ -2,8 +2,12 @@
 
 namespace LaravelAIEngine\Services\Media;
 
-use OpenAI\Client as OpenAIClient;
+use OpenAI\Contracts\ClientContract as OpenAIClient;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Services\CreditManager;
 
 class VisionService
@@ -36,6 +40,13 @@ class VisionService
             // Default prompt for embedding
             $prompt = $prompt ?? $this->getDefaultPrompt();
 
+            $preflightCredits = $this->estimateVisionPreflightCredits($prompt, 1);
+            $creditRequest = $this->buildCreditRequest($userId, 'vision_analysis', [
+                'image_count' => 1,
+                'max_tokens' => 500,
+            ]);
+            $this->assertCreditsAvailable($userId, $creditRequest, $preflightCredits);
+
             // Call GPT-4 Vision API
             $response = $this->client->chat()->create([
                 'model' => $this->model,
@@ -61,12 +72,11 @@ class VisionService
 
             $description = $response->choices[0]->message->content;
 
-            // Track credits
             $tokensUsed = $response->usage->totalTokens ?? 0;
-            if ($userId) {
-                // TODO: Integrate with proper credit system
-                // $this->creditManager->deductCredits($userId, $tokensUsed, 'vision');
-            }
+            $this->chargeCredits($userId, $creditRequest, $tokensUsed, [
+                'tokens_used' => $tokensUsed,
+                'image_count' => 1,
+            ]);
 
             Log::info('Image analyzed with GPT-4 Vision', [
                 'image_path' => $imagePath,
@@ -173,6 +183,14 @@ class VisionService
             $imageData1 = $this->encodeImage($imagePath1);
             $imageData2 = $this->encodeImage($imagePath2);
 
+            $prompt = 'Compare these two images. Describe the similarities and differences.';
+            $preflightCredits = $this->estimateVisionPreflightCredits($prompt, 2);
+            $creditRequest = $this->buildCreditRequest($userId, 'vision_comparison', [
+                'image_count' => 2,
+                'max_tokens' => 500,
+            ]);
+            $this->assertCreditsAvailable($userId, $creditRequest, $preflightCredits);
+
             $response = $this->client->chat()->create([
                 'model' => $this->model,
                 'messages' => [
@@ -181,7 +199,7 @@ class VisionService
                         'content' => [
                             [
                                 'type' => 'text',
-                                'text' => 'Compare these two images. Describe the similarities and differences.',
+                                'text' => $prompt,
                             ],
                             [
                                 'type' => 'image_url',
@@ -199,12 +217,11 @@ class VisionService
 
             $comparison = $response->choices[0]->message->content;
 
-            // Track credits
             $tokensUsed = $response->usage->totalTokens ?? 0;
-            if ($userId) {
-                // TODO: Integrate with proper credit system
-                // $this->creditManager->deductCredits($userId, $tokensUsed, 'vision');
-            }
+            $this->chargeCredits($userId, $creditRequest, $tokensUsed, [
+                'tokens_used' => $tokensUsed,
+                'image_count' => 2,
+            ]);
 
             return $comparison;
         } catch (\Exception $e) {
@@ -229,6 +246,72 @@ class VisionService
         $base64 = base64_encode($imageData);
 
         return "data:{$mimeType};base64,{$base64}";
+    }
+
+    protected function buildCreditRequest(?string $userId, string $operation, array $parameters = []): AIRequest
+    {
+        return new AIRequest(
+            prompt: $operation,
+            engine: EngineEnum::OPENAI,
+            model: $this->model,
+            parameters: $parameters,
+            userId: $userId,
+            metadata: [
+                'source' => 'media.vision',
+                'operation' => $operation,
+            ]
+        );
+    }
+
+    protected function assertCreditsAvailable(?string $userId, AIRequest $request, float $credits): void
+    {
+        if ($userId === null || $credits <= 0) {
+            return;
+        }
+
+        if (!$this->creditManager->hasCreditsForAmount($userId, $request, $credits)) {
+            throw new InsufficientCreditsException("Insufficient credits. Required: {$credits}");
+        }
+    }
+
+    protected function chargeCredits(?string $userId, AIRequest $request, int|float|null $tokensUsed, array $parameters = []): void
+    {
+        if ($userId === null) {
+            return;
+        }
+
+        $credits = $this->estimateVisionCredits((float) ($tokensUsed ?? 0));
+        if ($credits <= 0) {
+            return;
+        }
+
+        $this->creditManager->deductCredits($userId, $request, $credits);
+        CreditManager::accumulate($credits);
+    }
+
+    protected function estimateVisionCredits(float $tokensUsed): float
+    {
+        if ($tokensUsed <= 0) {
+            return 0.0;
+        }
+
+        $model = new EntityEnum($this->model);
+        $engineRate = (float) config('ai-engine.credits.engine_rates.' . EngineEnum::OPENAI, 1.0);
+
+        return $tokensUsed * $model->creditIndex() * $engineRate;
+    }
+
+    protected function estimateVisionPreflightCredits(string $prompt, int $imageCount): float
+    {
+        $configured = config('ai-engine.credits.media.vision_preflight_credits');
+        if (is_numeric($configured)) {
+            return (float) $configured;
+        }
+
+        $model = new EntityEnum($this->model);
+        $engineRate = (float) config('ai-engine.credits.engine_rates.' . EngineEnum::OPENAI, 1.0);
+
+        return max(1.0, $imageCount * $model->creditIndex() * $engineRate);
     }
 
     /**

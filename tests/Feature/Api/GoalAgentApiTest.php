@@ -81,37 +81,11 @@ class GoalAgentApiTest extends TestCase
         $this->assertStringContainsString('writer: done - Writer complete', $response->json('data.response'));
     }
 
-    public function test_legacy_rag_chat_endpoint_remains_available_for_goal_agent_requests(): void
+    public function test_rag_chat_alias_is_removed(): void
     {
-        Config::set('ai-agent.sub_agents', [
-            'planner' => [
-                'name' => 'Planner',
-                'handler' => fn (
-                    SubAgentTask $task,
-                    UnifiedActionContext $context,
-                    array $previousResults,
-                    array $options
-                ) => SubAgentResult::success(
-                    taskId: $task->id,
-                    agentId: $task->agentId,
-                    message: 'Planner complete'
-                ),
-            ],
-        ]);
-
-        $response = $this->postJson('/api/v1/rag/chat', [
+        $this->postJson('/api/v1/rag/chat', [
             'message' => 'Create a plan',
-            'session_id' => 'legacy-goal-api-e2e',
-            'memory' => false,
-            'actions' => false,
-            'agent_goal' => true,
-            'target' => 'Create a plan',
-            'sub_agents' => ['planner'],
-        ]);
-
-        $response->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.session_id', 'legacy-goal-api-e2e')
-            ->assertJsonPath('data.focused_entity.tasks.0.agent_id', 'planner');
+            'session_id' => 'removed-rag-chat-alias',
+        ])->assertNotFound();
     }
 }

@@ -20,8 +20,8 @@ class MessageRoutingClassifier
             return $this->decision('conversational', 'conversational', 'greeting or general chat');
         }
 
-        if ($this->isActionWorkflow($normalized)) {
-            return $this->decision('ask_ai', 'workflow_or_action', 'explicit mutation or workflow intent');
+        if ($this->isActionFlow($normalized)) {
+            return $this->decision('ask_ai', 'action_flow', 'explicit mutation or action flow intent');
         }
 
         if ($this->isExactLookup($normalized)) {
@@ -113,7 +113,7 @@ class MessageRoutingClassifier
         return false;
     }
 
-    protected function isActionWorkflow(string $normalized): bool
+    protected function isActionFlow(string $normalized): bool
     {
         return preg_match('/^(please\s+)?(prepare|draft|create|add|new|make|generate|update|edit|change|modify|delete|remove|cancel|approve|reject|submit|send|run|execute|trigger)\b/i', $normalized) === 1
             || preg_match('/\b(prepare|draft|create|add|make|generate)\b.+\b(invoice|proposal|quote|order|ticket|customer|product|warehouse|project|contract|employee)\b/i', $normalized) === 1;

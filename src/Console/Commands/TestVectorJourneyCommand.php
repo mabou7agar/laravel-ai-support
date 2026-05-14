@@ -136,7 +136,7 @@ class TestVectorJourneyCommand extends Command
         try {
             // Schema Analysis
             $this->line("📊 Analyzing schema for: " . class_basename($modelClass));
-            $schemaAnalysis = $schemaAnalyzer->analyzeModel($modelClass);
+            $schemaAnalysis = $schemaAnalyzer->analyze($modelClass);
             
             $textFields = $schemaAnalysis['text_fields'] ?? [];
             $relationships = $schemaAnalysis['relationships'] ?? [];

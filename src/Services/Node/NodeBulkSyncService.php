@@ -45,7 +45,6 @@ class NodeBulkSyncService
                     'data_types' => array_values((array) ($node->data_types ?? [])),
                     'keywords' => array_values((array) ($node->keywords ?? [])),
                     'collections' => array_values((array) ($node->collections ?? [])),
-                    'workflows' => array_values((array) ($node->workflows ?? [])),
                     'autonomous_collectors' => array_values((array) ($node->autonomous_collectors ?? [])),
                     'metadata' => (array) ($node->metadata ?? []),
                     'version' => (string) ($node->version ?? '1.0.0'),
@@ -291,7 +290,7 @@ class NodeBulkSyncService
                 ];
             }
 
-            foreach (['domains', 'data_types', 'keywords', 'collections', 'workflows', 'autonomous_collectors'] as $arrayField) {
+            foreach (['domains', 'data_types', 'keywords', 'collections', 'autonomous_collectors'] as $arrayField) {
                 if (isset($fixed[$arrayField]) && !is_array($fixed[$arrayField])) {
                     $fixed[$arrayField] = is_string($fixed[$arrayField])
                         ? array_values(array_filter(array_map(
@@ -423,7 +422,6 @@ class NodeBulkSyncService
                 'data_types' => array_values((array) ($record['data_types'] ?? [])),
                 'keywords' => array_values((array) ($record['keywords'] ?? [])),
                 'collections' => array_values((array) ($record['collections'] ?? [])),
-                'workflows' => array_values((array) ($record['workflows'] ?? [])),
                 'autonomous_collectors' => array_values((array) ($record['autonomous_collectors'] ?? [])),
                 'metadata' => (array) ($record['metadata'] ?? []),
                 'version' => (string) ($record['version'] ?? '1.0.0'),

@@ -355,19 +355,17 @@ class AIConfigBuilder
      * @return self
      * 
      * @example
-     * // Using array (legacy)
+     * // Using array
      * ->entityField('customer_id', [
      *     'model' => Customer::class,
      *     'search_fields' => ['name', 'email', 'contact'],
      *     'filters' => fn($query) => $query->where('workspace', getActiveWorkSpace()),
-     *     'subflow' => CreateCustomerWorkflow::class,
      * ])
      * 
      * // Using DTO (recommended)
      * ->entityField('customer_id', EntityFieldConfig::make(Customer::class)
      *     ->searchFields(['name', 'email', 'contact'])
      *     ->filters(fn($query) => $query->where('workspace', getActiveWorkSpace()))
-     *     ->subflow(CreateCustomerWorkflow::class)
      *     ->checkDuplicates()
      * )
      */
@@ -385,7 +383,7 @@ class AIConfigBuilder
             'resolver' => $config['resolver'] ?? 'GenericEntityResolver',
         ], $config);
         
-        // Store as entities config for workflow integration
+        // Store as entities config for resolver integration
         if (!isset($this->config['entities'])) {
             $this->config['entities'] = [];
         }
@@ -405,19 +403,17 @@ class AIConfigBuilder
      * @return self
      * 
      * @example
-     * // Using array (legacy)
+     * // Using array
      * ->entitiesField('products', [
      *     'model' => Product::class,
      *     'search_fields' => ['name', 'sku'],
      *     'filters' => fn($query) => $query->where('workspace_id', getActiveWorkSpace()),
-     *     'subflow' => CreateProductWorkflow::class,
      * ])
      * 
      * // Using DTO (recommended)
      * ->entitiesField('items', EntityFieldConfig::make(Product::class)
      *     ->searchFields(['name', 'sku'])
      *     ->filters(fn($query) => $query->where('workspace_id', getActiveWorkSpace()))
-     *     ->subflow(CreateProductWorkflow::class)
      *     ->multiple()
      * )
      */
@@ -441,21 +437,12 @@ class AIConfigBuilder
             'is_array' => true,
         ], $config);
         
-        // Store as entities config for workflow integration
+        // Store as entities config for runtime extraction.
         if (!isset($this->config['entities'])) {
             $this->config['entities'] = [];
         }
         $this->config['entities'][$name] = $config;
         
-        return $this;
-    }
-    
-    /**
-     * Specify workflow class to use for this model
-     */
-    public function workflow(string $workflowClass): self
-    {
-        $this->config['workflow'] = $workflowClass;
         return $this;
     }
     

@@ -21,8 +21,8 @@ class ActionExecutionService
         protected ?Actions\ActionRegistry $registry = null
     ) {
         $this->registry = $registry ?? app(Actions\ActionRegistry::class);
-        $this->registerDefaultHandlers(); // Will now register into the registry
-        $this->registerExecutors();       // Will now register into the registry
+        $this->registerDefaultHandlers();
+        $this->registerExecutors();
     }
 
     /**
@@ -126,12 +126,11 @@ class ActionExecutionService
      */
     public function registerHandler(string $actionType, callable $handler): void
     {
-        // $this->handlers[$actionType] = $handler; // Legacy array
         $this->registry->registerHandler($actionType, $handler);
     }
 
     /**
-     * Execute an action (supports both legacy handlers and smart executors)
+     * Execute an action using a registered executor or handler.
      * 
      * @param string $actionType Action type identifier
      * @param array $data Action data including params, executor, node info
@@ -179,7 +178,6 @@ class ActionExecutionService
             return $executor($data, $userId, $sessionId);
         }
 
-        // Legacy handler support
         if ($this->registry->hasHandler($actionType)) {
             $handler = $this->registry->getHandler($actionType);
             return $handler($data, $userId, $sessionId);
@@ -1218,7 +1216,7 @@ class ActionExecutionService
                 return $result->toArray();
             }
 
-            // Handle array responses (backward compatibility)
+            // Handle plain array responses from model action handlers.
             return [
                 'success' => $result['success'] ?? false,
                 'data' => $result['data'] ?? null,

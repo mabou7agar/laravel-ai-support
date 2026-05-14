@@ -115,6 +115,6 @@ class FalMediaWorkflowServiceTest extends TestCase
             'start_image_url' => 'https://example.com/start.png',
         ], 'abc');
 
-        $this->assertTrue($result['response']->isSuccess());
+        $this->assertTrue($result['response']->isSuccessful());
     }
 }

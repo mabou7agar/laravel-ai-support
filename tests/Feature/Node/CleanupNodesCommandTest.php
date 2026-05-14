@@ -171,7 +171,6 @@ class CleanupNodesCommandTest extends UnitTestCase
             $table->json('data_types')->nullable();
             $table->json('keywords')->nullable();
             $table->json('collections')->nullable();
-            $table->json('workflows')->nullable();
             $table->json('autonomous_collectors')->nullable();
             $table->json('metadata')->nullable();
             $table->string('version')->nullable();

@@ -403,11 +403,10 @@ PROMPT;
 
         $message = (string) ($response['response'] ?? '');
         $pending = [
-            'type' => 'remote_node_workflow',
+            'type' => 'remote_node_session',
             'status' => 'awaiting_input',
             'node_slug' => (string) $node->slug,
             'node_name' => (string) ($node->name ?? $node->slug),
-            'workflow_class' => $metadata['workflow_class'] ?? null,
             'current_step' => $metadata['current_step'] ?? null,
             'pending_entity_slot' => $this->extractPendingEntitySlot($message),
             'updated_at' => now()->toIso8601String(),
@@ -416,9 +415,9 @@ PROMPT;
         $context->set('remote_pending_action', $pending);
         $context->pendingAction = [
             'id' => 'remote:' . (string) $node->slug,
-            'type' => 'remote_node_workflow',
-            'label' => (string) ($pending['workflow_class'] ?: 'Remote workflow'),
-            'description' => 'Awaiting user input to continue remote workflow',
+            'type' => 'remote_node_session',
+            'label' => 'Remote node session',
+            'description' => 'Awaiting user input to continue remote node session',
             'data' => $pending,
         ];
     }
@@ -427,7 +426,7 @@ PROMPT;
     {
         $context->forget('remote_pending_action');
 
-        if (is_array($context->pendingAction) && ($context->pendingAction['type'] ?? null) === 'remote_node_workflow') {
+        if (is_array($context->pendingAction) && ($context->pendingAction['type'] ?? null) === 'remote_node_session') {
             $context->pendingAction = null;
         }
     }
@@ -438,12 +437,12 @@ PROMPT;
             return (bool) $metadata['needs_user_input'];
         }
 
-        if (array_key_exists('workflow_active', $metadata)) {
-            return (bool) $metadata['workflow_active'];
+        if (array_key_exists('session_active', $metadata)) {
+            return (bool) $metadata['session_active'];
         }
 
-        if (array_key_exists('workflow_completed', $metadata)) {
-            return !((bool) $metadata['workflow_completed']);
+        if (array_key_exists('session_completed', $metadata)) {
+            return !((bool) $metadata['session_completed']);
         }
 
         return false;

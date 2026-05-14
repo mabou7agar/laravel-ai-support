@@ -409,29 +409,6 @@ class ActionParameterExtractor
         return $contextStr;
     }
     
-    /**
-     * Build conversation context string (legacy - kept for compatibility)
-     */
-    protected function buildConversationContext(string $message, array $context): string
-    {
-        $conversationHistory = $context['conversation_history'] ?? [];
-        
-        if (empty($conversationHistory)) {
-            return '';
-        }
-        
-        $contextStr = '';
-        $recentMessages = array_slice($conversationHistory, -5);
-        
-        foreach ($recentMessages as $msg) {
-            $role = $msg['role'] ?? 'user';
-            $content = $msg['content'] ?? '';
-            $contextStr .= "{$role}: {$content}\n";
-        }
-        
-        return $contextStr;
-    }
-
     protected function extractHeuristically(string $message, array $actionDefinition, array $context): array
     {
         $fields = array_values(array_unique(array_merge(

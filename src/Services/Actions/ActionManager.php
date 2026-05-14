@@ -74,11 +74,11 @@ class ActionManager
                 $name = $model['name'];
                 $snakeName = \Illuminate\Support\Str::snake($name);
 
-                // Map strategy to executor
+                // Map strategy to executor. Complex data collection is now handled by skills/tools,
+                // so discovered model actions stay on the generic dynamic executor.
                 $executor = match ($model['strategy'] ?? 'quick_action') {
-                    'agent_mode' => 'workflow',
-                    'guided_flow' => 'interactive',
-                    default => 'model_action'
+                    'guided_flow', 'quick_action' => 'model.dynamic',
+                    default => 'model.dynamic'
                 };
 
                 $definition = [
@@ -95,11 +95,6 @@ class ActionManager
                     'relationships' => $model['relationships'] ?? [],
                 ];
                 
-                // Add workflow_class if executor is workflow
-                if ($executor === 'workflow' && !empty($model['workflow_class'])) {
-                    $definition['workflow_class'] = $model['workflow_class'];
-                }
-
                 $definitions[] = $definition;
                 $this->registry->register($definition);
 

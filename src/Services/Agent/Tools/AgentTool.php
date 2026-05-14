@@ -31,7 +31,7 @@ abstract class AgentTool
         $requiredParams = $this->getRequiredParameters();
         
         foreach ($requiredParams as $param) {
-            if (!isset($parameters[$param]) || empty($parameters[$param])) {
+            if (!array_key_exists($param, $parameters) || $parameters[$param] === null || $parameters[$param] === '') {
                 $errors[] = "Missing required parameter: {$param}";
             }
         }

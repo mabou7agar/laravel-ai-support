@@ -153,7 +153,19 @@ class ActionOrchestrator
 
         $normalizer = $action['prepare'] ?? null;
         if ($normalizer) {
-            $payload = $this->call($normalizer, [$payload, $context, $action]);
+            $prepared = $this->call($normalizer, [$payload, $context, $action]);
+            if (is_array($prepared) && (
+                array_key_exists('success', $prepared)
+                || array_key_exists('draft', $prepared)
+                || array_key_exists('needs_user_input', $prepared)
+            )) {
+                $result = $this->normalizePreparedResult($actionId, $action, $prepared, $payload, $relationResolution);
+                $this->auditLogger()?->prepared($actionId, $action, $payload, $result, $context);
+
+                return $result;
+            }
+
+            $payload = is_array($prepared) ? $prepared : $payload;
         }
 
         $result = [

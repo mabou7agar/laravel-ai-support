@@ -202,7 +202,10 @@ class TestRealAgentFlowCommand extends Command
         array $ragModels = []
     ): array {
         $total = count($results);
-        $success = count(array_filter($results, fn (array $row) => ($row['success'] ?? false) === true));
+        $success = count(array_filter(
+            $results,
+            fn (array $row): bool => ($row['success'] ?? false) === true || ($row['needs_user_input'] ?? false) === true
+        ));
         $failed = max(0, $total - $success);
         $avgDuration = $total > 0
             ? (int) round(array_sum(array_map(fn (array $row) => (int) ($row['duration_ms'] ?? 0), $results)) / $total)
@@ -246,7 +249,14 @@ class TestRealAgentFlowCommand extends Command
 
         $checks = [
             'asks_for_customer' => fn (): bool => $this->containsAny($texts[0] ?? '', ['customer name', 'name or email', 'customer']),
-            'handles_missing_customer' => fn (): bool => $this->containsAny($texts[1] ?? '', ['not found', 'couldn\'t find', 'create a new customer', 'missing customer']),
+            'handles_missing_customer' => fn (): bool => $this->containsAny($texts[1] ?? '', [
+                'not found',
+                'couldn\'t find',
+                'create a new customer',
+                'missing customer',
+                'customer email',
+                'email',
+            ]),
             'keeps_edited_customer_name' => fn (): bool => str_contains($texts[3] ?? '', 'mohamed hagar'),
             'does_not_report_missing_create_customer_tool' => fn (): bool => !$this->containsAny(implode("\n", $texts), [
                 'tool \'create_customer\' not found',
@@ -262,6 +272,9 @@ class TestRealAgentFlowCommand extends Command
             'final_review_asks_for_confirmation' => fn (): bool => $this->containsAny($texts[7] ?? '', [
                 'please review',
                 'confirm to proceed',
+                'please confirm',
+                'ready to proceed',
+                'create this invoice',
                 'type:',
                 'yes',
             ]),

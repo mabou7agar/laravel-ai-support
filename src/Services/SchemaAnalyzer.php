@@ -52,14 +52,6 @@ class SchemaAnalyzer
     }
 
     /**
-     * Backward-compatible alias used by older commands.
-     */
-    public function analyzeModel(string $modelClass): array
-    {
-        return $this->analyze($modelClass);
-    }
-    
-    /**
      * Get text fields from table
      * 
      * @param string $table

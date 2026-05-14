@@ -57,9 +57,8 @@ class AIEngineServiceProvider extends ServiceProvider
     }
 
     /**
-     * Laravel's mergeConfigFrom is shallow, so older published config files
-     * would miss newer nested keys like engines.fal_ai. Merge recursively here
-     * to preserve backward compatibility.
+     * Laravel's mergeConfigFrom is shallow, so recursive defaults keep nested
+     * engine sections complete when applications publish partial config files.
      */
     protected function mergeNestedConfig(string $key, array $defaults): void
     {

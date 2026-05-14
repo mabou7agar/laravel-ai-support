@@ -13,7 +13,6 @@ class StandardizeApiResponseMiddlewareTest extends UnitTestCase
     public function test_it_wraps_success_response_with_standard_envelope(): void
     {
         config()->set('ai-engine.api.standardize_responses', true);
-        config()->set('ai-engine.api.preserve_legacy_keys', true);
 
         $middleware = new StandardizeApiResponseMiddleware();
         $request = Request::create('/api/test', 'GET');
@@ -28,7 +27,7 @@ class StandardizeApiResponseMiddlewareTest extends UnitTestCase
 
         $this->assertTrue($data['success']);
         $this->assertSame('Request completed.', $data['message']);
-        $this->assertSame('ok', $data['response']);
+        $this->assertArrayNotHasKey('response', $data);
         $this->assertSame('ok', $data['data']['response']);
         $this->assertNull($data['error']);
         $this->assertSame(200, $data['meta']['status_code']);
@@ -38,7 +37,6 @@ class StandardizeApiResponseMiddlewareTest extends UnitTestCase
     public function test_it_normalizes_error_payload(): void
     {
         config()->set('ai-engine.api.standardize_responses', true);
-        config()->set('ai-engine.api.preserve_legacy_keys', true);
 
         $middleware = new StandardizeApiResponseMiddleware();
         $request = Request::create('/api/test', 'GET');
@@ -90,7 +88,6 @@ class StandardizeApiResponseMiddlewareTest extends UnitTestCase
     public function test_it_uses_translated_default_message_for_current_locale(): void
     {
         config()->set('ai-engine.api.standardize_responses', true);
-        config()->set('ai-engine.api.preserve_legacy_keys', false);
         app()->setLocale('ar');
 
         $middleware = new StandardizeApiResponseMiddleware();

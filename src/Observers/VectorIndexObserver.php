@@ -165,14 +165,6 @@ class VectorIndexObserver
             return $model->shouldBeIndexed();
         }
 
-        // Check if content is empty
-        if (method_exists($model, 'getVectorContent')) {
-            $content = $model->getVectorContent();
-            if (empty(trim($content))) {
-                return false;
-            }
-        }
-
         // Check status field
         if (isset($model->status) && in_array($model->status, ['draft', 'archived', 'deleted'])) {
             return false;

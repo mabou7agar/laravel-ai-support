@@ -56,7 +56,7 @@ class NvidiaNimEngineDriverTest extends UnitTestCase
             temperature: 0.2
         ));
 
-        $this->assertTrue($response->isSuccess());
+        $this->assertTrue($response->isSuccessful());
         $this->assertSame('NIM response', $response->getContent());
         $this->assertSame('chatcmpl-test', $response->getRequestId());
 

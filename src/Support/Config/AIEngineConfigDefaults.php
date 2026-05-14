@@ -75,7 +75,6 @@ class AIEngineConfigDefaults
     */
     'api' => [
         'standardize_responses' => env('AI_ENGINE_STANDARDIZE_API_RESPONSES', true),
-        'preserve_legacy_keys' => env('AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY', true),
         'generate' => [
             'enabled' => env('AI_ENGINE_GENERATE_API_ENABLED', true),
             'prefix' => env('AI_ENGINE_GENERATE_API_PREFIX', 'api/v1/ai/generate'),
@@ -511,7 +510,7 @@ class AIEngineConfigDefaults
     | supported engines defined in the engines array below.
     |
     */
-    'default' => env('AI_ENGINE_DEFAULT', env('AI_DEFAULT_ENGINE', 'openai')),
+    'default' => env('AI_ENGINE_DEFAULT', 'openai'),
 
 
     /*
@@ -789,8 +788,26 @@ class AIEngineConfigDefaults
             'openai' => env('AI_OPENAI_RATE', 2.0),      // 2:1 ratio
             'anthropic' => env('AI_ANTHROPIC_RATE', 3.0), // 3:1 ratio
             'gemini' => env('AI_GEMINI_RATE', 1.0),       // 1:1 ratio
+            'fal_ai' => env('AI_FAL_AI_RATE', 1.0),        // 1:1 ratio
             'openrouter' => env('AI_OPENROUTER_RATE', 2.5), // 2.5:1 ratio
             'nvidia_nim' => env('AI_NVIDIA_NIM_RATE', 1.5), // 1.5:1 ratio
+        ],
+
+        // Optional extra engine-credit charges for provider input media that are not
+        // the primary billable output unit. Defaults are zero to preserve existing
+        // behavior; apps can set model-specific rates for FAL reference/start/end
+        // images or other provider endpoints whose pricing includes input media.
+        'additional_input_unit_rates' => [
+            'fal_ai' => [
+                'default' => [
+                    'image' => env('AI_FAL_INPUT_IMAGE_CREDIT_RATE', 0.0),
+                ],
+                'models' => [
+                    // 'fal-ai/kling-video/o3/standard/reference-to-video' => [
+                    //     'image' => 0.5,
+                    // ],
+                ],
+            ],
         ],
     ],
 
@@ -931,17 +948,13 @@ class AIEngineConfigDefaults
 
     /*
     |--------------------------------------------------------------------------
-    | Unified Engine Configuration (Legacy Aliases)
+    | Unified Engine Configuration
     |--------------------------------------------------------------------------
     |
-    | Keep backward-compatible aliases for older integrations.
-    | Canonical keys are:
-    | - ai-engine.default (engine)
-    | - ai-engine.default_model (model)
+    | Canonical defaults for direct requests and provider selection.
     |
     */
-    'default_engine' => env('AI_DEFAULT_ENGINE', env('AI_ENGINE_DEFAULT', 'openai')),
-    'default_model' => env('AI_ENGINE_DEFAULT_MODEL', env('AI_DEFAULT_MODEL', 'gpt-4o')),
+    'default_model' => env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o'),
 
     /*
     |--------------------------------------------------------------------------
@@ -1915,85 +1928,6 @@ class AIEngineConfigDefaults
 
         // Maximum message length to store (truncate longer messages)
         'max_message_length' => env('AI_CONVERSATION_MAX_MESSAGE_LENGTH', 1000),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Workflow Performance Optimization
-    |--------------------------------------------------------------------------
-    |
-    | Configure performance settings for AI workflows to prevent timeouts
-    | and memory exhaustion.
-    |
-    */
-    'workflow' => [
-        'max_execution_time' => env('AI_WORKFLOW_MAX_EXECUTION_TIME', 120),
-        'max_ai_calls' => env('AI_WORKFLOW_MAX_AI_CALLS', 10),
-        'max_step_executions' => env('AI_WORKFLOW_MAX_STEP_EXECUTIONS', 20), // Increased for testing
-        'cache_enabled' => env('AI_WORKFLOW_CACHE_ENABLED', true),
-        'cache_ttl' => env('AI_WORKFLOW_CACHE_TTL', 300), // 5 minutes
-
-        // Intent Analysis
-        'intent' => [
-            'max_actions' => env('AI_WORKFLOW_INTENT_MAX_ACTIONS', 10),
-            'filter_relevance' => env('AI_WORKFLOW_INTENT_FILTER_RELEVANCE', true),
-        ],
-
-        // Field Names (Configurable for different use cases)
-        // These allow you to customize field names used throughout the workflow system
-        'items_field_name' => env('AI_WORKFLOW_ITEMS_FIELD', 'items'),
-        'name_field_name' => env('AI_WORKFLOW_NAME_FIELD', 'name'),
-        'id_field_name' => env('AI_WORKFLOW_ID_FIELD', 'id'),
-
-        // System Fields (Fields that should not be merged between workflows)
-        // Add any custom system fields your application uses
-        'system_fields' => [
-            'items',
-            'workflow_stack',
-            'active_subflow',
-            'current_workflow',
-            'step_execution_count',
-            '_entity_states',
-            'asking_for',
-        ],
-
-        // Step Names (Configurable workflow control flow)
-        'complete_step_name' => env('AI_WORKFLOW_COMPLETE_STEP', 'complete'),
-        'error_step_name' => env('AI_WORKFLOW_ERROR_STEP', 'error'),
-        'cancel_step_name' => env('AI_WORKFLOW_CANCEL_STEP', 'cancel'),
-
-        // Workflow State Keys to Clear on Restart
-        // These keys are cleared when a workflow is restarted
-        'clear_on_restart' => [
-            'collected_data',
-            'validated_products',
-            'missing_products',
-            'customer_id',
-            'products',
-            'confirmation_message_shown',
-            'user_confirmed_action',
-            'awaiting_confirmation',
-            'asked_for_customer',
-            'asked_for_products',
-        ],
-
-        // Field Aliases (for modification handling)
-        // When a field is updated, also update its aliases
-        'field_aliases' => [
-            'price' => ['sale_price', 'unit_price'],
-            'sale_price' => ['price', 'unit_price'],
-            'unit_price' => ['price', 'sale_price'],
-            'quantity' => ['qty', 'amount'],
-            'qty' => ['quantity', 'amount'],
-        ],
-
-        // Array Field Name Mapping
-        // Maps user-friendly names to actual field names in collected_data
-        'array_field_mapping' => [
-            'products' => 'items',
-            'items' => 'items',
-            'line_items' => 'items',
-        ],
     ],
 
     /*

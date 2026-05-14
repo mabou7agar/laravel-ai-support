@@ -10,7 +10,6 @@ final class RoutingDecisionAction
     public const CONTINUE_COLLECTOR = 'continue_collector';
     public const CONTINUE_NODE = 'continue_node';
     public const HANDLE_SELECTION = 'handle_selection';
-    public const RUN_DETERMINISTIC = 'run_deterministic';
     public const SEARCH_RAG = 'search_rag';
     public const USE_TOOL = 'use_tool';
     public const RUN_SUB_AGENT = 'run_sub_agent';
@@ -29,7 +28,6 @@ final class RoutingDecisionAction
             self::CONTINUE_COLLECTOR,
             self::CONTINUE_NODE,
             self::HANDLE_SELECTION,
-            self::RUN_DETERMINISTIC,
             self::SEARCH_RAG,
             self::USE_TOOL,
             self::RUN_SUB_AGENT,

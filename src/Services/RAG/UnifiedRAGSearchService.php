@@ -145,7 +145,7 @@ class UnifiedRAGSearchService
                 maxTokens: 200
             ));
 
-            if ($response->isSuccess()) {
+            if ($response->isSuccessful()) {
                 $relevantProjects = $this->parseProjectsFromResponse($response->content, $projects);
 
                 // Cache for 5 minutes

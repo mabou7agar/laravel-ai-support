@@ -429,13 +429,6 @@ class AgentSelectionService
                     $detail = $this->formatSelectedRecordDetails($record);
                     $responseText = "**Selected option {$optionNumber}**\n\n{$detail}";
 
-                    $context->metadata['last_selected_option'] = [
-                        'option' => $optionNumber,
-                        'entity_id' => $entityId,
-                        'entity_type' => $selection['entity_type'] ?? class_basename($modelClass),
-                        'model_class' => $modelClass,
-                        'source_node' => $selection['source_node'] ?? null,
-                    ];
                     $context->metadata['selected_entity_context'] = [
                         'entity_id' => (int) $entityId,
                         'entity_type' => $selection['entity_type'] ?? class_basename($modelClass),
@@ -670,10 +663,6 @@ class AgentSelectionService
     {
         if (method_exists($record, 'toRAGDetail')) {
             return (string) $record->toRAGDetail();
-        }
-
-        if (method_exists($record, 'toRAGContent')) {
-            return (string) $record->toRAGContent();
         }
 
         if (method_exists($record, '__toString')) {

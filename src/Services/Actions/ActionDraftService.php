@@ -6,7 +6,7 @@ namespace LaravelAIEngine\Services\Actions;
 
 use DateInterval;
 use DateTimeInterface;
-use LaravelAIEngine\Contracts\ActionWorkflowHandler;
+use LaravelAIEngine\Contracts\ActionFlowHandler;
 use LaravelAIEngine\Contracts\ConversationMemory;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
@@ -14,7 +14,7 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 class ActionDraftService
 {
     public function __construct(
-        private readonly ActionWorkflowHandler $actions,
+        private readonly ActionFlowHandler $actions,
         private readonly ConversationMemory $memory
     ) {
     }
@@ -382,6 +382,8 @@ class ActionDraftService
                 'append', 'add' => $this->appendArrayOperationValues($items, $operation),
                 'prepend' => array_values(array_merge($this->arrayOperationValues($operation), $items)),
                 'update' => $this->updateArrayOperationValue($items, $operation),
+                'increment' => $this->incrementArrayOperationValue($items, $operation, false),
+                'decrement' => $this->incrementArrayOperationValue($items, $operation, true),
                 'remove', 'delete' => $this->removeArrayOperationValues($items, $operation),
                 'replace' => $this->arrayOperationValues($operation),
                 default => $items,
@@ -440,6 +442,34 @@ class ActionDraftService
         $items[$index] = is_array($items[$index] ?? null) && is_array($value)
             ? $this->merge($items[$index], $value)
             : $value;
+
+        return array_values($items);
+    }
+
+    /**
+     * @param array<int, mixed> $items
+     * @param array<string, mixed> $operation
+     * @return array<int, mixed>
+     */
+    private function incrementArrayOperationValue(array $items, array $operation, bool $decrement): array
+    {
+        $index = $this->arrayOperationIndex($items, $operation);
+        if ($index === null || !is_array($items[$index] ?? null)) {
+            return $items;
+        }
+
+        $field = trim((string) ($operation['field'] ?? ''));
+        if ($field === '') {
+            return $items;
+        }
+
+        $amount = abs((float) ($operation['amount'] ?? 1));
+        if ($decrement) {
+            $amount *= -1;
+        }
+
+        $current = (float) data_get($items[$index], $field, 0);
+        data_set($items[$index], $field, $current + $amount);
 
         return array_values($items);
     }

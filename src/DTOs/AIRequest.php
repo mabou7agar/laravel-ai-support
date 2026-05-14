@@ -55,7 +55,7 @@ class AIRequest
         
         // Auto-select engine and model from config if not provided
         if ($engine === null) {
-            $defaultEngine = config('ai-engine.default', config('ai-engine.default_engine', 'openai'));
+            $defaultEngine = config('ai-engine.default', 'openai');
             $engine = $this->resolveEngine($defaultEngine);
         } else {
             $engine = $this->resolveEngine($engine);
@@ -678,26 +678,13 @@ class AIRequest
         ];
     }
 
-    // Magic getter for backward compatibility with readonly properties
     public function __get(string $name)
     {
-        // Legacy aliases used by older tests/call-sites.
-        if ($name === 'entity') {
-            return $this->model;
-        }
-        if ($name === 'user') {
-            return $this->userId;
-        }
-        if ($name === 'conversation_id') {
-            return $this->conversationId;
-        }
-
         $getter = 'get' . ucfirst($name);
         if (method_exists($this, $getter)) {
             return $this->$getter();
         }
         
-        // Direct property access for backward compatibility
         if (property_exists($this, $name)) {
             return $this->$name;
         }

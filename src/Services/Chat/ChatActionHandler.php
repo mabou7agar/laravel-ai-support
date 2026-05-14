@@ -78,12 +78,11 @@ class ChatActionHandler
         }
 
         switch ($intentAnalysis['intent']) {
-            case 'new_workflow':
             case 'new_request':
             case 'create':
-                // Always clear pending actions for new workflow/request
+                // Always clear pending actions for a new request.
                 if ($cachedActionData) {
-                    Log::channel('ai-engine')->info('New workflow/request detected, clearing pending action', [
+                    Log::channel('ai-engine')->info('New request detected, clearing pending action', [
                         'intent' => $intentAnalysis['intent'],
                         'old_action' => $cachedActionData['label'],
                         'session_id' => $sessionId,
@@ -362,32 +361,11 @@ class ChatActionHandler
                 return $this->executeDynamicModelAction($modelClass, $params, $userId);
             case 'model.remote':
                 return $this->executeRemoteModelAction($action, $params, $userId);
-            case 'workflow':
-                if ($this->actionManager) {
-                    $pipeline = app(ActionExecutionPipeline::class);
-                    $sessionId = $action->data['session_id'] ?? uniqid('workflow_');
-                    $result = $pipeline->execute($action, $userId, $sessionId);
-                    return [
-                        'success' => $result->success,
-                        'message' => $result->message,
-                        'data' => $result->data,
-                        'error' => $result->error,
-                    ];
-                }
-                return ['success' => false, 'error' => 'ActionManager not available'];
             case 'email.reply':
                 return $this->executeEmailReply($params, $userId);
             default:
                 return ['success' => false, 'error' => "Unknown executor: {$executor}"];
         }
-    }
-
-    /**
-     * Backward compatibility
-     */
-    protected function executeSmartActionInline(InteractiveAction $action, $userId): array
-    {
-        return $this->executeSmartAction($action, $userId);
     }
 
     protected function executeDynamicModelAction(?string $modelClass, array $params, $userId): array

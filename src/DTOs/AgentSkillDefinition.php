@@ -13,7 +13,6 @@ class AgentSkillDefinition implements JsonSerializable
      * @param array<int, string> $requiredData
      * @param array<int, string> $tools
      * @param array<int, string> $actions
-     * @param array<int, string> $workflows
      * @param array<int, string> $capabilities
      * @param array<string, mixed> $metadata
      */
@@ -25,7 +24,6 @@ class AgentSkillDefinition implements JsonSerializable
         public readonly array $requiredData = [],
         public readonly array $tools = [],
         public readonly array $actions = [],
-        public readonly array $workflows = [],
         public readonly array $capabilities = [],
         public readonly bool $requiresConfirmation = true,
         public readonly bool $enabled = true,
@@ -46,7 +44,6 @@ class AgentSkillDefinition implements JsonSerializable
             requiredData: self::stringList($data['required_data'] ?? $data['requiredData'] ?? []),
             tools: self::stringList($data['tools'] ?? []),
             actions: self::stringList($data['actions'] ?? []),
-            workflows: self::stringList($data['workflows'] ?? []),
             capabilities: self::stringList($data['capabilities'] ?? []),
             requiresConfirmation: (bool) ($data['requires_confirmation'] ?? $data['requiresConfirmation'] ?? true),
             enabled: (bool) ($data['enabled'] ?? true),
@@ -66,7 +63,6 @@ class AgentSkillDefinition implements JsonSerializable
                 'required_data' => $this->requiredData,
                 'tools' => $this->tools,
                 'actions' => $this->actions,
-                'workflows' => $this->workflows,
                 'requires_confirmation' => $this->requiresConfirmation,
             ],
             metadata: array_merge($this->metadata, [
@@ -85,7 +81,6 @@ class AgentSkillDefinition implements JsonSerializable
      *     required_data:array<int,string>,
      *     tools:array<int,string>,
      *     actions:array<int,string>,
-     *     workflows:array<int,string>,
      *     capabilities:array<int,string>,
      *     requires_confirmation:bool,
      *     enabled:bool,
@@ -102,7 +97,6 @@ class AgentSkillDefinition implements JsonSerializable
             'required_data' => $this->requiredData,
             'tools' => $this->tools,
             'actions' => $this->actions,
-            'workflows' => $this->workflows,
             'capabilities' => $this->capabilities,
             'requires_confirmation' => $this->requiresConfirmation,
             'enabled' => $this->enabled,

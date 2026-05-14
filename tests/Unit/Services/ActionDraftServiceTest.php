@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services;
 
-use LaravelAIEngine\Contracts\ActionWorkflowHandler;
+use LaravelAIEngine\Contracts\ActionFlowHandler;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Actions\ActionDraftService;
@@ -15,7 +15,7 @@ class ActionDraftServiceTest extends TestCase
 {
     public function test_patch_prepare_stores_draft_and_normalizes_relation_approval(): void
     {
-        $handler = new class implements ActionWorkflowHandler {
+        $handler = new class implements ActionFlowHandler {
             public function action(string $actionId, ?UnifiedActionContext $context = null): ?array
             {
                 return ['id' => $actionId, 'initial_payload' => ['status' => 'draft']];
@@ -66,7 +66,7 @@ class ActionDraftServiceTest extends TestCase
 
     public function test_patch_prepare_ignores_relation_approval_without_approval_message(): void
     {
-        $handler = new class implements ActionWorkflowHandler {
+        $handler = new class implements ActionFlowHandler {
             public function action(string $actionId, ?UnifiedActionContext $context = null): ?array
             {
                 return ['id' => $actionId, 'initial_payload' => []];
@@ -114,7 +114,7 @@ class ActionDraftServiceTest extends TestCase
 
     public function test_array_operations_append_update_and_remove_without_replacing_existing_items(): void
     {
-        $handler = new class implements ActionWorkflowHandler {
+        $handler = new class implements ActionFlowHandler {
             public function action(string $actionId, ?UnifiedActionContext $context = null): ?array
             {
                 return ['id' => $actionId];
@@ -197,10 +197,73 @@ class ActionDraftServiceTest extends TestCase
         ], $removed['current_payload']['items']);
     }
 
+    public function test_array_operations_increment_and_decrement_numeric_item_fields(): void
+    {
+        $handler = new class implements ActionFlowHandler {
+            public function action(string $actionId, ?UnifiedActionContext $context = null): ?array
+            {
+                return ['id' => $actionId];
+            }
+
+            public function catalog(?UnifiedActionContext $context = null, ?string $module = null): array
+            {
+                return ['success' => true, 'actions' => []];
+            }
+
+            public function prepare(string $actionId, array $payload, ?UnifiedActionContext $context = null): array
+            {
+                return ['success' => true, 'draft' => ['payload' => $payload]];
+            }
+
+            public function execute(string $actionId, array $payload, bool $confirmed, ?UnifiedActionContext $context = null): ActionResult|array
+            {
+                return ['success' => true, 'data' => $payload];
+            }
+
+            public function suggest(array $contextData = [], ?UnifiedActionContext $context = null): array
+            {
+                return ['success' => true, 'suggestions' => []];
+            }
+        };
+
+        $service = new ActionDraftService($handler, new CacheConversationMemory());
+        $context = new UnifiedActionContext('draft-array-ops-numeric-' . uniqid(), 42);
+
+        $service->patchAndPrepare($context, 'create_record', [
+            'items' => [
+                ['product_name' => 'iPhone', 'quantity' => 3],
+            ],
+        ]);
+
+        $decremented = $service->patchAndPrepare($context, 'create_record', [
+            '_array_ops' => [[
+                'op' => 'decrement',
+                'path' => 'items',
+                'match' => ['product_name' => 'iPhone'],
+                'field' => 'quantity',
+                'amount' => 1,
+            ]],
+        ]);
+
+        $this->assertSame(2.0, $decremented['current_payload']['items'][0]['quantity']);
+
+        $incremented = $service->patchAndPrepare($context, 'create_record', [
+            '_array_ops' => [[
+                'op' => 'increment',
+                'path' => 'items',
+                'match' => ['product_name' => 'iPhone'],
+                'field' => 'quantity',
+                'amount' => 2,
+            ]],
+        ]);
+
+        $this->assertSame(4.0, $incremented['current_payload']['items'][0]['quantity']);
+    }
+
     public function test_execute_replays_duplicate_confirmations_without_second_write(): void
     {
         $counter = (object) ['writes' => 0];
-        $handler = new class($counter) implements ActionWorkflowHandler {
+        $handler = new class($counter) implements ActionFlowHandler {
             public function __construct(private object $counter)
             {
             }

@@ -10,10 +10,10 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
     public function test_package_config_still_exposes_core_defaults(): void
     {
         $this->assertSame('openai', config('ai-engine.default'));
-        $this->assertSame(config('ai-engine.default'), config('ai-engine.default_engine'));
+        $this->assertNull(config('ai-engine.default_engine'));
         $this->assertTrue(config('ai-engine.engines.openai.models.gpt-4o-mini.enabled'));
         $this->assertSame('HS256', config('ai-engine.nodes.jwt.algorithm'));
-        $this->assertSame(10, config('ai-engine.workflow.max_ai_calls'));
+        $this->assertSame(true, config('ai-engine.provider_tools.approvals.enabled'));
     }
 
     public function test_defaults_class_returns_full_config_tree(): void
@@ -22,7 +22,6 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
 
         $this->assertIsArray($defaults['engines'] ?? null);
         $this->assertIsArray($defaults['nodes'] ?? null);
-        $this->assertIsArray($defaults['workflow'] ?? null);
         $this->assertIsArray($defaults['infrastructure'] ?? null);
         $this->assertSame(['computer_use', 'mcp_server', 'code_interpreter'], $defaults['provider_tools']['approvals']['require_for'] ?? null);
         $this->assertSame(true, $defaults['rag']['autonomous_mode'] ?? null);

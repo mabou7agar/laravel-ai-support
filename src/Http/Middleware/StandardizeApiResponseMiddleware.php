@@ -49,11 +49,6 @@ class StandardizeApiResponseMiddleware
             'meta' => $meta,
         ];
 
-        if (config('ai-engine.api.preserve_legacy_keys', true) && $this->isAssoc($decoded)) {
-            // Keep legacy top-level fields for compatibility while enforcing a standard envelope.
-            $standard = array_merge($decoded, $standard);
-        }
-
         $response->setData($standard);
 
         return $response;
@@ -70,12 +65,12 @@ class StandardizeApiResponseMiddleware
 
     protected function resolveData(array $payload): mixed
     {
-        if (array_key_exists('data', $payload)) {
-            return $payload['data'];
-        }
-
         $known = ['success', 'message', 'error', 'meta'];
         $data = array_diff_key($payload, array_flip($known));
+
+        if (array_keys($data) === ['data']) {
+            return $data['data'];
+        }
 
         return $this->isAssoc($data) ? $data : array_values($data);
     }

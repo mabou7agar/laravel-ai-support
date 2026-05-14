@@ -60,8 +60,8 @@ class AutonomousCollectorApiTest extends UnitTestCase
 
         $response->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('status', 'collecting')
-            ->assertJsonPath('session_id', 'ac-test-1');
+            ->assertJsonPath('data.status', 'collecting')
+            ->assertJsonPath('data.session_id', 'ac-test-1');
     }
 
     public function test_start_endpoint_returns_not_found_when_config_is_missing(): void
@@ -106,14 +106,14 @@ class AutonomousCollectorApiTest extends UnitTestCase
             'session_id' => 'ac-test-3',
             'message' => 'Next step',
         ])->assertOk()
-            ->assertJsonPath('status', 'confirming')
-            ->assertJsonPath('requires_confirmation', true);
+            ->assertJsonPath('data.status', 'confirming')
+            ->assertJsonPath('data.requires_confirmation', true);
 
         $this->postJson('/api/v1/autonomous-collector/confirm', [
             'session_id' => 'ac-test-3',
         ])->assertOk()
-            ->assertJsonPath('status', 'completed')
-            ->assertJsonPath('is_complete', true);
+            ->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.is_complete', true);
     }
 
     public function test_status_and_data_endpoints_handle_missing_or_existing_sessions(): void
@@ -143,7 +143,7 @@ class AutonomousCollectorApiTest extends UnitTestCase
         $this->getJson('/api/v1/autonomous-collector/data/ac-test-5')
             ->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('status', 'collecting')
-            ->assertJsonPath('data.customer_id', 5);
+            ->assertJsonPath('data.status', 'collecting')
+            ->assertJsonPath('data.data.customer_id', 5);
     }
 }

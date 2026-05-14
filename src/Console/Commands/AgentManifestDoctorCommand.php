@@ -12,7 +12,7 @@ class AgentManifestDoctorCommand extends Command
     protected $signature = 'ai-engine:manifest:doctor
                             {--json : Output diagnostics as JSON}';
 
-    protected $description = 'Inspect agent manifest skills, actions, tools, and workflow references';
+    protected $description = 'Inspect agent manifest skills, actions, tools, and flow references';
 
     public function handle(AgentManifestDoctor $doctor): int
     {

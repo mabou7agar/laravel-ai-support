@@ -94,7 +94,7 @@ class FalAIEngineDriver extends BaseEngineDriver
                 throw new AIEngineException('Prompt is required for text-to-video generation');
             }
 
-            if (!$isTextToVideo && !$hasStartImage && !$hasReferences && !$this->isLegacyTextToVideoModel($model)) {
+            if (!$isTextToVideo && !$hasStartImage && !$hasReferences && !$this->isAliasTextToVideoModel($model)) {
                 throw new AIEngineException('Video generation requires a start image or references for the selected model');
             }
         }
@@ -137,7 +137,7 @@ class FalAIEngineDriver extends BaseEngineDriver
                 model: EntityEnum::FAL_FLUX_PRO
             );
 
-            return $this->generateImage($request)->isSuccess();
+            return $this->generateImage($request)->isSuccessful();
         } catch (\Throwable) {
             return false;
         }
@@ -504,7 +504,7 @@ class FalAIEngineDriver extends BaseEngineDriver
 
         return [
             'endpoint' => $this->resolveEndpointForModel($requestedModel),
-            'payload' => $this->buildLegacyVideoPayload($request),
+            'payload' => $this->buildAliasVideoPayload($request),
             'resolved_model' => $requestedModel,
         ];
     }
@@ -616,7 +616,7 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     private function isDriverManagedModel(string $model): bool
     {
-        return isset($this->getAvailableModels()[$model]) || $this->isLegacyAlias($model);
+        return isset($this->getAvailableModels()[$model]) || $this->isProviderAlias($model);
     }
 
     private function isCatalogModel(string $model): bool
@@ -839,7 +839,7 @@ class FalAIEngineDriver extends BaseEngineDriver
         return $elements;
     }
 
-    private function buildLegacyVideoPayload(AIRequest $request): array
+    private function buildAliasVideoPayload(AIRequest $request): array
     {
         $parameters = $request->getParameters();
 
@@ -951,7 +951,7 @@ class FalAIEngineDriver extends BaseEngineDriver
         return $images;
     }
 
-    private function isLegacyAlias(string $model): bool
+    private function isProviderAlias(string $model): bool
     {
         return in_array($model, [
             EntityEnum::FLUX_PRO,
@@ -960,7 +960,7 @@ class FalAIEngineDriver extends BaseEngineDriver
         ], true);
     }
 
-    private function isLegacyTextToVideoModel(string $model): bool
+    private function isAliasTextToVideoModel(string $model): bool
     {
         return in_array($model, [
             EntityEnum::FAL_STABLE_VIDEO,

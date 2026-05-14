@@ -3,11 +3,10 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Agent Mode
+    | Agent Runtime
     |--------------------------------------------------------------------------
     |
-    | Enable unified AI agent that intelligently chooses between quick actions
-    | and guided data collection based on request complexity.
+    | Enable the unified AI agent runtime.
     |
     */
     'enabled' => env('AI_AGENT_ENABLED', true),
@@ -18,7 +17,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | Default execution strategy when complexity analysis is uncertain.
-    | Options: quick_action, guided_flow, agent_mode, conversational
+    | Options: quick_action, guided_flow, conversational
     |
     */
     'default_strategy' => env('AI_AGENT_DEFAULT_STRATEGY', 'conversational'),
@@ -70,24 +69,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Workflows
-    |--------------------------------------------------------------------------
-    |
-    | Register agent workflows with their trigger keywords.
-    | When a message contains a trigger, the workflow will be activated.
-    |
-    */
-    'workflows' => [
-        // Example:
-        // \App\AI\Workflows\CreateInvoiceWorkflow::class => [
-        //     'create invoice',
-        //     'new invoice',
-        //     'invoice for',
-        // ],
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
     | Caching
     |--------------------------------------------------------------------------
     |
@@ -116,14 +97,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Agent Mode Settings
+    | Agent Runtime Settings
     |--------------------------------------------------------------------------
     |
-    | Configuration for advanced agent mode with multi-step reasoning.
+    | Configuration for the agent runtime with multi-step tool reasoning.
     |
     */
-    'agent_mode' => [
-        'enabled' => env('AI_AGENT_MODE_ENABLED', true),
+    'runtime' => [
+        'enabled' => env('AI_AGENT_RUNTIME_ENABLED', true),
         'max_steps' => env('AI_AGENT_MAX_STEPS', 10),
         'max_retries' => env('AI_AGENT_MAX_RETRIES', 3),
         'tools_enabled' => env('AI_AGENT_TOOLS_ENABLED', true),
@@ -145,6 +126,16 @@ return [
         'max_sub_agents' => env('AI_AGENT_GOAL_MAX_SUB_AGENTS', 5),
         'stop_on_failure' => env('AI_AGENT_GOAL_STOP_ON_FAILURE', true),
         'register_sub_agent_tool' => env('AI_AGENT_REGISTER_SUB_AGENT_TOOL', true),
+    ],
+
+    'skill_tool_planner' => [
+        'enabled' => env('AI_AGENT_SKILL_TOOL_PLANNER_ENABLED', true),
+        'engine' => env('AI_AGENT_SKILL_TOOL_PLANNER_ENGINE', env('AI_ENGINE_DEFAULT')),
+        'model' => env('AI_AGENT_SKILL_TOOL_PLANNER_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o-mini'))),
+        'max_tokens' => env('AI_AGENT_SKILL_TOOL_PLANNER_MAX_TOKENS', 1200),
+        'temperature' => env('AI_AGENT_SKILL_TOOL_PLANNER_TEMPERATURE', 0.1),
+        'max_steps' => env('AI_AGENT_SKILL_TOOL_PLANNER_MAX_STEPS', 4),
+        'extract_before_plan' => env('AI_AGENT_SKILL_TOOL_EXTRACT_BEFORE_PLAN', true),
     ],
 
     'orchestration' => [
@@ -227,7 +218,7 @@ return [
             \LaravelAIEngine\Services\Agent\Routing\Stages\ActiveRunContinuationStage::class,
             \LaravelAIEngine\Services\Agent\Routing\Stages\ExplicitModeStage::class,
             \LaravelAIEngine\Services\Agent\Routing\Stages\SelectionReferenceStage::class,
-            \LaravelAIEngine\Services\Agent\Routing\Stages\DeterministicCommandStage::class,
+            \LaravelAIEngine\Services\Agent\Routing\Stages\AgentSkillMatchStage::class,
             \LaravelAIEngine\Services\Agent\Routing\Stages\MessageClassificationStage::class,
             \LaravelAIEngine\Services\Agent\Routing\Stages\AIRouterStage::class,
             \LaravelAIEngine\Services\Agent\Routing\Stages\FallbackConversationalStage::class,
@@ -251,7 +242,7 @@ return [
     | Tools
     |--------------------------------------------------------------------------
     |
-     | Available tools for agent mode.
+     | Available tools for the agent runtime.
     | Host applications can enable the built-in tools below or provide their
     | own AgentTool implementations through the same registry.
      |
@@ -272,31 +263,16 @@ return [
         // 'suggest_action' => \LaravelAIEngine\Services\Agent\Tools\SuggestActionTool::class,
     ],
 
-    'workflow_reply' => [
-        'ai_enabled' => env('AI_AGENT_WORKFLOW_REPLY_AI_ENABLED', true),
+    'action_reply' => [
+        'ai_enabled' => env('AI_AGENT_ACTION_REPLY_AI_ENABLED', true),
         'enhancer' => null,
         'mcp' => [
-            'enabled' => env('AI_AGENT_WORKFLOW_REPLY_MCP_ENABLED', false),
-            'url' => env('AI_AGENT_WORKFLOW_REPLY_MCP_URL'),
-            'tool_name' => env('AI_AGENT_WORKFLOW_REPLY_MCP_TOOL_NAME', 'humanize_text'),
-            'timeout' => (int) env('AI_AGENT_WORKFLOW_REPLY_MCP_TIMEOUT', 8),
-            'max_chars' => (int) env('AI_AGENT_WORKFLOW_REPLY_MCP_MAX_CHARS', 4000),
+            'enabled' => env('AI_AGENT_ACTION_REPLY_MCP_ENABLED', false),
+            'url' => env('AI_AGENT_ACTION_REPLY_MCP_URL'),
+            'tool_name' => env('AI_AGENT_ACTION_REPLY_MCP_TOOL_NAME', 'humanize_text'),
+            'timeout' => (int) env('AI_AGENT_ACTION_REPLY_MCP_TIMEOUT', 8),
+            'max_chars' => (int) env('AI_AGENT_ACTION_REPLY_MCP_MAX_CHARS', 4000),
         ],
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Deterministic Agent Handlers
-    |--------------------------------------------------------------------------
-    |
-    | Host applications can register small, high-confidence handlers that run
-    | before model routing. Use these for deterministic domain commands,
-    | multilingual aliases, or compliance-critical flows. Handlers must
-    | implement LaravelAIEngine\Contracts\DeterministicAgentHandler.
-    |
-    */
-    'deterministic_handlers' => [
-        // \App\AI\Handlers\CreateInvoiceIntentHandler::class,
     ],
 
     /*
@@ -352,15 +328,26 @@ return [
     |--------------------------------------------------------------------------
     |
     | Skills are user-facing abilities that group triggers, required data,
-    | tools, actions, workflows, and confirmation policy. They do not replace
-    | tools. They describe and route complete business capabilities while the
-    | actual work remains in services, repositories, actions, and workflows.
+    | tools, actions, and confirmation policy. They do not replace tools.
+    | They describe and route complete business capabilities while the actual
+    | work remains in services, repositories, actions, and tool handlers.
     |
     */
     'skills' => [
         'enabled' => env('AI_AGENT_SKILLS_ENABLED', true),
         'expose_as_capabilities' => env('AI_AGENT_SKILLS_EXPOSE_AS_CAPABILITIES', true),
         'prefer_deterministic_matches' => env('AI_AGENT_SKILLS_PREFER_DETERMINISTIC_MATCHES', true),
+        'intent_matching' => [
+            'enabled' => env('AI_AGENT_SKILL_INTENT_MATCHING_ENABLED', true),
+            'engine' => env('AI_AGENT_SKILL_INTENT_MATCHING_ENGINE', env('AI_ENGINE_DEFAULT')),
+            'model' => env('AI_AGENT_SKILL_INTENT_MATCHING_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o-mini'))),
+            'max_tokens' => env('AI_AGENT_SKILL_INTENT_MATCHING_MAX_TOKENS', 450),
+            'temperature' => env('AI_AGENT_SKILL_INTENT_MATCHING_TEMPERATURE', 0.05),
+            'min_confidence' => env('AI_AGENT_SKILL_INTENT_MATCHING_MIN_CONFIDENCE', 72),
+        ],
+        'intent_aliases' => [
+            'invoice' => ['invoice', 'bill', 'billing', 'charge', 'فاتورة', 'فوتر', 'facture', 'factura', 'fatura'],
+        ],
     ],
 
     'skill_providers' => [

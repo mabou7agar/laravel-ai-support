@@ -7,7 +7,7 @@ namespace LaravelAIEngine\Contracts;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
-interface ActionWorkflowHandler
+interface ActionFlowHandler
 {
     /**
      * @return array<string, mixed>|null

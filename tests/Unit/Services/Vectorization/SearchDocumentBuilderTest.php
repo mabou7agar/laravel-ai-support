@@ -11,16 +11,11 @@ use LaravelAIEngine\Traits\Vectorizable;
 
 class SearchDocumentBuilderTest extends UnitTestCase
 {
-    public function test_custom_search_document_takes_precedence_over_legacy_contracts(): void
+    public function test_custom_search_document_takes_precedence_over_inferred_defaults(): void
     {
         $model = new class extends Model {
             protected $table = 'custom_records';
             public $id = 15;
-
-            public function getVectorContent(): string
-            {
-                return 'legacy content should not be used';
-            }
 
             public function toSearchDocument(): SearchDocument|array
             {
@@ -47,7 +42,7 @@ class SearchDocumentBuilderTest extends UnitTestCase
         $this->assertSame('user-15', $document->entityRef()['canonical_user_id']);
     }
 
-    public function test_legacy_vectorizable_model_builds_entity_ref_and_safe_object(): void
+    public function test_vectorizable_model_defaults_build_entity_ref_and_safe_object(): void
     {
         $model = new class extends Model {
             use Vectorizable;
@@ -79,7 +74,7 @@ class SearchDocumentBuilderTest extends UnitTestCase
         $this->assertArrayNotHasKey('password', $document->object);
     }
 
-    public function test_transcription_uses_vector_content_contract_instead_of_dead_alias(): void
+    public function test_transcription_builds_search_document_from_model_contract(): void
     {
         $transcription = new Transcription([
             'content' => 'Transcript body',
@@ -144,10 +139,6 @@ class SearchDocumentBuilderOwnerModel extends Model
         return $this->belongsTo(SearchDocumentBuilderUserModel::class, 'user_id');
     }
 
-    public function getVectorContent(): string
-    {
-        return 'Owner aware content';
-    }
 }
 
 class SearchDocumentBuilderUserModel extends Model
@@ -174,10 +165,6 @@ class SearchDocumentBuilderPartnerModel extends Model
         return $this->belongsTo(SearchDocumentBuilderCompanyModel::class, 'company_id');
     }
 
-    public function getVectorContent(): string
-    {
-        return 'Partner aware content';
-    }
 }
 
 class SearchDocumentBuilderCompanyModel extends Model

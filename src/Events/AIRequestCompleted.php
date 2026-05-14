@@ -40,7 +40,7 @@ class AIRequestCompleted
         $this->cost = $this->creditsUsed * 0.001; // Calculate cost from credits
 
         // Set status properties
-        $this->success = method_exists($response, 'isSuccess') ? $response->isSuccess() : true;
+        $this->success = method_exists($response, 'isSuccessful') ? $response->isSuccessful() : true;
         $this->finishReason = property_exists($response, 'finishReason') ? ($response->finishReason ?? 'complete') : 'complete';
         $this->errorMessage = property_exists($response, 'error') ? $response->error : null;
 
@@ -80,7 +80,7 @@ class AIRequestCompleted
             'request_id' => $this->requestId,
             'engine' => $this->request->engine->value,
             'model' => $this->request->model->value,
-            'success' => $this->response->isSuccess(),
+            'success' => $this->response->isSuccessful(),
             'execution_time' => $this->executionTime,
             'tokens_used' => $this->response->tokensUsed,
             'credits_used' => $this->response->creditsUsed,
@@ -99,7 +99,7 @@ class AIRequestCompleted
      */
     public function wasSuccessful(): bool
     {
-        return $this->response->isSuccess();
+        return $this->response->isSuccessful();
     }
 
     /**

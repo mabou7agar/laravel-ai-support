@@ -453,7 +453,7 @@ class AIEngineService
             return $this->driverRegistry->resolve($engine);
         }
 
-        // Fallback for backward compatibility if registry fails or not present (legacy logic)
+        // Direct driver resolution for package contexts without an injected registry.
         $driverClass = $engine->driverClass();
 
         if (!class_exists($driverClass)) {

@@ -100,7 +100,6 @@ class TestAgentCommand extends Command
             $strategyIcon = match($response->strategy) {
                 'quick_action' => '⚡',
                 'guided_flow' => '📝',
-                'agent_mode' => '🧠',
                 'conversational' => '💬',
                 default => '🔹',
             };

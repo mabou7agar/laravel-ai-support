@@ -120,7 +120,7 @@ class DiscoverModelsForAgentCommand extends Command
                 [
                     'HIGH',
                     count($high),
-                    'agent_mode',
+                    'guided_flow',
                     $this->formatModelList($high, 3)
                 ],
                 [
@@ -142,7 +142,7 @@ class DiscoverModelsForAgentCommand extends Command
 
         // Show what this means
         $this->info('💡 What this means:');
-        $this->line('  🔴 HIGH (agent_mode): Multi-step workflows with validation');
+        $this->line('  🔴 HIGH (guided_flow): Multi-step data collection with validation');
         $this->line('  🟡 MEDIUM (guided_flow): Step-by-step data collection');
         $this->line('  🟢 SIMPLE (quick_action): Immediate execution');
     }

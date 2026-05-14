@@ -37,7 +37,6 @@ class NodeManifestServiceTest extends TestCase
                     'capabilities' => ['db_query' => true],
                 ],
             ],
-            'workflows' => ['App\\AI\\Workflows\\CreateInvoiceWorkflow'],
         ]);
 
         $collectors = Mockery::mock(AutonomousCollectorDiscoveryService::class);

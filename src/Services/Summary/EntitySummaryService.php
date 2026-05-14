@@ -135,10 +135,6 @@ class EntitySummaryService
             return trim((string) $entity->toRAGSummary());
         }
 
-        if (method_exists($entity, 'toRAGContent')) {
-            return trim((string) $entity->toRAGContent());
-        }
-
         if (method_exists($entity, '__toString')) {
             $stringValue = trim((string) $entity);
             if ($stringValue !== '' && $stringValue !== get_class($entity)) {

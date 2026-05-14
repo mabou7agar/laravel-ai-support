@@ -60,22 +60,11 @@ Route::prefix('api/v1/agent')
             ->name('chat.send');
     });
 
-// RAG Chat API Routes (v1, legacy chat alias plus retrieval endpoints)
+// RAG API Routes (v1 retrieval endpoints)
 Route::prefix('api/v1/rag')
     ->middleware($resolveApiMiddleware('rag'))
     ->name('ai-engine.rag.api.')
     ->group(function () {
-        
-        // Chat endpoints
-        Route::post('/chat', [RagChatApiController::class, 'sendMessage'])
-            ->name('chat.send');
-        
-        Route::get('/chat/history/{session_id}', [RagChatApiController::class, 'getHistory'])
-            ->name('chat.history');
-        
-        Route::post('/chat/clear', [RagChatApiController::class, 'clearHistory'])
-            ->name('chat.clear');
-        
         // File analysis endpoint
         Route::post('/analyze-file', [RagChatApiController::class, 'analyzeFile'])
             ->name('analyze-file');
@@ -314,7 +303,6 @@ Route::prefix('api/v1/autonomous-collector')
             ->name('data');
     });
 
-// Legacy AI Demo Routes
 Route::prefix('ai-demo')
     ->middleware($resolveApiMiddleware('demo'))
     ->name('ai-engine.api.')

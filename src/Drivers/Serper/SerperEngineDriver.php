@@ -84,7 +84,7 @@ class SerperEngineDriver extends BaseEngineDriver
             );
             
             $response = $this->searchWeb($testRequest);
-            return $response->isSuccess();
+            return $response->isSuccessful();
         } catch (\Exception $e) {
             return false;
         }

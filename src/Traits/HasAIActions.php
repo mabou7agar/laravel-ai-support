@@ -38,7 +38,7 @@ trait HasAIActions
     /**
      * Execute AI action (create, update, delete)
      * 
-     * Check if model implements AIConfigurable interface or has customExecuteAI static method
+     * Check if model implements AIConfigurable interface
      * 
      * @param string $action The action to perform (create, update, delete)
      * @param array $data The data extracted from conversation
@@ -48,11 +48,6 @@ trait HasAIActions
     {
         // Check if model implements AIConfigurable interface
         if (is_subclass_of(static::class, \LaravelAIEngine\Contracts\AIConfigurable::class)) {
-            return static::customExecuteAI($action, $data);
-        }
-        
-        // Fallback: check if static method exists (for backward compatibility)
-        if (method_exists(static::class, 'customExecuteAI')) {
             return static::customExecuteAI($action, $data);
         }
         

@@ -12,9 +12,9 @@ class ActionReplyMcpEnhancerTest extends TestCase
 {
     public function test_mcp_enhancer_calls_configured_tool_and_restores_protected_terms(): void
     {
-        config()->set('ai-agent.workflow_reply.mcp.enabled', true);
-        config()->set('ai-agent.workflow_reply.mcp.url', 'https://humanize.test/mcp');
-        config()->set('ai-agent.workflow_reply.mcp.tool_name', 'humanize_text');
+        config()->set('ai-agent.action_reply.mcp.enabled', true);
+        config()->set('ai-agent.action_reply.mcp.url', 'https://humanize.test/mcp');
+        config()->set('ai-agent.action_reply.mcp.tool_name', 'humanize_text');
 
         Http::fake([
             'https://humanize.test/mcp' => Http::response([
@@ -29,7 +29,7 @@ class ActionReplyMcpEnhancerTest extends TestCase
         $result = (new ActionReplyMcpEnhancer())(
             'ask Smoke Customer for smoke.customer@example.test',
             [
-                'style' => 'workflow_reply',
+                'style' => 'action_reply',
                 'preserve_terms' => ['Smoke Customer', 'smoke.customer@example.test'],
             ]
         );
@@ -51,8 +51,8 @@ class ActionReplyMcpEnhancerTest extends TestCase
 
     public function test_mcp_enhancer_returns_null_when_not_configured(): void
     {
-        config()->set('ai-agent.workflow_reply.mcp.enabled', false);
-        config()->set('ai-agent.workflow_reply.mcp.url', null);
+        config()->set('ai-agent.action_reply.mcp.enabled', false);
+        config()->set('ai-agent.action_reply.mcp.url', null);
 
         $this->assertNull((new ActionReplyMcpEnhancer())('hello', []));
     }

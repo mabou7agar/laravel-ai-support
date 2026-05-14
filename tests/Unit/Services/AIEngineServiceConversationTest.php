@@ -219,7 +219,7 @@ class AIEngineServiceConversationTest extends TestCase
         );
 
         // Mock the driver to return a failed response
-        $mockResponse = AIResponse::failure(
+        $mockResponse = AIResponse::error(
             'API rate limit exceeded',
             EngineEnum::OPENAI,
             EntityEnum::GPT_4O

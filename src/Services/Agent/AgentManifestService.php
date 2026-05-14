@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent;
 
+use Illuminate\Support\Facades\File;
+use LaravelAIEngine\Contracts\ActionDefinitionProvider;
+use LaravelAIEngine\Contracts\AgentSkillProvider;
+use LaravelAIEngine\Services\Agent\Tools\AgentTool;
+use Throwable;
+
 class AgentManifestService
 {
     protected ?array $manifest = null;
@@ -53,6 +59,10 @@ class AgentManifestService
                 continue;
             }
             $resolved[$name] = $className;
+        }
+
+        foreach ($this->discoverToolClasses() as $name => $className) {
+            $resolved[$name] ??= $className;
         }
 
         return $resolved;
@@ -108,6 +118,48 @@ class AgentManifestService
                 continue;
             }
             $resolved[$name] = $className;
+        }
+
+        foreach ($this->discoverProviderClasses(AgentSkillProvider::class, [app_path('AI/Skills')]) as $name => $className) {
+            $resolved[$name] ??= $className;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function actionProviders(): array
+    {
+        $manifest = $this->manifest();
+        $providers = $manifest['action_providers'] ?? [];
+        $resolved = [];
+
+        if (is_array($providers)) {
+            foreach ($providers as $name => $className) {
+                if (is_int($name)) {
+                    $name = (string) $className;
+                }
+
+                if (!is_string($name) || trim($name) === '') {
+                    continue;
+                }
+
+                if (!is_string($className) || trim($className) === '' || !class_exists($className)) {
+                    continue;
+                }
+
+                if (!is_subclass_of($className, ActionDefinitionProvider::class)) {
+                    continue;
+                }
+
+                $resolved[$name] = $className;
+            }
+        }
+
+        foreach ($this->discoverProviderClasses(ActionDefinitionProvider::class, [app_path('AI/Actions'), app_path('AI/Skills')]) as $name => $className) {
+            $resolved[$name] ??= $className;
         }
 
         return $resolved;
@@ -224,5 +276,105 @@ class AgentManifestService
         }
 
         return $this->manifest;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function discoverToolClasses(): array
+    {
+        if (!$this->fallbackDiscoveryEnabled()) {
+            return [];
+        }
+
+        $resolved = [];
+        foreach ($this->classesInDirectories([app_path('AI/Tools')]) as $className) {
+            if (!is_subclass_of($className, AgentTool::class)) {
+                continue;
+            }
+
+            try {
+                /** @var AgentTool $tool */
+                $tool = app($className);
+                $name = trim($tool->getName());
+                if ($name !== '') {
+                    $resolved[$name] = $className;
+                }
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @param class-string $contract
+     * @param array<int, string> $directories
+     * @return array<string, string>
+     */
+    protected function discoverProviderClasses(string $contract, array $directories): array
+    {
+        if (!$this->fallbackDiscoveryEnabled()) {
+            return [];
+        }
+
+        $resolved = [];
+        foreach ($this->classesInDirectories($directories) as $className) {
+            if (!is_subclass_of($className, $contract)) {
+                continue;
+            }
+
+            $resolved[$className] = $className;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @param array<int, string> $directories
+     * @return array<int, class-string>
+     */
+    protected function classesInDirectories(array $directories): array
+    {
+        $classes = [];
+
+        foreach ($directories as $directory) {
+            if (!is_dir($directory)) {
+                continue;
+            }
+
+            foreach (File::allFiles($directory) as $file) {
+                if ($file->getExtension() !== 'php') {
+                    continue;
+                }
+
+                $className = $this->classNameFromFile($file->getPathname());
+                if ($className !== null && class_exists($className)) {
+                    $classes[] = $className;
+                }
+            }
+        }
+
+        return array_values(array_unique($classes));
+    }
+
+    protected function classNameFromFile(string $path): ?string
+    {
+        $contents = @file_get_contents($path);
+        if (!is_string($contents) || $contents === '') {
+            return null;
+        }
+
+        $namespace = '';
+        if (preg_match('/^namespace\s+([^;]+);/m', $contents, $matches) === 1) {
+            $namespace = trim($matches[1]);
+        }
+
+        if (preg_match('/^(?:final\s+|abstract\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)/m', $contents, $matches) !== 1) {
+            return null;
+        }
+
+        return $namespace !== '' ? $namespace . '\\' . $matches[1] : $matches[1];
     }
 }

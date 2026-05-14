@@ -1,13 +1,13 @@
 ---
 title: Agent Skills
-description: Package user-facing agent abilities from tools, actions, workflows, collectors, and capability documents.
+description: Package user-facing agent abilities from tools, actions, collectors, and capability documents.
 ---
 
 # Agent Skills
 
 Skills are a lightweight orchestration layer above existing agent primitives.
 
-A tool is an atomic callable operation. A skill is a user-facing ability that describes when to use tools, actions, workflows, required data, and confirmation rules.
+A tool is an atomic callable operation. A skill is a user-facing ability that describes when to use tools, actions, required data, target JSON, and confirmation rules.
 
 ## Structure
 
@@ -22,14 +22,13 @@ new AgentSkillDefinition(
     requiredData: ['customer_id', 'items'],
     tools: ['find_customer', 'calculate_totals'],
     actions: ['invoices.create'],
-    workflows: [App\AI\Workflows\CreateInvoiceWorkflow::class],
     capabilities: ['invoice', 'create'],
     requiresConfirmation: true,
     enabled: true,
 );
 ```
 
-Keep business writes in host application services and repositories. A skill should reference an action or workflow that validates, authorizes, confirms, and executes the write.
+Keep business writes in host application services and repositories. A skill should reference actions and tools that validate, authorize, confirm, and execute the write.
 
 ## Scaffold a skill
 
@@ -49,7 +48,7 @@ php artisan ai-engine:skills:discover --json
 php artisan ai-engine:skills:discover --write
 ```
 
-The scanner proposes draft skills from registered actions, workflows, autonomous collectors, and model discovery metadata.
+The scanner proposes draft skills from registered actions, tools, autonomous collectors, and model discovery metadata.
 
 Use `--write` to add draft definitions to `app/AI/agent-manifest.php`. Draft skills are disabled unless `--enable` is passed.
 
@@ -60,7 +59,7 @@ php artisan ai-engine:skills:test "create invoice for ACME"
 php artisan ai-engine:skills:test "create invoice for ACME" --include-disabled --json
 ```
 
-The command shows the matched skill, score, trigger, and compiled execution plan. Action-backed skills compile to the existing `update_action_draft` tool so validation, confirmation, and execution stay inside the existing action workflow.
+The command shows the matched skill, score, trigger, and compiled execution plan. Action-backed skills compile to the existing `update_action_draft` tool so validation, confirmation, and execution stay inside the action flow.
 
 ## Diagnose the manifest
 
@@ -69,7 +68,7 @@ php artisan ai-engine:manifest:doctor
 php artisan ai-engine:manifest:doctor --json
 ```
 
-The doctor reports disabled draft skills, non-executable skills, and skills that reference missing actions, tools, or workflows.
+The doctor reports disabled draft skills, non-executable skills, and skills that reference missing actions or tools.
 
 Use the orchestration validator when skills also link to sub-agents through `metadata.sub_agents`:
 
@@ -105,4 +104,4 @@ return [
 
 When `ai-agent.skills.expose_as_capabilities` is enabled, skills are exposed as capability documents through the existing capability registry. This lets semantic routing discover complete abilities without exposing every low-level tool directly.
 
-When `ai-agent.skills.prefer_deterministic_matches` is enabled, exact or strong trigger matches are compiled before the LLM router runs. This keeps common business requests deterministic while still using the existing tools, actions, workflows, and RAG fallback paths.
+When `ai-agent.skills.prefer_deterministic_matches` is enabled, exact or strong trigger matches are compiled before the LLM router runs. This keeps common business requests predictable while still using the existing tools, actions, and RAG fallback paths.

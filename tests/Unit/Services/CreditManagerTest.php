@@ -12,7 +12,10 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
+use LaravelAIEngine\Models\AIModel;
+use LaravelAIEngine\Services\Models\DynamicModelResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 
 class CreditlessOwner extends Model
@@ -140,6 +143,86 @@ class CreditManagerTest extends TestCase
         $this->assertEquals(20.0, $credits);
     }
 
+    public function test_calculate_credits_for_fal_image_generation_uses_provider_count_aliases(): void
+    {
+        Config::set('ai-engine.credits.engine_rates.fal_ai', 1.25);
+
+        $frameCountRequest = new AIRequest(
+            prompt: 'Generate product keyframes',
+            engine: EngineEnum::FAL_AI,
+            model: EntityEnum::FAL_NANO_BANANA_2,
+            parameters: ['frame_count' => 3],
+            userId: $this->testUser->id
+        );
+
+        $numImagesRequest = new AIRequest(
+            prompt: 'Generate product variations',
+            engine: EngineEnum::FAL_AI,
+            model: EntityEnum::FAL_NANO_BANANA_2,
+            parameters: ['num_images' => 2],
+            userId: $this->testUser->id
+        );
+
+        $this->assertEqualsWithDelta(14.25, $this->creditManager->calculateCredits($frameCountRequest), 0.0001);
+        $this->assertEqualsWithDelta(9.5, $this->creditManager->calculateCredits($numImagesRequest), 0.0001);
+    }
+
+    public function test_calculate_credits_for_dynamic_fal_vision_model_uses_image_units(): void
+    {
+        Config::set('ai-engine.credits.engine_rates.fal_ai', 1.5);
+
+        AIModel::query()->create([
+            'provider' => 'fal_ai',
+            'model_id' => 'fal-ai/test/vision-caption',
+            'name' => 'FAL Vision Caption',
+            'capabilities' => ['vision', 'image_analysis'],
+            'supports_vision' => true,
+            'supports_streaming' => false,
+            'supports_function_calling' => false,
+            'supports_json_mode' => false,
+            'is_active' => true,
+            'is_deprecated' => false,
+        ]);
+        app(DynamicModelResolver::class)->clearCache('fal-ai/test/vision-caption');
+
+        $request = new AIRequest(
+            prompt: 'describe this uploaded image carefully',
+            engine: EngineEnum::FAL_AI,
+            model: 'fal-ai/test/vision-caption',
+            parameters: ['image_url' => 'https://example.com/image.png'],
+            userId: $this->testUser->id
+        );
+
+        $this->assertSame('image', $request->getModel()->contentType());
+        $this->assertEqualsWithDelta(1.5, $this->creditManager->calculateCredits($request), 0.0001);
+    }
+
+    public function test_calculate_credits_can_include_fal_reference_input_images_by_model_policy(): void
+    {
+        Config::set('ai-engine.credits.engine_rates.fal_ai', 1.0);
+        Config::set('ai-engine.credits.additional_input_unit_rates.fal_ai.models', [
+            EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO => [
+                'image' => 0.5,
+            ],
+        ]);
+
+        $request = new AIRequest(
+            prompt: 'Animate this product from references',
+            engine: EngineEnum::FAL_AI,
+            model: EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO,
+            parameters: [
+                'image_url' => 'https://example.com/hero.png',
+                'reference_image_urls' => [
+                    'https://example.com/ref-1.png',
+                    'https://example.com/ref-2.png',
+                ],
+            ],
+            userId: $this->testUser->id
+        );
+
+        $this->assertEqualsWithDelta(9.5, $this->creditManager->calculateCredits($request), 0.0001);
+    }
+
     public function test_has_credits_with_sufficient_balance()
     {
         $request = new AIRequest(
@@ -257,9 +340,9 @@ class CreditManagerTest extends TestCase
         $creditsToAdd = 50.0;
         $result = $this->creditManager->addCredits(
             $this->testUser->id,
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O,
-            $creditsToAdd
+            $creditsToAdd,
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O
         );
 
         $this->assertTrue($result);
@@ -278,9 +361,9 @@ class CreditManagerTest extends TestCase
         $newBalance = 200.0;
         $result = $this->creditManager->setCredits(
             $this->testUser->id,
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O,
-            $newBalance
+            $newBalance,
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O
         );
 
         $this->assertTrue($result);
@@ -299,8 +382,8 @@ class CreditManagerTest extends TestCase
     {
         $result = $this->creditManager->setUnlimitedCredits(
             $this->testUser->id,
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O
         );
 
         $this->assertTrue($result);
@@ -502,9 +585,9 @@ class CreditManagerTest extends TestCase
         // Modify user credits first
         $this->creditManager->setCredits(
             $this->testUser->id,
-            EngineEnum::OPENAI,
-            EntityEnum::GPT_4O,
-            500.0
+            500.0,
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O
         );
 
         // Reset credits

@@ -182,7 +182,7 @@ class NodeRegistryService
                 if (!empty($manifest)) {
                     $updateData = array_merge($updateData, $this->mapManifestToNodeFields($manifest));
                 } else {
-                    $updateData = array_merge($updateData, $this->mapLegacyHealthMetadata($health));
+                    $updateData = array_merge($updateData, $this->mapHealthMetadata($health));
                 }
 
                 $node->update($updateData);
@@ -281,17 +281,16 @@ class NodeRegistryService
             'data_types' => $manifest['data_types'] ?? [],
             'keywords' => $manifest['keywords'] ?? [],
             'collections' => $manifest['collections'] ?? [],
-            'workflows' => $manifest['workflows'] ?? [],
             'autonomous_collectors' => $manifest['autonomous_collectors'] ?? [],
             'version' => data_get($manifest, 'node.version') ?? ($manifest['version'] ?? null),
         ], static fn ($value) => $value !== null && $value !== []);
     }
 
-    protected function mapLegacyHealthMetadata(array $data): array
+    protected function mapHealthMetadata(array $data): array
     {
         $updateData = [];
 
-        foreach (['description', 'domains', 'data_types', 'keywords', 'collections', 'workflows', 'autonomous_collectors'] as $field) {
+        foreach (['description', 'domains', 'data_types', 'keywords', 'collections', 'autonomous_collectors'] as $field) {
             if (!empty($data[$field])) {
                 $updateData[$field] = $data[$field];
             }
@@ -365,7 +364,6 @@ class NodeRegistryService
         }
 
         foreach ($collections as $collection) {
-            // Handle new format (array with metadata) or legacy format (class string)
             if (is_array($collection)) {
                 $collectionClass = $collection['class'] ?? '';
                 $collectionName = $collection['name'] ?? '';
@@ -383,7 +381,6 @@ class NodeRegistryService
                     return true;
                 }
             } else {
-                // Legacy format: class string
                 // Exact match
                 if ($collection === $modelClass) {
                     return true;
