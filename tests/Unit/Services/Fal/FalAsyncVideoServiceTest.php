@@ -76,6 +76,8 @@ class FalAsyncVideoServiceTest extends TestCase
         $this->assertSame('queued', $status['status']);
         $this->assertSame('fal-job-1', $status['metadata']['provider']['request_id']);
         $this->assertTrue($status['metadata']['credits']['charged']);
+        $this->assertSame('reserved', $status['metadata']['credits']['status']);
+        $this->assertNotEmpty($status['metadata']['credits']['reservation_uuid']);
         $this->assertArrayNotHasKey('token', $status['metadata']['webhook']);
 
         $user->refresh();
@@ -85,6 +87,22 @@ class FalAsyncVideoServiceTest extends TestCase
 
     public function test_refresh_finalizes_completed_job_from_provider_response(): void
     {
+        $user = $this->createTestUser([
+            'entity_credits' => [
+                'fal_ai' => [
+                    EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO => ['balance' => 100.0, 'is_unlimited' => false],
+                ],
+            ],
+        ]);
+        $reservationRequest = new AIRequest(
+            prompt: 'Animate this still image',
+            engine: 'fal_ai',
+            model: EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
+            parameters: ['start_image_url' => 'https://example.com/start.png'],
+            userId: (string) $user->id
+        );
+        $reservation = app(CreditManager::class)->reserveCredits((string) $user->id, $reservationRequest);
+
         $workflow = Mockery::mock(FalMediaWorkflowService::class);
         $registry = Mockery::mock(DriverRegistry::class);
         $tracker = app(JobStatusTracker::class);
@@ -144,6 +162,12 @@ class FalAsyncVideoServiceTest extends TestCase
                 'token' => 'secret-token',
                 'enabled' => true,
             ],
+            'credits' => [
+                'charged' => true,
+                'amount' => 11.05,
+                'status' => 'reserved',
+                'reservation_uuid' => $reservation?->uuid,
+            ],
         ]);
 
         $status = $service->refresh('local-job-1');
@@ -151,6 +175,7 @@ class FalAsyncVideoServiceTest extends TestCase
 
         $this->assertSame('completed', $status['status']);
         $this->assertSame('https://example.com/out.mp4', $status['metadata']['response']['metadata']['video']['url']);
+        $this->assertSame('finalized', $status['metadata']['credits']['status']);
         $this->assertArrayNotHasKey('token', $publicStatus['metadata']['webhook']);
     }
 
@@ -241,5 +266,66 @@ class FalAsyncVideoServiceTest extends TestCase
         $user->refresh();
         $credits = $user->entity_credits['fal_ai'][EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO]['balance'];
         $this->assertEqualsWithDelta(100.0, $credits, 0.0001);
+    }
+
+    public function test_webhook_failure_refunds_reserved_async_credits(): void
+    {
+        config()->set('app.url', 'https://app.test');
+
+        $user = $this->createTestUser([
+            'entity_credits' => [
+                'fal_ai' => [
+                    EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO => ['balance' => 100.0, 'is_unlimited' => false],
+                ],
+            ],
+        ]);
+
+        $request = new AIRequest(
+            prompt: 'Animate this still image',
+            engine: 'fal_ai',
+            model: EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
+            parameters: ['start_image_url' => 'https://example.com/start.png'],
+            userId: (string) $user->id
+        );
+
+        $workflow = Mockery::mock(FalMediaWorkflowService::class);
+        $workflow->shouldReceive('prepareRequest')->once()->andReturn($request);
+
+        $driver = Mockery::mock(FalAIEngineDriver::class);
+        $driver->shouldReceive('validateRequest')->once()->with($request);
+        $driver->shouldReceive('submitVideoAsync')
+            ->once()
+            ->andReturn([
+                'request_id' => 'fal-job-refund',
+                'status_url' => 'https://queue.fal.run/status/fal-job-refund',
+            ]);
+
+        $registry = Mockery::mock(DriverRegistry::class);
+        $registry->shouldReceive('resolve')->once()->andReturn($driver);
+
+        $service = new FalAsyncVideoService(
+            $workflow,
+            $registry,
+            app(JobStatusTracker::class),
+            app(CreditManager::class)
+        );
+
+        $submitted = $service->submit('Animate this still image', [], (string) $user->id);
+        parse_str((string) parse_url((string) $submitted['webhook_url'], PHP_URL_QUERY), $query);
+        $status = $service->handleWebhook(
+            $submitted['job_id'],
+            (string) $query['token'],
+            ['status' => 'ERROR', 'error' => 'provider failed']
+        );
+
+        $this->assertSame('failed', $status['status']);
+        $this->assertSame('refunded', $status['metadata']['credits']['status']);
+
+        $user->refresh();
+        $this->assertEqualsWithDelta(
+            100.0,
+            $user->entity_credits['fal_ai'][EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO]['balance'],
+            0.0001
+        );
     }
 }

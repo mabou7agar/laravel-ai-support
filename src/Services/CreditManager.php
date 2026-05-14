@@ -7,13 +7,16 @@ namespace LaravelAIEngine\Services;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Models\AIAgentRun;
+use LaravelAIEngine\Models\AICreditReservation;
 use LaravelAIEngine\Repositories\AgentRunRepository;
+use LaravelAIEngine\Repositories\CreditReservationRepository;
 
 class CreditManager
 {
@@ -291,6 +294,89 @@ class CreditManager
         }
 
         return $this->writeScalarCreditState($user, $currentBalance - $creditsToDeduct, false);
+    }
+
+    /**
+     * Reserve credits by deducting them now and storing a reservation that can be finalized or refunded later.
+     *
+     * @param array<string, mixed> $metadata
+     */
+    public function reserveCredits(
+        string $userId,
+        AIRequest $request,
+        ?float $creditsToReserve = null,
+        array $metadata = [],
+        ?string $idempotencyKey = null
+    ): ?AICreditReservation {
+        $amount = $creditsToReserve ?? $this->calculateCredits($request);
+        if ($amount <= 0.0) {
+            return null;
+        }
+
+        if (!$this->creditReservationTableAvailable()) {
+            $this->deductCredits($userId, $request, $amount);
+            return null;
+        }
+
+        $repository = $this->creditReservationRepository();
+        $existing = $repository->findByIdempotencyKey($idempotencyKey);
+        if ($existing instanceof AICreditReservation) {
+            return $existing;
+        }
+
+        return DB::transaction(function () use ($userId, $request, $amount, $metadata, $idempotencyKey, $repository): AICreditReservation {
+            if (!$this->hasCreditsForAmount($userId, $request, $amount)) {
+                throw new InsufficientCreditsException('Insufficient credits for this request');
+            }
+
+            $this->deductCredits($userId, $request, $amount);
+
+            return $repository->createReserved($userId, $request, $amount, $metadata, $idempotencyKey);
+        });
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     */
+    public function finalizeCreditReservation(?string $reservationUuid, array $metadata = []): bool
+    {
+        if (!$this->creditReservationTableAvailable() || $reservationUuid === null || trim($reservationUuid) === '') {
+            return false;
+        }
+
+        $reservation = $this->creditReservationRepository()->findByUuid($reservationUuid);
+        if (!$reservation instanceof AICreditReservation || $reservation->status !== AICreditReservation::STATUS_RESERVED) {
+            return false;
+        }
+
+        return $this->creditReservationRepository()->markFinalized($reservation, $metadata);
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     */
+    public function refundCreditReservation(?string $reservationUuid, array $metadata = []): bool
+    {
+        if (!$this->creditReservationTableAvailable() || $reservationUuid === null || trim($reservationUuid) === '') {
+            return false;
+        }
+
+        $reservation = $this->creditReservationRepository()->findByUuid($reservationUuid);
+        if (!$reservation instanceof AICreditReservation || $reservation->status !== AICreditReservation::STATUS_RESERVED) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($reservation, $metadata): bool {
+            $this->addCredits(
+                (string) $reservation->owner_id,
+                (float) $reservation->amount,
+                metadata: array_merge($metadata, ['reservation_uuid' => $reservation->uuid]),
+                engine: $reservation->engine,
+                model: $reservation->ai_model
+            );
+
+            return $this->creditReservationRepository()->markRefunded($reservation, $metadata);
+        });
     }
 
     /**
@@ -863,6 +949,16 @@ class CreditManager
     private function runRepository(): AgentRunRepository
     {
         return app(AgentRunRepository::class);
+    }
+
+    private function creditReservationRepository(): CreditReservationRepository
+    {
+        return app(CreditReservationRepository::class);
+    }
+
+    private function creditReservationTableAvailable(): bool
+    {
+        return Schema::hasTable('ai_credit_reservations');
     }
 
     private function normalizeRunBudgetLimits(array $limits): array

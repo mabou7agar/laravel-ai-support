@@ -42,9 +42,27 @@ FAL input media defaults:
 ```bash
 php artisan ai-engine:pricing-audit
 php artisan ai-engine:pricing-audit --json
+php artisan ai-engine:pricing-audit --fail-on-warning
 ```
 
 The audit command reports engine rates, env override names, additional input media rates, and warnings for zero or discounted provider rates.
+Use `--fail-on-warning` in CI or deploy checks when paid provider rates must never be zero, discounted, or below a configured model pricing floor.
+
+## Model pricing floors
+
+The package reuses the existing `ai_models.pricing` JSON column for optional app-credit floors. Add `minimum_app_credits_per_unit` to a model when you know the minimum app-credit charge that should apply for one billable unit:
+
+```php
+[
+    'provider' => 'fal_ai',
+    'model_id' => 'fal-ai/kling-video/o3/standard/image-to-video',
+    'pricing' => [
+        'minimum_app_credits_per_unit' => 12.0,
+    ],
+]
+```
+
+`ai-engine:pricing-audit` compares that floor against `credit_index * engine_rate` and warns when the configured charge is lower.
 
 ## Simulate a request
 
@@ -69,4 +87,24 @@ final_credits = 11.05
 
 Synchronous media services check credits before provider calls and only deduct after successful provider responses. Async FAL video jobs check credits before queue submission and deduct only after the provider accepts the queued job.
 
-Keep production pricing above provider cost by leaving provider rates at `1.0` or higher. Use `ai-engine:pricing-audit --json` in CI or deploy checks to detect accidental discounted or zero rates.
+For long-running async jobs, the package stores credit reservations in `ai_credit_reservations`. FAL async video reserves credits before provider submission, refunds the reservation if submission fails or the provider later reports failure, and finalizes it when the job completes.
+
+## Preview API
+
+```http
+POST /api/v1/ai/pricing/preview
+Content-Type: application/json
+
+{
+  "engine": "fal_ai",
+  "model": "fal-ai/kling-video/o3/standard/image-to-video",
+  "prompt": "Animate this product",
+  "parameters": {
+    "image_url": "https://example.test/product.png"
+  }
+}
+```
+
+The preview endpoint returns the same breakdown as `ai-engine:pricing-simulate` and never calls providers or deducts credits.
+
+Keep production pricing above provider cost by leaving provider rates at `1.0` or higher. Use `ai-engine:pricing-audit --fail-on-warning` in CI or deploy checks to detect accidental discounted or zero rates.

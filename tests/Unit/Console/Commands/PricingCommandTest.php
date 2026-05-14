@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Tests\Unit\Console\Commands;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Models\AIModel;
 use LaravelAIEngine\Tests\TestCase;
 
 class PricingCommandTest extends TestCase
@@ -38,6 +39,44 @@ class PricingCommandTest extends TestCase
         $this->assertContains('discounted_provider_rate', $payload['engine_rates']['fal_ai']['flags']);
         $this->assertContains('free_or_disabled_rate', $payload['engine_rates']['gemini']['flags']);
         $this->assertNotEmpty($payload['warnings']);
+    }
+
+    public function test_pricing_audit_can_fail_ci_when_warnings_exist(): void
+    {
+        Config::set('ai-engine.credits.engine_rates.gemini', 0.0);
+
+        $exitCode = Artisan::call('ai-engine:pricing-audit', [
+            '--json' => true,
+            '--fail-on-warning' => true,
+        ]);
+
+        $this->assertSame(1, $exitCode);
+    }
+
+    public function test_pricing_audit_warns_when_model_pricing_floor_exceeds_configured_charge(): void
+    {
+        Config::set('ai-engine.credits.engine_rates.fal_ai', 1.0);
+
+        AIModel::query()->create([
+            'provider' => 'fal_ai',
+            'model_id' => EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
+            'name' => 'Kling O3',
+            'capabilities' => ['video'],
+            'pricing' => ['minimum_app_credits_per_unit' => 12.0],
+            'supports_streaming' => false,
+            'supports_vision' => false,
+            'supports_function_calling' => false,
+            'supports_json_mode' => false,
+            'is_active' => true,
+            'is_deprecated' => false,
+        ]);
+
+        Artisan::call('ai-engine:pricing-audit', ['--json' => true]);
+
+        $payload = json_decode(Artisan::output(), true);
+
+        $this->assertSame(1, $payload['model_price_floors']['warnings_count']);
+        $this->assertStringContainsString('fal-ai/kling-video/o3/standard/image-to-video', $payload['warnings'][0]);
     }
 
     public function test_pricing_simulate_explains_fal_reference_image_charge(): void

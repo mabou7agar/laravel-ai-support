@@ -10,6 +10,7 @@ use LaravelAIEngine\Services\Billing\PricingInspectionService;
 class PricingAuditCommand extends Command
 {
     protected $signature = 'ai-engine:pricing-audit
+                            {--fail-on-warning : Return a failure exit code when warnings are present}
                             {--json : Output a JSON payload instead of tables}';
 
     protected $description = 'Audit configured AI engine rates, input media rates, and pricing warnings';
@@ -21,7 +22,7 @@ class PricingAuditCommand extends Command
         if ((bool) $this->option('json')) {
             $this->line(json_encode($audit, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
-            return self::SUCCESS;
+            return $this->exitCode($audit);
         }
 
         $this->info('AI pricing audit');
@@ -52,6 +53,16 @@ class PricingAuditCommand extends Command
             }
         }
 
-        return self::SUCCESS;
+        return $this->exitCode($audit);
+    }
+
+    /**
+     * @param array<string, mixed> $audit
+     */
+    private function exitCode(array $audit): int
+    {
+        return (bool) $this->option('fail-on-warning') && !empty($audit['warnings'])
+            ? self::FAILURE
+            : self::SUCCESS;
     }
 }

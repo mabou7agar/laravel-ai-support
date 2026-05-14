@@ -1,0 +1,30 @@
+meta {
+  name: Pricing Preview
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/pricing/preview
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "engine": "fal_ai",
+    "model": "fal-ai/kling-video/o3/standard/image-to-video",
+    "prompt": "Animate this product",
+    "parameters": {
+      "image_url": "https://example.test/product.png"
+    }
+  }
+}

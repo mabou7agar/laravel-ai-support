@@ -303,6 +303,55 @@ class CreditManagerTest extends TestCase
         $this->assertEquals($initialBalance - $creditsToDeduct, $remainingCredits['balance']);
     }
 
+    public function test_credit_reservation_can_be_reserved_finalized_and_refunded(): void
+    {
+        $this->creditManager->setCredits(
+            (string) $this->testUser->id,
+            100.0,
+            EngineEnum::FAL_AI,
+            EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO
+        );
+
+        $request = new AIRequest(
+            prompt: 'Animate this still image',
+            engine: EngineEnum::FAL_AI,
+            model: EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
+            parameters: ['start_image_url' => 'https://example.com/start.png'],
+            userId: (string) $this->testUser->id
+        );
+
+        $reservation = $this->creditManager->reserveCredits((string) $this->testUser->id, $request, metadata: [
+            'job_id' => 'fal-job-1',
+        ]);
+
+        $this->assertNotNull($reservation);
+        $this->assertSame('reserved', $reservation->status);
+        $this->assertEqualsWithDelta(11.05, (float) $reservation->amount, 0.0001);
+
+        $reservedCredits = $this->creditManager->getUserCredits(
+            (string) $this->testUser->id,
+            EngineEnum::FAL_AI,
+            EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO
+        );
+        $this->assertEqualsWithDelta(88.95, $reservedCredits['balance'], 0.0001);
+
+        $this->assertTrue($this->creditManager->finalizeCreditReservation($reservation->uuid));
+        $this->assertSame('finalized', $reservation->fresh()->status);
+        $this->assertFalse($this->creditManager->refundCreditReservation($reservation->uuid));
+
+        $secondReservation = $this->creditManager->reserveCredits((string) $this->testUser->id, $request);
+        $this->assertNotNull($secondReservation);
+        $this->assertTrue($this->creditManager->refundCreditReservation($secondReservation->uuid));
+        $this->assertSame('refunded', $secondReservation->fresh()->status);
+
+        $refundedCredits = $this->creditManager->getUserCredits(
+            (string) $this->testUser->id,
+            EngineEnum::FAL_AI,
+            EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO
+        );
+        $this->assertEqualsWithDelta(88.95, $refundedCredits['balance'], 0.0001);
+    }
+
     public function test_deduct_credits_throws_exception_for_insufficient_balance()
     {
         $lowCreditUser = $this->createTestUser([

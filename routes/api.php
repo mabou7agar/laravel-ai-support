@@ -11,6 +11,7 @@ use LaravelAIEngine\Http\Controllers\Api\AgentRunController;
 use LaravelAIEngine\Http\Controllers\Api\ModelRecommendationController;
 use LaravelAIEngine\Http\Controllers\DataCollectorController;
 use LaravelAIEngine\Http\Controllers\Api\ProviderToolController;
+use LaravelAIEngine\Http\Controllers\Api\PricingController;
 use LaravelAIEngine\Http\Controllers\AutonomousCollectorController;
 use LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware;
 use LaravelAIEngine\Http\Middleware\StandardizeApiResponseMiddleware;
@@ -185,6 +186,9 @@ Route::prefix('api/v1/ai')
     ->middleware($resolveApiMiddleware('generate'))
     ->name('ai-engine.catalog.api.')
     ->group(function () {
+        Route::post('/pricing/preview', [PricingController::class, 'preview'])
+            ->name('pricing.preview');
+
         Route::get('/models', [EngineCatalogController::class, 'models'])
             ->name('models');
 

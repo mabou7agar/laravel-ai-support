@@ -50,15 +50,32 @@ class FalAsyncVideoService
         $webhookUrl = $this->buildWebhookUrl($jobId, $webhookToken, $options);
         $creditsEnabled = $this->shouldProcessCredits() && config('ai-engine.credits.enabled', false) && $request->getUserId();
         $creditsUsed = $this->creditManager->calculateCredits($request);
+        $reservation = null;
 
         if ($creditsEnabled && !$this->creditManager->hasCredits($request->getUserId(), $request)) {
             throw new InsufficientCreditsException('Insufficient credits for this request');
         }
 
-        $submission = $driver->submitVideoAsync($request, $webhookUrl);
-
         if ($creditsEnabled) {
-            $this->creditManager->deductCredits($request->getUserId(), $request, $creditsUsed);
+            $reservation = $this->creditManager->reserveCredits(
+                $request->getUserId(),
+                $request,
+                $creditsUsed,
+                ['job_id' => $jobId, 'workflow' => 'fal_async_video']
+            );
+        }
+
+        try {
+            $submission = $driver->submitVideoAsync($request, $webhookUrl);
+        } catch (\Throwable $e) {
+            if ($reservation !== null) {
+                $this->creditManager->refundCreditReservation($reservation->uuid, [
+                    'reason' => 'provider_submission_failed',
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            throw $e;
         }
 
         $metadata = array_filter([
@@ -84,6 +101,8 @@ class FalAsyncVideoService
             'credits' => [
                 'charged' => (bool) $creditsEnabled,
                 'amount' => $creditsEnabled ? $creditsUsed : 0.0,
+                'status' => $creditsEnabled ? ($reservation !== null ? 'reserved' : 'charged') : 'skipped',
+                'reservation_uuid' => $reservation?->uuid,
             ],
         ], static fn ($value): bool => $value !== null);
 
@@ -145,6 +164,7 @@ class FalAsyncVideoService
         ]);
 
         if ($queueStatus === 'COMPLETED' && !empty($providerStatus['error'])) {
+            $metadata = $this->refundReservation($metadata, 'provider_completed_with_error');
             $this->jobStatusTracker->updateStatus($jobId, 'failed', $metadata);
 
             return $this->jobStatusTracker->getStatus($jobId);
@@ -214,6 +234,7 @@ class FalAsyncVideoService
         if ($webhookStatus !== 'OK') {
             $metadata['provider']['error'] = $payload['error'] ?? 'FAL async job failed.';
             $metadata['provider']['payload'] = $payload['payload'] ?? null;
+            $metadata = $this->refundReservation($metadata, 'webhook_failure');
             $this->jobStatusTracker->updateStatus($jobId, 'failed', $metadata);
 
             return $this->jobStatusTracker->getStatus($jobId);
@@ -250,9 +271,31 @@ class FalAsyncVideoService
 
         $metadata['provider']['payload'] = $payload;
         $metadata['response'] = $this->serializeResponse($response);
+        $metadata = $this->finalizeReservation($metadata);
         $this->jobStatusTracker->updateStatus($jobId, 'completed', $metadata);
 
         return $this->jobStatusTracker->getStatus($jobId);
+    }
+
+    private function finalizeReservation(array $metadata): array
+    {
+        $uuid = $metadata['credits']['reservation_uuid'] ?? null;
+        if (is_string($uuid) && $this->creditManager->finalizeCreditReservation($uuid, ['reason' => 'async_job_completed'])) {
+            $metadata['credits']['status'] = 'finalized';
+        }
+
+        return $metadata;
+    }
+
+    private function refundReservation(array $metadata, string $reason): array
+    {
+        $uuid = $metadata['credits']['reservation_uuid'] ?? null;
+        if (is_string($uuid) && $this->creditManager->refundCreditReservation($uuid, ['reason' => $reason])) {
+            $metadata['credits']['status'] = 'refunded';
+            $metadata['credits']['refunded'] = true;
+        }
+
+        return $metadata;
     }
 
     private function rebuildRequest(array $request): AIRequest

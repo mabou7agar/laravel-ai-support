@@ -520,8 +520,11 @@ Use the pricing audit and dry-run commands before enabling live traffic:
 
 ```bash
 php artisan ai-engine:pricing-audit --json
+php artisan ai-engine:pricing-audit --fail-on-warning
 php artisan ai-engine:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video --parameters='{"image_url":"https://example.test/product.png"}'
 ```
+
+Apps can also call `POST /api/v1/ai/pricing/preview` with `engine`, `model`, `prompt`, and `parameters` to show the same credit breakdown before making a live provider request.
 
 When direct requests omit `engine`, the package can resolve the provider from the requested model and configured availability. By default it prefers the model's native provider first, then OpenRouter-compatible fallbacks. Tune this with `AI_ENGINE_REQUEST_PROVIDER_PRIORITY`.
 
