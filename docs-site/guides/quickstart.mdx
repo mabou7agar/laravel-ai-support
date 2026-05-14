@@ -58,6 +58,8 @@ $response = Engine::engine('openai')
 php artisan ai-engine:test-real-agent --script=minimal --json
 ```
 
+Use `--script-file=path/to/agent-flow.json` when the smoke test should exercise your own app-specific workflow.
+
 Expected:
 
 - `successful_turns` > 0

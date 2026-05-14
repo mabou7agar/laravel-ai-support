@@ -162,6 +162,8 @@ AI_ENGINE_INJECT_USER_CONTEXT=true
 ```env
 AI_ENGINE_DEMO_USER_ID=
 AI_ENGINE_ENABLE_DEMO_ROUTES=false
+AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED=false
+AI_ENGINE_AUTH_ROUTES_ENABLED=false
 ```
 
 Demo routes, legacy chat routes, and package auth helper routes are disabled by default. Enable demo routes only inside the demo application. Host applications should pass authenticated user, tenant, workspace, and other scope values through request payloads, `AIScopeOptionsService`, middleware, or model config hooks instead of relying on package fallbacks.

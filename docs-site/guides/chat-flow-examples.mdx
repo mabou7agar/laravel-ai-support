@@ -7,11 +7,11 @@ description: Real conversation patterns and expected system behavior.
 
 ### User
 
-`list invoices`
+`list recent records`
 
 ### Expected system behavior
 
-- tool executes invoice list query
+- tool executes the configured list/search query
 - result gets cached in conversation context/session state
 
 ### User follow-up
@@ -27,14 +27,14 @@ description: Real conversation patterns and expected system behavior.
 
 ### User
 
-`create invoice for acme`
+`create return request for Acme`
 
 ### Expected behavior
 
-- identify missing required fields (date/items/amount)
+- identify missing required fields from the app's action schema
 - start collector flow
 - ask only for missing fields
-- call `create_invoice` tool after completion
+- call the configured write tool after completion
 
 ## Example 3: Local or Remote Ownership
 
@@ -63,7 +63,7 @@ description: Real conversation patterns and expected system behavior.
 
 ### User
 
-`create invoice for google glass`
+`create return request for Alpha Laptop`
 
 ### Expected behavior
 
@@ -74,9 +74,10 @@ description: Real conversation patterns and expected system behavior.
 ## Run These As Canary
 
 ```bash
-php artisan ai-engine:test-real-agent --message="list invoices" --message="what is the status of the first one?" --json
+php artisan ai-engine:test-real-agent --message="list recent records" --message="what is the status of the first one?" --json
 php artisan ai-engine:test-real-agent --message="create chart of account" --json
 php artisan ai-engine:test-real-agent --script=followup --json
+php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 ```
 
 For HTTP copy-paste requests/responses, see `guides/copy-paste-playbooks`.

@@ -30,7 +30,8 @@ php artisan ai-engine:node-list
 ```bash
 php artisan ai-engine:test-real-agent --script=minimal --json
 php artisan ai-engine:test-real-agent --script=followup --json
-php artisan ai-engine:test-real-agent --message="list invoices" --message="what is status of first one" --json
+php artisan ai-engine:test-real-agent --message="list recent records" --message="what is status of first one" --json
+php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 ```
 
 ## 4) Infrastructure Checks

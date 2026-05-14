@@ -32,7 +32,7 @@ curl -sS "${AI_BASE_URL}/api/v1/rag/chat" \
   -H "${JSON_HEADER}" \
   -H "${AUTH_HEADER}" \
   -d '{
-    "message":"list invoices",
+    "message":"list recent records",
     "session_id":"pb-list-1001",
     "engine":"openai",
     "model":"gpt-4o-mini",
@@ -156,7 +156,7 @@ curl -sS "${AI_BASE_URL}/api/v1/autonomous-collector/start" \
   -d '{
     "config_name":"invoice",
     "session_id":"pb-ac-4001",
-    "initial_message":"Create invoice for ACME with 2 Macbook Pro items"
+    "initial_message":"Create return request for ACME with 2 Alpha Laptop items"
   }'
 ```
 
@@ -205,7 +205,7 @@ php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --pr
 
 ```bash
 php artisan ai-engine:test-real-agent \
-  --message="list invoices" \
+  --message="list recent records" \
   --message="show details of the first one" \
   --json
 ```

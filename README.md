@@ -140,6 +140,7 @@ php artisan ai-engine:test-everything --profile=all --root-path=/path/to/root/ap
 php artisan ai-engine:backend-status
 php artisan ai-engine:model-status "App\\Models\\Project"
 php artisan ai-engine:test-real-agent --script=followup --json
+php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 php artisan ai-engine:infra-health
 ```
 
@@ -153,6 +154,8 @@ php artisan ai-engine:infra-health
 `ai-engine:backend-status` shows the effective read backend and whether Neo4j is active or falling back.
 
 `ai-engine:model-status "App\\Models\\Project"` shows whether a model is ready for indexing, graph publishing, and chat retrieval. Use `--id=<record>` to inspect a real row instead of a blank instance, which is useful when a model only becomes indexable after required attributes are populated.
+
+`ai-engine:test-real-agent` includes only generic built-in scripts: `minimal` and `followup`. Use repeated `--message` options for quick checks, and use `--script-file` for app-specific business flows.
 
 ### Federation (Safe Flow)
 
@@ -363,11 +366,11 @@ use LaravelAIEngine\Services\Actions\ActionPayloadExtractor;
 
 $patch = app(ActionPayloadExtractor::class)->extract(
     action: $actionDefinition,
-    message: '5 Macbook Pro and 4 iPhone',
+    message: '5 Alpha Laptop and 4 Beta Phone',
     currentPayload: $draftPayload,
     recentHistory: $history,
     options: [
-        'instructions' => 'For invoices, split natural item phrases into line items.',
+        'instructions' => 'Split natural item phrases into structured line items.',
     ],
 );
 ```

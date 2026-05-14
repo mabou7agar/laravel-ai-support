@@ -18,7 +18,23 @@ php artisan optimize:clear
 php artisan ai-engine:test-package
 php artisan ai-engine:test-nodes --quick
 php artisan ai-engine:test-real-agent --script=minimal --json
+php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 ```
+
+`ai-engine:test-real-agent` keeps package built-ins generic. Use `--message` for quick checks and `--script-file` for app-specific business flows.
+
+## Generic Package Defaults
+
+Recent releases removed package-core demo assumptions:
+
+- demo routes are disabled unless `AI_ENGINE_ENABLE_DEMO_ROUTES=true`
+- legacy chat compatibility routes are disabled unless `AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED=true`
+- package auth helper routes are disabled unless `AI_ENGINE_AUTH_ROUTES_ENABLED=true`
+- request/user handling no longer falls back to a demo user id
+- workspace/tenant defaults should come from `AIScopeOptionsService`, request options, middleware, or model config hooks
+- action entities, skill aliases, pending entity terms, file-analysis suggestions, and node domain maps are app configuration
+
+If your app relied on package demo routes or implicit user/workspace fallbacks, enable the route flags temporarily and migrate to app-owned controllers and scoped request options.
 
 ## Breaking Changes
 

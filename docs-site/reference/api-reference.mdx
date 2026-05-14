@@ -140,7 +140,7 @@ Use this contract for infrastructure, not frontend apps.
 
 ```json
 {
-  "message": "list invoices",
+  "message": "list recent records",
   "session_id": "session-123",
   "engine": "openai",
   "model": "gpt-4o-mini",
@@ -231,7 +231,7 @@ curl -X POST https://your-app.test/api/v1/agent/chat \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "message":"list invoices",
+    "message":"list recent records",
     "session_id":"api-ref-1001",
     "memory":true,
     "actions":true,

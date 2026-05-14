@@ -39,8 +39,25 @@ Use `php artisan ai-engine:model-status "App\\Models\\Project"` to inspect wheth
 ```bash
 php artisan ai-engine:test-real-agent --script=minimal --json
 php artisan ai-engine:test-real-agent --script=followup --report-feedback --json
-php artisan ai-engine:test-real-agent --message="list invoices" --message="what is status of first one" --json
+php artisan ai-engine:test-real-agent --message="list recent records" --message="what is status of first one" --json
+php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 ```
+
+Built-in scripts are intentionally generic: `minimal` and `followup`. Put domain-specific live flows in a script file instead of expecting package built-ins.
+
+Script files may be JSON:
+
+```json
+{
+  "messages": [
+    "start return flow",
+    "use request R-100",
+    "confirm"
+  ]
+}
+```
+
+They may also be a JSON list or a newline-delimited text file.
 
 ## Data Collector
 

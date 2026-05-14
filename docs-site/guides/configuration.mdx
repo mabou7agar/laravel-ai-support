@@ -26,6 +26,10 @@ AI_ENGINE_INJECT_USER_CONTEXT=true
 AI_ENGINE_REMOTE_NODE_MIGRATION_GUARD=true
 AI_ENGINE_QDRANT_SELF_CHECK_ENABLED=true
 AI_ENGINE_STARTUP_HEALTH_GATE_ENABLED=true
+
+AI_ENGINE_ENABLE_DEMO_ROUTES=false
+AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED=false
+AI_ENGINE_AUTH_ROUTES_ENABLED=false
 ```
 
 For direct generation requests that pass only a `model`, keep `native` first if you want direct-provider preference, then list aggregator or fallback providers after it. Example:
@@ -35,6 +39,27 @@ AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini
 ```
 
 If the native provider is not configured or the model is unavailable there, the resolver walks the remaining providers in order and still applies normal credit checks against the final chosen provider/model.
+
+Demo routes, legacy chat compatibility routes, and package auth helper routes are opt-in. Production apps should keep them disabled and expose their own versioned controllers, middleware, auth, tenant, and workspace policies.
+
+## Generic Routing Profile
+
+Keep domain language in app configuration, not package core:
+
+```php
+'skills' => [
+    'intent_aliases' => [
+        'refund' => ['refund', 'return', 'credit memo'],
+    ],
+],
+
+'routing_classifier' => [
+    'action_entities' => ['refund', 'shipment', 'ticket'],
+    'pending_entity_terms' => ['record', 'request', 'ticket'],
+],
+```
+
+Use `AIScopeOptionsService`, request options, middleware, or model config hooks to provide `tenant_id`, `workspace_id`, user id, and ownership defaults. The package does not fall back to a demo user or a hardcoded workspace.
 
 ## Multi-App Federation Profile
 
