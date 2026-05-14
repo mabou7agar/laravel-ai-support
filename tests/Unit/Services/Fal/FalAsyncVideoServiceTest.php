@@ -6,6 +6,7 @@ use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\Services\Fal\FalAsyncVideoService;
@@ -151,5 +152,94 @@ class FalAsyncVideoServiceTest extends TestCase
         $this->assertSame('completed', $status['status']);
         $this->assertSame('https://example.com/out.mp4', $status['metadata']['response']['metadata']['video']['url']);
         $this->assertArrayNotHasKey('token', $publicStatus['metadata']['webhook']);
+    }
+
+    public function test_submit_checks_credits_before_async_provider_submission(): void
+    {
+        $user = $this->createTestUser([
+            'entity_credits' => [
+                'fal_ai' => [
+                    EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO => ['balance' => 1.0, 'is_unlimited' => false],
+                ],
+            ],
+        ]);
+
+        $request = new AIRequest(
+            prompt: 'Animate this still image',
+            engine: 'fal_ai',
+            model: EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
+            parameters: ['start_image_url' => 'https://example.com/start.png'],
+            userId: (string) $user->id
+        );
+
+        $workflow = Mockery::mock(FalMediaWorkflowService::class);
+        $workflow->shouldReceive('prepareRequest')->once()->andReturn($request);
+
+        $driver = Mockery::mock(FalAIEngineDriver::class);
+        $driver->shouldReceive('validateRequest')->once()->with($request);
+        $driver->shouldReceive('submitVideoAsync')->never();
+
+        $registry = Mockery::mock(DriverRegistry::class);
+        $registry->shouldReceive('resolve')->once()->andReturn($driver);
+
+        $service = new FalAsyncVideoService(
+            $workflow,
+            $registry,
+            app(JobStatusTracker::class),
+            app(CreditManager::class)
+        );
+
+        $this->expectException(InsufficientCreditsException::class);
+
+        $service->submit('Animate this still image', [], (string) $user->id);
+    }
+
+    public function test_submit_does_not_deduct_credits_when_async_provider_submission_fails(): void
+    {
+        $user = $this->createTestUser([
+            'entity_credits' => [
+                'fal_ai' => [
+                    EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO => ['balance' => 100.0, 'is_unlimited' => false],
+                ],
+            ],
+        ]);
+
+        $request = new AIRequest(
+            prompt: 'Animate this still image',
+            engine: 'fal_ai',
+            model: EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
+            parameters: ['start_image_url' => 'https://example.com/start.png'],
+            userId: (string) $user->id
+        );
+
+        $workflow = Mockery::mock(FalMediaWorkflowService::class);
+        $workflow->shouldReceive('prepareRequest')->once()->andReturn($request);
+
+        $driver = Mockery::mock(FalAIEngineDriver::class);
+        $driver->shouldReceive('validateRequest')->once()->with($request);
+        $driver->shouldReceive('submitVideoAsync')
+            ->once()
+            ->andThrow(new \RuntimeException('fal queue failed'));
+
+        $registry = Mockery::mock(DriverRegistry::class);
+        $registry->shouldReceive('resolve')->once()->andReturn($driver);
+
+        $service = new FalAsyncVideoService(
+            $workflow,
+            $registry,
+            app(JobStatusTracker::class),
+            app(CreditManager::class)
+        );
+
+        try {
+            $service->submit('Animate this still image', [], (string) $user->id);
+            $this->fail('Expected provider failure to be rethrown.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('fal queue failed', $exception->getMessage());
+        }
+
+        $user->refresh();
+        $credits = $user->entity_credits['fal_ai'][EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO]['balance'];
+        $this->assertEqualsWithDelta(100.0, $credits, 0.0001);
     }
 }

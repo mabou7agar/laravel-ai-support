@@ -17,12 +17,14 @@ class AgentManifestDoctor
     }
 
     /**
-     * @return array{ok:bool,issues:array<int,array<string,mixed>>,summary:array<string,int>}
+     * @return array<string, mixed>
      */
     public function inspect(): array
     {
         $issues = [];
         $skills = $this->skillRegistry->skills(includeDisabled: true);
+        $actions = $this->actionRegistry->all();
+        $tools = $this->toolRegistry->getToolDefinitions();
         $seen = [];
 
         foreach ($skills as $skill) {
@@ -67,8 +69,36 @@ class AgentManifestDoctor
             'issues' => $issues,
             'summary' => [
                 'skills' => count($skills),
+                'actions' => count($actions),
+                'tools' => count($tools),
                 'errors' => $errors,
                 'warnings' => $warnings,
+            ],
+            'inventory' => [
+                'skills' => array_values(array_map(static fn ($skill): string => $skill->id, $skills)),
+                'actions' => array_values(array_keys($actions)),
+                'tools' => array_values(array_map(
+                    static fn (array $tool): string => (string) ($tool['name'] ?? ''),
+                    $tools
+                )),
+            ],
+            'developer_commands' => [
+                'scaffold' => [
+                    'ai-engine:init',
+                    'ai-engine:make-agent',
+                    'ai-engine:make-tool',
+                    'ai-engine:scaffold skill',
+                ],
+                'diagnostics' => [
+                    'ai-engine:manifest:doctor',
+                    'ai-engine:skills:discover',
+                    'ai-engine:skills:test',
+                    'ai-engine:test-orchestration',
+                ],
+                'pricing' => [
+                    'ai-engine:pricing-audit',
+                    'ai-engine:pricing-simulate',
+                ],
             ],
         ];
     }

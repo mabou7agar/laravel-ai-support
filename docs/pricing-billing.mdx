@@ -1,0 +1,72 @@
+---
+title: Pricing And Billing
+description: Audit AI engine rates, simulate credit charges, and verify billing guard behavior before live provider calls.
+---
+
+# Pricing And Billing
+
+The package charges in app credits by calculating provider engine credits first, then applying the configured engine rate.
+
+```text
+final_credits = (base_engine_credits + additional_input_engine_credits) * engine_rate
+```
+
+`base_engine_credits` comes from the model `credit_index` and the request unit count. Text uses words, images use image count, video uses video count, audio uses minutes, and unknown units default to one.
+
+`additional_input_engine_credits` covers provider input/reference media that is not the primary output unit. FAL uses this for reference images, start/end images, edit images, and similar media inputs.
+
+## Default rates
+
+| Provider | Env | Default | Meaning |
+| --- | --- | ---: | --- |
+| OpenAI | `AI_OPENAI_RATE` | `2.0` | 2 app credits per provider engine credit |
+| Anthropic | `AI_ANTHROPIC_RATE` | `3.0` | 3 app credits per provider engine credit |
+| Gemini | `AI_GEMINI_RATE` | `1.2` | 20% default margin |
+| FAL | `AI_FAL_AI_RATE` | `1.3` | 30% default margin |
+| OpenRouter | `AI_OPENROUTER_RATE` | `2.5` | 2.5 app credits per provider engine credit |
+| NVIDIA NIM | `AI_NVIDIA_NIM_RATE` | `1.5` | 1.5 app credits per provider engine credit |
+
+FAL input media defaults:
+
+| Input | Env | Default |
+| --- | --- | ---: |
+| Generic input image | `AI_FAL_INPUT_IMAGE_CREDIT_RATE` | `0.25` |
+| Edit input image | `AI_FAL_EDIT_INPUT_IMAGE_CREDIT_RATE` | `0.5` |
+| Kling video input image | `AI_FAL_VIDEO_INPUT_IMAGE_CREDIT_RATE` | `0.5` |
+| Kling reference image | `AI_FAL_VIDEO_REFERENCE_IMAGE_CREDIT_RATE` | `0.5` |
+| Seedance input image | `AI_FAL_SEEDANCE_INPUT_IMAGE_CREDIT_RATE` | `0.75` |
+| Seedance reference image | `AI_FAL_SEEDANCE_REFERENCE_IMAGE_CREDIT_RATE` | `0.75` |
+
+## Audit pricing
+
+```bash
+php artisan ai-engine:pricing-audit
+php artisan ai-engine:pricing-audit --json
+```
+
+The audit command reports engine rates, env override names, additional input media rates, and warnings for zero or discounted provider rates.
+
+## Simulate a request
+
+```bash
+php artisan ai-engine:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video \
+  --prompt="Animate this product" \
+  --parameters='{"image_url":"https://example.test/product.png"}'
+```
+
+This command does not call a provider and does not deduct credits. It returns the base engine credits, additional input credits, engine rate, total engine credits, and final app credits.
+
+For the default Kling image-to-video example:
+
+```text
+base_engine_credits = 8.0
+additional_input_engine_credits = 0.5
+engine_rate = 1.3
+final_credits = 11.05
+```
+
+## Guard behavior
+
+Synchronous media services check credits before provider calls and only deduct after successful provider responses. Async FAL video jobs check credits before queue submission and deduct only after the provider accepts the queued job.
+
+Keep production pricing above provider cost by leaving provider rates at `1.0` or higher. Use `ai-engine:pricing-audit --json` in CI or deploy checks to detect accidental discounted or zero rates.

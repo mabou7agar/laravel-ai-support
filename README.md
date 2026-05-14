@@ -516,6 +516,13 @@ FAL output units are charged through the model `credit_index` and engine rate. T
 
 Gemini defaults to `AI_GEMINI_RATE=1.2`, giving Gemini usage a 20% margin by default. Override `AI_FAL_AI_RATE` or `AI_GEMINI_RATE` in the host app when your subscription tiers need different margins.
 
+Use the pricing audit and dry-run commands before enabling live traffic:
+
+```bash
+php artisan ai-engine:pricing-audit --json
+php artisan ai-engine:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video --parameters='{"image_url":"https://example.test/product.png"}'
+```
+
 When direct requests omit `engine`, the package can resolve the provider from the requested model and configured availability. By default it prefers the model's native provider first, then OpenRouter-compatible fallbacks. Tune this with `AI_ENGINE_REQUEST_PROVIDER_PRIORITY`.
 
 For text generation you can also omit both `engine` and `model` and send a simple preference like `cost`, `speed`, `performance`, or `quality`. The package resolves a suitable model/provider first, then applies the normal credit checks against the final route.

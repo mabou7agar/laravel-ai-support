@@ -69,6 +69,18 @@ php artisan ai-engine:manifest:doctor --json
 ```
 
 The doctor reports disabled draft skills, non-executable skills, and skills that reference missing actions or tools.
+JSON output also includes an `inventory` section with discovered skill, action, and tool names plus `developer_commands` for the usual scaffold, diagnostic, and pricing dry-run commands. Use it when wiring a host app so you can confirm the AI can see the same tools that your code registered.
+
+Recommended development loop:
+
+```bash
+php artisan ai-engine:init
+php artisan ai-engine:make-tool LookupCustomer
+php artisan ai-engine:scaffold skill CreateInvoice
+php artisan ai-engine:skills:discover --write
+php artisan ai-engine:manifest:doctor --json
+php artisan ai-engine:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video --parameters='{"image_url":"https://example.test/product.png"}'
+```
 
 Use the orchestration validator when skills also link to sub-agents through `metadata.sub_agents`:
 

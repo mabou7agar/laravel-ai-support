@@ -140,13 +140,46 @@ class CreditManager
      */
     public function calculateCredits(AIRequest $request): float
     {
+        return $this->calculateCreditBreakdown($request)['final_credits'];
+    }
+
+    /**
+     * Calculate a transparent credit breakdown for audits, dry-runs, and UI previews.
+     *
+     * @return array{
+     *     engine:string,
+     *     model:string,
+     *     calculation_method:string,
+     *     input_count:float,
+     *     credit_index:float,
+     *     base_engine_credits:float,
+     *     additional_input_engine_credits:float,
+     *     total_engine_credits:float,
+     *     engine_rate:float,
+     *     final_credits:float
+     * }
+     */
+    public function calculateCreditBreakdown(AIRequest $request): array
+    {
         $inputCount = $this->getInputCount($request);
         $creditIndex = $request->model->creditIndex();
+        $baseEngineCredits = $inputCount * $creditIndex;
+        $additionalInputCredits = $this->getAdditionalInputUnitEngineCredits($request);
+        $totalEngineCredits = $baseEngineCredits + $additionalInputCredits;
         $engineRate = $this->getEngineRate($request->engine);
 
-        // Calculate engine credits then convert to MyCredits
-        $engineCredits = ($inputCount * $creditIndex) + $this->getAdditionalInputUnitEngineCredits($request);
-        return $engineCredits * $engineRate;
+        return [
+            'engine' => $request->engine->value,
+            'model' => $request->model->value,
+            'calculation_method' => $request->model->calculationMethod(),
+            'input_count' => round($inputCount, 8),
+            'credit_index' => round($creditIndex, 8),
+            'base_engine_credits' => round($baseEngineCredits, 8),
+            'additional_input_engine_credits' => round($additionalInputCredits, 8),
+            'total_engine_credits' => round($totalEngineCredits, 8),
+            'engine_rate' => round($engineRate, 8),
+            'final_credits' => round($totalEngineCredits * $engineRate, 8),
+        ];
     }
 
     /**

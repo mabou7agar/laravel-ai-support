@@ -25,8 +25,16 @@ class AgentManifestDoctorCommand extends Command
 
         $summary = $report['summary'];
         $this->info("Skills: {$summary['skills']}");
+        $this->line("Actions: {$summary['actions']}");
+        $this->line("Tools: {$summary['tools']}");
         $this->line("Errors: {$summary['errors']}");
         $this->line("Warnings: {$summary['warnings']}");
+
+        $this->newLine();
+        $this->info('Developer commands');
+        foreach ($report['developer_commands'] as $group => $commands) {
+            $this->line($group.': '.implode(', ', $commands));
+        }
 
         if ($report['issues'] === []) {
             $this->newLine();

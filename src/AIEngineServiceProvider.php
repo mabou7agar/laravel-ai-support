@@ -216,6 +216,8 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\SyncAIModelsCommand::class,
                 Console\Commands\ListAIModelsCommand::class,
                 Console\Commands\UsageReportCommand::class,
+                Console\Commands\PricingAuditCommand::class,
+                Console\Commands\PricingSimulateCommand::class,
                 Console\Commands\ClearCacheCommand::class,
                 Console\Commands\AnalyticsReportCommand::class,
                 Console\Commands\FailoverStatusCommand::class,
