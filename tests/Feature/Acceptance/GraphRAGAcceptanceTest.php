@@ -9,7 +9,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\Drivers\DriverRegistry;
-use LaravelAIEngine\Services\RAG\IntelligentRAGService;
+use LaravelAIEngine\Services\RAG\RAGChatService;
 use LaravelAIEngine\Tests\Models\User;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -198,7 +198,7 @@ class GraphRAGAcceptanceTest extends UnitTestCase
                 'gpt-4o-mini'
             ));
 
-        $service = new IntelligentRAGService(
+        $service = new RAGChatService(
             $this->app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
             $ai,
             $this->createMock(DriverRegistry::class),

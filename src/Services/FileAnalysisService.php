@@ -31,7 +31,7 @@ class FileAnalysisService
      * @param string $sessionId Session identifier
      * @param string $engine AI engine (openai, anthropic, etc.)
      * @param string $model AI model
-     * @param bool $useIntelligentRAG Enable RAG
+     * @param bool $useRag Enable RAG
      * @param array $ragCollections RAG collections to search
      * @param mixed $userId User ID
      * @return array Complete analysis result
@@ -42,7 +42,7 @@ class FileAnalysisService
         string $sessionId,
         string $engine = 'openai',
         string $model = 'gpt-4o',
-        bool $useIntelligentRAG = true,
+        bool $useRag = true,
         array $ragCollections = [],
         $userId = null
     ): array {
@@ -52,7 +52,7 @@ class FileAnalysisService
         if ($isImage) {
             return $this->analyzeImage($file, $message, $sessionId, $engine, $userId);
         } else {
-            return $this->analyzeDocument($file, $message, $sessionId, $engine, $model, $useIntelligentRAG, $ragCollections, $userId);
+            return $this->analyzeDocument($file, $message, $sessionId, $engine, $model, $useRag, $ragCollections, $userId);
         }
     }
 
@@ -177,7 +177,7 @@ class FileAnalysisService
         string $sessionId,
         string $engine,
         string $model,
-        bool $useIntelligentRAG,
+        bool $useRag,
         array $ragCollections,
         $userId
     ): array {
@@ -215,7 +215,7 @@ class FileAnalysisService
             model: $model,
             useMemory: true,
             useActions: false,
-            useIntelligentRAG: $useIntelligentRAG,
+            useRag: $useRag,
             ragCollections: $ragCollections,
             userId: $userId
         );

@@ -1,28 +1,38 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Agent\Handlers;
 
-use LaravelAIEngine\DTOs\AgentResponse;
-use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
-use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
+use LaravelAIEngine\DTOs\AutonomousCollectorSessionState;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\Collectors\AutonomousCollectorTurnProcessor;
+use LaravelAIEngine\Services\Agent\Collectors\CollectorConfigResolver;
+use LaravelAIEngine\Services\Agent\Collectors\CollectorConfirmationService;
+use LaravelAIEngine\Services\Agent\Collectors\CollectorInputSchemaBuilder;
+use LaravelAIEngine\Services\Agent\Collectors\CollectorPromptBuilder;
+use LaravelAIEngine\Services\Agent\Collectors\CollectorReroutePolicy;
+use LaravelAIEngine\Services\Agent\Collectors\CollectorSummaryRenderer;
+use LaravelAIEngine\Services\Agent\Collectors\CollectorToolCallParser;
+use LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
-/**
- * Handler for Autonomous Collector sessions
- *
- * Integrates AutonomousCollector with AgentOrchestrator so that:
- * 1. Active collector sessions are automatically detected
- * 2. Messages are routed to the collector
- * 3. State is managed through UnifiedActionContext
- */
 class AutonomousCollectorHandler implements MessageHandlerInterface
 {
     public function __construct(
-        protected AutonomousCollectorService $collectorService,
-        protected ?LocaleResourceService $localeResources = null
+        protected AutonomousCollectorSessionService $collectorService,
+        protected ?LocaleResourceService $localeResources = null,
+        protected ?CollectorConfigResolver $configResolver = null,
+        protected ?AutonomousCollectorTurnProcessor $turnProcessor = null,
+        protected ?CollectorConfirmationService $confirmationService = null,
+        protected ?CollectorSummaryRenderer $summaryRenderer = null,
+        protected ?CollectorInputSchemaBuilder $inputSchemaBuilder = null,
+        protected ?CollectorPromptBuilder $promptBuilder = null,
+        protected ?CollectorToolCallParser $parser = null,
+        protected ?CollectorReroutePolicy $reroutePolicy = null,
     ) {
     }
 
@@ -31,25 +41,22 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         UnifiedActionContext $context,
         array $options = []
     ): AgentResponse {
-        $sessionId = $context->sessionId;
         $action = $options['action'] ?? 'continue_autonomous_collector';
 
         Log::channel('ai-engine')->info('AutonomousCollectorHandler processing', [
-            'session_id' => $sessionId,
+            'session_id' => $context->sessionId,
             'action' => $action,
             'message' => substr($message, 0, 100),
         ]);
 
-        // Check if this is starting a new collector
         if ($action === 'start_autonomous_collector') {
             return $this->handleStartCollector($message, $context, $options);
         }
 
-        // Continuing existing collector
-        $collectorState = $context->get('autonomous_collector');
-
-        if (!$collectorState) {
+        $rawState = $context->get('autonomous_collector');
+        if (!is_array($rawState)) {
             Log::channel('ai-engine')->warning('AutonomousCollectorHandler called without active collector');
+
             return AgentResponse::failure(
                 message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.no_active_session')
                     ?: 'No active collector session.',
@@ -57,20 +64,14 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             );
         }
 
-        // Get the config from registry (static registry persists across requests)
-        $configName = $collectorState['config_name'] ?? null;
-        $config = $configName ? AutonomousCollectorRegistry::getConfig($configName) : null;
+        $state = AutonomousCollectorSessionState::fromArray($rawState);
+        $config = $this->configResolver()->resolve($state);
 
-        // Fallback to service's registered config (for backward compatibility)
-        if (!$config && $configName) {
-            $config = $this->collectorService->getRegisteredConfig($configName);
-        }
-
-        if (!$config) {
+        if (!$config instanceof AutonomousCollectorConfig) {
             Log::channel('ai-engine')->error('Collector config not found', [
-                'config_name' => $configName,
-                'available_configs' => array_keys(AutonomousCollectorRegistry::getConfigs()),
+                'config_name' => $state->configName,
             ]);
+
             return AgentResponse::failure(
                 message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.config_not_found')
                     ?: 'Collector configuration not found.',
@@ -78,831 +79,160 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
             );
         }
 
-        // Process the message through the collector
-        $response = $this->processCollectorMessage($sessionId, $message, $config, $context);
-
-        // Update context state based on response
-        $this->updateContextState($context, $response);
-
-        return $response;
+        return $this->turnProcessor()->process($context->sessionId, $message, $config, $state, $context);
     }
 
-    /**
-     * Handle starting a new autonomous collector
-     */
     protected function handleStartCollector(string $message, UnifiedActionContext $context, array $options = []): AgentResponse
     {
-        // First check if the orchestrator already supplied a collector match.
-        $match = $options['collector_match'] ?? null;
+        $match = $this->configResolver()->resolveStartMatch($message, $options['collector_match'] ?? null);
 
-        // Fallback to finding config if not passed (shouldn't happen normally)
-        if (!$match) {
-            $match = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::findConfigForMessage($message);
-        }
-
-        if ($match) {
-            $config = $match['config'] ?? null;
-            if (!$config instanceof AutonomousCollectorConfig) {
-                return AgentResponse::failure(
-                    message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.config_not_found')
-                        ?: 'Collector configuration not found.',
-                    context: $context
-                );
-            }
-
-            Log::channel('ai-engine')->info('Starting autonomous collector from registry', [
-                'name' => $match['name'],
-                'goal' => $config->goal,
+        if (!$match || !($match['config'] ?? null) instanceof AutonomousCollectorConfig) {
+            Log::channel('ai-engine')->warning('No autonomous collector config found for message', [
+                'message' => substr($message, 0, 100),
             ]);
 
-            return $this->startCollector($context, $config, $message, (string) ($match['name'] ?? ''));
+            return AgentResponse::conversational(
+                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.no_matching_collector')
+                    ?: "I couldn't find a matching collector for your request. Can you please clarify what you'd like to do?",
+                context: $context
+            );
         }
 
-        Log::channel('ai-engine')->warning('No autonomous collector config found for message', [
-            'message' => substr($message, 0, 100),
+        return $this->startCollector(
+            context: $context,
+            config: $match['config'],
+            initialMessage: $message,
+            configNameHint: (string) ($match['name'] ?? '')
+        );
+    }
+
+    public function startCollector(
+        UnifiedActionContext $context,
+        AutonomousCollectorConfig $config,
+        string $initialMessage = '',
+        string $configNameHint = ''
+    ): AgentResponse {
+        $configName = $this->configResolver()->register($config, $context, $configNameHint);
+
+        $state = new AutonomousCollectorSessionState(
+            configName: $configName,
+            status: AutonomousCollectorSessionState::STATUS_COLLECTING,
+        );
+
+        $context->set('autonomous_collector', $state->toArray());
+
+        Log::channel('ai-engine')->info('Autonomous collector started', [
+            'session_id' => $context->sessionId,
+            'config_name' => $configName,
+            'goal' => $config->goal,
         ]);
 
-        return AgentResponse::conversational(
-            message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.no_matching_collector')
-                ?: "I couldn't find a matching collector for your request. Can you please clarify what you'd like to do?",
+        if ($initialMessage !== '') {
+            return $this->handle($initialMessage, $context);
+        }
+
+        $greeting = "Hello! I'll help you {$config->goal}. What would you like to do?";
+        $state->appendConversation('assistant', $greeting);
+        $context->set('autonomous_collector', $state->toArray());
+
+        return AgentResponse::needsUserInput(
+            message: $greeting,
             context: $context
         );
     }
 
-    /**
-     * Process message through the autonomous collector
-     */
-    protected function processCollectorMessage(
-        string $sessionId,
-        string $message,
-        AutonomousCollectorConfig $config,
-        UnifiedActionContext $context
-    ): AgentResponse {
-        // Get current collector state from context
-        $collectorState = $context->get('autonomous_collector', []);
-        $status = $collectorState['status'] ?? 'collecting';
-
-        // Handle confirmation response
-        if ($status === 'confirming') {
-            if ($this->isConfirmation($message)) {
-                // User confirmed - execute completion
-                $collectedData = $collectorState['collected_data'] ?? [];
-
-                try {
-                    $result = $config->executeOnComplete($collectedData);
-
-                    // Clear collector state
-                    $context->forget('autonomous_collector');
-
-                    Log::channel('ai-engine')->info('Autonomous collector completed', [
-                        'session_id' => $sessionId,
-                        'data' => $collectedData,
-                    ]);
-
-                    // Build detailed success message
-                    $successMessage = $this->buildSuccessMessage($result, $collectedData, $config);
-
-                    return AgentResponse::success(
-                        message: $successMessage,
-                        context: $context,
-                        data: ['result' => $result, 'collected_data' => $collectedData]
-                    );
-
-                } catch (\Exception $e) {
-                    Log::channel('ai-engine')->error('Collector completion failed', [
-                        'error' => $e->getMessage(),
-                    ]);
-
-                    return AgentResponse::failure(
-                        message: $this->locale()->translation(
-                            'ai-engine::runtime.autonomous_collector.completion_failed',
-                            ['error' => $e->getMessage()]
-                        ) ?: "Failed to complete: {$e->getMessage()}",
-                        context: $context
-                    );
-                }
-            } elseif ($this->isDenial($message)) {
-                // User denied - go back to collecting
-                $collectorState['status'] = 'collecting';
-                $context->set('autonomous_collector', $collectorState);
-
-                return AgentResponse::needsUserInput(
-                    message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.change_prompt')
-                        ?: 'No problem. What would you like to change?',
-                    context: $context
-                );
-            }
-        }
-
-        // Handle cancellation
-        if ($this->isCancellation($message)) {
-            $context->forget('autonomous_collector');
-
-            return AgentResponse::success(
-                message: $this->locale()->translation('ai-engine::runtime.autonomous_collector.cancelled')
-                    ?: 'Collection cancelled.',
-                context: $context
-            );
-        }
-
-        // Detect if user is asking an unrelated query (e.g., "list invoices" during invoice creation)
-        // This prevents the collector from staying active when user wants to do something else
-        if ($this->isUnrelatedQuery($message, $config)) {
-            Log::channel('ai-engine')->info('Unrelated query detected - exiting collector', [
-                'message' => $message,
-                'collector' => $config->name,
-            ]);
-
-            $context->forget('autonomous_collector');
-
-            // Return a special response that tells the orchestrator to re-route this message
-            return AgentResponse::failure(
-                message: 'exit_and_reroute',
-                context: $context,
-                data: ['reroute_message' => $message]
-            );
-        }
-
-        // Process through AI with tools
-        $aiResponse = $this->generateAIResponse($message, $config, $collectorState, $context);
-
-        return $aiResponse;
-    }
-
-    /**
-     * Generate AI response with tool execution
-     */
-    protected function generateAIResponse(
-        string $message,
-        AutonomousCollectorConfig $config,
-        array $collectorState,
-        UnifiedActionContext $context
-    ): AgentResponse {
-        $conversation = $collectorState['conversation'] ?? [];
-        $toolResults = $collectorState['tool_results'] ?? [];
-
-        // Add user message to conversation
-        $conversation[] = ['role' => 'user', 'content' => $message];
-
-        // Build system prompt
-        $systemPrompt = $config->buildSystemPrompt();
-
-        // Add prior conversation context from before collector started
-        // This allows the collector to see what was discussed earlier (e.g., which invoice was shown)
-        $priorHistory = $context->conversationHistory;
-        if (!empty($priorHistory)) {
-            $systemPrompt .= "\n\n## Prior Conversation Context\n";
-            $systemPrompt .= "The following conversation happened before this task started:\n";
-            foreach (array_slice($priorHistory, -10) as $msg) {
-                $role = ucfirst($msg['role'] ?? 'unknown');
-                $content = $msg['content'] ?? '';
-                $systemPrompt .= "**{$role}:** " . substr($content, 0, 500) . "\n";
-            }
-            $systemPrompt .= "\nUse this context to understand what the user is referring to (e.g., invoice IDs, customer names, etc.).\n";
-        }
-
-        // Add tool results context
-        if (!empty($toolResults)) {
-            $systemPrompt .= "\n\n## Recent Tool Results\n";
-            foreach (array_slice($toolResults, -5) as $result) {
-                $toolName = $result['tool'] ?? 'unknown';
-                $toolResult = $result['result'] ?? $result;
-                $systemPrompt .= "- {$toolName}: " . json_encode($toolResult, JSON_UNESCAPED_UNICODE) . "\n";
-            }
-        }
-
-        // Build conversation prompt
-        $conversationPrompt = $this->buildConversationPrompt($conversation);
-
-        try {
-            $ai = app(\LaravelAIEngine\Services\AIEngineService::class);
-
-            // Add tool instructions
-            $fullPrompt = $conversationPrompt;
-            $tools = $config->getToolDefinitions();
-
-            if (!empty($tools)) {
-                $fullPrompt .= "\n\n---\nIf you need to use a tool, respond with:\n";
-                $fullPrompt .= "```tool\n{\"tool\": \"tool_name\", \"arguments\": {...}}\n```\n";
-                $fullPrompt .= "Otherwise, respond naturally to the user.\n";
-                $fullPrompt .= "When you have all required information, output the final data as:\n";
-                $fullPrompt .= "```json\n{...final output...}\n```";
-            }
-
-            $response = $ai->generate(
-                new \LaravelAIEngine\DTOs\AIRequest(
-                    prompt: $fullPrompt,
-                    systemPrompt: $systemPrompt,
-                    maxTokens: 1500,
-                    temperature: 0.7,
-                )
-            );
-
-            $content = $response->getContent();
-
-            // Check for tool call
-            if (preg_match('/```tool\s*\n?(.*?)\n?```/s', $content, $matches)) {
-                $toolCall = json_decode(trim($matches[1]), true);
-                if ($toolCall && isset($toolCall['tool'])) {
-                    return $this->handleToolCall($toolCall, $config, $collectorState, $conversation, $context);
-                }
-            }
-
-            // Check for final output
-            $finalOutput = $this->extractFinalOutput($content);
-            if ($finalOutput !== null) {
-                return $this->handleFinalOutput($finalOutput, $content, $config, $collectorState, $conversation, $context);
-            }
-
-            // Regular response
-            $conversation[] = ['role' => 'assistant', 'content' => $content];
-            $collectorState['conversation'] = $conversation;
-            $context->set('autonomous_collector', $collectorState);
-
-            // Extract required inputs from AI response for UI form generation
-            $requiredInputs = $this->extractRequiredInputs($content, $config);
-
-            return AgentResponse::needsUserInput(
-                message: $content,
-                context: $context,
-                requiredInputs: $requiredInputs
-            );
-
-        } catch (\Exception $e) {
-            Log::channel('ai-engine')->error('AI generation failed', ['error' => $e->getMessage()]);
-
-            return AgentResponse::failure(
-                message: "I encountered an error. Please try again.",
-                context: $context
-            );
-        }
-    }
-
-    /**
-     * Handle tool call from AI
-     */
-    protected function handleToolCall(
-        array $toolCall,
-        AutonomousCollectorConfig $config,
-        array $collectorState,
-        array $conversation,
-        UnifiedActionContext $context
-    ): AgentResponse {
-        $toolName = $toolCall['tool'];
-        $arguments = $toolCall['arguments'] ?? [];
-        $toolResults = $collectorState['tool_results'] ?? [];
-
-        try {
-            $result = $config->executeTool($toolName, $arguments);
-
-            // Convert models to arrays
-            if ($result instanceof \Illuminate\Support\Collection) {
-                $result = $result->map(
-                    fn($item) =>
-                    $item instanceof \Illuminate\Database\Eloquent\Model
-                    ? $item->toArray()
-                    : $item
-                )->toArray();
-            } elseif ($result instanceof \Illuminate\Database\Eloquent\Model) {
-                $result = $result->toArray();
-            }
-
-            $toolResults[] = [
-                'tool' => $toolName,
-                'arguments' => $arguments,
-                'result' => $result,
-                'success' => true,
-            ];
-
-            Log::channel('ai-engine')->info('Tool executed', [
-                'tool' => $toolName,
-                'arguments' => $arguments,
-            ]);
-
-        } catch (\Exception $e) {
-            $toolResults[] = [
-                'tool' => $toolName,
-                'arguments' => $arguments,
-                'error' => $e->getMessage(),
-                'success' => false,
-            ];
-        }
-
-        // Add tool result to conversation
-        $resultStr = json_encode(end($toolResults)['result'] ?? end($toolResults)['error'], JSON_UNESCAPED_UNICODE);
-        $conversation[] = [
-            'role' => 'system',
-            'content' => "Tool {$toolName} result: " . substr($resultStr, 0, 500),
-        ];
-
-        $collectorState['conversation'] = $conversation;
-        $collectorState['tool_results'] = $toolResults;
-        $context->set('autonomous_collector', $collectorState);
-
-        // Continue processing with tool results
-        return $this->generateAIResponse('', $config, $collectorState, $context);
-    }
-
-    /**
-     * Handle final output from AI
-     */
-    protected function handleFinalOutput(
-        array $finalOutput,
-        string $aiMessage,
-        AutonomousCollectorConfig $config,
-        array $collectorState,
-        array $conversation,
-        UnifiedActionContext $context
-    ): AgentResponse {
-        // Validate output
-        $errors = $config->validateOutput($finalOutput);
-
-        if (!empty($errors)) {
-            $conversation[] = [
-                'role' => 'system',
-                'content' => "Output validation failed: " . implode(', ', $errors),
-            ];
-            $collectorState['conversation'] = $conversation;
-            $context->set('autonomous_collector', $collectorState);
-
-            return $this->generateAIResponse('', $config, $collectorState, $context);
-        }
-
-        // Store collected data
-        $collectorState['collected_data'] = $finalOutput;
-        $collectorState['status'] = $config->confirmBeforeComplete ? 'confirming' : 'completed';
-
-        // Clean message - remove JSON blocks and verbose explanations
-        $cleanMessage = preg_replace('/```json\s*\n?.*?\n?```/s', '', $aiMessage);
-        $cleanMessage = preg_replace('/Here is the JSON representation.*$/si', '', $cleanMessage);
-        $cleanMessage = preg_replace('/Here\'s the final.*?:\s*/si', '', $cleanMessage);
-        $cleanMessage = trim($cleanMessage);
-
-        if ($config->confirmBeforeComplete) {
-            $summary = $this->generateSummary($finalOutput, 0, $config, $collectorState['tool_results'] ?? []);
-            $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
-            $noToken = $this->locale()->lexicon('intent.reject', default: ['no'])[0] ?? 'no';
-            $title = $this->locale()->translation('ai-engine::runtime.autonomous_collector.confirm_review_title')
-                ?: 'Please Review:';
-            $footer = $this->locale()->translation('ai-engine::runtime.autonomous_collector.confirm_footer')
-                ?: 'Confirm to proceed or cancel';
-            $typeHint = $this->locale()->translation(
-                'ai-engine::runtime.autonomous_collector.confirm_type_hint',
-                ['yes' => $yesToken, 'no' => $noToken]
-            ) ?: "Type: '{$yesToken}' or '{$noToken}'";
-
-            // Build structured confirmation message
-            $confirmMessage = "📋 **{$title}**\n\n";
-            $confirmMessage .= $summary;
-            $confirmMessage .= "\n\n";
-            $confirmMessage .= "---\n";
-            $confirmMessage .= "✅ {$footer}\n";
-            $confirmMessage .= $typeHint;
-
-            $conversation[] = ['role' => 'assistant', 'content' => $confirmMessage];
-            $collectorState['conversation'] = $conversation;
-            $context->set('autonomous_collector', $collectorState);
-
-            return AgentResponse::needsUserInput(
-                message: $confirmMessage,
-                data: ['collected_data' => $finalOutput, 'requires_confirmation' => true],
-                context: $context
-            );
-        }
-
-        // Execute completion directly
-        try {
-            $result = $config->executeOnComplete($finalOutput);
-            $context->forget('autonomous_collector');
-
-            return AgentResponse::success(
-                message: '✅ ' . ($this->locale()->translation('ai-engine::runtime.autonomous_collector.completed') ?: 'Successfully completed!'),
-                context: $context,
-                data: ['result' => $result]
-            );
-        } catch (\Exception $e) {
-            return AgentResponse::failure(
-                message: $this->locale()->translation(
-                    'ai-engine::runtime.autonomous_collector.failed',
-                    ['error' => $e->getMessage()]
-                ) ?: "Failed: {$e->getMessage()}",
-                context: $context
-            );
-        }
-    }
-
-    /**
-     * Extract final JSON output from AI message
-     */
-    protected function extractFinalOutput(string $message): ?array
+    public function canHandle(string $action): bool
     {
-        if (preg_match('/```json\s*\n?(.*?)\n?```/s', $message, $matches)) {
-            $json = trim($matches[1]);
-            $data = json_decode($json, true);
-
-            if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
-                return $data;
-            }
-        }
-
-        return null;
+        return in_array($action, ['continue_autonomous_collector', 'start_autonomous_collector'], true);
     }
 
-    /**
-     * Generate summary of collected data
-     */
     protected function generateSummary(
         array $data,
         int $depth = 0,
         ?AutonomousCollectorConfig $config = null,
         array $toolResults = []
-    ): string
-    {
-        $lines = [];
-        $indent = str_repeat('  ', $depth);
-
-        // Fetch entity details for user-friendly display
-        $entityDetails = $this->fetchEntityDetails($data, $config, $toolResults);
-
-        // Group fields by category for better organization
-        $entities = [];
-        $changes = [];
-        $items = [];
-
-        foreach ($data as $key => $value) {
-            // Skip internal fields (prefixed with _)
-            if (str_starts_with($key, '_')) {
-                continue;
-            }
-
-            // Skip empty/null values to reduce noise.
-            if (!$this->hasDisplayValue($value)) {
-                continue;
-            }
-
-            // Skip auxiliary user IDs if main entity ID is already present.
-            if (str_ends_with($key, '_user_id')) {
-                $baseEntity = str_replace('_user_id', '', $key) . '_id';
-                if (array_key_exists($baseEntity, $data) && $this->hasDisplayValue($data[$baseEntity] ?? null)) {
-                    continue;
-                }
-            }
-
-            // Categorize fields
-            if (str_ends_with($key, '_id')) {
-                // Check if we have entity details for this ID
-                if (isset($entityDetails[$key])) {
-                    $entities[$key] = $entityDetails[$key];
-                } else {
-                    // No entity resolver - still show ID but in a better format
-                    $entityType = str_replace('_id', '', $key);
-                    $entities[$key] = ['ID' => $value]; // Will show as "Customer: ID: 73"
-                }
-            } elseif (is_array($value) && isset($value[0])) {
-                $items[$key] = $value;
-            } else {
-                $changes[$key] = $value;
-            }
-        }
-
-        // Show entity details first (customer, invoice, etc.)
-        foreach ($entities as $key => $details) {
-            $entityType = str_replace('_id', '', $key);
-            $icon = $this->getEntityIcon($entityType);
-            $lines[] = "{$indent}{$icon} **" . ucwords(str_replace('_', ' ', $entityType)) . "**:";
-            foreach ($details as $field => $value) {
-                $lines[] = "{$indent}  • **{$field}**: {$value}";
-            }
-        }
-
-        // Show changes
-        foreach ($changes as $key => $value) {
-            $label = $this->formatFieldLabel($key);
-            if (is_array($value)) {
-                $lines[] = "{$indent}📝 **{$label}**:";
-                $lines[] = $this->generateSummary($value, $depth + 1, $config, $toolResults);
-            } else {
-                $lines[] = "{$indent}📝 **{$label}**: " . $this->formatScalarValue($key, $value);
-            }
-        }
-
-        // Show items/arrays
-        foreach ($items as $key => $value) {
-            $label = $this->formatFieldLabel($key);
-            $lines[] = "{$indent}📦 **{$label}**: " . count($value) . " item(s)";
-            foreach ($value as $item) {
-                if (is_array($item)) {
-                    $itemSummary = $this->buildItemSummary($item);
-                    if ($itemSummary !== '') {
-                        $lines[] = "{$indent}  • {$itemSummary}";
-                    }
-                } else {
-                    $lines[] = "{$indent}  • {$item}";
-                }
-            }
-        }
-
-        return implode("\n", $lines);
+    ): string {
+        return $this->summaryRenderer()->generateSummary($data, $depth, $config, $toolResults);
     }
 
-    /**
-     * Fetch entity details for user-friendly display
-     * Uses collector config's entity resolvers if available
-     */
-    protected function fetchEntityDetails(
-        array $data,
-        ?AutonomousCollectorConfig $config = null,
-        array $toolResults = []
-    ): array
+    protected function buildSuccessMessage(mixed $result, array $collectedData, AutonomousCollectorConfig $config): string
     {
-        $details = [];
-
-        // Get entity resolvers from config
-        $entityResolvers = $config?->entityResolvers ?? [];
-        $toolLookup = $this->buildEntityLookupFromToolResults($toolResults);
-
-        foreach ($data as $key => $value) {
-            // Check if this is an ID field with a resolver
-            if (!str_ends_with($key, '_id') || !$this->hasDisplayValue($value)) {
-                continue;
-            }
-
-            if (isset($entityResolvers[$key])) {
-                try {
-                    $resolver = $entityResolvers[$key];
-
-                    // Call the resolver to get entity details
-                    if (is_callable($resolver)) {
-                        $entityData = $resolver($value);
-                        if ($entityData && is_array($entityData)) {
-                            $details[$key] = $entityData;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::warning('Entity resolver failed', [
-                        'field' => $key,
-                        'value' => $value,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-
-                continue;
-            }
-
-            $lookupValue = $toolLookup[$key][(string) $value] ?? null;
-            if (is_array($lookupValue) && $lookupValue !== []) {
-                $details[$key] = $lookupValue;
-            }
-        }
-
-        return $details;
+        return $this->summaryRenderer()->buildSuccessMessage($result, $collectedData, $config);
     }
 
-    /**
-     * Get collector config from context
-     * Note: This method is not currently used but kept for potential future use
-     */
-    protected function getCollectorConfig(): ?AutonomousCollectorConfig
+    protected function requiresToolConfirmation(AutonomousCollectorConfig $config, string $toolName): bool
     {
-        // This method would need a context parameter to work
-        // For now, return null as it's not actively used
-        return null;
+        return $this->confirmationService()->requiresToolConfirmation($config, $toolName);
     }
 
-    /**
-     * Get icon for entity type
-     */
-    protected function getEntityIcon(string $entityType): string
+    protected function isConfirmedToolCall(string $toolName, array $conversation): bool
     {
-        return match ($entityType) {
-            'customer', 'customer_user' => '👤',
-            'invoice' => '📄',
-            'product' => '📦',
-            'order' => '🛒',
-            default => '🔖',
-        };
+        return $this->confirmationService()->isConfirmedToolCall($toolName, $conversation);
     }
 
-    /**
-     * Format field name to human-readable label
-     */
-    protected function formatFieldLabel(string $field): string
+    protected function buildToolConfirmationMessage(string $toolName, array $arguments, AutonomousCollectorConfig $config): string
     {
-        // Convert snake_case to Title Case
-        return ucwords(str_replace('_', ' ', $field));
+        return $this->confirmationService()->buildToolConfirmationMessage($toolName, $arguments, $config);
     }
 
-    protected function hasDisplayValue(mixed $value): bool
+    protected function extractFinalOutput(string $message): ?array
     {
-        if ($value === null) {
-            return false;
-        }
-
-        if (is_string($value)) {
-            return trim($value) !== '';
-        }
-
-        if (is_array($value)) {
-            return $value !== [];
-        }
-
-        return true;
+        return $this->parser()->extractFinalOutput($message);
     }
 
-    protected function formatScalarValue(string $key, mixed $value): string
-    {
-        if (is_bool($value)) {
-            return $value ? 'Yes' : 'No';
-        }
-
-        if (is_numeric($value)) {
-            if (preg_match('/(?:total|subtotal|tax|amount|price|cost)/i', $key)) {
-                return number_format((float) $value, 2, '.', '');
-            }
-
-            return (string) $value;
-        }
-
-        if (is_scalar($value)) {
-            return trim((string) $value);
-        }
-
-        return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
-    }
-
-    protected function buildItemSummary(array $item): string
-    {
-        $name = trim((string) ($item['name'] ?? $item['title'] ?? ''));
-        $quantity = $item['quantity'] ?? null;
-        $unitPrice = $item['unit_price'] ?? $item['price'] ?? null;
-        $total = $item['total'] ?? null;
-
-        if ($name !== '' && $this->hasDisplayValue($quantity) && $this->hasDisplayValue($unitPrice)) {
-            $summary = $name . ' × ' . $this->formatScalarValue('quantity', $quantity);
-            $summary .= ' @ ' . $this->formatScalarValue('unit_price', $unitPrice);
-            if ($this->hasDisplayValue($total)) {
-                $summary .= ' = ' . $this->formatScalarValue('total', $total);
-            }
-
-            return $summary;
-        }
-
-        $parts = [];
-        foreach ($item as $key => $value) {
-            if (str_starts_with((string) $key, '_') || !$this->hasDisplayValue($value) || is_array($value)) {
-                continue;
-            }
-
-            if (str_ends_with((string) $key, '_id') && isset($item[str_replace('_id', '_name', (string) $key)])) {
-                continue;
-            }
-
-            $parts[] = $this->formatFieldLabel((string) $key) . ': ' . $this->formatScalarValue((string) $key, $value);
-        }
-
-        return implode(', ', $parts);
-    }
-
-    protected function buildEntityLookupFromToolResults(array $toolResults): array
-    {
-        $lookup = [];
-
-        foreach ($toolResults as $entry) {
-            if (!is_array($entry) || (($entry['success'] ?? false) !== true)) {
-                continue;
-            }
-
-            $tool = strtolower((string) ($entry['tool'] ?? ''));
-            $result = $entry['result'] ?? null;
-            if (!is_array($result)) {
-                continue;
-            }
-
-            $rows = [];
-            if (isset($result['id']) || isset($result['user_id'])) {
-                $rows[] = $result;
-            }
-            foreach (['customers', 'products', 'vendors', 'items'] as $listKey) {
-                if (!empty($result[$listKey]) && is_array($result[$listKey])) {
-                    foreach ($result[$listKey] as $row) {
-                        if (is_array($row)) {
-                            $rows[] = $row;
-                        }
-                    }
-                }
-            }
-
-            foreach ($rows as $row) {
-                $name = trim((string) ($row['name'] ?? $row['title'] ?? ''));
-                $email = trim((string) ($row['email'] ?? ''));
-                $profile = [];
-                if ($name !== '') {
-                    $profile['Name'] = $name;
-                }
-                if ($email !== '') {
-                    $profile['Email'] = $email;
-                }
-
-                if ($profile === []) {
-                    continue;
-                }
-
-                if (isset($row['id']) && str_contains($tool, 'customer')) {
-                    $lookup['customer_id'][(string) $row['id']] = $profile;
-                }
-
-                if (isset($row['user_id']) && str_contains($tool, 'customer')) {
-                    $lookup['customer_user_id'][(string) $row['user_id']] = $profile;
-                }
-
-                if (isset($row['id']) && str_contains($tool, 'product')) {
-                    $lookup['product_id'][(string) $row['id']] = $profile;
-                }
-            }
-        }
-
-        return $lookup;
-    }
-
-    /**
-     * Build conversation prompt
-     */
     protected function buildConversationPrompt(array $conversation): string
     {
-        $prompt = "";
-        foreach ($conversation as $msg) {
-            $role = ucfirst($msg['role']);
-            $prompt .= "{$role}: {$msg['content']}\n\n";
-        }
-        return $prompt;
+        return $this->promptBuilder()->buildConversationPrompt($conversation);
     }
 
-    /**
-     * Update context state based on response
-     */
-    protected function updateContextState(UnifiedActionContext $context, AgentResponse $response): void
+    protected function extractRequiredInputs(string $content, AutonomousCollectorConfig $config): ?array
     {
-        // Context is already updated in the processing methods
+        return $this->inputSchemaBuilder()->extractRequiredInputs($content, $config);
     }
 
-    /**
-     * Check if message is confirmation
-     */
-    protected function isConfirmation(string $message): bool
-    {
-        return $this->locale()->isLexiconMatch(strtolower(trim($message)), 'intent.confirm');
-    }
-
-    /**
-     * Check if message is denial
-     */
-    protected function isDenial(string $message): bool
-    {
-        return $this->locale()->isLexiconMatch(strtolower(trim($message)), 'intent.deny');
-    }
-
-    /**
-     * Check if message is cancellation
-     */
-    protected function isCancellation(string $message): bool
-    {
-        return $this->locale()->isLexiconMatch(strtolower(trim($message)), 'intent.cancel');
-    }
-
-    /**
-     * Check if message is an unrelated query that should exit the collector
-     */
     protected function isUnrelatedQuery(string $message, AutonomousCollectorConfig $config): bool
     {
-        $messageLower = strtolower(trim($message));
+        return $this->reroutePolicy()->shouldExitForMessage($message, $config);
+    }
 
-        // Common query patterns that indicate user wants to do something else
-        $queryPatterns = $this->locale()->lexicon('intent.query_prefixes');
+    protected function configResolver(): CollectorConfigResolver
+    {
+        return $this->configResolver ??= new CollectorConfigResolver($this->collectorService);
+    }
 
-        foreach ($queryPatterns as $pattern) {
-            if (str_starts_with($messageLower, $pattern)) {
-                // Check if the query is about the same entity we're collecting
-                // e.g., "list invoices" during invoice creation should exit
-                // but "list products" during invoice creation might be relevant
-                $collectorName = $config->name;
+    protected function turnProcessor(): AutonomousCollectorTurnProcessor
+    {
+        return $this->turnProcessor ??= app(AutonomousCollectorTurnProcessor::class);
+    }
 
-                // If query mentions the same entity type, it's likely unrelated
-                // (user wants to see existing items, not continue creating)
-                if (str_contains($messageLower, $collectorName)) {
-                    return true;
-                }
+    protected function confirmationService(): CollectorConfirmationService
+    {
+        return $this->confirmationService ??= new CollectorConfirmationService($this->locale());
+    }
 
-                // Also exit for clearly unrelated entities
-                $unrelatedEntities = ['invoice', 'bill', 'customer', 'vendor', 'product', 'order', 'payment'];
-                foreach ($unrelatedEntities as $entity) {
-                    if ($entity !== $collectorName && str_contains($messageLower, $entity)) {
-                        return true;
-                    }
-                }
-            }
-        }
+    protected function summaryRenderer(): CollectorSummaryRenderer
+    {
+        return $this->summaryRenderer ??= new CollectorSummaryRenderer();
+    }
 
-        return false;
+    protected function inputSchemaBuilder(): CollectorInputSchemaBuilder
+    {
+        return $this->inputSchemaBuilder ??= new CollectorInputSchemaBuilder($this->locale());
+    }
+
+    protected function promptBuilder(): CollectorPromptBuilder
+    {
+        return $this->promptBuilder ??= new CollectorPromptBuilder($this->locale());
+    }
+
+    protected function parser(): CollectorToolCallParser
+    {
+        return $this->parser ??= new CollectorToolCallParser();
+    }
+
+    protected function reroutePolicy(): CollectorReroutePolicy
+    {
+        return $this->reroutePolicy ??= new CollectorReroutePolicy($this->locale());
     }
 
     protected function locale(): LocaleResourceService
@@ -912,291 +242,5 @@ class AutonomousCollectorHandler implements MessageHandlerInterface
         }
 
         return $this->localeResources;
-    }
-
-    public function canHandle(string $action): bool
-    {
-        return in_array($action, ['continue_autonomous_collector', 'start_autonomous_collector']);
-    }
-
-    /**
-     * Build detailed success message from completion result
-     */
-    protected function buildSuccessMessage(mixed $result, array $collectedData, AutonomousCollectorConfig $config): string
-    {
-        // If result contains a custom message, use it
-        if (is_array($result) && isset($result['message'])) {
-            return $result['message'];
-        }
-
-        // Build a detailed success message
-        $message = "✅ **{$config->goal} - Completed Successfully!**\n\n";
-
-        // Add result details if available
-        if (is_array($result)) {
-            if (isset($result['invoice_number']) || isset($result['invoice_id'])) {
-                $invoiceNum = $result['invoice_number'] ?? $result['invoice_id'] ?? 'N/A';
-                $message .= "**Invoice #:** {$invoiceNum}\n";
-            }
-
-            if (isset($result['customer'])) {
-                $message .= "**Customer:** {$result['customer']}\n";
-            }
-
-            if (isset($result['total'])) {
-                $message .= "**Total:** \${$result['total']}\n";
-            }
-
-            if (isset($result['id'])) {
-                $message .= "**Record ID:** {$result['id']}\n";
-            }
-        }
-
-        // Add items summary from collected data
-        if (isset($collectedData['items']) && is_array($collectedData['items'])) {
-            $itemCount = count($collectedData['items']);
-            $message .= "\n**Items ({$itemCount}):**\n";
-
-            foreach ($collectedData['items'] as $item) {
-                $name = $item['name'] ?? 'Unknown';
-                $qty = $item['quantity'] ?? 1;
-                $price = $item['unit_price'] ?? $item['price'] ?? 0;
-                $total = $item['total'] ?? ($qty * $price);
-                $message .= "• {$name} × {$qty} @ \${$price} = \${$total}\n";
-            }
-        }
-
-        // Add totals from collected data
-        if (isset($collectedData['subtotal'])) {
-            $message .= "\n**Subtotal:** \${$collectedData['subtotal']}";
-        }
-        if (isset($collectedData['tax']) && $collectedData['tax'] > 0) {
-            $message .= "\n**Tax:** \${$collectedData['tax']}";
-        }
-        if (isset($collectedData['total'])) {
-            $message .= "\n**Total:** \${$collectedData['total']}";
-        }
-
-        return $message;
-    }
-
-    /**
-     * Extract required inputs from AI response for UI form generation
-     *
-     * Analyzes the AI's response to detect what inputs are being requested
-     * and returns structured input definitions for the UI to render forms.
-     */
-    protected function extractRequiredInputs(string $content, AutonomousCollectorConfig $config): ?array
-    {
-        $inputs = [];
-        $contentLower = strtolower($content);
-        $yesToken = $this->locale()->lexicon('intent.confirm', default: ['yes'])[0] ?? 'yes';
-        $noToken = $this->locale()->lexicon('intent.reject', default: ['no'])[0] ?? 'no';
-        $confirmLabel = $this->locale()->translation('ai-engine::runtime.common.confirm_label') ?: 'Confirm';
-        $yesLabel = $this->locale()->translation('ai-engine::runtime.common.yes_label') ?: 'Yes';
-        $noLabel = $this->locale()->translation('ai-engine::runtime.common.no_label') ?: 'No';
-
-        $confirmationHint = mb_strtolower((string) $this->locale()->translation(
-            'ai-engine::runtime.autonomous_collector.confirm_type_hint',
-            ['yes' => $yesToken, 'no' => $noToken]
-        ));
-        $reviewTitle = mb_strtolower((string) $this->locale()->translation('ai-engine::runtime.autonomous_collector.confirm_review_title'));
-        $confirmationPatterns = array_values(array_filter([
-            trim($confirmationHint),
-            trim($reviewTitle),
-            "({$yesToken}/{$noToken})",
-        ]));
-
-        $isConfirmation = false;
-        foreach ($confirmationPatterns as $pattern) {
-            if (str_contains($contentLower, $pattern)) {
-                $isConfirmation = true;
-                break;
-            }
-        }
-
-        if (!$isConfirmation) {
-            $yesPattern = preg_quote($yesToken, '/');
-            $noPattern = preg_quote($noToken, '/');
-            $isConfirmation = (bool) preg_match("/({$yesPattern}.*{$noPattern}|{$noPattern}.*{$yesPattern})/iu", $contentLower);
-        }
-
-        if ($isConfirmation) {
-            $inputs[] = [
-                'name' => 'confirmation',
-                'type' => 'confirm',
-                'label' => $confirmLabel,
-                'required' => true,
-                'options' => [
-                    ['value' => $yesToken, 'label' => $yesLabel],
-                    ['value' => $noToken, 'label' => $noLabel],
-                ],
-            ];
-        }
-
-        // Extract structured data from various formats
-        $extractedData = [];
-
-        // Format 1: Markdown list items: - **Label:** Value or - **Label**: Value or **Label:** Value
-        if (preg_match_all('/[-•]?\s*\*\*([^*]+)\*\*:?\s*([^\n]+)/i', $content, $matches, PREG_SET_ORDER)) {
-            foreach ($matches as $match) {
-                $label = trim($match[1]);
-                $value = trim($match[2]);
-                $key = strtolower(str_replace([' ', '-'], '_', $label));
-                $value = preg_replace('/\*\*$/', '', $value);
-                $value = trim($value, ' .,');
-
-                if (!empty($value) && strlen($value) < 100) {
-                    $extractedData[$key] = ['label' => $label, 'value' => $value];
-                }
-            }
-        }
-
-        // Format 2: Simple list items or plain lines: - Label: Value or Label: Value
-        if (preg_match_all('/^[-•]?\s*([A-Za-z][A-Za-z\s]{1,20}):\s*(.+?)(?:\s{2,}|$)/im', $content, $matches, PREG_SET_ORDER)) {
-            foreach ($matches as $match) {
-                $label = trim($match[1]);
-                $value = trim($match[2]);
-                $key = strtolower(str_replace([' ', '-'], '_', $label));
-                $value = trim($value, ' .,*');
-
-                // Skip if already captured, too long, or looks like a sentence
-                if (!isset($extractedData[$key]) && !empty($value) && strlen($value) < 50 && !str_contains($value, ' is ')) {
-                    $extractedData[$key] = ['label' => $label, 'value' => $value];
-                }
-            }
-        }
-
-        // Check for category in extracted data or content
-        if (isset($extractedData['category'])) {
-            $inputs[] = [
-                'name' => 'category',
-                'type' => 'text',
-                'label' => 'Category',
-                'required' => false,
-                'default' => $extractedData['category']['value'],
-                'placeholder' => 'Enter category or keep suggested',
-            ];
-            unset($extractedData['category']);
-        }
-
-        // Check for price in extracted data
-        if (isset($extractedData['price'])) {
-            $priceValue = preg_replace('/[^\d.]/', '', $extractedData['price']['value']);
-            $inputs[] = [
-                'name' => 'price',
-                'type' => 'number',
-                'label' => 'Price',
-                'required' => true,
-                'default' => $priceValue,
-                'placeholder' => 'Enter price',
-            ];
-            unset($extractedData['price']);
-        }
-
-        // Check for email input requests
-        if (str_contains($contentLower, 'email') && (str_contains($contentLower, 'provide') || str_contains($contentLower, 'enter') || str_contains($contentLower, 'what is'))) {
-            $inputs[] = [
-                'name' => 'email',
-                'type' => 'email',
-                'label' => 'Email Address',
-                'required' => true,
-                'placeholder' => 'Enter email address',
-            ];
-        }
-
-        // Check for account code input
-        if (str_contains($contentLower, 'account code') && (str_contains($contentLower, 'specify') || str_contains($contentLower, 'provide'))) {
-            $inputs[] = [
-                'name' => 'code',
-                'type' => 'text',
-                'label' => 'Account Code',
-                'required' => false,
-                'placeholder' => 'Enter account code (optional)',
-            ];
-        }
-
-        // Check for selection from options (e.g., "use existing or create new")
-        if (
-            (str_contains($contentLower, 'use this existing') || str_contains($contentLower, 'use existing'))
-            && str_contains($contentLower, 'create new')
-        ) {
-            $inputs[] = [
-                'name' => 'selection',
-                'type' => 'select',
-                'label' => 'Choose an option',
-                'required' => true,
-                'options' => [
-                    ['value' => 'use_existing', 'label' => 'Use Existing'],
-                    ['value' => 'create_new', 'label' => 'Create New'],
-                ],
-            ];
-        }
-
-        // Add remaining extracted data as readonly fields for display
-        foreach ($extractedData as $key => $data) {
-            $inputs[] = [
-                'name' => $key,
-                'type' => 'readonly',
-                'label' => $data['label'],
-                'value' => $data['value'],
-            ];
-        }
-
-        return !empty($inputs) ? $inputs : null;
-    }
-
-    /**
-     * Start a new autonomous collector session
-     */
-    public function startCollector(
-        UnifiedActionContext $context,
-        AutonomousCollectorConfig $config,
-        string $initialMessage = '',
-        string $configNameHint = ''
-    ): AgentResponse {
-        $configName = trim($config->name ?? '');
-        if ($configName === '') {
-            $configName = trim($configNameHint);
-        }
-        if ($configName === '') {
-            $configName = 'collector_' . substr(sha1($context->sessionId . '|' . $config->goal), 0, 16);
-        }
-
-        // Register config for later retrieval (name may be generated at runtime).
-        $this->collectorService->registerConfigAs($configName, $config);
-
-        // Initialize collector state in context
-        $collectorState = [
-            'config_name' => $configName,
-            'status' => 'collecting',
-            'conversation' => [],
-            'collected_data' => [],
-            'tool_results' => [],
-            'started_at' => now()->toIso8601String(),
-        ];
-
-        $context->set('autonomous_collector', $collectorState);
-
-        Log::channel('ai-engine')->info('Autonomous collector started', [
-            'session_id' => $context->sessionId,
-            'config_name' => $configName,
-            'goal' => $config->goal,
-        ]);
-
-        // Process initial message if provided
-        if ($initialMessage) {
-            return $this->handle($initialMessage, $context);
-        }
-
-        // Generate greeting
-        $greeting = "Hello! I'll help you {$config->goal}. What would you like to do?";
-        $collectorState['conversation'][] = ['role' => 'assistant', 'content' => $greeting];
-        $context->set('autonomous_collector', $collectorState);
-
-        return AgentResponse::needsUserInput(
-            message: $greeting,
-            context: $context
-        );
     }
 }

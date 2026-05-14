@@ -23,8 +23,8 @@ class RAGCollectionDiscovery
 
     public function __construct()
     {
-        $this->cacheTtl = config('ai-engine.intelligent_rag.discovery_cache_ttl', 3600); // Default 1 hour
-        $this->autoDiscover = config('ai-engine.intelligent_rag.auto_discover', true);
+        $this->cacheTtl = config('ai-engine.rag.discovery_cache_ttl', 3600); // Default 1 hour
+        $this->autoDiscover = config('ai-engine.rag.auto_discover', true);
 
         // Lazy load node registry if available
         if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
@@ -50,7 +50,7 @@ class RAGCollectionDiscovery
         }
 
         // Get from config first
-        $configCollections = config('ai-engine.intelligent_rag.default_collections', []);
+        $configCollections = config('ai-engine.rag.default_collections', []);
         if (!empty($configCollections)) {
             Cache::put($this->cacheKey, $configCollections, $this->cacheTtl);
             return $configCollections;
@@ -288,7 +288,7 @@ class RAGCollectionDiscovery
     protected function discoverFromModels(): array
     {
         $collections = [];
-        $discoveryPaths = config('ai-engine.intelligent_rag.discovery_paths', [
+        $discoveryPaths = config('ai-engine.rag.discovery_paths', [
             app_path('Models'),
         ]);
 

@@ -36,17 +36,6 @@ class AgentSkillExecutionPlanner
             ];
         }
 
-        if ($skill->tools !== []) {
-            return [
-                'action' => 'use_tool',
-                'resource_name' => $skill->tools[0],
-                'params' => [],
-                'reasoning' => "Matched skill [{$skill->name}] and selected tool [{$skill->tools[0]}].",
-                'decision_source' => 'skill_match',
-                'metadata' => $metadata,
-            ];
-        }
-
         $collector = $skill->metadata['collector'] ?? null;
         if (is_string($collector) && trim($collector) !== '') {
             return [
@@ -54,6 +43,17 @@ class AgentSkillExecutionPlanner
                 'resource_name' => $collector,
                 'params' => [],
                 'reasoning' => "Matched skill [{$skill->name}] and selected collector [{$collector}].",
+                'decision_source' => 'skill_match',
+                'metadata' => $metadata,
+            ];
+        }
+
+        if ($skill->tools !== []) {
+            return [
+                'action' => 'use_tool',
+                'resource_name' => $skill->tools[0],
+                'params' => [],
+                'reasoning' => "Matched skill [{$skill->name}] and selected tool [{$skill->tools[0]}].",
                 'decision_source' => 'skill_match',
                 'metadata' => $metadata,
             ];

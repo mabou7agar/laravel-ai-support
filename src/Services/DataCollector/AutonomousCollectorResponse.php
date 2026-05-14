@@ -3,7 +3,7 @@
 namespace LaravelAIEngine\Services\DataCollector;
 
 /**
- * Response from AutonomousCollectorService
+ * Response from autonomous collector session APIs.
  */
 class AutonomousCollectorResponse
 {

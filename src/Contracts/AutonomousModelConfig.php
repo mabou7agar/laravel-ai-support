@@ -28,10 +28,13 @@ abstract class AutonomousModelConfig
      * 
      * @return array [
      *   'user_field' => 'created_by',
+     *   'tenant_field' => 'tenant_id',
+     *   'workspace_field' => 'workspace_id',
      *   'date_field' => 'created_at',
      *   'status_field' => 'status',
      *   'amount_field' => 'total',
      *   'eager_load' => ['relation1', 'relation2'],
+     *   'public_access' => false, // true only for models safe to query without a user scope
      * ]
      */
     public static function getFilterConfig(): array

@@ -3,8 +3,9 @@
 namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\Events\AISessionStarted;
-use LaravelAIEngine\Services\Agent\AgentOrchestrator;
+use LaravelAIEngine\Contracts\AgentRuntimeContract;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
@@ -12,7 +13,7 @@ class ChatService
 {
     public function __construct(
         protected ConversationService $conversationService,
-        protected AgentOrchestrator $orchestrator
+        protected AgentRuntimeContract $agentRuntime
     ) {}
 
     /**
@@ -24,7 +25,7 @@ class ChatService
      * @param string $model AI model to use
      * @param bool $useMemory Enable conversation memory
      * @param bool $useActions Enable interactive actions
-     * @param bool $useIntelligentRAG Enable RAG with access control
+     * @param bool $useRag Enable RAG with access control
      * @param array $ragCollections RAG collections to search
      * @param string|int|null $userId User ID (fetched internally for access control)
      * @return AIResponse
@@ -36,7 +37,7 @@ class ChatService
         string $model = 'gpt-4o-mini',
         bool $useMemory = true,
         bool $useActions = true,
-        bool $useIntelligentRAG = true,
+        bool $useRag = true,
         array $ragCollections = [],
         $userId = null,
         ?string $searchInstructions = null,
@@ -65,64 +66,108 @@ class ChatService
             }
         }
 
-        // Fire session started event
+        $this->fireSessionStarted($sessionId, $userId, $engine, $model, $useMemory, $useActions, $useRag);
+
+        // Delegate decisions to the configured agent runtime.
+        Log::channel('ai-engine')->debug('ChatService delegating to agent runtime', [
+            'session_id' => $sessionId,
+            'user_id' => $userId,
+            'runtime' => $this->agentRuntime->name(),
+        ]);
+
+        $options = $this->buildRuntimeOptions(
+            $engine,
+            $model,
+            $useMemory,
+            $useActions,
+            $useRag,
+            $ragCollections,
+            $searchInstructions,
+            $conversationHistory,
+            $extraOptions
+        );
+        $agentResponse = $this->agentRuntime->process($message, $sessionId, $userId, $options);
+
+        $this->updateWorkflowSessionNode($sessionId, $agentResponse);
+
+        return $this->toAIResponse($agentResponse, $engine, $model, $conversationId);
+    }
+
+    protected function buildRuntimeOptions(
+        string $engine,
+        string $model,
+        bool $useMemory,
+        bool $useActions,
+        bool $useRag,
+        array $ragCollections,
+        ?string $searchInstructions,
+        array $conversationHistory,
+        array $extraOptions
+    ): array {
+        return array_merge([
+            'engine' => $engine,
+            'model' => $model,
+            'use_memory' => $useMemory,
+            'use_actions' => $useActions,
+            'use_rag' => $useRag,
+            'rag_collections' => $ragCollections,
+            'search_instructions' => $searchInstructions,
+            'conversation_history' => $conversationHistory,
+            'is_forwarded' => $this->isForwardedRequest(),
+        ], $extraOptions);
+    }
+
+    protected function fireSessionStarted(
+        string $sessionId,
+        mixed $userId,
+        string $engine,
+        string $model,
+        bool $useMemory,
+        bool $useActions,
+        bool $useRag
+    ): void {
         try {
             event(new AISessionStarted(
                 sessionId: $sessionId,
                 userId: $userId,
                 engine: $engine,
                 model: $model,
-                metadata: ['memory' => $useMemory, 'actions' => $useActions, 'intelligent_rag' => $useIntelligentRAG]
+                metadata: ['memory' => $useMemory, 'actions' => $useActions, 'rag' => $useRag]
             ));
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::warning('Failed to fire AISessionStarted event: ' . $e->getMessage());
         }
+    }
 
-        // Delegate ALL decisions to AgentOrchestrator (AI-driven)
-        Log::channel('ai-engine')->debug('ChatService delegating to AgentOrchestrator', [
-            'session_id' => $sessionId,
-            'user_id' => $userId,
-        ]);
-
-        // Pass all context to orchestrator for AI-driven decisions
-        $options = [
-            'engine' => $engine,
-            'model' => $model,
-            'use_memory' => $useMemory,
-            'use_actions' => $useActions,
-            'use_intelligent_rag' => $useIntelligentRAG,
-            'rag_collections' => $ragCollections,
-            'search_instructions' => $searchInstructions,
-            'conversation_history' => $conversationHistory,
-            'is_forwarded' => $this->isForwardedRequest(), // Prevent infinite forwarding loops
-        ];
-        if (!empty($extraOptions)) {
-            $options = array_merge($options, $extraOptions);
-        }
-
-        $agentResponse = $this->orchestrator->process($message, $sessionId, $userId, $options);
-
-        // Handle workflow session tracking
-        if (!empty($agentResponse->context->currentWorkflow)) {
+    protected function updateWorkflowSessionNode(string $sessionId, AgentResponse $agentResponse): void
+    {
+        $context = $agentResponse->context;
+        if ($context !== null && !empty($context->currentWorkflow)) {
             Cache::put(
                 "session_node:{$sessionId}",
-                $agentResponse->context->toArray()['routed_to_node'] ?? null,
+                $context->toArray()['routed_to_node'] ?? null,
                 now()->addHours(1)
             );
-        } else {
-            Cache::forget("session_node:{$sessionId}");
+
+            return;
         }
 
-        // Convert AgentResponse to AIResponse
-        $contextMetadata = array_merge(
-            $agentResponse->context->toArray(),
-            $agentResponse->metadata ?? []
-        );
+        Cache::forget("session_node:{$sessionId}");
+    }
 
-        // Extract entity_ids from last_entity_list for node routing
+    protected function toAIResponse(
+        AgentResponse $agentResponse,
+        string $engine,
+        string $model,
+        ?string $conversationId
+    ): AIResponse {
+        $context = $agentResponse->context;
+        $contextData = $context?->toArray() ?? [];
+        $contextMetadata = $context?->metadata ?? [];
+
         $entityTracking = [];
-        if (isset($agentResponse->context->metadata['last_entity_list'])) {
-            $lastList = $agentResponse->context->metadata['last_entity_list'];
+        if (isset($contextMetadata['last_entity_list']) && is_array($contextMetadata['last_entity_list'])) {
+            $lastList = $contextMetadata['last_entity_list'];
             $entityTracking = [
                 'entity_ids' => $lastList['entity_ids'] ?? null,
                 'entity_type' => $lastList['entity_type'] ?? null,
@@ -133,15 +178,20 @@ class ChatService
             content: $agentResponse->message,
             engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
             model: \LaravelAIEngine\Enums\EntityEnum::from($model),
-            metadata: array_merge($contextMetadata, $entityTracking, [
+            metadata: array_merge($contextData, $agentResponse->metadata ?? [], $entityTracking, [
                 'workflow_active' => !$agentResponse->isComplete,
-                'workflow_class' => $agentResponse->context->currentWorkflow,
+                'workflow_class' => $context?->currentWorkflow,
                 'workflow_data' => $agentResponse->data ?? [],
                 'workflow_completed' => $agentResponse->isComplete,
                 'agent_strategy' => $agentResponse->strategy,
+                'needs_user_input' => $agentResponse->needsUserInput,
+                'is_complete' => $agentResponse->isComplete,
+                'next_step' => $agentResponse->nextStep,
+                'required_inputs' => $agentResponse->requiredInputs,
             ]),
             success: $agentResponse->success,
-            conversationId: $conversationId
+            conversationId: $conversationId,
+            actions: $agentResponse->actions ?? []
         );
     }
 

@@ -96,6 +96,7 @@ class EnterpriseServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Vector\VectorAccessControl::class),
             $app->make(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class),
             $app->make(\LaravelAIEngine\Services\Vector\ChunkingService::class),
+            $app->make(\LaravelAIEngine\Services\Tenant\MultiTenantVectorService::class),
         ));
         $app->singleton(\LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService(
             $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),

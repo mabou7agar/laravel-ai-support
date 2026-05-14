@@ -3,20 +3,23 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
+use LaravelAIEngine\Contracts\AgentRuntimeContract;
 use LaravelAIEngine\DTOs\AgentResponse;
-use LaravelAIEngine\Services\Agent\AgentOrchestrator;
-use LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
+use LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService;
+use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
 
 class TestRealAgentFlowCommand extends Command
 {
     protected $signature = 'ai-engine:test-real-agent
                             {--message=* : Ordered test messages (repeat option)}
-                            {--script=followup : Built-in script when no messages provided (followup|minimal)}
+                            {--script=followup : Built-in script when no messages provided (followup|minimal|invoice-create)}
+                            {--assert= : Validate a named scenario against responses (invoice-create)}
+                            {--full-response : Include full response text in JSON output}
                             {--session= : Session ID}
                             {--user=1 : User ID}
                             {--engine=openai : AI engine}
                             {--model=gpt-4o-mini : AI model}
+                            {--rag-model=* : RAG model/collection class to scope retrieval (repeat option)}
                             {--local-only : Force local-only execution (no remote node routing)}
                             {--json : Output JSON summary}
                             {--report-feedback : Include adaptive decision feedback report}
@@ -25,13 +28,14 @@ class TestRealAgentFlowCommand extends Command
     protected $description = 'Run a real end-to-end agent conversation test against live app data';
 
     public function handle(
-        AgentOrchestrator $orchestrator,
-        AutonomousRAGDecisionFeedbackService $feedbackService,
-        AutonomousRAGPolicy $policy
+        AgentRuntimeContract $runtime,
+        RAGDecisionFeedbackService $feedbackService,
+        RAGDecisionPolicy $policy
     ): int {
         $sessionId = $this->option('session') ?: 'real-agent-' . uniqid();
         $userId = $this->option('user');
         $messages = $this->resolveMessages();
+        $ragModels = $this->resolveRagModels();
         $localOnly = (bool) $this->option('local-only');
         $originalNodesEnabled = config('ai-engine.nodes.enabled');
 
@@ -54,15 +58,11 @@ class TestRealAgentFlowCommand extends Command
                 $start = microtime(true);
 
                 try {
-                    $response = $orchestrator->process(
+                    $response = $runtime->process(
                         $message,
                         $sessionId,
                         $userId,
-                        [
-                            'engine' => $this->option('engine'),
-                            'model' => $this->option('model'),
-                            'local_only' => $localOnly,
-                        ]
+                        $this->runtimeOptions($localOnly, $ragModels)
                     );
 
                     $duration = (int) round((microtime(true) - $start) * 1000);
@@ -89,21 +89,33 @@ class TestRealAgentFlowCommand extends Command
                 }
             }
 
-            $summary = $this->buildSummary($sessionId, $userId, $results, $toolCounts, $errors);
+            $summary = $this->buildSummary($sessionId, $userId, $results, $toolCounts, $errors, $ragModels);
+            $assertions = $this->assertScenario((string) $this->option('assert'), $results);
+            if ($assertions !== null) {
+                $summary['assertions'] = $assertions;
+            }
+
             if ($this->option('report-feedback')) {
                 $summary['decision_feedback'] = $feedbackService->report($policy->decisionBusinessContext());
             }
 
+            $outputResults = $this->option('full-response')
+                ? $results
+                : array_map(fn (array $row): array => array_diff_key($row, ['response_text' => true]), $results);
+
             if ($this->option('json')) {
                 $this->line(json_encode([
                     'summary' => $summary,
-                    'turns' => $results,
+                    'turns' => $outputResults,
                 ], JSON_PRETTY_PRINT));
             } else {
-                $this->displaySummary($summary, $results);
+                $this->displaySummary($summary, $outputResults);
             }
 
-            return $errors > 0 ? self::FAILURE : self::SUCCESS;
+            return ((int) ($summary['failed_turns'] ?? 0)) > 0
+                || (($assertions['passed'] ?? true) === false)
+                    ? self::FAILURE
+                    : self::SUCCESS;
         } finally {
             if ($localOnly) {
                 config(['ai-engine.nodes.enabled' => $originalNodesEnabled]);
@@ -123,12 +135,41 @@ class TestRealAgentFlowCommand extends Command
                 'hello',
                 'show me recent updates',
             ],
+            'invoice-create' => [
+                'create invoice',
+                'Mohamed Abou Hagar',
+                'mohamed@example.test',
+                'actually change customer name to Mohamed Hagar before confirmation',
+                'yes create the customer',
+                '2 Macbook Pro and 3 iPhone',
+                'remove 1 iPhone and add 1 iPad',
+                'confirm',
+                'yes',
+            ],
             default => [
                 'list invoices',
                 'what is the status of the first one?',
                 'should i follow up on it?',
             ],
         };
+    }
+
+    protected function resolveRagModels(): array
+    {
+        return array_values(array_filter(
+            array_map(static fn ($value): string => trim((string) $value), (array) $this->option('rag-model')),
+            static fn (string $value): bool => $value !== ''
+        ));
+    }
+
+    protected function runtimeOptions(bool $localOnly, array $ragModels): array
+    {
+        return array_filter([
+            'engine' => $this->option('engine'),
+            'model' => $this->option('model'),
+            'local_only' => $localOnly,
+            'rag_collections' => $ragModels !== [] ? $ragModels : null,
+        ], static fn ($value): bool => $value !== null);
     }
 
     protected function buildResultRow(
@@ -147,6 +188,7 @@ class TestRealAgentFlowCommand extends Command
             'needs_user_input' => $response->needsUserInput,
             'is_complete' => $response->isComplete,
             'duration_ms' => $duration,
+            'response_text' => $response->message,
             'response_excerpt' => $this->excerpt($response->message),
         ];
     }
@@ -156,10 +198,12 @@ class TestRealAgentFlowCommand extends Command
         $userId,
         array $results,
         array $toolCounts,
-        int $errors
+        int $errors,
+        array $ragModels = []
     ): array {
         $total = count($results);
         $success = count(array_filter($results, fn (array $row) => ($row['success'] ?? false) === true));
+        $failed = max(0, $total - $success);
         $avgDuration = $total > 0
             ? (int) round(array_sum(array_map(fn (array $row) => (int) ($row['duration_ms'] ?? 0), $results)) / $total)
             : 0;
@@ -170,12 +214,84 @@ class TestRealAgentFlowCommand extends Command
             'engine' => $this->option('engine'),
             'model' => $this->option('model'),
             'local_only' => (bool) $this->option('local-only'),
+            'rag_collections' => $ragModels,
             'total_turns' => $total,
             'successful_turns' => $success,
-            'failed_turns' => $errors,
+            'failed_turns' => $failed,
+            'error_turns' => $errors,
             'average_duration_ms' => $avgDuration,
             'tool_counts' => $toolCounts,
         ];
+    }
+
+    protected function assertScenario(string $scenario, array $results): ?array
+    {
+        return match ($scenario) {
+            'invoice-create' => $this->assertInvoiceCreateScenario($results),
+            '', 'none' => null,
+            default => [
+                'scenario' => $scenario,
+                'passed' => false,
+                'failures' => ["Unknown assertion scenario [{$scenario}]."],
+            ],
+        };
+    }
+
+    protected function assertInvoiceCreateScenario(array $results): array
+    {
+        $texts = array_map(
+            fn (array $row): string => mb_strtolower((string) ($row['response_text'] ?? $row['response_excerpt'] ?? '')),
+            $results
+        );
+
+        $checks = [
+            'asks_for_customer' => fn (): bool => $this->containsAny($texts[0] ?? '', ['customer name', 'name or email', 'customer']),
+            'handles_missing_customer' => fn (): bool => $this->containsAny($texts[1] ?? '', ['not found', 'couldn\'t find', 'create a new customer', 'missing customer']),
+            'keeps_edited_customer_name' => fn (): bool => str_contains($texts[3] ?? '', 'mohamed hagar'),
+            'does_not_report_missing_create_customer_tool' => fn (): bool => !$this->containsAny(implode("\n", $texts), [
+                'tool \'create_customer\' not found',
+                'unable to create a new customer',
+                'system limitation',
+                'customer_id": 0',
+                'placeholder',
+            ]),
+            'asks_or_accepts_products' => fn (): bool => $this->containsAny($texts[5] ?? '', ['macbook pro', 'iphone', 'product']),
+            'supports_item_edit' => fn (): bool => str_contains($texts[6] ?? '', 'ipad')
+                && str_contains($texts[6] ?? '', 'iphone')
+                && $this->containsAny($texts[6] ?? '', ['2 iphone', '2 iphones', '2 units', 'quantity: 2']),
+            'final_review_asks_for_confirmation' => fn (): bool => $this->containsAny($texts[7] ?? '', [
+                'please review',
+                'confirm to proceed',
+                'type:',
+                'yes',
+            ]),
+            'final_confirmation_completes' => fn (): bool => (($results[8]['is_complete'] ?? false) === true)
+                || $this->containsAny($texts[8] ?? '', ['successfully completed', 'invoice', 'created']),
+        ];
+
+        $failures = [];
+        foreach ($checks as $name => $check) {
+            if (!$check()) {
+                $failures[] = $name;
+            }
+        }
+
+        return [
+            'scenario' => 'invoice-create',
+            'passed' => $failures === [],
+            'failures' => $failures,
+        ];
+    }
+
+    protected function containsAny(string $text, array $needles): bool
+    {
+        foreach ($needles as $needle) {
+            if (str_contains($text, mb_strtolower((string) $needle))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function displaySummary(array $summary, array $results): void

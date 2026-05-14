@@ -22,6 +22,10 @@ class ProviderToolContinuationService
     public function continueRun(int|string $runId, array $options = []): AIProviderToolRun
     {
         $run = $this->runs->findOrFail($runId);
+        if ($run->status === 'completed') {
+            return $run;
+        }
+
         $this->assertReadyForContinuation($run);
 
         $payload = is_array($run->request_payload) ? $run->request_payload : [];
@@ -45,10 +49,16 @@ class ProviderToolContinuationService
             $run = $this->runLifecycle->complete($run, $response, [
                 'continued_at' => now()->toISOString(),
                 'continuation' => $options,
+                'agent_run_id' => $run->agent_run_id,
+                'agent_run_step_id' => $run->agent_run_step_id,
+                'trace_id' => $run->metadata['trace_id'] ?? null,
             ]);
 
             $this->artifacts->recordFromProviderResponse($run, $response, [
                 'continued' => true,
+                'agent_run_id' => $run->agent_run_id,
+                'agent_run_step_id' => $run->agent_run_step_id,
+                'trace_id' => $run->metadata['trace_id'] ?? null,
             ]);
 
             return $run;

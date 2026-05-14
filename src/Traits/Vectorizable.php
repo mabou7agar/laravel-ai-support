@@ -2,7 +2,7 @@
 
 namespace LaravelAIEngine\Traits;
 
-use LaravelAIEngine\Services\RAG\IntelligentRAGService;
+use LaravelAIEngine\Services\RAG\RAGChatService;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\SearchDocument;
 use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
@@ -1878,7 +1878,7 @@ PROMPT;
     // ==========================================
 
     /**
-     * Intelligent RAG chat - AI decides when to search
+     * RAG chat - AI decides when to search
      *
      * @param string $query
      * @param string $sessionId
@@ -1893,7 +1893,8 @@ PROMPT;
         string $sessionId = 'default',
         array $options = []
     ): AIResponse {
-        $intelligentRAG = app(IntelligentRAGService::class);
+        $ragChat = app(RAGChatService::class);
+        $userId = $options['user_id'] ?? null;
 
         // Determine which collections to search
         $restrictToModel = $options['restrict_to_model'] ?? false;
@@ -1914,12 +1915,13 @@ PROMPT;
             $collections = $discovery->discover();
         }
 
-        return $intelligentRAG->processMessage(
+        return $ragChat->processMessage(
             $query,
             $sessionId,
             $collections,
             [],
-            $options
+            $options,
+            $userId
         );
     }
 
@@ -1936,14 +1938,15 @@ PROMPT;
         ?string $userId = null,
         array $options = []
     ): array {
-        $intelligentRAG = app(IntelligentRAGService::class);
+        $ragChat = app(RAGChatService::class);
 
-        $response = $intelligentRAG->processMessage(
+        $response = $ragChat->processMessage(
             $query,
             $userId ?? 'default',
             [static::class],
             [],
-            array_merge($options, ['intelligent' => false])
+            array_merge($options, ['intelligent' => false]),
+            $userId
         );
 
         return [
@@ -1969,15 +1972,16 @@ PROMPT;
         ?string $userId = null,
         array $options = []
     ): array {
-        $intelligentRAG = app(IntelligentRAGService::class);
+        $ragChat = app(RAGChatService::class);
 
-        return $intelligentRAG->processMessageStream(
+        return $ragChat->processMessageStream(
             $query,
             $userId ?? 'default',
             $callback,
             [static::class],
             [],
-            array_merge($options, ['intelligent' => false])
+            array_merge($options, ['intelligent' => false]),
+            $userId
         );
     }
 

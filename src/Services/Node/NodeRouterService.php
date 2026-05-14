@@ -263,7 +263,7 @@ class NodeRouterService
         $startTime = microtime(true);
 
         try {
-            // Extract headers from options if provided (from AgentOrchestrator)
+            // Extract headers from options if provided (from LaravelAgentProcessor)
             $customHeaders = $options['headers'] ?? [];
 
             // Default headers

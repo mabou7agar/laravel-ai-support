@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\DTOs;
 
 use Closure;
+use LaravelAIEngine\Services\Agent\Tools\AgentTool;
 
 /**
  * Configuration for AI-Autonomous Data Collection
@@ -151,12 +152,18 @@ class AutonomousCollectorConfig
             
             foreach ($this->tools as $toolName => $tool) {
                 $prompt .= "### {$toolName}\n";
-                $prompt .= $tool['description'] ?? "Tool: {$toolName}";
+                $prompt .= $this->toolDescription((string) $toolName, $tool);
                 $prompt .= "\n";
                 
-                if (!empty($tool['parameters'])) {
-                    $prompt .= "Parameters: " . json_encode($tool['parameters'], JSON_PRETTY_PRINT) . "\n";
+                $parameters = $this->toolParameters($tool);
+                if (!empty($parameters)) {
+                    $prompt .= "Parameters: " . json_encode($parameters, JSON_PRETTY_PRINT) . "\n";
                 }
+
+                if ($this->toolRequiresConfirmation((string) $toolName)) {
+                    $prompt .= "Requires explicit user confirmation before execution.\n";
+                }
+
                 $prompt .= "\n";
             }
         }
@@ -194,11 +201,12 @@ class AutonomousCollectorConfig
         foreach ($this->tools as $toolName => $tool) {
             $definition = [
                 'name' => $toolName,
-                'description' => $tool['description'] ?? "Execute {$toolName}",
+                'description' => $this->toolDescription((string) $toolName, $tool),
             ];
             
-            if (!empty($tool['parameters'])) {
-                $definition['parameters'] = $this->convertToJsonSchema($tool['parameters']);
+            $parameters = $this->toolParameters($tool);
+            if (!empty($parameters)) {
+                $definition['parameters'] = $this->convertToJsonSchema($parameters);
             }
             
             $definitions[] = $definition;
@@ -210,13 +218,22 @@ class AutonomousCollectorConfig
     /**
      * Execute a tool by name
      */
-    public function executeTool(string $toolName, array $arguments = []): mixed
+    public function executeTool(string $toolName, array $arguments = [], ?UnifiedActionContext $context = null): mixed
     {
         if (!isset($this->tools[$toolName])) {
             throw new \InvalidArgumentException("Tool '{$toolName}' not found");
         }
         
         $tool = $this->tools[$toolName];
+        $agentTool = $this->resolveAgentTool($tool);
+
+        if ($agentTool instanceof AgentTool) {
+            $context ??= new UnifiedActionContext('autonomous-tool-' . uniqid());
+            $result = $agentTool->execute($arguments, $context);
+
+            return $this->actionResultPayload($result);
+        }
+
         $handler = $tool['handler'] ?? null;
         
         if (!$handler instanceof Closure) {
@@ -229,6 +246,36 @@ class AutonomousCollectorConfig
         }
         
         return $handler($arguments);
+    }
+
+    public function toolRequiresConfirmation(string $toolName): bool
+    {
+        if (!isset($this->tools[$toolName])) {
+            return false;
+        }
+
+        $tool = $this->tools[$toolName];
+        $agentTool = $this->resolveAgentTool($tool);
+        if ($agentTool instanceof AgentTool) {
+            return $agentTool->requiresConfirmation();
+        }
+
+        return (($tool['requires_confirmation'] ?? false) === true);
+    }
+
+    public function toolConfirmationDescription(string $toolName): ?string
+    {
+        if (!isset($this->tools[$toolName])) {
+            return null;
+        }
+
+        $tool = $this->tools[$toolName];
+        $agentTool = $this->resolveAgentTool($tool);
+        if ($agentTool instanceof AgentTool) {
+            return $agentTool->getConfirmationMessage() ?: $agentTool->getDescription();
+        }
+
+        return $tool['confirmation_message'] ?? $tool['description'] ?? null;
     }
 
     /**
@@ -300,6 +347,76 @@ class AutonomousCollectorConfig
             'properties' => $properties,
             'required' => $required,
         ];
+    }
+
+    protected function resolveAgentTool(mixed $tool): ?AgentTool
+    {
+        if ($tool instanceof AgentTool) {
+            return $tool;
+        }
+
+        if (is_string($tool) && is_a($tool, AgentTool::class, true)) {
+            return app($tool);
+        }
+
+        if (is_array($tool)) {
+            $candidate = $tool['tool'] ?? $tool['class'] ?? null;
+            if ($candidate instanceof AgentTool) {
+                return $candidate;
+            }
+
+            if (is_string($candidate) && is_a($candidate, AgentTool::class, true)) {
+                return app($candidate);
+            }
+        }
+
+        return null;
+    }
+
+    protected function toolDescription(string $toolName, mixed $tool): string
+    {
+        $agentTool = $this->resolveAgentTool($tool);
+        if ($agentTool instanceof AgentTool) {
+            return $agentTool->getDescription();
+        }
+
+        if (is_array($tool)) {
+            return (string) ($tool['description'] ?? "Execute {$toolName}");
+        }
+
+        return "Execute {$toolName}";
+    }
+
+    protected function toolParameters(mixed $tool): array
+    {
+        $agentTool = $this->resolveAgentTool($tool);
+        if ($agentTool instanceof AgentTool) {
+            return $agentTool->getParameters();
+        }
+
+        return is_array($tool) ? (array) ($tool['parameters'] ?? []) : [];
+    }
+
+    protected function actionResultPayload(ActionResult $result): mixed
+    {
+        $hasStructuredPayload = is_array($result->data) && $result->data !== [];
+        $payload = is_array($result->data)
+            ? $result->data
+            : ($result->data === null ? [] : ['data' => $result->data]);
+
+        if (!array_key_exists('success', $payload) && !array_key_exists('found', $payload)) {
+            $payload['success'] = $result->success;
+        }
+
+        if ($result->message !== null && !array_key_exists('message', $payload)) {
+            $payload['message'] = $result->message;
+        }
+
+        if ($result->error !== null && !$hasStructuredPayload && !array_key_exists('error', $payload)) {
+            $payload['error'] = $result->error;
+        }
+
+        return $payload;
     }
 
     /**

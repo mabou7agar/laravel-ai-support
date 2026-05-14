@@ -6,18 +6,19 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Contracts\Auth\Authenticatable;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\RAGExecutionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGAgent;
+use LaravelAIEngine\Services\RAG\RAGExecutionRouter;
 
 class AgentConversationService
 {
     public function __construct(
         protected AIEngineService $ai,
-        protected AutonomousRAGAgent $ragAgent,
+        protected RAGExecutionRouter $ragExecutionRouter,
         protected SelectedEntityContextService $selectedEntityContext,
         protected AgentSelectionService $selectionService,
         protected ?LocaleResourceService $localeResources = null,
@@ -32,8 +33,6 @@ class AgentConversationService
         array $options,
         callable $reroute
     ): AgentResponse {
-        $conversationHistory = $context->conversationHistory ?? [];
-
         Log::channel('ai-engine')->debug('Executing RAG search', [
             'message' => substr($message, 0, 100),
             'session_id' => $context->sessionId,
@@ -42,13 +41,12 @@ class AgentConversationService
         $options = $this->routingContextResolver->mergeConversationContext($context, $options);
         $this->recordRoutingMetadata($context, $options);
 
-        $result = $this->ragAgent->process(
-            $message,
-            $context->sessionId,
-            $context->userId,
-            $conversationHistory,
-            $options
-        );
+        $ragExecution = $this->ragExecutionRouter->execute($message, $context, $options);
+        if ($ragExecution->usesPipeline()) {
+            return $this->formatRagPipelineResponse($ragExecution, $context, $options);
+        }
+
+        $result = $ragExecution->decisionResult ?? [];
 
         if (!empty($result['exit_to_orchestrator'])) {
             $newMessage = $result['message'] ?? $message;
@@ -58,7 +56,7 @@ class AgentConversationService
                 'new_message' => substr($newMessage, 0, 100),
             ]);
 
-            $options['skip_ai_decision'] = true;
+            $options['start_collector'] = true;
 
             return $reroute($newMessage, $context->sessionId, $context->userId, $options);
         }
@@ -123,7 +121,7 @@ class AgentConversationService
             $historyText .= "Earlier conversation summary:\n{$conversationSummary}\n\n";
         }
 
-        foreach (array_slice($conversationHistory, -3) as $msg) {
+        foreach (array_slice($conversationHistory, -$this->recentConversationMessageLimit()) as $msg) {
             $historyText .= "{$msg['role']}: {$msg['content']}\n";
         }
 
@@ -196,6 +194,34 @@ PROMPT;
                 $context->metadata[$metadataKey] = $options[$optionKey];
             }
         }
+    }
+
+    protected function formatRagPipelineResponse(
+        RAGExecutionResult $ragExecution,
+        UnifiedActionContext $context,
+        array $options
+    ): AgentResponse {
+        $response = $ragExecution->response;
+        if (!$response instanceof AgentResponse) {
+            return AgentResponse::failure('RAG pipeline returned no response.', context: $context);
+        }
+
+        $context->metadata['tool_used'] = 'rag_pipeline';
+        $context->metadata['fast_path'] = false;
+        $context->metadata['decision_source'] = $options['decision_source'] ?? $context->metadata['decision_source'] ?? 'rag_pipeline';
+        $context->metadata['rag_last_metadata'] = $response->metadata ?? [];
+
+        if (!$response->success) {
+            return $response;
+        }
+
+        return AgentResponse::conversational(
+            message: $response->message,
+            context: $context,
+            metadata: array_merge($response->metadata ?? [], [
+                'rag_pipeline' => true,
+            ])
+        );
     }
 
     protected function formatRagFailureMessage(array $result): string
@@ -304,6 +330,16 @@ PROMPT;
         $user = $modelClass::find($userId);
 
         return $user instanceof Authenticatable ? $user : null;
+    }
+
+    protected function recentConversationMessageLimit(): int
+    {
+        $configured = (int) config(
+            'ai-engine.conversation_history.recent_messages',
+            config('ai-agent.context_compaction.keep_recent_messages', 6)
+        );
+
+        return max(3, $configured);
     }
 
     protected function sanitizeProfile(Authenticatable $user): array

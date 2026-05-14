@@ -141,7 +141,7 @@ class TestEverythingCommand extends Command
                 [
                     $this->phpunitBinary(),
                     'tests/Unit/Services/Agent',
-                    'tests/Unit/Services/RAG/AutonomousRAGDecisionServiceTest.php',
+                    'tests/Unit/Services/RAG/RAGPlannerServiceTest.php',
                     'tests/Unit/Http/Controllers/Concerns/ExtractsConversationContextPayloadTest.php',
                 ]
             ),
@@ -192,7 +192,7 @@ class TestEverythingCommand extends Command
                     'AI_ENGINE_RUN_NEO4J_LIVE_TESTS' => 'true',
                     'AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX') ?: 'openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini',
                     'AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX') ?: 'openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini',
-                    'AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX') ?: 'openai:dall-e-3,fal_ai:fal-ai/nano-banana-2',
+                    'AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX') ?: 'openai:gpt-image-1-mini,fal_ai:fal-ai/nano-banana-2',
                     'AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX') ?: 'fal_ai:bytedance/seedance-2.0/text-to-video',
                     'AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX') ?: 'eleven_labs:eleven_multilingual_v2',
                     'AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX') ?: 'openai:whisper-1',
@@ -263,14 +263,14 @@ class TestEverythingCommand extends Command
             return is_file($explicit.'/artisan') ? $explicit : null;
         }
 
-        $appBasePath = base_path();
-        if (is_file($appBasePath.'/artisan')) {
-            return $appBasePath;
-        }
-
         $packageParentRoot = dirname($this->packagePath(), 2);
         if (is_file($packageParentRoot.'/artisan')) {
             return $packageParentRoot;
+        }
+
+        $appBasePath = base_path();
+        if (is_file($appBasePath.'/artisan')) {
+            return $appBasePath;
         }
 
         return null;

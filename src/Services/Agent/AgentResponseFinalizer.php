@@ -9,7 +9,8 @@ class AgentResponseFinalizer
 {
     public function __construct(
         protected ContextManager $contextManager,
-        protected ?ConversationContextCompactor $compactor = null
+        protected ?ConversationContextCompactor $compactor = null,
+        protected ?AgentTraceMetadataService $traceMetadata = null
     )
     {
         if ($this->compactor === null) {
@@ -21,11 +22,26 @@ class AgentResponseFinalizer
                 $this->compactor = new ConversationContextCompactor();
             }
         }
+
+        if ($this->traceMetadata === null) {
+            try {
+                $this->traceMetadata = app()->bound(AgentTraceMetadataService::class)
+                    ? app(AgentTraceMetadataService::class)
+                    : new AgentTraceMetadataService();
+            } catch (\Throwable) {
+                $this->traceMetadata = new AgentTraceMetadataService();
+            }
+        }
     }
 
     public function finalize(UnifiedActionContext $context, AgentResponse $response): AgentResponse
     {
-        $metadata = [];
+        $response = $this->traceMetadata->enrichResponse(
+            $response,
+            $this->traceMetadata->responseMetadataFromContext($context->metadata ?? [])
+        );
+
+        $metadata = $this->traceMetadata->responseMetadataFromContext($response->metadata ?? []);
         if (!empty($response->metadata['entity_ids'])) {
             $metadata['entity_ids'] = $response->metadata['entity_ids'];
             $metadata['entity_type'] = $response->metadata['entity_type'] ?? 'item';

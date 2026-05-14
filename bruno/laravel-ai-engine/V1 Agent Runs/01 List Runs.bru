@@ -1,0 +1,19 @@
+meta {
+  name: List Runs
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/agent-runs?status={{agentRunStatus}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

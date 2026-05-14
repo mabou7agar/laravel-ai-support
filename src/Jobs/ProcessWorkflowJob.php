@@ -29,7 +29,7 @@ class ProcessWorkflowJob implements ShouldQueue
         public string $model = 'gpt-4o-mini',
         public bool $useMemory = true,
         public bool $useActions = true,
-        public bool $useIntelligentRAG = true,
+        public bool $useRag = true,
         public array $ragCollections = []
     ) {}
 
@@ -56,7 +56,7 @@ class ProcessWorkflowJob implements ShouldQueue
                 model: $this->model,
                 useMemory: $this->useMemory,
                 useActions: $this->useActions,
-                useIntelligentRAG: $this->useIntelligentRAG,
+                useRag: $this->useRag,
                 ragCollections: $this->ragCollections,
                 userId: $this->userId
             );

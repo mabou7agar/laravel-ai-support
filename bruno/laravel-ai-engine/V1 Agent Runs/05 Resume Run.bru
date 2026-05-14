@@ -1,0 +1,30 @@
+meta {
+  name: Resume Run
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/agent-runs/{{agentRunId}}/resume
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "message": "continue",
+    "approval_key": "{{approvalKey}}",
+    "payload": {
+      "approved": true
+    }
+  }
+}

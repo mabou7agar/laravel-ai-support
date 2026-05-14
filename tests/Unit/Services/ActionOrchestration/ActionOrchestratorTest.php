@@ -164,6 +164,34 @@ class ActionOrchestratorTest extends UnitTestCase
         $this->assertTrue($second->metadata['idempotent_replay']);
     }
 
+    public function test_orchestrator_exposes_execution_helpers_for_agent_steps(): void
+    {
+        $orchestrator = $this->orchestrator();
+        $payload = [
+            'customer_id' => 10,
+            'items' => [['name' => 'Service']],
+            '_idempotency_key' => 'agent-step-1',
+        ];
+        $result = ActionResult::success('Ready.', ['preview' => true])
+            ->withActionInfo('create_invoice', 'create');
+
+        $this->assertTrue($orchestrator->canExecute('create_invoice'));
+        $this->assertFalse($orchestrator->canExecute('missing_action'));
+        $this->assertTrue($orchestrator->requiresConfirmation('create_invoice', $payload));
+
+        $idempotency = $orchestrator->idempotencyMetadata('create_invoice', $payload);
+        $this->assertSame('action:idempotency', $idempotency['cache_namespace']);
+        $this->assertIsString($idempotency['key']);
+        $this->assertFalse($idempotency['has_cached_result']);
+
+        $metadata = $orchestrator->executionStepMetadata('create_invoice', $result, $payload);
+        $this->assertSame('create_invoice', $metadata['action_id']);
+        $this->assertSame('create', $metadata['operation']);
+        $this->assertTrue($metadata['success']);
+        $this->assertTrue($metadata['requires_confirmation']);
+        $this->assertSame($idempotency['key'], $metadata['idempotency']['key']);
+    }
+
     public function test_orchestrator_writes_prepare_and_execute_audit_events(): void
     {
         $registry = new ActionRegistry();

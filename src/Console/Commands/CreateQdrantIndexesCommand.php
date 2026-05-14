@@ -132,7 +132,7 @@ class CreateQdrantIndexesCommand extends Command
     protected function discoverVectorizableModels(): array
     {
         $models = [];
-        $discoveryPaths = config('ai-engine.intelligent_rag.discovery_paths', [
+        $discoveryPaths = config('ai-engine.rag.discovery_paths', [
             app_path('Models'),
             base_path('modules/*/Models'),
         ]);

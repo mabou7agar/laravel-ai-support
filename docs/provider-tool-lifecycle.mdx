@@ -20,6 +20,14 @@ Hosted artifacts are extracted from provider responses and linked to `ai_media` 
 
 Generic FAL catalog models synced into `ai_models` can execute through the FAL driver. The request parameters become the endpoint payload, and the prompt is mapped to `prompt` unless the synced schema declares another prompt-like field.
 
+Before using a discovered FAL endpoint, sync the active provider catalog:
+
+```bash
+php artisan ai-engine:sync-models --provider=fal_ai --auto-discover
+```
+
+If a requested model is not active in `ai_models`, the API returns a `422` validation-style response instead of starting a provider run.
+
 ## API Surface
 
 The package exposes versioned app APIs under `/api/v1/ai/provider-tools`:

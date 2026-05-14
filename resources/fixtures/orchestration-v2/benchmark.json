@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "routing_messages": [
+    "hello",
+    "What changed in the Apollo handoff notes?",
+    "Search the customer invoice documents",
+    "Find Apollo customer context"
+  ],
+  "rag_sources": [
+    {
+      "type": "vector",
+      "id": "doc-1",
+      "title": "Apollo Handoff Notes",
+      "content": "Apollo needs invoice approval, hosted artifact citations, and a customer handoff summary."
+    },
+    {
+      "source_type": "hybrid",
+      "type": "hybrid",
+      "id": "hybrid-1",
+      "title": "Apollo Graph Join",
+      "content": "Invoice INV-DEMO-1001 is linked to the Apollo Migration project and the hosted artifact task."
+    }
+  ],
+  "thresholds": {
+    "routing_avg_ms": 25,
+    "rag_context_avg_ms": 10
+  }
+}

@@ -35,6 +35,12 @@ class CoreServiceRegistrar
         $app->singleton(DriverRegistry::class, fn ($app) => new DriverRegistry($app));
 
         $app->singleton(ConversationManager::class, fn () => new ConversationManager());
+        if (!$app->bound(\LaravelAIEngine\Contracts\AIScopeResolver::class)) {
+            $app->singleton(\LaravelAIEngine\Contracts\AIScopeResolver::class, fn () => new \LaravelAIEngine\Services\Scope\DefaultAIScopeResolver());
+        }
+        $app->singleton(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class, fn ($app) => new \LaravelAIEngine\Services\Scope\AIScopeOptionsService(
+            $app->make(\LaravelAIEngine\Contracts\AIScopeResolver::class)
+        ));
 
         $app->singleton(DiscoveryCacheWarmer::class, function ($app) {
             return new DiscoveryCacheWarmer(
@@ -51,7 +57,8 @@ class CoreServiceRegistrar
             $app->make(CreditManager::class),
             $app->make(ConversationManager::class),
             $app->make(DriverRegistry::class),
-            $app->make(\LaravelAIEngine\Services\RequestRouteResolver::class)
+            $app->make(\LaravelAIEngine\Services\RequestRouteResolver::class),
+            $app->make(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class)
         ));
         $app->singleton(\LaravelAIEngine\Support\Fal\FalCharacterStore::class, fn () => new \LaravelAIEngine\Support\Fal\FalCharacterStore());
         $app->singleton(\LaravelAIEngine\Services\Fal\FalReferencePackGenerationService::class, fn ($app) => new \LaravelAIEngine\Services\Fal\FalReferencePackGenerationService(
@@ -89,17 +96,47 @@ class CoreServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\JobStatusTracker::class, fn () => new \LaravelAIEngine\Services\JobStatusTracker());
         $app->singleton(\LaravelAIEngine\Services\QueuedAIProcessor::class, fn ($app) => new \LaravelAIEngine\Services\QueuedAIProcessor($app->make(\LaravelAIEngine\Services\JobStatusTracker::class)));
 
-        $app->singleton(\LaravelAIEngine\Services\RAG\IntelligentRAGService::class, function ($app) {
-            return new \LaravelAIEngine\Services\RAG\IntelligentRAGService(
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGChatService::class, function ($app) {
+            return new \LaravelAIEngine\Services\RAG\RAGChatService(
                 $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
                 $app->make(\LaravelAIEngine\Services\AIEngineService::class),
                 $app->make(DriverRegistry::class),
-                $app->make(\LaravelAIEngine\Services\ConversationService::class)
+                $app->make(\LaravelAIEngine\Services\ConversationService::class),
+                null,
+                $app->make(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class)
             );
         });
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGRetriever::class, function ($app) {
+            $vector = $app->bound(\LaravelAIEngine\Services\Vector\VectorSearchService::class)
+                ? $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class)
+                : null;
+            $graph = $app->bound(\LaravelAIEngine\Services\Graph\Neo4jRetrievalService::class)
+                ? $app->make(\LaravelAIEngine\Services\Graph\Neo4jRetrievalService::class)
+                : null;
+            $hybrid = $app->bound(\LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService::class)
+                ? $app->make(\LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService::class)
+                : null;
+
+            return new \LaravelAIEngine\Services\RAG\RAGRetriever([
+                new \LaravelAIEngine\Services\RAG\Retrievers\VectorRAGRetriever($vector),
+                new \LaravelAIEngine\Services\RAG\Retrievers\GraphRAGRetriever($graph),
+                new \LaravelAIEngine\Services\RAG\Retrievers\HybridRAGRetriever($hybrid),
+            ]);
+        });
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGPipeline::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGPipeline(
+            $app->make(\LaravelAIEngine\Services\RAG\RAGQueryAnalyzer::class),
+            $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionResolver::class),
+            $app->make(\LaravelAIEngine\Services\RAG\RAGRetriever::class),
+            $app->make(\LaravelAIEngine\Services\RAG\RAGContextBuilder::class),
+            $app->make(\LaravelAIEngine\Services\RAG\RAGPromptBuilder::class),
+            $app->make(\LaravelAIEngine\Services\RAG\RAGResponseGenerator::class)
+        ));
+        $app->alias(\LaravelAIEngine\Services\RAG\RAGPipeline::class, \LaravelAIEngine\Contracts\RAGPipelineContract::class);
 
         $app->singleton(\LaravelAIEngine\Services\AIModelRegistry::class, fn () => new \LaravelAIEngine\Services\AIModelRegistry());
         $app->singleton(\LaravelAIEngine\Repositories\AIModelRepository::class);
+        $app->singleton(\LaravelAIEngine\Repositories\AgentRunRepository::class);
+        $app->singleton(\LaravelAIEngine\Repositories\AgentRunStepRepository::class);
         $app->singleton(\LaravelAIEngine\Repositories\ProviderToolRunRepository::class);
         $app->singleton(\LaravelAIEngine\Repositories\ProviderToolApprovalRepository::class);
         $app->singleton(\LaravelAIEngine\Repositories\ProviderToolArtifactRepository::class);
@@ -111,18 +148,22 @@ class CoreServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\ProviderTools\HostedArtifactService::class);
         $app->singleton(\LaravelAIEngine\Services\ProviderTools\ProviderToolContinuationService::class);
         $app->singleton(\LaravelAIEngine\Services\ProviderTools\ProviderFileDownloadService::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunApprovalService::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentTraceMetadataService::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentExecutionPolicyService::class);
         $app->singleton(\LaravelAIEngine\Services\Fal\FalCatalogExecutionService::class);
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, fn () => new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery());
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class, fn () => new \LaravelAIEngine\Services\RAG\AutonomousRAGPolicy());
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionPromptService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGDecisionPromptService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGStateService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGStateService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGModelMetadataService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGModelMetadataService($app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGStateService::class), $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGContextService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGContextService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGModelMetadataService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionPromptService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGExecutionService::class, fn () => new \LaravelAIEngine\Services\RAG\AutonomousRAGExecutionService());
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGAggregateService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGAggregateService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\AutonomousRAGStructuredDataService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\AutonomousRAGStructuredDataService($app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGStateService::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\AutonomousRAGAggregateService::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class, fn () => new \LaravelAIEngine\Services\RAG\RAGDecisionPolicy());
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionPromptService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionPromptService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionStateService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionStateService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGModelMetadataService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGModelMetadataService($app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionStateService::class), $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGContextService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGContextService($app->make(\LaravelAIEngine\Services\RAG\RAGModelMetadataService::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGPlannerService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGPlannerService($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPromptService::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGToolExecutionService::class, fn () => new \LaravelAIEngine\Services\RAG\RAGToolExecutionService());
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGModelScopeGuard::class, fn () => new \LaravelAIEngine\Services\RAG\RAGModelScopeGuard());
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGAggregateService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGAggregateService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\RAGModelScopeGuard::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGStructuredDataService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGStructuredDataService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionStateService::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\RAGAggregateService::class), null, null, null, $app->make(\LaravelAIEngine\Services\RAG\RAGModelScopeGuard::class)));
 
         $app->singleton(\LaravelAIEngine\Services\DataCollector\DataCollectorService::class, function ($app) {
             return new \LaravelAIEngine\Services\DataCollector\DataCollectorService(
@@ -140,6 +181,11 @@ class CoreServiceRegistrar
 
         $app->singleton(\LaravelAIEngine\Services\ModelResolver::class, fn () => new \LaravelAIEngine\Services\ModelResolver());
         $app->singleton(\LaravelAIEngine\Services\PendingActionService::class, fn () => new \LaravelAIEngine\Services\PendingActionService());
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunSafetyService::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunMaintenanceService::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunRetentionService::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunRecoveryService::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunBudgetService::class);
         $app->singleton(InfrastructureHealthService::class, fn () => new InfrastructureHealthService());
     }
 }

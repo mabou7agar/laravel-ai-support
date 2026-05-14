@@ -5,20 +5,20 @@ namespace LaravelAIEngine\Tests\Feature\Policies;
 use Illuminate\Support\Facades\Artisan;
 use LaravelAIEngine\Models\AIPromptFeedbackEvent;
 use LaravelAIEngine\Models\AIPromptPolicyVersion;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPromptPolicyService;
+use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 use LaravelAIEngine\Tests\TestCase;
 
 class DecisionPolicyEvaluateCommandTest extends TestCase
 {
     public function test_it_promotes_best_canary_when_metrics_improve(): void
     {
-        config()->set('ai-engine.intelligent_rag.decision.policy_store.enabled', true);
-        config()->set('ai-engine.intelligent_rag.decision.policy_store.auto_seed_default', false);
-        config()->set('ai-engine.intelligent_rag.decision.adaptive_feedback.persistence.enabled', true);
-        config()->set('ai-engine.intelligent_rag.decision.policy_store.evaluation.min_score_delta', 0.1);
+        config()->set('ai-engine.rag.decision.policy_store.enabled', true);
+        config()->set('ai-engine.rag.decision.policy_store.auto_seed_default', false);
+        config()->set('ai-engine.rag.decision.adaptive_feedback.persistence.enabled', true);
+        config()->set('ai-engine.rag.decision.policy_store.evaluation.min_score_delta', 0.1);
 
-        /** @var AutonomousRAGPromptPolicyService $service */
-        $service = $this->app->make(AutonomousRAGPromptPolicyService::class);
+        /** @var RAGPromptPolicyService $service */
+        $service = $this->app->make(RAGPromptPolicyService::class);
 
         $active = $service->createVersion('ACTIVE V1', [
             'policy_key' => 'decision',

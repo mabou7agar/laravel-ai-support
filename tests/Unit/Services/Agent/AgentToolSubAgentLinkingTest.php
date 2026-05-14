@@ -10,6 +10,8 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentOrchestrationInspector;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
+use LaravelAIEngine\Services\Agent\Routing\Stages\AIRouterStage;
+use LaravelAIEngine\Services\Agent\Routing\Stages\ExplicitModeStage;
 use LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService;
 use LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner;
 use LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry;
@@ -86,6 +88,13 @@ class AgentToolSubAgentLinkingTest extends UnitTestCase
 
     public function test_orchestration_inspector_reports_missing_links_and_complexity(): void
     {
+        config()->set('ai-agent.routing_pipeline.stages', [
+            ExplicitModeStage::class,
+            AIRouterStage::class,
+        ]);
+        config()->set('ai-agent.runtime.default', 'langgraph');
+        config()->set('ai-agent.runtime.langgraph.enabled', true);
+
         $tools = new ToolRegistry();
         $tools->register('echo', new LinkedEchoTool());
 
@@ -119,6 +128,12 @@ class AgentToolSubAgentLinkingTest extends UnitTestCase
         $this->assertContains('missing_tool', array_column($report->issues, 'code'));
         $this->assertContains('missing_sub_agent', array_column($report->issues, 'code'));
         $this->assertContains('orchestration_complexity_high', array_column($report->issues, 'code'));
+        $this->assertSame(['langgraph', 'laravel'], $report->nodes['runtimes']);
+        $this->assertSame([ExplicitModeStage::class, AIRouterStage::class], $report->nodes['routing_stages']);
+        $this->assertContains('runs_stage', array_column($report->links, 'type'));
+        $this->assertContains('fallback_runtime', array_column($report->links, 'type'));
+        $this->assertSame(2, $report->metrics['runtime_count']);
+        $this->assertSame(2, $report->metrics['routing_stage_count']);
         $this->assertSame(1, $report->metrics['tool_count']);
     }
 }

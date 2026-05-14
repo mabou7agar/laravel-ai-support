@@ -32,14 +32,14 @@ class AsyncChatClient {
      * @param {boolean} options.async - Enable async mode (default: false)
      * @param {boolean} options.actions - Enable actions (default: true)
      * @param {boolean} options.memory - Enable memory (default: true)
-     * @param {boolean} options.intelligent_rag - Enable RAG (default: true)
+     * @param {boolean} options.rag - Enable RAG (default: true)
      */
     async sendMessage(message, options = {}) {
         const {
             async = false,
             actions = true,
             memory = true,
-            intelligent_rag = true,
+            rag = true,
         } = options;
 
         const response = await fetch(`${this.apiBaseUrl}/chat/send`, {
@@ -51,7 +51,7 @@ class AsyncChatClient {
                 async,
                 actions,
                 memory,
-                intelligent_rag,
+                rag,
             }),
         });
 

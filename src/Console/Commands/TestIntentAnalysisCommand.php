@@ -45,7 +45,7 @@ class TestIntentAnalysisCommand extends Command
                 model: 'gpt-4o-mini',
                 useMemory: true,
                 useActions: true,
-                useIntelligentRAG: false
+                useRag: false
             );
 
             $this->info('💬 AI Response:');
@@ -80,7 +80,7 @@ class TestIntentAnalysisCommand extends Command
                 model: 'gpt-4o-mini',
                 useMemory: true,
                 useActions: true,
-                useIntelligentRAG: false
+                useRag: false
             );
 
             $duration = round((microtime(true) - $startTime) * 1000, 2);
@@ -140,7 +140,7 @@ class TestIntentAnalysisCommand extends Command
                 model: 'gpt-4o-mini',
                 useMemory: true,
                 useActions: true,
-                useIntelligentRAG: false
+                useRag: false
             );
 
             $duration = round((microtime(true) - $startTime) * 1000, 2);

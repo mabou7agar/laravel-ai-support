@@ -3,8 +3,8 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
+use LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService;
+use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
 
 class DecisionFeedbackReportCommand extends Command
 {
@@ -15,8 +15,8 @@ class DecisionFeedbackReportCommand extends Command
     protected $description = 'Show adaptive decision-prompt feedback report and generated hints';
 
     public function handle(
-        AutonomousRAGDecisionFeedbackService $feedbackService,
-        AutonomousRAGPolicy $policy
+        RAGDecisionFeedbackService $feedbackService,
+        RAGDecisionPolicy $policy
     ): int {
         $businessContext = $policy->decisionBusinessContext();
         $report = $feedbackService->report($businessContext);

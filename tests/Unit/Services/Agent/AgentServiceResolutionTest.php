@@ -7,12 +7,16 @@ use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
+use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\AgentManifestDoctor;
 use LaravelAIEngine\Services\Agent\AgentOrchestrationInspector;
-use LaravelAIEngine\Services\Agent\AgentOrchestrator;
+use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
+use LaravelAIEngine\Contracts\AgentRuntimeContract;
+use LaravelAIEngine\Contracts\RAGPipelineContract;
+use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeManager;
 use LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner;
 use LaravelAIEngine\Services\Agent\AgentSkillMatcher;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
@@ -22,6 +26,7 @@ use LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService;
 use LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner;
 use LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry;
 use LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler;
+use LaravelAIEngine\Services\RAG\RAGPipeline;
 use LaravelAIEngine\Tests\UnitTestCase;
 
 class AgentServiceResolutionTest extends UnitTestCase
@@ -31,9 +36,19 @@ class AgentServiceResolutionTest extends UnitTestCase
         $this->assertInstanceOf(IntentRouter::class, $this->app->make(IntentRouter::class));
     }
 
-    public function test_agent_orchestrator_resolves_with_intent_router_dependency(): void
+    public function test_agent_processor_resolves_with_intent_router_dependency(): void
     {
-        $this->assertInstanceOf(AgentOrchestrator::class, $this->app->make(AgentOrchestrator::class));
+        $this->assertInstanceOf(LaravelAgentProcessor::class, $this->app->make(LaravelAgentProcessor::class));
+    }
+
+    public function test_agent_runtime_contract_resolves_to_runtime_manager(): void
+    {
+        $this->assertInstanceOf(AgentRuntimeManager::class, $this->app->make(AgentRuntimeContract::class));
+    }
+
+    public function test_rag_pipeline_contract_resolves_to_v2_pipeline(): void
+    {
+        $this->assertInstanceOf(RAGPipeline::class, $this->app->make(RAGPipelineContract::class));
     }
 
     public function test_agent_planner_resolves_from_container(): void
@@ -74,6 +89,11 @@ class AgentServiceResolutionTest extends UnitTestCase
     public function test_agent_execution_facade_resolves_from_container(): void
     {
         $this->assertInstanceOf(AgentExecutionFacade::class, $this->app->make(AgentExecutionFacade::class));
+    }
+
+    public function test_agent_execution_dispatcher_resolves_from_container(): void
+    {
+        $this->assertInstanceOf(AgentExecutionDispatcher::class, $this->app->make(AgentExecutionDispatcher::class));
     }
 
     public function test_goal_agent_services_resolve_from_container(): void

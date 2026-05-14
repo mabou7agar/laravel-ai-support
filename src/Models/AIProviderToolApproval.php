@@ -14,6 +14,7 @@ class AIProviderToolApproval extends Model
 
     protected $fillable = [
         'approval_key',
+        'agent_run_step_id',
         'tool_run_id',
         'provider',
         'tool_name',
@@ -25,6 +26,7 @@ class AIProviderToolApproval extends Model
         'metadata',
         'reason',
         'requested_at',
+        'expires_at',
         'resolved_at',
     ];
 
@@ -32,12 +34,18 @@ class AIProviderToolApproval extends Model
         'tool_payload' => 'array',
         'metadata' => 'array',
         'requested_at' => 'datetime',
+        'expires_at' => 'datetime',
         'resolved_at' => 'datetime',
     ];
 
     public function run(): BelongsTo
     {
         return $this->belongsTo(AIProviderToolRun::class, 'tool_run_id');
+    }
+
+    public function agentRunStep(): BelongsTo
+    {
+        return $this->belongsTo(AIAgentRunStep::class, 'agent_run_step_id');
     }
 
     public function auditEvents(): HasMany

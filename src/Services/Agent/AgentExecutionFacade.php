@@ -47,31 +47,6 @@ class AgentExecutionFacade
         ]));
     }
 
-    public function handleSkipDecision(
-        string $message,
-        UnifiedActionContext $context,
-        array $options
-    ): AgentResponse {
-        $match = $this->collectorRegistry->findConfigForMessage($message);
-        if ($match) {
-            return $this->collectorHandler->handle($message, $context, array_merge($options, [
-                'action' => 'start_autonomous_collector',
-                'collector_match' => $match,
-            ]));
-        }
-
-        if (preg_match('/\b(delete|remove|cancel)\b/i', $message)) {
-            $errorMessage = 'Delete operations are not currently available through the AI assistant. Please use the application interface to delete records.';
-        } else {
-            $errorMessage = "I couldn't find a way to handle that request. I can help you create, update, or search for records. What would you like to do?";
-        }
-
-        return AgentResponse::conversational(
-            message: $errorMessage,
-            context: $context
-        );
-    }
-
     public function executeUseTool(
         string $toolName,
         string $message,

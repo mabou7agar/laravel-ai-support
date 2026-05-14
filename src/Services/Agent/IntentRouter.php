@@ -10,6 +10,7 @@ use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Agent\AgentManifestService;
 use LaravelAIEngine\Services\Node\NodeMetadataDiscovery;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
+use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 use Illuminate\Support\Facades\Log;
 
 class IntentRouter
@@ -23,7 +24,8 @@ class IntentRouter
         protected ?RoutingContextResolver $routingContextResolver = null,
         protected ?AgentSkillRegistry $skillRegistry = null,
         protected ?AgentSkillMatcher $skillMatcher = null,
-        protected ?AgentSkillExecutionPlanner $skillPlanner = null
+        protected ?AgentSkillExecutionPlanner $skillPlanner = null,
+        protected ?RAGPromptPolicyService $promptPolicyService = null
     ) {
         $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
             ? app(MessageRoutingClassifier::class)
@@ -32,6 +34,9 @@ class IntentRouter
         $this->skillRegistry ??= app()->bound(AgentSkillRegistry::class) ? app(AgentSkillRegistry::class) : null;
         $this->skillMatcher ??= app()->bound(AgentSkillMatcher::class) ? app(AgentSkillMatcher::class) : null;
         $this->skillPlanner ??= app()->bound(AgentSkillExecutionPlanner::class) ? app(AgentSkillExecutionPlanner::class) : null;
+        $this->promptPolicyService ??= app()->bound(RAGPromptPolicyService::class)
+            ? app(RAGPromptPolicyService::class)
+            : null;
     }
 
     public function route(string $message, UnifiedActionContext $context, array $options = []): array
@@ -51,7 +56,8 @@ class IntentRouter
             return $this->enforceForwardedRequestPolicy($skillDecision, $options);
         }
 
-        $prompt = $this->buildPrompt($message, $resources, $context);
+        $promptPolicy = $this->resolvePromptPolicy($context, $options);
+        $prompt = $this->buildPrompt($message, $resources, $context, $promptPolicy);
 
         Log::channel('ai-engine')->debug('IntentRouter prompt', [
             'prompt' => $prompt,
@@ -75,7 +81,7 @@ class IntentRouter
             'session_id' => $context->sessionId,
         ]);
 
-        return $this->enforceForwardedRequestPolicy(
+        return $this->withPromptPolicyMetadata($this->enforceForwardedRequestPolicy(
             $this->enforceStructuredQueryToolPolicy(
                 $this->enforceActiveActionWorkflowPolicy($this->parseDecision($rawResponse, $message, $context, $options), $message, $context),
                 $message,
@@ -84,7 +90,7 @@ class IntentRouter
                 $resources
             ),
             $options
-        );
+        ), $promptPolicy);
     }
 
     protected function discoverResources(array $options): array
@@ -358,7 +364,7 @@ class IntentRouter
         return $this->manifestService;
     }
 
-    protected function buildPrompt(string $message, array $resources, UnifiedActionContext $context): string
+    protected function buildPrompt(string $message, array $resources, UnifiedActionContext $context, array $promptPolicy = []): string
     {
         $history = $this->formatHistory($context);
         $pausedSessions = $context->get('session_stack', []);
@@ -369,9 +375,13 @@ class IntentRouter
         $userProfile = $this->getUserProfile($context->userId);
         $entityContext = $this->formatEntityMetadata($context);
         $actionWorkflowContext = $this->formatActionWorkflowContext($context);
+        $policyContext = $this->formatPromptPolicy($promptPolicy);
 
         return <<<PROMPT
 You are an intent router. Choose exactly one action for the user's message.
+
+DECISION PROMPT POLICY:
+{$policyContext}
 
 USER PROFILE:
 {$userProfile}
@@ -443,6 +453,79 @@ Respond with JSON ONLY using this schema:
 PROMPT;
     }
 
+    protected function resolvePromptPolicy(UnifiedActionContext $context, array $options): array
+    {
+        if (!$this->promptPolicyService instanceof RAGPromptPolicyService) {
+            return [];
+        }
+
+        try {
+            return $this->promptPolicyService->resolveForRuntime([
+                'session_id' => $context->sessionId,
+                'user_id' => $context->userId,
+                'tenant_id' => $options['tenant_id'] ?? $options['tenant'] ?? null,
+                'app_id' => $options['app_id'] ?? null,
+                'domain' => $options['domain'] ?? null,
+                'locale' => $options['locale'] ?? app()->getLocale(),
+            ], $options['decision_policy_key'] ?? null);
+        } catch (\Throwable $e) {
+            Log::channel('ai-engine')->warning('IntentRouter prompt policy resolution failed', [
+                'error' => $e->getMessage(),
+                'session_id' => $context->sessionId,
+            ]);
+
+            return [];
+        }
+    }
+
+    protected function formatPromptPolicy(array $promptPolicy): string
+    {
+        $selected = $promptPolicy['selected'] ?? null;
+        if (!$selected) {
+            return '- Default routing policy.';
+        }
+
+        $template = trim((string) ($selected->template ?? ''));
+        $rules = (array) ($selected->rules ?? []);
+        $lines = [
+            '- Policy selection: ' . (string) ($promptPolicy['selection'] ?? 'active'),
+            '- Policy key: ' . (string) ($selected->policy_key ?? 'default'),
+            '- Policy version: ' . (string) ($selected->version ?? 'unknown'),
+        ];
+
+        if ($template !== '') {
+            $lines[] = "Instructions:\n{$template}";
+        }
+
+        if ($rules !== []) {
+            $lines[] = 'Rules: ' . json_encode($rules, JSON_UNESCAPED_SLASHES);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    protected function withPromptPolicyMetadata(array $decision, array $promptPolicy): array
+    {
+        $selected = $promptPolicy['selected'] ?? null;
+        if (!$selected) {
+            return $decision;
+        }
+
+        $metadata = is_array($decision['metadata'] ?? null) ? $decision['metadata'] : [];
+        $metadata['prompt_policy'] = array_filter([
+            'id' => $selected->id ?? null,
+            'policy_key' => $selected->policy_key ?? null,
+            'version' => $selected->version ?? null,
+            'status' => $selected->status ?? null,
+            'selection' => $promptPolicy['selection'] ?? null,
+            'scope_key' => $selected->scope_key ?? null,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+
+        $decision['metadata'] = $metadata;
+
+        return $decision;
+    }
+
     protected function getUserProfile(?string $userId): string
     {
         if (!$userId) {
@@ -450,28 +533,33 @@ PROMPT;
         }
 
         try {
-            $user = \App\Models\User::find($userId);
+            $modelClass = config('auth.providers.users.model');
+            if (!is_string($modelClass) || !class_exists($modelClass) || !method_exists($modelClass, 'find')) {
+                return "- User ID: {$userId} (profile unavailable)";
+            }
+
+            $user = $modelClass::find($userId);
             if (!$user) {
                 return "- User ID: {$userId} (profile not found)";
             }
 
             $profile = [
-                "- Name: {$user->name}",
-                "- Email: {$user->email}",
+                '- Name: ' . (data_get($user, 'name') ?: 'unavailable'),
+                '- Email: ' . (data_get($user, 'email') ?: 'unavailable'),
             ];
 
-            if (isset($user->company)) {
-                $profile[] = "- Company: {$user->company}";
+            if (data_get($user, 'company') !== null) {
+                $profile[] = '- Company: ' . data_get($user, 'company');
             }
-            if (isset($user->role)) {
-                $profile[] = "- Role: {$user->role}";
+            if (data_get($user, 'role') !== null) {
+                $profile[] = '- Role: ' . data_get($user, 'role');
             }
-            if (isset($user->preferences) && is_array($user->preferences)) {
-                $profile[] = '- Preferences: ' . json_encode($user->preferences);
+            if (is_array(data_get($user, 'preferences'))) {
+                $profile[] = '- Preferences: ' . json_encode(data_get($user, 'preferences'));
             }
 
             return implode("\n", $profile);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::channel('ai-engine')->warning('Failed to fetch user profile', [
                 'user_id' => $userId,
                 'error' => $e->getMessage(),
@@ -492,7 +580,7 @@ PROMPT;
                 : '(New conversation)';
         }
 
-        $recent = array_slice($messages, -5);
+        $recent = array_slice($messages, -$this->recentConversationMessageLimit());
         $lines = $summary !== ''
             ? ["Earlier conversation summary:\n{$summary}", 'Recent conversation:']
             : [];
@@ -506,6 +594,16 @@ PROMPT;
         }
 
         return implode("\n", $lines);
+    }
+
+    protected function recentConversationMessageLimit(): int
+    {
+        $configured = (int) config(
+            'ai-engine.conversation_history.recent_messages',
+            config('ai-agent.context_compaction.keep_recent_messages', 6)
+        );
+
+        return max(5, $configured);
     }
 
     protected function formatSelectedEntityContext(UnifiedActionContext $context): string
@@ -771,6 +869,21 @@ PROMPT;
         $resourceName = $decoded['resource_name'] ?? null;
         if (!is_string($resourceName) || trim($resourceName) === '' || in_array(strtolower(trim($resourceName)), ['none', 'null'], true)) {
             $resourceName = null;
+        }
+
+        if ($action === 'use_tool' && $resourceName === null) {
+            $classification = $this->messageClassifier->classify(
+                $message,
+                $this->routingContextResolver->signalsFromContext($context, $options)
+            );
+
+            return [
+                'action' => $classification['route'] === 'search_rag' ? 'search_rag' : 'conversational',
+                'resource_name' => null,
+                'params' => is_array($decoded['params'] ?? null) ? $decoded['params'] : [],
+                'reasoning' => 'Heuristic fallback: router selected use_tool without a tool name.',
+                'decision_source' => 'heuristic_fallback',
+            ];
         }
 
         $reasoning = trim((string) ($decoded['reasoning'] ?? 'AI routing decision'));

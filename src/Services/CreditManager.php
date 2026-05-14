@@ -10,7 +10,10 @@ use Illuminate\Support\Facades\Schema;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
+use LaravelAIEngine\Models\AIAgentRun;
+use LaravelAIEngine\Repositories\AgentRunRepository;
 
 class CreditManager
 {
@@ -424,12 +427,17 @@ class CreditManager
 
             return $total;
         }
+
+        $handler = $this->getLifecycleHandler();
+        if ($handler) {
+            return $handler->getAvailableCredits($user);
+        }
         
-        if ($user->has_unlimited_credits) {
+        if ($this->readUnlimitedCreditsFlag($user)) {
             return PHP_FLOAT_MAX;
         }
         
-        return $user->my_credits ?? 0;
+        return $this->readScalarCreditBalance($user);
     }
 
     /**
@@ -456,6 +464,153 @@ class CreditManager
             'most_used_model' => null,
             'period' => '30_days',
         ];
+    }
+
+    /**
+     * Start tracking a budget envelope for an agent run.
+     */
+    public function startRunBudget(int|string|AIAgentRun $runId, int|string|null $ownerId, array $limits): AIAgentRun
+    {
+        $run = $this->resolveRun($runId);
+        $metadata = $run->metadata ?? [];
+
+        $metadata['budget'] = [
+            'owner_id' => $ownerId === null ? null : (string) $ownerId,
+            'limits' => $this->normalizeRunBudgetLimits($limits),
+            'usage' => [
+                'tokens' => 0,
+                'cost' => 0.0,
+                'credits' => 0.0,
+                'requests' => 0,
+            ],
+            'started_at' => now()->toISOString(),
+            'updated_at' => now()->toISOString(),
+        ];
+
+        foreach (['max_tokens', 'max_cost', 'max_credits'] as $key) {
+            if (array_key_exists($key, $metadata['budget']['limits'])) {
+                $metadata[$key] = $metadata['budget']['limits'][$key];
+            }
+        }
+
+        return $this->runRepository()->update($run, ['metadata' => $metadata]);
+    }
+
+    /**
+     * Record usage against a run budget, optionally deducting credits from the configured owner.
+     */
+    public function recordRunUsage(int|string|AIAgentRun $runId, AIResponse|array $usage): AIAgentRun
+    {
+        $run = $this->resolveRun($runId);
+        $metadata = $run->metadata ?? [];
+        $budget = $metadata['budget'] ?? [
+            'owner_id' => $run->user_id === null ? null : (string) $run->user_id,
+            'limits' => [],
+            'usage' => [],
+        ];
+
+        $delta = $this->normalizeRunUsage($usage);
+        $limits = $this->normalizeRunBudgetLimits($budget['limits'] ?? []);
+
+        if (($limits['deduct_credits'] ?? false) === true && ($budget['owner_id'] ?? null) !== null && $delta['credits'] > 0) {
+            $this->deductRunCredits((string) $budget['owner_id'], $delta['credits'], $limits);
+        }
+
+        $current = array_merge([
+            'tokens' => 0,
+            'cost' => 0.0,
+            'credits' => 0.0,
+            'requests' => 0,
+        ], $budget['usage'] ?? []);
+
+        $budget['limits'] = $limits;
+        $budget['usage'] = [
+            'tokens' => (int) $current['tokens'] + $delta['tokens'],
+            'cost' => round((float) $current['cost'] + $delta['cost'], 8),
+            'credits' => round((float) $current['credits'] + $delta['credits'], 8),
+            'requests' => (int) $current['requests'] + 1,
+        ];
+        $budget['last_usage'] = $delta['raw'];
+        $budget['updated_at'] = now()->toISOString();
+
+        $metadata['budget'] = $budget;
+        $metadata['tokens_used'] = $budget['usage']['tokens'];
+        $metadata['cost_used'] = $budget['usage']['cost'];
+        $metadata['credits_used'] = $budget['usage']['credits'];
+
+        if (($delta['provider_model'] ?? null) !== null) {
+            $metadata['provider_model'] = $delta['provider_model'];
+        }
+
+        return $this->runRepository()->update($run, ['metadata' => $metadata]);
+    }
+
+    /**
+     * Return remaining run budget for tokens, cost, credits, and owner balance.
+     */
+    public function remainingRunBudget(int|string|AIAgentRun $runId): array
+    {
+        $run = $this->resolveRun($runId);
+        $budget = ($run->metadata ?? [])['budget'] ?? [];
+        $limits = $this->normalizeRunBudgetLimits($budget['limits'] ?? []);
+        $usage = array_merge([
+            'tokens' => 0,
+            'cost' => 0.0,
+            'credits' => 0.0,
+            'requests' => 0,
+        ], $budget['usage'] ?? []);
+
+        $remaining = [
+            'tokens' => array_key_exists('max_tokens', $limits) ? (int) $limits['max_tokens'] - (int) $usage['tokens'] : null,
+            'cost' => array_key_exists('max_cost', $limits) ? round((float) $limits['max_cost'] - (float) $usage['cost'], 8) : null,
+            'credits' => array_key_exists('max_credits', $limits) ? round((float) $limits['max_credits'] - (float) $usage['credits'], 8) : null,
+        ];
+
+        $owner = ['id' => $budget['owner_id'] ?? null, 'available_credits' => null, 'is_unlimited' => false];
+        if (($budget['owner_id'] ?? null) !== null) {
+            $ownerCredits = $this->ownerCreditSnapshot((string) $budget['owner_id'], $limits);
+            $owner['available_credits'] = $ownerCredits['balance'];
+            $owner['is_unlimited'] = $ownerCredits['is_unlimited'];
+
+            if ($remaining['credits'] === null) {
+                $remaining['credits'] = $owner['is_unlimited'] ? null : $owner['available_credits'];
+            } elseif (!$owner['is_unlimited']) {
+                $remaining['credits'] = min((float) $remaining['credits'], (float) $owner['available_credits']);
+            }
+        }
+
+        return [
+            'run_id' => $run->uuid,
+            'owner' => $owner,
+            'limits' => $limits,
+            'usage' => $usage,
+            'remaining' => $remaining,
+        ];
+    }
+
+    /**
+     * Throw when the tracked run budget has already been exhausted.
+     */
+    public function assertRunBudgetAvailable(int|string|AIAgentRun $runId): bool
+    {
+        $summary = $this->remainingRunBudget($runId);
+
+        foreach (['tokens' => 'token', 'cost' => 'cost', 'credits' => 'credit'] as $key => $label) {
+            $remaining = $summary['remaining'][$key] ?? null;
+            if ($remaining !== null && (float) $remaining < 0) {
+                $limitKey = 'max_' . $key;
+                throw new \RuntimeException("Agent run exceeded {$label} budget [{$summary['limits'][$limitKey]}].");
+            }
+        }
+
+        if (($summary['owner']['available_credits'] ?? null) !== null
+            && ($summary['owner']['is_unlimited'] ?? false) === false
+            && (float) $summary['owner']['available_credits'] < 0
+        ) {
+            throw new \RuntimeException('Agent run credit owner has no available credits.');
+        }
+
+        return true;
     }
 
     /**
@@ -521,6 +676,144 @@ class CreditManager
     private function countCharacters(string $text): int
     {
         return mb_strlen(strip_tags($text));
+    }
+
+    private function resolveRun(int|string|AIAgentRun $runId): AIAgentRun
+    {
+        return $runId instanceof AIAgentRun
+            ? $runId->refresh()
+            : $this->runRepository()->findOrFail($runId);
+    }
+
+    private function runRepository(): AgentRunRepository
+    {
+        return app(AgentRunRepository::class);
+    }
+
+    private function normalizeRunBudgetLimits(array $limits): array
+    {
+        foreach (['engine', 'model'] as $key) {
+            if (($limits[$key] ?? null) instanceof EngineEnum || ($limits[$key] ?? null) instanceof EntityEnum) {
+                $limits[$key] = $limits[$key]->value;
+            }
+        }
+
+        foreach (['max_tokens'] as $key) {
+            if (array_key_exists($key, $limits) && $limits[$key] !== null) {
+                $limits[$key] = (int) $limits[$key];
+            }
+        }
+
+        foreach (['max_cost', 'max_credits'] as $key) {
+            if (array_key_exists($key, $limits) && $limits[$key] !== null) {
+                $limits[$key] = (float) $limits[$key];
+            }
+        }
+
+        if (array_key_exists('deduct_credits', $limits)) {
+            $limits['deduct_credits'] = (bool) $limits['deduct_credits'];
+        }
+
+        return $limits;
+    }
+
+    /**
+     * @return array{tokens:int,cost:float,credits:float,provider_model:?string,raw:array}
+     */
+    private function normalizeRunUsage(AIResponse|array $usage): array
+    {
+        $raw = $usage instanceof AIResponse ? array_merge($usage->getUsage() ?? [], [
+            'tokens_used' => $usage->getTokensUsed(),
+            'credits_used' => $usage->getCreditsUsed(),
+            'provider_model' => $usage->getModel()->value,
+        ]) : $usage;
+
+        $tokens = $raw['tokens_used']
+            ?? $raw['total_tokens']
+            ?? $raw['tokens']
+            ?? ((int) ($raw['input_tokens'] ?? 0) + (int) ($raw['output_tokens'] ?? 0));
+
+        $cost = $raw['cost_used']
+            ?? $raw['total_cost']
+            ?? $raw['cost']
+            ?? $raw['amount']
+            ?? 0.0;
+
+        $credits = $raw['credits_used']
+            ?? $raw['credits']
+            ?? $raw['total_credits']
+            ?? $cost;
+
+        return [
+            'tokens' => (int) $tokens,
+            'cost' => (float) $cost,
+            'credits' => (float) $credits,
+            'provider_model' => isset($raw['provider_model']) ? (string) $raw['provider_model'] : null,
+            'raw' => $raw,
+        ];
+    }
+
+    private function deductRunCredits(string $ownerId, float $credits, array $limits): void
+    {
+        if (($limits['engine'] ?? null) !== null && ($limits['model'] ?? null) !== null) {
+            $request = new AIRequest(
+                prompt: '',
+                engine: (string) $limits['engine'],
+                model: (string) $limits['model'],
+                userId: $ownerId,
+                metadata: ['source' => 'agent_run_budget']
+            );
+
+            $this->deductCredits($ownerId, $request, $credits);
+            return;
+        }
+
+        $user = $this->getUserModel($ownerId);
+        $handler = $this->getLifecycleHandler();
+        if ($handler) {
+            $request = new AIRequest(prompt: '', userId: $ownerId, metadata: ['source' => 'agent_run_budget']);
+            $handler->deductCredits($user, $request, $credits);
+            return;
+        }
+
+        if ($this->usesEntityCreditLedger($user)) {
+            throw new \InvalidArgumentException('Run budget credit deduction requires engine and model when using entity credit ledgers.');
+        }
+
+        if (!$this->supportsScalarCreditFields($user) || $this->readUnlimitedCreditsFlag($user)) {
+            return;
+        }
+
+        $currentBalance = $this->readScalarCreditBalance($user);
+        if ($currentBalance < $credits) {
+            throw new InsufficientCreditsException(
+                "Insufficient MyCredits. Required: {$credits}, Available: {$currentBalance}"
+            );
+        }
+
+        $this->writeScalarCreditState($user, $currentBalance - $credits, false);
+    }
+
+    /**
+     * @return array{balance:float,is_unlimited:bool}
+     */
+    private function ownerCreditSnapshot(string $ownerId, array $limits): array
+    {
+        if (($limits['engine'] ?? null) !== null && ($limits['model'] ?? null) !== null) {
+            $credits = $this->getUserCredits($ownerId, (string) $limits['engine'], (string) $limits['model']);
+
+            return [
+                'balance' => (float) $credits['balance'],
+                'is_unlimited' => (bool) ($credits['is_unlimited'] ?? false),
+            ];
+        }
+
+        $total = $this->getTotalCredits($ownerId);
+
+        return [
+            'balance' => $total,
+            'is_unlimited' => $total === PHP_FLOAT_MAX,
+        ];
     }
 
     /**

@@ -3,7 +3,7 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\Agent\AgentOrchestrator;
+use LaravelAIEngine\Contracts\AgentRuntimeContract;
 
 class TestAgentCommand extends Command
 {
@@ -17,7 +17,7 @@ class TestAgentCommand extends Command
 
     protected $description = 'Test the Unified AI Agent system';
 
-    public function handle(AgentOrchestrator $orchestrator)
+    public function handle(AgentRuntimeContract $runtime)
     {
         $this->info('🤖 Unified AI Agent Test');
         $this->newLine();
@@ -42,17 +42,17 @@ class TestAgentCommand extends Command
                     break;
                 }
 
-                $this->processMessage($orchestrator, $message, $sessionId, $userId);
+                $this->processMessage($runtime, $message, $sessionId, $userId);
             }
         } else {
-            $this->processMessage($orchestrator, $message, $sessionId, $userId);
+            $this->processMessage($runtime, $message, $sessionId, $userId);
         }
 
         return 0;
     }
 
     protected function processMessage(
-        AgentOrchestrator $orchestrator,
+        AgentRuntimeContract $runtime,
         string $message,
         string $sessionId,
         $userId
@@ -64,7 +64,7 @@ class TestAgentCommand extends Command
         $startTime = microtime(true);
 
         try {
-            $response = $orchestrator->process(
+            $response = $runtime->process(
                 $message,
                 $sessionId,
                 $userId,

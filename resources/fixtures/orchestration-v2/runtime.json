@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "tool_safety": [
+    {
+      "name": "deny_browser_control",
+      "type": "tool",
+      "target": "computer_use.browser",
+      "deny": ["computer_use.*"],
+      "expected_allowed": false
+    },
+    {
+      "name": "allow_hosted_code_execution",
+      "type": "tool",
+      "target": "code_interpreter",
+      "allow": ["code_interpreter"],
+      "expected_allowed": true
+    }
+  ],
+  "approval_resume": [
+    {
+      "name": "mcp_tool_approval_interrupt",
+      "run": {
+        "id": "lg-approval-1",
+        "thread_id": "thread-approval",
+        "status": "interrupted",
+        "interrupt": {
+          "tool_name": "mcp.filesystem.write",
+          "risk_level": "high",
+          "message": "Approve file write?",
+          "requires_approval": true,
+          "required_inputs": [
+            {"name": "approved", "type": "boolean"}
+          ]
+        }
+      },
+      "resume_payload": {
+        "approved": true
+      },
+      "expected": {
+        "requires_approval": true,
+        "required_input": "approved"
+      }
+    }
+  ],
+  "langgraph_mock_runtime": [
+    {
+      "name": "completed_run_maps_to_success",
+      "run": {
+        "id": "lg-complete-1",
+        "thread_id": "thread-complete",
+        "status": "completed",
+        "output": {
+          "message": "Graph completed."
+        }
+      },
+      "expected": {
+        "success": true,
+        "message": "Graph completed."
+      }
+    },
+    {
+      "name": "interrupted_run_maps_to_user_input",
+      "run": {
+        "id": "lg-interrupt-1",
+        "thread_id": "thread-interrupt",
+        "status": "interrupted",
+        "interrupt": {
+          "message": "Approve browser control?",
+          "required_inputs": [
+            {"name": "approved", "type": "boolean"}
+          ]
+        }
+      },
+      "expected": {
+        "needs_user_input": true,
+        "required_input": "approved"
+      }
+    }
+  ]
+}

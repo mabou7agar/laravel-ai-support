@@ -128,6 +128,32 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertStringContainsString('enabled: false', $skillFile);
     }
 
+    public function test_scaffold_runtime_graph_extension_types_register_manifest_entries(): void
+    {
+        $types = [
+            'routing-stage' => ['InvoiceGuard', 'AI/Routing/InvoiceGuardRoutingStage.php', 'routing_stages', 'invoice_guard', 'implements RoutingStageContract'],
+            'execution-handler' => ['ApproveInvoice', 'AI/Execution/ApproveInvoiceExecutionHandler.php', 'execution_handlers', 'approve_invoice', 'implements ExecutionHandlerContract'],
+            'runtime' => ['DurableGraph', 'AI/Runtimes/DurableGraphRuntime.php', 'runtimes', 'durable_graph', 'implements AgentRuntimeContract'],
+            'rag-retriever' => ['HybridKnowledge', 'AI/RAG/HybridKnowledgeRAGRetriever.php', 'rag_retrievers', 'hybrid_knowledge', 'implements RAGRetrieverContract'],
+            'policy' => ['FinanceApproval', 'AI/Policies/FinanceApprovalPolicy.php', 'policies', 'finance_approval', 'function canExecute'],
+        ];
+
+        foreach ($types as $type => [$name, $path, $section, $key, $expected]) {
+            $exitCode = Artisan::call('ai-engine:scaffold', [
+                'type' => $type,
+                'name' => $name,
+            ]);
+
+            $this->assertSame(0, $exitCode, "Scaffold failed for {$type}");
+            $this->assertFileExists(app_path($path));
+            $this->assertStringContainsString($expected, file_get_contents(app_path($path)) ?: '');
+
+            $manifest = require $this->manifestPath;
+            $this->assertArrayHasKey($section, $manifest);
+            $this->assertNotNull($manifest[$section][$key] ?? null);
+        }
+    }
+
     public function test_discover_skills_command_writes_draft_manifest_definitions(): void
     {
         config()->set('ai-agent.actions', [

@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 use LaravelAIEngine\Models\AIProviderToolArtifact;
 use LaravelAIEngine\Models\AIProviderToolRun;
 use LaravelAIEngine\Repositories\ProviderToolArtifactRepository;
+use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\AIMediaManager;
 
 class HostedArtifactService
@@ -43,6 +44,10 @@ class HostedArtifactService
     {
         $url = $artifact['download_url'] ?? $artifact['source_url'] ?? $artifact['citation_url'] ?? null;
         $media = null;
+        $metadata = $artifact['metadata'] ?? [];
+        $ownerType = (string) ($artifact['owner_type'] ?? $metadata['owner_type'] ?? 'provider_tool_run');
+        $ownerId = (string) ($artifact['owner_id'] ?? $metadata['owner_id'] ?? $run->id);
+        $source = (string) ($artifact['source'] ?? $metadata['source'] ?? $this->inferSource($run, $artifact));
 
         if (is_string($url) && $this->shouldPersistRemote($artifact, $url)) {
             $media = $this->mediaManager->storeRemoteFile($url, [
@@ -58,11 +63,15 @@ class HostedArtifactService
             ]);
         }
 
-        return $this->artifacts->create([
+        $record = $this->artifacts->create([
             'uuid' => (string) Str::uuid(),
+            'agent_run_step_id' => $artifact['agent_run_step_id'] ?? $artifact['metadata']['agent_run_step_id'] ?? $run->agent_run_step_id,
             'tool_run_id' => $run->id,
+            'owner_type' => $ownerType,
+            'owner_id' => $ownerId,
             'media_id' => is_array($media) ? ($media['id'] ?? null) : null,
             'provider' => $run->provider,
+            'source' => $source,
             'artifact_type' => $artifact['artifact_type'] ?? 'file',
             'name' => $artifact['name'] ?? null,
             'mime_type' => $artifact['mime_type'] ?? null,
@@ -72,8 +81,25 @@ class HostedArtifactService
             'provider_container_id' => $artifact['provider_container_id'] ?? null,
             'citation_title' => $artifact['citation_title'] ?? null,
             'citation_url' => $artifact['citation_url'] ?? null,
-            'metadata' => $artifact['metadata'] ?? [],
+            'metadata' => array_merge($metadata, [
+                'owner_type' => $ownerType,
+                'owner_id' => $ownerId,
+                'source' => $source,
+            ]),
+            'expires_at' => $artifact['expires_at'] ?? $metadata['expires_at'] ?? $this->expiresAt(),
         ]);
+
+        $this->emitArtifactEvent($run, $record);
+
+        return $record;
+    }
+
+    public function recordForOwner(AIProviderToolRun $run, string $ownerType, int|string $ownerId, array $artifact): AIProviderToolArtifact
+    {
+        return $this->record($run, array_merge($artifact, [
+            'owner_type' => $ownerType,
+            'owner_id' => (string) $ownerId,
+        ]));
     }
 
     private function extractCandidates(array $payload, string $path = ''): array
@@ -201,5 +227,44 @@ class HostedArtifactService
         $type = (string) ($artifact['artifact_type'] ?? $this->inferArtifactType($url, ''));
 
         return in_array($type, ['image', 'video', 'audio', 'file'], true);
+    }
+
+    private function inferSource(AIProviderToolRun $run, array $artifact): string
+    {
+        $toolNames = array_values(array_filter((array) ($run->tool_names ?? [])));
+        $firstTool = (string) ($toolNames[0] ?? '');
+        if ($firstTool !== '') {
+            return $firstTool;
+        }
+
+        return match ((string) ($artifact['artifact_type'] ?? 'file')) {
+            'image' => 'image_generation',
+            'video' => 'video_generation',
+            default => 'provider_tool',
+        };
+    }
+
+    private function expiresAt(): mixed
+    {
+        $days = (int) config('ai-agent.run_retention.artifact_days', 90);
+
+        return $days > 0 ? now()->addDays($days) : null;
+    }
+
+    private function emitArtifactEvent(AIProviderToolRun $run, AIProviderToolArtifact $artifact): void
+    {
+        app(AgentRunEventStreamService::class)->emit(
+            AgentRunEventStreamService::ARTIFACT_CREATED,
+            $run->agent_run_id,
+            $artifact->agent_run_step_id,
+            [
+                'artifact_id' => $artifact->uuid,
+                'artifact_type' => $artifact->artifact_type,
+                'source' => $artifact->source,
+                'provider' => $artifact->provider,
+                'tool_run_id' => $run->uuid,
+            ],
+            ['trace_id' => $run->metadata['trace_id'] ?? $artifact->metadata['trace_id'] ?? null]
+        );
     }
 }

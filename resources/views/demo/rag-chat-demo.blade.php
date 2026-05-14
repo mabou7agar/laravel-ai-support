@@ -145,7 +145,7 @@
                 height="600px"
                 :memory="true"
                 :actions="true"
-                :useIntelligentRAG="true"
+                :useRag="true"
                 :ragCollections="[]"
                 placeholder="Ask me about Laravel..."
                 :showSources="true"

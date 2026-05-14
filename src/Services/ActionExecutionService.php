@@ -704,7 +704,7 @@ class ActionExecutionService
                 $response = $this->chatService->processMessage(
                     message: $prompt,
                     sessionId: $sessionId,
-                    useIntelligentRAG: false
+                    useRag: false
                 );
 
                 return [

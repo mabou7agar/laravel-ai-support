@@ -33,7 +33,7 @@ class AgentActionExecutionService
         array $options,
         callable $searchRag
     ): AgentResponse {
-        Log::channel('ai-engine')->debug('AgentOrchestrator: executeUseTool called', [
+        Log::channel('ai-engine')->debug('LaravelAgentProcessor: executeUseTool called', [
             'tool_name' => $toolName,
             'message' => $message,
         ]);
@@ -160,7 +160,24 @@ class AgentActionExecutionService
             'tool_name' => $toolName,
         ]);
 
+        if ($this->isStructuredDataFallback($message)) {
+            return $searchRag($message, $context, array_merge($options, [
+                'preclassified_route_mode' => 'structured_query',
+                'target_model' => $toolName,
+                'decision_path' => 'tool_fallback_structured_query',
+                'decision_source' => 'tool_fallback',
+            ]));
+        }
+
         return $searchRag($message, $context, $options);
+    }
+
+    protected function isStructuredDataFallback(string $message): bool
+    {
+        return preg_match(
+            '/\b(count|how many|total|sum|average|avg|minimum|min|maximum|max|group by|by status|per status|by month|monthly)\b/i',
+            $message
+        ) === 1;
     }
 
     protected function executeRegistryTool(
@@ -227,14 +244,7 @@ class AgentActionExecutionService
         array $options,
         callable $routeToNode
     ): AgentResponse {
-        if ($collectorName === '') {
-            return AgentResponse::failure(
-                message: $this->runtimeText('ai-engine::runtime.agent_action_execution.no_collector_specified', 'No collector specified'),
-                context: $context
-            );
-        }
-
-        Log::channel('ai-engine')->debug('AgentOrchestrator starting collector', [
+        Log::channel('ai-engine')->debug('LaravelAgentProcessor starting collector', [
             'collector_name' => $collectorName,
             'message' => substr($message, 0, 100),
         ]);
@@ -270,6 +280,19 @@ class AgentActionExecutionService
         }
 
         $match = AutonomousCollectorRegistry::findConfigForMessage($message);
+        if (!$match && $collectorName === '') {
+            if (preg_match('/\b(delete|remove|cancel)\b/i', $message)) {
+                $errorMessage = 'Delete operations are not currently available through the AI assistant. Please use the application interface to delete records.';
+            } else {
+                $errorMessage = "I couldn't find a way to handle that request. I can help you create, update, or search for records. What would you like to do?";
+            }
+
+            return AgentResponse::conversational(
+                message: $errorMessage,
+                context: $context
+            );
+        }
+
         if (!$match) {
             Log::channel('ai-engine')->error('Collector not found', [
                 'collector_name' => $collectorName,

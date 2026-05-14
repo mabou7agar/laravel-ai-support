@@ -171,7 +171,7 @@ class Neo4jGraphLoadBenchmarkCommand extends Command
                 model: (string) ($this->option('model') ?: config('ai-engine.default_model', 'gpt-4o-mini')),
                 useMemory: false,
                 useActions: false,
-                useIntelligentRAG: true,
+                useRag: true,
                 ragCollections: $collections,
                 userId: null,
                 searchInstructions: null,

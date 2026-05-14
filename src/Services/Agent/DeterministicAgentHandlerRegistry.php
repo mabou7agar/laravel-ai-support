@@ -66,6 +66,17 @@ class DeterministicAgentHandlerRegistry
     }
 
     /**
+     * @return array<int, string>
+     */
+    public function candidates(): array
+    {
+        return collect($this->resolvedHandlers())
+            ->map(static fn (DeterministicAgentHandler $handler): string => $handler::class)
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<int, DeterministicAgentHandler>
      */
     protected function resolvedHandlers(): array

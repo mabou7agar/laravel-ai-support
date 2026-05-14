@@ -61,4 +61,26 @@ class AgentSkillMatcherTest extends UnitTestCase
         $this->assertTrue($plan['params']['reset']);
         $this->assertSame('skill_match', $plan['decision_source']);
     }
+
+    public function test_planner_prefers_skill_collector_over_supporting_tools(): void
+    {
+        $skill = new AgentSkillDefinition(
+            id: 'create_invoice',
+            name: 'Create Invoice',
+            description: 'Create invoices.',
+            tools: ['find_customer', 'create_customer'],
+            metadata: ['collector' => 'test_invoice_creator']
+        );
+
+        $plan = (new AgentSkillExecutionPlanner())->plan(
+            $skill,
+            'create invoice',
+            new UnifiedActionContext('skill-collector-plan-test'),
+            ['score' => 100, 'trigger' => 'create invoice']
+        );
+
+        $this->assertSame('start_collector', $plan['action']);
+        $this->assertSame('test_invoice_creator', $plan['resource_name']);
+        $this->assertSame('skill_match', $plan['decision_source']);
+    }
 }

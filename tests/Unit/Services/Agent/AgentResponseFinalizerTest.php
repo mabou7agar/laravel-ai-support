@@ -52,4 +52,28 @@ class AgentResponseFinalizerTest extends TestCase
 
         $this->assertCount(1, $context->conversationHistory);
     }
+
+    public function test_finalize_adds_trace_metadata_to_response_and_message(): void
+    {
+        $manager = Mockery::mock(ContextManager::class);
+        $manager->shouldReceive('save')->once();
+
+        $finalizer = new AgentResponseFinalizer($manager);
+        $context = new UnifiedActionContext('session-3', null, metadata: [
+            'trace_id' => 'trace-1',
+            'agent_run_id' => 'run-1',
+            'agent_run_step_id' => 'step-1',
+            'runtime' => 'laravel',
+            'decision_source' => 'classifier',
+        ]);
+
+        $response = AgentResponse::success('Done.', context: $context);
+
+        $finalized = $finalizer->finalize($context, $response);
+
+        $this->assertSame('trace-1', $finalized->metadata['trace_id']);
+        $this->assertSame('run-1', $finalized->metadata['agent_run_id']);
+        $this->assertSame('step-1', $finalized->metadata['agent_run_step_id']);
+        $this->assertSame('trace-1', $context->conversationHistory[0]['metadata']['trace_id']);
+    }
 }

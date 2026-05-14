@@ -37,6 +37,11 @@ Route::prefix(config('ai-engine.admin_ui.route_prefix', 'ai-engine/admin'))
         Route::post('/nodes/bulk-sync/apply', [AdminOperationsController::class, 'applyBulkSync'])->name('nodes.bulk-sync.apply');
         Route::get('/health', [AdminOperationsController::class, 'health'])->name('health');
         Route::get('/policies', [AdminOperationsController::class, 'policies'])->name('policies');
+        Route::get('/agent-runs', [AdminOperationsController::class, 'agentRuns'])->name('agent-runs');
+        Route::get('/agent-runs/{run}', [AdminOperationsController::class, 'agentRunDetail'])->name('agent-runs.show');
+        Route::post('/agent-runs/{run}/resume', [AdminOperationsController::class, 'resumeAgentRun'])->name('agent-runs.resume');
+        Route::post('/agent-runs/{run}/retry', [AdminOperationsController::class, 'retryAgentRun'])->name('agent-runs.retry');
+        Route::post('/agent-runs/{run}/cancel', [AdminOperationsController::class, 'cancelAgentRun'])->name('agent-runs.cancel');
         Route::get('/provider-tools', [AdminOperationsController::class, 'providerTools'])->name('provider-tools');
         Route::post('/provider-tools/approvals/approve', [AdminOperationsController::class, 'approveProviderTool'])->name('provider-tools.approvals.approve');
         Route::post('/provider-tools/approvals/reject', [AdminOperationsController::class, 'rejectProviderTool'])->name('provider-tools.approvals.reject');

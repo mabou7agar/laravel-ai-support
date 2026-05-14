@@ -58,6 +58,56 @@ class ActionOrchestrator
         ];
     }
 
+    public function canExecute(string $actionId, ?UnifiedActionContext $context = null): bool
+    {
+        $action = $this->registry->get($actionId);
+
+        return $action !== null
+            && ($action['enabled'] ?? true) === true
+            && $this->authorize($action, $context) === null;
+    }
+
+    public function requiresConfirmation(string $actionId, array $payload = [], ?UnifiedActionContext $context = null): bool
+    {
+        $action = $this->registry->get($actionId);
+        if (!$action || !($action['enabled'] ?? true) || $this->authorize($action, $context) !== null) {
+            return false;
+        }
+
+        return (bool) ($action['confirmation_required'] ?? true);
+    }
+
+    public function idempotencyMetadata(string $actionId, array $payload, ?UnifiedActionContext $context = null): array
+    {
+        $action = $this->registry->get($actionId);
+        if (!$action) {
+            return ['key' => null, 'cache_namespace' => 'action:idempotency', 'has_cached_result' => false];
+        }
+
+        $key = $this->idempotencyKey($actionId, $action, $payload, $context);
+
+        return [
+            'key' => $key,
+            'cache_namespace' => 'action:idempotency',
+            'has_cached_result' => $key !== null && is_array($this->memory()?->get('action:idempotency', $key)),
+        ];
+    }
+
+    public function executionStepMetadata(string $actionId, ActionResult $result, array $payload = [], ?UnifiedActionContext $context = null): array
+    {
+        $action = $this->registry->get($actionId) ?? [];
+
+        return [
+            'action_id' => $actionId,
+            'operation' => (string) ($action['operation'] ?? $result->actionType ?? 'custom'),
+            'success' => $result->success,
+            'requires_user_input' => $result->requiresUserInput(),
+            'requires_confirmation' => $this->requiresConfirmation($actionId, $payload, $context),
+            'idempotency' => $this->idempotencyMetadata($actionId, $payload, $context),
+            'metadata' => $result->metadata,
+        ];
+    }
+
     /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>

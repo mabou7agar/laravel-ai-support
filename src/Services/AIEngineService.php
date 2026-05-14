@@ -14,6 +14,7 @@ use LaravelAIEngine\Events\AIRequestCompleted;
 use LaravelAIEngine\Exceptions\AIEngineException;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Services\ConversationManager;
+use LaravelAIEngine\Services\Scope\AIScopeOptionsService;
 use Illuminate\Support\Facades\Event;
 
 class AIEngineService
@@ -24,11 +25,15 @@ class AIEngineService
         protected CreditManager $creditManager,
         protected ?ConversationManager $conversationManager = null,
         protected ?Drivers\DriverRegistry $driverRegistry = null,
-        protected ?RequestRouteResolver $requestRouteResolver = null
+        protected ?RequestRouteResolver $requestRouteResolver = null,
+        protected ?AIScopeOptionsService $scopeOptions = null
     ) {
         $this->conversationManager = $conversationManager ?? app(ConversationManager::class);
         $this->driverRegistry = $driverRegistry ?? app(Drivers\DriverRegistry::class);
         $this->requestRouteResolver = $requestRouteResolver ?? app(RequestRouteResolver::class);
+        $this->scopeOptions = $scopeOptions ?? (app()->bound(AIScopeOptionsService::class)
+            ? app(AIScopeOptionsService::class)
+            : null);
     }
 
     /**
@@ -75,6 +80,12 @@ class AIEngineService
         // IMPORTANT: withUserId returns a NEW immutable request, so we must reassign
         if (!$request->userId && $this->isAuthenticatedSafely()) {
             $request = $request->withUserId($this->resolveUserId());
+        }
+
+        if ($this->scopeOptions instanceof AIScopeOptionsService) {
+            $request = $request->withMetadata(
+                $this->scopeOptions->merge($request->userId, $request->getMetadata())
+            );
         }
 
         // Debug mode: Log prompt before sending

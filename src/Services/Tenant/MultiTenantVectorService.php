@@ -247,6 +247,49 @@ class MultiTenantVectorService
         return $metadata;
     }
 
+    public function currentScope(array $metadata = []): array
+    {
+        $tenantId = $this->nullableString($metadata['tenant_id'] ?? $metadata['tenant'] ?? null)
+            ?? $this->getCurrentTenantId();
+        $workspaceId = $this->nullableString($metadata['workspace_id'] ?? $metadata['workspace'] ?? null)
+            ?? $this->resolveCurrentWorkspaceId();
+
+        return [
+            'tenant_id' => $this->nullableString($tenantId),
+            'workspace_id' => $this->nullableString($workspaceId),
+        ];
+    }
+
+    public function scopeKey(array|string|null $scopeOrTenant = [], ?string $workspaceId = null): string
+    {
+        $scope = is_array($scopeOrTenant)
+            ? $this->currentScope($scopeOrTenant)
+            : [
+                'tenant_id' => $this->nullableString($scopeOrTenant),
+                'workspace_id' => $this->nullableString($workspaceId),
+            ];
+
+        return sha1(json_encode([
+            'tenant_id' => $scope['tenant_id'] ?? null,
+            'workspace_id' => $scope['workspace_id'] ?? null,
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    public function applyScopeToMetadata(array $metadata): array
+    {
+        $scope = $this->currentScope($metadata);
+
+        foreach ($scope as $key => $value) {
+            if ($value !== null && !array_key_exists($key, $metadata)) {
+                $metadata[$key] = $value;
+            }
+        }
+
+        $metadata['scope_key'] ??= $this->scopeKey($scope);
+
+        return $metadata;
+    }
+
     /**
      * Get search filters for multi-db tenancy
      * 
@@ -258,5 +301,31 @@ class MultiTenantVectorService
         // In multi-db mode, isolation is at collection level
         // No additional filters needed
         return [];
+    }
+
+    protected function resolveCurrentWorkspaceId(): ?string
+    {
+        if (function_exists('session')) {
+            $workspaceId = session('workspace_id') ?? session('current_workspace_id');
+            if ($workspaceId !== null && $workspaceId !== '') {
+                return (string) $workspaceId;
+            }
+        }
+
+        $configKey = config('vector-access-control.workspace_config_key');
+        if (is_string($configKey) && $configKey !== '') {
+            return $this->nullableString(config($configKey));
+        }
+
+        return null;
+    }
+
+    protected function nullableString(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (string) $value;
     }
 }

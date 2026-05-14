@@ -15,6 +15,16 @@ abstract class AgentTool
     
     abstract public function execute(array $parameters, UnifiedActionContext $context): ActionResult;
 
+    public function requiresConfirmation(): bool
+    {
+        return false;
+    }
+
+    public function getConfirmationMessage(): ?string
+    {
+        return null;
+    }
+
     public function validate(array $parameters): array
     {
         $errors = [];
@@ -41,6 +51,7 @@ abstract class AgentTool
             'name' => $this->getName(),
             'description' => $this->getDescription(),
             'parameters' => $this->getParameters(),
+            'requires_confirmation' => $this->requiresConfirmation(),
         ];
     }
 }

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use LaravelAIEngine\Services\Vector\ChunkingService;
 use LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
+use LaravelAIEngine\Services\Tenant\MultiTenantVectorService;
 use LaravelAIEngine\Services\Vector\VectorAccessControl;
 use LaravelAIEngine\Services\Vector\VectorDriverManager;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
@@ -120,5 +121,65 @@ class VectorSearchServiceContractTest extends UnitTestCase
         };
 
         $this->assertTrue($service->deleteFromIndex($model));
+    }
+
+    public function test_index_metadata_reuses_tenant_workspace_scope_shape(): void
+    {
+        config()->set('ai-engine.vector.multi_chunk_enabled', false);
+
+        $driver = $this->createMock(VectorDriverInterface::class);
+        $driver->expects($this->once())
+            ->method('upsert')
+            ->with(
+                'vec_scoped_records',
+                $this->callback(function (array $points): bool {
+                    $metadata = $points[0]['metadata'];
+
+                    $this->assertSame('tenant-1', $metadata['tenant_id']);
+                    $this->assertSame('workspace-9', $metadata['workspace_id']);
+                    $this->assertSame(sha1(json_encode([
+                        'tenant_id' => 'tenant-1',
+                        'workspace_id' => 'workspace-9',
+                    ], JSON_THROW_ON_ERROR)), $metadata['scope_key']);
+
+                    return true;
+                })
+            )
+            ->willReturn(true);
+
+        $driverManager = $this->createMock(VectorDriverManager::class);
+        $driverManager->method('driver')->willReturn($driver);
+
+        $embeddingService = $this->createMock(EmbeddingService::class);
+        $embeddingService->expects($this->once())
+            ->method('embed')
+            ->willReturn([0.1, 0.2, 0.3]);
+
+        $service = new VectorSearchService(
+            $driverManager,
+            $embeddingService,
+            $this->createMock(VectorAccessControl::class),
+            $this->app->make(SearchDocumentBuilder::class),
+            $this->app->make(ChunkingService::class),
+            new MultiTenantVectorService()
+        );
+
+        $model = new class extends Model {
+            protected $table = 'scoped_records';
+            public $id = 99;
+
+            public function toSearchDocument(): array
+            {
+                return [
+                    'content' => 'scoped vector content',
+                    'metadata' => [
+                        'tenant_id' => 'tenant-1',
+                        'workspace_id' => 'workspace-9',
+                    ],
+                ];
+            }
+        };
+
+        $this->assertTrue($service->index($model));
     }
 }

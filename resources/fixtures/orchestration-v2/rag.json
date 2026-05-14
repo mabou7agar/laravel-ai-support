@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "vector_document_citation",
+      "query": "What does Apollo need before handoff?",
+      "sources": [
+        {
+          "type": "vector",
+          "id": "doc-1",
+          "title": "Apollo Handoff Notes",
+          "content": "Apollo needs invoice approval, hosted artifact citations, and a customer handoff summary.",
+          "citations": [
+            {
+              "type": "vector",
+              "title": "Apollo Handoff Notes",
+              "url": "document://doc-1",
+              "source_id": "doc-1"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "context_contains": ["Apollo needs invoice approval", "Source 0"],
+        "citation_count": 1,
+        "source_types": ["vector"]
+      }
+    },
+    {
+      "name": "hybrid_graph_vector_context",
+      "query": "Which invoice and project task are linked?",
+      "sources": [
+        {
+          "source_type": "hybrid",
+          "type": "hybrid",
+          "id": "hybrid-1",
+          "title": "Apollo Graph Join",
+          "content": "Invoice INV-DEMO-1001 is linked to the Apollo Migration project and the hosted artifact task.",
+          "metadata": {
+            "hybrid_sources": ["vector", "graph"]
+          },
+          "citations": [
+            {
+              "type": "graph",
+              "title": "Apollo Migration",
+              "url": "project://apollo-migration",
+              "source_id": "project-1"
+            },
+            {
+              "type": "vector",
+              "title": "INV-DEMO-1001",
+              "url": "invoice://INV-DEMO-1001",
+              "source_id": "invoice-1"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "context_contains": ["INV-DEMO-1001", "hosted artifact task"],
+        "citation_count": 2,
+        "source_types": ["hybrid"]
+      }
+    },
+    {
+      "name": "provider_file_search_citation",
+      "query": "What file did the provider cite?",
+      "sources": [
+        {
+          "source_type": "provider_file_search",
+          "file_id": "file-demo-1",
+          "filename": "apollo-approval.pdf",
+          "text": "Provider-hosted file search cited the approval checklist.",
+          "url": "https://example.test/files/apollo-approval.pdf"
+        }
+      ],
+      "expected": {
+        "context_contains": ["provider", "approval checklist"],
+        "citation_count": 1,
+        "source_types": ["provider_file_search"]
+      }
+    }
+  ]
+}

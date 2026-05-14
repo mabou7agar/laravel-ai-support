@@ -1,0 +1,247 @@
+# Orchestration V2
+
+Orchestration v2 makes agent execution explicit: a runtime receives the message, a routing decision is made, the dispatcher executes that decision, and run data is persisted for inspection, recovery, retention, and audit.
+
+Laravel remains the default runtime. LangGraph is optional and should be enabled only for workflows that need checkpointing, graph debugging, human interrupts, or long-running multi-agent branches.
+
+## Runtime Contract
+
+Custom runtimes implement `LaravelAIEngine\Contracts\AgentRuntimeContract`.
+
+```php
+use LaravelAIEngine\Contracts\AgentRuntimeContract;
+use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\AgentRuntimeCapabilities;
+
+final class MyRuntime implements AgentRuntimeContract
+{
+    public function name(): string
+    {
+        return 'my_runtime';
+    }
+
+    public function capabilities(): AgentRuntimeCapabilities
+    {
+        return new AgentRuntimeCapabilities(
+            runtime: $this->name(),
+            tools: true,
+            artifacts: true,
+            humanApprovals: true
+        );
+    }
+
+    public function process(string $message, string $sessionId, mixed $userId, array $options = []): AgentResponse
+    {
+        return AgentResponse::success('Handled by my runtime.');
+    }
+}
+```
+
+Register the runtime in the container and select it with `agent_runtime` or `ai-agent.runtime.default`.
+
+## Routing Stages
+
+Routing stages decide, but never execute. Execution belongs to the dispatcher.
+
+```php
+use LaravelAIEngine\Contracts\RoutingStageContract;
+use LaravelAIEngine\DTOs\RoutingDecision;
+use LaravelAIEngine\DTOs\RoutingDecisionAction;
+use LaravelAIEngine\DTOs\RoutingDecisionSource;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+final class BillingQuestionStage implements RoutingStageContract
+{
+    public function name(): string
+    {
+        return 'billing_question';
+    }
+
+    public function decide(string $message, UnifiedActionContext $context, array $options = []): ?RoutingDecision
+    {
+        if (! str_contains(strtolower($message), 'invoice')) {
+            return null;
+        }
+
+        return new RoutingDecision(
+            action: RoutingDecisionAction::SEARCH_RAG,
+            source: RoutingDecisionSource::CLASSIFIER,
+            confidence: 'high',
+            reason: 'Billing terms require retrieval.',
+            payload: ['collections' => ['App\\Models\\Invoice']]
+        );
+    }
+}
+```
+
+Add the stage to `ai-agent.routing_pipeline.stages` in the order it should run.
+
+## Execution Handlers
+
+Execution handlers receive a routing decision and return an `AgentResponse`. Keep authorization, idempotency, audit, and side effects here.
+
+```php
+use LaravelAIEngine\Contracts\ExecutionHandlerContract;
+use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\RoutingDecision;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+final class SendInvoiceHandler implements ExecutionHandlerContract
+{
+    public function handle(RoutingDecision $decision, string $message, UnifiedActionContext $context, array $options = []): AgentResponse
+    {
+        // Call an application service here, not a controller or raw model query.
+        return AgentResponse::success('Invoice queued for delivery.');
+    }
+}
+```
+
+## Tools With Approval Policy
+
+Provider tools, MCP tools, computer-use tools, and code execution tools should go through the provider-tool approval lifecycle when risk is non-trivial.
+
+```php
+$approval = app(\LaravelAIEngine\Services\ProviderTools\ProviderToolApprovalService::class)
+    ->requestApproval($toolRun, [
+        'type' => 'computer_use',
+        'risk_level' => 'high',
+        'requires_approval' => true,
+        'decision' => ['url' => 'https://example.com/admin'],
+    ]);
+```
+
+The approval record links back to the provider tool run, agent run, and agent run step when those ids are provided.
+
+## LangGraph Runtime
+
+Enable LangGraph only when a sidecar service is deployed.
+
+```env
+AI_AGENT_RUNTIME_DEFAULT=langgraph
+AI_AGENT_LANGGRAPH_ENABLED=true
+AI_AGENT_LANGGRAPH_BASE_URL=https://langgraph.internal
+AI_AGENT_LANGGRAPH_API_TOKEN=...
+AI_AGENT_LANGGRAPH_SIGNATURE_SECRET=...
+```
+
+The sidecar contract is:
+
+- `POST /runs` starts a graph run.
+- `GET /runs/{id}` returns status.
+- `POST /runs/{id}/resume` resumes after input or approval.
+- `POST /runs/{id}/cancel` cancels a run.
+- `GET /runs/{id}/events` returns events.
+- `GET /health` reports availability.
+
+LangGraph interrupts that require approval are mapped into Laravel approval records. Approving and resuming an agent run calls `/runs/{id}/resume`; cancelling calls `/runs/{id}/cancel`.
+
+## Streaming Events
+
+The native runtime emits stable event names:
+
+- `run.started`, `run.completed`, `run.failed`, `run.cancelled`, `run.expired`
+- `routing.stage_started`, `routing.stage_abstained`, `routing.decided`
+- `rag.started`, `rag.sources_found`, `rag.completed`
+- `tool.started`, `tool.progress`, `tool.completed`, `tool.failed`
+- `sub_agent.started`, `sub_agent.completed`
+- `approval.required`, `approval.resolved`
+- `artifact.created`
+- `final_response.token_streamed`, `final_response.stream_completed`
+
+If a client cannot consume live events, use the run trace API to read persisted fallback events.
+
+## RAG Pipeline
+
+RAG belongs behind the `search_rag` decision and should stay in RAG services:
+
+- `RAGQueryAnalyzer` expands or normalizes the user query.
+- `RAGCollectionResolver` chooses collections.
+- `RAGRetriever` delegates to vector, graph, hybrid, SQL, or provider file-search retrievers.
+- `RAGContextBuilder` produces a compact context.
+- `RAGPromptBuilder` creates the generation prompt.
+- `RAGResponseGenerator` returns an `AgentResponse` with normalized sources and citations.
+
+The agent dispatcher calls the pipeline; routing stages do not retrieve records directly.
+
+## Run Statuses
+
+Agent runs use these statuses: `pending`, `running`, `waiting_approval`, `waiting_input`, `completed`, `failed`, `cancelled`, and `expired`.
+
+Use the agent run API for inspection and control:
+
+```bash
+curl "$APP_URL/api/v1/ai/agent-runs/$RUN_ID/trace"
+curl -X POST "$APP_URL/api/v1/ai/agent-runs/$RUN_ID/resume" \
+  -H "Content-Type: application/json" \
+  -d '{"approval_key":"...","payload":{"approved":true}}'
+curl -X POST "$APP_URL/api/v1/ai/agent-runs/$RUN_ID/cancel" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"User cancelled"}'
+```
+
+## Tenancy And Scope
+
+Run locks, duplicate-message keys, LangGraph payloads, and runtime execution checks use the same scope shape:
+
+```php
+[
+    'tenant_id' => 'tenant-1',
+    'workspace_id' => 'workspace-1',
+]
+```
+
+The runtime reuses `vector-access-control.php`, `TenantResolverInterface`, and `MultiTenantVectorService` where applicable.
+
+## Budgets And Rate Limits
+
+Use `CreditManager` for run budgets:
+
+```php
+$credits = app(\LaravelAIEngine\Services\CreditManager::class);
+$credits->startRunBudget($runId, $ownerId, ['credits' => 50, 'tokens' => 100000]);
+$credits->recordRunUsage($runId, ['total_tokens' => 1200, 'credits' => 1.2]);
+$remaining = $credits->remainingRunBudget($runId);
+```
+
+`RateLimitManager` accepts runtime, run, tenant, workspace, tool, and provider scope keys for scoped throttling.
+
+## Runtime Capability Discovery
+
+Use the API or artisan command to inspect capabilities before selecting a runtime:
+
+```bash
+curl "$APP_URL/api/v1/ai/agent-runs/capabilities"
+php artisan ai-engine:agent-runtime:capabilities
+```
+
+## Retention, Recovery, And Replay
+
+Retention settings live under `ai-agent.run_retention`. Use:
+
+```bash
+php artisan ai-engine:agent-runs:retention-cleanup
+php artisan ai-engine:agent-runs:recover-stuck
+php artisan ai-engine:agent-runs:cleanup-expired
+php artisan ai-engine:agent-runs:replay-step {step}
+```
+
+Replay creates a new step linked to the failed step instead of rewriting history.
+
+## Runtime Config
+
+Laravel is the default runtime. LangGraph remains optional and explicit:
+
+```php
+'runtime' => [
+    'default' => 'laravel',
+    'langgraph' => [
+        'enabled' => false,
+        'base_url' => null,
+        'fallback_to_laravel' => true,
+    ],
+],
+```
+
+## Upgrade Notes
+
+The v2 flow is a breaking simplification. New applications should call the runtime boundary and avoid adding behavior to broad orchestration services.

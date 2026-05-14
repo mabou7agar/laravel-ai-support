@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "conversational_greeting",
+      "message": "hello",
+      "expected": {
+        "action": "conversational",
+        "source": "classifier"
+      }
+    },
+    {
+      "name": "semantic_rag_question",
+      "message": "What changed in the Apollo handoff notes?",
+      "options": {
+        "rag_collections": ["App\\Models\\Document"]
+      },
+      "expected": {
+        "action": "search_rag",
+        "source": "classifier"
+      }
+    },
+    {
+      "name": "numbered_option_selection_wins_before_classifier",
+      "message": "1",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "1. Apollo invoice\n2. Apollo handoff document"
+        }
+      ],
+      "expected": {
+        "action": "handle_selection",
+        "source": "selection",
+        "payload": {
+          "selection_type": "option_selection"
+        }
+      }
+    },
+    {
+      "name": "explicit_sub_agent_request",
+      "message": "Create a launch plan",
+      "options": {
+        "agent_goal": true,
+        "sub_agents": ["researcher", "writer"]
+      },
+      "expected": {
+        "action": "run_sub_agent",
+        "source": "explicit"
+      }
+    },
+    {
+      "name": "forced_rag_request",
+      "message": "Search the local customer documents",
+      "options": {
+        "force_rag": true
+      },
+      "expected": {
+        "action": "search_rag",
+        "source": "explicit"
+      }
+    }
+  ]
+}

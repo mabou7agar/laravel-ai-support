@@ -6,7 +6,6 @@ namespace LaravelAIEngine\Tests\Feature\Live;
 
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Storage;
 use LaravelAIEngine\Models\AIMedia;
 use LaravelAIEngine\Support\Fal\FalCharacterStore;
 use LaravelAIEngine\Tests\TestCase;
@@ -336,9 +335,31 @@ class LiveFeatureMatrixTest extends TestCase
                 'model' => $model,
                 'duration' => '4',
                 'generate_audio' => false,
+                'async' => $engine === 'fal_ai',
+                'use_webhook' => false,
             ]);
 
             $payload = $response->json();
+            if ($engine === 'fal_ai') {
+                if ($response->getStatusCode() !== 202) {
+                    throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                }
+
+                $jobId = (string) ($payload['data']['job_id'] ?? '');
+                $this->assertNotSame('', $jobId, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                $completed = $this->waitForFalVideoJob($jobId);
+                $files = data_get($completed, 'data.metadata.response.files', []);
+                $this->assertNotEmpty($files, json_encode($completed, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                $details[] = [
+                    'engine' => $engine,
+                    'model' => $model,
+                    'job_id' => $jobId,
+                    'files_count' => is_array($files) ? count($files) : 0,
+                ];
+
+                continue;
+            }
+
             if ($response->getStatusCode() !== 200) {
                 throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
             }
@@ -355,6 +376,37 @@ class LiveFeatureMatrixTest extends TestCase
         }
 
         return $this->passedResult('Live video generation succeeded.', ['providers' => $details]);
+    }
+
+    private function waitForFalVideoJob(string $jobId): array
+    {
+        $timeout = max(30, (int) getenv('AI_ENGINE_LIVE_FAL_VIDEO_TIMEOUT') ?: 300);
+        $interval = max(2, (int) getenv('AI_ENGINE_LIVE_FAL_VIDEO_POLL_INTERVAL') ?: 5);
+        $deadline = time() + $timeout;
+        $lastPayload = [];
+
+        do {
+            $response = $this->getJson("/api/v1/ai/generate/video/jobs/{$jobId}?refresh=1");
+            $payload = $response->json() ?? [];
+            $lastPayload = $payload;
+
+            if ($response->getStatusCode() !== 200) {
+                throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            }
+
+            $status = (string) data_get($payload, 'data.status', '');
+            if ($status === 'completed') {
+                return $payload;
+            }
+
+            if (in_array($status, ['failed', 'cancelled'], true)) {
+                throw new \RuntimeException(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            }
+
+            sleep($interval);
+        } while (time() < $deadline);
+
+        throw new \RuntimeException('FAL video job did not complete before timeout: ' . json_encode($lastPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
     private function checkLiveTtsGeneration(): array
@@ -425,12 +477,7 @@ class LiveFeatureMatrixTest extends TestCase
             return $this->skippedResult('transcription', 'Set AI_ENGINE_RUN_LIVE_TESTS=true to enable billed live provider checks.');
         }
 
-        $ttsPairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveTtsEngineAndModel()]);
         $transcribePairs = $this->resolveProviderMatrix('AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX', fn (): array => [$this->resolveLiveTranscriptionEngineAndModel()]);
-
-        if ($ttsPairs === []) {
-            return $this->skippedResult('transcription', 'Live transcription requires a live TTS provider to create sample audio.');
-        }
 
         if ($transcribePairs === []) {
             return $this->skippedResult('transcription', 'No live transcription provider credential is configured.');
@@ -438,60 +485,31 @@ class LiveFeatureMatrixTest extends TestCase
 
         $details = [];
         foreach ($transcribePairs as [$engine, $model]) {
-            [$ttsEngine, $ttsModel] = $ttsPairs[0];
-            $this->configureLiveProvider($ttsEngine, $ttsModel);
             $this->configureLiveProvider($engine, $model);
-            $alias = 'voice-transcribe-' . uniqid();
-            app(FalCharacterStore::class)->save([
-                'name' => 'Voice Transcribe',
-                'voice_id' => (string) (getenv('ELEVENLABS_VOICE_ID') ?: config('ai-engine.engines.eleven_labs.default_voice_id', 'pNInz6obpgDQGcFmaJgB')),
-            ], $alias);
-
-            $beforeId = AIMedia::query()->max('id');
-            $ttsResponse = $this->postJson('/api/v1/ai/generate/tts', [
-                'text' => 'Transcribe this live audio sample please.',
-                'engine' => $ttsEngine,
-                'model' => $ttsModel,
-                'minutes' => 1,
-                'use_character' => $alias,
-            ]);
-
-            $ttsResponse->assertOk()->assertJsonPath('success', true);
-
-            $audio = AIMedia::query()
-                ->when($beforeId !== null, fn ($query) => $query->where('id', '>', $beforeId))
-                ->where('content_type', 'audio')
-                ->latest('id')
-                ->first();
-
-            if ($audio === null || !is_string($audio->disk) || !is_string($audio->path)) {
-                return $this->skippedResult('transcription', 'Could not locate a local AIMedia audio artifact for transcription.');
-            }
-
-            $absolutePath = Storage::disk($audio->disk)->path($audio->path);
-            if (!is_string($absolutePath) || !is_file($absolutePath)) {
-                return $this->skippedResult('transcription', 'Generated audio is not available on a local filesystem path.', [
-                    'disk' => $audio->disk,
-                    'path' => $audio->path,
-                ]);
-            }
+            $absolutePath = $this->createLiveTranscriptionWavFile();
 
             $upload = new UploadedFile(
                 $absolutePath,
-                basename($absolutePath),
-                'audio/mpeg',
+                'live-transcription.wav',
+                'audio/wav',
                 null,
                 true
             );
 
-            $response = $this->post('/api/v1/ai/generate/transcribe', [
-                'engine' => $engine,
-                'model' => $model,
-                'audio_minutes' => 1,
-                'file' => $upload,
-            ], [
-                'Accept' => 'application/json',
-            ]);
+            try {
+                $response = $this->post('/api/v1/ai/generate/transcribe', [
+                    'engine' => $engine,
+                    'model' => $model,
+                    'audio_minutes' => 0.1,
+                    'file' => $upload,
+                ], [
+                    'Accept' => 'application/json',
+                ]);
+            } finally {
+                if (is_file($absolutePath)) {
+                    unlink($absolutePath);
+                }
+            }
 
             $payload = json_decode($response->getContent(), true);
             if ($response->getStatusCode() !== 200) {
@@ -508,9 +526,35 @@ class LiveFeatureMatrixTest extends TestCase
             ];
         }
 
-        return $this->passedResult('Live transcription succeeded using generated TTS audio.', [
+        return $this->passedResult('Live transcription succeeded using a generated WAV fixture.', [
             'providers' => $details,
         ]);
+    }
+
+    private function createLiveTranscriptionWavFile(): string
+    {
+        $sampleRate = 16000;
+        $durationSeconds = 1;
+        $samples = $sampleRate * $durationSeconds;
+        $data = '';
+
+        for ($i = 0; $i < $samples; $i++) {
+            $amplitude = (int) round(8000 * sin(2 * M_PI * 440 * ($i / $sampleRate)));
+            $data .= pack('v', $amplitude & 0xffff);
+        }
+
+        $path = sys_get_temp_dir() . '/ai-engine-live-transcription-' . bin2hex(random_bytes(6)) . '.wav';
+        $dataLength = strlen($data);
+        $header = 'RIFF'
+            . pack('V', 36 + $dataLength)
+            . 'WAVEfmt '
+            . pack('VvvVVvv', 16, 1, 1, $sampleRate, $sampleRate * 2, 2, 16)
+            . 'data'
+            . pack('V', $dataLength);
+
+        file_put_contents($path, $header . $data);
+
+        return $path;
     }
 
     private function checkLiveAgentFlow(): array
@@ -728,7 +772,7 @@ class LiveFeatureMatrixTest extends TestCase
             'gemini' => $this->hasNonEmptyEnv('GEMINI_API_KEY'),
             'openrouter' => $this->hasNonEmptyEnv('OPENROUTER_API_KEY'),
             'eleven_labs' => $this->hasNonEmptyEnv('ELEVENLABS_API_KEY'),
-            'fal_ai' => $this->hasAnyNonEmptyEnv(['FAL_API_KEY', 'FALAI_API_KEY']),
+            'fal_ai' => $this->hasAnyNonEmptyEnv(['FAL_AI_API_KEY', 'FAL_API_KEY', 'FALAI_API_KEY']),
             default => false,
         };
     }
@@ -774,7 +818,7 @@ class LiveFeatureMatrixTest extends TestCase
             'gemini' => config()->set('ai-engine.engines.gemini.api_key', (string) getenv('GEMINI_API_KEY')),
             'openrouter' => config()->set('ai-engine.engines.openrouter.api_key', (string) getenv('OPENROUTER_API_KEY')),
             'eleven_labs' => config()->set('ai-engine.engines.eleven_labs.api_key', (string) getenv('ELEVENLABS_API_KEY')),
-            'fal_ai' => config()->set('ai-engine.engines.fal_ai.api_key', $this->firstNonEmptyEnv(['FAL_API_KEY', 'FALAI_API_KEY'])),
+            'fal_ai' => config()->set('ai-engine.engines.fal_ai.api_key', $this->firstNonEmptyEnv(['FAL_AI_API_KEY', 'FAL_API_KEY', 'FALAI_API_KEY'])),
             default => null,
         };
     }

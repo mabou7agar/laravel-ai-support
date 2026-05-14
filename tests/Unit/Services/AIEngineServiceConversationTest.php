@@ -6,6 +6,9 @@ use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\ConversationManager;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Services\Drivers\DriverRegistry;
+use LaravelAIEngine\Services\Scope\AIScopeOptionsService;
+use LaravelAIEngine\Contracts\AIScopeResolver;
+use LaravelAIEngine\Contracts\EngineDriverInterface;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -89,6 +92,52 @@ class AIEngineServiceConversationTest extends TestCase
         $this->assertEquals('Hello, how are you?', $messages[0]->content);
         $this->assertEquals('assistant', $messages[1]->role);
         $this->assertEquals('Hello! How can I help you today?', $messages[1]->content);
+    }
+
+    public function test_generate_merges_resolved_scope_into_request_metadata_without_overriding_explicit_scope(): void
+    {
+        config()->set('ai-engine.credits.enabled', false);
+
+        $capturedRequest = null;
+        $driver = Mockery::mock(EngineDriverInterface::class);
+        $driver->shouldReceive('validateRequest')->andReturn(true);
+        $driver->shouldReceive('generate')->andReturnUsing(function (AIRequest $request) use (&$capturedRequest): AIResponse {
+            $capturedRequest = $request;
+
+            return AIResponse::success('ok', EngineEnum::OPENAI, EntityEnum::GPT_4O);
+        });
+
+        $this->driverRegistry->shouldReceive('resolve')->andReturn($driver);
+
+        $resolver = new class implements AIScopeResolver {
+            public function resolve(mixed $userId = null, array $options = []): array
+            {
+                return [
+                    'tenant_id' => 'tenant-from-resolver',
+                    'workspace_id' => 'workspace-from-resolver',
+                ];
+            }
+        };
+
+        $service = new AIEngineService(
+            $this->creditManager,
+            $this->conversationManager,
+            $this->driverRegistry,
+            null,
+            new AIScopeOptionsService($resolver)
+        );
+
+        $response = $service->generate(new AIRequest(
+            prompt: 'hello',
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O,
+            userId: 'user-123',
+            metadata: ['tenant_id' => 'tenant-explicit']
+        ));
+
+        $this->assertTrue($response->success);
+        $this->assertSame('tenant-explicit', $capturedRequest->metadata['tenant_id']);
+        $this->assertSame('workspace-from-resolver', $capturedRequest->metadata['workspace_id']);
     }
 
     public function test_generate_with_conversation_includes_context()

@@ -1,0 +1,145 @@
+# Autonomous Collector
+
+Autonomous collectors are the structured input layer used by agents, skills, and APIs when an action needs more data before it can safely run.
+
+Use a collector when the user intent is known but required fields are missing. Examples include creating an order, booking an appointment, preparing a quote, or updating a record after review.
+
+## Runtime Shape
+
+The collector runtime is split into small services:
+
+- `AutonomousCollectorHandler` is the agent-facing facade.
+- `AutonomousCollectorSessionService` is the cache-backed API/facade adapter.
+- `AutonomousCollectorTurnProcessor` owns one collector turn.
+- `AutonomousCollectorSessionState` stores typed state.
+- `CollectorToolExecutionService` normalizes tool results.
+- `CollectorConfirmationService` handles write-tool and final confirmations.
+- `CollectorPromptBuilder` builds model prompts.
+- `CollectorToolCallParser` parses tool calls and final JSON.
+- `CollectorSummaryRenderer` renders human review text.
+- `CollectorInputSchemaBuilder` extracts optional UI input metadata.
+- `CollectorReroutePolicy` decides when an active collector should exit and let the agent router handle the message.
+
+The old standalone collector engine is no longer duplicated inside the session service; the service delegates into the same turn processor used by agents. `AutonomousCollectorService` remains as a thin alias for existing apps.
+
+## Configuration
+
+Collectors are configured with `AutonomousCollectorConfig`.
+
+```php
+use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
+
+$config = new AutonomousCollectorConfig(
+    name: 'create_order',
+    goal: 'Create order',
+    description: 'Collect account and line item details before creating an order.',
+    tools: [
+        'find_account' => [
+            'description' => 'Find an account by name or email',
+            'parameters' => ['query' => 'required|string'],
+            'handler' => fn (array $arguments): array => [
+                'success' => true,
+                'id' => 7,
+                'name' => $arguments['query'],
+            ],
+        ],
+    ],
+    outputSchema: [
+        'account_id' => 'integer|required',
+        'items' => ['type' => 'array', 'required' => true],
+        'total' => 'numeric|required',
+    ],
+    onComplete: fn (array $data): array => app(CreateOrderService::class)->create($data),
+);
+```
+
+Prefer `AgentTool` classes for reusable tools. Use closure handlers only for small app-local integrations.
+
+Collector tools are also passed to providers through `AIRequest::functions`, so drivers that support native function/tool calls can return structured calls. The markdown ```tool``` format remains available as a provider-neutral fallback.
+
+## Display Configuration
+
+The package does not assume invoice, product, money, or customer field names. Configure display conventions per collector when you want richer review text:
+
+```php
+new AutonomousCollectorConfig(
+    goal: 'Create order',
+    context: [
+        'collector_display' => [
+            'decimal_fields' => ['unit_price', 'line_total', 'order_total'],
+            'decimal_places' => 2,
+            'entity_profile_fields' => [
+                'name' => 'Name',
+                'email' => 'Email',
+            ],
+            'item_summaries' => [
+                'items' => [
+                    'label_fields' => ['sku', 'name'],
+                    'quantity_field' => 'quantity',
+                    'unit_value_field' => 'unit_price',
+                    'total_field' => 'line_total',
+                ],
+            ],
+        ],
+    ],
+);
+```
+
+## Confirmation
+
+Set `requires_confirmation` on write tools, or implement `requiresConfirmation()` on an `AgentTool`.
+
+```php
+'create_account' => [
+    'description' => 'Create a new account',
+    'requires_confirmation' => true,
+    'confirmation_message' => 'Create this account',
+    'parameters' => ['name' => 'required|string'],
+    'handler' => fn (array $arguments): array => app(AccountService::class)->create($arguments),
+],
+```
+
+If the user replies with unclear text during a pending tool confirmation, the collector keeps the pending tool and asks again. It does not silently discard write intent.
+
+## Tool Results
+
+Tool execution distinguishes transport success from domain success.
+
+```php
+return ['success' => false, 'error' => 'Email is required'];
+```
+
+This is stored as a failed tool result, even though the PHP handler returned normally. The model receives the result and can ask for missing data instead of assuming the tool succeeded.
+
+## Rerouting
+
+Collectors should not trap unrelated user requests. Add app-specific reroute entities in the config context when needed:
+
+```php
+new AutonomousCollectorConfig(
+    name: 'create_order',
+    goal: 'Create order',
+    context: [
+        'reroute_entities' => ['order', 'shipment', 'payment'],
+    ],
+);
+```
+
+When the message looks like a query for one of those entities, the collector exits and the agent router can handle the request.
+
+## API Adapter
+
+The `AutonomousCollector` facade and API controller still return `AutonomousCollectorResponse`.
+
+```php
+$response = app(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService::class)
+    ->start('session-1', $config, 'Create order for Acme');
+
+$response = app(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService::class)
+    ->process('session-1', '2 seats at 50 each');
+
+$response = app(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService::class)
+    ->confirm('session-1');
+```
+
+Internally, those calls now use the same collector turn processor as the agent runtime.

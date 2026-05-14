@@ -2,18 +2,18 @@
 
 namespace LaravelAIEngine\Tests\Feature\Policies;
 
-use LaravelAIEngine\Services\RAG\AutonomousRAGPromptPolicyService;
+use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 use LaravelAIEngine\Tests\TestCase;
 
 class DecisionPromptPolicyServiceTest extends TestCase
 {
     public function test_it_creates_and_resolves_canary_policy_by_runtime_context(): void
     {
-        config()->set('ai-engine.intelligent_rag.decision.policy_store.enabled', true);
-        config()->set('ai-engine.intelligent_rag.decision.policy_store.auto_seed_default', false);
+        config()->set('ai-engine.rag.decision.policy_store.enabled', true);
+        config()->set('ai-engine.rag.decision.policy_store.auto_seed_default', false);
 
-        /** @var AutonomousRAGPromptPolicyService $service */
-        $service = $this->app->make(AutonomousRAGPromptPolicyService::class);
+        /** @var RAGPromptPolicyService $service */
+        $service = $this->app->make(RAGPromptPolicyService::class);
 
         $active = $service->createVersion('ACTIVE TEMPLATE', [
             'policy_key' => 'decision',
@@ -41,11 +41,11 @@ class DecisionPromptPolicyServiceTest extends TestCase
 
     public function test_it_matches_scoped_policy_over_global_policy(): void
     {
-        config()->set('ai-engine.intelligent_rag.decision.policy_store.enabled', true);
-        config()->set('ai-engine.intelligent_rag.decision.policy_store.auto_seed_default', false);
+        config()->set('ai-engine.rag.decision.policy_store.enabled', true);
+        config()->set('ai-engine.rag.decision.policy_store.auto_seed_default', false);
 
-        /** @var AutonomousRAGPromptPolicyService $service */
-        $service = $this->app->make(AutonomousRAGPromptPolicyService::class);
+        /** @var RAGPromptPolicyService $service */
+        $service = $this->app->make(RAGPromptPolicyService::class);
 
         $global = $service->createVersion('GLOBAL', [
             'policy_key' => 'decision',

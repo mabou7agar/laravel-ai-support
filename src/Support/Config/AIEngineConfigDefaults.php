@@ -29,7 +29,7 @@ class AIEngineConfigDefaults
     | Orchestration Model
     |--------------------------------------------------------------------------
     |
-    | The AI model used by AgentOrchestrator for routing decisions.
+    | The AI model used by the Laravel runtime for routing decisions.
     | This should be a fast, cost-effective model since it's called frequently.
     |
     */
@@ -146,7 +146,26 @@ class AIEngineConfigDefaults
         ],
         'approvals' => [
             'enabled' => env('AI_ENGINE_PROVIDER_TOOL_APPROVALS_ENABLED', true),
+            'expires_after_minutes' => (int) env('AI_ENGINE_PROVIDER_TOOL_APPROVAL_EXPIRES_AFTER', 0),
             'require_for' => ['computer_use', 'mcp_server', 'code_interpreter'],
+            'require_risk_level_at_or_above' => env('AI_ENGINE_PROVIDER_TOOL_APPROVAL_RISK_THRESHOLD'),
+            'require_for_sensitive_payloads' => env('AI_ENGINE_PROVIDER_TOOL_APPROVAL_SENSITIVE_PAYLOADS', true),
+            'sensitive_keys' => [
+                'password',
+                'secret',
+                'token',
+                'api_key',
+                'authorization',
+                'cookie',
+                'private_key',
+                'card_number',
+                'ssn',
+            ],
+            'sensitive_patterns' => [
+                '/sk-[A-Za-z0-9_\-]{16,}/',
+                '/-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----/',
+                '/\b\d{13,19}\b/',
+            ],
             'risk_levels' => [
                 'computer_use' => 'high',
                 'mcp_server' => 'medium',
@@ -587,7 +606,7 @@ class AIEngineConfigDefaults
 
         'fal_ai' => [
             'driver' => 'fal_ai',
-            'api_key' => env('FAL_API_KEY'),
+            'api_key' => env('FAL_AI_API_KEY', env('FAL_API_KEY', env('FALAI_API_KEY'))),
             'base_url' => env('FAL_BASE_URL', 'https://fal.run'),
             'queue_base_url' => env('FAL_QUEUE_BASE_URL', 'https://queue.fal.run'),
             'timeout' => env('FAL_TIMEOUT', 180),
@@ -944,6 +963,22 @@ class AIEngineConfigDefaults
 
     /*
     |--------------------------------------------------------------------------
+    | Scope Resolution
+    |--------------------------------------------------------------------------
+    |
+    | Resolves trusted tenant/workspace context once and injects it into
+    | AI, RAG, and agent requests. Explicit per-request options still win.
+    |
+    */
+    'scope' => [
+        'auto_inject' => env('AI_ENGINE_SCOPE_AUTO_INJECT', true),
+        'resolver' => env('AI_ENGINE_SCOPE_RESOLVER', null),
+        'tenant_user_fields' => ['tenant_id', 'organization_id', 'company_id', 'team_id'],
+        'workspace_user_fields' => ['workspace_id', 'current_workspace_id'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Enterprise Features Configuration
     |--------------------------------------------------------------------------
     |
@@ -1253,6 +1288,9 @@ class AIEngineConfigDefaults
             'include_sources' => env('VECTOR_RAG_INCLUDE_SOURCES', true),
             'min_relevance_score' => env('VECTOR_RAG_MIN_SCORE', 0.5),
             'user_scope_fields' => ['user_id', 'created_by', 'owner_id'],
+            'tenant_scope_fields' => ['tenant_id', 'organization_id', 'company_id', 'team_id'],
+            'workspace_scope_fields' => ['workspace_id', 'current_workspace_id'],
+            'require_structured_scope' => env('AI_ENGINE_RAG_REQUIRE_STRUCTURED_SCOPE', true),
 
             // Query Analysis Model
             // The model used for analyzing queries and determining search strategy
@@ -1322,14 +1360,19 @@ class AIEngineConfigDefaults
 
     /*
     |--------------------------------------------------------------------------
-    | Shared RAG Retrieval Configuration
+    | RAG Configuration
     |--------------------------------------------------------------------------
     |
-    | Cross-cutting retrieval settings used by vector, graph, and hybrid RAG.
+    | Configuration for RAG (Retrieval-Augmented Generation).
+    | The AI automatically decides when to search the knowledge base.
     |
     */
     'rag' => [
+        'enabled' => env('AI_ENGINE_RAG_ENABLED', true),
         'user_scope_fields' => ['user_id', 'created_by', 'owner_id'],
+        'tenant_scope_fields' => ['tenant_id', 'organization_id', 'company_id', 'team_id'],
+        'workspace_scope_fields' => ['workspace_id', 'current_workspace_id'],
+        'require_structured_scope' => env('AI_ENGINE_RAG_REQUIRE_STRUCTURED_SCOPE', true),
         'hybrid' => [
             'enabled' => env('AI_ENGINE_HYBRID_RAG_ENABLED', false),
             'strategy' => env('AI_ENGINE_HYBRID_RAG_STRATEGY', 'vector_then_graph'),
@@ -1342,19 +1385,6 @@ class AIEngineConfigDefaults
             'rrf_k' => (int) env('AI_ENGINE_HYBRID_RAG_RRF_K', 60),
             'disable_graph_only_fallback' => env('AI_ENGINE_HYBRID_RAG_DISABLE_GRAPH_ONLY_FALLBACK', false),
         ],
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Intelligent RAG Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Configuration for Intelligent RAG (Retrieval-Augmented Generation).
-    | The AI automatically decides when to search the knowledge base.
-    |
-    */
-    'intelligent_rag' => [
-        'enabled' => env('INTELLIGENT_RAG_ENABLED', true),
 
         // Default collections to search (model class names)
         // If empty, the system will AUTO-DISCOVER all models with:
@@ -1362,8 +1392,8 @@ class AIEngineConfigDefaults
         // - RAGgable trait
         //
         // Simply add 'use Vectorizable;' or 'use RAGgable;' to your models!
-        'default_collections' => env('INTELLIGENT_RAG_COLLECTIONS')
-            ? explode(',', env('INTELLIGENT_RAG_COLLECTIONS'))
+        'default_collections' => env('AI_ENGINE_RAG_COLLECTIONS')
+            ? explode(',', env('AI_ENGINE_RAG_COLLECTIONS'))
             : [
                 // Leave empty for auto-discovery, or specify manually:
                 // 'App\\Models\\Document',
@@ -1373,8 +1403,8 @@ class AIEngineConfigDefaults
             ],
 
         // Auto-discovery settings
-        'auto_discover' => env('INTELLIGENT_RAG_AUTO_DISCOVER', true),
-        'discovery_cache_ttl' => env('INTELLIGENT_RAG_DISCOVERY_CACHE', 3600), // 1 hour
+        'auto_discover' => env('AI_ENGINE_RAG_AUTO_DISCOVER', true),
+        'discovery_cache_ttl' => env('AI_ENGINE_RAG_DISCOVERY_CACHE', 3600), // 1 hour
 
         // Discovery paths - where to look for models with Vectorizable trait
         // Namespaces are auto-detected from the actual PHP files
@@ -1388,49 +1418,49 @@ class AIEngineConfigDefaults
         ],
 
         // Maximum context items to retrieve
-        'max_context_items' => env('INTELLIGENT_RAG_MAX_CONTEXT', 5),
+        'max_context_items' => env('AI_ENGINE_RAG_MAX_CONTEXT', 5),
 
         // Minimum relevance score (0-1) - Lower = more results, Higher = more precise
         // 0.3 = balanced (recommended), 0.5 = moderate, 0.7+ = strict/precise
-        'min_relevance_score' => env('INTELLIGENT_RAG_MIN_SCORE', 0.3),
+        'min_relevance_score' => env('AI_ENGINE_RAG_MIN_SCORE', 0.3),
 
         // Fallback threshold when no results found (0.0 = return anything, null = no fallback)
-        'fallback_threshold' => env('INTELLIGENT_RAG_FALLBACK_THRESHOLD', 0.0),
+        'fallback_threshold' => env('AI_ENGINE_RAG_FALLBACK_THRESHOLD', 0.0),
 
         // Autonomous mode: Single AI call decides everything (search, get_by_id, count, answer_from_context)
         // AI chooses fastest method: db_query (50ms) vs vector_search (5s)
         // Enabled by default for better performance
-        'autonomous_mode' => env('INTELLIGENT_RAG_AUTONOMOUS_MODE', true),
+        'autonomous_mode' => env('AI_ENGINE_RAG_AUTONOMOUS_MODE', true),
 
         // Model to use for query analysis (fast model recommended: gpt-4o-mini, gpt-4o)
         // GPT-5 models are slower due to reasoning overhead - not recommended for analysis
-        'analysis_model' => env('INTELLIGENT_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'),
+        'analysis_model' => env('AI_ENGINE_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'),
 
         // Model to use for final response generation
         // gpt-4o-mini is faster and cheaper, gpt-4o is more capable
-        'response_model' => env('INTELLIGENT_RAG_RESPONSE_MODEL', 'gpt-5-mini'),
+        'response_model' => env('AI_ENGINE_RAG_RESPONSE_MODEL', 'gpt-5-mini'),
 
         // Include source citations in response
-        'include_sources' => env('INTELLIGENT_RAG_INCLUDE_SOURCES', true),
+        'include_sources' => env('AI_ENGINE_RAG_INCLUDE_SOURCES', true),
 
         // Decision prompt configuration (tool-selection phase)
         'decision' => [
             // Optional custom template path. If empty, package default template is used.
-            'template_path' => env('INTELLIGENT_RAG_DECISION_TEMPLATE_PATH'),
+            'template_path' => env('AI_ENGINE_RAG_DECISION_TEMPLATE_PATH'),
 
             // Language control strategy for decision-time deterministic guards:
             // - ai_first: rely on model reasoning, keep only minimal technical normalization
             // - hybrid: blend AI reasoning with locale lexicon guards (recommended)
             // - strict: enforce strongest lexicon-based disambiguation across supported locales
-            'language_mode' => env('INTELLIGENT_RAG_DECISION_LANGUAGE_MODE', 'hybrid'),
+            'language_mode' => env('AI_ENGINE_RAG_DECISION_LANGUAGE_MODE', 'hybrid'),
 
             // Keep decision prompt compact to reduce token noise.
             'prompt_limits' => [
-                'models' => (int) env('INTELLIGENT_RAG_DECISION_PROMPT_MODELS', 12),
-                'model_fields' => (int) env('INTELLIGENT_RAG_DECISION_PROMPT_MODEL_FIELDS', 12),
-                'model_tools' => (int) env('INTELLIGENT_RAG_DECISION_PROMPT_MODEL_TOOLS', 8),
-                'nodes' => (int) env('INTELLIGENT_RAG_DECISION_PROMPT_NODES', 8),
-                'node_collections' => (int) env('INTELLIGENT_RAG_DECISION_PROMPT_NODE_COLLECTIONS', 10),
+                'models' => (int) env('AI_ENGINE_RAG_DECISION_PROMPT_MODELS', 12),
+                'model_fields' => (int) env('AI_ENGINE_RAG_DECISION_PROMPT_MODEL_FIELDS', 12),
+                'model_tools' => (int) env('AI_ENGINE_RAG_DECISION_PROMPT_MODEL_TOOLS', 8),
+                'nodes' => (int) env('AI_ENGINE_RAG_DECISION_PROMPT_NODES', 8),
+                'node_collections' => (int) env('AI_ENGINE_RAG_DECISION_PROMPT_NODE_COLLECTIONS', 10),
             ],
 
             // Optional business profile for adaptive prompt instructions
@@ -1452,26 +1482,26 @@ class AIEngineConfigDefaults
 
             // Lightweight adaptive feedback loop for prompt hints
             'adaptive_feedback' => [
-                'enabled' => env('INTELLIGENT_RAG_DECISION_ADAPTIVE_FEEDBACK', true),
-                'cache_key' => env('INTELLIGENT_RAG_DECISION_FEEDBACK_CACHE_KEY', 'ai_engine:rag_decision_feedback'),
-                'window_hours' => env('INTELLIGENT_RAG_DECISION_FEEDBACK_WINDOW_HOURS', 48),
-                'max_hints' => env('INTELLIGENT_RAG_DECISION_MAX_HINTS', 4),
+                'enabled' => env('AI_ENGINE_RAG_DECISION_ADAPTIVE_FEEDBACK', true),
+                'cache_key' => env('AI_ENGINE_RAG_DECISION_FEEDBACK_CACHE_KEY', 'ai_engine:rag_decision_feedback'),
+                'window_hours' => env('AI_ENGINE_RAG_DECISION_FEEDBACK_WINDOW_HOURS', 48),
+                'max_hints' => env('AI_ENGINE_RAG_DECISION_MAX_HINTS', 4),
                 'persistence' => [
-                    'enabled' => env('INTELLIGENT_RAG_DECISION_FEEDBACK_PERSISTENCE', true),
-                    'table' => env('INTELLIGENT_RAG_DECISION_FEEDBACK_TABLE', 'ai_prompt_feedback_events'),
+                    'enabled' => env('AI_ENGINE_RAG_DECISION_FEEDBACK_PERSISTENCE', true),
+                    'table' => env('AI_ENGINE_RAG_DECISION_FEEDBACK_TABLE', 'ai_prompt_feedback_events'),
                 ],
             ],
 
             // Versioned prompt policies (active/canary/shadow)
             'policy_store' => [
-                'enabled' => env('INTELLIGENT_RAG_DECISION_POLICY_STORE_ENABLED', true),
-                'table' => env('INTELLIGENT_RAG_DECISION_POLICY_TABLE', 'ai_prompt_policy_versions'),
-                'default_key' => env('INTELLIGENT_RAG_DECISION_POLICY_KEY', 'decision'),
-                'auto_seed_default' => env('INTELLIGENT_RAG_DECISION_POLICY_AUTO_SEED', true),
+                'enabled' => env('AI_ENGINE_RAG_DECISION_POLICY_STORE_ENABLED', true),
+                'table' => env('AI_ENGINE_RAG_DECISION_POLICY_TABLE', 'ai_prompt_policy_versions'),
+                'default_key' => env('AI_ENGINE_RAG_DECISION_POLICY_KEY', 'decision'),
+                'auto_seed_default' => env('AI_ENGINE_RAG_DECISION_POLICY_AUTO_SEED', true),
                 'evaluation' => [
-                    'window_hours' => env('INTELLIGENT_RAG_DECISION_POLICY_EVAL_WINDOW_HOURS', 168),
-                    'min_samples' => env('INTELLIGENT_RAG_DECISION_POLICY_EVAL_MIN_SAMPLES', 30),
-                    'min_score_delta' => env('INTELLIGENT_RAG_DECISION_POLICY_EVAL_MIN_SCORE_DELTA', 1.0),
+                    'window_hours' => env('AI_ENGINE_RAG_DECISION_POLICY_EVAL_WINDOW_HOURS', 168),
+                    'min_samples' => env('AI_ENGINE_RAG_DECISION_POLICY_EVAL_MIN_SAMPLES', 30),
+                    'min_score_delta' => env('AI_ENGINE_RAG_DECISION_POLICY_EVAL_MIN_SCORE_DELTA', 1.0),
                 ],
             ],
         ],

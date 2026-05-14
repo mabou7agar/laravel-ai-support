@@ -3,7 +3,7 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\RAG\IntelligentRAGService;
+use LaravelAIEngine\Services\RAG\RAGChatService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use LaravelAIEngine\Services\Vector\VectorAccessControl;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
@@ -152,7 +152,7 @@ class TestIntelligentSearchCommand extends Command
             $this->line("User ID: {$userId}");
             $this->newLine();
             
-            $rag = app(IntelligentRAGService::class);
+            $rag = app(RAGChatService::class);
             
             // Get available collections (or use auto-discovery if none specified)
             $collections = $this->option('collections') 

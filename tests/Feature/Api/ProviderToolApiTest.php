@@ -182,6 +182,18 @@ class ProviderToolApiTest extends TestCase
         ]);
     }
 
+    public function test_fal_catalog_api_returns_validation_error_for_missing_catalog_model(): void
+    {
+        $this->postJson('/api/v1/ai/provider-tools/fal/catalog/execute', [
+            'model' => 'fal-ai/missing/model',
+            'prompt' => 'A catalog image',
+            'async' => true,
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error.message', 'FAL catalog model fal-ai/missing/model was not found in the active model registry.');
+    }
+
     public function test_fal_catalog_webhook_marks_non_success_status_as_failed(): void
     {
         $this->createFalModel();

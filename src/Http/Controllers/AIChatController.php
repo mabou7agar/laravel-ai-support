@@ -165,8 +165,7 @@ class AIChatController extends Controller
                 ], 200); // Return 200 so the UI can display the demo message
             }
 
-            // Process message through ChatService (thin wrapper around AgentOrchestrator)
-            // AgentOrchestrator handles routing, RAG decisions, and workflow detection
+            // Process message through ChatService and the configured agent runtime.
             $response = $this->chatService->processMessage(
                 message: $dto->message,
                 sessionId: $dto->sessionId,
@@ -174,7 +173,7 @@ class AIChatController extends Controller
                 model: $model,
                 useMemory: $useMemory,
                 useActions: $useActions,
-                useIntelligentRAG: $dto->intelligentRag,
+                useRag: $dto->intelligentRag,
                 ragCollections: $dto->ragCollections ?? [],
                 userId: $dto->userId,
                 searchInstructions: $dto->searchInstructions,
@@ -221,7 +220,7 @@ class AIChatController extends Controller
                 'actions' => array_map(fn($action) => is_array($action) ? $action : $action->toArray(), $actions),
                 'usage' => $response->getUsage() ?? [],
                 'session_id' => $dto->sessionId,
-                // Metadata from AgentOrchestrator (includes RAG, workflow, actions, etc.)
+                // Runtime metadata includes RAG, workflow, actions, trace, and route data.
                 'metadata' => $metadata,
                 ...$this->extractConversationContextPayload($metadata),
                 // Legacy fields for backward compatibility
@@ -470,8 +469,8 @@ class AIChatController extends Controller
 
     /**
      * Handle streaming request
-     * Note: Streaming is handled directly by Engine for now
-     * TODO: Integrate streaming with AgentOrchestrator in future
+     * Note: Streaming is handled directly by Engine for now.
+     * TODO: Integrate provider token streams with runtime events.
      */
     protected function handleStreamingRequest(AIRequest $aiRequest, array $validated): JsonResponse
     {

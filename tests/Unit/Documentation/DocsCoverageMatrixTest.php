@@ -30,14 +30,14 @@ class DocsCoverageMatrixTest extends TestCase
         ],
         'guides/chat-flow-examples' => [
             'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
-            'tests/Unit/Services/Agent/AgentOrchestratorFollowUpTest.php',
+            'tests/Unit/Services/Agent/LaravelAgentProcessorFollowUpTest.php',
             'tests/Unit/Services/Agent/AgentConversationServiceTest.php',
         ],
         'guides/concepts' => [
             'tests/Unit/Services/Agent/IntentRouterTest.php',
             'tests/Unit/Services/Agent/AgentPlannerTest.php',
             'tests/Unit/Services/DataCollector/AutonomousCollectorServiceTest.php',
-            'tests/Unit/Services/RAG/AutonomousRAGDecisionServiceTest.php',
+            'tests/Unit/Services/RAG/RAGPlannerServiceTest.php',
         ],
         'guides/configuration' => [
             'tests/Unit/AIEngineServiceProviderConfigMergeTest.php',
@@ -78,7 +78,7 @@ class DocsCoverageMatrixTest extends TestCase
         'guides/entity-list-preview-ux' => [
             'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
             'tests/Unit/Services/Summary/EntitySummaryServiceTest.php',
-            'tests/Unit/Services/RAG/AutonomousRAGStructuredDataServiceTest.php',
+            'tests/Unit/Services/RAG/RAGStructuredDataServiceTest.php',
         ],
         'guides/federation' => [
             'tests/Feature/Node/NodeApiRoutesTest.php',
@@ -108,7 +108,7 @@ class DocsCoverageMatrixTest extends TestCase
         ],
         'guides/localization' => [
             'tests/Unit/Http/Middleware/SetRequestLocaleMiddlewareTest.php',
-            'tests/Unit/Services/RAG/AutonomousRAGDecisionServiceTest.php',
+            'tests/Unit/Services/RAG/RAGPlannerServiceTest.php',
         ],
         'guides/model-config-tools' => [
             'tests/Feature/Actions/ActionRegistryTest.php',

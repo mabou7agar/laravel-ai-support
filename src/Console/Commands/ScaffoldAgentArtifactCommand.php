@@ -10,14 +10,14 @@ use LaravelAIEngine\Services\Agent\AgentManifestService;
 class ScaffoldAgentArtifactCommand extends Command
 {
     protected $signature = 'ai-engine:scaffold
-                            {type? : agent|collector|filter|tool|skill}
+                            {type? : agent|collector|filter|tool|skill|routing-stage|execution-handler|runtime|rag-retriever|policy}
                             {name? : Class name (e.g. Invoice)}
                             {--model= : Model class for agent/collector (e.g. App\\Models\\Invoice)}
                             {--description= : Description text used in generated class}
                             {--force : Overwrite file if it already exists}
                             {--no-register : Skip automatic manifest registration}';
 
-    protected $description = 'Scaffold AI agent artifacts (agent config, collector, filter, tool, skill)';
+    protected $description = 'Scaffold AI agent artifacts (agent config, collector, filter, tool, skill, routing stage, execution handler, runtime, RAG retriever, policy)';
 
     /**
      * @var array<string, array{namespace:string,directory:string,suffix:string,manifest:string,map:bool}>
@@ -56,6 +56,41 @@ class ScaffoldAgentArtifactCommand extends Command
             'directory' => 'AI/Skills',
             'suffix' => 'Skill',
             'manifest' => 'skill_providers',
+            'map' => true,
+        ],
+        'routing-stage' => [
+            'namespace' => 'App\\AI\\Routing',
+            'directory' => 'AI/Routing',
+            'suffix' => 'RoutingStage',
+            'manifest' => 'routing_stages',
+            'map' => true,
+        ],
+        'execution-handler' => [
+            'namespace' => 'App\\AI\\Execution',
+            'directory' => 'AI/Execution',
+            'suffix' => 'ExecutionHandler',
+            'manifest' => 'execution_handlers',
+            'map' => true,
+        ],
+        'runtime' => [
+            'namespace' => 'App\\AI\\Runtimes',
+            'directory' => 'AI/Runtimes',
+            'suffix' => 'Runtime',
+            'manifest' => 'runtimes',
+            'map' => true,
+        ],
+        'rag-retriever' => [
+            'namespace' => 'App\\AI\\RAG',
+            'directory' => 'AI/RAG',
+            'suffix' => 'RAGRetriever',
+            'manifest' => 'rag_retrievers',
+            'map' => true,
+        ],
+        'policy' => [
+            'namespace' => 'App\\AI\\Policies',
+            'directory' => 'AI/Policies',
+            'suffix' => 'Policy',
+            'manifest' => 'policies',
             'map' => true,
         ],
     ];
@@ -143,7 +178,7 @@ class ScaffoldAgentArtifactCommand extends Command
         }
 
         if (!array_key_exists($type, $this->types)) {
-            $this->error('Invalid type. Allowed: agent, collector, filter, tool, skill.');
+            $this->error('Invalid type. Allowed: ' . implode(', ', array_keys($this->types)) . '.');
             return null;
         }
 
@@ -199,7 +234,7 @@ class ScaffoldAgentArtifactCommand extends Command
 
     protected function artifactKey(string $className): string
     {
-        $key = preg_replace('/(Config|Collector|Filter|Tool|Skill)$/', '', $className) ?? $className;
+        $key = preg_replace('/(Config|Collector|Filter|Tool|Skill|RoutingStage|ExecutionHandler|Runtime|RAGRetriever|Policy)$/', '', $className) ?? $className;
         $key = Str::snake($key);
 
         return $key !== '' ? $key : Str::snake($className);
@@ -213,6 +248,11 @@ class ScaffoldAgentArtifactCommand extends Command
             'filter' => $this->buildFilterTemplate($namespace, $className),
             'tool' => $this->buildToolTemplate($namespace, $className),
             'skill' => $this->buildSkillTemplate($namespace, $className),
+            'routing-stage' => $this->buildRoutingStageTemplate($namespace, $className),
+            'execution-handler' => $this->buildExecutionHandlerTemplate($namespace, $className),
+            'runtime' => $this->buildRuntimeTemplate($namespace, $className),
+            'rag-retriever' => $this->buildRagRetrieverTemplate($namespace, $className),
+            'policy' => $this->buildPolicyTemplate($namespace, $className),
             default => throw new \InvalidArgumentException("Unsupported scaffold type: {$type}"),
         };
     }
@@ -463,6 +503,146 @@ class {$className} implements AgentSkillProvider
 PHP;
     }
 
+    protected function buildRoutingStageTemplate(string $namespace, string $className): string
+    {
+        $name = Str::snake(Str::beforeLast($className, 'RoutingStage')) ?: Str::snake($className);
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Contracts\RoutingStageContract;
+use LaravelAIEngine\DTOs\RoutingDecision;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+class {$className} implements RoutingStageContract
+{
+    public function name(): string
+    {
+        return '{$name}';
+    }
+
+    public function decide(string \$message, UnifiedActionContext \$context, array \$options = []): ?RoutingDecision
+    {
+        return null;
+    }
+}
+PHP;
+    }
+
+    protected function buildExecutionHandlerTemplate(string $namespace, string $className): string
+    {
+        $action = Str::snake(Str::beforeLast($className, 'ExecutionHandler')) ?: Str::snake($className);
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Contracts\ExecutionHandlerContract;
+use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\RoutingDecision;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+class {$className} implements ExecutionHandlerContract
+{
+    public function action(): string
+    {
+        return '{$action}';
+    }
+
+    public function handle(RoutingDecision \$decision, UnifiedActionContext \$context, array \$options = []): AgentResponse
+    {
+        return AgentResponse::failure('Execution handler is not implemented.', context: \$context);
+    }
+}
+PHP;
+    }
+
+    protected function buildRuntimeTemplate(string $namespace, string $className): string
+    {
+        $name = Str::snake(Str::beforeLast($className, 'Runtime')) ?: Str::snake($className);
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Contracts\AgentRuntimeContract;
+use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\AgentRuntimeCapabilities;
+
+class {$className} implements AgentRuntimeContract
+{
+    public function name(): string
+    {
+        return '{$name}';
+    }
+
+    public function capabilities(): AgentRuntimeCapabilities
+    {
+        return AgentRuntimeCapabilities::laravel();
+    }
+
+    public function process(string \$message, string \$sessionId, mixed \$userId, array \$options = []): AgentResponse
+    {
+        return AgentResponse::failure('Runtime is not implemented.');
+    }
+}
+PHP;
+    }
+
+    protected function buildRagRetrieverTemplate(string $namespace, string $className): string
+    {
+        $name = Str::snake(Str::beforeLast($className, 'RAGRetriever')) ?: Str::snake($className);
+
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Contracts\RAGRetrieverContract;
+
+class {$className} implements RAGRetrieverContract
+{
+    public function name(): string
+    {
+        return '{$name}';
+    }
+
+    public function retrieve(array \$queries, array \$collections, array \$options = [], int|string|null \$userId = null): array
+    {
+        return [];
+    }
+}
+PHP;
+    }
+
+    protected function buildPolicyTemplate(string $namespace, string $className): string
+    {
+        return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+class {$className}
+{
+    public function canExecute(string \$action, ?UnifiedActionContext \$context = null, array \$payload = []): bool
+    {
+        return true;
+    }
+
+    public function sanitize(array \$payload): array
+    {
+        return \$payload;
+    }
+}
+PHP;
+    }
+
     protected function loadManifest(string $path): array
     {
         $default = [
@@ -472,6 +652,11 @@ PHP;
             'filters' => [],
             'skill_providers' => [],
             'skills' => [],
+            'routing_stages' => [],
+            'execution_handlers' => [],
+            'runtimes' => [],
+            'rag_retrievers' => [],
+            'policies' => [],
         ];
 
         if (!is_file($path)) {
@@ -499,6 +684,11 @@ PHP;
             'filters' => (array) ($manifest['filters'] ?? []),
             'skill_providers' => (array) ($manifest['skill_providers'] ?? []),
             'skills' => (array) ($manifest['skills'] ?? []),
+            'routing_stages' => (array) ($manifest['routing_stages'] ?? []),
+            'execution_handlers' => (array) ($manifest['execution_handlers'] ?? []),
+            'runtimes' => (array) ($manifest['runtimes'] ?? []),
+            'rag_retrievers' => (array) ($manifest['rag_retrievers'] ?? []),
+            'policies' => (array) ($manifest['policies'] ?? []),
         ];
 
         return "<?php\n\nreturn " . var_export($normalized, true) . ";\n";

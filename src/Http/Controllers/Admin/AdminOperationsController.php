@@ -12,19 +12,22 @@ use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use LaravelAIEngine\Http\Requests\AdminProviderToolApprovalActionRequest;
 use LaravelAIEngine\Http\Requests\AdminProviderToolRunActionRequest;
+use LaravelAIEngine\Http\Requests\AdminAgentRunActionRequest;
 use LaravelAIEngine\Jobs\ContinueProviderToolRunJob;
+use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AIPromptPolicyVersionRepository;
 use LaravelAIEngine\Repositories\ProviderToolApprovalRepository;
 use LaravelAIEngine\Repositories\ProviderToolArtifactRepository;
 use LaravelAIEngine\Repositories\ProviderToolRunRepository;
 use LaravelAIEngine\Services\Admin\NodeAdminService;
+use LaravelAIEngine\Services\Agent\AgentRunRuntimeControlService;
 use LaravelAIEngine\Services\JobStatusTracker;
 use LaravelAIEngine\Services\Node\NodeBulkSyncService;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolApprovalService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolContinuationService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPromptPolicyService;
+use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
+use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class AdminOperationsController extends Controller
@@ -43,6 +46,105 @@ class AdminOperationsController extends Controller
             'artifacts' => $tableExists ? $artifacts->paginate([], 10) : null,
             'api_base' => url('/api/v1/ai/provider-tools'),
         ]);
+    }
+
+    public function agentRuns(AgentRunRepository $runs): View
+    {
+        $tableExists = Schema::hasTable('ai_agent_runs');
+
+        return view('ai-engine::admin.agent-runs', [
+            'table_exists' => $tableExists,
+            'runs' => $tableExists ? $runs->paginate([
+                'status' => request('status'),
+                'session_id' => request('session_id'),
+                'user_id' => request('user_id'),
+                'tenant_id' => request('tenant_id'),
+                'workspace_id' => request('workspace_id'),
+            ], 15) : null,
+        ]);
+    }
+
+    public function agentRunDetail(string $run, AgentRunRepository $runs): View
+    {
+        if (!Schema::hasTable('ai_agent_runs')) {
+            return view('ai-engine::admin.agent-runs', [
+                'table_exists' => false,
+                'runs' => null,
+            ]);
+        }
+
+        return view('ai-engine::admin.agent-run-detail', [
+            'run' => $runs->findOrFail($run)->load([
+                'steps.approvals',
+                'steps.artifacts',
+                'steps.auditEvents',
+                'steps.linkedProviderToolRuns',
+                'providerToolRuns.approvals',
+                'providerToolRuns.artifacts',
+            ]),
+        ]);
+    }
+
+    public function resumeAgentRun(
+        string $run,
+        AdminAgentRunActionRequest $request,
+        AgentRunRuntimeControlService $control
+    ): RedirectResponse {
+        if (!Schema::hasTable('ai_agent_runs')) {
+            return back()->withErrors(['agent_runs' => 'Agent run tables are missing. Run package migrations first.']);
+        }
+
+        try {
+            $payload = array_merge($request->validated(), [
+                'queue' => $request->boolean('queue', true),
+            ]);
+            $control->resume($run, $payload);
+
+            return back()->with('status', 'Agent run resume queued.');
+        } catch (\Throwable $e) {
+            return back()->withErrors(['agent_runs' => $e->getMessage()]);
+        }
+    }
+
+    public function retryAgentRun(
+        string $run,
+        AdminAgentRunActionRequest $request,
+        AgentRunRuntimeControlService $control
+    ): RedirectResponse {
+        if (!Schema::hasTable('ai_agent_runs')) {
+            return back()->withErrors(['agent_runs' => 'Agent run tables are missing. Run package migrations first.']);
+        }
+
+        try {
+            $payload = array_merge($request->validated(), [
+                'message' => $request->input('message') ?: 'retry failed agent run',
+                'reason' => $request->input('reason') ?: 'Admin retry requested.',
+                'queue' => $request->boolean('queue', true),
+            ]);
+            $control->resume($run, $payload);
+
+            return back()->with('status', 'Agent run retry queued.');
+        } catch (\Throwable $e) {
+            return back()->withErrors(['agent_runs' => $e->getMessage()]);
+        }
+    }
+
+    public function cancelAgentRun(
+        string $run,
+        AdminAgentRunActionRequest $request,
+        AgentRunRuntimeControlService $control
+    ): RedirectResponse {
+        if (!Schema::hasTable('ai_agent_runs')) {
+            return back()->withErrors(['agent_runs' => 'Agent run tables are missing. Run package migrations first.']);
+        }
+
+        try {
+            $control->cancel($run, $request->validated());
+
+            return back()->with('status', 'Agent run cancelled.');
+        } catch (\Throwable $e) {
+            return back()->withErrors(['agent_runs' => $e->getMessage()]);
+        }
     }
 
     public function approveProviderTool(
@@ -621,7 +723,7 @@ class AdminOperationsController extends Controller
     }
 
     public function policies(
-        AutonomousRAGPromptPolicyService $policyService,
+        RAGPromptPolicyService $policyService,
         AIPromptPolicyVersionRepository $policyVersions
     ): View
     {
@@ -632,15 +734,15 @@ class AdminOperationsController extends Controller
 
         return view('ai-engine::admin.policies', [
             'store_available' => $storeAvailable,
-            'default_policy_key' => config('ai-engine.intelligent_rag.decision.policy_store.default_key', 'decision'),
+            'default_policy_key' => config('ai-engine.rag.decision.policy_store.default_key', 'decision'),
             'policies' => $policies,
         ]);
     }
 
     public function createPolicy(
         Request $request,
-        AutonomousRAGPromptPolicyService $policyService,
-        AutonomousRAGPolicy $policyConfig
+        RAGPromptPolicyService $policyService,
+        RAGDecisionPolicy $policyConfig
     ): RedirectResponse {
         $validated = $request->validate([
             'policy_key' => 'nullable|string|max:100',
@@ -681,7 +783,7 @@ class AdminOperationsController extends Controller
         return back()->with('status', 'Created policy #' . $created->id . ' v' . $created->version . ' (' . $created->status . ').');
     }
 
-    public function activatePolicy(Request $request, AutonomousRAGPromptPolicyService $policyService): RedirectResponse
+    public function activatePolicy(Request $request, RAGPromptPolicyService $policyService): RedirectResponse
     {
         $validated = $request->validate([
             'policy_id' => 'required|integer|min:1',

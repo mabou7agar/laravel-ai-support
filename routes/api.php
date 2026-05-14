@@ -7,6 +7,7 @@ use LaravelAIEngine\Http\Controllers\Api\GenerateApiController;
 use LaravelAIEngine\Http\Controllers\Api\EngineCatalogController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\ActionExecutionController;
+use LaravelAIEngine\Http\Controllers\Api\AgentRunController;
 use LaravelAIEngine\Http\Controllers\Api\ModelRecommendationController;
 use LaravelAIEngine\Http\Controllers\DataCollectorController;
 use LaravelAIEngine\Http\Controllers\Api\ProviderToolController;
@@ -229,6 +230,24 @@ Route::prefix('api/v1/ai/provider-tools')
             ->name('fal.catalog.execute');
         Route::post('/fal/catalog/webhook', [ProviderToolController::class, 'falCatalogWebhook'])
             ->name('fal.catalog.webhook');
+    });
+
+Route::prefix('api/v1/ai/agent-runs')
+    ->middleware($resolveApiMiddleware('generate'))
+    ->name('ai-engine.agent-runs.api.')
+    ->group(function () {
+        Route::get('/', [AgentRunController::class, 'index'])
+            ->name('runs.index');
+        Route::get('/capabilities', [AgentRunController::class, 'capabilities'])
+            ->name('capabilities');
+        Route::get('/{run}', [AgentRunController::class, 'show'])
+            ->name('runs.show');
+        Route::get('/{run}/trace', [AgentRunController::class, 'trace'])
+            ->name('runs.trace');
+        Route::post('/{run}/resume', [AgentRunController::class, 'resume'])
+            ->name('runs.resume');
+        Route::post('/{run}/cancel', [AgentRunController::class, 'cancel'])
+            ->name('runs.cancel');
     });
 
 // Data Collector Chat Routes (v1)

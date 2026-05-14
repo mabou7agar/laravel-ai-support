@@ -6,29 +6,29 @@ use LaravelAIEngine\Models\Conversation;
 use LaravelAIEngine\Models\Message;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
-use LaravelAIEngine\Services\RAG\IntelligentRAGService;
+use LaravelAIEngine\Services\RAG\RAGChatService;
 use Illuminate\Support\Collection;
 
 class ConversationManager
 {
-    protected ?IntelligentRAGService $ragService = null;
+    protected ?RAGChatService $ragService = null;
     protected bool $ragServiceResolved = false;
 
     public function __construct()
     {
         // RAG service is lazy-loaded to avoid circular dependency
-        // ConversationManager -> IntelligentRAGService -> ConversationService -> ConversationManager
+        // ConversationManager -> RAGChatService -> ConversationService -> ConversationManager
     }
 
     /**
      * Get RAG service (lazy loaded to avoid circular dependency)
      */
-    protected function getRagService(): ?IntelligentRAGService
+    protected function getRagService(): ?RAGChatService
     {
         if (!$this->ragServiceResolved) {
             $this->ragServiceResolved = true;
-            if (class_exists(IntelligentRAGService::class)) {
-                $this->ragService = app(IntelligentRAGService::class);
+            if (class_exists(RAGChatService::class)) {
+                $this->ragService = app(RAGChatService::class);
             }
         }
         return $this->ragService;
@@ -299,7 +299,7 @@ class ConversationManager
         // Get conversation history
         $conversationHistory = $this->getConversationContext($conversationId);
 
-        // Get RAG response using IntelligentRAGService
+        // Get RAG response using RAGChatService
         // Use intelligent: false to always search (like old VectorRAGBridge behavior)
         $response = $ragService->processMessage(
             $query,

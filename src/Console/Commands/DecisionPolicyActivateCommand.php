@@ -3,7 +3,7 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPromptPolicyService;
+use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 
 class DecisionPolicyActivateCommand extends Command
 {
@@ -14,7 +14,7 @@ class DecisionPolicyActivateCommand extends Command
 
     protected $description = 'Activate a decision prompt policy version as active/canary/shadow';
 
-    public function handle(AutonomousRAGPromptPolicyService $policyService): int
+    public function handle(RAGPromptPolicyService $policyService): int
     {
         if (!$policyService->storeAvailable()) {
             $this->warn('Decision policy store is disabled or unavailable.');

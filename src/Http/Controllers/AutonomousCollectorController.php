@@ -6,12 +6,12 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
+use LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService;
 
 class AutonomousCollectorController extends Controller
 {
     public function __construct(
-        protected AutonomousCollectorService $collector
+        protected AutonomousCollectorSessionService $collector
     ) {
     }
 

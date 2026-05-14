@@ -124,6 +124,8 @@ class ProviderToolRunService
 
         return $this->runRepository->create([
             'uuid' => (string) Str::uuid(),
+            'agent_run_id' => $metadata['agent_run_id'] ?? null,
+            'agent_run_step_id' => $metadata['agent_run_step_id'] ?? null,
             'provider' => $provider,
             'engine' => $request->getEngine()->value,
             'ai_model' => $request->getModel()->value,
@@ -132,7 +134,7 @@ class ProviderToolRunService
             'conversation_id' => $metadata['conversation_id'] ?? null,
             'user_id' => $this->resolveActorId($metadata),
             'tool_names' => array_values(array_unique(array_column($tools, 'type'))),
-            'request_payload' => config('ai-engine.provider_tools.lifecycle.store_payloads', true) ? $requestPayload : [],
+            'request_payload' => config('ai-agent.run_retention.store_raw_provider_payloads', config('ai-engine.provider_tools.lifecycle.store_payloads', true)) ? $requestPayload : [],
             'metadata' => $metadata,
         ]);
     }

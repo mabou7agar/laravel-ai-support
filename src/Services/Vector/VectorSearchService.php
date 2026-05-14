@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\GraphVectorLink;
 use LaravelAIEngine\DTOs\SearchDocument;
+use LaravelAIEngine\Services\Tenant\MultiTenantVectorService;
 use LaravelAIEngine\Services\Vector\VectorDriverManager;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
 use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
@@ -19,19 +20,22 @@ class VectorSearchService
     protected VectorAccessControl $accessControl;
     protected SearchDocumentBuilder $documentBuilder;
     protected ChunkingService $chunkingService;
+    protected ?MultiTenantVectorService $tenantScope;
 
     public function __construct(
         VectorDriverManager $driverManager,
         EmbeddingService $embeddingService,
         VectorAccessControl $accessControl,
         SearchDocumentBuilder $documentBuilder,
-        ChunkingService $chunkingService
+        ChunkingService $chunkingService,
+        ?MultiTenantVectorService $tenantScope = null
     ) {
         $this->driverManager = $driverManager;
         $this->embeddingService = $embeddingService;
         $this->accessControl = $accessControl;
         $this->documentBuilder = $documentBuilder;
         $this->chunkingService = $chunkingService;
+        $this->tenantScope = $tenantScope;
     }
 
     /**
@@ -1062,7 +1066,7 @@ class VectorSearchService
             GraphVectorLink::pointId($document->modelId, $chunkIndex, $totalChunks > 1)
         );
 
-        return array_merge(
+        $metadata = array_merge(
             $document->metadata,
             [
                 'model_class' => $document->modelClass,
@@ -1088,6 +1092,10 @@ class VectorSearchService
                 'graph_vector_link' => $link->toArray(),
             ]
         );
+
+        return $this->tenantScope instanceof MultiTenantVectorService
+            ? $this->tenantScope->applyScopeToMetadata($metadata)
+            : $metadata;
     }
 
     /**

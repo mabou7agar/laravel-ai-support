@@ -203,19 +203,37 @@ class ProviderToolController extends Controller
             metadata: is_array($validated['metadata'] ?? null) ? $validated['metadata'] : []
         );
 
-        if ((bool) ($validated['async'] ?? false)) {
-            $result = $this->falCatalog->submitAsync($aiRequest, $validated['webhook_url'] ?? null);
+        try {
+            if ((bool) ($validated['async'] ?? false)) {
+                $result = $this->falCatalog->submitAsync($aiRequest, $validated['webhook_url'] ?? null);
 
+                return response()->json([
+                    'success' => true,
+                    'message' => 'FAL catalog execution queued.',
+                    'data' => $result,
+                    'error' => null,
+                    'meta' => ['schema' => 'ai-engine.v1'],
+                ], 202);
+            }
+
+            $response = $this->falCatalog->executeRequest($aiRequest);
+        } catch (\InvalidArgumentException $exception) {
             return response()->json([
-                'success' => true,
-                'message' => 'FAL catalog execution queued.',
-                'data' => $result,
-                'error' => null,
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'data' => null,
+                'error' => ['message' => $exception->getMessage()],
                 'meta' => ['schema' => 'ai-engine.v1'],
-            ], 202);
+            ], 422);
+        } catch (\RuntimeException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => 'FAL catalog execution failed.',
+                'data' => null,
+                'error' => ['message' => $exception->getMessage()],
+                'meta' => ['schema' => 'ai-engine.v1'],
+            ], 422);
         }
-
-        $response = $this->falCatalog->executeRequest($aiRequest);
 
         return response()->json([
             'success' => $response->isSuccess(),

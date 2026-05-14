@@ -44,7 +44,7 @@ class RagChatApiController extends Controller
      * @bodyParam model string Model to use. Example: gpt-4o
      * @bodyParam memory boolean Enable conversation memory. Example: true
      * @bodyParam actions boolean Enable suggested actions. Example: true
-     * @bodyParam use_intelligent_rag boolean Enable intelligent RAG. Example: true
+     * @bodyParam use_rag boolean Enable RAG. Example: true
      * @bodyParam rag_collections array Array of model classes to search. Example: ["App\\Models\\Post"]
      * @bodyParam user_id string Optional user identifier. Example: user-456
      *
@@ -72,7 +72,7 @@ class RagChatApiController extends Controller
             $model = $dto->model;
             $useMemory = $dto->memory;
             $useActions = $dto->actions;
-            $useIntelligentRAG = $request->input('use_intelligent_rag', true);
+            $useRag = $request->input('use_rag', true);
             $userId = $dto->userId; // SECURITY: Uses authenticated user or demo user
 
             // Get RAG collections - respect user's explicit choice
@@ -117,7 +117,7 @@ class RagChatApiController extends Controller
                 model: $model,
                 useMemory: $useMemory,
                 useActions: $useActions,
-                useIntelligentRAG: $useIntelligentRAG,
+                useRag: $useRag,
                 ragCollections: $ragCollections,
                 userId: $userId,
                 searchInstructions: $dto->searchInstructions,
@@ -430,7 +430,7 @@ class RagChatApiController extends Controller
                 'data' => [
                     'status' => 'healthy',
                     'version' => '1.0.0',
-                    'rag_enabled' => config('ai-engine.intelligent_rag.enabled', true),
+                    'rag_enabled' => config('ai-engine.rag.enabled', true),
                     'collections_count' => count($collections),
                     'timestamp' => now()->toIso8601String(),
                 ]
@@ -563,7 +563,7 @@ class RagChatApiController extends Controller
             'session_id' => 'required|string',
             'engine' => 'nullable|string',
             'model' => 'nullable|string',
-            'use_intelligent_rag' => 'nullable|boolean',
+            'use_rag' => 'nullable|boolean',
             'rag_collections' => 'nullable|string',
         ]);
 
@@ -581,7 +581,7 @@ class RagChatApiController extends Controller
             $sessionId = $request->input('session_id');
             $engine = $request->input('engine', 'openai');
             $model = $request->input('model', 'gpt-4o');
-            $useIntelligentRAG = filter_var($request->input('use_intelligent_rag', true), FILTER_VALIDATE_BOOLEAN);
+            $useRag = filter_var($request->input('use_rag', true), FILTER_VALIDATE_BOOLEAN);
             $ragCollections = json_decode($request->input('rag_collections', '[]'), true) ?: [];
             $userId = $request->user()?->id ?? config('ai-engine.demo_user_id', '1');
 
@@ -592,7 +592,7 @@ class RagChatApiController extends Controller
                 $sessionId,
                 $engine,
                 $model,
-                $useIntelligentRAG,
+                $useRag,
                 $ragCollections,
                 $userId
             );
@@ -686,7 +686,7 @@ class RagChatApiController extends Controller
     /**
      * Analyze a document file - pass directly to AI when possible
      */
-    protected function analyzeDocumentFile($file, string $message, string $sessionId, string $engine, string $model, bool $useIntelligentRAG, array $ragCollections, $userId): array
+    protected function analyzeDocumentFile($file, string $message, string $sessionId, string $engine, string $model, bool $useRag, array $ragCollections, $userId): array
     {
         $extension = strtolower($file->getClientOriginalExtension());
         $fileName = $file->getClientOriginalName();
@@ -738,7 +738,7 @@ class RagChatApiController extends Controller
             model: $model,
             useMemory: true,
             useActions: false,
-            useIntelligentRAG: $useIntelligentRAG,
+            useRag: $useRag,
             ragCollections: $ragCollections,
             userId: $userId
         );

@@ -13,9 +13,13 @@ class AIProviderToolArtifact extends Model
 
     protected $fillable = [
         'uuid',
+        'agent_run_step_id',
         'tool_run_id',
+        'owner_type',
+        'owner_id',
         'media_id',
         'provider',
+        'source',
         'artifact_type',
         'name',
         'mime_type',
@@ -26,15 +30,22 @@ class AIProviderToolArtifact extends Model
         'citation_title',
         'citation_url',
         'metadata',
+        'expires_at',
     ];
 
     protected $casts = [
         'metadata' => 'array',
+        'expires_at' => 'datetime',
     ];
 
     public function run(): BelongsTo
     {
         return $this->belongsTo(AIProviderToolRun::class, 'tool_run_id');
+    }
+
+    public function agentRunStep(): BelongsTo
+    {
+        return $this->belongsTo(AIAgentRunStep::class, 'agent_run_step_id');
     }
 
     public function media(): BelongsTo

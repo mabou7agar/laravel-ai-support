@@ -101,6 +101,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Agent Run Event Stream
+    |--------------------------------------------------------------------------
+    |
+    | Native Laravel event stream for persisted agent-run lifecycle events.
+    | These events are also kept in run/step metadata as a non-streaming
+    | fallback for admin screens and APIs.
+    |
+    */
+    'event_stream' => [
+        'enabled' => env('AI_AGENT_EVENT_STREAM_ENABLED', true),
+        'persisted_events_limit' => env('AI_AGENT_EVENT_STREAM_PERSISTED_LIMIT', 200),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Agent Mode Settings
     |--------------------------------------------------------------------------
     |
@@ -134,6 +149,89 @@ return [
 
     'orchestration' => [
         'max_complexity' => (int) env('AI_AGENT_ORCHESTRATION_MAX_COMPLEXITY', 80),
+    ],
+
+    'run_safety' => [
+        'lock_ttl_seconds' => (int) env('AI_AGENT_RUN_LOCK_TTL', 60),
+        'lock_wait_seconds' => (int) env('AI_AGENT_RUN_LOCK_WAIT', 5),
+        'duplicate_message_ttl_seconds' => (int) env('AI_AGENT_DUPLICATE_MESSAGE_TTL', 120),
+        'stuck_after_minutes' => (int) env('AI_AGENT_RUN_STUCK_AFTER_MINUTES', 30),
+        'expired_cleanup_days' => (int) env('AI_AGENT_RUN_EXPIRED_CLEANUP_DAYS', 30),
+        'queue' => [
+            'connection' => env('AI_AGENT_RUN_QUEUE_CONNECTION'),
+            'name' => env('AI_AGENT_RUN_QUEUE', 'ai-agent'),
+            'tries' => (int) env('AI_AGENT_RUN_QUEUE_TRIES', 3),
+            'timeout' => (int) env('AI_AGENT_RUN_QUEUE_TIMEOUT', 300),
+            'backoff' => [30, 60, 120],
+            'max_steps' => (int) env('AI_AGENT_RUN_MAX_STEPS', 50),
+            'max_tokens' => env('AI_AGENT_RUN_MAX_TOKENS') !== null ? (int) env('AI_AGENT_RUN_MAX_TOKENS') : null,
+            'max_cost' => env('AI_AGENT_RUN_MAX_COST') !== null ? (float) env('AI_AGENT_RUN_MAX_COST') : null,
+        ],
+    ],
+
+    'run_retention' => [
+        'run_days' => (int) env('AI_AGENT_RUN_RETENTION_DAYS', 90),
+        'step_days' => (int) env('AI_AGENT_RUN_STEP_RETENTION_DAYS', 90),
+        'trace_days' => (int) env('AI_AGENT_RUN_TRACE_RETENTION_DAYS', 30),
+        'artifact_days' => (int) env('AI_AGENT_RUN_ARTIFACT_RETENTION_DAYS', 90),
+        'redact_prompts' => env('AI_AGENT_RUN_REDACT_PROMPTS', false),
+        'redact_responses' => env('AI_AGENT_RUN_REDACT_RESPONSES', false),
+        'store_raw_provider_payloads' => env('AI_AGENT_STORE_RAW_PROVIDER_PAYLOADS', env('AI_ENGINE_PROVIDER_TOOL_STORE_PAYLOADS', true)),
+    ],
+
+    'execution_policy' => [
+        'runtime_allow' => [],
+        'runtime_deny' => [],
+        'tool_allow' => [],
+        'tool_deny' => [],
+        'sub_agent_allow' => [],
+        'sub_agent_deny' => [],
+        'rag_collection_allow' => [],
+        'rag_collection_deny' => [],
+        'node_allow' => [],
+        'node_deny' => [],
+        'sensitive_keys' => [
+            'password',
+            'token',
+            'secret',
+            'api_key',
+            'authorization',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Agent Runtime
+    |--------------------------------------------------------------------------
+    |
+    | Runtime selection is explicit in v2. Laravel stays the default runtime.
+    | LangGraph is optional and must be enabled/configured by the host app.
+    |
+    */
+    'runtime' => [
+        'default' => env('AI_AGENT_RUNTIME', 'laravel'),
+        'langgraph' => [
+            'enabled' => env('AI_AGENT_LANGGRAPH_ENABLED', false),
+            'base_url' => env('AI_AGENT_LANGGRAPH_URL'),
+            'api_token' => env('AI_AGENT_LANGGRAPH_API_TOKEN'),
+            'signature_secret' => env('AI_AGENT_LANGGRAPH_SIGNATURE_SECRET'),
+            'timeout' => (int) env('AI_AGENT_LANGGRAPH_TIMEOUT', 120),
+            'retry_times' => (int) env('AI_AGENT_LANGGRAPH_RETRY_TIMES', 1),
+            'retry_sleep_ms' => (int) env('AI_AGENT_LANGGRAPH_RETRY_SLEEP_MS', 100),
+            'fallback_to_laravel' => env('AI_AGENT_LANGGRAPH_FALLBACK_TO_LARAVEL', true),
+        ],
+    ],
+
+    'routing_pipeline' => [
+        'stages' => [
+            \LaravelAIEngine\Services\Agent\Routing\Stages\ActiveRunContinuationStage::class,
+            \LaravelAIEngine\Services\Agent\Routing\Stages\ExplicitModeStage::class,
+            \LaravelAIEngine\Services\Agent\Routing\Stages\SelectionReferenceStage::class,
+            \LaravelAIEngine\Services\Agent\Routing\Stages\DeterministicCommandStage::class,
+            \LaravelAIEngine\Services\Agent\Routing\Stages\MessageClassificationStage::class,
+            \LaravelAIEngine\Services\Agent\Routing\Stages\AIRouterStage::class,
+            \LaravelAIEngine\Services\Agent\Routing\Stages\FallbackConversationalStage::class,
+        ],
     ],
 
     'sub_agents' => [

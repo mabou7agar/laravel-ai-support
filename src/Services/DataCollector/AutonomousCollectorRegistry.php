@@ -18,9 +18,10 @@ use Illuminate\Support\Facades\Log;
  * 
  * public function boot()
  * {
- *     AutonomousCollectorRegistry::register('invoice', [
- *         'config' => fn() => InvoiceAutonomousConfig::create(),
- *         'description' => 'Create a sales invoice with customer and products',
+ *     AutonomousCollectorRegistry::register('create_record', [
+ *         'operation' => 'create',
+ *         'config' => fn() => CreateRecordAutonomousConfig::create(),
+ *         'description' => 'Collect the fields required to create a record',
  *     ]);
  * }
  * ```
@@ -91,8 +92,7 @@ class AutonomousCollectorRegistry
             if ($configClass && method_exists($configClass, 'getAllowedOperations')) {
                 $allowedOps = $configClass::getAllowedOperations($userId);
                 
-                // Determine required operation from collector name
-                $requiredOp = static::getRequiredOperation($name);
+                $requiredOp = static::getRequiredOperation($name, $configData);
                 if (!in_array($requiredOp, $allowedOps)) {
                     Log::channel('ai-engine')->debug('Skipping collector due to permissions', [
                         'collector' => $name,
@@ -112,6 +112,7 @@ class AutonomousCollectorRegistry
             $collectorsContext[$name] = [
                 'goal' => $config->goal ?? '',
                 'description' => $configData['description'] ?? $config->description ?? '',
+                'operation' => static::getRequiredOperation($name, $configData),
             ];
         }
         
@@ -152,18 +153,23 @@ class AutonomousCollectorRegistry
     }
     
     /**
-     * Get required operation from collector name
+     * Get required operation from explicit registration metadata or collector name.
      */
-    protected static function getRequiredOperation(string $name): string
+    protected static function getRequiredOperation(string $name, array $configData = []): string
     {
+        $configured = $configData['required_operation'] ?? $configData['operation'] ?? null;
+        if (is_string($configured) && trim($configured) !== '') {
+            return trim($configured);
+        }
+
         if (str_contains($name, '_delete')) {
             return 'delete';
         }
         if (str_contains($name, '_update')) {
             return 'update';
         }
-        // Default is create for base collectors like 'invoice', 'bill', etc.
-        return 'create';
+
+        return (string) config('ai-engine.autonomous_collector.default_operation', 'create');
     }
 
     /**
@@ -184,6 +190,7 @@ class AutonomousCollectorRegistry
         $index = 1;
         $indexMap = [];
         $examples = [];
+        $operations = [];
         foreach ($collectors as $name => $info) {
             $prompt .= "{$index}. {$info['goal']}";
             if (!empty($info['description'])) {
@@ -191,13 +198,14 @@ class AutonomousCollectorRegistry
             }
             $prompt .= "\n";
             $indexMap[$index] = $name;
-            // Build dynamic examples from collector names
-            $examples[] = "\"create {$name}\" → {$index}";
+            $operation = (string) ($info['operation'] ?? static::getRequiredOperation((string) $name));
+            $operations[] = $operation;
+            $examples[] = "\"{$operation} {$name}\" → {$index}";
             $index++;
         }
         
         // Build detection prompt dynamically
-        $detectionPrompt = static::buildDetectionPrompt($examples, count($collectors));
+        $detectionPrompt = static::buildDetectionPrompt($examples, count($collectors), $operations);
         $prompt .= "\n" . $detectionPrompt;
 
         $response = $ai->generate(new AIRequest(
@@ -225,17 +233,21 @@ class AutonomousCollectorRegistry
     /**
      * Build detection prompt dynamically from discovered collectors
      */
-    protected static function buildDetectionPrompt(array $examples, int $count): string
+    protected static function buildDetectionPrompt(array $examples, int $count, array $operations = []): string
     {
         $examplesText = implode("\n", array_map(fn($e) => "- {$e}", $examples));
+        $operationText = implode(', ', array_values(array_unique(array_filter(
+            array_map(static fn (mixed $operation): string => trim((string) $operation), $operations)
+        ))));
+        $operationLine = $operationText !== '' ? "Relevant collector operations: {$operationText}.\n\n" : '';
         
         return <<<PROMPT
-Which collector matches the user's intent (CREATE, UPDATE, or DELETE)? Reply with the number only.
+Which collector matches the user's intent? Reply with the number only.
 
 Examples:
 {$examplesText}
 
-Reply 0 if user is SEARCHING/LISTING/COUNTING (not creating/updating/deleting).
+{$operationLine}Reply 0 if the user is not asking to start one of these collectors.
 
 Number (1-{$count}) or 0:
 PROMPT;

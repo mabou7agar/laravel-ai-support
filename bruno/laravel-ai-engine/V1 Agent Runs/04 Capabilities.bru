@@ -1,0 +1,19 @@
+meta {
+  name: Capabilities
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/agent-runs/capabilities
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

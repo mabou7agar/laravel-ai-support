@@ -8,6 +8,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Models\AIPromptPolicyVersion;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
 use LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner;
@@ -15,6 +16,7 @@ use LaravelAIEngine\Services\Agent\AgentSkillMatcher;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
+use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 use LaravelAIEngine\DTOs\AgentSkillDefinition;
 use Mockery;
 use Orchestra\Testbench\TestCase;
@@ -141,6 +143,29 @@ class IntentRouterTest extends TestCase
         $this->assertSame('Heuristic fallback: greeting or general chat', $decision['reasoning']);
     }
 
+    public function test_use_tool_without_resource_falls_back_to_safe_route(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(
+                '{"action":"use_tool","resource_name":null,"params":{"query":"show me recent updates"},"reasoning":"needs data"}',
+                EngineEnum::from('openai'),
+                EntityEnum::from('gpt-4o-mini')
+            ));
+
+        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes->shouldReceive('getActiveNodes')->twice()->andReturn(new Collection());
+
+        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $decision = $router->route('show me recent updates', new UnifiedActionContext('session-use-tool-null', null));
+
+        $this->assertSame('conversational', $decision['action']);
+        $this->assertNull($decision['resource_name']);
+        $this->assertSame('show me recent updates', $decision['params']['query']);
+        $this->assertSame('heuristic_fallback', $decision['decision_source']);
+    }
+
     public function test_forwarded_requests_cannot_reroute_to_another_node(): void
     {
         $ai = Mockery::mock(AIEngineService::class);
@@ -233,6 +258,72 @@ class IntentRouterTest extends TestCase
         $this->assertSame('update_action_draft', $decision['resource_name']);
         $this->assertSame('invoices.create', $decision['params']['action_id']);
         $this->assertSame('skill_match', $decision['decision_source']);
+    }
+
+    public function test_route_reuses_prompt_policy_service_for_decision_prompt(): void
+    {
+        $capturedPrompt = null;
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->with(Mockery::on(function (AIRequest $request) use (&$capturedPrompt) {
+                $capturedPrompt = $request->getPrompt();
+
+                return true;
+            }))
+            ->andReturn(AIResponse::success(
+                '{"action":"conversational","resource_name":null,"reasoning":"policy-aware route"}',
+                EngineEnum::from('openai'),
+                EntityEnum::from('gpt-4o-mini')
+            ));
+
+        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes->shouldReceive('getActiveNodes')->twice()->andReturn(new Collection());
+
+        $policy = new AIPromptPolicyVersion([
+            'policy_key' => 'agent-router',
+            'version' => 3,
+            'status' => 'active',
+            'scope_key' => 'tenant-scope',
+            'template' => 'Prefer local deterministic tools before remote routing.',
+            'rules' => ['remote_routing' => 'last_resort'],
+        ]);
+        $policy->id = 44;
+
+        $promptPolicies = Mockery::mock(RAGPromptPolicyService::class);
+        $promptPolicies->shouldReceive('resolveForRuntime')
+            ->once()
+            ->with(Mockery::on(fn (array $runtime): bool => ($runtime['tenant_id'] ?? null) === 'tenant-policy'), null)
+            ->andReturn([
+                'selected' => $policy,
+                'active' => $policy,
+                'canary' => null,
+                'shadow' => null,
+                'selection' => 'active',
+            ]);
+
+        $router = new IntentRouter(
+            $ai,
+            $nodes,
+            new SelectedEntityContextService(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $promptPolicies
+        );
+
+        $decision = $router->route('hello', new UnifiedActionContext('session-policy', null), [
+            'tenant_id' => 'tenant-policy',
+        ]);
+
+        $this->assertSame('conversational', $decision['action']);
+        $this->assertStringContainsString('DECISION PROMPT POLICY', $capturedPrompt);
+        $this->assertStringContainsString('Prefer local deterministic tools before remote routing.', $capturedPrompt);
+        $this->assertSame('agent-router', $decision['metadata']['prompt_policy']['policy_key']);
+        $this->assertSame(3, $decision['metadata']['prompt_policy']['version']);
     }
 }
 

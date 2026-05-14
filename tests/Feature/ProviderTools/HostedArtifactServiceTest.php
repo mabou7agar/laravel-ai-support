@@ -8,7 +8,10 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use LaravelAIEngine\Models\AIProviderToolArtifact;
+use LaravelAIEngine\Repositories\AgentRunRepository;
+use LaravelAIEngine\Repositories\AgentRunStepRepository;
 use LaravelAIEngine\Repositories\ProviderToolRunRepository;
+use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\ProviderTools\HostedArtifactService;
 use LaravelAIEngine\Tests\TestCase;
 
@@ -71,5 +74,70 @@ class HostedArtifactServiceTest extends TestCase
             'citation_url' => 'https://docs.example.test/source',
         ]);
         $this->assertSame(1, AIProviderToolArtifact::query()->whereNotNull('media_id')->count());
+    }
+
+    public function test_hosted_artifacts_support_generic_owners_sources_and_expiry(): void
+    {
+        config()->set('ai-agent.run_retention.artifact_days', 7);
+
+        $agentRun = app(AgentRunRepository::class)->create([
+            'session_id' => 'artifact-owner-session',
+            'status' => 'running',
+        ]);
+        $agentStep = app(AgentRunStepRepository::class)->create($agentRun, [
+            'type' => 'provider_tool',
+            'status' => 'running',
+            'action' => 'fal',
+        ]);
+        $providerRun = app(ProviderToolRunRepository::class)->create([
+            'uuid' => (string) Str::uuid(),
+            'agent_run_id' => $agentRun->id,
+            'agent_run_step_id' => $agentStep->id,
+            'provider' => 'fal',
+            'engine' => 'fal',
+            'ai_model' => 'fal/image',
+            'status' => 'completed',
+            'tool_names' => ['fal'],
+            'metadata' => [],
+        ]);
+
+        $service = app(HostedArtifactService::class);
+        $runArtifact = $service->recordForOwner($providerRun, 'agent_run', $agentRun->id, [
+            'artifact_type' => 'image',
+            'source_url' => 'https://cdn.example.test/image.png',
+            'source' => 'image_generation',
+        ]);
+        $stepArtifact = $service->recordForOwner($providerRun, 'agent_step', $agentStep->id, [
+            'artifact_type' => 'video',
+            'source_url' => 'https://cdn.example.test/video.mp4',
+            'source' => 'video_generation',
+        ]);
+        $manualArtifact = $service->recordForOwner($providerRun, 'agent_step', $agentStep->id, [
+            'artifact_type' => 'file',
+            'provider_file_id' => 'manual_file',
+            'source' => 'manual_upload',
+        ]);
+        $langGraphArtifact = $service->recordForOwner($providerRun, 'agent_step', $agentStep->id, [
+            'artifact_type' => 'file',
+            'provider_file_id' => 'langgraph_file',
+            'source' => 'langgraph',
+        ]);
+
+        $this->assertSame('agent_run', $runArtifact->owner_type);
+        $this->assertSame((string) $agentRun->id, $runArtifact->owner_id);
+        $this->assertSame('image_generation', $runArtifact->source);
+        $this->assertSame('agent_step', $stepArtifact->owner_type);
+        $this->assertSame('video_generation', $stepArtifact->source);
+        $this->assertSame('manual_upload', $manualArtifact->source);
+        $this->assertSame('langgraph', $langGraphArtifact->source);
+        $this->assertNotNull($runArtifact->expires_at);
+        $this->assertTrue(collect(app(AgentRunEventStreamService::class)->fallbackEvents($agentRun))
+            ->contains(fn (array $event): bool => ($event['name'] ?? null) === 'artifact.created'));
+        $this->assertDatabaseHas('ai_provider_tool_artifacts', [
+            'owner_type' => 'agent_step',
+            'owner_id' => (string) $agentStep->id,
+            'source' => 'manual_upload',
+            'provider_file_id' => 'manual_file',
+        ]);
     }
 }

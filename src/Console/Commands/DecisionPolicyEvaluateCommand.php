@@ -7,8 +7,8 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use LaravelAIEngine\Models\AIPromptFeedbackEvent;
 use LaravelAIEngine\Models\AIPromptPolicyVersion;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPromptPolicyService;
+use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
+use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 
 class DecisionPolicyEvaluateCommand extends Command
 {
@@ -22,8 +22,8 @@ class DecisionPolicyEvaluateCommand extends Command
     protected $description = 'Evaluate decision prompt policy versions and optionally promote canary versions';
 
     public function handle(
-        AutonomousRAGPromptPolicyService $policyService,
-        AutonomousRAGPolicy $policyConfig
+        RAGPromptPolicyService $policyService,
+        RAGDecisionPolicy $policyConfig
     ): int {
         if (!$policyService->storeAvailable()) {
             $this->warn('Decision policy store is disabled or unavailable.');
@@ -178,7 +178,7 @@ class DecisionPolicyEvaluateCommand extends Command
 
     protected function tryPromoteCanary(
         Collection $rows,
-        AutonomousRAGPromptPolicyService $policyService,
+        RAGPromptPolicyService $policyService,
         int $minSamples,
         float $minScoreDelta
     ): array {

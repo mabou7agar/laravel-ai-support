@@ -22,19 +22,19 @@ use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ContextManager;
 use LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler;
 use LaravelAIEngine\Services\Agent\IntentRouter;
-use LaravelAIEngine\Services\Agent\AgentOrchestrator;
+use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
 use LaravelAIEngine\Services\Node\NodeOwnershipResolver;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGAgent;
-use LaravelAIEngine\Services\RAG\AutonomousRAGDecisionService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGExecutionService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
-use LaravelAIEngine\Services\RAG\AutonomousRAGStateService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGStructuredDataService;
+use LaravelAIEngine\Services\RAG\RAGDecisionEngine;
+use LaravelAIEngine\Services\RAG\RAGPlannerService;
+use LaravelAIEngine\Services\RAG\RAGToolExecutionService;
+use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
+use LaravelAIEngine\Services\RAG\RAGDecisionStateService;
+use LaravelAIEngine\Services\RAG\RAGStructuredDataService;
 use LaravelAIEngine\Tests\Models\User;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -234,7 +234,7 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
             )
         );
 
-        $decisionService = new AutonomousRAGDecisionService($ai, new AutonomousRAGPolicy());
+        $decisionService = new RAGPlannerService($ai, new RAGDecisionPolicy());
         $decision = $decisionService->decide('what is the refund policy?', [
             'conversation' => 'Customer asked about refund terms',
             'models' => [
@@ -245,7 +245,7 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
             'selected_entity' => null,
         ], 'gpt-4o-mini');
 
-        $executed = (new AutonomousRAGExecutionService())->execute($decision, [
+        $executed = (new RAGToolExecutionService())->execute($decision, [
             'vector_search' => fn (array $plan) => [
                 'success' => true,
                 'tool' => $plan['tool'],
@@ -338,7 +338,7 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
         $intentRouter = Mockery::mock(IntentRouter::class);
         $intentRouter->shouldNotReceive('route');
 
-        $ragAgent = Mockery::mock(AutonomousRAGAgent::class);
+        $ragAgent = Mockery::mock(RAGDecisionEngine::class);
         $ragAgent->shouldReceive('process')
             ->once()
             ->withArgs(function (string $message, string $sessionId, $userId, array $history, array $options) {
@@ -353,7 +353,7 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
                 'tool' => 'invoice_lookup',
                 'fast_path' => true,
             ]);
-        $this->app->instance(AutonomousRAGAgent::class, $ragAgent);
+        $this->app->instance(RAGDecisionEngine::class, $ragAgent);
 
         $execution = new AgentExecutionFacade(
             $this->app->make(AgentActionExecutionService::class),
@@ -363,7 +363,7 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
             Mockery::mock(AutonomousCollectorHandler::class)
         );
 
-        $orchestrator = new AgentOrchestrator(
+        $processor = new LaravelAgentProcessor(
             new ContextManager(),
             $intentRouter,
             new AgentPlanner(),
@@ -372,16 +372,16 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
             $execution
         );
 
-        $response = $orchestrator->process('which one is overdue?', 'acceptance-follow-up', null);
+        $response = $processor->process('which one is overdue?', 'acceptance-follow-up', null);
 
         $this->assertSame('Invoice INV-42 is overdue by 3 days.', $response->message);
     }
 
-    protected function structuredDataService(): AutonomousRAGStructuredDataService
+    protected function structuredDataService(): RAGStructuredDataService
     {
-        return new AutonomousRAGStructuredDataService(
-            new AutonomousRAGStateService(new AutonomousRAGPolicy()),
-            new AutonomousRAGPolicy()
+        return new RAGStructuredDataService(
+            new RAGDecisionStateService(new RAGDecisionPolicy()),
+            new RAGDecisionPolicy()
         );
     }
 

@@ -3,9 +3,12 @@
 namespace LaravelAIEngine\Tests\Unit\Services;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Schema\Blueprint;
+use LaravelAIEngine\Contracts\CreditLifecycleInterface;
 use LaravelAIEngine\Tests\TestCase;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
@@ -24,6 +27,71 @@ class CreditlessOwnerResolver
     public function resolve(string $ownerId): Model
     {
         return CreditlessOwner::query()->findOrFail($ownerId);
+    }
+}
+
+class ScalarCreditOwner extends Model
+{
+    protected $table = 'scalar_credit_owners';
+    public $timestamps = false;
+    protected $guarded = [];
+}
+
+class ScalarCreditOwnerResolver
+{
+    public function resolve(string $ownerId): Model
+    {
+        return ScalarCreditOwner::query()->findOrFail($ownerId);
+    }
+}
+
+class LifecycleCreditOwner extends Model
+{
+    protected $table = 'lifecycle_credit_owners';
+    public $timestamps = false;
+    protected $guarded = [];
+}
+
+class LifecycleCreditOwnerResolver
+{
+    public function resolve(string $ownerId): Model
+    {
+        return LifecycleCreditOwner::query()->findOrFail($ownerId);
+    }
+}
+
+class BudgetLifecycleHandler implements CreditLifecycleInterface
+{
+    public static float $deducted = 0.0;
+
+    public function hasCredits(Model $owner, AIRequest $request): bool
+    {
+        return (float) $owner->credits_balance > 0;
+    }
+
+    public function deductCredits(Model $owner, AIRequest $request, float $creditsToDeduct): bool
+    {
+        self::$deducted += $creditsToDeduct;
+        $owner->credits_balance = (float) $owner->credits_balance - $creditsToDeduct;
+
+        return $owner->save();
+    }
+
+    public function addCredits(Model $owner, float $credits, array $metadata = []): bool
+    {
+        $owner->credits_balance = (float) $owner->credits_balance + $credits;
+
+        return $owner->save();
+    }
+
+    public function getAvailableCredits(Model $owner): float
+    {
+        return (float) $owner->credits_balance;
+    }
+
+    public function hasLowCredits(Model $owner): bool
+    {
+        return (float) $owner->credits_balance < 10.0;
     }
 }
 
@@ -297,6 +365,138 @@ class CreditManagerTest extends TestCase
         $this->assertArrayHasKey('period', $stats);
     }
 
+    public function test_run_budget_tracks_response_usage_and_remaining_limits(): void
+    {
+        $run = app(\LaravelAIEngine\Repositories\AgentRunRepository::class)->create([
+            'session_id' => 'credit-manager-budget',
+            'user_id' => (string) $this->testUser->id,
+            'status' => \LaravelAIEngine\Models\AIAgentRun::STATUS_RUNNING,
+            'metadata' => [],
+        ]);
+
+        $this->creditManager->startRunBudget($run, $this->testUser->id, [
+            'max_tokens' => 100,
+            'max_cost' => 5.0,
+            'max_credits' => 10.0,
+            'engine' => EngineEnum::OPENAI,
+            'model' => EntityEnum::GPT_4O,
+        ]);
+
+        $response = new AIResponse(
+            content: 'ok',
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O,
+            tokensUsed: 60,
+            creditsUsed: 2.5,
+            usage: ['total_cost' => 1.25]
+        );
+
+        $updated = $this->creditManager->recordRunUsage($run->uuid, $response);
+        $remaining = $this->creditManager->remainingRunBudget($updated);
+
+        $this->assertSame(60, $updated->metadata['tokens_used']);
+        $this->assertSame(1.25, $updated->metadata['cost_used']);
+        $this->assertSame(2.5, $updated->metadata['credits_used']);
+        $this->assertSame('gpt-4o', $updated->metadata['provider_model']);
+        $this->assertSame(40, $remaining['remaining']['tokens']);
+        $this->assertSame(3.75, $remaining['remaining']['cost']);
+        $this->assertSame(7.5, $remaining['remaining']['credits']);
+        $this->assertTrue($this->creditManager->assertRunBudgetAvailable($updated));
+
+        $updated = $this->creditManager->recordRunUsage($updated, ['total_tokens' => 50]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Agent run exceeded token budget [100].');
+        $this->creditManager->assertRunBudgetAvailable($updated);
+    }
+
+    public function test_run_budget_can_deduct_scalar_owner_credits(): void
+    {
+        $this->createScalarCreditOwnerTable();
+        $owner = ScalarCreditOwner::query()->create([
+            'name' => 'Scalar Owner',
+            'my_credits' => 12.0,
+            'has_unlimited_credits' => false,
+        ]);
+        config()->set('ai-engine.credits.owner_model', ScalarCreditOwner::class);
+        config()->set('ai-engine.credits.query_resolver', ScalarCreditOwnerResolver::class);
+
+        $run = app(\LaravelAIEngine\Repositories\AgentRunRepository::class)->create([
+            'session_id' => 'scalar-budget',
+            'status' => \LaravelAIEngine\Models\AIAgentRun::STATUS_RUNNING,
+            'metadata' => [],
+        ]);
+
+        $this->creditManager->startRunBudget($run, $owner->id, [
+            'max_credits' => 10.0,
+            'deduct_credits' => true,
+        ]);
+        $updated = $this->creditManager->recordRunUsage($run, ['credits_used' => 3.5]);
+        $remaining = $this->creditManager->remainingRunBudget($updated);
+
+        $this->assertSame(8.5, (float) $owner->fresh()->my_credits);
+        $this->assertSame(6.5, $remaining['remaining']['credits']);
+    }
+
+    public function test_run_budget_can_deduct_entity_ledger_credits(): void
+    {
+        $user = $this->createTestUser([
+            'entity_credits' => [
+                'openai' => [
+                    'gpt-4o' => ['balance' => 10.0, 'is_unlimited' => false],
+                ],
+            ],
+        ]);
+        $run = app(\LaravelAIEngine\Repositories\AgentRunRepository::class)->create([
+            'session_id' => 'entity-budget',
+            'user_id' => (string) $user->id,
+            'status' => \LaravelAIEngine\Models\AIAgentRun::STATUS_RUNNING,
+            'metadata' => [],
+        ]);
+
+        $this->creditManager->startRunBudget($run, $user->id, [
+            'max_credits' => 10.0,
+            'engine' => EngineEnum::OPENAI,
+            'model' => EntityEnum::GPT_4O,
+            'deduct_credits' => true,
+        ]);
+        $updated = $this->creditManager->recordRunUsage($run, ['credits_used' => 4.0]);
+        $remaining = $this->creditManager->remainingRunBudget($updated);
+
+        $this->assertSame(6.0, (float) data_get($user->fresh()->entity_credits, 'openai.gpt-4o.balance'));
+        $this->assertSame(6.0, $remaining['remaining']['credits']);
+    }
+
+    public function test_run_budget_reuses_custom_lifecycle_handler(): void
+    {
+        $this->createLifecycleCreditOwnerTable();
+        BudgetLifecycleHandler::$deducted = 0.0;
+        $owner = LifecycleCreditOwner::query()->create([
+            'name' => 'Lifecycle Owner',
+            'credits_balance' => 20.0,
+        ]);
+        config()->set('ai-engine.credits.owner_model', LifecycleCreditOwner::class);
+        config()->set('ai-engine.credits.query_resolver', LifecycleCreditOwnerResolver::class);
+        config()->set('ai-engine.credits.lifecycle_handler', BudgetLifecycleHandler::class);
+
+        $run = app(\LaravelAIEngine\Repositories\AgentRunRepository::class)->create([
+            'session_id' => 'lifecycle-budget',
+            'status' => \LaravelAIEngine\Models\AIAgentRun::STATUS_RUNNING,
+            'metadata' => [],
+        ]);
+
+        $this->creditManager->startRunBudget($run, $owner->id, [
+            'max_credits' => 15.0,
+            'deduct_credits' => true,
+        ]);
+        $updated = $this->creditManager->recordRunUsage($run, ['credits_used' => 5.0]);
+        $remaining = $this->creditManager->remainingRunBudget($updated);
+
+        $this->assertSame(5.0, BudgetLifecycleHandler::$deducted);
+        $this->assertSame(15.0, (float) $owner->fresh()->credits_balance);
+        $this->assertSame(10.0, $remaining['remaining']['credits']);
+    }
+
     public function test_reset_credits()
     {
         // Modify user credits first
@@ -359,5 +559,32 @@ class CreditManagerTest extends TestCase
 
         $this->assertEquals(100.0, $credits['balance']); // Default balance
         $this->assertFalse($credits['is_unlimited']);
+    }
+
+    private function createScalarCreditOwnerTable(): void
+    {
+        if (Schema::hasTable('scalar_credit_owners')) {
+            return;
+        }
+
+        Schema::create('scalar_credit_owners', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->float('my_credits')->default(0);
+            $table->boolean('has_unlimited_credits')->default(false);
+        });
+    }
+
+    private function createLifecycleCreditOwnerTable(): void
+    {
+        if (Schema::hasTable('lifecycle_credit_owners')) {
+            return;
+        }
+
+        Schema::create('lifecycle_credit_owners', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->float('credits_balance')->default(0);
+        });
     }
 }

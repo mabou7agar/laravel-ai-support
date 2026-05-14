@@ -13,11 +13,16 @@ class AIProviderToolAuditEvent extends Model
 
     protected $fillable = [
         'uuid',
+        'agent_run_id',
+        'agent_run_step_id',
         'tool_run_id',
         'approval_id',
         'event',
         'provider',
         'tool_name',
+        'runtime',
+        'decision_source',
+        'trace_id',
         'actor_id',
         'payload',
         'metadata',
@@ -31,6 +36,16 @@ class AIProviderToolAuditEvent extends Model
     public function run(): BelongsTo
     {
         return $this->belongsTo(AIProviderToolRun::class, 'tool_run_id');
+    }
+
+    public function agentRun(): BelongsTo
+    {
+        return $this->belongsTo(AIAgentRun::class, 'agent_run_id');
+    }
+
+    public function agentRunStep(): BelongsTo
+    {
+        return $this->belongsTo(AIAgentRunStep::class, 'agent_run_step_id');
     }
 
     public function approval(): BelongsTo

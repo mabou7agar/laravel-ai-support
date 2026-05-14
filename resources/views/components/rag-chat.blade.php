@@ -6,7 +6,7 @@
     'height' => '700px',
     'memory' => true,
     'actions' => true,
-    'useIntelligentRAG' => true,
+    'useRag' => true,
     'ragCollections' => [],
     'placeholder' => 'Ask me anything...',
     'showSources' => true,
@@ -23,7 +23,7 @@
     data-model="{{ $model }}"
     data-memory="{{ $memory ? 'true' : 'false' }}"
     data-actions="{{ $actions ? 'true' : 'false' }}"
-    data-use-intelligent-rag="{{ $useIntelligentRAG ? 'true' : 'false' }}"
+    data-use-intelligent-rag="{{ $useRag ? 'true' : 'false' }}"
     data-rag-collections="{{ json_encode($ragCollections) }}"
 >
     <!-- Chat Header -->
@@ -655,7 +655,7 @@
         model: container.dataset.model,
         memory: container.dataset.memory === 'true',
         actions: container.dataset.actions === 'true',
-        useIntelligentRAG: container.dataset.useIntelligentRag === 'true',
+        useRag: container.dataset.useIntelligentRag === 'true',
         ragCollections: JSON.parse(container.dataset.ragCollections || '[]'),
         sessionId: sessionId,
         showSources: {{ $showSources ? 'true' : 'false' }},
@@ -693,7 +693,7 @@
                     model: config.model,
                     memory: config.memory,
                     actions: config.actions,
-                    use_intelligent_rag: config.useIntelligentRAG,
+                    use_rag: config.useRag,
                     rag_collections: config.ragCollections
                 })
             });
@@ -796,7 +796,7 @@
         formData.append('engine', config.engine);
         formData.append('model', config.model);
         formData.append('memory', config.memory);
-        formData.append('use_intelligent_rag', config.useIntelligentRAG);
+        formData.append('use_rag', config.useRag);
         formData.append('rag_collections', JSON.stringify(config.ragCollections));
         
         const response = await fetch('/api/v1/rag/analyze-file', {

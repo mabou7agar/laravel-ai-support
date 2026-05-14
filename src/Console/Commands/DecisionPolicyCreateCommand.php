@@ -3,8 +3,8 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPromptPolicyService;
+use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
+use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 
 class DecisionPolicyCreateCommand extends Command
 {
@@ -23,8 +23,8 @@ class DecisionPolicyCreateCommand extends Command
     protected $description = 'Create a new versioned decision prompt policy';
 
     public function handle(
-        AutonomousRAGPromptPolicyService $policyService,
-        AutonomousRAGPolicy $policyConfig
+        RAGPromptPolicyService $policyService,
+        RAGDecisionPolicy $policyConfig
     ): int {
         if (!$policyService->storeAvailable()) {
             $this->warn('Decision policy store is disabled or unavailable.');
@@ -33,7 +33,7 @@ class DecisionPolicyCreateCommand extends Command
 
         $template = $this->loadTemplate();
         if ($template === null) {
-            $this->error('Template not found. Provide --template-path or configure INTELLIGENT_RAG_DECISION_TEMPLATE_PATH.');
+            $this->error('Template not found. Provide --template-path or configure AI_ENGINE_RAG_DECISION_TEMPLATE_PATH.');
             return self::FAILURE;
         }
 
@@ -90,7 +90,7 @@ class DecisionPolicyCreateCommand extends Command
             return is_string($content) && trim($content) !== '' ? $content : null;
         }
 
-        $configured = config('ai-engine.intelligent_rag.decision.template_path');
+        $configured = config('ai-engine.rag.decision.template_path');
         $candidate = is_string($configured) && is_file($configured)
             ? $configured
             : dirname(__DIR__, 3) . '/resources/prompts/rag/decision_prompt.txt';

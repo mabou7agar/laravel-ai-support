@@ -1,0 +1,26 @@
+meta {
+  name: Cancel Run
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/agent-runs/{{agentRunId}}/cancel
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reason": "User cancelled the run."
+  }
+}

@@ -3,7 +3,7 @@
 namespace LaravelAIEngine\Facades;
 
 use Illuminate\Support\Facades\Facade;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
+use LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService;
 
 /**
  * @method static \LaravelAIEngine\Services\DataCollector\AutonomousCollectorResponse start(string $sessionId, \LaravelAIEngine\DTOs\AutonomousCollectorConfig $config, string $initialMessage = '')
@@ -15,12 +15,12 @@ use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
  * @method static void deleteSession(string $sessionId)
  * @method static void registerConfig(\LaravelAIEngine\DTOs\AutonomousCollectorConfig $config)
  * 
- * @see \LaravelAIEngine\Services\DataCollector\AutonomousCollectorService
+ * @see \LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService
  */
 class AutonomousCollector extends Facade
 {
     protected static function getFacadeAccessor(): string
     {
-        return AutonomousCollectorService::class;
+        return AutonomousCollectorSessionService::class;
     }
 }

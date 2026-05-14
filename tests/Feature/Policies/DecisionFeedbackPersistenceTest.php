@@ -3,19 +3,19 @@
 namespace LaravelAIEngine\Tests\Feature\Policies;
 
 use LaravelAIEngine\Models\AIPromptFeedbackEvent;
-use LaravelAIEngine\Services\RAG\AutonomousRAGDecisionFeedbackService;
-use LaravelAIEngine\Services\RAG\AutonomousRAGPolicy;
+use LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService;
+use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
 use LaravelAIEngine\Tests\TestCase;
 
 class DecisionFeedbackPersistenceTest extends TestCase
 {
     public function test_it_persists_feedback_events_and_reports_from_database(): void
     {
-        config()->set('ai-engine.intelligent_rag.decision.adaptive_feedback.enabled', true);
-        config()->set('ai-engine.intelligent_rag.decision.adaptive_feedback.persistence.enabled', true);
+        config()->set('ai-engine.rag.decision.adaptive_feedback.enabled', true);
+        config()->set('ai-engine.rag.decision.adaptive_feedback.persistence.enabled', true);
 
-        $policy = new AutonomousRAGPolicy();
-        $service = new AutonomousRAGDecisionFeedbackService($policy);
+        $policy = new RAGDecisionPolicy();
+        $service = new RAGDecisionFeedbackService($policy);
 
         $runtime = [
             'session_id' => 'session-a',
@@ -53,11 +53,11 @@ class DecisionFeedbackPersistenceTest extends TestCase
 
     public function test_it_records_execution_outcome_event(): void
     {
-        config()->set('ai-engine.intelligent_rag.decision.adaptive_feedback.enabled', true);
-        config()->set('ai-engine.intelligent_rag.decision.adaptive_feedback.persistence.enabled', true);
+        config()->set('ai-engine.rag.decision.adaptive_feedback.enabled', true);
+        config()->set('ai-engine.rag.decision.adaptive_feedback.persistence.enabled', true);
 
-        $policy = new AutonomousRAGPolicy();
-        $service = new AutonomousRAGDecisionFeedbackService($policy);
+        $policy = new RAGDecisionPolicy();
+        $service = new RAGDecisionFeedbackService($policy);
 
         $service->recordExecutionOutcome(
             [

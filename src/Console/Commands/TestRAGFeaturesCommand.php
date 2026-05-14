@@ -4,24 +4,30 @@ namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
-use LaravelAIEngine\Services\RAG\IntelligentRAGService;
+use LaravelAIEngine\Services\RAG\RAGChatService;
 use LaravelAIEngine\Services\ChatService;
 
 class TestRAGFeaturesCommand extends Command
 {
     protected $signature = 'ai-engine:test-rag
                             {--model= : Specific model class to test}
+                            {--user-id= : User ID for scoped vector/RAG retrieval}
+                            {--query= : Factual query to use for RAG retrieval checks}
                             {--quick : Run quick tests only}
                             {--detailed : Show detailed output}
                             {--skip-interactive : Skip interactive prompts}';
 
     protected $description = 'Comprehensive RAG testing suite (discovery, search, chat, context, relationships)';
 
+    protected array $failures = [];
+
     public function handle(
         RAGCollectionDiscovery $discovery,
-        IntelligentRAGService $intelligentRAG,
+        RAGChatService $ragChat,
         ChatService $chatService
     ): int {
+        $this->failures = [];
+
         $this->info('🧪 Testing Laravel AI Engine RAG Features');
         $this->newLine();
 
@@ -46,8 +52,8 @@ class TestRAGFeaturesCommand extends Command
             $this->testVectorSearch($modelClass);
         }
 
-        // Test 4: Intelligent RAG
-        $this->testIntelligentRAG($modelClass, $intelligentRAG);
+        // Test 4: RAG
+        $this->testRAG($modelClass, $ragChat);
 
         // Test 5: Manual RAG
         if (!$this->option('quick')) {
@@ -60,7 +66,7 @@ class TestRAGFeaturesCommand extends Command
         }
 
         // Test 7: Chat Service Integration
-        $this->testChatServiceIntegration($chatService);
+        $this->testChatServiceIntegration($chatService, $modelClass);
 
         // Test 8: Context Enhancement
         if (!$this->option('quick')) {
@@ -86,8 +92,18 @@ class TestRAGFeaturesCommand extends Command
         $this->testVectorStatus($modelClass);
 
         $this->newLine();
+        if ($this->failures !== []) {
+            $this->error('❌ RAG smoke test completed with failures:');
+            foreach ($this->failures as $failure) {
+                $this->line("   - {$failure}");
+            }
+            $this->displayTestSummary(false);
+
+            return self::FAILURE;
+        }
+
         $this->info('✅ All tests completed successfully!');
-        $this->displayTestSummary();
+        $this->displayTestSummary(true);
 
         return self::SUCCESS;
     }
@@ -111,7 +127,13 @@ class TestRAGFeaturesCommand extends Command
             $count = count($collections);
             $this->info("✅ Found {$count} RAG collection(s):");
             foreach ($collections as $collection) {
-                $this->line("   - {$collection}");
+                $class = $this->collectionClass($collection);
+                $label = $class ?? $this->stringifyValue($collection);
+                $description = is_array($collection) && isset($collection['description'])
+                    ? ' - ' . $this->stringifyValue($collection['description'])
+                    : '';
+
+                $this->line("   - {$label}{$description}");
             }
 
             $stats = $discovery->getStatistics();
@@ -122,6 +144,7 @@ class TestRAGFeaturesCommand extends Command
             return true;
 
         } catch (\Exception $e) {
+            $this->recordFailure('Collection discovery', $e);
             $this->error("❌ Discovery failed: {$e->getMessage()}");
             return false;
         }
@@ -139,18 +162,19 @@ class TestRAGFeaturesCommand extends Command
         }
 
         if (count($collections) === 1) {
-            return $collections[0];
+            return $this->collectionClass($collections[0]);
         }
 
         $choices = [];
         foreach ($collections as $index => $collection) {
-            $choices[$index] = class_basename($collection) . " ({$collection})";
+            $class = $this->collectionClass($collection) ?? $this->stringifyValue($collection);
+            $choices[$index] = class_basename($class) . " ({$class})";
         }
 
         $selected = $this->choice('Select a model to test', $choices, 0);
         $index = array_search($selected, $choices);
 
-        return $collections[$index];
+        return $this->collectionClass($collections[$index]);
     }
 
     /**
@@ -185,36 +209,41 @@ class TestRAGFeaturesCommand extends Command
             $this->newLine();
 
         } catch (\Exception $e) {
+            $this->recordFailure('Vector search', $e);
             $this->error("❌ Vector search failed: {$e->getMessage()}");
             $this->newLine();
         }
     }
 
     /**
-     * Test 3: Intelligent RAG
+     * Test 3: RAG
      */
-    protected function testIntelligentRAG(string $modelClass, IntelligentRAGService $intelligentRAG): void
+    protected function testRAG(string $modelClass, RAGChatService $ragChat): void
     {
-        $this->line('🤖 Test 3: Intelligent RAG (AI Decides)');
+        $this->line('🤖 Test 3: RAG (AI Decides)');
         $this->line('─────────────────────────────────');
 
         try {
             // Test 3a: Simple greeting (should NOT search)
             $this->line('Test 3a: Simple greeting (should NOT search)');
-            $response1 = $modelClass::intelligentChat('Hello!', 'test-session-1');
+            $response1 = $modelClass::intelligentChat('Hello!', 'test-session-1', $this->ragOptions($modelClass));
 
             $ragEnabled = $response1->getMetadata()['rag_enabled'] ?? false;
             $this->line("   Query: 'Hello!'");
             $this->line("   RAG Used: " . ($ragEnabled ? 'Yes ❌' : 'No ✅'));
             $this->line("   Response: " . substr($response1->getContent(), 0, 100) . '...');
+            if ($ragEnabled) {
+                $this->recordFailure('RAG greeting decision', 'Simple greeting unexpectedly used RAG.');
+            }
 
             $this->newLine();
 
             // Test 3b: Factual query (should search)
             $this->line('Test 3b: Factual query (should search)');
-            $query = $this->ask('Enter a factual query', 'Tell me about Laravel routing');
+            $query = $this->option('query')
+                ?: ($this->option('skip-interactive') ? 'Tell me about Apollo handoff notes' : $this->ask('Enter a factual query', 'Tell me about Apollo handoff notes'));
 
-            $response2 = $modelClass::intelligentChat($query, 'test-session-2');
+            $response2 = $modelClass::intelligentChat($query, 'test-session-2', $this->ragOptions($modelClass));
 
             $ragEnabled = $response2->getMetadata()['rag_enabled'] ?? false;
             $contextCount = $response2->getMetadata()['context_count'] ?? 0;
@@ -223,11 +252,15 @@ class TestRAGFeaturesCommand extends Command
             $this->line("   RAG Used: " . ($ragEnabled ? 'Yes ✅' : 'No ❌'));
             $this->line("   Context Items: {$contextCount}");
             $this->line("   Response: " . substr($response2->getContent(), 0, 150) . '...');
+            if (!$ragEnabled) {
+                $this->recordFailure('RAG factual decision', 'Factual query did not use RAG.');
+            }
 
             $this->newLine();
 
         } catch (\Exception $e) {
-            $this->error("❌ Intelligent RAG failed: {$e->getMessage()}");
+            $this->recordFailure('RAG chat', $e);
+            $this->error("❌ RAG failed: {$e->getMessage()}");
             $this->newLine();
         }
     }
@@ -241,9 +274,10 @@ class TestRAGFeaturesCommand extends Command
         $this->line('─────────────────────────────────');
 
         try {
-            $query = $this->ask('Enter query for manual RAG', 'test query');
+            $query = $this->option('query')
+                ?: ($this->option('skip-interactive') ? 'Tell me about Apollo handoff notes' : $this->ask('Enter query for manual RAG', 'Tell me about Apollo handoff notes'));
 
-            $result = $modelClass::vectorChat($query);
+            $result = $modelClass::vectorChat($query, $this->userId(), $this->ragOptions($modelClass));
 
             $this->info('✅ Manual RAG completed:');
             $this->line("   Query: '{$query}'");
@@ -254,6 +288,7 @@ class TestRAGFeaturesCommand extends Command
             $this->newLine();
 
         } catch (\Exception $e) {
+            $this->recordFailure('Manual RAG', $e);
             $this->error("❌ Manual RAG failed: {$e->getMessage()}");
             $this->newLine();
         }
@@ -309,6 +344,7 @@ class TestRAGFeaturesCommand extends Command
             $this->newLine();
 
         } catch (\Exception $e) {
+            $this->recordFailure('Instance methods', $e);
             $this->error("❌ Instance methods failed: {$e->getMessage()}");
             $this->newLine();
         }
@@ -317,14 +353,14 @@ class TestRAGFeaturesCommand extends Command
     /**
      * Test 6: Chat Service Integration
      */
-    protected function testChatServiceIntegration(ChatService $chatService): void
+    protected function testChatServiceIntegration(ChatService $chatService, string $modelClass): void
     {
         $this->line('💬 Test 6: Chat Service Integration');
         $this->line('─────────────────────────────────');
 
         try {
-            // Test 6a: Intelligent RAG (AI decides)
-            $this->line('Test 6a: Intelligent RAG (AI decides when to search)');
+            // Test 6a: RAG (AI decides)
+            $this->line('Test 6a: RAG (AI decides when to search)');
             $message = $this->option('skip-interactive') 
                 ? 'What is Laravel?' 
                 : $this->ask('Enter message for chat service', 'What is Laravel?');
@@ -336,9 +372,9 @@ class TestRAGFeaturesCommand extends Command
                 model: 'gpt-4o-mini',
                 useMemory: true,
                 useActions: false,
-                useIntelligentRAG: true,
-                ragCollections: [],  // Auto-discover
-                userId: 'test-user'
+                useRag: true,
+                ragCollections: [$modelClass],
+                userId: $this->userId() ?? 'test-user'
             );
 
             $ragEnabled = $response->getMetadata()['rag_enabled'] ?? false;
@@ -353,14 +389,14 @@ class TestRAGFeaturesCommand extends Command
             // Test 6b: Manual RAG (always searches via model method)
             $this->line('Test 6b: Manual RAG (always searches knowledge base)');
             $message2 = $this->option('skip-interactive') 
-                ? 'Tell me about Laravel' 
-                : $this->ask('Enter another message', 'Tell me about Laravel');
+                ? ($this->option('query') ?: 'Tell me about Apollo handoff notes')
+                : $this->ask('Enter another message', $this->option('query') ?: 'Tell me about Apollo handoff notes');
 
             // Get the model class from earlier test
             $modelClass = $this->option('model') ?? 'App\Models\Post';
             
             // Use vectorChat which always searches
-            $ragResult = $modelClass::vectorChat($message2, 'test-user');
+            $ragResult = $modelClass::vectorChat($message2, $this->userId() ?? 'test-user', $this->ragOptions($modelClass));
 
             $contextCount2 = $ragResult['context_count'] ?? 0;
             $sources = $ragResult['sources'] ?? [];
@@ -375,6 +411,7 @@ class TestRAGFeaturesCommand extends Command
             $this->info('✅ Chat service integration working');
 
         } catch (\Exception $e) {
+            $this->recordFailure('Chat service integration', $e);
             $this->error("❌ Chat service integration failed: {$e->getMessage()}");
             $this->newLine();
         }
@@ -389,9 +426,10 @@ class TestRAGFeaturesCommand extends Command
         $this->line('─────────────────────────────────');
 
         try {
-            $query = $this->option('skip-interactive') ? 'test' : $this->ask('Enter search query', 'test');
+            $query = $this->option('query')
+                ?: ($this->option('skip-interactive') ? 'Apollo' : $this->ask('Enter search query', 'Apollo'));
             
-            $results = $modelClass::vectorSearch($query, 3);
+            $results = $modelClass::vectorSearch($query, 3, 0.3, [], $this->userId());
 
             if ($results->isEmpty()) {
                 $this->warn('⚠️  No results to test context enhancement');
@@ -427,6 +465,7 @@ class TestRAGFeaturesCommand extends Command
             $this->newLine();
 
         } catch (\Exception $e) {
+            $this->recordFailure('Context enhancement', $e);
             $this->error("❌ Context enhancement test failed: {$e->getMessage()}");
             $this->newLine();
         }
@@ -454,7 +493,7 @@ class TestRAGFeaturesCommand extends Command
             $this->line("Vectorizable fields: " . (empty($vectorizable) ? 'Auto-detected' : 'Configured'));
             
             if (!empty($vectorizable)) {
-                $this->line("   Fields: " . implode(', ', $vectorizable));
+                $this->line("   Fields: " . implode(', ', array_map(fn (mixed $field): string => $this->stringifyValue($field), $vectorizable)));
             }
 
             // Test collection name
@@ -475,6 +514,7 @@ class TestRAGFeaturesCommand extends Command
             $this->newLine();
 
         } catch (\Exception $e) {
+            $this->recordFailure('Auto-detection', $e);
             $this->error("❌ Auto-detection test failed: {$e->getMessage()}");
             $this->newLine();
         }
@@ -527,6 +567,7 @@ class TestRAGFeaturesCommand extends Command
             $this->newLine();
 
         } catch (\Exception $e) {
+            $this->recordFailure('Relationship traversal', $e);
             $this->error("❌ Relationship traversal test failed: {$e->getMessage()}");
             $this->newLine();
         }
@@ -570,6 +611,7 @@ class TestRAGFeaturesCommand extends Command
             $this->newLine();
 
         } catch (\Exception $e) {
+            $this->recordFailure('Content truncation', $e);
             $this->error("❌ Content truncation test failed: {$e->getMessage()}");
             $this->newLine();
         }
@@ -611,15 +653,64 @@ class TestRAGFeaturesCommand extends Command
             $this->newLine();
 
         } catch (\Exception $e) {
+            $this->recordFailure('Vector status', $e);
             $this->error("❌ Vector status test failed: {$e->getMessage()}");
             $this->newLine();
         }
     }
 
+    protected function collectionClass(mixed $collection): ?string
+    {
+        if (is_string($collection) && $collection !== '') {
+            return $collection;
+        }
+
+        if (is_array($collection)) {
+            foreach (['class', 'model', 'model_class'] as $key) {
+                if (isset($collection[$key]) && is_string($collection[$key]) && $collection[$key] !== '') {
+                    return $collection[$key];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    protected function userId(): ?string
+    {
+        $userId = $this->option('user-id');
+
+        return $userId === null || $userId === '' ? null : (string) $userId;
+    }
+
+    protected function ragOptions(string $modelClass): array
+    {
+        return array_filter([
+            'collections' => [$modelClass],
+            'restrict_to_model' => true,
+            'user_id' => $this->userId(),
+        ], static fn (mixed $value): bool => $value !== null);
+    }
+
+    protected function stringifyValue(mixed $value): string
+    {
+        if (is_scalar($value) || $value === null) {
+            return (string) $value;
+        }
+
+        return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '[complex value]';
+    }
+
+    protected function recordFailure(string $scope, \Throwable|string $failure): void
+    {
+        $message = $failure instanceof \Throwable ? $failure->getMessage() : $failure;
+        $this->failures[] = "{$scope}: {$message}";
+    }
+
     /**
      * Display test summary
      */
-    protected function displayTestSummary(): void
+    protected function displayTestSummary(bool $passed): void
     {
         $this->newLine();
         $this->line('═══════════════════════════════════');
@@ -629,7 +720,7 @@ class TestRAGFeaturesCommand extends Command
         $tests = [
             '✅ Collection Discovery',
             '✅ Vector Search',
-            '✅ Intelligent RAG',
+            '✅ RAG',
             '✅ Manual RAG',
             '✅ Instance Methods',
             '✅ Chat Service Integration',
@@ -645,7 +736,11 @@ class TestRAGFeaturesCommand extends Command
         }
 
         $this->newLine();
-        $this->info('🎉 All RAG features tested successfully!');
+        if ($passed) {
+            $this->info('🎉 All RAG features tested successfully!');
+        } else {
+            $this->error('RAG feature smoke test did not pass. Review the failures above.');
+        }
         $this->line('═══════════════════════════════════');
     }
 }

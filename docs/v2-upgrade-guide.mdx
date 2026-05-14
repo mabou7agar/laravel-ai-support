@@ -1,0 +1,110 @@
+# V2 Upgrade Guide
+
+Orchestration v2 is a breaking runtime refactor. New applications should enter through the runtime boundary, not through legacy broad services.
+
+## Why This Is Breaking
+
+The old flow mixed routing, RAG selection, action execution, remote node routing, and continuation handling in the same orchestration path. V2 separates those responsibilities:
+
+| Old area | V2 replacement |
+| --- | --- |
+| `AgentOrchestrator::process()` as the public brain | `AgentRuntimeContract::process()` resolved from the container |
+| Embedded route branches | `RoutingPipeline` and `RoutingStageContract` |
+| In-method execution branches | `AgentExecutionDispatcher` and execution handlers |
+| RAG decisions inside orchestration | `search_rag` routing decision plus `RAGPipeline` |
+| Ad hoc run state | `ai_agent_runs` and `ai_agent_run_steps` |
+| Provider tool side effects without unified run links | provider tool runs, approvals, artifacts, and audit events linked to agent run steps |
+
+## Public Entrypoint
+
+Prefer resolving the runtime contract:
+
+```php
+use LaravelAIEngine\Contracts\AgentRuntimeContract;
+
+$response = app(AgentRuntimeContract::class)->process(
+    message: $message,
+    sessionId: $sessionId,
+    userId: $userId,
+    options: ['agent_runtime' => 'laravel']
+);
+```
+
+`LaravelAgentProcessor` is an internal Laravel-runtime processor. New package consumers should not resolve it directly.
+
+## Removed Or Renamed Candidates
+
+These names should not be used as new extension points:
+
+| Removed or renamed name | Status | Replacement |
+| --- | --- | --- |
+| `AgentOrchestrator` | removed | `AgentRuntimeContract`, `LaravelAgentProcessor` internally |
+| `RAGService` | renamed | `RAGChatService` |
+| `AutonomousRAGAgent` | renamed | `RAGDecisionEngine` |
+| `ai-engine:sync-engine-models` | removed from the v2 plan | catalog/model sync commands that remain registered |
+
+Move new behavior into the narrower runtime, routing, execution, RAG, provider-tool, credit, or audit services.
+
+## Config Changes
+
+Runtime config lives under `ai-agent.runtime`:
+
+```php
+'runtime' => [
+    'default' => 'laravel',
+    'langgraph' => [
+        'enabled' => false,
+        'base_url' => null,
+        'fallback_to_laravel' => true,
+    ],
+],
+```
+
+Run storage, retention, queue safety, and event streaming live under `ai-agent.run_retention`, `ai-agent.run_safety`, and `ai-agent.event_stream`.
+
+## Command Changes
+
+New v2 runtime commands:
+
+```bash
+php artisan ai-engine:agent-runtime:capabilities
+php artisan ai-engine:agent-runtime:validate
+php artisan ai-engine:agent-runs:recover-stuck
+php artisan ai-engine:agent-runs:cleanup-expired
+php artisan ai-engine:agent-runs:retention-cleanup
+php artisan ai-engine:agent-runs:replay-step {step}
+```
+
+Scaffolding is still routed through the existing scaffold command where possible:
+
+```bash
+php artisan ai-engine:scaffold routing-stage BillingQuestion
+php artisan ai-engine:scaffold execution-handler SendInvoice
+php artisan ai-engine:scaffold runtime MyRuntime
+```
+
+## Old-To-New Flow
+
+1. Runtime receives the request.
+2. Routing stages produce a trace and one selected decision.
+3. Dispatcher executes that decision.
+4. RAG, tools, sub-agents, approvals, and artifacts stay in their own services.
+5. Agent run and step records store trace, status, response, audit, and recovery metadata.
+6. API/admin consumers inspect `/api/v1/ai/agent-runs`.
+
+## Live Validation
+
+Use the existing test command for package-level smoke checks:
+
+```bash
+php artisan ai-engine:test-orchestration --json
+```
+
+Provider-backed checks remain opt-in because they can create billed calls:
+
+```bash
+AI_ENGINE_RUN_LIVE_TESTS=true php artisan ai-engine:test-orchestration
+AI_ENGINE_RUN_NEO4J_LIVE_TESTS=true php artisan ai-engine:test-orchestration
+```
+
+Demo fixtures are intentionally separate from package core. Keep demo tables and seeders generic: projects, tasks, customers, invoices, documents, tenant/workspace scope, approval-required tool runs, credit-limited users, and graph-linked records.

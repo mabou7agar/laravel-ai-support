@@ -122,7 +122,7 @@ class ActionService
         $topSource = $sources[0] ?? null;
         
         if ($topSource) {
-            // Get display name - use model_type from source (already processed by IntelligentRAGService)
+            // Get display name - use model_type from source (already processed by RAGChatService)
             // or fall back to humanized class basename
             $modelType = $topSource['model_type'] ?? $this->getDisplayName($topSource['model_class'] ?? null);
             $modelTypeLower = strtolower(str_replace(' ', '_', $modelType));

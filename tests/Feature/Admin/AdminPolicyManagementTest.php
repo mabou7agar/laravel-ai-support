@@ -20,9 +20,9 @@ class AdminPolicyManagementTest extends UnitTestCase
         $app['config']->set('ai-engine.admin_ui.middleware', ['web']);
         $app['config']->set('ai-engine.admin_ui.access.allowed_ips', ['203.0.113.10']);
         $app['config']->set('ai-engine.admin_ui.access.allow_localhost', false);
-        $app['config']->set('ai-engine.intelligent_rag.decision.policy_store.enabled', true);
-        $app['config']->set('ai-engine.intelligent_rag.decision.policy_store.table', 'ai_prompt_policy_versions');
-        $app['config']->set('ai-engine.intelligent_rag.decision.policy_store.default_key', 'decision');
+        $app['config']->set('ai-engine.rag.decision.policy_store.enabled', true);
+        $app['config']->set('ai-engine.rag.decision.policy_store.table', 'ai_prompt_policy_versions');
+        $app['config']->set('ai-engine.rag.decision.policy_store.default_key', 'decision');
     }
 
     protected function setUp(): void

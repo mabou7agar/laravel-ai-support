@@ -230,7 +230,7 @@ class NodeMetadataDiscovery
         $collections = [];
         
         // Get paths from config (supports modular architecture)
-        $discoveryPaths = config('ai-engine.intelligent_rag.discovery_paths', [
+        $discoveryPaths = config('ai-engine.rag.discovery_paths', [
             app_path('Models'),
         ]);
         

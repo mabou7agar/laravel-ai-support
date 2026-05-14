@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AIProviderToolRun extends Model
@@ -13,6 +14,8 @@ class AIProviderToolRun extends Model
 
     protected $fillable = [
         'uuid',
+        'agent_run_id',
+        'agent_run_step_id',
         'provider',
         'engine',
         'ai_model',
@@ -48,6 +51,16 @@ class AIProviderToolRun extends Model
     public function approvals(): HasMany
     {
         return $this->hasMany(AIProviderToolApproval::class, 'tool_run_id');
+    }
+
+    public function agentRun(): BelongsTo
+    {
+        return $this->belongsTo(AIAgentRun::class, 'agent_run_id');
+    }
+
+    public function agentRunStep(): BelongsTo
+    {
+        return $this->belongsTo(AIAgentRunStep::class, 'agent_run_step_id');
     }
 
     public function artifacts(): HasMany

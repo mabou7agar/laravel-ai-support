@@ -5,13 +5,13 @@ namespace LaravelAIEngine\Tests\Feature\DataCollector;
 use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
 use LaravelAIEngine\Services\DataCollector\AutonomousCollectorResponse;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorService;
+use LaravelAIEngine\Services\DataCollector\AutonomousCollectorSessionService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
 class AutonomousCollectorApiTest extends UnitTestCase
 {
-    protected AutonomousCollectorService $service;
+    protected AutonomousCollectorSessionService $service;
 
     protected function setUp(): void
     {
@@ -19,9 +19,9 @@ class AutonomousCollectorApiTest extends UnitTestCase
 
         AutonomousCollectorRegistry::clear();
 
-        $this->service = Mockery::mock(AutonomousCollectorService::class);
+        $this->service = Mockery::mock(AutonomousCollectorSessionService::class);
         $this->service->shouldReceive('getRegisteredConfig')->byDefault()->andReturnNull();
-        $this->app->instance(AutonomousCollectorService::class, $this->service);
+        $this->app->instance(AutonomousCollectorSessionService::class, $this->service);
     }
 
     protected function tearDown(): void

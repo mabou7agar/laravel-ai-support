@@ -244,7 +244,7 @@
                             <div class="space-y-2">
                                 <label class="text-sm font-medium text-gray-700 block">RAG Mode</label>
 
-                                <!-- Intelligent RAG Option -->
+                                <!-- RAG Option -->
                                 <label class="flex items-center justify-between cursor-pointer p-3 border rounded-lg" :class="!forceRAG ? 'bg-purple-50 border-purple-300' : 'bg-gray-50 border-gray-200'">
                                     <div class="flex items-center space-x-2">
                                         <input type="radio" name="rag-mode" :checked="!forceRAG" @change="forceRAG = false" class="text-purple-600">
@@ -591,7 +591,7 @@
                                 session_id: this.sessionId,
                                 memory: this.memoryEnabled,
                                 actions: true,
-                                intelligent_rag: !this.forceRAG,  // Use intelligent RAG unless force is enabled
+                                rag: !this.forceRAG,  // Use intelligent RAG unless force is enabled
                                 force_rag: this.forceRAG  // Force RAG mode
                             })
                         });

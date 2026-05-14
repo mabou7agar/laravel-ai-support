@@ -281,7 +281,7 @@ class NodeApiController extends Controller
                 model: $options['model'] ?? 'gpt-4o-mini',
                 useMemory: $options['use_memory'] ?? true,
                 useActions: $options['use_actions'] ?? true,
-                useIntelligentRAG: $options['use_intelligent_rag'] ?? true,
+                useRag: $options['use_rag'] ?? true,
                 ragCollections: $options['rag_collections'] ?? [],
                 userId: $userId,
                 searchInstructions: $options['search_instructions'] ?? null,

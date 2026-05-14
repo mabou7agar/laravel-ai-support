@@ -121,7 +121,7 @@ class GenerateApiController extends Controller
      * @group AI Generate
      * @bodyParam prompt string required Image prompt.
      * @bodyParam engine string Optional engine slug. Default: openai
-     * @bodyParam model string Optional model slug. Default: dall-e-3
+     * @bodyParam model string Optional model slug. Default: gpt-image-1-mini
      * @bodyParam count integer Optional image count. Default: 1
      * @bodyParam size string Optional provider-specific size (for OpenAI: 1024x1024).
      * @bodyParam quality string Optional provider-specific quality (for OpenAI: standard|hd).
@@ -1066,7 +1066,7 @@ class GenerateApiController extends Controller
     private function resolveDefaultImageModel(array $validated): string
     {
         if (!$this->usesFalImageWorkflow($validated)) {
-            return 'dall-e-3';
+            return EntityEnum::GPT_IMAGE_1_MINI;
         }
 
         if (($validated['mode'] ?? null) === 'edit'
