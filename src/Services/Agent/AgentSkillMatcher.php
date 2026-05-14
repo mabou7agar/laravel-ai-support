@@ -103,7 +103,7 @@ class AgentSkillMatcher
         }
 
         $skillId = trim((string) ($decoded['skill_id'] ?? ''));
-        $confidence = (int) round((float) ($decoded['confidence'] ?? 0));
+        $confidence = $this->normalizeConfidence($decoded['confidence'] ?? 0);
         if ($skillId === '' || in_array(strtolower($skillId), ['none', 'null'], true) || $confidence < $this->intentThreshold()) {
             return null;
         }
@@ -119,6 +119,16 @@ class AgentSkillMatcher
             'trigger' => 'ai_intent',
             'reason' => trim((string) ($decoded['reason'] ?? 'Matched skill by conversation intent.')) ?: 'Matched skill by conversation intent.',
         ];
+    }
+
+    protected function normalizeConfidence(mixed $value): int
+    {
+        $confidence = (float) $value;
+        if ($confidence > 0 && $confidence <= 1) {
+            $confidence *= 100;
+        }
+
+        return (int) round($confidence);
     }
 
     /**

@@ -84,6 +84,19 @@ class RunSkillTool extends AgentTool
             }
 
             if ($action === 'final_response') {
+                if ($this->shouldUseFinalTool($skill, $state, $message)) {
+                    $finalToolResult = $this->handleFinalToolPlan($skill, $state, $plan, $context);
+                    if ($finalToolResult instanceof ActionResult) {
+                        return $finalToolResult;
+                    }
+                }
+
+                if ($this->configuredFinalTool($skill) !== null) {
+                    $this->putState($context, $skill->id, $state);
+
+                    return $this->needsInput($skill, $state, $this->planMessage($plan));
+                }
+
                 $this->forgetState($context, $skill->id);
 
                 return ActionResult::success($this->planMessage($plan), $this->flowData($skill, $state, 'completed'), [
@@ -106,12 +119,42 @@ class RunSkillTool extends AgentTool
             }
 
             $toolParams = (array) ($plan['tool_params'] ?? []);
+            if ($toolName === $this->configuredFinalTool($skill) && !$this->shouldUseFinalTool($skill, $state, $message)) {
+                $this->putState($context, $skill->id, $state);
+
+                return $this->needsInput($skill, $state, $this->planMessage($plan));
+            }
+
             if ($tool->requiresConfirmation()) {
                 $validation = $tool->validate($this->withConfirmationForValidation($tool, $toolParams));
                 if ($validation !== []) {
                     $this->putState($context, $skill->id, $state);
 
                     return $this->needsInput($skill, $state, implode("\n", $validation));
+                }
+
+                if ($this->looksLikeExplicitApproval($message)) {
+                    $result = $this->executeTool($tool, $this->withConfirmationForValidation($tool, $toolParams), $context);
+                    $state['tool_results'][] = [
+                        'tool' => $toolName,
+                        'params' => $this->withConfirmationForValidation($tool, $toolParams),
+                        'result' => $result->toArray(),
+                    ];
+                    $state['payload'] = $this->mergePayload($state['payload'], $this->resultPayloadPatch($toolName, $result));
+
+                    if ($result->success && $toolName === $this->finalTool($skill)) {
+                        $this->forgetState($context, $skill->id);
+
+                        return ActionResult::success($result->message ?? 'Done.', $this->flowData($skill, $state, 'completed') + [
+                            'tool_result' => $result->toArray(),
+                        ], ['agent_strategy' => 'skill_tool']);
+                    }
+
+                    $this->putState($context, $skill->id, $state);
+
+                    return $result->success
+                        ? ActionResult::success($result->message ?? 'Done.', $this->flowData($skill, $state, 'collecting'), ['agent_strategy' => 'skill_tool'])
+                        : $this->needsInput($skill, $state, $result->message ?? $result->error ?? 'More information is required.');
                 }
 
                 $state['pending_tool'] = [
@@ -162,8 +205,15 @@ class RunSkillTool extends AgentTool
             return $this->needsInput($skill, $state, 'The pending tool is no longer available.');
         }
 
-        if (!$this->looksLikeApproval($message)) {
-            return $this->needsInput($skill, $state, (string) ($pending['message'] ?? $tool->getConfirmationMessage() ?? 'Please confirm.'));
+        if (!$this->looksLikeApproval($message) || $this->approvalTargetsConfiguredFinalTool($skill, $toolName, $message)) {
+            unset($state['pending_tool']);
+            $this->putState($context, $skill->id, $state);
+
+            return $this->execute([
+                'skill_id' => $skill->id,
+                'message' => $message,
+                'reset' => false,
+            ], $context);
         }
 
         $params = $this->withConfirmationForValidation($tool, (array) ($pending['params'] ?? []));
@@ -189,6 +239,91 @@ class RunSkillTool extends AgentTool
         return $result->success
             ? ActionResult::success($result->message ?? 'Done.', $this->flowData($skill, $state, 'collecting'), ['agent_strategy' => 'skill_tool'])
             : $this->needsInput($skill, $state, $result->message ?? $result->error ?? 'More information is required.');
+    }
+
+    private function handleFinalToolPlan(AgentSkillDefinition $skill, array &$state, array $plan, UnifiedActionContext $context): ?ActionResult
+    {
+        $finalToolName = $this->configuredFinalTool($skill);
+        if ($finalToolName === null) {
+            return null;
+        }
+
+        $tool = $this->toolForSkill($skill, $finalToolName);
+        if (!$tool instanceof AgentTool) {
+            return null;
+        }
+
+        $toolParams = (array) ($plan['tool_params'] ?? []);
+        if ($toolParams === []) {
+            $toolParams = $this->payloadParamsForTool($tool, $state['payload'] ?? []);
+        }
+
+        if ($tool->requiresConfirmation()) {
+            $validation = $tool->validate($this->withConfirmationForValidation($tool, $toolParams));
+            if ($validation !== []) {
+                $this->putState($context, $skill->id, $state);
+
+                return $this->needsInput($skill, $state, implode("\n", $validation));
+            }
+
+            $state['pending_tool'] = [
+                'name' => $finalToolName,
+                'params' => $toolParams,
+                'message' => $this->planMessage($plan),
+            ];
+            $this->putState($context, $skill->id, $state);
+
+            return $this->needsInput($skill, $state, $this->planMessage($plan));
+        }
+
+        $result = $this->executeTool($tool, $toolParams, $context);
+        $state['tool_results'][] = [
+            'tool' => $finalToolName,
+            'params' => $toolParams,
+            'result' => $result->toArray(),
+        ];
+        $state['payload'] = $this->mergePayload($state['payload'], $this->resultPayloadPatch($finalToolName, $result));
+
+        if ($result->success) {
+            $this->forgetState($context, $skill->id);
+
+            return ActionResult::success($result->message ?? $this->planMessage($plan), $this->flowData($skill, $state, 'completed') + [
+                'tool_result' => $result->toArray(),
+            ], ['agent_strategy' => 'skill_tool']);
+        }
+
+        $this->putState($context, $skill->id, $state);
+
+        return $this->needsInput($skill, $state, $result->message ?? $result->error ?? 'More information is required.');
+    }
+
+    private function shouldUseFinalTool(AgentSkillDefinition $skill, array $state, string $message): bool
+    {
+        $finalTool = $this->configuredFinalTool($skill);
+        if ($finalTool === null) {
+            return false;
+        }
+
+        $entity = $this->entityNameFromToolName($finalTool);
+        $normalized = mb_strtolower(trim($message));
+
+        return $this->looksLikeApproval($message)
+            && ($entity === '' || str_contains($normalized, str_replace('_', ' ', $entity)) || preg_match('/\b(final|finalize|submit|finish|complete)\b/u', $normalized) === 1);
+    }
+
+    private function approvalTargetsConfiguredFinalTool(AgentSkillDefinition $skill, string $pendingToolName, string $message): bool
+    {
+        $finalTool = $this->configuredFinalTool($skill);
+        if ($finalTool === null || $pendingToolName === $finalTool) {
+            return false;
+        }
+
+        $entity = $this->entityNameFromToolName($finalTool);
+        if ($entity === '') {
+            return false;
+        }
+
+        return str_contains(mb_strtolower(trim($message)), str_replace('_', ' ', $entity));
     }
 
     private function executeTool(AgentTool $tool, array $params, UnifiedActionContext $context): ActionResult
@@ -292,6 +427,9 @@ class RunSkillTool extends AgentTool
             'JSON shape: {"action":"ask_user|run_tool|final_response","message":"user-facing message","payload_patch":{},"tool_name":"tool or null","tool_params":{}}',
             'When a lookup tool finds a record, patch the target JSON with IDs and fields from tool_results.',
             'When a lookup tool does not find a record and a create tool exists, collect missing fields, then choose the create tool.',
+            'When a tool result returns suggested_tool or suggested_tools, prefer the suggested declared tool before retrying the same failing tool.',
+            'When the latest user message confirms a non-final record creation after you asked for missing fields, choose that create/upsert tool with the collected parameters.',
+            'Do not choose the final_tool while required relation IDs or required records are unresolved and a lookup/create tool can resolve them.',
             'When target JSON is complete, choose the final create/submit tool.',
             '',
             'Skill JSON:',
@@ -402,9 +540,32 @@ class RunSkillTool extends AgentTool
 
     private function finalTool(AgentSkillDefinition $skill): ?string
     {
+        $final = $this->configuredFinalTool($skill);
+
+        return $final ?? ($skill->tools[array_key_last($skill->tools)] ?? null);
+    }
+
+    private function configuredFinalTool(AgentSkillDefinition $skill): ?string
+    {
         $final = $skill->metadata['final_tool'] ?? null;
 
-        return is_string($final) && trim($final) !== '' ? trim($final) : ($skill->tools[array_key_last($skill->tools)] ?? null);
+        return is_string($final) && trim($final) !== '' ? trim($final) : null;
+    }
+
+    private function payloadParamsForTool(AgentTool $tool, array $payload): array
+    {
+        $params = [];
+        foreach (array_keys($tool->getParameters()) as $name) {
+            if ($name === 'confirmed' || str_contains($name, '.')) {
+                continue;
+            }
+
+            if (array_key_exists($name, $payload)) {
+                $params[$name] = $payload[$name];
+            }
+        }
+
+        return $params;
     }
 
     private function withConfirmationForValidation(AgentTool $tool, array $params): array
@@ -472,6 +633,16 @@ class RunSkillTool extends AgentTool
         }
 
         return preg_match('/\b(yes|approve|approved|confirm|create|go ahead|proceed|ok|okay|sure)\b/u', $normalized) === 1;
+    }
+
+    private function looksLikeExplicitApproval(string $message): bool
+    {
+        $normalized = mb_strtolower(trim($message));
+        if ($normalized === '' || preg_match('/\b(no|not|don\'t|do not|cancel|stop|instead)\b/u', $normalized) === 1) {
+            return false;
+        }
+
+        return preg_match('/\b(yes|approve|approved|confirm|confirmed|go ahead|proceed|ok|okay|sure)\b/u', $normalized) === 1;
     }
 
     private function decodeJson(string $content): ?array

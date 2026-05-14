@@ -460,41 +460,55 @@ PHP;
 
 namespace {$namespace};
 
-use LaravelAIEngine\Contracts\AgentSkillProvider;
-use LaravelAIEngine\DTOs\AgentSkillDefinition;
+use LaravelAIEngine\Services\Agent\Skills\AgentSkill;
 
-class {$className} implements AgentSkillProvider
+class {$className} extends AgentSkill
 {
-    public function skills(): iterable
+    public string \$id = '{$id}';
+
+    public string \$name = '{$this->escapeSingleQuotes($name)}';
+
+    public string \$description = '{$this->escapeSingleQuotes($description)}';
+
+    public array \$triggers = [
+        '{$id}',
+    ];
+
+    public array \$requiredData = [
+        // 'customer_id',
+        // 'items',
+    ];
+
+    public array \$tools = [
+        // \\App\\AI\\Tools\\FindCustomerTool::class,
+        // \\App\\AI\\Tools\\CreateInvoiceTool::class,
+    ];
+
+    public string \$finalTool = '';
+
+    public array \$actions = [
+        // '{$id}.create',
+    ];
+
+    public array \$capabilities = [
+        '{$id}',
+    ];
+
+    public bool \$requiresConfirmation = true;
+
+    public bool \$enabled = false;
+
+    public array \$metadata = [
+        'source' => 'scaffold',
+        'review_required' => true,
+    ];
+
+    public function targetJson(): array
     {
-        yield new AgentSkillDefinition(
-            id: '{$id}',
-            name: '{$this->escapeSingleQuotes($name)}',
-            description: '{$this->escapeSingleQuotes($description)}',
-            triggers: [
-                '{$id}',
-            ],
-            requiredData: [
-                // 'customer_id',
-                // 'items',
-            ],
-            tools: [
-                // 'find_customer',
-                // 'calculate_totals',
-            ],
-            actions: [
-                // '{$id}.create',
-            ],
-            capabilities: [
-                '{$id}',
-            ],
-            requiresConfirmation: true,
-            enabled: false,
-            metadata: [
-                'source' => 'scaffold',
-                'review_required' => true,
-            ],
-        );
+        return [
+            // 'customer_id' => null,
+            // 'items' => [],
+        ];
     }
 }
 PHP;

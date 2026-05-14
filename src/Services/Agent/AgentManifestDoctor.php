@@ -87,6 +87,7 @@ class AgentManifestDoctor
                     'ai-engine:init',
                     'ai-engine:make-agent',
                     'ai-engine:make-tool',
+                    'ai-engine:make-skill',
                     'ai-engine:scaffold skill',
                 ],
                 'diagnostics' => [

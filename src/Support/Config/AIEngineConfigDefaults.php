@@ -131,6 +131,76 @@ class AIEngineConfigDefaults
 
     /*
     |--------------------------------------------------------------------------
+    | Media Provider Routing
+    |--------------------------------------------------------------------------
+    |
+    | Cost-aware media routing lets applications choose the cheapest, local,
+    | fastest, or highest-quality provider for image, video, and audio jobs.
+    | Costs are estimates only; keep provider billing as the source of truth.
+    |
+    */
+    'media_routing' => [
+        'enabled' => env('AI_ENGINE_MEDIA_ROUTING_ENABLED', true),
+        'default_mode' => env('AI_ENGINE_MEDIA_ROUTING_MODE', 'balanced'),
+        'providers' => [
+            'comfyui' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_COMFYUI', true),
+                'models' => [
+                    'image' => ['model' => 'comfyui/default-image', 'estimated_unit_cost' => 0.0, 'quality_score' => 2.0, 'latency_score' => 3.0, 'local' => true],
+                    'video' => ['model' => 'comfyui/default-video', 'estimated_unit_cost' => 0.0, 'quality_score' => 2.0, 'latency_score' => 8.0, 'local' => true],
+                ],
+            ],
+            'cloudflare_workers_ai' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_CLOUDFLARE', true),
+                'models' => [
+                    'image' => ['model' => '@cf/black-forest-labs/flux-1-schnell', 'estimated_unit_cost' => 0.001, 'quality_score' => 1.5, 'latency_score' => 1.0],
+                    'audio_transcription' => ['model' => '@cf/openai/whisper', 'estimated_unit_cost' => 0.0005, 'quality_score' => 1.3, 'latency_score' => 1.0],
+                    'audio_generation' => ['model' => '@cf/myshell-ai/melotts', 'estimated_unit_cost' => 0.0002, 'quality_score' => 1.0, 'latency_score' => 1.0],
+                ],
+            ],
+            'huggingface' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_HUGGINGFACE', true),
+                'models' => [
+                    'image' => ['model' => 'black-forest-labs/FLUX.1-schnell', 'estimated_unit_cost' => 0.003, 'quality_score' => 1.7, 'latency_score' => 3.0],
+                    'audio_transcription' => ['model' => 'openai/whisper-large-v3', 'estimated_unit_cost' => 0.002, 'quality_score' => 1.6, 'latency_score' => 4.0],
+                    'audio_generation' => ['model' => 'facebook/mms-tts', 'estimated_unit_cost' => 0.002, 'quality_score' => 1.1, 'latency_score' => 4.0],
+                ],
+            ],
+            'replicate' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_REPLICATE', true),
+                'models' => [
+                    'image' => ['model' => 'black-forest-labs/flux-schnell', 'estimated_unit_cost' => 0.004, 'quality_score' => 1.7, 'latency_score' => 4.0],
+                    'video' => ['model' => 'wavespeedai/wan-2.1-i2v-480p', 'estimated_unit_cost' => 0.09, 'quality_score' => 2.0, 'latency_score' => 8.0],
+                ],
+            ],
+            'gemini' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_GEMINI', true),
+                'models' => [
+                    'image' => ['model' => 'imagen-4.0-fast-generate-001', 'estimated_unit_cost' => 0.02, 'quality_score' => 2.2, 'latency_score' => 2.0],
+                    'video' => ['model' => 'veo-3.1-fast-generate-preview', 'estimated_unit_cost' => 0.05, 'quality_score' => 2.4, 'latency_score' => 8.0],
+                    'audio_generation' => ['model' => 'lyria-002', 'estimated_unit_cost' => 0.04, 'quality_score' => 2.0, 'latency_score' => 6.0],
+                ],
+            ],
+            'fal_ai' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_FAL', true),
+                'models' => [
+                    'image' => ['model' => 'fal-flux-schnell', 'estimated_unit_cost' => 0.003, 'quality_score' => 1.8, 'latency_score' => 2.0],
+                    'video' => ['model' => 'bytedance/seedance-2.0/image-to-video', 'estimated_unit_cost' => 0.08, 'quality_score' => 2.2, 'latency_score' => 7.0],
+                    'audio_generation' => ['model' => 'fal-ai/elevenlabs/tts', 'estimated_unit_cost' => 0.003, 'quality_score' => 1.8, 'latency_score' => 3.0],
+                ],
+            ],
+            'openai' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_OPENAI', true),
+                'models' => [
+                    'image' => ['model' => 'gpt-image-1-mini', 'estimated_unit_cost' => 0.02, 'quality_score' => 2.1, 'latency_score' => 2.0],
+                    'audio_transcription' => ['model' => 'whisper-1', 'estimated_unit_cost' => 0.006, 'quality_score' => 1.8, 'latency_score' => 2.0],
+                ],
+            ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Provider Tool Lifecycle
     |--------------------------------------------------------------------------
     |
@@ -567,6 +637,11 @@ class AIEngineConfigDefaults
             'models' => [
                 'gemini-2.5-flash' => ['enabled' => true, 'credit_index' => 1.5],
                 'gemini-2.5-pro' => ['enabled' => true, 'credit_index' => 4.0],
+                'imagen-4.0-fast-generate-001' => ['enabled' => true, 'credit_index' => 0.8, 'content_type' => 'image'],
+                'imagen-4.0-generate-001' => ['enabled' => true, 'credit_index' => 1.5, 'content_type' => 'image'],
+                'veo-3.1-generate-preview' => ['enabled' => true, 'credit_index' => 8.0, 'content_type' => 'video'],
+                'veo-3.1-fast-generate-preview' => ['enabled' => true, 'credit_index' => 4.0, 'content_type' => 'video'],
+                'lyria-002' => ['enabled' => true, 'credit_index' => 1.0, 'content_type' => 'audio'],
                 'gemini-1.5-flash' => ['enabled' => true, 'credit_index' => 0.4],
                 'gemini-1.5-pro' => ['enabled' => true, 'credit_index' => 1.5],
             ],
@@ -645,6 +720,55 @@ class AIEngineConfigDefaults
                 'bytedance/seedance-2.0/text-to-video' => ['enabled' => true, 'credit_index' => 7.5],
                 'bytedance/seedance-2.0/image-to-video' => ['enabled' => true, 'credit_index' => 7.5],
                 'bytedance/seedance-2.0/reference-to-video' => ['enabled' => true, 'credit_index' => 7.5],
+            ],
+        ],
+
+        'cloudflare_workers_ai' => [
+            'driver' => 'cloudflare_workers_ai',
+            'api_key' => env('CLOUDFLARE_API_TOKEN', env('CLOUDFLARE_WORKERS_AI_API_TOKEN')),
+            'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+            'base_url' => env('CLOUDFLARE_API_BASE_URL', 'https://api.cloudflare.com/client/v4'),
+            'timeout' => env('CLOUDFLARE_WORKERS_AI_TIMEOUT', 60),
+            'models' => [
+                '@cf/black-forest-labs/flux-1-schnell' => ['enabled' => true, 'credit_index' => 0.4, 'content_type' => 'image'],
+                '@cf/lykon/dreamshaper-8-lcm' => ['enabled' => true, 'credit_index' => 0.3, 'content_type' => 'image'],
+                '@cf/openai/whisper' => ['enabled' => true, 'credit_index' => 0.2, 'content_type' => 'audio'],
+                '@cf/myshell-ai/melotts' => ['enabled' => true, 'credit_index' => 0.2, 'content_type' => 'audio'],
+            ],
+        ],
+
+        'huggingface' => [
+            'driver' => 'huggingface',
+            'api_key' => env('HUGGINGFACE_API_KEY', env('HF_TOKEN')),
+            'base_url' => env('HUGGINGFACE_BASE_URL', 'https://api-inference.huggingface.co'),
+            'provider' => env('HUGGINGFACE_INFERENCE_PROVIDER', 'auto'),
+            'timeout' => env('HUGGINGFACE_TIMEOUT', 120),
+            'models' => [
+                'black-forest-labs/FLUX.1-schnell' => ['enabled' => true, 'credit_index' => 0.6, 'content_type' => 'image'],
+                'openai/whisper-large-v3' => ['enabled' => true, 'credit_index' => 0.4, 'content_type' => 'audio'],
+                'facebook/mms-tts' => ['enabled' => true, 'credit_index' => 0.4, 'content_type' => 'audio'],
+            ],
+        ],
+
+        'replicate' => [
+            'driver' => 'replicate',
+            'api_key' => env('REPLICATE_API_TOKEN', env('REPLICATE_API_KEY')),
+            'base_url' => env('REPLICATE_BASE_URL', 'https://api.replicate.com/v1'),
+            'timeout' => env('REPLICATE_TIMEOUT', 180),
+            'models' => [
+                'black-forest-labs/flux-schnell' => ['enabled' => true, 'credit_index' => 0.8, 'content_type' => 'image'],
+                'wavespeedai/wan-2.1-i2v-480p' => ['enabled' => true, 'credit_index' => 4.0, 'content_type' => 'video'],
+            ],
+        ],
+
+        'comfyui' => [
+            'driver' => 'comfyui',
+            'base_url' => env('COMFYUI_BASE_URL', 'http://127.0.0.1:8188'),
+            'timeout' => env('COMFYUI_TIMEOUT', 300),
+            'default_workflow' => null,
+            'models' => [
+                'comfyui/default-image' => ['enabled' => true, 'credit_index' => 0.01, 'content_type' => 'image'],
+                'comfyui/default-video' => ['enabled' => true, 'credit_index' => 0.01, 'content_type' => 'video'],
             ],
         ],
 
@@ -794,6 +918,10 @@ class AIEngineConfigDefaults
             'anthropic' => env('AI_ANTHROPIC_RATE', 3.0), // 3:1 ratio
             'gemini' => env('AI_GEMINI_RATE', 1.2),       // 20% margin
             'fal_ai' => env('AI_FAL_AI_RATE', 1.3),        // 30% margin
+            'cloudflare_workers_ai' => env('AI_CLOUDFLARE_WORKERS_AI_RATE', 1.2),
+            'huggingface' => env('AI_HUGGINGFACE_RATE', 1.2),
+            'replicate' => env('AI_REPLICATE_RATE', 1.25),
+            'comfyui' => env('AI_COMFYUI_RATE', 1.0),
             'openrouter' => env('AI_OPENROUTER_RATE', 2.5), // 2.5:1 ratio
             'nvidia_nim' => env('AI_NVIDIA_NIM_RATE', 1.5), // 1.5:1 ratio
         ],
@@ -860,6 +988,10 @@ class AIEngineConfigDefaults
             'anthropic' => ['requests' => 50, 'per_minute' => 1],
             'gemini' => ['requests' => 60, 'per_minute' => 1],
             'stable_diffusion' => ['requests' => 20, 'per_minute' => 1],
+            'cloudflare_workers_ai' => ['requests' => 60, 'per_minute' => 1],
+            'huggingface' => ['requests' => 60, 'per_minute' => 1],
+            'replicate' => ['requests' => 30, 'per_minute' => 1],
+            'comfyui' => ['requests' => 60, 'per_minute' => 1],
             'openrouter' => ['requests' => 200, 'per_minute' => 1], // Higher limits due to unified API
         ],
     ],
@@ -880,7 +1012,11 @@ class AIEngineConfigDefaults
             'openai' => ['openrouter', 'anthropic', 'gemini'],
             'anthropic' => ['openrouter', 'openai', 'gemini'],
             'gemini' => ['openrouter', 'openai', 'anthropic'],
-            'stable_diffusion' => ['openrouter'],
+            'stable_diffusion' => ['cloudflare_workers_ai', 'huggingface', 'replicate', 'comfyui', 'openrouter'],
+            'cloudflare_workers_ai' => ['huggingface', 'replicate', 'fal_ai', 'comfyui'],
+            'huggingface' => ['cloudflare_workers_ai', 'replicate', 'fal_ai', 'comfyui'],
+            'replicate' => ['huggingface', 'fal_ai', 'cloudflare_workers_ai', 'comfyui'],
+            'comfyui' => ['cloudflare_workers_ai', 'huggingface', 'replicate', 'fal_ai'],
             'openrouter' => ['openai', 'anthropic', 'gemini'], // OpenRouter as fallback for others
         ],
     ],

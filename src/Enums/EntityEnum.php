@@ -49,6 +49,11 @@ class EntityEnum
     // Gemini Models
     public const GEMINI_1_5_PRO = 'gemini-1.5-pro';
     public const GEMINI_1_5_FLASH = 'gemini-1.5-flash';
+    public const GEMINI_IMAGEN_4_FAST = 'imagen-4.0-fast-generate-001';
+    public const GEMINI_IMAGEN_4 = 'imagen-4.0-generate-001';
+    public const GEMINI_VEO_3_1 = 'veo-3.1-generate-preview';
+    public const GEMINI_VEO_3_1_FAST = 'veo-3.1-fast-generate-preview';
+    public const GEMINI_LYRIA_002 = 'lyria-002';
 
     // Stable Diffusion Models
     public const SD3_LARGE = 'sd3-large';
@@ -218,6 +223,19 @@ class EntityEnum
     public const NVIDIA_NIM_LLAMA_3_1_70B = 'meta/llama-3.1-70b-instruct';
     public const NVIDIA_NIM_LLAMA_3_1_8B = 'meta/llama-3.1-8b-instruct';
 
+    // Low-cost and local media provider models
+    public const CLOUDFLARE_FLUX_SCHNELL = '@cf/black-forest-labs/flux-1-schnell';
+    public const CLOUDFLARE_DREAMSHAPER = '@cf/lykon/dreamshaper-8-lcm';
+    public const CLOUDFLARE_WHISPER = '@cf/openai/whisper';
+    public const CLOUDFLARE_MELOTTS = '@cf/myshell-ai/melotts';
+    public const HUGGINGFACE_FLUX_SCHNELL = 'black-forest-labs/FLUX.1-schnell';
+    public const HUGGINGFACE_WHISPER_LARGE_V3 = 'openai/whisper-large-v3';
+    public const HUGGINGFACE_MMS_TTS = 'facebook/mms-tts';
+    public const REPLICATE_FLUX_SCHNELL = 'black-forest-labs/flux-schnell';
+    public const REPLICATE_WAN_IMAGE_TO_VIDEO = 'wavespeedai/wan-2.1-i2v-480p';
+    public const COMFYUI_DEFAULT_IMAGE = 'comfyui/default-image';
+    public const COMFYUI_DEFAULT_VIDEO = 'comfyui/default-video';
+
     public string $value;
 
     public function __construct(string $value)
@@ -344,6 +362,11 @@ class EntityEnum
                 return new EngineEnum(EngineEnum::ANTHROPIC);
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
+            case self::GEMINI_IMAGEN_4_FAST:
+            case self::GEMINI_IMAGEN_4:
+            case self::GEMINI_VEO_3_1:
+            case self::GEMINI_VEO_3_1_FAST:
+            case self::GEMINI_LYRIA_002:
                 return new EngineEnum(EngineEnum::GEMINI);
             case self::SD3_LARGE:
             case self::SD3_MEDIUM:
@@ -406,6 +429,21 @@ class EntityEnum
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return new EngineEnum(EngineEnum::NVIDIA_NIM);
+            case self::CLOUDFLARE_FLUX_SCHNELL:
+            case self::CLOUDFLARE_DREAMSHAPER:
+            case self::CLOUDFLARE_WHISPER:
+            case self::CLOUDFLARE_MELOTTS:
+                return new EngineEnum(EngineEnum::CLOUDFLARE_WORKERS_AI);
+            case self::HUGGINGFACE_FLUX_SCHNELL:
+            case self::HUGGINGFACE_WHISPER_LARGE_V3:
+            case self::HUGGINGFACE_MMS_TTS:
+                return new EngineEnum(EngineEnum::HUGGINGFACE);
+            case self::REPLICATE_FLUX_SCHNELL:
+            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
+                return new EngineEnum(EngineEnum::REPLICATE);
+            case self::COMFYUI_DEFAULT_IMAGE:
+            case self::COMFYUI_DEFAULT_VIDEO:
+                return new EngineEnum(EngineEnum::COMFYUI);
             default:
                 // Try to detect engine from model name pattern
                 return $this->detectEngineFromModelName();
@@ -452,6 +490,11 @@ class EntityEnum
             case self::GEMINI_1_5_PRO:
                 return Gemini15ProDriver::class;
             case self::GEMINI_1_5_FLASH:
+            case self::GEMINI_IMAGEN_4_FAST:
+            case self::GEMINI_IMAGEN_4:
+            case self::GEMINI_VEO_3_1:
+            case self::GEMINI_VEO_3_1_FAST:
+            case self::GEMINI_LYRIA_002:
                 return Gemini15FlashDriver::class;
             case self::SD3_LARGE:
                 return SD3LargeDriver::class;
@@ -549,6 +592,21 @@ class EntityEnum
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class;
+            case self::CLOUDFLARE_FLUX_SCHNELL:
+            case self::CLOUDFLARE_DREAMSHAPER:
+            case self::CLOUDFLARE_WHISPER:
+            case self::CLOUDFLARE_MELOTTS:
+                return \LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver::class;
+            case self::HUGGINGFACE_FLUX_SCHNELL:
+            case self::HUGGINGFACE_WHISPER_LARGE_V3:
+            case self::HUGGINGFACE_MMS_TTS:
+                return \LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver::class;
+            case self::REPLICATE_FLUX_SCHNELL:
+            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
+                return \LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver::class;
+            case self::COMFYUI_DEFAULT_IMAGE:
+            case self::COMFYUI_DEFAULT_VIDEO:
+                return \LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver::class;
             default:
                 // For unknown models, use engine-based driver detection
                 return $this->detectDriverFromEngine();
@@ -620,6 +678,16 @@ class EntityEnum
                 return 'Gemini 1.5 Pro';
             case self::GEMINI_1_5_FLASH:
                 return 'Gemini 1.5 Flash';
+            case self::GEMINI_IMAGEN_4_FAST:
+                return 'Imagen 4 Fast';
+            case self::GEMINI_IMAGEN_4:
+                return 'Imagen 4';
+            case self::GEMINI_VEO_3_1:
+                return 'Veo 3.1';
+            case self::GEMINI_VEO_3_1_FAST:
+                return 'Veo 3.1 Fast';
+            case self::GEMINI_LYRIA_002:
+                return 'Lyria 002';
             case self::SD3_LARGE:
                 return 'Stable Diffusion 3 Large';
             case self::SD3_MEDIUM:
@@ -726,6 +794,28 @@ class EntityEnum
                 return 'Llama 3.1 70B (NVIDIA NIM)';
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return 'Llama 3.1 8B (NVIDIA NIM)';
+            case self::CLOUDFLARE_FLUX_SCHNELL:
+                return 'Cloudflare FLUX Schnell';
+            case self::CLOUDFLARE_DREAMSHAPER:
+                return 'Cloudflare Dreamshaper 8 LCM';
+            case self::CLOUDFLARE_WHISPER:
+                return 'Cloudflare Whisper';
+            case self::CLOUDFLARE_MELOTTS:
+                return 'Cloudflare MeloTTS';
+            case self::HUGGINGFACE_FLUX_SCHNELL:
+                return 'Hugging Face FLUX Schnell';
+            case self::HUGGINGFACE_WHISPER_LARGE_V3:
+                return 'Hugging Face Whisper Large v3';
+            case self::HUGGINGFACE_MMS_TTS:
+                return 'Hugging Face MMS TTS';
+            case self::REPLICATE_FLUX_SCHNELL:
+                return 'Replicate FLUX Schnell';
+            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
+                return 'Replicate WAN Image to Video';
+            case self::COMFYUI_DEFAULT_IMAGE:
+                return 'ComfyUI Default Image';
+            case self::COMFYUI_DEFAULT_VIDEO:
+                return 'ComfyUI Default Video';
             default:
                 // Return model name as label for unknown models
                 return ucwords(str_replace(['-', '_', '/'], ' ', $this->value));
@@ -777,6 +867,16 @@ class EntityEnum
                 return 1.5;
             case self::GEMINI_1_5_FLASH:
                 return 0.4;
+            case self::GEMINI_IMAGEN_4_FAST:
+                return 0.8;
+            case self::GEMINI_IMAGEN_4:
+                return 1.5;
+            case self::GEMINI_VEO_3_1:
+                return 8.0;
+            case self::GEMINI_VEO_3_1_FAST:
+                return 4.0;
+            case self::GEMINI_LYRIA_002:
+                return 1.0;
             case self::SD3_LARGE:
                 return 4.0;
             case self::SD3_MEDIUM:
@@ -927,6 +1027,25 @@ class EntityEnum
                 return 0.8;
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return 0.3;
+            case self::CLOUDFLARE_FLUX_SCHNELL:
+                return 0.4;
+            case self::CLOUDFLARE_DREAMSHAPER:
+                return 0.3;
+            case self::CLOUDFLARE_WHISPER:
+            case self::CLOUDFLARE_MELOTTS:
+                return 0.2;
+            case self::HUGGINGFACE_FLUX_SCHNELL:
+                return 0.6;
+            case self::HUGGINGFACE_WHISPER_LARGE_V3:
+            case self::HUGGINGFACE_MMS_TTS:
+                return 0.4;
+            case self::REPLICATE_FLUX_SCHNELL:
+                return 0.8;
+            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
+                return 4.0;
+            case self::COMFYUI_DEFAULT_IMAGE:
+            case self::COMFYUI_DEFAULT_VIDEO:
+                return 0.01;
             default:
                 // Try to get credit index from config, default to 1.0
                 return $this->getCreditIndexFromConfig();
@@ -996,6 +1115,12 @@ class EntityEnum
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return 'text';
+            case self::CLOUDFLARE_FLUX_SCHNELL:
+            case self::CLOUDFLARE_DREAMSHAPER:
+            case self::HUGGINGFACE_FLUX_SCHNELL:
+            case self::REPLICATE_FLUX_SCHNELL:
+            case self::COMFYUI_DEFAULT_IMAGE:
+                return 'image';
             case self::GPT_IMAGE_1_5:
             case self::GPT_IMAGE_1:
             case self::GPT_IMAGE_1_MINI:
@@ -1009,6 +1134,8 @@ class EntityEnum
             case self::FAL_NANO_BANANA_2:
             case self::FAL_NANO_BANANA_2_EDIT:
             case self::FLUX_PRO:
+            case self::GEMINI_IMAGEN_4_FAST:
+            case self::GEMINI_IMAGEN_4:
                 return 'image';
             case self::FAL_STABLE_VIDEO:
             case self::FAL_ANIMATEDIFF:
@@ -1020,9 +1147,18 @@ class EntityEnum
             case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
+            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
+            case self::COMFYUI_DEFAULT_VIDEO:
+            case self::GEMINI_VEO_3_1:
+            case self::GEMINI_VEO_3_1_FAST:
                 return 'video';
             case self::WHISPER_1:
             case self::ELEVEN_MULTILINGUAL_V2:
+            case self::CLOUDFLARE_WHISPER:
+            case self::CLOUDFLARE_MELOTTS:
+            case self::HUGGINGFACE_WHISPER_LARGE_V3:
+            case self::HUGGINGFACE_MMS_TTS:
+            case self::GEMINI_LYRIA_002:
                 return 'audio';
             case self::UNSPLASH_SEARCH:
             case self::PERPLEXITY_SONAR_LARGE:
@@ -1320,6 +1456,11 @@ class EntityEnum
             self::CLAUDE_3_OPUS,
             self::GEMINI_1_5_PRO,
             self::GEMINI_1_5_FLASH,
+            self::GEMINI_IMAGEN_4_FAST,
+            self::GEMINI_IMAGEN_4,
+            self::GEMINI_VEO_3_1,
+            self::GEMINI_VEO_3_1_FAST,
+            self::GEMINI_LYRIA_002,
             self::SD3_LARGE,
             self::SD3_MEDIUM,
             self::SDXL_1024,
@@ -1372,6 +1513,17 @@ class EntityEnum
             self::NVIDIA_NIM_NEMOTRON_70B,
             self::NVIDIA_NIM_LLAMA_3_1_70B,
             self::NVIDIA_NIM_LLAMA_3_1_8B,
+            self::CLOUDFLARE_FLUX_SCHNELL,
+            self::CLOUDFLARE_DREAMSHAPER,
+            self::CLOUDFLARE_WHISPER,
+            self::CLOUDFLARE_MELOTTS,
+            self::HUGGINGFACE_FLUX_SCHNELL,
+            self::HUGGINGFACE_WHISPER_LARGE_V3,
+            self::HUGGINGFACE_MMS_TTS,
+            self::REPLICATE_FLUX_SCHNELL,
+            self::REPLICATE_WAN_IMAGE_TO_VIDEO,
+            self::COMFYUI_DEFAULT_IMAGE,
+            self::COMFYUI_DEFAULT_VIDEO,
         ];
     }
 

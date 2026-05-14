@@ -120,7 +120,7 @@ class AgentManifestService
             $resolved[$name] = $className;
         }
 
-        foreach ($this->discoverProviderClasses(AgentSkillProvider::class, [app_path('AI/Skills')]) as $name => $className) {
+        foreach ($this->discoverProviderClasses(AgentSkillProvider::class, $this->discoveryPaths('skills', [app_path('AI/Skills')])) as $name => $className) {
             $resolved[$name] ??= $className;
         }
 
@@ -158,7 +158,7 @@ class AgentManifestService
             }
         }
 
-        foreach ($this->discoverProviderClasses(ActionDefinitionProvider::class, [app_path('AI/Actions'), app_path('AI/Skills')]) as $name => $className) {
+        foreach ($this->discoverProviderClasses(ActionDefinitionProvider::class, $this->discoveryPaths('action_providers', [app_path('AI/Actions'), app_path('AI/Skills')])) as $name => $className) {
             $resolved[$name] ??= $className;
         }
 
@@ -288,7 +288,7 @@ class AgentManifestService
         }
 
         $resolved = [];
-        foreach ($this->classesInDirectories([app_path('AI/Tools')]) as $className) {
+        foreach ($this->classesInDirectories($this->discoveryPaths('tools', [app_path('AI/Tools')])) as $className) {
             if (!is_subclass_of($className, AgentTool::class)) {
                 continue;
             }
@@ -350,6 +350,14 @@ class AgentManifestService
                 }
 
                 $className = $this->classNameFromFile($file->getPathname());
+                if ($className !== null && !class_exists($className)) {
+                    try {
+                        require_once $file->getPathname();
+                    } catch (Throwable) {
+                        continue;
+                    }
+                }
+
                 if ($className !== null && class_exists($className)) {
                     $classes[] = $className;
                 }
@@ -376,5 +384,22 @@ class AgentManifestService
         }
 
         return $namespace !== '' ? $namespace . '\\' . $matches[1] : $matches[1];
+    }
+
+    /**
+     * @param array<int, string> $defaults
+     * @return array<int, string>
+     */
+    protected function discoveryPaths(string $key, array $defaults): array
+    {
+        $paths = config("ai-agent.discovery.{$key}.paths", $defaults);
+        if (!is_array($paths)) {
+            return $defaults;
+        }
+
+        return array_values(array_filter(array_map(
+            static fn (mixed $path): string => trim((string) $path),
+            $paths
+        ))) ?: $defaults;
     }
 }

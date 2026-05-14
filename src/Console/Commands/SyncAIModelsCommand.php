@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\AIModelRegistry;
 class SyncAIModelsCommand extends Command
 {
     protected $signature = 'ai-engine:sync-models
-                            {--provider= : Sync specific provider (openai, anthropic, google, gemini, deepseek, openrouter, fal_ai, fal, all)}
+                            {--provider= : Sync specific provider (openai, anthropic, google, gemini, deepseek, openrouter, fal_ai, fal, media, cloudflare_workers_ai, huggingface, replicate, comfyui, all)}
                             {--auto-discover : Auto-discover new models from APIs}';
 
     protected $description = 'Sync AI models from providers and auto-discover new models';
@@ -42,6 +42,10 @@ class SyncAIModelsCommand extends Command
 
         if ($provider === 'all' || $provider === 'fal_ai' || $provider === 'fal') {
             $this->syncFal($registry);
+        }
+
+        if (in_array($provider, ['all', 'media', 'cloudflare_workers_ai', 'huggingface', 'replicate', 'comfyui'], true)) {
+            $this->syncMediaProviders($registry, $provider === 'media' || $provider === 'all' ? null : $provider);
         }
 
         $this->newLine();
@@ -168,6 +172,19 @@ class SyncAIModelsCommand extends Command
 
         if (($result['truncated'] ?? false) === true) {
             $this->warn('⚠️  FAL sync stopped at the configured page limit.');
+        }
+    }
+
+    protected function syncMediaProviders(AIModelRegistry $registry, ?string $provider = null): void
+    {
+        $this->line('📡 Syncing low-cost media provider models...');
+
+        $result = $registry->syncMediaProviderModels($provider);
+
+        $this->info("✅ Synced {$result['total']} low-cost media models");
+
+        if (($result['new'] ?? 0) > 0) {
+            $this->warn("🆕 Registered {$result['new']} new media models");
         }
     }
 

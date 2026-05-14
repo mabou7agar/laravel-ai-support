@@ -467,6 +467,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Convention-Based Agent Discovery
+    |--------------------------------------------------------------------------
+    |
+    | These paths are scanned when manifest fallback discovery is enabled.
+    | This lets applications create app/AI/Skills/*Skill.php and
+    | app/AI/Tools/*Tool.php classes without long config setup.
+    |
+    */
+    'discovery' => [
+        'skills' => [
+            'paths' => [
+                app_path('AI/Skills'),
+            ],
+        ],
+        'tools' => [
+            'paths' => [
+                app_path('AI/Tools'),
+            ],
+        ],
+        'action_providers' => [
+            'paths' => [
+                app_path('AI/Actions'),
+                app_path('AI/Skills'),
+            ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Debug Mode
     |--------------------------------------------------------------------------
     |

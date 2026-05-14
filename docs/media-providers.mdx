@@ -1,0 +1,87 @@
+# Media Providers
+
+Laravel AI Engine supports hosted and local media generation providers for image, video, audio generation, and transcription.
+
+## Providers
+
+| Provider | Engine | Best for | Key env |
+| --- | --- | --- | --- |
+| Cloudflare Workers AI | `cloudflare_workers_ai` | low-cost image, TTS, transcription | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
+| Hugging Face Inference Providers | `huggingface` | provider marketplace for image/audio models | `HUGGINGFACE_API_KEY` or `HF_TOKEN` |
+| Replicate | `replicate` | public image/video/audio model catalog | `REPLICATE_API_TOKEN` |
+| ComfyUI | `comfyui` | local/self-hosted image and video workflows | `COMFYUI_BASE_URL` |
+| Gemini media | `gemini` | Imagen, Veo, and Lyria models | `GEMINI_API_KEY` |
+| FAL | `fal_ai` | async video and catalog execution | `FAL_AI_API_KEY` |
+
+## Sync Models
+
+Register the low-cost media providers into the `ai_models` table:
+
+```bash
+php artisan ai-engine:sync-models --provider=media
+```
+
+You can sync one provider:
+
+```bash
+php artisan ai-engine:sync-models --provider=cloudflare_workers_ai
+php artisan ai-engine:sync-models --provider=huggingface
+php artisan ai-engine:sync-models --provider=replicate
+php artisan ai-engine:sync-models --provider=comfyui
+```
+
+## Cost-Aware Routing
+
+Use `LaravelAIEngine\Services\Media\MediaProviderRouter` to choose a provider by capability:
+
+```php
+$selection = app(\LaravelAIEngine\Services\Media\MediaProviderRouter::class)
+    ->select('image', 'cheapest');
+
+// ['provider' => 'cloudflare_workers_ai', 'model' => '@cf/black-forest-labs/flux-1-schnell', ...]
+```
+
+Supported routing modes:
+
+| Mode | Behavior |
+| --- | --- |
+| `cheapest` | Lowest configured estimated unit cost |
+| `local` / `free` | Prefers local/free models such as ComfyUI |
+| `fast` | Prefers lower configured latency score |
+| `quality` | Prefers higher configured quality score |
+| `balanced` | Cost divided by quality score |
+
+Configure estimates in `ai-engine.media_routing.providers`. These are app-side estimates for routing and credit policy; provider invoices remain the source of truth.
+
+## ComfyUI Workflows
+
+ComfyUI needs a workflow graph. Configure a default workflow:
+
+```php
+'engines' => [
+    'comfyui' => [
+        'base_url' => env('COMFYUI_BASE_URL', 'http://127.0.0.1:8188'),
+        'default_workflow' => [
+            // ComfyUI workflow JSON. Use {{prompt}} where the user prompt should be inserted.
+        ],
+    ],
+],
+```
+
+You can also pass a workflow per request:
+
+```php
+new \LaravelAIEngine\DTOs\AIRequest(
+    prompt: 'product photo on white background',
+    engine: 'comfyui',
+    model: 'comfyui/default-image',
+    parameters: ['workflow' => $workflow]
+);
+```
+
+## Notes
+
+- Cloudflare image/audio endpoints use the Workers AI REST model runner.
+- Hugging Face is intentionally generic; pass `provider` or provider-specific parameters when needed.
+- Replicate supports model endpoints and versioned predictions.
+- Video generation should usually be queued or async in application code because provider jobs can run longer than HTTP request timeouts.

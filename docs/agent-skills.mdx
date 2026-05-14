@@ -12,31 +12,51 @@ A tool is an atomic callable operation. A skill is a user-facing ability that de
 ## Structure
 
 ```php
-use LaravelAIEngine\DTOs\AgentSkillDefinition;
+namespace App\AI\Skills;
 
-new AgentSkillDefinition(
-    id: 'create_invoice',
-    name: 'Create Invoice',
-    description: 'Create invoices through approved services and actions.',
-    triggers: ['create invoice', 'new invoice'],
-    requiredData: ['customer_id', 'items'],
-    tools: ['find_customer', 'calculate_totals'],
-    actions: ['invoices.create'],
-    capabilities: ['invoice', 'create'],
-    requiresConfirmation: true,
-    enabled: true,
-);
+use App\AI\Tools\CreateInvoiceTool;
+use App\AI\Tools\FindCustomerTool;
+use LaravelAIEngine\Services\Agent\Skills\AgentSkill;
+
+class CreateInvoiceSkill extends AgentSkill
+{
+    public string $id = 'create_invoice';
+
+    public string $name = 'Create Invoice';
+
+    public string $description = 'Create invoices through approved tools.';
+
+    public array $triggers = ['create invoice', 'new invoice'];
+
+    public array $tools = [
+        FindCustomerTool::class,
+        CreateInvoiceTool::class,
+    ];
+
+    public string $finalTool = CreateInvoiceTool::class;
+
+    public function targetJson(): array
+    {
+        return [
+            'customer_id' => null,
+            'items' => [],
+        ];
+    }
+}
 ```
 
 Keep business writes in host application services and repositories. A skill should reference actions and tools that validate, authorize, confirm, and execute the write.
 
+Class-based skills are auto-discovered from `app/AI/Skills` when manifest fallback discovery is enabled. Class-string tools are normalized to their `getName()` values, so the skill stays refactor-friendly while the runtime still works with stable tool names.
+
 ## Scaffold a skill
 
 ```bash
+php artisan ai-engine:make-skill CreateInvoice
 php artisan ai-engine:scaffold skill CreateInvoice
 ```
 
-This creates an `App\AI\Skills\CreateInvoiceSkill` provider and registers it in the agent manifest under `skill_providers`.
+This creates an `App\AI\Skills\CreateInvoiceSkill` class extending `AgentSkill` and registers it in the agent manifest under `skill_providers`.
 
 Generated skills are disabled by default and marked as review-required.
 
@@ -76,7 +96,7 @@ Recommended development loop:
 ```bash
 php artisan ai-engine:init
 php artisan ai-engine:make-tool LookupCustomer
-php artisan ai-engine:scaffold skill CreateInvoice
+php artisan ai-engine:make-skill CreateInvoice
 php artisan ai-engine:skills:discover --write
 php artisan ai-engine:manifest:doctor --json
 php artisan ai-engine:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video --parameters='{"image_url":"https://example.test/product.png"}'
@@ -111,6 +131,8 @@ return [
     ],
 ];
 ```
+
+The manifest is optional during local development if fallback discovery is enabled. For production, keep the manifest checked in when you want deterministic registration without scanning.
 
 ## Routing
 

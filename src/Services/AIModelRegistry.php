@@ -819,8 +819,86 @@ class AIModelRegistry
         $results['deepseek'] = $this->syncDeepSeekModels();
         $results['openrouter'] = $this->syncOpenRouterModels();
         $results['fal_ai'] = $this->syncFalModels();
+        $results['media'] = $this->syncMediaProviderModels();
 
         return $results;
+    }
+
+    public function syncMediaProviderModels(?string $onlyProvider = null): array
+    {
+        $providers = array_filter(
+            (array) config('ai-engine.engines', []),
+            function (array $engineConfig, string $provider) use ($onlyProvider): bool {
+                if ($onlyProvider !== null && $provider !== $onlyProvider) {
+                    return false;
+                }
+
+                return in_array($provider, [
+                    'cloudflare_workers_ai',
+                    'huggingface',
+                    'replicate',
+                    'comfyui',
+                ], true);
+            },
+            ARRAY_FILTER_USE_BOTH
+        );
+
+        $synced = [];
+        $new = [];
+        $updated = [];
+
+        foreach ($providers as $provider => $engineConfig) {
+            foreach ((array) ($engineConfig['models'] ?? []) as $modelId => $modelConfig) {
+                if (($modelConfig['enabled'] ?? true) === false) {
+                    continue;
+                }
+
+                $contentType = (string) ($modelConfig['content_type'] ?? $this->inferMediaContentType((string) $modelId));
+                $capabilities = $this->capabilitiesForMediaType($contentType, (string) $modelId);
+                $attributes = [
+                    'provider' => (string) $provider,
+                    'model_id' => (string) $modelId,
+                    'name' => $this->formatMediaModelName((string) $modelId),
+                    'description' => 'Configured low-cost media provider model',
+                    'capabilities' => $capabilities,
+                    'context_window' => null,
+                    'pricing' => $this->estimatedPricingForMediaModel((string) $provider, (string) $modelId, $contentType),
+                    'max_tokens' => null,
+                    'supports_streaming' => false,
+                    'supports_vision' => in_array($contentType, ['image', 'video'], true),
+                    'supports_function_calling' => false,
+                    'supports_json_mode' => false,
+                    'is_active' => true,
+                    'is_deprecated' => false,
+                    'released_at' => now(),
+                    'metadata' => array_merge($modelConfig, [
+                        'content_type' => $contentType,
+                        'source' => 'config',
+                    ]),
+                ];
+
+                $existing = AIModel::where('model_id', $modelId)->first();
+                if ($existing) {
+                    $existing->fill($attributes);
+                    $existing->save();
+                    $updated[] = (string) $modelId;
+                } else {
+                    AIModel::create($attributes);
+                    $new[] = (string) $modelId;
+                }
+
+                $synced[] = (string) $modelId;
+            }
+        }
+
+        return [
+            'success' => true,
+            'total' => count(array_unique($synced)),
+            'new' => count(array_unique($new)),
+            'updated' => count(array_unique($updated)),
+            'new_models' => array_values(array_unique($new)),
+            'updated_models' => array_values(array_unique($updated)),
+        ];
     }
 
     protected function falPlatformHeaders(): array
@@ -837,6 +915,72 @@ class AIModelRegistry
         }
 
         return $headers;
+    }
+
+    protected function inferMediaContentType(string $modelId): string
+    {
+        $model = strtolower($modelId);
+
+        if (str_contains($model, 'video') || str_contains($model, 'veo') || str_contains($model, 'wan')) {
+            return 'video';
+        }
+
+        if (str_contains($model, 'whisper')
+            || str_contains($model, 'tts')
+            || str_contains($model, 'audio')
+            || str_contains($model, 'lyria')
+            || str_contains($model, 'melotts')) {
+            return 'audio';
+        }
+
+        return 'image';
+    }
+
+    protected function capabilitiesForMediaType(string $contentType, string $modelId): array
+    {
+        $model = strtolower($modelId);
+
+        return match ($contentType) {
+            'video' => array_values(array_unique(array_filter([
+                'inference',
+                'video_generation',
+                str_contains($model, 'image-to-video') || str_contains($model, 'i2v') ? 'image_to_video' : 'text_to_video',
+                str_contains($model, 'image') || str_contains($model, 'i2v') ? 'vision' : null,
+            ]))),
+            'audio' => array_values(array_unique(array_filter([
+                'inference',
+                str_contains($model, 'whisper') ? 'transcription' : 'audio_generation',
+                str_contains($model, 'whisper') ? 'speech_to_text' : 'text_to_speech',
+                str_contains($model, 'tts') || str_contains($model, 'melotts') ? 'tts' : null,
+            ]))),
+            default => ['inference', 'image_generation', 'text_to_image'],
+        };
+    }
+
+    protected function estimatedPricingForMediaModel(string $provider, string $modelId, string $contentType): array
+    {
+        $routes = (array) config("ai-engine.media_routing.providers.{$provider}.models", []);
+        foreach ($routes as $routeContentType => $route) {
+            if (($route['model'] ?? null) === $modelId) {
+                return [
+                    'unit' => $routeContentType,
+                    'estimated_unit_cost' => (float) ($route['estimated_unit_cost'] ?? 0),
+                ];
+            }
+        }
+
+        return [
+            'unit' => $contentType,
+            'estimated_unit_cost' => null,
+        ];
+    }
+
+    protected function formatMediaModelName(string $modelId): string
+    {
+        $name = preg_replace('#^@cf/#', 'Cloudflare ', $modelId);
+        $name = str_replace(['/', '-', '_', '.'], ' ', (string) $name);
+
+        return trim(ucwords($name)) ?: $modelId;
     }
 
     /**

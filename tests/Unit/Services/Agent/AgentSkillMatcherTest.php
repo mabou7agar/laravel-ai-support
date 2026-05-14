@@ -259,4 +259,41 @@ class AgentSkillMatcherTest extends UnitTestCase
 
         $this->assertNull($match);
     }
+
+    public function test_ai_intent_match_accepts_fractional_confidence_scale(): void
+    {
+        config()->set('ai-agent.skills.intent_matching.min_confidence', 80);
+
+        $registry = Mockery::mock(AgentSkillRegistry::class);
+        $skill = new AgentSkillDefinition(
+            id: 'create_invoice',
+            name: 'Create Invoice',
+            description: 'Create invoices.',
+            triggers: ['create invoice'],
+            tools: ['run_skill']
+        );
+
+        $registry->shouldReceive('skills')
+            ->twice()
+            ->with([], false)
+            ->andReturn([$skill]);
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                'skill_id' => 'create_invoice',
+                'confidence' => 1,
+                'reason' => 'Certain match on requested workflow.',
+            ]), 'openai', 'gpt-4o-mini'));
+
+        $match = (new AgentSkillMatcher($registry, $ai))->matchIntent(
+            'create an invoice from this conversation',
+            new UnifiedActionContext('skill-intent-fractional-confidence')
+        );
+
+        $this->assertNotNull($match);
+        $this->assertSame('create_invoice', $match['skill']->id);
+        $this->assertSame(99, $match['score']);
+    }
 }

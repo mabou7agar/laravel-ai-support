@@ -104,6 +104,30 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertSame('App\\AI\\Tools\\LookupCustomerTool', $manifest['tools']['lookup_customer'] ?? null);
     }
 
+    public function test_make_skill_generates_class_based_skill(): void
+    {
+        $exitCode = Artisan::call('ai-engine:make-skill', [
+            'name' => 'CreateInvoice',
+            '--description' => 'Create invoices through approved tools.',
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertFileExists(app_path('AI/Skills/CreateInvoiceSkill.php'));
+
+        $manifest = require $this->manifestPath;
+
+        $this->assertSame(
+            'App\\AI\\Skills\\CreateInvoiceSkill',
+            $manifest['skill_providers']['create_invoice'] ?? null
+        );
+
+        $skillFile = file_get_contents(app_path('AI/Skills/CreateInvoiceSkill.php')) ?: '';
+        $this->assertStringContainsString('extends AgentSkill', $skillFile);
+        $this->assertStringContainsString("public string \$id = 'create_invoice';", $skillFile);
+        $this->assertStringContainsString('public function targetJson(): array', $skillFile);
+        $this->assertStringNotContainsString('implements AgentSkillProvider', $skillFile);
+    }
+
     public function test_scaffold_skill_registers_manifest_provider(): void
     {
         $exitCode = Artisan::call('ai-engine:scaffold', [
@@ -123,9 +147,9 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         );
 
         $skillFile = file_get_contents(app_path('AI/Skills/CreateInvoiceSkill.php')) ?: '';
-        $this->assertStringContainsString('implements AgentSkillProvider', $skillFile);
-        $this->assertStringContainsString("id: 'create_invoice'", $skillFile);
-        $this->assertStringContainsString('enabled: false', $skillFile);
+        $this->assertStringContainsString('extends AgentSkill', $skillFile);
+        $this->assertStringContainsString("public string \$id = 'create_invoice';", $skillFile);
+        $this->assertStringContainsString('public bool $enabled = false;', $skillFile);
     }
 
     public function test_scaffold_runtime_graph_extension_types_register_manifest_entries(): void
@@ -267,6 +291,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertContains('create_invoice', $payload['inventory']['skills']);
         $this->assertContains('run_skill', $payload['inventory']['tools']);
         $this->assertContains('ai-engine:make-tool', $payload['developer_commands']['scaffold']);
+        $this->assertContains('ai-engine:make-skill', $payload['developer_commands']['scaffold']);
         $this->assertContains('ai-engine:pricing-simulate', $payload['developer_commands']['pricing']);
     }
 

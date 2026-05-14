@@ -94,4 +94,38 @@ class SyncAIModelsCommandTest extends TestCase
         $this->assertContains('image_to_video', $videoModel->capabilities);
         $this->assertTrue($videoModel->supports_vision);
     }
+
+    public function test_sync_models_command_registers_low_cost_media_provider_models(): void
+    {
+        $this->artisan('ai-engine:sync-models', ['--provider' => 'media'])
+            ->expectsOutput('🔄 Syncing AI Models...')
+            ->expectsOutput('📡 Syncing low-cost media provider models...')
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('ai_models', [
+            'provider' => 'cloudflare_workers_ai',
+            'model_id' => '@cf/black-forest-labs/flux-1-schnell',
+        ]);
+
+        $this->assertDatabaseHas('ai_models', [
+            'provider' => 'huggingface',
+            'model_id' => 'black-forest-labs/FLUX.1-schnell',
+        ]);
+
+        $this->assertDatabaseHas('ai_models', [
+            'provider' => 'replicate',
+            'model_id' => 'black-forest-labs/flux-schnell',
+        ]);
+
+        $this->assertDatabaseHas('ai_models', [
+            'provider' => 'comfyui',
+            'model_id' => 'comfyui/default-image',
+        ]);
+
+        $model = AIModel::findByModelId('@cf/black-forest-labs/flux-1-schnell');
+
+        $this->assertNotNull($model);
+        $this->assertContains('image_generation', $model->capabilities);
+        $this->assertSame('image', $model->metadata['content_type'] ?? null);
+    }
 }

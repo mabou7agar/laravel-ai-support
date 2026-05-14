@@ -61,6 +61,10 @@ class DynamicModelResolver
             'deepseek' => EngineEnum::DEEPSEEK,
             'perplexity' => EngineEnum::PERPLEXITY,
             'openrouter' => EngineEnum::OPENROUTER,
+            'cloudflare_workers_ai', 'cloudflare' => EngineEnum::CLOUDFLARE_WORKERS_AI,
+            'huggingface', 'hugging_face' => EngineEnum::HUGGINGFACE,
+            'replicate' => EngineEnum::REPLICATE,
+            'comfyui', 'comfy' => EngineEnum::COMFYUI,
             default => EngineEnum::OPENAI,
         };
     }
@@ -75,6 +79,10 @@ class DynamicModelResolver
             'openai' => $this->getOpenAIDriver($modelId),
             'anthropic' => $this->getAnthropicDriver($modelId),
             'google', 'gemini' => $this->getGeminiDriver($modelId),
+            'cloudflare_workers_ai', 'cloudflare' => \LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver::class,
+            'huggingface', 'hugging_face' => \LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver::class,
+            'replicate' => \LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver::class,
+            'comfyui', 'comfy' => \LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver::class,
             default => \LaravelAIEngine\Drivers\OpenAI\GPT4ODriver::class,
         };
     }

@@ -283,6 +283,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\ScaffoldAgentArtifactCommand::class,
                 Console\Commands\MakeAgentCommand::class,
                 Console\Commands\MakeToolCommand::class,
+                Console\Commands\MakeSkillCommand::class,
                 Console\Commands\DiscoverAgentSkillsCommand::class,
                 Console\Commands\TestAgentSkillCommand::class,
                 Console\Commands\AgentManifestDoctorCommand::class,

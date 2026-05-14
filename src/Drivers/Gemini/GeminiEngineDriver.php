@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Drivers\Gemini;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use LaravelAIEngine\Drivers\BaseEngineDriver;
+use LaravelAIEngine\Drivers\Concerns\BuildsMediaResponses;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -15,13 +16,15 @@ use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 
 class GeminiEngineDriver extends BaseEngineDriver
 {
+    use BuildsMediaResponses;
+
     private Client $httpClient;
 
-    public function __construct(array $config)
+    public function __construct(array $config, ?Client $httpClient = null)
     {
         parent::__construct($config);
         
-        $this->httpClient = new Client([
+        $this->httpClient = $httpClient ?? new Client([
             'timeout' => $this->getTimeout(),
             'base_uri' => $this->getBaseUrl(),
         ]);
@@ -37,6 +40,8 @@ class GeminiEngineDriver extends BaseEngineDriver
         return match ($contentType) {
             'text' => $this->generateText($request),
             'image' => $this->generateImage($request),
+            'video' => $this->generateVideo($request),
+            'audio' => $this->generateAudio($request),
             default => throw new \InvalidArgumentException("Unsupported content type: {$contentType}")
         };
     }
@@ -70,7 +75,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::GEMINI;
+        return new EngineEnum(EngineEnum::GEMINI);
     }
 
     /**
@@ -196,16 +201,104 @@ class GeminiEngineDriver extends BaseEngineDriver
         }
     }
 
-    /**
-     * Generate images (not supported by Gemini directly)
-     */
     public function generateImage(AIRequest $request): AIResponse
     {
-        return AIResponse::error(
-            'Image generation not directly supported by Gemini',
-            $request->getEngine(),
-            $request->getModel()
-        );
+        try {
+            $parameters = $request->getParameters();
+            $payload = [
+                'instances' => [
+                    ['prompt' => $request->getPrompt()],
+                ],
+                'parameters' => array_filter([
+                    'sampleCount' => $parameters['sample_count'] ?? $parameters['n'] ?? 1,
+                    'aspectRatio' => $parameters['aspect_ratio'] ?? null,
+                    'negativePrompt' => $parameters['negative_prompt'] ?? null,
+                ], static fn ($value): bool => $value !== null),
+            ];
+
+            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:predict", [
+                'json' => $payload,
+                'query' => ['key' => $this->getApiKey()],
+            ]);
+
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
+            $files = [];
+            foreach ((array) ($data['predictions'] ?? []) as $prediction) {
+                $base64 = $prediction['bytesBase64Encoded']
+                    ?? $prediction['image']['bytesBase64Encoded']
+                    ?? $prediction['imageBytes']
+                    ?? null;
+
+                if (is_string($base64) && $base64 !== '') {
+                    $files[] = $this->storeMediaBytes(base64_decode($base64, true) ?: $base64, $request, 'png');
+                }
+            }
+
+            return AIResponse::success('', $request->getEngine(), $request->getModel(), [
+                'provider' => 'gemini',
+                'model' => $request->getModel()->value,
+                'raw' => $data,
+            ])->withFiles($files)->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
+        } catch (\Exception $e) {
+            return $this->handleApiError($e, $request, 'image generation');
+        }
+    }
+
+    public function generateVideo(AIRequest $request): AIResponse
+    {
+        try {
+            $payload = [
+                'instances' => [
+                    array_filter([
+                        'prompt' => $request->getPrompt(),
+                        'image' => $request->getParameters()['image'] ?? $request->getParameters()['image_url'] ?? null,
+                    ], static fn ($value): bool => $value !== null && $value !== ''),
+                ],
+                'parameters' => array_diff_key($request->getParameters(), ['image' => true, 'image_url' => true]),
+            ];
+
+            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:predictLongRunning", [
+                'json' => $payload,
+                'query' => ['key' => $this->getApiKey()],
+            ]);
+
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
+            $files = $this->normalizeOutputFiles($data['response']['videos'] ?? $data['predictions'] ?? $data);
+
+            return AIResponse::success('', $request->getEngine(), $request->getModel(), [
+                'provider' => 'gemini',
+                'model' => $request->getModel()->value,
+                'operation' => $data['name'] ?? null,
+                'status' => isset($data['name']) && $files === [] ? 'submitted' : 'succeeded',
+                'raw' => $data,
+            ])->withFiles($files)->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
+        } catch (\Exception $e) {
+            return $this->handleApiError($e, $request, 'video generation');
+        }
+    }
+
+    public function generateAudio(AIRequest $request): AIResponse
+    {
+        try {
+            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:predict", [
+                'json' => [
+                    'instances' => [['prompt' => $request->getPrompt()]],
+                    'parameters' => $request->getParameters(),
+                ],
+                'query' => ['key' => $this->getApiKey()],
+            ]);
+
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
+            $files = $this->normalizeOutputFiles($data['predictions'] ?? $data);
+
+            return AIResponse::success('', $request->getEngine(), $request->getModel(), [
+                'provider' => 'gemini',
+                'model' => $request->getModel()->value,
+                'raw' => $data,
+            ])->withFiles($files)->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
+        } catch (\Exception $e) {
+            return $this->handleApiError($e, $request, 'audio generation');
+        }
     }
 
     /**
@@ -277,7 +370,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     protected function getSupportedCapabilities(): array
     {
-        return ['text', 'chat', 'vision', 'embeddings', 'streaming'];
+        return ['text', 'chat', 'vision', 'embeddings', 'streaming', 'image', 'images', 'video', 'audio'];
     }
 
     /**
@@ -293,7 +386,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::GEMINI_1_5_FLASH;
+        return new EntityEnum(EntityEnum::GEMINI_1_5_FLASH);
     }
 
     /**

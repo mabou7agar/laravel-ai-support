@@ -28,10 +28,10 @@ class SendWebhookNotificationJob implements ShouldQueue
 
     public function handle(): void
     {
-        $client = new Client([
+        $client = app()->makeWith(Client::class, ['config' => [
             'timeout' => $this->timeout,
             'connect_timeout' => 10,
-        ]);
+        ]]);
 
         $defaultHeaders = [
             'Content-Type' => 'application/json',

@@ -13,6 +13,10 @@ use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
 use LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
+use LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver;
+use LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver;
+use LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver;
+use LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver;
 
 /**
  * Engine enumeration class (PHP 8.0 compatible)
@@ -38,6 +42,10 @@ class EngineEnum
     public const OPENROUTER = 'openrouter';
     public const OLLAMA = 'ollama';
     public const NVIDIA_NIM = 'nvidia_nim';
+    public const CLOUDFLARE_WORKERS_AI = 'cloudflare_workers_ai';
+    public const HUGGINGFACE = 'huggingface';
+    public const REPLICATE = 'replicate';
+    public const COMFYUI = 'comfyui';
 
     public string $value;
 
@@ -79,6 +87,14 @@ class EngineEnum
                 return OllamaEngineDriver::class;
             case self::NVIDIA_NIM:
                 return NvidiaNimEngineDriver::class;
+            case self::CLOUDFLARE_WORKERS_AI:
+                return CloudflareWorkersAIEngineDriver::class;
+            case self::HUGGINGFACE:
+                return HuggingFaceEngineDriver::class;
+            case self::REPLICATE:
+                return ReplicateEngineDriver::class;
+            case self::COMFYUI:
+                return ComfyUIEngineDriver::class;
             default:
                 throw new \InvalidArgumentException("Unknown engine: {$this->value}");
         }
@@ -126,6 +142,14 @@ class EngineEnum
                 return 'Ollama (Local)';
             case self::NVIDIA_NIM:
                 return 'NVIDIA NIM';
+            case self::CLOUDFLARE_WORKERS_AI:
+                return 'Cloudflare Workers AI';
+            case self::HUGGINGFACE:
+                return 'Hugging Face';
+            case self::REPLICATE:
+                return 'Replicate';
+            case self::COMFYUI:
+                return 'ComfyUI';
             default:
                 return ucfirst(str_replace('_', ' ', $this->value));
         }
@@ -181,6 +205,14 @@ class EngineEnum
                 return ['text', 'chat', 'embeddings'];
             case self::NVIDIA_NIM:
                 return ['text', 'chat', 'streaming'];
+            case self::CLOUDFLARE_WORKERS_AI:
+                return ['images', 'audio', 'speech_to_text', 'text_to_speech'];
+            case self::HUGGINGFACE:
+                return ['images', 'video', 'audio', 'speech_to_text', 'text_to_speech'];
+            case self::REPLICATE:
+                return ['images', 'video', 'audio'];
+            case self::COMFYUI:
+                return ['images', 'video', 'audio'];
             default:
                 return [];
         }
@@ -322,6 +354,10 @@ class EngineEnum
             self::OPENROUTER,
             self::OLLAMA,
             self::NVIDIA_NIM,
+            self::CLOUDFLARE_WORKERS_AI,
+            self::HUGGINGFACE,
+            self::REPLICATE,
+            self::COMFYUI,
         ];
     }
 
