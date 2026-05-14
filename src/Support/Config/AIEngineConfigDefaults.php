@@ -787,8 +787,8 @@ class AIEngineConfigDefaults
         'engine_rates' => [
             'openai' => env('AI_OPENAI_RATE', 2.0),      // 2:1 ratio
             'anthropic' => env('AI_ANTHROPIC_RATE', 3.0), // 3:1 ratio
-            'gemini' => env('AI_GEMINI_RATE', 1.0),       // 1:1 ratio
-            'fal_ai' => env('AI_FAL_AI_RATE', 1.0),        // 1:1 ratio
+            'gemini' => env('AI_GEMINI_RATE', 1.2),       // 20% margin
+            'fal_ai' => env('AI_FAL_AI_RATE', 1.3),        // 30% margin
             'openrouter' => env('AI_OPENROUTER_RATE', 2.5), // 2.5:1 ratio
             'nvidia_nim' => env('AI_NVIDIA_NIM_RATE', 1.5), // 1.5:1 ratio
         ],

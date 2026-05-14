@@ -16,6 +16,17 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
         $this->assertSame(true, config('ai-engine.provider_tools.approvals.enabled'));
     }
 
+    public function test_defaults_include_provider_margin_rates_for_fal_and_gemini(): void
+    {
+        $defaults = AIEngineConfigDefaults::defaults();
+
+        $this->assertSame(1.2, $defaults['credits']['engine_rates']['gemini'] ?? null);
+        $this->assertSame(1.3, $defaults['credits']['engine_rates']['fal_ai'] ?? null);
+        $this->assertSame(0.25, $defaults['credits']['additional_input_unit_rates']['fal_ai']['default']['image'] ?? null);
+        $this->assertSame(0.5, $defaults['credits']['additional_input_unit_rates']['fal_ai']['models']['fal-ai/kling-video/o3/standard/image-to-video']['image'] ?? null);
+        $this->assertSame(0.75, $defaults['credits']['additional_input_unit_rates']['fal_ai']['models']['bytedance/seedance-2.0/reference-to-video']['image'] ?? null);
+    }
+
     public function test_defaults_class_returns_full_config_tree(): void
     {
         $defaults = AIEngineConfigDefaults::defaults();

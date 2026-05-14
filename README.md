@@ -493,7 +493,7 @@ For consistent TTS per saved character, store `voice_id` and optional ElevenLabs
 
 Authenticated calls are credit-enforced (same policy as chat/RAG), including image/audio endpoints.
 
-FAL output units are charged through the model `credit_index` and engine rate. Input/reference media is charged with fixed extra credits per input unit, not a percentage of the output cost. The package ships conservative defaults and lets apps override them per model:
+FAL output units are charged through the model `credit_index` and engine rate. The default FAL engine rate is `1.3`, so FAL usage includes a 30% margin before app-specific plan pricing. Input/reference media is charged with fixed extra credits per input unit, not a percentage of the output cost. The package ships conservative defaults and lets apps override them per model:
 
 ```php
 'additional_input_unit_rates' => [
@@ -513,6 +513,8 @@ FAL output units are charged through the model `credit_index` and engine rate. I
     ],
 ],
 ```
+
+Gemini defaults to `AI_GEMINI_RATE=1.2`, giving Gemini usage a 20% margin by default. Override `AI_FAL_AI_RATE` or `AI_GEMINI_RATE` in the host app when your subscription tiers need different margins.
 
 When direct requests omit `engine`, the package can resolve the provider from the requested model and configured availability. By default it prefers the model's native provider first, then OpenRouter-compatible fallbacks. Tune this with `AI_ENGINE_REQUEST_PROVIDER_PRIORITY`.
 
