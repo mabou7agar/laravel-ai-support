@@ -152,20 +152,20 @@ class ActionDraftServiceTest extends TestCase
 
         $appended = $service->patchAndPrepare($context, 'create_record', [
             'items' => [
-                ['product_name' => 'iPhone 13 Pro Max', 'quantity' => 1],
+                ['product_name' => 'Sample Phone 13 Pro Max', 'quantity' => 1],
             ],
             '_array_ops' => [
                 [
                     'op' => 'append',
                     'path' => 'items',
-                    'value' => ['product_name' => 'iPhone 13 Pro Max', 'quantity' => 1],
+                    'value' => ['product_name' => 'Sample Phone 13 Pro Max', 'quantity' => 1],
                 ],
             ],
         ]);
 
         $this->assertSame([
             ['product_name' => 'MacBook Pro', 'quantity' => 2],
-            ['product_name' => 'iPhone 13 Pro Max', 'quantity' => 1],
+            ['product_name' => 'Sample Phone 13 Pro Max', 'quantity' => 1],
         ], $appended['current_payload']['items']);
 
         $updated = $service->patchAndPrepare($context, 'create_record', [
@@ -180,7 +180,7 @@ class ActionDraftServiceTest extends TestCase
         ]);
 
         $this->assertSame(400, $updated['current_payload']['items'][0]['unit_price']);
-        $this->assertSame('iPhone 13 Pro Max', $updated['current_payload']['items'][1]['product_name']);
+        $this->assertSame('Sample Phone 13 Pro Max', $updated['current_payload']['items'][1]['product_name']);
 
         $removed = $service->patchAndPrepare($context, 'create_record', [
             '_array_ops' => [
@@ -193,7 +193,7 @@ class ActionDraftServiceTest extends TestCase
         ]);
 
         $this->assertSame([
-            ['product_name' => 'iPhone 13 Pro Max', 'quantity' => 1],
+            ['product_name' => 'Sample Phone 13 Pro Max', 'quantity' => 1],
         ], $removed['current_payload']['items']);
     }
 
@@ -231,7 +231,7 @@ class ActionDraftServiceTest extends TestCase
 
         $service->patchAndPrepare($context, 'create_record', [
             'items' => [
-                ['product_name' => 'iPhone', 'quantity' => 3],
+                ['product_name' => 'Sample Phone', 'quantity' => 3],
             ],
         ]);
 
@@ -239,7 +239,7 @@ class ActionDraftServiceTest extends TestCase
             '_array_ops' => [[
                 'op' => 'decrement',
                 'path' => 'items',
-                'match' => ['product_name' => 'iPhone'],
+                'match' => ['product_name' => 'Sample Phone'],
                 'field' => 'quantity',
                 'amount' => 1,
             ]],
@@ -251,7 +251,7 @@ class ActionDraftServiceTest extends TestCase
             '_array_ops' => [[
                 'op' => 'increment',
                 'path' => 'items',
-                'match' => ['product_name' => 'iPhone'],
+                'match' => ['product_name' => 'Sample Phone'],
                 'field' => 'quantity',
                 'amount' => 2,
             ]],

@@ -843,7 +843,7 @@ CRITICAL SEARCH QUERY RULES:
    - Example: Previous showed "2. Sprinkler Heads" → User asks "tell me about #2" → Search for "Sprinkler Heads"
 
 6. Short specific queries that match items from previous response:
-   - If query looks like a product name, email subject, or document title from history → Use EXACT query as search term
+   - If query looks like a specific item name, message subject, or document title from history → Use EXACT query as search term
    - Include any context identifiers (IDs, names) from history in search
 
 7. Technical questions → Extract key terms: ["Laravel routing", "API endpoint"]
@@ -867,7 +867,7 @@ PROMPT;
                 $conversationContext .= "- {$m['role']}: {$preview}" . (strlen($m['content']) > $maxLen ? '...' : '') . "\n";
             }
             $conversationContext .= "\nCRITICAL FOLLOW-UP RULES:\n";
-            $conversationContext .= "1. If user asks about a specific item/product name from previous response → Use EXACT name as search query\n";
+            $conversationContext .= "1. If user asks about a specific item name from previous response → Use EXACT name as search query\n";
             $conversationContext .= "2. If user uses numbered reference (#1, #2, option 3) → Extract item name from that number in previous response\n";
             $conversationContext .= "3. If user asks 'tell me more', 'details', 'info about that' → Look for item name in their message or previous context\n";
             $conversationContext .= "4. Keep the SAME collection as the previous search for follow-up queries\n";

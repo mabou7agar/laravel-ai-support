@@ -115,13 +115,22 @@ class MessageRoutingClassifier
 
     protected function isActionFlow(string $normalized): bool
     {
-        return preg_match('/^(please\s+)?(prepare|draft|create|add|new|make|generate|update|edit|change|modify|delete|remove|cancel|approve|reject|submit|send|run|execute|trigger)\b/i', $normalized) === 1
-            || preg_match('/\b(prepare|draft|create|add|make|generate)\b.+\b(invoice|proposal|quote|order|ticket|customer|product|warehouse|project|contract|employee)\b/i', $normalized) === 1;
+        if (preg_match('/^(please\s+)?(prepare|draft|create|add|new|make|generate|update|edit|change|modify|delete|remove|cancel|approve|reject|submit|send|run|execute|trigger)\b/i', $normalized) === 1) {
+            return true;
+        }
+
+        $entities = $this->configuredTerms('action_entities');
+        if ($entities === []) {
+            return false;
+        }
+
+        return preg_match('/\b(prepare|draft|create|add|make|generate)\b.+\b(' . $this->termPattern($entities) . ')\b/iu', $normalized) === 1;
     }
 
     protected function isExactLookup(string $normalized): bool
     {
-        if (preg_match('/\b(invoice|proposal|quote|order|ticket|contract|customer|employee|asset|booking|courier|warehouse)\s+(number|no|id|code|sku)\b/i', $normalized)) {
+        $entities = $this->configuredTerms('action_entities');
+        if ($entities !== [] && preg_match('/\b(' . $this->termPattern($entities) . ')\s+(number|no|id|code|sku)\b/iu', $normalized)) {
             return true;
         }
 
@@ -142,15 +151,38 @@ class MessageRoutingClassifier
             return true;
         }
 
-        if (preg_match('/\b(status|created|updated|assigned|owner|workspace|project|user|type)\s*(=|:)\s*[\w-]+/i', $normalized)) {
+        $fieldTerms = $this->configuredTerms('structured_field_terms');
+        if ($fieldTerms !== [] && preg_match('/\b(' . $this->termPattern($fieldTerms) . ')\s*(=|:)\s*[\w-]+/iu', $normalized)) {
             return true;
         }
 
-        if (preg_match('/\b(open|closed|active|inactive|pending|completed)\b.*\b(items|records|tasks|projects|mails|emails|invoices)\b/i', $normalized)) {
+        $statusTerms = $this->configuredTerms('structured_status_terms');
+        $collectionTerms = $this->configuredTerms('structured_collection_terms');
+        if ($statusTerms !== [] && $collectionTerms !== []
+            && preg_match('/\b(' . $this->termPattern($statusTerms) . ')\b.*\b(' . $this->termPattern($collectionTerms) . ')\b/iu', $normalized)) {
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function configuredTerms(string $key): array
+    {
+        return array_values(array_filter(
+            array_map(static fn (mixed $term): string => mb_strtolower(trim((string) $term)), (array) config("ai-agent.routing_classifier.{$key}", [])),
+            static fn (string $term): bool => $term !== ''
+        ));
+    }
+
+    /**
+     * @param list<string> $terms
+     */
+    protected function termPattern(array $terms): string
+    {
+        return implode('|', array_map(static fn (string $term): string => preg_quote($term, '/'), $terms));
     }
 
     /**

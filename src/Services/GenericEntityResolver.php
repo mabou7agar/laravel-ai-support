@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Services;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
+use LaravelAIEngine\Services\Scope\AIScopeOptionsService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -1113,20 +1114,18 @@ class GenericEntityResolver
                 $data[$identifierField] = $identifier;
             }
 
-            // Add workspace field if model has one
-            $workspaceFields = ['workspace_id', 'workspace'];
-            foreach ($workspaceFields as $workspaceField) {
-                if (in_array($workspaceField, $fillable)) {
-                    $data[$workspaceField] = getActiveWorkSpace() ?: 1;
+            $workspaceId = $this->resolvedWorkspaceId($context);
+            foreach (['workspace_id', 'workspace'] as $workspaceField) {
+                if ($workspaceId !== null && in_array($workspaceField, $fillable)) {
+                    $data[$workspaceField] = $workspaceId;
                     break;
                 }
             }
 
-            // Add creator field if model has one
-            $creatorFields = ['created_by', 'creator_id', 'user_id'];
-            foreach ($creatorFields as $creatorField) {
-                if (in_array($creatorField, $fillable)) {
-                    $data[$creatorField] = creatorId();
+            $actorId = $this->resolvedActorId($context);
+            foreach (['created_by', 'creator_id', 'user_id'] as $creatorField) {
+                if ($actorId !== null && in_array($creatorField, $fillable)) {
+                    $data[$creatorField] = $actorId;
                     break;
                 }
             }
@@ -1539,11 +1538,14 @@ class GenericEntityResolver
                 $entityName = class_basename($modelClass);
                 $itemName = $this->extractEntityName($item, $entityName);
 
-                $data = array_merge([
-                    'name' => $itemName,
-                    'workspace' => getActiveWorkSpace() ?: 1,
-                    'created_by' => auth()->id() ?? 1,
-                ], $config['defaults'] ?? []);
+                $data = array_merge(
+                    array_filter([
+                        'name' => $itemName,
+                        'workspace' => $this->resolvedWorkspaceId($context),
+                        'created_by' => $this->resolvedActorId($context),
+                    ], static fn ($value): bool => $value !== null && $value !== ''),
+                    $config['defaults'] ?? []
+                );
 
                 $entity = $modelClass::create($data);
                 $created[] = array_merge([
@@ -1698,7 +1700,7 @@ class GenericEntityResolver
     }
 
     /**
-     * Extract items from a modification request like "replace phones with Macbook"
+     * Extract items from a modification request.
      */
     private function extractItemsFromModification(string $userResponse, string $fieldName, array $config): array
     {
@@ -1706,11 +1708,11 @@ class GenericEntityResolver
             $userId = auth()->check() ? (string) auth()->id() : null;
             $entityName = $config['display_name'] ?? $this->getFriendlyEntityName($fieldName, $config);
 
-            $prompt = "User wants to modify their order. They said: \"{$userResponse}\"\n\n";
+            $prompt = "User wants to modify the current item list. They said: \"{$userResponse}\"\n\n";
             $prompt .= "Extract the new {$entityName} they want to use.\n";
             $prompt .= "Return a JSON array of items with 'name' and 'quantity' fields.\n";
             $prompt .= "If quantity is not specified, use 1.\n";
-            $prompt .= "Example: [{\"name\": \"Macbook Pro\", \"quantity\": 2}]\n\n";
+            $prompt .= "Example: [{\"name\": \"Replacement Item\", \"quantity\": 2}]\n\n";
             $prompt .= "Return ONLY the JSON array, no other text.";
 
             $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
@@ -1765,6 +1767,52 @@ class GenericEntityResolver
         }
 
         return $name;
+    }
+
+    private function resolvedWorkspaceId(UnifiedActionContext $context): mixed
+    {
+        $scope = $this->resolvedScope($context);
+
+        return $scope['workspace_id'] ?? $scope['workspace'] ?? null;
+    }
+
+    private function resolvedActorId(UnifiedActionContext $context): mixed
+    {
+        if ($context->userId !== null && $context->userId !== '') {
+            return $context->userId;
+        }
+
+        try {
+            $user = auth()->user();
+
+            return is_object($user) && method_exists($user, 'getAuthIdentifier')
+                ? $user->getAuthIdentifier()
+                : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolvedScope(UnifiedActionContext $context): array
+    {
+        try {
+            if (!app()->bound(AIScopeOptionsService::class)) {
+                return [];
+            }
+
+            $options = [];
+            $user = auth()->user();
+            if (is_object($user)) {
+                $options['user'] = $user;
+            }
+
+            return app(AIScopeOptionsService::class)->merge($context->userId, $options);
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     private function formatExamples(array $examples): string

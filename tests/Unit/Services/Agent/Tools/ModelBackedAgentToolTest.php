@@ -71,12 +71,12 @@ class ModelBackedAgentToolTest extends TestCase
         $this->assertTrue($tool->requiresConfirmation());
         $this->assertSame(['name', 'email'], array_keys($tool->getParameters()));
 
-        $missing = $tool->execute(['name' => 'Mohamed Hagar'], new UnifiedActionContext('upsert-test', 77));
+        $missing = $tool->execute(['name' => 'Sample Customer'], new UnifiedActionContext('upsert-test', 77));
         $this->assertFalse($missing->success);
         $this->assertSame(['email'], $missing->data['missing_fields']);
 
         $created = $tool->execute([
-            'name' => 'Mohamed Hagar',
+            'name' => 'Sample Customer',
             'email' => 'mohamed@example.test',
         ], new UnifiedActionContext('upsert-test', 77));
 
@@ -85,7 +85,7 @@ class ModelBackedAgentToolTest extends TestCase
         $this->assertTrue($created->data['created']);
         $this->assertSame(77, $created->data['user_id']);
         $this->assertDatabaseHas('collector_tool_customers', [
-            'name' => 'Mohamed Hagar',
+            'name' => 'Sample Customer',
             'email' => 'mohamed@example.test',
             'user_id' => 77,
         ]);
@@ -94,7 +94,7 @@ class ModelBackedAgentToolTest extends TestCase
     public function test_autonomous_collector_config_can_execute_agent_tool_classes(): void
     {
         CollectorToolCustomer::query()->create([
-            'name' => 'Mohamed Hagar',
+            'name' => 'Sample Customer',
             'email' => 'mohamed@example.test',
             'user_id' => 77,
         ]);
@@ -113,7 +113,7 @@ class ModelBackedAgentToolTest extends TestCase
 
         $result = $config->executeTool(
             'find_customer',
-            ['query' => 'Mohamed'],
+            ['query' => 'Sample Customer'],
             new UnifiedActionContext('config-tool-test', 77)
         );
 

@@ -520,7 +520,12 @@ PROMPT;
     {
         $lower = strtolower($message);
         $entity = null;
-        foreach (['product', 'invoice', 'bill', 'customer', 'vendor', 'order', 'item'] as $candidate) {
+        $candidates = array_values(array_filter(
+            array_map(static fn (mixed $term): string => mb_strtolower(trim((string) $term)), (array) config('ai-agent.routing_classifier.pending_entity_terms', ['record', 'item', 'entry'])),
+            static fn (string $term): bool => $term !== ''
+        ));
+
+        foreach ($candidates as $candidate) {
             if (str_contains($lower, $candidate)) {
                 $entity = $candidate;
                 break;

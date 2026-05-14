@@ -27,7 +27,7 @@ class ExtractsConversationContextPayloadTest extends UnitTestCase
                 return [
                     'id' => 15,
                     'invoice_number' => 'INV-15',
-                    'customer_name' => 'Mohamed Abouhagar',
+                    'customer_name' => 'Sample Customer',
                 ];
             }
         };
@@ -96,12 +96,12 @@ class ExtractsConversationContextPayloadTest extends UnitTestCase
                     'id' => 999,
                     'invoice_number' => 'DRAFT-1',
                     'customer_id' => 44,
-                    'customer_name' => 'Mohamed Abouhagar',
+                    'customer_name' => 'Sample Customer',
                     'items' => [
                         [
                             'id' => 10,
                             'product_id' => 77,
-                            'name' => 'Macbook Pro M5',
+                            'name' => 'Alpha Laptop 15',
                             'quantity' => 10,
                         ],
                     ],

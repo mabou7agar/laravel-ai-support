@@ -840,13 +840,9 @@ class FalReferencePackGenerationService
             return trim($userId);
         }
 
-        if (($options['use_demo_user_id'] ?? false) !== true) {
-            return null;
-        }
+        $fallbackUserId = $options['fallback_user_id'] ?? null;
 
-        $configuredUserId = config('ai-engine.demo_user_id');
-
-        return is_string($configuredUserId) && trim($configuredUserId) !== '' ? trim($configuredUserId) : null;
+        return is_string($fallbackUserId) && trim($fallbackUserId) !== '' ? trim($fallbackUserId) : null;
     }
 
     private function resolveBaseReferencePack(array $options): ?array

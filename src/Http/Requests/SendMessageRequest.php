@@ -41,6 +41,7 @@ class SendMessageRequest extends FormRequest
             'sub_agents' => 'sometimes|array',
             'sub_agents.*' => 'sometimes',
             'goal_agent' => 'sometimes|array',
+            'user_id' => 'sometimes|nullable|string|max:255',
         ];
     }
 
@@ -72,7 +73,7 @@ class SendMessageRequest extends FormRequest
             memory: $validated['memory'] ?? true,
             actions: $validated['actions'] ?? true,
             streaming: $validated['streaming'] ?? false,
-            userId: auth()->user()?->id ?? config('ai-engine.demo_user_id', '1'),
+            userId: $validated['user_id'] ?? auth()->user()?->getAuthIdentifier(),
             intelligentRag: $validated['rag'] ?? false,
             forceRag: $validated['force_rag'] ?? false,
             ragCollections: $validated['rag_collections'] ?? null,

@@ -97,22 +97,7 @@ class NodeMetadataDiscovery
         $domains = [];
         $models = $this->discoverCollections();
         
-        // Map common model names to domains
-        $domainMap = [
-            'invoice' => ['business', 'finance', 'accounting'],
-            'bill' => ['business', 'finance', 'accounting'],
-            'payment' => ['business', 'finance'],
-            'customer' => ['business', 'crm'],
-            'vendor' => ['business', 'procurement'],
-            'product' => ['business', 'inventory', 'e-commerce'],
-            'order' => ['business', 'e-commerce'],
-            'user' => ['authentication', 'user-management'],
-            'employee' => ['hr', 'business'],
-            'course' => ['education', 'learning'],
-            'student' => ['education', 'learning'],
-            'patient' => ['healthcare', 'medical'],
-            'appointment' => ['scheduling', 'business'],
-        ];
+        $domainMap = (array) config('ai-engine.nodes.model_domain_map', []);
         
         foreach ($models as $model) {
             $modelName = $model['name'];

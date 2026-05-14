@@ -12,7 +12,7 @@ use LaravelAIEngine\Services\Node\FederatedSearchService;
 class TestIntelligentSearchCommand extends Command
 {
     protected $signature = 'ai-engine:test-intelligent-search
-                            {--query= : Test query (default: "Find Milk products")}
+                            {--query= : Test query (default: "Find matching records")}
                             {--user-id= : User ID for testing}
                             {--collections= : Comma-separated collection classes}
                             {--skip-federated : Skip federated search tests}
@@ -145,8 +145,8 @@ class TestIntelligentSearchCommand extends Command
         $this->line('─────────────────────────────────────');
         
         try {
-            $query = $this->option('query') ?? 'Find Milk products';
-            $userId = $this->option('user-id') ?? 1;
+            $query = $this->option('query') ?? 'Find matching records';
+            $userId = $this->option('user-id');
             
             $this->line("Query: \"{$query}\"");
             $this->line("User ID: {$userId}");

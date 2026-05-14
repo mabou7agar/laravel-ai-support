@@ -77,6 +77,8 @@ class NodeSessionManagerTest extends UnitTestCase
 
     public function test_route_to_node_tracks_remote_pending_state_and_entity_slot(): void
     {
+        config()->set('ai-agent.routing_classifier.pending_entity_terms', ['product', 'item']);
+
         $node = new AINode();
         $node->slug = 'inbusiness';
         $node->name = 'InBusiness';

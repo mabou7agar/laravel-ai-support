@@ -36,6 +36,9 @@ abstract class UnitTestCase extends Orchestra
         $app['config']->set('queue.default', 'sync');
         $app['config']->set('ai-engine.nodes.enabled', false);
         $app['config']->set('ai-engine.nodes.jwt.secret', 'test-jwt-secret');
+        $app['config']->set('ai-engine.enable_demo_routes', false);
+        $app['config']->set('ai-engine.legacy_chat_routes.enabled', false);
+        $app['config']->set('ai-engine.auth_routes.enabled', false);
         $app['config']->set('auth.providers.users.model', User::class);
     }
 

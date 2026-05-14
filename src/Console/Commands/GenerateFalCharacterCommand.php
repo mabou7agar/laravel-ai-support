@@ -170,7 +170,6 @@ class GenerateFalCharacterCommand extends Command
             'name' => $this->option('name'),
             'save_as' => $this->option('save-as'),
             'from_character' => $this->option('from-character'),
-            'use_demo_user_id' => false,
             'frame_count' => max(1, (int) $this->option('frame-count')),
             'look_size' => max(1, (int) $this->option('look-size')),
             'preview_only' => (bool) $this->option('preview-only'),

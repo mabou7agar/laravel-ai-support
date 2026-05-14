@@ -144,37 +144,26 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
         $this->assertSame(['App\\Models\\Document'], $payload['summary']['rag_collections']);
     }
 
-    public function test_command_runs_invoice_create_script_with_assertions(): void
+    public function test_command_runs_messages_from_script_file(): void
     {
         $runtime = Mockery::mock(AgentRuntimeContract::class);
 
-        $messages = [
-            'create invoice',
-            'Mohamed Abou Hagar',
-            'mohamed@example.test',
-            'actually change customer name to Mohamed Hagar before confirmation',
-            'yes create the customer',
-            '2 Macbook Pro and 3 iPhone',
-            'remove 1 iPhone and add 1 iPad',
-            'confirm',
-            'yes',
-        ];
+        $scriptPath = tempnam(sys_get_temp_dir(), 'agent-script-');
+        file_put_contents($scriptPath, json_encode([
+            'messages' => ['start return flow', 'use order R-100', 'confirm'],
+        ], JSON_THROW_ON_ERROR));
 
         $responses = [
-            AgentResponse::needsUserInput('What is the customer name or email?', context: new UnifiedActionContext('invoice-script', 1)),
-            AgentResponse::needsUserInput('Customer not found. Should I create a new customer?', context: new UnifiedActionContext('invoice-script', 1)),
-            AgentResponse::needsUserInput('I have Mohamed Abou Hagar with mohamed@example.test.', context: new UnifiedActionContext('invoice-script', 1)),
-            AgentResponse::needsUserInput('Updated customer name to Mohamed Hagar with mohamed@example.test. Please confirm.', context: new UnifiedActionContext('invoice-script', 1)),
-            AgentResponse::needsUserInput('Customer created. What products should be on the invoice?', context: new UnifiedActionContext('invoice-script', 1)),
-            AgentResponse::needsUserInput('Products: 2 Macbook Pro and 3 iPhone. Confirm or edit products.', context: new UnifiedActionContext('invoice-script', 1)),
-            AgentResponse::needsUserInput('Updated products: 2 Macbook Pro, 2 iPhone, 1 iPad. Confirm?', context: new UnifiedActionContext('invoice-script', 1)),
-            AgentResponse::needsUserInput('Please review. Confirm to proceed. Type: yes or no.', context: new UnifiedActionContext('invoice-script', 1)),
-            AgentResponse::success('Invoice created successfully.', context: new UnifiedActionContext('invoice-script', 1)),
+            AgentResponse::needsUserInput('Which order should I use?', context: new UnifiedActionContext('script-file', 1)),
+            AgentResponse::needsUserInput('Ready to confirm return R-100.', context: new UnifiedActionContext('script-file', 1)),
+            AgentResponse::success('Return created.', context: new UnifiedActionContext('script-file', 1)),
         ];
 
         $runtime->shouldReceive('process')
-            ->times(9)
-            ->withArgs(function ($message) use (&$messages): bool {
+            ->times(3)
+            ->withArgs(function ($message): bool {
+                static $messages = ['start return flow', 'use order R-100', 'confirm'];
+
                 return $message === array_shift($messages);
             })
             ->andReturn(...$responses);
@@ -182,48 +171,31 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
         $exitCode = Artisan::call('ai-engine:test-real-agent', [
-            '--script' => 'invoice-create',
-            '--assert' => 'invoice-create',
+            '--script-file' => $scriptPath,
             '--json' => true,
         ]);
 
         $payload = json_decode(Artisan::output(), true);
 
         $this->assertSame(0, $exitCode);
-        $this->assertSame(9, $payload['summary']['total_turns']);
-        $this->assertTrue($payload['summary']['assertions']['passed']);
+        $this->assertSame(3, $payload['summary']['total_turns']);
+
+        @unlink($scriptPath);
     }
 
-    public function test_invoice_create_assertions_fail_on_placeholder_customer(): void
+    public function test_unknown_named_script_returns_failure_instead_of_domain_specific_default(): void
     {
         $runtime = Mockery::mock(AgentRuntimeContract::class);
-
-        $runtime->shouldReceive('process')
-            ->times(9)
-            ->andReturn(
-                AgentResponse::needsUserInput('What is the customer name or email?', context: new UnifiedActionContext('invoice-script-fail', 1)),
-                AgentResponse::needsUserInput('Customer not found. Should I create a new customer?', context: new UnifiedActionContext('invoice-script-fail', 1)),
-                AgentResponse::needsUserInput('I have Mohamed Abou Hagar with mohamed@example.test.', context: new UnifiedActionContext('invoice-script-fail', 1)),
-                AgentResponse::needsUserInput('Updated customer name to Mohamed Hagar.', context: new UnifiedActionContext('invoice-script-fail', 1)),
-                AgentResponse::needsUserInput("Tool 'create_customer' not found. Using customer_id: 0 placeholder.", context: new UnifiedActionContext('invoice-script-fail', 1)),
-                AgentResponse::needsUserInput('Products: 2 Macbook Pro and 3 iPhone.', context: new UnifiedActionContext('invoice-script-fail', 1)),
-                AgentResponse::needsUserInput('Updated products: 2 Macbook Pro, 2 iPhone, 1 iPad.', context: new UnifiedActionContext('invoice-script-fail', 1)),
-                AgentResponse::needsUserInput('Please review. Confirm to proceed. Type: yes or no.', context: new UnifiedActionContext('invoice-script-fail', 1)),
-                AgentResponse::needsUserInput('Final JSON has customer_id: 0 placeholder.', context: new UnifiedActionContext('invoice-script-fail', 1)),
-            );
+        $runtime->shouldNotReceive('process');
 
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
         $exitCode = Artisan::call('ai-engine:test-real-agent', [
-            '--script' => 'invoice-create',
-            '--assert' => 'invoice-create',
+            '--script' => 'domain-flow',
             '--json' => true,
         ]);
 
-        $payload = json_decode(Artisan::output(), true);
-
         $this->assertSame(1, $exitCode);
-        $this->assertFalse($payload['summary']['assertions']['passed']);
-        $this->assertContains('does_not_report_missing_create_customer_tool', $payload['summary']['assertions']['failures']);
+        $this->assertStringContainsString('Unknown built-in script', Artisan::output());
     }
 }

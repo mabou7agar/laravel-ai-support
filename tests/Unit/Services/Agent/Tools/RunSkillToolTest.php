@@ -32,12 +32,12 @@ class RunSkillToolTest extends UnitTestCase
         $tool = $this->makeTool($skill, [
             'action' => 'ask_user',
             'message' => 'What customer name should I use?',
-            'payload_patch' => ['items' => [['product_name' => 'Macbook Pro', 'quantity' => 2]]],
+            'payload_patch' => ['items' => [['product_name' => 'Alpha Laptop', 'quantity' => 2]]],
         ]);
 
         $result = $tool->execute([
             'skill_id' => 'create_invoice',
-            'message' => 'create invoice for 2 Macbook Pro',
+            'message' => 'create invoice for 2 Alpha Laptop',
             'reset' => true,
         ], new UnifiedActionContext('run-skill-ask-test'));
 
@@ -45,7 +45,7 @@ class RunSkillToolTest extends UnitTestCase
         $this->assertTrue($result->requiresUserInput());
         $this->assertSame('What customer name should I use?', $result->message);
         $this->assertSame('create_invoice', $result->data['skill_id']);
-        $this->assertSame('Macbook Pro', $result->data['payload']['items'][0]['product_name']);
+        $this->assertSame('Alpha Laptop', $result->data['payload']['items'][0]['product_name']);
     }
 
     public function test_it_runs_declared_tool_and_keeps_runtime_state(): void

@@ -130,7 +130,7 @@ class ToolParameterExtractor
     {
         $params = [];
         
-        // Pattern: "Invoice #218", "invoice 218", "Customer #5"
+        // Pattern: "{modelName} #218" or "{modelName} 218"
         $pattern = '/' . preg_quote($modelName, '/') . '\s*#?(\d+)/i';
         if (preg_match($pattern, $message, $matches)) {
             $params['id'] = (int)$matches[1];

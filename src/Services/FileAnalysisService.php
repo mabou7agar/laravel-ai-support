@@ -75,7 +75,7 @@ class FileAnalysisService
 
         $client = \OpenAI::client($apiKey);
         
-        $systemPrompt = "You are an expert at analyzing images and extracting information. When analyzing receipts, invoices, or documents, extract all relevant data in a structured format. Be thorough and accurate. For receipts, extract: store name, date, items with prices, subtotal, tax, total, payment method if visible.";
+        $systemPrompt = "You are an expert at analyzing images and extracting information. Extract all relevant visible data in a structured format. Be thorough and accurate. For transactional documents, include parties, dates, line items, totals, taxes, and payment details when visible.";
         
         $response = $client->chat()->create([
             'model' => 'gpt-4o',
@@ -202,7 +202,7 @@ class FileAnalysisService
         
         // Add specific instructions based on user message or default
         if (empty($message) || $message === 'Analyze this file and extract relevant information.') {
-            $fullMessage .= "Please analyze this document and extract all relevant information. If this is a receipt or invoice, extract: vendor/store name, date, line items with prices, subtotal, tax, total amount, and payment method if available. Present the data in a clear, structured format.";
+            $fullMessage .= "Please analyze this document and extract all relevant information. For transactional documents, extract parties, dates, line items, subtotals, taxes, totals, and payment details when available. Present the data in a clear, structured format.";
         } else {
             $fullMessage .= $message;
         }
@@ -418,51 +418,27 @@ class FileAnalysisService
      */
     protected function keywordAnalysis(string $content): array
     {
-        $content = strtolower($content);
         $suggestions = [];
-        
-        // Product indicators
-        if (preg_match('/\b(product|item|sku|price|stock|inventory)\b/i', $content)) {
-            $suggestions[] = [
-                'action_id' => 'create_products',
-                'action_label' => 'Create Products',
-                'confidence' => 70,
-                'reason' => 'File contains product-related keywords',
-                'detected_fields' => ['product', 'price'],
-            ];
-        }
-        
-        // Invoice indicators
-        if (preg_match('/\b(invoice|customer|bill to|total|due date)\b/i', $content)) {
-            $suggestions[] = [
-                'action_id' => 'create_invoice',
-                'action_label' => 'Create Invoice',
-                'confidence' => 65,
-                'reason' => 'File contains invoice-related keywords',
-                'detected_fields' => ['customer', 'total'],
-            ];
-        }
-        
-        // Bill/Purchase indicators
-        if (preg_match('/\b(vendor|supplier|purchase|bill from)\b/i', $content)) {
-            $suggestions[] = [
-                'action_id' => 'create_bill',
-                'action_label' => 'Create Bill',
-                'confidence' => 65,
-                'reason' => 'File contains vendor/purchase keywords',
-                'detected_fields' => ['vendor', 'amount'],
-            ];
-        }
-        
-        // Customer list indicators
-        if (preg_match('/\b(customer|client|email|phone|contact)\b/i', $content)) {
-            $suggestions[] = [
-                'action_id' => 'create_customers',
-                'action_label' => 'Create Customers',
-                'confidence' => 60,
-                'reason' => 'File contains customer contact information',
-                'detected_fields' => ['name', 'email'],
-            ];
+
+        foreach ((array) config('ai-engine.file_analysis.keyword_suggestions', []) as $suggestion) {
+            if (!is_array($suggestion)) {
+                continue;
+            }
+
+            $pattern = (string) ($suggestion['pattern'] ?? '');
+            if ($pattern === '' || @preg_match($pattern, '') === false) {
+                continue;
+            }
+
+            if (preg_match($pattern, $content)) {
+                $suggestions[] = [
+                    'action_id' => (string) ($suggestion['action_id'] ?? ''),
+                    'action_label' => (string) ($suggestion['action_label'] ?? ''),
+                    'confidence' => (int) ($suggestion['confidence'] ?? 50),
+                    'reason' => (string) ($suggestion['reason'] ?? 'File matched configured keywords.'),
+                    'detected_fields' => array_values((array) ($suggestion['detected_fields'] ?? [])),
+                ];
+            }
         }
         
         return $suggestions;

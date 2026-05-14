@@ -311,12 +311,17 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadTranslationsFrom(__DIR__.'/../resources/lang', 'ai-engine');
 
-        // Load routes
-        $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
-        $this->loadRoutesFrom(__DIR__.'/../routes/auth.php');
+        // Load optional legacy/demo routes only when explicitly enabled.
+        if (filter_var(config('ai-engine.legacy_chat_routes.enabled', false), FILTER_VALIDATE_BOOLEAN)) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
+        }
+
+        if (filter_var(config('ai-engine.auth_routes.enabled', false), FILTER_VALIDATE_BOOLEAN)) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/auth.php');
+        }
 
         // Load demo routes conditionally (safe for config cache)
-        if (config('ai-engine.enable_demo_routes', false)) {
+        if (filter_var(config('ai-engine.enable_demo_routes', false), FILTER_VALIDATE_BOOLEAN)) {
             $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
         }
 

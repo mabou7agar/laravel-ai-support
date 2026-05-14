@@ -190,10 +190,9 @@ class AgentSkillMatcher
         return implode("\n", [
             'AGENT_SKILL_INTENT_MATCHER',
             'Select the one skill that should handle the latest user request, using the recent conversation as context.',
-            'The latest message may be indirect, multilingual, or refer to earlier entities with words like this, it, him, her, them, order, quote, or conversation.',
+            'The latest message may be indirect, multilingual, or refer to earlier entities with words like this, it, him, her, them, record, request, or conversation.',
             'Match by user intent and required output, not only by trigger words.',
-            'If the recent conversation contains the data needed by a skill and the latest message asks to bill, create, submit, finalize, convert, turn it into something, or do it, choose that skill.',
-            'Example: if the conversation discussed a customer and products, and the user says "bill him for those items" or "turn this into an invoice", choose an invoice-creation skill.',
+            'If the recent conversation contains the data needed by a skill and the latest message asks to create, submit, finalize, convert, turn it into something, or do it, choose that skill.',
             'Return no match when the user is only chatting, asking an unrelated question, or the skill would not perform the requested business action.',
             'Return JSON only. Do not explain. Do not wrap in markdown.',
             'JSON shape: {"skill_id":"skill id or null","confidence":0,"reason":"short reason"}',
@@ -273,7 +272,16 @@ class AgentSkillMatcher
             return false;
         }
 
-        return preg_match('/\b(do it|create it|make it|submit it|finalize|proceed|go ahead|turn .* into|convert .* into|use .* conversation|from .* conversation|bill|charge|invoice|فاتورة|حول|اعمل|انشئ|أنشئ)\b/u', $normalized) === 1;
+        $terms = array_values(array_filter(
+            array_map(static fn (mixed $term): string => trim((string) $term), (array) config('ai-agent.skills.continuation_terms', [])),
+            static fn (string $term): bool => $term !== ''
+        ));
+
+        if ($terms === []) {
+            return false;
+        }
+
+        return preg_match('/\b(' . implode('|', $terms) . ')\b/u', $normalized) === 1;
     }
 
     /**
@@ -331,9 +339,7 @@ class AgentSkillMatcher
             return $configured;
         }
 
-        return [
-            'invoice' => ['invoice', 'bill', 'billing', 'charge', 'فاتورة', 'فوتر', 'facture', 'factura', 'fatura'],
-        ];
+        return [];
     }
 
     /**

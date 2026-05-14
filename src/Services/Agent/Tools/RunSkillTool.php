@@ -341,15 +341,29 @@ class RunSkillTool extends AgentTool
         }
 
         $data = $result->data;
-        if (str_contains($toolName, 'customer')) {
-            return array_filter([
-                'customer_id' => $data['id'] ?? null,
-                'customer_name' => $data['name'] ?? null,
-                'customer_email' => $data['email'] ?? null,
-            ], static fn (mixed $value): bool => $value !== null && $value !== '');
+        $entity = $this->entityNameFromToolName($toolName);
+        if ($entity !== '') {
+            $patch = [];
+            foreach (['id', 'name', 'email'] as $field) {
+                if (array_key_exists($field, $data) && $data[$field] !== null && $data[$field] !== '') {
+                    $patch["{$entity}_{$field}"] = $data[$field];
+                }
+            }
+
+            return $patch;
         }
 
         return [];
+    }
+
+    private function entityNameFromToolName(string $toolName): string
+    {
+        $normalized = mb_strtolower(trim($toolName));
+        $normalized = preg_replace('/^(find|lookup|search|create|upsert|update|get|fetch)[_-]+/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/[_-]+(tool|record|entity)$/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/[^a-z0-9_]+/u', '_', $normalized) ?? $normalized;
+
+        return trim($normalized, '_');
     }
 
     private function flowData(AgentSkillDefinition $skill, array $state, string $status): array

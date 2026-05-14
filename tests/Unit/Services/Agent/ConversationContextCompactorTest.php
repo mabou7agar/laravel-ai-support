@@ -44,7 +44,7 @@ class ConversationContextCompactorTest extends UnitTestCase
 
         $compactor = app(ConversationContextCompactor::class);
         $context = new UnifiedActionContext('compact-session', 7, metadata: [
-            'conversation_summary' => '- user: earlier customer was Mohamed',
+            'conversation_summary' => '- user: earlier customer was Sample Customer',
             'conversation_compacted_messages' => 2,
         ]);
 
@@ -58,7 +58,7 @@ class ConversationContextCompactorTest extends UnitTestCase
         $compactor->compact($context);
 
         $this->assertCount(2, $context->conversationHistory);
-        $this->assertStringContainsString('earlier customer was Mohamed', $context->metadata['conversation_summary']);
+        $this->assertStringContainsString('earlier customer was Sample Customer', $context->metadata['conversation_summary']);
         $this->assertStringContainsString('new detail 1', $context->metadata['conversation_summary']);
         $this->assertSame(5, $context->metadata['conversation_compacted_messages']);
     }

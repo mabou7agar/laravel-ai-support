@@ -307,10 +307,11 @@ Route::prefix('api/v1/autonomous-collector')
             ->name('data');
     });
 
-Route::prefix('ai-demo')
-    ->middleware($resolveApiMiddleware('demo'))
-    ->name('ai-engine.api.')
-    ->group(function () {
+if (filter_var(config('ai-engine.enable_demo_routes', false), FILTER_VALIDATE_BOOLEAN)) {
+    Route::prefix('ai-demo')
+        ->middleware($resolveApiMiddleware('demo'))
+        ->name('ai-engine.api.')
+        ->group(function () {
         
         // Chat API Routes
         Route::prefix('chat')->group(function () {
@@ -391,4 +392,5 @@ Route::prefix('ai-demo')
             Route::get('/status', [ModelRecommendationController::class, 'status'])
                 ->name('models.status');
         });
-    });
+        });
+}

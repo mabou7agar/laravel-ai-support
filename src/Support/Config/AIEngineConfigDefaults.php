@@ -301,12 +301,11 @@ class AIEngineConfigDefaults
     | Demo User ID
     |--------------------------------------------------------------------------
     |
-    | Default user ID to use when no authenticated user is present.
-    | This allows the system to work with or without authentication.
-    | Set to null to require authentication for all requests.
+    | Optional user ID for explicitly enabled demo workflows. Production
+    | runtime paths do not fall back to this value.
     |
     */
-    'demo_user_id' => env('AI_ENGINE_DEMO_USER_ID', '1'),
+    'demo_user_id' => env('AI_ENGINE_DEMO_USER_ID'),
 
     /*
     |--------------------------------------------------------------------------
@@ -463,6 +462,12 @@ class AIEngineConfigDefaults
     'enable_demo_routes' => env('AI_ENGINE_ENABLE_DEMO_ROUTES', false),
     'demo_route_prefix' => env('AI_ENGINE_DEMO_PREFIX', 'ai-demo'),
     'demo_route_middleware' => ['web'],
+    'legacy_chat_routes' => [
+        'enabled' => env('AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED', false),
+    ],
+    'auth_routes' => [
+        'enabled' => env('AI_ENGINE_AUTH_ROUTES_ENABLED', false),
+    ],
 
     /*
     |--------------------------------------------------------------------------

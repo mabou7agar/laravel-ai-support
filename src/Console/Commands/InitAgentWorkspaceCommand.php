@@ -110,15 +110,15 @@ class InitAgentWorkspaceCommand extends Command
 
 return [
     'model_configs' => [
-        // App\AI\Configs\InvoiceConfig::class,
+        // App\AI\Configs\RecordConfig::class,
     ],
 
     'collectors' => [
-        // 'invoice' => App\AI\Collectors\InvoiceCollector::class,
+        // 'record' => App\AI\Collectors\RecordCollector::class,
     ],
 
     'tools' => [
-        // 'lookup_customer' => App\AI\Tools\LookupCustomerTool::class,
+        // 'lookup_record' => App\AI\Tools\LookupRecordTool::class,
     ],
 
     'filters' => [
@@ -126,15 +126,15 @@ return [
     ],
 
     'skill_providers' => [
-        // 'create_invoice' => App\AI\Skills\CreateInvoiceSkill::class,
+        // 'create_record' => App\AI\Skills\CreateRecordSkill::class,
     ],
 
     'skills' => [
-        // 'create_invoice' => [
-        //     'name' => 'Create Invoice',
-        //     'description' => 'Create invoices through approved actions and tools.',
-        //     'triggers' => ['create invoice', 'new invoice'],
-        //     'actions' => ['invoices.create'],
+        // 'create_record' => [
+        //     'name' => 'Create Record',
+        //     'description' => 'Create records through approved actions and tools.',
+        //     'triggers' => ['create record', 'new record'],
+        //     'actions' => ['records.create'],
         //     'requires_confirmation' => true,
         //     'enabled' => false,
         // ],

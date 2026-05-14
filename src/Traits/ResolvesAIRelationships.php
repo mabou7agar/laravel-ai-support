@@ -144,15 +144,7 @@ trait ResolvesAIRelationships
             // Create the record
             $data = ['name' => $searchValue];
             
-            // Add workspace_id if the model uses it
-            if (in_array('workspace_id', $relatedModel->getFillable())) {
-                $data['workspace_id'] = auth()->user()->workspace_id ?? getActiveWorkSpace() ?? 1;
-            }
-            
-            // Add created_by if the model uses it
-            if (in_array('created_by', $relatedModel->getFillable())) {
-                $data['created_by'] = auth()->id() ?? 1;
-            }
+            $data = array_merge(static::aiEngineRelationshipDefaults($relatedClass), $data);
 
             $newRecord = $relatedClass::create($data);
 
@@ -170,6 +162,48 @@ trait ResolvesAIRelationships
                 'search' => $searchValue,
                 'error' => $e->getMessage()
             ]);
+            return null;
+        }
+    }
+
+    protected static function aiEngineRelationshipDefaults(string $modelClass): array
+    {
+        $defaults = [];
+
+        try {
+            $model = new $modelClass();
+            $fillable = method_exists($model, 'getFillable') ? $model->getFillable() : [];
+            $actorId = static::aiEngineRelationshipActorId();
+            $scope = [];
+
+            if (function_exists('app') && app()->bound(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class)) {
+                $scope = app(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class)->merge($actorId, []);
+            }
+
+            $workspaceId = $scope['workspace_id'] ?? $scope['workspace'] ?? null;
+            if ($workspaceId !== null && in_array('workspace_id', $fillable, true)) {
+                $defaults['workspace_id'] = $workspaceId;
+            }
+
+            if ($actorId !== null && in_array('created_by', $fillable, true)) {
+                $defaults['created_by'] = $actorId;
+            }
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return $defaults;
+    }
+
+    protected static function aiEngineRelationshipActorId(): mixed
+    {
+        try {
+            $user = auth()->user();
+
+            return is_object($user) && method_exists($user, 'getAuthIdentifier')
+                ? $user->getAuthIdentifier()
+                : null;
+        } catch (\Throwable) {
             return null;
         }
     }

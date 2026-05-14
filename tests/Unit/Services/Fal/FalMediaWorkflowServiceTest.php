@@ -13,10 +13,8 @@ use Mockery;
 
 class FalMediaWorkflowServiceTest extends TestCase
 {
-    public function test_prepare_request_loads_saved_characters_and_uses_demo_user_id(): void
+    public function test_prepare_request_loads_saved_characters_and_uses_explicit_fallback_user_id(): void
     {
-        config()->set('ai-engine.demo_user_id', '55');
-
         $store = app(FalCharacterStore::class);
         $store->save([
             'name' => 'Mina',
@@ -31,7 +29,7 @@ class FalMediaWorkflowServiceTest extends TestCase
         );
 
         $request = $service->prepareRequest('Make Mina walk', [
-            'use_demo_user_id' => true,
+            'fallback_user_id' => '55',
             'use_characters' => ['mina'],
             'multi_prompt' => [
                 ['prompt' => '@Element1 walks to camera', 'duration' => 4],
@@ -46,8 +44,6 @@ class FalMediaWorkflowServiceTest extends TestCase
 
     public function test_prepare_request_omits_user_id_when_demo_fallback_disabled(): void
     {
-        config()->set('ai-engine.demo_user_id', '55');
-
         $service = new FalMediaWorkflowService(
             Mockery::mock(AIEngineService::class),
             app(FalCharacterStore::class)

@@ -238,13 +238,6 @@ class VectorAccessControl
             return $baseFilters;
         }
         
-        // If no userId provided, try to use demo user as fallback
-        if (!$userId) {
-            $demoUserId = config('ai-engine.demo_user_id', '1');
-            Log::debug('No userId provided, using demo user', ['demo_user_id' => $demoUserId]);
-            $userId = $demoUserId;
-        }
-        
         // Fetch user by ID
         $user = $this->getUserById($userId);
         
@@ -255,15 +248,13 @@ class VectorAccessControl
                 return $baseFilters;
             }
             
-            // Last resort: try demo user ID directly in filter
-            $demoUserId = config('ai-engine.demo_user_id', '1');
-            Log::warning('User not found, using demo user ID in filter', [
+            Log::warning('Vector search blocked because no accessible user scope was resolved', [
                 'requested_user_id' => $userId,
-                'demo_user_id' => $demoUserId,
             ]);
-            // Cast to int if numeric to match Qdrant integer index type
-            $filterUserId = is_numeric($demoUserId) ? (int) $demoUserId : $demoUserId;
-            return array_merge($baseFilters, ['user_id' => $filterUserId]);
+
+            return array_merge($baseFilters, [
+                'user_id' => '__ai_engine_access_denied__',
+            ]);
         }
 
         $userId = method_exists($user, 'getAuthIdentifier') 

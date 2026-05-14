@@ -173,9 +173,7 @@ class TestFalMediaCommand extends Command
 
     private function buildOptions(): array
     {
-        $options = [
-            'use_demo_user_id' => false,
-        ];
+        $options = [];
 
         $model = $this->option('model');
         if (is_string($model) && trim($model) !== '') {

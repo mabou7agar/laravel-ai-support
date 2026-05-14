@@ -157,6 +157,15 @@ INTELLIGENT_RAG_DECISION_LANGUAGE_MODE=hybrid
 AI_ENGINE_INJECT_USER_CONTEXT=true
 ```
 
+## Package Generic Defaults
+
+```env
+AI_ENGINE_DEMO_USER_ID=
+AI_ENGINE_ENABLE_DEMO_ROUTES=false
+```
+
+Demo routes, legacy chat routes, and package auth helper routes are disabled by default. Enable demo routes only inside the demo application. Host applications should pass authenticated user, tenant, workspace, and other scope values through request payloads, `AIScopeOptionsService`, middleware, or model config hooks instead of relying on package fallbacks.
+
 ## Agent Conversation Context
 
 ```env

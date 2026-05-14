@@ -359,13 +359,13 @@ class AIConfigBuilder
      * ->entityField('customer_id', [
      *     'model' => Customer::class,
      *     'search_fields' => ['name', 'email', 'contact'],
-     *     'filters' => fn($query) => $query->where('workspace', getActiveWorkSpace()),
+     *     'filters' => fn($query, array $scope = []) => $query->where('workspace', $scope['workspace_id'] ?? null),
      * ])
      * 
      * // Using DTO (recommended)
      * ->entityField('customer_id', EntityFieldConfig::make(Customer::class)
      *     ->searchFields(['name', 'email', 'contact'])
-     *     ->filters(fn($query) => $query->where('workspace', getActiveWorkSpace()))
+     *     ->filters(fn($query, array $scope = []) => $query->where('workspace', $scope['workspace_id'] ?? null))
      *     ->checkDuplicates()
      * )
      */
@@ -407,13 +407,13 @@ class AIConfigBuilder
      * ->entitiesField('products', [
      *     'model' => Product::class,
      *     'search_fields' => ['name', 'sku'],
-     *     'filters' => fn($query) => $query->where('workspace_id', getActiveWorkSpace()),
+     *     'filters' => fn($query, array $scope = []) => $query->where('workspace_id', $scope['workspace_id'] ?? null),
      * ])
      * 
      * // Using DTO (recommended)
      * ->entitiesField('items', EntityFieldConfig::make(Product::class)
      *     ->searchFields(['name', 'sku'])
-     *     ->filters(fn($query) => $query->where('workspace_id', getActiveWorkSpace()))
+     *     ->filters(fn($query, array $scope = []) => $query->where('workspace_id', $scope['workspace_id'] ?? null))
      *     ->multiple()
      * )
      */

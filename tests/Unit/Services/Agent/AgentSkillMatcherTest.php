@@ -182,7 +182,7 @@ class AgentSkillMatcherTest extends UnitTestCase
             ->andReturn([$skill]);
 
         $context = new UnifiedActionContext('skill-context-test', null, [
-            ['role' => 'user', 'content' => 'I need to create invoice for Mohamed with 2 laptops.'],
+            ['role' => 'user', 'content' => 'I need to create invoice for Sample Customer with 2 laptops.'],
             ['role' => 'assistant', 'content' => 'I can help with that.'],
         ]);
 
@@ -195,6 +195,10 @@ class AgentSkillMatcherTest extends UnitTestCase
 
     public function test_it_matches_skill_by_semantic_business_alias(): void
     {
+        config()->set('ai-agent.skills.intent_aliases', [
+            'invoice' => ['invoice', 'bill'],
+        ]);
+
         $registry = Mockery::mock(AgentSkillRegistry::class);
         $skill = new AgentSkillDefinition(
             id: 'create_invoice',
@@ -211,7 +215,7 @@ class AgentSkillMatcherTest extends UnitTestCase
             ->andReturn([$skill]);
 
         $context = new UnifiedActionContext('skill-alias-test', null, [
-            ['role' => 'user', 'content' => 'Mohamed wants 2 Macbook Pro and 3 iPhone.'],
+            ['role' => 'user', 'content' => 'Sample Customer wants 2 Alpha Laptop and 3 Beta Phone.'],
         ]);
 
         $match = (new AgentSkillMatcher($registry))->matchIntent('bill him for those items', $context);

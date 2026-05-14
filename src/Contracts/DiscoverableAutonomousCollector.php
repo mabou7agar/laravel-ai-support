@@ -17,22 +17,22 @@ use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
  * {
  *     public static function getName(): string
  *     {
- *         return 'invoice';
+ *         return 'record_create';
  *     }
  * 
  *     public static function getConfig(): AutonomousCollectorConfig
  *     {
  *         return new AutonomousCollectorConfig(
- *             goal: 'Create a sales invoice',
+ *             goal: 'Create a record',
  *             tools: [...],
  *             outputSchema: [...],
- *             onComplete: fn($data) => Invoice::create($data),
+ *             onComplete: fn($data) => app(AppRecordService::class)->create($data),
  *         );
  *     }
  * 
  *     public static function getDescription(): string
  *     {
- *         return 'Create invoices with customer and products';
+ *         return 'Create records with configured fields and tools';
  *     }
  * }
  * ```

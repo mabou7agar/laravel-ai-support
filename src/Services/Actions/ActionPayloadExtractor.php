@@ -117,7 +117,7 @@ class ActionPayloadExtractor
             'If a related record name is already present and the user sends only an email, assign that email to the matching related email parameter rather than asking for the name again.',
             'For array fields, parse natural multi-item phrases into separate objects when the schema supports an array.',
             'For array fields, use _array_ops when the latest message means append, prepend, update, remove, increment, or decrement rather than replace.',
-            'Examples: "add iPhone" => {"_array_ops":[{"op":"append","path":"items","value":{"product_name":"iPhone","quantity":1}}]}; "also add" means append; "replace items with" means a normal array field patch; "remove Macbook" means op remove with match; "remove 1 iPhone" means op decrement with match, field, and amount.',
+            'Examples: "add Sample Item" => {"_array_ops":[{"op":"append","path":"items","value":{"name":"Sample Item","quantity":1}}]}; "also add" means append; "replace items with" means a normal array field patch; "remove Sample Item" means op remove with match; "remove 1 Sample Item" means op decrement with match, field, and amount.',
             'For price-only or correction updates, return partial item patches and omit unchanged fields.',
             $instructions,
             'Action ID: ' . ($action['id'] ?? ''),

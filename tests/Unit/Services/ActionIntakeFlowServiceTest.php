@@ -18,7 +18,7 @@ class ActionIntakeFlowServiceTest extends TestCase
 
         $flow->putPendingRelation($context, 12, 'invoice', [
             'kind' => 'existing_relation',
-            'payload' => ['customer_name' => 'Mohamed Abou Hagar'],
+            'payload' => ['customer_name' => 'Sample Customer'],
             'candidate' => ['id' => 44],
         ]);
 
@@ -47,12 +47,12 @@ class ActionIntakeFlowServiceTest extends TestCase
 
         $flow->putPendingRelation($context, 12, 'invoice', [
             'kind' => 'relation_collection_review',
-            'payload' => ['items' => [['product_name' => 'Macbook'], ['product_name' => 'iPhone']]],
+            'payload' => ['items' => [['product_name' => 'Alpha Laptop'], ['product_name' => 'Beta Phone']]],
             'existing' => [['index' => 0, 'id' => 77]],
-            'missing' => [['index' => 1, 'name' => 'iPhone']],
+            'missing' => [['index' => 1, 'name' => 'Beta Phone']],
         ]);
 
-        $response = $flow->handlePendingRelationDecision('use existing Macbook and create new iPhone', $context, 12, 'invoice', [
+        $response = $flow->handlePendingRelationDecision('use existing Alpha Laptop and create new Beta Phone', $context, 12, 'invoice', [
             'apply_existing' => function (array $payload, array $pending): array {
                 $payload['items'][0]['product_id'] = $pending['existing'][0]['id'];
 

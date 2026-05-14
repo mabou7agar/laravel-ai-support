@@ -87,13 +87,7 @@ trait AutoResolvesRelationships
                             // Merge with defaults
                             $createData = array_merge($relationConfig['defaults'] ?? [], $value);
                             
-                            // Add common defaults if not present (generic for all models)
-                            if (!isset($createData['workspace'])) {
-                                $createData['workspace'] = function_exists('getActiveWorkSpace') ? getActiveWorkSpace() : 1;
-                            }
-                            if (!isset($createData['created_by'])) {
-                                $createData['created_by'] = auth()->id() ?? 1;
-                            }
+                            $createData = array_merge(static::aiEngineCreationDefaults($relatedModel), $createData);
                             
                             // Auto-resolve nested relationships if model supports it
                             if (method_exists($relatedModel, 'autoResolveRelationships')) {
@@ -494,13 +488,7 @@ trait AutoResolvesRelationships
             $data = array_merge($data, $config['defaults']);
         }
         
-        // Add workspace if model has it
-        if (in_array('workspace_id', $relatedModel->getFillable())) {
-            $data['workspace_id'] = $data['workspace_id'] ?? getActiveWorkSpace() ?? 1;
-        }
-        if (in_array('created_by', $relatedModel->getFillable())) {
-            $data['created_by'] = $data['created_by'] ?? auth()->id() ?? 1;
-        }
+        $data = array_merge(static::aiEngineCreationDefaults($relatedModel), $data);
         
         try {
             $created = $modelClass::create($data);
@@ -561,6 +549,57 @@ trait AutoResolvesRelationships
                     return $contextValue;
                 }
                 return null;
+        }
+    }
+
+    /**
+     * Build generic creation defaults from the package scope resolver.
+     */
+    protected static function aiEngineCreationDefaults(string $modelClass): array
+    {
+        $defaults = [];
+
+        try {
+            $model = new $modelClass();
+            $fillable = method_exists($model, 'getFillable') ? $model->getFillable() : [];
+            $scope = [];
+
+            if (function_exists('app') && app()->bound(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class)) {
+                $scope = app(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class)->merge(static::aiEngineActorId(), []);
+            }
+
+            $workspaceId = $scope['workspace_id'] ?? $scope['workspace'] ?? null;
+            foreach (['workspace_id', 'workspace'] as $field) {
+                if ($workspaceId !== null && in_array($field, $fillable, true)) {
+                    $defaults[$field] = $workspaceId;
+                    break;
+                }
+            }
+
+            $actorId = static::aiEngineActorId();
+            foreach (['created_by', 'creator_id', 'user_id'] as $field) {
+                if ($actorId !== null && in_array($field, $fillable, true)) {
+                    $defaults[$field] = $actorId;
+                    break;
+                }
+            }
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return $defaults;
+    }
+
+    protected static function aiEngineActorId(): mixed
+    {
+        try {
+            $user = auth()->user();
+
+            return is_object($user) && method_exists($user, 'getAuthIdentifier')
+                ? $user->getAuthIdentifier()
+                : null;
+        } catch (\Throwable) {
+            return null;
         }
     }
     

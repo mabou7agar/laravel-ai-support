@@ -15,8 +15,6 @@ class FalReferencePackGenerationServiceTest extends TestCase
 {
     public function test_prepare_request_uses_character_profile_for_default_entity_type(): void
     {
-        config()->set('ai-engine.demo_user_id', '7');
-
         $service = new FalReferencePackGenerationService(
             Mockery::mock(AIEngineService::class),
             app(FalCharacterStore::class)
@@ -25,7 +23,7 @@ class FalReferencePackGenerationServiceTest extends TestCase
         $request = $service->prepareRequest('Generate Mina', [
             'frame_count' => 16,
             'look_size' => 4,
-            'use_demo_user_id' => true,
+            'fallback_user_id' => '7',
         ]);
 
         $this->assertSame('fal_ai', $request->getEngine()->value);

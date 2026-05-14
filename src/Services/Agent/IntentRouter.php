@@ -486,7 +486,7 @@ Routing rules:
 2) Use route_to_node only when the requested domain belongs to a remote node.
 3) Never route_to_node for "local".
 4) Use data_query through use_tool for local list/show/count/filter questions when a target entity/table/model is named. Pass the original query if exact model/table parameters are uncertain.
-5) Use data_query through use_tool for exact local IDs, codes, invoice numbers, ticket numbers, SKUs, or other structured filters.
+5) Use data_query through use_tool for exact local IDs, codes, reference numbers, SKUs, or other structured filters.
 6) For Action Flows, use use_tool with update_action_draft to start or continue draft collection. Params must include action_id, payload_patch, and reset=true only when starting a new flow. Use initial_payload when provided by the flow.
 7) If ACTIVE ACTION FLOW has relation_next_steps or next_options with relation_create_confirmation and the user confirms/proceeds/approves that relation, continue the active draft using update_action_draft with params {"action_id":"the active action_id","payload_patch":{"approved_missing_relations":["the approval_key"]}}. Do not start a standalone action for that related record.
 8) If ACTIVE ACTION FLOW exists and the user provides more details, corrections, dates, item details, relation details, or relation approval, continue the active action_id with update_action_draft unless the user explicitly says to cancel, restart, or switch to a different action instead.

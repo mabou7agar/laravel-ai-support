@@ -19,20 +19,20 @@ class ActionPayloadExtractorTest extends TestCase
             ->once()
             ->withArgs(fn ($request): bool => str_contains($request->getPrompt(), 'ACTION_PAYLOAD_EXTRACTOR')
                 && str_contains($request->getPrompt(), 'create_sales_invoice')
-                && str_contains($request->getPrompt(), '5 Macbook Pro and 4 iPhone'))
+                && str_contains($request->getPrompt(), '5 Alpha Laptop and 4 Beta Phone'))
             ->andReturn(AIResponse::success(json_encode([
                 'payload_patch' => [
-                    'customer_name' => 'Mohamed Abou Hagar',
+                    'customer_name' => 'Sample Customer',
                     'ignored_field' => 'remove me',
                     'items' => [
                         [
-                            'product_name' => 'Macbook Pro',
+                            'product_name' => 'Alpha Laptop',
                             'quantity' => 5,
                             'unit_price' => 500,
                             'ignored_item_field' => 'remove me',
                         ],
                         [
-                            'product_name' => 'iPhone',
+                            'product_name' => 'Beta Phone',
                             'quantity' => 4,
                             'unit_price' => 200,
                         ],
@@ -43,20 +43,20 @@ class ActionPayloadExtractorTest extends TestCase
 
         $extractor = new ActionPayloadExtractor($ai);
 
-        $payload = $extractor->extract($this->invoiceAction(), '5 Macbook Pro and 4 iPhone', [
-            'customer_name' => 'Mohamed Abou Hagar',
+        $payload = $extractor->extract($this->invoiceAction(), '5 Alpha Laptop and 4 Beta Phone', [
+            'customer_name' => 'Sample Customer',
         ]);
 
         $this->assertSame([
-            'customer_name' => 'Mohamed Abou Hagar',
+            'customer_name' => 'Sample Customer',
             'items' => [
                 [
-                    'product_name' => 'Macbook Pro',
+                    'product_name' => 'Alpha Laptop',
                     'quantity' => 5,
                     'unit_price' => 500,
                 ],
                 [
-                    'product_name' => 'iPhone',
+                    'product_name' => 'Beta Phone',
                     'quantity' => 4,
                     'unit_price' => 200,
                 ],
@@ -83,19 +83,19 @@ class ActionPayloadExtractorTest extends TestCase
             ->once()
             ->andReturn(AIResponse::success(json_encode([
                 'payload_patch' => [
-                    'customer_email' => 'mohamed@example.test',
+                    'customer_email' => 'sample.customer@example.test',
                     'approved_missing_relations' => ['customer_id'],
                 ],
             ]), 'openai', 'gpt-4o'));
 
         $extractor = new ActionPayloadExtractor($ai);
 
-        $payload = $extractor->extract($this->invoiceActionWithRelationApproval(), 'mohamed@example.test', [
-            'customer_name' => 'Mohamed Abou Hagar',
+        $payload = $extractor->extract($this->invoiceActionWithRelationApproval(), 'sample.customer@example.test', [
+            'customer_name' => 'Sample Customer',
         ]);
 
         $this->assertSame([
-            'customer_email' => 'mohamed@example.test',
+            'customer_email' => 'sample.customer@example.test',
         ], $payload);
     }
 
@@ -113,8 +113,8 @@ class ActionPayloadExtractorTest extends TestCase
         $extractor = new ActionPayloadExtractor($ai);
 
         $payload = $extractor->extract($this->invoiceActionWithRelationApproval(), 'yes create customer', [
-            'customer_name' => 'Mohamed Abou Hagar',
-            'customer_email' => 'mohamed@example.test',
+            'customer_name' => 'Sample Customer',
+            'customer_email' => 'sample.customer@example.test',
         ]);
 
         $this->assertSame([
@@ -148,7 +148,7 @@ class ActionPayloadExtractorTest extends TestCase
         $ai->shouldReceive('generate')
             ->once()
             ->withArgs(fn ($request): bool => str_contains($request->getPrompt(), '_array_ops')
-                && str_contains($request->getPrompt(), 'add iPhone 13 Pro Max'))
+                && str_contains($request->getPrompt(), 'add Beta Phone 13 Pro Max'))
             ->andReturn(AIResponse::success(json_encode([
                 'payload_patch' => [
                     '_array_ops' => [
@@ -156,7 +156,7 @@ class ActionPayloadExtractorTest extends TestCase
                             'op' => 'append',
                             'path' => 'items',
                             'value' => [
-                                'product_name' => 'iPhone 13 Pro Max',
+                                'product_name' => 'Beta Phone 13 Pro Max',
                                 'quantity' => 1,
                                 'ignored_item_field' => 'remove me',
                             ],
@@ -173,7 +173,7 @@ class ActionPayloadExtractorTest extends TestCase
 
         $extractor = new ActionPayloadExtractor($ai);
 
-        $payload = $extractor->extract($this->invoiceAction(), 'add iPhone 13 Pro Max', [
+        $payload = $extractor->extract($this->invoiceAction(), 'add Beta Phone 13 Pro Max', [
             'items' => [
                 ['product_name' => 'MacBook Pro', 'quantity' => 2],
             ],
@@ -185,7 +185,7 @@ class ActionPayloadExtractorTest extends TestCase
                     'op' => 'append',
                     'path' => 'items',
                     'value' => [
-                        'product_name' => 'iPhone 13 Pro Max',
+                        'product_name' => 'Beta Phone 13 Pro Max',
                         'quantity' => 1,
                     ],
                 ],
@@ -204,7 +204,7 @@ class ActionPayloadExtractorTest extends TestCase
                         [
                             'op' => 'decrement',
                             'path' => 'items',
-                            'match' => ['product_name' => 'iPhone', 'ignored_item_field' => 'remove me'],
+                            'match' => ['product_name' => 'Beta Phone', 'ignored_item_field' => 'remove me'],
                             'field' => 'quantity',
                             'amount' => 1,
                             'ignored_operation_field' => 'remove me',
@@ -212,7 +212,7 @@ class ActionPayloadExtractorTest extends TestCase
                         [
                             'op' => 'decrement',
                             'path' => 'items',
-                            'match' => ['product_name' => 'iPhone'],
+                            'match' => ['product_name' => 'Beta Phone'],
                             'field' => 'unsafe_field',
                             'amount' => 1,
                         ],
@@ -222,9 +222,9 @@ class ActionPayloadExtractorTest extends TestCase
 
         $extractor = new ActionPayloadExtractor($ai);
 
-        $payload = $extractor->extract($this->invoiceAction(), 'remove 1 iPhone', [
+        $payload = $extractor->extract($this->invoiceAction(), 'remove 1 Beta Phone', [
             'items' => [
-                ['product_name' => 'iPhone', 'quantity' => 3],
+                ['product_name' => 'Beta Phone', 'quantity' => 3],
             ],
         ]);
 
@@ -233,14 +233,14 @@ class ActionPayloadExtractorTest extends TestCase
                 [
                     'op' => 'decrement',
                     'path' => 'items',
-                    'match' => ['product_name' => 'iPhone'],
+                    'match' => ['product_name' => 'Beta Phone'],
                     'field' => 'quantity',
                     'amount' => 1.0,
                 ],
                 [
                     'op' => 'decrement',
                     'path' => 'items',
-                    'match' => ['product_name' => 'iPhone'],
+                    'match' => ['product_name' => 'Beta Phone'],
                     'amount' => 1.0,
                 ],
             ],
@@ -269,7 +269,7 @@ class ActionPayloadExtractorTest extends TestCase
         $extractor = new ActionPayloadExtractor($ai);
         $payload = $extractor->extract($action, 'add 1 iPad', [
             'items' => [
-                ['product_name' => 'iPhone', 'quantity' => 2],
+                ['product_name' => 'Beta Phone', 'quantity' => 2],
             ],
             'ready_for_confirmation' => true,
         ]);

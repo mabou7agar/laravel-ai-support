@@ -27,7 +27,7 @@ class ActionExecutionTest extends ActionTestCase
         
         // Act: Execute the action
         $action = ActionFactory::modelAction(\App\Models\Product::class, [
-            'name' => 'iPhone 15',
+            'name' => 'Sample Phone 15',
             'price' => 999,
         ]);
         
@@ -53,7 +53,7 @@ class ActionExecutionTest extends ActionTestCase
         
         // Act: Execute with missing price
         $action = ActionFactory::modelAction(\App\Models\Product::class, [
-            'name' => 'iPhone 15',
+            'name' => 'Sample Phone 15',
             // price is missing
         ]);
         
@@ -138,13 +138,13 @@ class ActionExecutionTest extends ActionTestCase
         // Act
         $this->actionManager->executeById(
             actionId: 'create_product',
-            params: ['name' => 'iPhone', 'price' => 999],
+            params: ['name' => 'Sample Phone', 'price' => 999],
             userId: 1
         );
         
         // Assert
         $this->assertActionCalledWith($spy, 'create_product', [
-            'name' => 'iPhone',
+            'name' => 'Sample Phone',
             'price' => 999,
         ]);
     }

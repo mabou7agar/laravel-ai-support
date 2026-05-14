@@ -345,9 +345,35 @@ return [
             'temperature' => env('AI_AGENT_SKILL_INTENT_MATCHING_TEMPERATURE', 0.05),
             'min_confidence' => env('AI_AGENT_SKILL_INTENT_MATCHING_MIN_CONFIDENCE', 72),
         ],
-        'intent_aliases' => [
-            'invoice' => ['invoice', 'bill', 'billing', 'charge', 'فاتورة', 'فوتر', 'facture', 'factura', 'fatura'],
+        'intent_aliases' => [],
+        'continuation_terms' => [
+            'do it',
+            'create it',
+            'make it',
+            'submit it',
+            'finalize',
+            'proceed',
+            'go ahead',
+            'turn .* into',
+            'convert .* into',
+            'use .* conversation',
+            'from .* conversation',
+            'حول',
+            'اعمل',
+            'انشئ',
+            'أنشئ',
         ],
+    ],
+
+    'routing_classifier' => [
+        'action_entities' => env('AI_AGENT_ROUTING_ACTION_ENTITIES')
+            ? array_values(array_filter(array_map('trim', explode(',', env('AI_AGENT_ROUTING_ACTION_ENTITIES')))))
+            : [],
+        'structured_status_terms' => ['open', 'closed', 'active', 'inactive', 'pending', 'completed'],
+        'structured_collection_terms' => ['items', 'records', 'tasks', 'projects', 'mails', 'emails'],
+        'structured_field_terms' => ['status', 'created', 'updated', 'assigned', 'owner', 'workspace', 'project', 'user', 'type'],
+        'selection_reference_terms' => ['one', 'record', 'item', 'entry', 'message', 'result'],
+        'pending_entity_terms' => ['record', 'item', 'entry'],
     ],
 
     'skill_providers' => [

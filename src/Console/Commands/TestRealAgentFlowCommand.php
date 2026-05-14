@@ -12,11 +12,12 @@ class TestRealAgentFlowCommand extends Command
 {
     protected $signature = 'ai-engine:test-real-agent
                             {--message=* : Ordered test messages (repeat option)}
-                            {--script=followup : Built-in script when no messages provided (followup|minimal|invoice-create)}
-                            {--assert= : Validate a named scenario against responses (invoice-create)}
+                            {--script=followup : Built-in script when no messages provided (followup|minimal)}
+                            {--script-file= : JSON file containing a messages array}
+                            {--assert= : Validate a named scenario against responses}
                             {--full-response : Include full response text in JSON output}
                             {--session= : Session ID}
-                            {--user=1 : User ID}
+                            {--user= : User ID}
                             {--engine=openai : AI engine}
                             {--model=gpt-4o-mini : AI model}
                             {--rag-model=* : RAG model/collection class to scope retrieval (repeat option)}
@@ -34,7 +35,20 @@ class TestRealAgentFlowCommand extends Command
     ): int {
         $sessionId = $this->option('session') ?: 'real-agent-' . uniqid();
         $userId = $this->option('user');
-        $messages = $this->resolveMessages();
+        try {
+            $messages = $this->resolveMessages();
+        } catch (\InvalidArgumentException $e) {
+            if ($this->option('json')) {
+                $this->line(json_encode([
+                    'success' => false,
+                    'error' => $e->getMessage(),
+                ], JSON_PRETTY_PRINT));
+            } else {
+                $this->error($e->getMessage());
+            }
+
+            return self::FAILURE;
+        }
         $ragModels = $this->resolveRagModels();
         $localOnly = (bool) $this->option('local-only');
         $originalNodesEnabled = config('ai-engine.nodes.enabled');
@@ -130,28 +144,55 @@ class TestRealAgentFlowCommand extends Command
             return $messages;
         }
 
+        $scriptFile = trim((string) ($this->option('script-file') ?? ''));
+        if ($scriptFile !== '') {
+            return $this->messagesFromScriptFile($scriptFile);
+        }
+
         return match ((string) $this->option('script')) {
             'minimal' => [
                 'hello',
                 'show me recent updates',
             ],
-            'invoice-create' => [
-                'create invoice',
-                'Mohamed Abou Hagar',
-                'mohamed@example.test',
-                'actually change customer name to Mohamed Hagar before confirmation',
-                'yes create the customer',
-                '2 Macbook Pro and 3 iPhone',
-                'remove 1 iPhone and add 1 iPad',
-                'confirm',
-                'yes',
-            ],
-            default => [
-                'list invoices',
+            'followup' => [
+                'list recent records',
                 'what is the status of the first one?',
                 'should i follow up on it?',
             ],
+            default => throw new \InvalidArgumentException('Unknown built-in script [' . (string) $this->option('script') . ']. Use --message or --script-file for app-specific flows.'),
         };
+    }
+
+    protected function messagesFromScriptFile(string $path): array
+    {
+        if (!is_file($path)) {
+            throw new \InvalidArgumentException("Script file [{$path}] was not found.");
+        }
+
+        $contents = file_get_contents($path);
+        if ($contents === false) {
+            throw new \InvalidArgumentException("Script file [{$path}] could not be read.");
+        }
+
+        $decoded = json_decode($contents, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            $messages = is_array($decoded) && array_is_list($decoded)
+                ? $decoded
+                : (is_array($decoded) ? ($decoded['messages'] ?? []) : []);
+        } else {
+            $messages = preg_split('/\R/', $contents) ?: [];
+        }
+
+        $messages = array_values(array_filter(
+            array_map(static fn (mixed $message): string => trim((string) $message), (array) $messages),
+            static fn (string $message): bool => $message !== ''
+        ));
+
+        if ($messages === []) {
+            throw new \InvalidArgumentException("Script file [{$path}] does not contain any messages.");
+        }
+
+        return $messages;
     }
 
     protected function resolveRagModels(): array
@@ -230,7 +271,6 @@ class TestRealAgentFlowCommand extends Command
     protected function assertScenario(string $scenario, array $results): ?array
     {
         return match ($scenario) {
-            'invoice-create' => $this->assertInvoiceCreateScenario($results),
             '', 'none' => null,
             default => [
                 'scenario' => $scenario,
@@ -238,62 +278,6 @@ class TestRealAgentFlowCommand extends Command
                 'failures' => ["Unknown assertion scenario [{$scenario}]."],
             ],
         };
-    }
-
-    protected function assertInvoiceCreateScenario(array $results): array
-    {
-        $texts = array_map(
-            fn (array $row): string => mb_strtolower((string) ($row['response_text'] ?? $row['response_excerpt'] ?? '')),
-            $results
-        );
-
-        $checks = [
-            'asks_for_customer' => fn (): bool => $this->containsAny($texts[0] ?? '', ['customer name', 'name or email', 'customer']),
-            'handles_missing_customer' => fn (): bool => $this->containsAny($texts[1] ?? '', [
-                'not found',
-                'couldn\'t find',
-                'create a new customer',
-                'missing customer',
-                'customer email',
-                'email',
-            ]),
-            'keeps_edited_customer_name' => fn (): bool => str_contains($texts[3] ?? '', 'mohamed hagar'),
-            'does_not_report_missing_create_customer_tool' => fn (): bool => !$this->containsAny(implode("\n", $texts), [
-                'tool \'create_customer\' not found',
-                'unable to create a new customer',
-                'system limitation',
-                'customer_id": 0',
-                'placeholder',
-            ]),
-            'asks_or_accepts_products' => fn (): bool => $this->containsAny($texts[5] ?? '', ['macbook pro', 'iphone', 'product']),
-            'supports_item_edit' => fn (): bool => str_contains($texts[6] ?? '', 'ipad')
-                && str_contains($texts[6] ?? '', 'iphone')
-                && $this->containsAny($texts[6] ?? '', ['2 iphone', '2 iphones', '2 units', 'quantity: 2']),
-            'final_review_asks_for_confirmation' => fn (): bool => $this->containsAny($texts[7] ?? '', [
-                'please review',
-                'confirm to proceed',
-                'please confirm',
-                'ready to proceed',
-                'create this invoice',
-                'type:',
-                'yes',
-            ]),
-            'final_confirmation_completes' => fn (): bool => (($results[8]['is_complete'] ?? false) === true)
-                || $this->containsAny($texts[8] ?? '', ['successfully completed', 'invoice', 'created']),
-        ];
-
-        $failures = [];
-        foreach ($checks as $name => $check) {
-            if (!$check()) {
-                $failures[] = $name;
-            }
-        }
-
-        return [
-            'scenario' => 'invoice-create',
-            'passed' => $failures === [],
-            'failures' => $failures,
-        ];
     }
 
     protected function containsAny(string $text, array $needles): bool

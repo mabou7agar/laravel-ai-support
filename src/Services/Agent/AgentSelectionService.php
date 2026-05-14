@@ -53,7 +53,12 @@ class AgentSelectionService
 
     public function detectsPositionalReference(string $message, UnifiedActionContext $context): bool
     {
-        $positionalPattern = '/\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|the\s+\d+|number\s+\d+|\d+)\s*(one|email|invoice|item|entry)?\b/i';
+        $referenceTerms = array_values(array_filter(
+            array_map(static fn (mixed $term): string => preg_quote(trim((string) $term), '/'), (array) config('ai-agent.routing_classifier.selection_reference_terms', ['one', 'record', 'item', 'entry'])),
+            static fn (string $term): bool => $term !== ''
+        ));
+        $suffix = $referenceTerms !== [] ? '(' . implode('|', $referenceTerms) . ')?' : '';
+        $positionalPattern = '/\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|the\s+\d+|number\s+\d+|\d+)\s*' . $suffix . '\b/i';
         if (!preg_match($positionalPattern, $message)) {
             return false;
         }

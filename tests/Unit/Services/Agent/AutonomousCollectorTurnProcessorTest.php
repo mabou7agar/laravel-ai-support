@@ -34,7 +34,7 @@ class AutonomousCollectorTurnProcessorTest extends UnitTestCase
             configName: 'customer',
             pendingToolConfirmation: [
                 'tool' => 'create_customer',
-                'arguments' => ['name' => 'Mohamed'],
+                'arguments' => ['name' => 'Sample Customer'],
             ],
         );
 

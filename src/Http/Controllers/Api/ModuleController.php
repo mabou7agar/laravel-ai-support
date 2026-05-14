@@ -116,9 +116,6 @@ class ModuleController extends Controller
         if (str_contains($name, 'database')) return '💾';
         if (str_contains($name, 'api')) return '🔌';
         if (str_contains($name, 'user')) return '👤';
-        if (str_contains($name, 'customer')) return '👥';
-        if (str_contains($name, 'product')) return '🛍️';
-        if (str_contains($name, 'order')) return '📦';
         
         return '📚';
     }

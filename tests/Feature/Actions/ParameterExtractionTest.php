@@ -23,7 +23,7 @@ class ParameterExtractionTest extends ActionTestCase
         
         // Act
         $result = $this->actionExtractor->extract(
-            message: "Create a product called iPhone 15 for $999",
+            message: "Create a product called Sample Phone 15 for $999",
             actionDefinition: $actionDefinition,
             context: []
         );
@@ -31,7 +31,7 @@ class ParameterExtractionTest extends ActionTestCase
         // Assert
         $this->assertExtractionComplete($result);
         $this->assertParametersExtracted([
-            'name' => 'iPhone 15',
+            'name' => 'Sample Phone 15',
             'price' => 999,
         ], $result->params);
         $this->assertHighConfidence($result);
@@ -49,7 +49,7 @@ class ParameterExtractionTest extends ActionTestCase
         
         // Act
         $result = $this->actionExtractor->extract(
-            message: "Create a product called iPhone 15",
+            message: "Create a product called Sample Phone 15",
             actionDefinition: $actionDefinition,
             context: []
         );
@@ -73,7 +73,7 @@ class ParameterExtractionTest extends ActionTestCase
             'conversation_history' => [
                 ['role' => 'user', 'content' => 'I want to add a new product'],
                 ['role' => 'assistant', 'content' => 'What product would you like to add?'],
-                ['role' => 'user', 'content' => 'An iPhone'],
+                ['role' => 'user', 'content' => 'An Sample Phone'],
                 ['role' => 'assistant', 'content' => 'What price?'],
             ],
         ];

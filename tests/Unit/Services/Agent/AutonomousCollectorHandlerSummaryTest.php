@@ -32,8 +32,8 @@ class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
             ],
             entityResolvers: [
                 'customer_id' => fn (int $id): array => [
-                    'Name' => 'Mohamed Abou Hagar',
-                    'Email' => 'm.abou7agarx@gmail.com',
+                    'Name' => 'Sample Customer',
+                    'Email' => 'sample.customer@example.test',
                 ],
             ]
         );
@@ -49,7 +49,7 @@ class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
             'items' => [
                 [
                     'product_id' => 2,
-                    'name' => 'Macbook Pro M1',
+                    'name' => 'Alpha Laptop 13',
                     'quantity' => 2,
                     'unit_price' => 300,
                     'total' => 600,
@@ -75,15 +75,15 @@ class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
                 'result' => [
                     'id' => 2,
                     'user_id' => 905,
-                    'name' => 'Mohamed Abou Hagar',
-                    'email' => 'm.abou7agarx@gmail.com',
+                    'name' => 'Sample Customer',
+                    'email' => 'sample.customer@example.test',
                 ],
             ],
         ]);
 
         $this->assertStringContainsString('Customer', $summary);
-        $this->assertStringContainsString('Mohamed Abou Hagar', $summary);
-        $this->assertStringContainsString('Macbook Pro M1 × 2 @ 300.00 = 600.00', $summary);
+        $this->assertStringContainsString('Sample Customer', $summary);
+        $this->assertStringContainsString('Alpha Laptop 13 × 2 @ 300.00 = 600.00', $summary);
         $this->assertStringNotContainsString('Customer User', $summary);
         $this->assertStringNotContainsString('Account', $summary);
         $this->assertStringNotContainsString('Tax', $summary);
@@ -108,20 +108,20 @@ class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
         ], [
             'items' => [
                 [
-                    'product_name' => 'Macbook Pro',
+                    'product_name' => 'Alpha Laptop',
                     'quantity' => 2,
                     'unit_price' => 1999,
                 ],
                 [
-                    'product_name' => 'iPhone',
+                    'product_name' => 'Beta Phone',
                     'quantity' => 2,
                     'unit_price' => 999,
                 ],
             ],
         ], $config);
 
-        $this->assertStringContainsString('Macbook Pro', $message);
-        $this->assertStringContainsString('iPhone', $message);
+        $this->assertStringContainsString('Alpha Laptop', $message);
+        $this->assertStringContainsString('Beta Phone', $message);
         $this->assertStringNotContainsString('Unknown', $message);
     }
 
@@ -160,12 +160,12 @@ class AutonomousCollectorHandlerSummaryTest extends UnitTestCase
         ]));
 
         $message = (string) $buildMessage->invoke($handler, 'create_customer', [
-            'name' => 'Mohamed Hagar',
-            'email' => 'mohamed@example.test',
+            'name' => 'Sample Customer',
+            'email' => 'sample.customer@example.test',
         ], $config);
 
         $this->assertStringContainsString('Please confirm', $message);
-        $this->assertStringContainsString('Mohamed Hagar', $message);
-        $this->assertStringContainsString('mohamed@example.test', $message);
+        $this->assertStringContainsString('Sample Customer', $message);
+        $this->assertStringContainsString('sample.customer@example.test', $message);
     }
 }

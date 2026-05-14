@@ -14,6 +14,9 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
         $this->assertTrue(config('ai-engine.engines.openai.models.gpt-4o-mini.enabled'));
         $this->assertSame('HS256', config('ai-engine.nodes.jwt.algorithm'));
         $this->assertSame(true, config('ai-engine.provider_tools.approvals.enabled'));
+        $this->assertNull(config('ai-engine.demo_user_id'));
+        $this->assertFalse(config('ai-engine.legacy_chat_routes.enabled'));
+        $this->assertFalse(config('ai-engine.auth_routes.enabled'));
     }
 
     public function test_defaults_include_provider_margin_rates_for_fal_and_gemini(): void

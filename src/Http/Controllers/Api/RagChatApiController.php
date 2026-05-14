@@ -73,7 +73,7 @@ class RagChatApiController extends Controller
             $useMemory = $dto->memory;
             $useActions = $dto->actions;
             $useRag = $request->input('use_rag', true);
-            $userId = $dto->userId; // SECURITY: Uses authenticated user or demo user
+            $userId = $dto->userId;
 
             // Get RAG collections - respect user's explicit choice
             $ragCollections = $request->input('rag_collections');
@@ -583,7 +583,7 @@ class RagChatApiController extends Controller
             $model = $request->input('model', 'gpt-4o');
             $useRag = filter_var($request->input('use_rag', true), FILTER_VALIDATE_BOOLEAN);
             $ragCollections = json_decode($request->input('rag_collections', '[]'), true) ?: [];
-            $userId = $request->user()?->id ?? config('ai-engine.demo_user_id', '1');
+            $userId = $request->input('user_id') ?? $request->user()?->getAuthIdentifier();
 
             // Analyze file using FileAnalysisService (handles everything)
             $response = $this->fileAnalysis->analyzeFile(
@@ -641,7 +641,7 @@ class RagChatApiController extends Controller
 
         $client = \OpenAI::client($apiKey);
         
-        $systemPrompt = "You are an expert at analyzing images and extracting information. When analyzing receipts, invoices, or documents, extract all relevant data in a structured format. Be thorough and accurate. For receipts, extract: store name, date, items with prices, subtotal, tax, total, payment method if visible.";
+        $systemPrompt = "You are an expert at analyzing images and extracting information. Extract all relevant visible data in a structured format. Be thorough and accurate. For transactional documents, include parties, dates, line items, totals, taxes, and payment details when visible.";
         
         $response = $client->chat()->create([
             'model' => 'gpt-4o',
@@ -725,7 +725,7 @@ class RagChatApiController extends Controller
         
         // Add specific instructions based on user message or default
         if (empty($message) || $message === 'Analyze this file and extract relevant information.') {
-            $fullMessage .= "Please analyze this document and extract all relevant information. If this is a receipt or invoice, extract: vendor/store name, date, line items with prices, subtotal, tax, total amount, and payment method if available. Present the data in a clear, structured format.";
+            $fullMessage .= "Please analyze this document and extract all relevant information. For transactional documents, extract parties, dates, line items, subtotals, taxes, totals, and payment details when available. Present the data in a clear, structured format.";
         } else {
             $fullMessage .= $message;
         }
@@ -793,7 +793,7 @@ class RagChatApiController extends Controller
             // Step 2: Create an assistant with file search capability
             $assistant = $client->assistants()->create([
                 'name' => 'Document Analyzer',
-                'instructions' => "You are an expert document analyst. Analyze uploaded files thoroughly and extract all relevant information. For receipts and invoices, extract: vendor/store name, date, line items with prices, subtotal, tax, total amount, and payment method. For other documents, provide a comprehensive summary and extract key data points. Be thorough and accurate. Always respond in a structured format.",
+                'instructions' => "You are an expert document analyst. Analyze uploaded files thoroughly and extract all relevant information. For transactional documents, extract parties, dates, line items, subtotals, taxes, totals, and payment method. For other documents, provide a comprehensive summary and extract key data points. Be thorough and accurate. Always respond in a structured format.",
                 'model' => 'gpt-4o',
                 'tools' => [
                     ['type' => 'file_search'],

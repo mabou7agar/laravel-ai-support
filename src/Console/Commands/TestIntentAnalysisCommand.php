@@ -32,14 +32,14 @@ class TestIntentAnalysisCommand extends Command
         $this->info("Session ID: {$sessionId}");
         $this->newLine();
 
-        // Test Scenario 1: Create Product Request
-        $this->info('📝 Test 1: Initial Product Creation Request');
-        $this->line('User: "create a product called MacBook Pro for $2499"');
+        // Test Scenario 1: Create Record Request
+        $this->info('📝 Test 1: Initial Record Creation Request');
+        $this->line('User: "create a record called Sample Item for 2499"');
         $this->newLine();
 
         try {
             $response1 = $chatService->processMessage(
-                message: 'create a product called MacBook Pro for $2499',
+                message: 'create a record called Sample Item for 2499',
                 sessionId: $sessionId,
                 engine: 'openai',
                 model: 'gpt-4o-mini',

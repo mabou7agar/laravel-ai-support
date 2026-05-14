@@ -34,19 +34,16 @@ class IntelligentEntityService
     {
         $inferred = [];
         
-        // Get entity name for inference
-        $entityName = $existingData['name'] ?? $existingData['product'] ?? null;
+        $entityName = $this->entityDisplayName($existingData);
         
         if (!$entityName) {
             return $inferred;
         }
         
-        // Infer category from product name
         if (in_array('category', $allFields) && !isset($existingData['category'])) {
             $inferred['category'] = $this->inferCategory($entityName);
         }
         
-        // Infer brand from product name
         if (in_array('brand', $allFields) && !isset($existingData['brand'])) {
             $brand = $this->inferBrand($entityName);
             if ($brand) {
@@ -54,7 +51,6 @@ class IntelligentEntityService
             }
         }
         
-        // Infer type from product name
         if (in_array('type', $allFields) && !isset($existingData['type'])) {
             $type = $this->inferType($entityName);
             if ($type) {
@@ -187,7 +183,7 @@ class IntelligentEntityService
      */
     public function generateContextAwarePrompt(array $existingData, array $missingFields, string $entityType): string
     {
-        $entityName = $existingData['name'] ?? $existingData['product'] ?? 'this ' . $entityType;
+        $entityName = $this->entityDisplayName($existingData) ?? 'this ' . $entityType;
         
         $message = "I see you want to add **{$entityName}**.\n\n";
         
@@ -195,7 +191,7 @@ class IntelligentEntityService
         if (count($existingData) > 1) {
             $message .= "What I know so far:\n";
             foreach ($existingData as $key => $value) {
-                if ($key !== 'name' && $key !== 'product' && !empty($value)) {
+                if ($key !== 'name' && !empty($value)) {
                     $message .= "- " . ucfirst(str_replace('_', ' ', $key)) . ": {$value}\n";
                 }
             }
@@ -300,15 +296,15 @@ class IntelligentEntityService
         $prompt .= "User request: \"{$userInput}\"\n\n";
         $prompt .= "Determine what they want to modify:\n";
         $prompt .= "- action: 'add', 'remove', 'change', or 'update_item_field'\n";
-        $prompt .= "- field: which field to modify (e.g., 'items', 'products')\n";
+        $prompt .= "- field: which field to modify (for example, 'items')\n";
         $prompt .= "- item_name: name of item to modify (if modifying array item)\n";
         $prompt .= "- item_field: which field within the item to update (e.g., 'price', 'sale_price', 'quantity')\n";
         $prompt .= "- value: new value (for add/change/update actions)\n\n";
         $prompt .= "Return JSON with these fields or null if unclear.\n";
         $prompt .= "Examples:\n";
         $prompt .= "- Remove item: {\"action\":\"remove\",\"field\":\"items\",\"item_name\":\"macboss\"}\n";
-        $prompt .= "- Change price: {\"action\":\"update_item_field\",\"field\":\"products\",\"item_name\":\"Macbook\",\"item_field\":\"price\",\"value\":300}\n";
-        $prompt .= "- Change quantity: {\"action\":\"update_item_field\",\"field\":\"items\",\"item_name\":\"Rice\",\"item_field\":\"quantity\",\"value\":10}";
+        $prompt .= "- Change numeric field: {\"action\":\"update_item_field\",\"field\":\"items\",\"item_name\":\"Sample Item\",\"item_field\":\"price\",\"value\":300}\n";
+        $prompt .= "- Change quantity: {\"action\":\"update_item_field\",\"field\":\"items\",\"item_name\":\"Sample Item\",\"item_field\":\"quantity\",\"value\":10}";
 
         try {
             $response = $this->ai->generate(new \LaravelAIEngine\DTOs\AIRequest(
@@ -403,6 +399,17 @@ class IntelligentEntityService
             ]);
             return null;
         }
+    }
+
+    protected function entityDisplayName(array $data): ?string
+    {
+        foreach (['name', 'title', 'label', 'identifier'] as $field) {
+            if (isset($data[$field]) && is_scalar($data[$field]) && trim((string) $data[$field]) !== '') {
+                return trim((string) $data[$field]);
+            }
+        }
+
+        return null;
     }
 
     protected function locale(): LocaleResourceService
