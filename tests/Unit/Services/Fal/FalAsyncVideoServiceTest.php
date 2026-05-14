@@ -79,7 +79,7 @@ class FalAsyncVideoServiceTest extends TestCase
 
         $user->refresh();
         $credits = $user->entity_credits['fal_ai'][EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO]['balance'];
-        $this->assertEquals(92.0, $credits);
+        $this->assertEquals(91.5, $credits);
     }
 
     public function test_refresh_finalizes_completed_job_from_provider_response(): void

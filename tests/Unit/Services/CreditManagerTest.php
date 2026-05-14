@@ -194,17 +194,12 @@ class CreditManagerTest extends TestCase
         );
 
         $this->assertSame('image', $request->getModel()->contentType());
-        $this->assertEqualsWithDelta(1.5, $this->creditManager->calculateCredits($request), 0.0001);
+        $this->assertEqualsWithDelta(1.875, $this->creditManager->calculateCredits($request), 0.0001);
     }
 
-    public function test_calculate_credits_can_include_fal_reference_input_images_by_model_policy(): void
+    public function test_calculate_credits_includes_fal_reference_input_images_by_default_model_policy(): void
     {
         Config::set('ai-engine.credits.engine_rates.fal_ai', 1.0);
-        Config::set('ai-engine.credits.additional_input_unit_rates.fal_ai.models', [
-            EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO => [
-                'image' => 0.5,
-            ],
-        ]);
 
         $request = new AIRequest(
             prompt: 'Animate this product from references',

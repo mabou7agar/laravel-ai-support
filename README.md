@@ -493,15 +493,21 @@ For consistent TTS per saved character, store `voice_id` and optional ElevenLabs
 
 Authenticated calls are credit-enforced (same policy as chat/RAG), including image/audio endpoints.
 
-FAL output units are charged through the model `credit_index` and engine rate. Apps that also need to charge provider input media, such as reference/start/end images for image-to-video or vision endpoints, can opt in with `ai-engine.credits.additional_input_unit_rates`. Defaults are zero to keep existing package behavior unchanged:
+FAL output units are charged through the model `credit_index` and engine rate. Input/reference media is charged with fixed extra credits per input unit, not a percentage of the output cost. The package ships conservative defaults and lets apps override them per model:
 
 ```php
 'additional_input_unit_rates' => [
     'fal_ai' => [
-        'default' => ['image' => 0.0],
+        'default' => ['image' => 0.25],
         'models' => [
+            'fal-ai/nano-banana-2/edit' => [
+                'image' => 0.5,
+            ],
             'fal-ai/kling-video/o3/standard/reference-to-video' => [
                 'image' => 0.5,
+            ],
+            'bytedance/seedance-2.0/reference-to-video' => [
+                'image' => 0.75,
             ],
         ],
     ],

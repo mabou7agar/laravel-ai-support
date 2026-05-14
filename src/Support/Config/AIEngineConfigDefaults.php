@@ -793,19 +793,30 @@ class AIEngineConfigDefaults
             'nvidia_nim' => env('AI_NVIDIA_NIM_RATE', 1.5), // 1.5:1 ratio
         ],
 
-        // Optional extra engine-credit charges for provider input media that are not
-        // the primary billable output unit. Defaults are zero to preserve existing
-        // behavior; apps can set model-specific rates for FAL reference/start/end
-        // images or other provider endpoints whose pricing includes input media.
+        // Fixed extra engine-credit charges for provider input media that are not
+        // the primary billable output unit. Keep these fixed per input unit so
+        // reference/start/end images do not scale unpredictably with output cost.
         'additional_input_unit_rates' => [
             'fal_ai' => [
                 'default' => [
-                    'image' => env('AI_FAL_INPUT_IMAGE_CREDIT_RATE', 0.0),
+                    'image' => env('AI_FAL_INPUT_IMAGE_CREDIT_RATE', 0.25),
                 ],
                 'models' => [
-                    // 'fal-ai/kling-video/o3/standard/reference-to-video' => [
-                    //     'image' => 0.5,
-                    // ],
+                    'fal-ai/nano-banana-2/edit' => [
+                        'image' => env('AI_FAL_EDIT_INPUT_IMAGE_CREDIT_RATE', 0.5),
+                    ],
+                    'fal-ai/kling-video/o3/standard/image-to-video' => [
+                        'image' => env('AI_FAL_VIDEO_INPUT_IMAGE_CREDIT_RATE', 0.5),
+                    ],
+                    'fal-ai/kling-video/o3/standard/reference-to-video' => [
+                        'image' => env('AI_FAL_VIDEO_REFERENCE_IMAGE_CREDIT_RATE', 0.5),
+                    ],
+                    'bytedance/seedance-2.0/image-to-video' => [
+                        'image' => env('AI_FAL_SEEDANCE_INPUT_IMAGE_CREDIT_RATE', 0.75),
+                    ],
+                    'bytedance/seedance-2.0/reference-to-video' => [
+                        'image' => env('AI_FAL_SEEDANCE_REFERENCE_IMAGE_CREDIT_RATE', 0.75),
+                    ],
                 ],
             ],
         ],
