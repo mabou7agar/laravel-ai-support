@@ -67,6 +67,14 @@ class ActionOrchestrator
             && $this->authorize($action, $context) === null;
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function actionDefinition(string $actionId): ?array
+    {
+        return $this->registry->get($actionId);
+    }
+
     public function requiresConfirmation(string $actionId, array $payload = [], ?UnifiedActionContext $context = null): bool
     {
         $action = $this->registry->get($actionId);

@@ -9,6 +9,7 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AgentSkillDefinition;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\AIEngineService;
 use Throwable;
@@ -16,14 +17,19 @@ use Throwable;
 class RunSkillTool extends AgentTool
 {
     private ?ToolRegistry $tools;
+    private ?AgentExecutionPolicyService $policy;
 
     public function __construct(
         private readonly AgentSkillRegistry $skills,
         private readonly ConversationMemory $memory,
         private readonly AIEngineService $ai,
+        mixed $policy = null,
         mixed $tools = null
     ) {
-        $this->tools = $tools instanceof ToolRegistry ? $tools : null;
+        $this->policy = $policy instanceof AgentExecutionPolicyService ? $policy : null;
+        $this->tools = $tools instanceof ToolRegistry
+            ? $tools
+            : ($policy instanceof ToolRegistry ? $policy : null);
     }
 
     public function getName(): string
@@ -56,6 +62,7 @@ class RunSkillTool extends AgentTool
         $message = trim((string) ($parameters['message'] ?? $context->metadata['latest_user_message'] ?? ''));
         $state = !empty($parameters['reset']) ? [] : $this->state($context, $skill->id);
         $state = $this->normalizeState($state, $skill);
+        $trace = [];
 
         if (is_array($state['pending_tool'] ?? null)) {
             return $this->handlePendingTool($skill, $state, $message, $context);
@@ -71,8 +78,17 @@ class RunSkillTool extends AgentTool
             if ($plan === null) {
                 $this->putState($context, $skill->id, $state);
 
-                return $this->needsInput($skill, $state, 'I need a little more information to continue.');
+                return $this->needsInput($skill, $state, 'I need a little more information to continue.', $trace);
             }
+            if (($plan['_planner_error'] ?? null) === 'invalid_schema') {
+                $trace[] = $this->plannerTraceEntry($skill, $step, $plan);
+                $this->putState($context, $skill->id, $state);
+                $result = $this->needsInput($skill, $state, $this->planMessage($plan), $trace);
+                $result->metadata['skill_planner_error'] = 'invalid_schema';
+
+                return $result;
+            }
+            $trace[] = $this->plannerTraceEntry($skill, $step, $plan);
 
             $state['payload'] = $this->mergePayload($state['payload'], (array) ($plan['payload_patch'] ?? []));
 
@@ -80,34 +96,34 @@ class RunSkillTool extends AgentTool
             if ($action === 'ask_user') {
                 $this->putState($context, $skill->id, $state);
 
-                return $this->needsInput($skill, $state, $this->planMessage($plan));
+                return $this->needsInput($skill, $state, $this->planMessage($plan), $trace);
             }
 
             if ($action === 'final_response') {
                 if ($this->shouldUseFinalTool($skill, $state, $message)) {
                     $finalToolResult = $this->handleFinalToolPlan($skill, $state, $plan, $context);
                     if ($finalToolResult instanceof ActionResult) {
-                        return $finalToolResult;
+                        return $this->withSkillMetadata($finalToolResult, $trace);
                     }
                 }
 
                 if ($this->configuredFinalTool($skill) !== null) {
                     $this->putState($context, $skill->id, $state);
 
-                    return $this->needsInput($skill, $state, $this->planMessage($plan));
+                    return $this->needsInput($skill, $state, $this->planMessage($plan), $trace);
                 }
 
                 $this->forgetState($context, $skill->id);
 
-                return ActionResult::success($this->planMessage($plan), $this->flowData($skill, $state, 'completed'), [
+                return $this->withSkillMetadata(ActionResult::success($this->planMessage($plan), $this->flowData($skill, $state, 'completed'), [
                     'agent_strategy' => 'skill_tool',
-                ]);
+                ]), $trace);
             }
 
             if ($action !== 'run_tool') {
                 $this->putState($context, $skill->id, $state);
 
-                return $this->needsInput($skill, $state, $this->planMessage($plan));
+                return $this->needsInput($skill, $state, $this->planMessage($plan), $trace);
             }
 
             $toolName = trim((string) ($plan['tool_name'] ?? ''));
@@ -115,7 +131,7 @@ class RunSkillTool extends AgentTool
             if (!$tool instanceof AgentTool) {
                 $this->putState($context, $skill->id, $state);
 
-                return $this->needsInput($skill, $state, 'I cannot use that tool for this skill.');
+                return $this->needsInput($skill, $state, 'I cannot use that tool for this skill.', $trace);
             }
 
             $toolParams = (array) ($plan['tool_params'] ?? []);
@@ -130,7 +146,7 @@ class RunSkillTool extends AgentTool
                 if ($validation !== []) {
                     $this->putState($context, $skill->id, $state);
 
-                    return $this->needsInput($skill, $state, implode("\n", $validation));
+                    return $this->needsInput($skill, $state, implode("\n", $validation), $trace);
                 }
 
                 if ($this->looksLikeExplicitApproval($message)) {
@@ -145,16 +161,20 @@ class RunSkillTool extends AgentTool
                     if ($result->success && $toolName === $this->finalTool($skill)) {
                         $this->forgetState($context, $skill->id);
 
-                        return ActionResult::success($result->message ?? 'Done.', $this->flowData($skill, $state, 'completed') + [
+                        return $this->withSkillMetadata(ActionResult::success($result->message ?? 'Done.', $this->flowData($skill, $state, 'completed') + [
                             'tool_result' => $result->toArray(),
-                        ], ['agent_strategy' => 'skill_tool']);
+                        ], ['agent_strategy' => 'skill_tool']), $trace);
                     }
 
                     $this->putState($context, $skill->id, $state);
 
+                    if (($result->metadata['policy_blocked'] ?? false) === true) {
+                        return $this->withSkillMetadata($result, $trace, ['agent_strategy' => 'skill_tool']);
+                    }
+
                     return $result->success
-                        ? ActionResult::success($result->message ?? 'Done.', $this->flowData($skill, $state, 'collecting'), ['agent_strategy' => 'skill_tool'])
-                        : $this->needsInput($skill, $state, $result->message ?? $result->error ?? 'More information is required.');
+                        ? $this->withSkillMetadata(ActionResult::success($result->message ?? 'Done.', $this->flowData($skill, $state, 'collecting'), ['agent_strategy' => 'skill_tool']), $trace)
+                        : $this->needsInput($skill, $state, $result->message ?? $result->error ?? 'More information is required.', $trace);
                 }
 
                 $state['pending_tool'] = [
@@ -164,7 +184,7 @@ class RunSkillTool extends AgentTool
                 ];
                 $this->putState($context, $skill->id, $state);
 
-                return $this->needsInput($skill, $state, $this->planMessage($plan));
+                return $this->needsInput($skill, $state, $this->planMessage($plan), $trace);
             }
 
             $result = $this->executeTool($tool, $toolParams, $context);
@@ -178,7 +198,13 @@ class RunSkillTool extends AgentTool
             if ($result->requiresUserInput()) {
                 $this->putState($context, $skill->id, $state);
 
-                return $this->needsInput($skill, $state, $result->message ?? $result->error ?? 'More information is required.');
+                return $this->needsInput($skill, $state, $result->message ?? $result->error ?? 'More information is required.', $trace);
+            }
+
+            if (($result->metadata['policy_blocked'] ?? false) === true) {
+                $this->putState($context, $skill->id, $state);
+
+                return $this->withSkillMetadata($result, $trace, ['agent_strategy' => 'skill_tool']);
             }
 
             if (!$result->success) {
@@ -188,9 +214,9 @@ class RunSkillTool extends AgentTool
 
         $this->putState($context, $skill->id, $state);
 
-        return ActionResult::success('Skill draft updated.', $this->flowData($skill, $state, 'collecting'), [
+        return $this->withSkillMetadata(ActionResult::success('Skill draft updated.', $this->flowData($skill, $state, 'collecting'), [
             'agent_strategy' => 'skill_tool',
-        ]);
+        ]), $trace);
     }
 
     private function handlePendingTool(AgentSkillDefinition $skill, array $state, string $message, UnifiedActionContext $context): ActionResult
@@ -328,6 +354,20 @@ class RunSkillTool extends AgentTool
 
     private function executeTool(AgentTool $tool, array $params, UnifiedActionContext $context): ActionResult
     {
+        if (!$this->policy()->canUseTool($tool->getName(), [
+            'session_id' => $context->sessionId,
+            'user_id' => $context->userId,
+            'metadata' => $context->metadata,
+        ])) {
+            return ActionResult::failure(
+                $this->policy()->blockedMessage('tool', $tool->getName()),
+                metadata: [
+                    'policy_blocked' => true,
+                    'blocked_tool' => $tool->getName(),
+                ]
+            );
+        }
+
         $errors = $tool->validate($params);
         if ($errors !== []) {
             return ActionResult::needsUserInput(implode("\n", $errors), [
@@ -357,7 +397,19 @@ class RunSkillTool extends AgentTool
             return null;
         }
 
-        return $this->decodeJson($response->getContent());
+        $decoded = $this->decodeJson($response->getContent());
+        if ($decoded !== null && !$this->validPlannerSchema($decoded)) {
+            return [
+                '_planner_error' => 'invalid_schema',
+                'action' => 'ask_user',
+                'message' => 'I need a clearer plan before I can continue.',
+                'payload_patch' => [],
+                'tool_name' => null,
+                'tool_params' => [],
+            ];
+        }
+
+        return $decoded;
     }
 
     private function extractPayloadPatch(AgentSkillDefinition $skill, array $state, string $message, UnifiedActionContext $context): array
@@ -516,11 +568,47 @@ class RunSkillTool extends AgentTool
         ];
     }
 
-    private function needsInput(AgentSkillDefinition $skill, array $state, string $message): ActionResult
+    /**
+     * @param array<int, array<string, mixed>> $trace
+     */
+    private function needsInput(AgentSkillDefinition $skill, array $state, string $message, array $trace = []): ActionResult
     {
-        return ActionResult::needsUserInput($message, $this->flowData($skill, $state, 'collecting'), [
+        return $this->withSkillMetadata(ActionResult::needsUserInput($message, $this->flowData($skill, $state, 'collecting'), [
             'agent_strategy' => 'skill_tool',
-        ]);
+        ]), $trace);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $trace
+     * @param array<string, mixed> $extra
+     */
+    private function withSkillMetadata(ActionResult $result, array $trace, array $extra = []): ActionResult
+    {
+        foreach ($extra as $key => $value) {
+            $result->metadata[$key] = $value;
+        }
+
+        if (!array_key_exists('agent_strategy', $result->metadata)) {
+            $result->metadata['agent_strategy'] = 'skill_tool';
+        }
+
+        if ($trace !== []) {
+            $result->metadata['skill_planner_trace'] = $trace;
+        }
+
+        return $result;
+    }
+
+    private function plannerTraceEntry(AgentSkillDefinition $skill, int $step, array $plan): array
+    {
+        return [
+            'skill_id' => $skill->id,
+            'step' => $step + 1,
+            'action' => strtolower(trim((string) ($plan['action'] ?? 'ask_user'))),
+            'tool_name' => trim((string) ($plan['tool_name'] ?? '')),
+            'has_payload_patch' => !empty($plan['payload_patch']) && is_array($plan['payload_patch']),
+            'message_preview' => mb_substr(trim((string) ($plan['message'] ?? '')), 0, 160),
+        ];
     }
 
     private function skill(string $skillId): ?AgentSkillDefinition
@@ -625,6 +713,38 @@ class RunSkillTool extends AgentTool
         return $message !== '' ? $message : 'Please provide the missing information so I can continue.';
     }
 
+    private function validPlannerSchema(array $plan): bool
+    {
+        if (!(bool) config('ai-agent.skill_tool_planner.strict_schema', true)) {
+            return true;
+        }
+
+        $action = $plan['action'] ?? null;
+        if (!is_string($action) || !in_array($action, ['ask_user', 'run_tool', 'final_response'], true)) {
+            return false;
+        }
+
+        if (array_key_exists('message', $plan) && !is_string($plan['message'])) {
+            return false;
+        }
+
+        if (array_key_exists('payload_patch', $plan) && !is_array($plan['payload_patch'])) {
+            return false;
+        }
+
+        if ($action === 'run_tool') {
+            if (!is_string($plan['tool_name'] ?? null) || trim((string) $plan['tool_name']) === '') {
+                return false;
+            }
+
+            if (array_key_exists('tool_params', $plan) && !is_array($plan['tool_params'])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function looksLikeApproval(string $message): bool
     {
         $normalized = mb_strtolower(trim($message));
@@ -667,5 +787,10 @@ class RunSkillTool extends AgentTool
     private function tools(): ToolRegistry
     {
         return $this->tools ??= app(ToolRegistry::class);
+    }
+
+    private function policy(): AgentExecutionPolicyService
+    {
+        return $this->policy ??= app(AgentExecutionPolicyService::class);
     }
 }

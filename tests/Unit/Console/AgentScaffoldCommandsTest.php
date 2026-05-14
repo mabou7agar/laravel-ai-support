@@ -102,6 +102,37 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
         $this->assertContains('App\\AI\\Configs\\ProjectConfig', $manifest['model_configs']);
         $this->assertSame('App\\AI\\Tools\\LookupCustomerTool', $manifest['tools']['lookup_customer'] ?? null);
+
+        $toolFile = file_get_contents(app_path('AI/Tools/LookupCustomerTool.php')) ?: '';
+        $this->assertStringContainsString('extends SimpleAgentTool', $toolFile);
+        $this->assertStringContainsString('protected function handle(array $parameters, UnifiedActionContext $context): array', $toolFile);
+    }
+
+    public function test_make_tool_can_generate_model_lookup_and_action_backed_templates(): void
+    {
+        $lookupExitCode = Artisan::call('ai-engine:make-tool', [
+            'name' => 'FindCustomer',
+            '--kind' => 'lookup',
+            '--model' => 'App\\Models\\Customer',
+        ]);
+
+        $actionExitCode = Artisan::call('ai-engine:make-tool', [
+            'name' => 'CreateInvoice',
+            '--kind' => 'action',
+            '--action' => 'invoices.create',
+        ]);
+
+        $this->assertSame(0, $lookupExitCode);
+        $this->assertSame(0, $actionExitCode);
+
+        $lookupFile = file_get_contents(app_path('AI/Tools/FindCustomerTool.php')) ?: '';
+        $this->assertStringContainsString('extends ModelBackedLookupTool', $lookupFile);
+        $this->assertStringContainsString('protected string $model = \\App\\Models\\Customer::class;', $lookupFile);
+        $this->assertStringContainsString("protected array \$search = ['name', 'email'];", $lookupFile);
+
+        $actionFile = file_get_contents(app_path('AI/Tools/CreateInvoiceTool.php')) ?: '';
+        $this->assertStringContainsString('extends ActionBackedTool', $actionFile);
+        $this->assertStringContainsString("public string \$actionId = 'invoices.create';", $actionFile);
     }
 
     public function test_make_skill_generates_class_based_skill(): void

@@ -9,6 +9,8 @@ class MakeToolCommand extends ScaffoldAgentArtifactCommand
     protected $signature = 'ai-engine:make-tool
                             {name? : Class name (e.g. LookupCustomer)}
                             {--model= : Optional model class used by generated examples}
+                            {--kind= : Tool template kind: simple, lookup, upsert, action}
+                            {--action= : Action id for action-backed tool templates}
                             {--description= : Description text used in generated class}
                             {--force : Overwrite file if it already exists}
                             {--no-register : Skip automatic manifest registration}';

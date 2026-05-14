@@ -682,3 +682,30 @@ RAG services:
 - [x] v2 upgrade docs cover removed classes, commands, and config keys.
 - [x] Full test suite passes.
 - [x] Docs explain the new v2 runtime clearly.
+
+## Phase 16: Package Hardening And Simplification
+
+These points address the remaining weak spots after the v2 runtime and provider expansion work.
+
+- [x] Split generate API validation into dedicated Form Request classes.
+- [x] Move generate API request-to-DTO mapping and provider defaults into focused services where practical.
+- [x] Split broad RAG chat responsibilities into focused retrieval, prompt, answer, and citation collaborators.
+- [x] Keep Skills + Tools + Actions as the primary public workflow model; keep collectors as internal/legacy helpers unless explicitly enabled.
+- [x] Add stricter skill planner JSON schema validation before executing planner decisions.
+- [x] Add skill planner decision trace metadata to all `run_skill` results.
+- [x] Enforce execution policy in `RunSkillTool` before executing declared tools.
+- [x] Add media provider routing guards for missing credentials, disabled providers, local-only constraints, and recent provider failures.
+- [x] Keep enums for stable aliases only and document dynamic `ai_models` catalog as the preferred model expansion path.
+- [x] Add tests for the hardening behavior before checking each point.
+
+## Phase 17: Tool Developer Experience
+
+These points make tool creation easier without removing the existing low-level `AgentTool` contract.
+
+- [x] Add `SimpleAgentTool` for metadata-property tools that only implement `handle()`.
+- [x] Add `ActionBackedTool` for thin wrappers around registered action flows.
+- [x] Enhance model-backed lookup/upsert tools so host apps can define them with properties instead of boilerplate methods.
+- [x] Generate simple, model-backed, and action-backed tool templates from `ai-engine:make-tool`.
+- [x] Add `ai-engine:tools:test` to execute a registered tool with a JSON payload.
+- [x] Document when to use simple tools, model-backed tools, action-backed tools, and skill orchestration.
+- [x] Add focused tests for the easier tool API, scaffolds, and command behavior.

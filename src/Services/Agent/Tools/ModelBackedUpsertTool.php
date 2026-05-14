@@ -12,21 +12,47 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 abstract class ModelBackedUpsertTool extends ModelBackedLookupTool
 {
     /**
-     * @return array<int, string>
+     * @var array<int, string>
      */
-    abstract protected function identityFields(): array;
+    protected array $identity = [];
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $write = [];
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $required = [];
+
+    /**
+     * @var array<string, mixed>
+     */
+    protected array $defaultValues = [];
 
     /**
      * @return array<int, string>
      */
-    abstract protected function writeFields(): array;
+    protected function identityFields(): array
+    {
+        return $this->identity;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function writeFields(): array
+    {
+        return $this->write;
+    }
 
     /**
      * @return array<int, string>
      */
     protected function requiredFields(): array
     {
-        return [];
+        return $this->required;
     }
 
     /**
@@ -34,7 +60,7 @@ abstract class ModelBackedUpsertTool extends ModelBackedLookupTool
      */
     protected function defaults(UnifiedActionContext $context, array $parameters): array
     {
-        return [];
+        return $this->defaultValues;
     }
 
     /**

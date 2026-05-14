@@ -11,22 +11,66 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 
 abstract class ModelBackedLookupTool extends AgentTool
 {
+    public string $name = '';
+
+    public string $description = '';
+
+    /**
+     * @var class-string<Model>|string
+     */
+    protected string $model = '';
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $search = [];
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $returns = ['id', 'name', 'title', 'email'];
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $missingFields = [];
+
     /**
      * @return class-string<Model>
      */
-    abstract protected function modelClass(): string;
+    protected function modelClass(): string
+    {
+        return $this->model;
+    }
 
     /**
      * @return array<int, string>
      */
-    abstract protected function searchColumns(): array;
+    protected function searchColumns(): array
+    {
+        return $this->search;
+    }
+
+    public function getName(): string
+    {
+        return $this->name !== ''
+            ? $this->name
+            : \Illuminate\Support\Str::snake(\Illuminate\Support\Str::beforeLast(class_basename($this), 'Tool'));
+    }
+
+    public function getDescription(): string
+    {
+        return $this->description !== ''
+            ? $this->description
+            : 'Find ' . str_replace('_', ' ', $this->getName()) . ' records.';
+    }
 
     /**
      * @return array<int, string>
      */
     protected function returnColumns(): array
     {
-        return ['id', 'name', 'title', 'email'];
+        return $this->returns;
     }
 
     /**
@@ -42,7 +86,7 @@ abstract class ModelBackedLookupTool extends AgentTool
      */
     protected function missingRequiredFields(): array
     {
-        return [];
+        return $this->missingFields;
     }
 
     public function getParameters(): array

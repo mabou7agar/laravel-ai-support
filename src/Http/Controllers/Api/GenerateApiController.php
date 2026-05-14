@@ -10,10 +10,15 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\InsufficientCreditsException;
+use LaravelAIEngine\Http\Requests\GenerateImageRequest;
+use LaravelAIEngine\Http\Requests\GenerateTextRequest;
+use LaravelAIEngine\Http\Requests\GenerateTtsRequest;
 use LaravelAIEngine\Http\Requests\GenerateVideoRequest;
+use LaravelAIEngine\Http\Requests\TranscribeAudioRequest;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Fal\FalAsyncReferencePackGenerationService;
 use LaravelAIEngine\Services\Fal\FalAsyncVideoService;
+use LaravelAIEngine\Services\Media\GenerateApiRequestFactory;
 use LaravelAIEngine\Support\Fal\FalCharacterStore;
 use Throwable;
 
@@ -23,7 +28,8 @@ class GenerateApiController extends Controller
         private readonly AIEngineService $aiEngineService,
         private readonly FalAsyncVideoService $falAsyncVideoService,
         private readonly FalAsyncReferencePackGenerationService $falAsyncReferencePackGenerationService,
-        private readonly FalCharacterStore $characterStore
+        private readonly FalCharacterStore $characterStore,
+        private readonly GenerateApiRequestFactory $generateRequestFactory
     ) {}
 
     /**
@@ -39,36 +45,12 @@ class GenerateApiController extends Controller
      * @bodyParam temperature number Optional sampling temperature between 0 and 2.
      * @bodyParam parameters object Optional provider-specific parameters.
      */
-    public function text(Request $request): JsonResponse
+    public function text(GenerateTextRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'prompt' => 'required|string|max:10000',
-            'engine' => 'nullable|string|max:100',
-            'model' => 'nullable|string|max:200',
-            'preference' => 'nullable|string|in:cost,cheap,speed,fast,performance,quality',
-            'system_prompt' => 'nullable|string|max:4000',
-            'max_tokens' => 'nullable|integer|min:1|max:16000',
-            'temperature' => 'nullable|numeric|min:0|max:2',
-            'parameters' => 'nullable|array',
-        ]);
+        $validated = $request->validated();
 
         try {
-            $engine = array_key_exists('engine', $validated) ? (string) $validated['engine'] : null;
-            $model = array_key_exists('model', $validated) ? (string) $validated['model'] : null;
-            $parameters = is_array($validated['parameters'] ?? null) ? $validated['parameters'] : [];
-            $response = $this->generateDirect(new AIRequest(
-                prompt: (string) $validated['prompt'],
-                engine: $engine,
-                model: $model,
-                parameters: $parameters,
-                userId: $this->resolveAuthenticatedUserId(),
-                systemPrompt: $validated['system_prompt'] ?? null,
-                maxTokens: isset($validated['max_tokens']) ? (int) $validated['max_tokens'] : null,
-                temperature: isset($validated['temperature']) ? (float) $validated['temperature'] : null,
-                metadata: array_filter([
-                    'routing_preference' => $validated['preference'] ?? null,
-                ], static fn ($value): bool => $value !== null && $value !== ''),
-            ));
+            $response = $this->generateDirect($this->generateRequestFactory->text($validated, $this->resolveAuthenticatedUserId()));
 
             if (!$response->isSuccessful()) {
                 return $this->envelope(
@@ -136,73 +118,15 @@ class GenerateApiController extends Controller
      * @bodyParam output_format string Optional output format.
      * @bodyParam parameters object Optional provider-specific parameters.
      */
-    public function image(Request $request): JsonResponse
+    public function image(GenerateImageRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'prompt' => 'required|string|max:4000',
-            'engine' => 'nullable|string|max:100',
-            'model' => 'nullable|string|max:200',
-            'count' => 'nullable|integer|min:1|max:8',
-            'size' => 'nullable|string|max:50',
-            'quality' => 'nullable|string|max:50',
-            'frame_count' => 'nullable|integer|min:1|max:4',
-            'mode' => 'nullable|string|in:generate,edit',
-            'source_images' => 'nullable|array|max:8',
-            'source_images.*' => 'nullable|url|max:2048',
-            'character_sources' => 'nullable|array|max:4',
-            'character_sources.*.name' => 'nullable|string|max:120',
-            'character_sources.*.description' => 'nullable|string|max:500',
-            'character_sources.*.frontal_image_url' => 'nullable|url|max:2048',
-            'character_sources.*.reference_image_urls' => 'nullable|array|max:4',
-            'character_sources.*.reference_image_urls.*' => 'nullable|url|max:2048',
-            'character_sources.*.metadata' => 'nullable|array',
-            'aspect_ratio' => 'nullable|string|max:20',
-            'resolution' => 'nullable|string|max:20',
-            'seed' => 'nullable|integer',
-            'thinking_level' => 'nullable|string|in:minimal,high',
-            'output_format' => 'nullable|string|in:jpeg,jpg,png,webp,gif',
-            'parameters' => 'nullable|array',
-        ]);
+        $validated = $request->validated();
 
         try {
             $engine = (string) ($validated['engine'] ?? $this->resolveDefaultImageEngine($validated));
             $model = (string) ($validated['model'] ?? $this->resolveDefaultImageModel($validated));
-            $count = (int) ($validated['count'] ?? 1);
-            $parameters = is_array($validated['parameters'] ?? null) ? $validated['parameters'] : [];
-
-            if (!empty($validated['size'])) {
-                $parameters['size'] = (string) $validated['size'];
-            }
-            if (!empty($validated['quality'])) {
-                $parameters['quality'] = (string) $validated['quality'];
-            }
-            if (isset($validated['frame_count'])) {
-                $parameters['frame_count'] = (int) $validated['frame_count'];
-            }
-            if (!empty($validated['mode'])) {
-                $parameters['mode'] = (string) $validated['mode'];
-            }
-            if (!empty($validated['source_images'])) {
-                $parameters['source_images'] = $validated['source_images'];
-            }
-            if (!empty($validated['character_sources'])) {
-                $parameters['character_sources'] = $validated['character_sources'];
-            }
-            if (!empty($validated['aspect_ratio'])) {
-                $parameters['aspect_ratio'] = (string) $validated['aspect_ratio'];
-            }
-            if (!empty($validated['resolution'])) {
-                $parameters['resolution'] = (string) $validated['resolution'];
-            }
-            if (isset($validated['seed'])) {
-                $parameters['seed'] = (int) $validated['seed'];
-            }
-            if (!empty($validated['thinking_level'])) {
-                $parameters['thinking_level'] = (string) $validated['thinking_level'];
-            }
-            if (!empty($validated['output_format'])) {
-                $parameters['output_format'] = (string) $validated['output_format'];
-            }
+            $aiRequest = $this->generateRequestFactory->image($validated, $engine, $model, $this->resolveAuthenticatedUserId());
+            $parameters = $aiRequest->getParameters();
             if ($model === EntityEnum::FAL_NANO_BANANA_2_EDIT
                 && empty($parameters['source_images'])
                 && empty($parameters['character_sources'])) {
@@ -214,13 +138,7 @@ class GenerateApiController extends Controller
                 );
             }
 
-            $response = $this->generateDirect(new AIRequest(
-                prompt: (string) $validated['prompt'],
-                engine: $engine,
-                model: $model,
-                parameters: array_merge($parameters, ['image_count' => $count]),
-                userId: $this->resolveAuthenticatedUserId(),
-            ));
+            $response = $this->generateDirect($aiRequest);
 
             if (!$response->isSuccessful()) {
                 return $this->envelope(
@@ -708,25 +626,11 @@ class GenerateApiController extends Controller
      * @bodyParam audio_minutes number Optional duration hint for usage accounting.
      * @bodyParam parameters object Optional provider-specific parameters.
      */
-    public function transcribe(Request $request): JsonResponse
+    public function transcribe(TranscribeAudioRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'file' => 'required|file|mimes:wav,mp3,m4a,mp4,webm,ogg|max:51200',
-            'engine' => 'nullable|string|max:100',
-            'model' => 'nullable|string|max:200',
-            'audio_minutes' => 'nullable|numeric|min:0.1|max:180',
-            'parameters' => 'nullable|array',
-        ]);
+        $validated = $request->validated();
 
         try {
-            $engine = (string) ($validated['engine'] ?? 'openai');
-            $model = (string) ($validated['model'] ?? 'whisper-1');
-            $parameters = is_array($validated['parameters'] ?? null) ? $validated['parameters'] : [];
-
-            if (isset($validated['audio_minutes'])) {
-                $parameters['audio_minutes'] = (float) $validated['audio_minutes'];
-            }
-
             $file = $request->file('file');
             $realPath = $file?->getRealPath();
             if (!is_string($realPath) || trim($realPath) === '') {
@@ -738,22 +642,16 @@ class GenerateApiController extends Controller
                 );
             }
 
-            $response = $this->generateDirect(new AIRequest(
-                prompt: 'Transcribe this audio file.',
-                engine: $engine,
-                model: $model,
-                parameters: $parameters,
-                files: [$realPath],
-                userId: $this->resolveAuthenticatedUserId(),
-            ));
+            $aiRequest = $this->generateRequestFactory->transcription($validated, $realPath, $this->resolveAuthenticatedUserId());
+            $response = $this->generateDirect($aiRequest);
 
             if (!$response->isSuccessful()) {
                 return $this->envelope(
                     success: false,
                     message: $response->getError() ?? 'Audio transcription failed.',
                     data: [
-                        'engine' => $engine,
-                        'model' => $model,
+                        'engine' => $aiRequest->getEngine()->value,
+                        'model' => $aiRequest->getModel()->value,
                         'usage' => $response->getUsage(),
                         'metadata' => $response->getMetadata(),
                     ],
@@ -809,68 +707,26 @@ class GenerateApiController extends Controller
      * @bodyParam use_speaker_boost boolean Optional speaker boost toggle.
      * @bodyParam parameters object Optional provider-specific parameters.
      */
-    public function tts(Request $request): JsonResponse
+    public function tts(GenerateTtsRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'text' => 'required|string|max:10000',
-            'engine' => 'nullable|string|max:100',
-            'model' => 'nullable|string|max:200',
-            'minutes' => 'nullable|numeric|min:0.1|max:180',
-            'voice_id' => 'nullable|string|max:120',
-            'use_character' => 'nullable|string|max:120',
-            'use_last_character' => 'nullable|boolean',
-            'stability' => 'nullable|numeric|min:0|max:1',
-            'similarity_boost' => 'nullable|numeric|min:0|max:1',
-            'style' => 'nullable|numeric|min:0|max:1',
-            'use_speaker_boost' => 'nullable|boolean',
-            'parameters' => 'nullable|array',
-        ]);
+        $validated = $request->validated();
 
         try {
-            $engine = (string) ($validated['engine'] ?? 'eleven_labs');
-            $model = (string) ($validated['model'] ?? 'eleven_multilingual_v2');
-            $minutes = (float) ($validated['minutes'] ?? 1.0);
-            $parameters = is_array($validated['parameters'] ?? null) ? $validated['parameters'] : [];
             $storedVoice = $this->resolveStoredCharacterVoice($validated);
             if ($storedVoice instanceof JsonResponse) {
                 return $storedVoice;
             }
 
-            if ($storedVoice !== []) {
-                $parameters = array_merge($storedVoice, $parameters);
-            }
-
-            if (!empty($validated['voice_id'])) {
-                $parameters['voice_id'] = (string) $validated['voice_id'];
-            }
-            if (isset($validated['stability'])) {
-                $parameters['stability'] = (float) $validated['stability'];
-            }
-            if (isset($validated['similarity_boost'])) {
-                $parameters['similarity_boost'] = (float) $validated['similarity_boost'];
-            }
-            if (isset($validated['style'])) {
-                $parameters['style'] = (float) $validated['style'];
-            }
-            if (array_key_exists('use_speaker_boost', $validated)) {
-                $parameters['use_speaker_boost'] = (bool) $validated['use_speaker_boost'];
-            }
-
-            $response = $this->generateDirect(new AIRequest(
-                prompt: (string) $validated['text'],
-                engine: $engine,
-                model: $model,
-                parameters: array_merge($parameters, ['audio_minutes' => $minutes]),
-                userId: $this->resolveAuthenticatedUserId(),
-            ));
+            $aiRequest = $this->generateRequestFactory->tts($validated, $storedVoice, $this->resolveAuthenticatedUserId());
+            $response = $this->generateDirect($aiRequest);
 
             if (!$response->isSuccessful()) {
                 return $this->envelope(
                     success: false,
                     message: $response->getError() ?? 'Text-to-speech generation failed.',
                     data: [
-                        'engine' => $engine,
-                        'model' => $model,
+                        'engine' => $aiRequest->getEngine()->value,
+                        'model' => $aiRequest->getModel()->value,
                         'usage' => $response->getUsage(),
                         'metadata' => $response->getMetadata(),
                     ],

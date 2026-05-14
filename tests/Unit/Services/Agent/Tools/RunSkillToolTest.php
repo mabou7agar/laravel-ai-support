@@ -292,6 +292,98 @@ class RunSkillToolTest extends UnitTestCase
         $this->assertSame('Acme', $result->data['payload']['customer_name']);
     }
 
+    public function test_it_blocks_tool_execution_when_execution_policy_denies_tool(): void
+    {
+        config()->set('ai-agent.execution_policy.tool_deny', ['echo_tool']);
+
+        $skill = new AgentSkillDefinition(
+            id: 'create_invoice',
+            name: 'Create Invoice',
+            description: 'Create invoices.',
+            tools: ['echo_tool'],
+            metadata: ['planner' => 'skill_tool_auto', 'target_json' => ['customer_name' => null]]
+        );
+
+        $tool = $this->makeTool($skill, [
+            'action' => 'run_tool',
+            'message' => 'Looking up the customer.',
+            'payload_patch' => ['customer_name' => 'Acme'],
+            'tool_name' => 'echo_tool',
+            'tool_params' => ['value' => 'Acme'],
+        ]);
+
+        $result = $tool->execute([
+            'skill_id' => 'create_invoice',
+            'message' => 'create invoice for Acme',
+            'reset' => true,
+        ], new UnifiedActionContext('run-skill-blocked-tool-test'));
+
+        $this->assertFalse($result->success);
+        $this->assertStringContainsString('blocked by execution policy', (string) $result->error);
+        $this->assertSame('skill_tool', $result->metadata['agent_strategy']);
+        $this->assertSame('echo_tool', $result->metadata['blocked_tool']);
+    }
+
+    public function test_it_returns_planner_trace_metadata_for_skill_decisions(): void
+    {
+        config()->set('ai-agent.skill_tool_planner.max_steps', 1);
+
+        $skill = new AgentSkillDefinition(
+            id: 'create_invoice',
+            name: 'Create Invoice',
+            description: 'Create invoices.',
+            tools: ['echo_tool'],
+            metadata: ['planner' => 'skill_tool_auto', 'target_json' => ['customer_name' => null]]
+        );
+
+        $tool = $this->makeTool($skill, [
+            'action' => 'run_tool',
+            'message' => 'Looking up the customer.',
+            'payload_patch' => ['customer_name' => 'Acme'],
+            'tool_name' => 'echo_tool',
+            'tool_params' => ['value' => 'Acme'],
+        ]);
+
+        $result = $tool->execute([
+            'skill_id' => 'create_invoice',
+            'message' => 'create invoice for Acme',
+            'reset' => true,
+        ], new UnifiedActionContext('run-skill-trace-test'));
+
+        $this->assertTrue($result->success);
+        $this->assertSame('skill_tool', $result->metadata['agent_strategy']);
+        $this->assertSame('create_invoice', $result->metadata['skill_planner_trace'][0]['skill_id']);
+        $this->assertSame('run_tool', $result->metadata['skill_planner_trace'][0]['action']);
+        $this->assertSame('echo_tool', $result->metadata['skill_planner_trace'][0]['tool_name']);
+    }
+
+    public function test_it_rejects_invalid_planner_json_shape_when_strict_schema_enabled(): void
+    {
+        config()->set('ai-agent.skill_tool_planner.strict_schema', true);
+
+        $skill = new AgentSkillDefinition(
+            id: 'create_invoice',
+            name: 'Create Invoice',
+            description: 'Create invoices.',
+            tools: ['echo_tool'],
+            metadata: ['planner' => 'skill_tool_auto', 'target_json' => ['customer_name' => null]]
+        );
+
+        $tool = $this->makeTool($skill, [
+            'message' => 'This object is missing the required action field.',
+        ]);
+
+        $result = $tool->execute([
+            'skill_id' => 'create_invoice',
+            'message' => 'create invoice for Acme',
+            'reset' => true,
+        ], new UnifiedActionContext('run-skill-invalid-plan-test'));
+
+        $this->assertFalse($result->success);
+        $this->assertTrue($result->requiresUserInput());
+        $this->assertSame('invalid_schema', $result->metadata['skill_planner_error']);
+    }
+
     public function test_it_converts_final_response_to_configured_final_tool_confirmation(): void
     {
         config()->set('ai-agent.skill_tool_planner.extract_before_plan', false);

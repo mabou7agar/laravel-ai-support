@@ -139,22 +139,70 @@ class MediaProviderDriversTest extends UnitTestCase
         Config::set('ai-engine.media_routing.providers', [
             'openai' => [
                 'enabled' => true,
+                'api_key_config' => 'services.openai.key',
                 'models' => [
                     'image' => ['model' => 'gpt-image-1-mini', 'estimated_unit_cost' => 0.02],
                 ],
             ],
             'cloudflare_workers_ai' => [
                 'enabled' => true,
+                'api_key_config' => 'services.cloudflare.key',
                 'models' => [
                     'image' => ['model' => '@cf/black-forest-labs/flux-1-schnell', 'estimated_unit_cost' => 0.001],
+                ],
+            ],
+        ]);
+        Config::set('services.openai.key', 'openai-key');
+        Config::set('services.cloudflare.key', 'cloudflare-key');
+
+        $selection = app(MediaProviderRouter::class)->select('image', 'cheapest');
+
+        $this->assertSame('cloudflare_workers_ai', $selection['provider']);
+        $this->assertSame('@cf/black-forest-labs/flux-1-schnell', $selection['model']);
+    }
+
+    public function test_media_provider_router_skips_providers_without_required_credentials(): void
+    {
+        Config::set('ai-engine.media_routing.providers', [
+            'missing_key' => [
+                'api_key_config' => 'services.missing.key',
+                'models' => [
+                    'image' => ['model' => 'missing/image', 'estimated_unit_cost' => 0.01],
+                ],
+            ],
+            'ready' => [
+                'api_key_config' => 'services.ready.key',
+                'models' => [
+                    'image' => ['model' => 'ready/image', 'estimated_unit_cost' => 0.5],
+                ],
+            ],
+        ]);
+        Config::set('services.ready.key', 'ready-key');
+
+        $selection = app(MediaProviderRouter::class)->select('image', 'cheapest');
+
+        $this->assertSame('ready', $selection['provider']);
+    }
+
+    public function test_media_provider_router_skips_recently_failed_provider(): void
+    {
+        Config::set('ai-engine.media_routing.providers', [
+            'failed' => [
+                'unhealthy_until' => now()->addMinute()->toIso8601String(),
+                'models' => [
+                    'image' => ['model' => 'failed/image', 'estimated_unit_cost' => 0.01],
+                ],
+            ],
+            'healthy' => [
+                'models' => [
+                    'image' => ['model' => 'healthy/image', 'estimated_unit_cost' => 0.5],
                 ],
             ],
         ]);
 
         $selection = app(MediaProviderRouter::class)->select('image', 'cheapest');
 
-        $this->assertSame('cloudflare_workers_ai', $selection['provider']);
-        $this->assertSame('@cf/black-forest-labs/flux-1-schnell', $selection['model']);
+        $this->assertSame('healthy', $selection['provider']);
     }
 
     public function test_gemini_generates_imagen_media_response(): void

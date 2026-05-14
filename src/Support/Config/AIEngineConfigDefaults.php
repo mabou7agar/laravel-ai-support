@@ -152,6 +152,7 @@ class AIEngineConfigDefaults
             ],
             'cloudflare_workers_ai' => [
                 'enabled' => env('AI_ENGINE_MEDIA_ROUTE_CLOUDFLARE', true),
+                'api_key_config' => ['ai-engine.engines.cloudflare_workers_ai.api_key', 'ai-engine.engines.cloudflare_workers_ai.account_id'],
                 'models' => [
                     'image' => ['model' => '@cf/black-forest-labs/flux-1-schnell', 'estimated_unit_cost' => 0.001, 'quality_score' => 1.5, 'latency_score' => 1.0],
                     'audio_transcription' => ['model' => '@cf/openai/whisper', 'estimated_unit_cost' => 0.0005, 'quality_score' => 1.3, 'latency_score' => 1.0],
@@ -160,6 +161,7 @@ class AIEngineConfigDefaults
             ],
             'huggingface' => [
                 'enabled' => env('AI_ENGINE_MEDIA_ROUTE_HUGGINGFACE', true),
+                'api_key_config' => 'ai-engine.engines.huggingface.api_key',
                 'models' => [
                     'image' => ['model' => 'black-forest-labs/FLUX.1-schnell', 'estimated_unit_cost' => 0.003, 'quality_score' => 1.7, 'latency_score' => 3.0],
                     'audio_transcription' => ['model' => 'openai/whisper-large-v3', 'estimated_unit_cost' => 0.002, 'quality_score' => 1.6, 'latency_score' => 4.0],
@@ -168,6 +170,7 @@ class AIEngineConfigDefaults
             ],
             'replicate' => [
                 'enabled' => env('AI_ENGINE_MEDIA_ROUTE_REPLICATE', true),
+                'api_key_config' => 'ai-engine.engines.replicate.api_key',
                 'models' => [
                     'image' => ['model' => 'black-forest-labs/flux-schnell', 'estimated_unit_cost' => 0.004, 'quality_score' => 1.7, 'latency_score' => 4.0],
                     'video' => ['model' => 'wavespeedai/wan-2.1-i2v-480p', 'estimated_unit_cost' => 0.09, 'quality_score' => 2.0, 'latency_score' => 8.0],
@@ -175,6 +178,7 @@ class AIEngineConfigDefaults
             ],
             'gemini' => [
                 'enabled' => env('AI_ENGINE_MEDIA_ROUTE_GEMINI', true),
+                'api_key_config' => 'ai-engine.engines.gemini.api_key',
                 'models' => [
                     'image' => ['model' => 'imagen-4.0-fast-generate-001', 'estimated_unit_cost' => 0.02, 'quality_score' => 2.2, 'latency_score' => 2.0],
                     'video' => ['model' => 'veo-3.1-fast-generate-preview', 'estimated_unit_cost' => 0.05, 'quality_score' => 2.4, 'latency_score' => 8.0],
@@ -183,6 +187,7 @@ class AIEngineConfigDefaults
             ],
             'fal_ai' => [
                 'enabled' => env('AI_ENGINE_MEDIA_ROUTE_FAL', true),
+                'api_key_config' => 'ai-engine.engines.fal_ai.api_key',
                 'models' => [
                     'image' => ['model' => 'fal-flux-schnell', 'estimated_unit_cost' => 0.003, 'quality_score' => 1.8, 'latency_score' => 2.0],
                     'video' => ['model' => 'bytedance/seedance-2.0/image-to-video', 'estimated_unit_cost' => 0.08, 'quality_score' => 2.2, 'latency_score' => 7.0],
@@ -191,6 +196,7 @@ class AIEngineConfigDefaults
             ],
             'openai' => [
                 'enabled' => env('AI_ENGINE_MEDIA_ROUTE_OPENAI', true),
+                'api_key_config' => 'ai-engine.engines.openai.api_key',
                 'models' => [
                     'image' => ['model' => 'gpt-image-1-mini', 'estimated_unit_cost' => 0.02, 'quality_score' => 2.1, 'latency_score' => 2.0],
                     'audio_transcription' => ['model' => 'whisper-1', 'estimated_unit_cost' => 0.006, 'quality_score' => 1.8, 'latency_score' => 2.0],

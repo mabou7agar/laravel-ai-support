@@ -53,6 +53,30 @@ Supported routing modes:
 
 Configure estimates in `ai-engine.media_routing.providers`. These are app-side estimates for routing and credit policy; provider invoices remain the source of truth.
 
+Provider routing skips disabled providers, providers with missing configured credentials, and providers marked unhealthy until a future timestamp:
+
+```php
+'media_routing' => [
+    'providers' => [
+        'replicate' => [
+            'enabled' => true,
+            'api_key_config' => 'ai-engine.engines.replicate.api_key',
+            'unhealthy_until' => null,
+            'models' => [
+                'image' => [
+                    'model' => 'black-forest-labs/flux-schnell',
+                    'estimated_unit_cost' => 0.004,
+                    'quality_score' => 1.7,
+                    'latency_score' => 4.0,
+                ],
+            ],
+        ],
+    ],
+],
+```
+
+Use `constraints: ['allow_local' => false]` when an application must avoid local/self-hosted providers such as ComfyUI.
+
 ## ComfyUI Workflows
 
 ComfyUI needs a workflow graph. Configure a default workflow:
@@ -85,3 +109,4 @@ new \LaravelAIEngine\DTOs\AIRequest(
 - Hugging Face is intentionally generic; pass `provider` or provider-specific parameters when needed.
 - Replicate supports model endpoints and versioned predictions.
 - Video generation should usually be queued or async in application code because provider jobs can run longer than HTTP request timeouts.
+- Stable enum aliases are for built-in defaults. For changing provider catalogs, sync models into `ai_models` and let the dynamic model resolver route by provider/model id.

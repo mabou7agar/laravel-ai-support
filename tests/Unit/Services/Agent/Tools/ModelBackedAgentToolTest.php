@@ -91,6 +91,35 @@ class ModelBackedAgentToolTest extends TestCase
         ]);
     }
 
+    public function test_model_backed_tools_can_be_defined_with_properties_only(): void
+    {
+        CollectorToolCustomer::query()->create([
+            'name' => 'Property Customer',
+            'email' => 'property@example.test',
+            'user_id' => 88,
+        ]);
+
+        $lookup = (new PropertyCustomerLookupTool())->execute(
+            ['query' => 'property@example.test'],
+            new UnifiedActionContext('property-lookup-test', 88)
+        );
+
+        $this->assertTrue($lookup->success);
+        $this->assertSame('Property Customer', $lookup->data['name']);
+
+        $upsert = (new PropertyCustomerUpsertTool())->execute([
+            'name' => 'Property Created',
+            'email' => 'created@example.test',
+        ], new UnifiedActionContext('property-upsert-test', 88));
+
+        $this->assertTrue($upsert->success);
+        $this->assertTrue($upsert->data['created']);
+        $this->assertDatabaseHas('collector_tool_customers', [
+            'name' => 'Property Created',
+            'email' => 'created@example.test',
+        ]);
+    }
+
     public function test_autonomous_collector_config_can_execute_agent_tool_classes(): void
     {
         CollectorToolCustomer::query()->create([
@@ -208,4 +237,34 @@ class CollectorCustomerUpsertTool extends ModelBackedUpsertTool
     {
         return ['user_id' => $context->userId];
     }
+}
+
+class PropertyCustomerLookupTool extends ModelBackedLookupTool
+{
+    public string $name = 'customers.find';
+
+    public string $description = 'Find customer.';
+
+    protected string $model = CollectorToolCustomer::class;
+
+    protected array $search = ['name', 'email'];
+
+    protected array $returns = ['id', 'name', 'email'];
+}
+
+class PropertyCustomerUpsertTool extends ModelBackedUpsertTool
+{
+    public string $name = 'customers.upsert';
+
+    public string $description = 'Create or update customer.';
+
+    protected string $model = CollectorToolCustomer::class;
+
+    protected array $identity = ['email'];
+
+    protected array $write = ['name', 'email'];
+
+    protected array $required = ['name', 'email'];
+
+    protected array $returns = ['id', 'name', 'email'];
 }

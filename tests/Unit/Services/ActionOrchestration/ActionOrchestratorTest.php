@@ -192,6 +192,15 @@ class ActionOrchestratorTest extends UnitTestCase
         $this->assertSame($idempotency['key'], $metadata['idempotency']['key']);
     }
 
+    public function test_orchestrator_exposes_action_definition_for_tool_wrappers(): void
+    {
+        $definition = $this->orchestrator()->actionDefinition('create_invoice');
+
+        $this->assertIsArray($definition);
+        $this->assertSame('Create invoice', $definition['label']);
+        $this->assertNull($this->orchestrator()->actionDefinition('missing_action'));
+    }
+
     public function test_orchestrator_writes_prepare_and_execute_audit_events(): void
     {
         $registry = new ActionRegistry();

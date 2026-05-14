@@ -286,6 +286,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\MakeSkillCommand::class,
                 Console\Commands\DiscoverAgentSkillsCommand::class,
                 Console\Commands\TestAgentSkillCommand::class,
+                Console\Commands\TestAgentToolCommand::class,
                 Console\Commands\AgentManifestDoctorCommand::class,
             ]);
 

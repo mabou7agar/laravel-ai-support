@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Media;
 
+use Carbon\Carbon;
+
 class MediaProviderRouter
 {
     /**
@@ -47,6 +49,14 @@ class MediaProviderRouter
                 continue;
             }
 
+            if (!$this->hasRequiredCredentials((array) $config)) {
+                continue;
+            }
+
+            if ($this->isRecentlyUnhealthy((array) $config)) {
+                continue;
+            }
+
             $model = $config['models'][$capability] ?? null;
             if (!is_array($model) || empty($model['model'])) {
                 continue;
@@ -67,5 +77,38 @@ class MediaProviderRouter
         }
 
         return $candidates;
+    }
+
+    private function hasRequiredCredentials(array $config): bool
+    {
+        $keys = $config['api_key_config'] ?? $config['required_config'] ?? [];
+        $keys = is_array($keys) ? $keys : [$keys];
+        $keys = array_values(array_filter(array_map(
+            static fn (mixed $key): string => trim((string) $key),
+            $keys
+        )));
+
+        foreach ($keys as $key) {
+            $value = config($key);
+            if (!is_string($value) || trim($value) === '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function isRecentlyUnhealthy(array $config): bool
+    {
+        $until = $config['unhealthy_until'] ?? null;
+        if (!is_string($until) || trim($until) === '') {
+            return false;
+        }
+
+        try {
+            return Carbon::parse($until)->isFuture();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 }

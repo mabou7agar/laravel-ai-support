@@ -9,6 +9,14 @@ Skills are a lightweight orchestration layer above existing agent primitives.
 
 A tool is an atomic callable operation. A skill is a user-facing ability that describes when to use tools, actions, required data, target JSON, and confirmation rules.
 
+For application workflows, prefer this public model:
+
+```text
+Chat -> skill detection -> declared tools/actions -> confirmation -> execution
+```
+
+Use RAG, Qdrant, Neo4j, and capability search to find context and choose the right skill/tool. Do not put business workflow logic inside RAG prompts. Collectors remain available for schema-driven data collection and legacy flows, but new application actions should normally be modeled as skills backed by tools/actions.
+
 ## Structure
 
 ```php
@@ -60,6 +68,59 @@ This creates an `App\AI\Skills\CreateInvoiceSkill` class extending `AgentSkill` 
 
 Generated skills are disabled by default and marked as review-required.
 
+## Create tools
+
+Use the simple tool template for custom service calls:
+
+```bash
+php artisan ai-engine:make-tool LookupCustomer
+php artisan ai-engine:tools:test lookup_customer --payload='{"input":"ACME"}'
+```
+
+The generated class extends `SimpleAgentTool`, so most app tools only need stable metadata and a `handle()` method:
+
+```php
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\Tools\SimpleAgentTool;
+
+class LookupCustomerTool extends SimpleAgentTool
+{
+    public string $name = 'customers.lookup';
+
+    public string $description = 'Find a customer by name, email, or phone.';
+
+    public array $parameters = [
+        'query' => ['type' => 'string', 'required' => true],
+    ];
+
+    protected function handle(array $parameters, UnifiedActionContext $context): array
+    {
+        return [
+            'message' => 'Customer lookup completed.',
+            'data' => app(CustomerService::class)->findForAi($parameters['query'], $context->userId),
+        ];
+    }
+}
+```
+
+For common Eloquent-backed tools, generate property-only templates:
+
+```bash
+php artisan ai-engine:make-tool FindCustomer --kind=lookup --model="App\\Models\\Customer"
+php artisan ai-engine:make-tool UpsertCustomer --kind=upsert --model="App\\Models\\Customer"
+```
+
+Lookup tools extend `ModelBackedLookupTool` and define `$model`, `$search`, and `$returns`.
+Upsert tools extend `ModelBackedUpsertTool` and define `$model`, `$identity`, `$write`, `$required`, and `$returns`.
+
+When the app already exposes an action, prefer a thin action-backed tool:
+
+```bash
+php artisan ai-engine:make-tool CreateInvoice --kind=action --action=invoices.create
+```
+
+`ActionBackedTool` reads the action schema from `ActionRegistry` and executes through `ActionOrchestrator`, so relation resolution, validation, confirmation, idempotency, audit logging, and policies stay in the action flow instead of being duplicated in tool code.
+
 ## Scan project abilities
 
 ```bash
@@ -81,6 +142,28 @@ php artisan ai-engine:skills:test "create invoice for ACME" --include-disabled -
 
 The command shows the matched skill, score, trigger, and compiled execution plan. Action-backed skills compile to the existing `update_action_draft` tool so validation, confirmation, and execution stay inside the action flow.
 
+## Runtime Guardrails
+
+`run_skill` uses the configured skill tool planner to extract target JSON and choose the next declared tool. Planner output is validated against a strict JSON shape before execution:
+
+```json
+{
+  "action": "ask_user|run_tool|final_response",
+  "message": "user-facing message",
+  "payload_patch": {},
+  "tool_name": "declared tool name or null",
+  "tool_params": {}
+}
+```
+
+Strict validation is enabled by default:
+
+```env
+AI_AGENT_SKILL_TOOL_STRICT_SCHEMA=true
+```
+
+Tool execution still passes through `AgentExecutionPolicyService`, so host applications can block tools through `ai-agent.execution_policy.tool_deny` or require an allow-list through `tool_allow`. Every `run_skill` result includes `metadata.skill_planner_trace` when the planner makes decisions, which lets apps audit why a tool was selected.
+
 ## Diagnose the manifest
 
 ```bash
@@ -96,6 +179,7 @@ Recommended development loop:
 ```bash
 php artisan ai-engine:init
 php artisan ai-engine:make-tool LookupCustomer
+php artisan ai-engine:tools:test lookup_customer --payload='{"input":"ACME"}' --json
 php artisan ai-engine:make-skill CreateInvoice
 php artisan ai-engine:skills:discover --write
 php artisan ai-engine:manifest:doctor --json

@@ -13,6 +13,8 @@ class ScaffoldAgentArtifactCommand extends Command
                             {type? : agent|collector|filter|tool|skill|routing-stage|execution-handler|runtime|rag-retriever|policy}
                             {name? : Class name (e.g. Invoice)}
                             {--model= : Model class for agent/collector (e.g. App\\Models\\Invoice)}
+                            {--kind= : Tool template kind: simple, lookup, upsert, action}
+                            {--action= : Action id for action-backed tool templates}
                             {--description= : Description text used in generated class}
                             {--force : Overwrite file if it already exists}
                             {--no-register : Skip automatic manifest registration}';
@@ -164,7 +166,9 @@ class ScaffoldAgentArtifactCommand extends Command
         $this->newLine();
         $this->line('Next:');
         $this->line('1) Implement real logic in the generated class');
-        $this->line('2) Run php artisan ai-engine:test-agent');
+        $this->line($type === 'tool'
+            ? '2) Run php artisan ai-engine:tools:test ' . $this->artifactKey($className) . ' --payload=\'{}\''
+            : '2) Run php artisan ai-engine:test-agent');
 
         return self::SUCCESS;
     }
@@ -403,44 +407,114 @@ PHP;
         $name = $name !== '' ? $name : Str::snake($className);
         $description = trim((string) ($this->option('description') ?? ''));
         $description = $description !== '' ? $description : "Tool for {$name} operations.";
+        $kind = strtolower(trim((string) ($this->option('kind') ?: 'simple')));
+
+        if ($kind === 'lookup') {
+            $modelClass = $this->inferModelClass($className, 'tool');
+
+            return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Services\Agent\Tools\ModelBackedLookupTool;
+
+class {$className} extends ModelBackedLookupTool
+{
+    public string \$name = '{$name}';
+
+    public string \$description = '{$this->escapeSingleQuotes($description)}';
+
+    protected string \$model = \\{$modelClass}::class;
+
+    protected array \$search = ['name', 'email'];
+
+    protected array \$returns = ['id', 'name', 'email'];
+}
+PHP;
+        }
+
+        if ($kind === 'upsert') {
+            $modelClass = $this->inferModelClass($className, 'tool');
+
+            return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Services\Agent\Tools\ModelBackedUpsertTool;
+
+class {$className} extends ModelBackedUpsertTool
+{
+    public string \$name = '{$name}';
+
+    public string \$description = '{$this->escapeSingleQuotes($description)}';
+
+    protected string \$model = \\{$modelClass}::class;
+
+    protected array \$identity = ['email'];
+
+    protected array \$write = ['name', 'email'];
+
+    protected array \$required = ['name'];
+
+    protected array \$returns = ['id', 'name', 'email'];
+}
+PHP;
+        }
+
+        if ($kind === 'action') {
+            $actionId = trim((string) ($this->option('action') ?: $name));
+
+            return <<<PHP
+<?php
+
+namespace {$namespace};
+
+use LaravelAIEngine\Services\Agent\Tools\ActionBackedTool;
+
+class {$className} extends ActionBackedTool
+{
+    public string \$name = '{$name}';
+
+    public string \$description = '{$this->escapeSingleQuotes($description)}';
+
+    public string \$actionId = '{$this->escapeSingleQuotes($actionId)}';
+}
+PHP;
+        }
 
         return <<<PHP
 <?php
 
 namespace {$namespace};
 
-use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Agent\Tools\AgentTool;
+use LaravelAIEngine\Services\Agent\Tools\SimpleAgentTool;
 
-class {$className} extends AgentTool
+class {$className} extends SimpleAgentTool
 {
-    public function getName(): string
-    {
-        return '{$name}';
-    }
+    public string \$name = '{$name}';
 
-    public function getDescription(): string
-    {
-        return '{$this->escapeSingleQuotes($description)}';
-    }
+    public string \$description = '{$this->escapeSingleQuotes($description)}';
 
-    public function getParameters(): array
+    public array \$parameters = [
+        'input' => [
+            'type' => 'string',
+            'required' => true,
+            'description' => 'Input payload for tool execution',
+        ],
+    ];
+
+    protected function handle(array \$parameters, UnifiedActionContext \$context): array
     {
         return [
-            'input' => [
-                'type' => 'string',
-                'required' => true,
-                'description' => 'Input payload for tool execution',
+            'message' => 'Tool executed successfully.',
+            'data' => [
+                'received' => \$parameters,
+                'user_id' => \$context->userId,
             ],
         ];
-    }
-
-    public function execute(array \$parameters, UnifiedActionContext \$context): ActionResult
-    {
-        return ActionResult::success('Tool executed successfully', [
-            'received' => \$parameters,
-        ]);
     }
 }
 PHP;

@@ -136,6 +136,7 @@ return [
         'temperature' => env('AI_AGENT_SKILL_TOOL_PLANNER_TEMPERATURE', 0.1),
         'max_steps' => env('AI_AGENT_SKILL_TOOL_PLANNER_MAX_STEPS', 4),
         'extract_before_plan' => env('AI_AGENT_SKILL_TOOL_EXTRACT_BEFORE_PLAN', true),
+        'strict_schema' => env('AI_AGENT_SKILL_TOOL_STRICT_SCHEMA', true),
     ],
 
     'orchestration' => [
