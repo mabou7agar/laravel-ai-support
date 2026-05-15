@@ -13,18 +13,29 @@ use LaravelAIEngine\Services\DiscoveryCacheWarmer;
 use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\Services\RateLimitManager;
 use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
+use LaravelAIEngine\Support\OpenAI\MissingOpenAIClient;
+use OpenAI\Contracts\ClientContract;
 
 class CoreServiceRegistrar
 {
     public static function register($app): void
     {
-        $app->singleton(\OpenAI\Client::class, function () {
+        $app->singleton(ClientContract::class, function () {
             $apiKey = config('ai-engine.engines.openai.api_key');
             if (empty($apiKey)) {
-                throw new \RuntimeException('OpenAI API key is not configured. Please set OPENAI_API_KEY in your .env file.');
+                return new MissingOpenAIClient();
             }
 
             return \OpenAI::client($apiKey);
+        });
+        $app->singleton(\OpenAI\Client::class, function ($app) {
+            $client = $app->make(ClientContract::class);
+
+            if ($client instanceof \OpenAI\Client) {
+                return $client;
+            }
+
+            throw new \RuntimeException('OpenAI API key is not configured. Please set OPENAI_API_KEY in your .env file before resolving the concrete OpenAI client.');
         });
 
         $app->singleton(CreditManager::class, fn ($app) => new CreditManager($app));
@@ -44,7 +55,6 @@ class CoreServiceRegistrar
 
         $app->singleton(DiscoveryCacheWarmer::class, function ($app) {
             return new DiscoveryCacheWarmer(
-                $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class),
                 $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class)
             );
         });

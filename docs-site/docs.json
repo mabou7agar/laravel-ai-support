@@ -36,8 +36,6 @@
               "guides/conversation-sessions",
               "guides/direct-generation-recipes",
               "guides/entity-list-preview-ux",
-              "guides/data-collectors",
-              "guides/data-collector-recipes",
               "guides/rag-indexing",
               "guides/graph-rag-neo4j",
               "guides/chat-flow-examples",
@@ -67,7 +65,6 @@
             "pages": [
               "reference/commands",
               "reference/api-reference",
-              "reference/data-collector-api",
               "reference/env-reference",
               "reference/qdrant-to-neo4j-migration",
               "reference/upgrade"

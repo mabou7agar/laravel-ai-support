@@ -25,6 +25,19 @@ class CapabilityApiRouteCleanupTest extends TestCase
         $this->getJson('/api/v1/rag/conversations')->assertNotFound();
     }
 
+    public function test_legacy_collector_api_routes_are_removed(): void
+    {
+        $this->assertFalse(class_exists('LaravelAIEngine\\Http\\Controllers\\DataCollectorController'));
+        $this->assertFalse(class_exists('LaravelAIEngine\\Http\\Controllers\\AutonomousCollectorController'));
+
+        $this->postJson('/api/v1/data-collector/start')->assertNotFound();
+        $this->postJson('/api/v1/data-collector/message')->assertNotFound();
+        $this->getJson('/api/v1/data-collector/status/test-session')->assertNotFound();
+        $this->postJson('/api/v1/autonomous-collector/start')->assertNotFound();
+        $this->postJson('/api/v1/autonomous-collector/message')->assertNotFound();
+        $this->postJson('/api/v1/autonomous-collector/confirm')->assertNotFound();
+    }
+
     public function test_capability_routes_use_focused_controllers(): void
     {
         $this->assertSame(AgentChatApiController::class, $this->routeController('ai-engine.agent.api.chat.send'));

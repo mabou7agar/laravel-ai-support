@@ -28,7 +28,7 @@ class EnterpriseServiceRegistrar
         $app->singleton(NewAnalyticsManager::class, fn ($app) => new NewAnalyticsManager($app->make(MetricsCollector::class)));
 
         $app->singleton(\LaravelAIEngine\Services\Vector\VectorDriverManager::class, fn () => new \LaravelAIEngine\Services\Vector\VectorDriverManager());
-        $app->singleton(\LaravelAIEngine\Services\Vector\EmbeddingService::class, fn ($app) => new \LaravelAIEngine\Services\Vector\EmbeddingService($app->make(\OpenAI\Client::class), $app->make(CreditManager::class)));
+        $app->singleton(\LaravelAIEngine\Services\Vector\EmbeddingService::class, fn ($app) => new \LaravelAIEngine\Services\Vector\EmbeddingService($app->make(\OpenAI\Contracts\ClientContract::class), $app->make(CreditManager::class)));
         $app->singleton(\LaravelAIEngine\Services\Vector\VectorAccessControl::class, fn () => new \LaravelAIEngine\Services\Vector\VectorAccessControl());
         $app->singleton(\LaravelAIEngine\Services\Tenant\MultiTenantVectorService::class, fn () => new \LaravelAIEngine\Services\Tenant\MultiTenantVectorService());
         $app->singleton(\LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder::class, fn () => new \LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder());
@@ -93,8 +93,8 @@ class EnterpriseServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Graph\Neo4jRetrievalService::class),
         ));
 
-        $app->singleton(\LaravelAIEngine\Services\Media\VisionService::class, fn ($app) => new \LaravelAIEngine\Services\Media\VisionService($app->make(\OpenAI\Client::class), $app->make(CreditManager::class)));
-        $app->singleton(\LaravelAIEngine\Services\Media\AudioService::class, fn ($app) => new \LaravelAIEngine\Services\Media\AudioService($app->make(\OpenAI\Client::class), $app->make(CreditManager::class)));
+        $app->singleton(\LaravelAIEngine\Services\Media\VisionService::class, fn ($app) => new \LaravelAIEngine\Services\Media\VisionService($app->make(\OpenAI\Contracts\ClientContract::class), $app->make(CreditManager::class)));
+        $app->singleton(\LaravelAIEngine\Services\Media\AudioService::class, fn ($app) => new \LaravelAIEngine\Services\Media\AudioService($app->make(\OpenAI\Contracts\ClientContract::class), $app->make(CreditManager::class)));
         $app->singleton(\LaravelAIEngine\Services\Media\VideoService::class, fn ($app) => new \LaravelAIEngine\Services\Media\VideoService($app->make(\LaravelAIEngine\Services\Media\AudioService::class), $app->make(\LaravelAIEngine\Services\Media\VisionService::class)));
         $app->singleton(\LaravelAIEngine\Services\Media\DocumentService::class, fn () => new \LaravelAIEngine\Services\Media\DocumentService());
         $app->singleton(\LaravelAIEngine\Services\Media\MediaEmbeddingService::class, fn ($app) => new \LaravelAIEngine\Services\Media\MediaEmbeddingService($app->make(\LaravelAIEngine\Services\Vector\EmbeddingService::class)));

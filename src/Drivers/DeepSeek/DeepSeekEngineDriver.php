@@ -257,7 +257,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::DEEPSEEK);
+        return EngineEnum::from(EngineEnum::DEEPSEEK);
     }
 
     /**

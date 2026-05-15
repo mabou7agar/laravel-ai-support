@@ -13,7 +13,7 @@ class AgentManifestEditorService
     }
 
     /**
-     * @return array{model_configs:array<int,string>,collectors:array<string,string>,tools:array<string,string>,filters:array<string,string>,skill_providers:array<string,string>,skills:array<string,array<string,mixed>>}
+     * @return array{model_configs:array<int,string>,tools:array<string,string>,filters:array<string,string>,skill_providers:array<string,string>,skills:array<string,array<string,mixed>>}
      */
     public function read(): array
     {
@@ -21,7 +21,6 @@ class AgentManifestEditorService
 
         $defaults = [
             'model_configs' => [],
-            'collectors' => [],
             'tools' => [],
             'filters' => [],
             'skill_providers' => [],
@@ -45,7 +44,7 @@ class AgentManifestEditorService
                 (array) ($manifest['model_configs'] ?? [])
             )));
 
-            foreach (['collectors', 'tools', 'filters', 'skill_providers'] as $section) {
+            foreach (['tools', 'filters', 'skill_providers'] as $section) {
                 $normalized = [];
                 foreach ((array) ($manifest[$section] ?? []) as $key => $class) {
                     $entryKey = trim((string) $key);
@@ -121,7 +120,7 @@ class AgentManifestEditorService
 
     public function putMappedEntry(string $section, string $key, string $className): bool
     {
-        if (!in_array($section, ['collectors', 'tools', 'filters', 'skill_providers'], true)) {
+        if (!in_array($section, ['tools', 'filters', 'skill_providers'], true)) {
             return false;
         }
 
@@ -149,7 +148,7 @@ class AgentManifestEditorService
 
     public function replaceMappedEntry(string $section, string $oldKey, string $newKey, string $className): bool
     {
-        if (!in_array($section, ['collectors', 'tools', 'filters', 'skill_providers'], true)) {
+        if (!in_array($section, ['tools', 'filters', 'skill_providers'], true)) {
             return false;
         }
 
@@ -207,7 +206,7 @@ class AgentManifestEditorService
 
     public function removeMappedEntry(string $section, string $key): bool
     {
-        if (!in_array($section, ['collectors', 'tools', 'filters', 'skill_providers'], true)) {
+        if (!in_array($section, ['tools', 'filters', 'skill_providers'], true)) {
             return false;
         }
 
@@ -283,7 +282,6 @@ class AgentManifestEditorService
     {
         $normalized = [
             'model_configs' => [],
-            'collectors' => [],
             'tools' => [],
             'filters' => [],
             'skill_providers' => [],
@@ -298,7 +296,7 @@ class AgentManifestEditorService
         }
         $normalized['model_configs'] = array_values(array_unique($normalized['model_configs']));
 
-        foreach (['collectors', 'tools', 'filters', 'skill_providers'] as $section) {
+        foreach (['tools', 'filters', 'skill_providers'] as $section) {
             foreach ((array) ($manifest[$section] ?? []) as $key => $className) {
                 $normalizedKey = trim((string) $key);
                 $normalizedClass = $this->normalizeClass((string) $className);
@@ -316,7 +314,7 @@ class AgentManifestEditorService
     }
 
     /**
-     * @param array{model_configs:array<int,string>,collectors:array<string,string>,tools:array<string,string>,filters:array<string,string>,skill_providers?:array<string,string>,skills?:array<string,array<string,mixed>>} $manifest
+     * @param array{model_configs:array<int,string>,tools:array<string,string>,filters:array<string,string>,skill_providers?:array<string,string>,skills?:array<string,array<string,mixed>>} $manifest
      */
     protected function write(array $manifest): void
     {
@@ -325,7 +323,6 @@ class AgentManifestEditorService
 
         $content = "<?php\n\nreturn " . var_export([
             'model_configs' => array_values($manifest['model_configs']),
-            'collectors' => $manifest['collectors'],
             'tools' => $manifest['tools'],
             'filters' => $manifest['filters'],
             'skill_providers' => $manifest['skill_providers'] ?? [],

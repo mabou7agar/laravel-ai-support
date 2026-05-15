@@ -8,11 +8,15 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Config;
 use LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver;
 use LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver;
 use LaravelAIEngine\Drivers\Gemini\GeminiEngineDriver;
+use LaravelAIEngine\Drivers\GoogleTTS\GoogleTTSEngineDriver;
 use LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver;
+use LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
+use LaravelAIEngine\Drivers\Pexels\PexelsEngineDriver;
 use LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -24,10 +28,60 @@ class MediaProviderDriversTest extends UnitTestCase
 {
     public function test_engine_enum_maps_new_media_providers_to_drivers(): void
     {
-        $this->assertSame(CloudflareWorkersAIEngineDriver::class, (new EngineEnum(EngineEnum::CLOUDFLARE_WORKERS_AI))->driverClass());
-        $this->assertSame(HuggingFaceEngineDriver::class, (new EngineEnum(EngineEnum::HUGGINGFACE))->driverClass());
-        $this->assertSame(ReplicateEngineDriver::class, (new EngineEnum(EngineEnum::REPLICATE))->driverClass());
-        $this->assertSame(ComfyUIEngineDriver::class, (new EngineEnum(EngineEnum::COMFYUI))->driverClass());
+        $this->assertSame(CloudflareWorkersAIEngineDriver::class, (EngineEnum::from(EngineEnum::CLOUDFLARE_WORKERS_AI))->driverClass());
+        $this->assertSame(HuggingFaceEngineDriver::class, (EngineEnum::from(EngineEnum::HUGGINGFACE))->driverClass());
+        $this->assertSame(ReplicateEngineDriver::class, (EngineEnum::from(EngineEnum::REPLICATE))->driverClass());
+        $this->assertSame(ComfyUIEngineDriver::class, (EngineEnum::from(EngineEnum::COMFYUI))->driverClass());
+        $this->assertSame(PexelsEngineDriver::class, (EngineEnum::from(EngineEnum::PEXELS))->driverClass());
+        $this->assertSame(GoogleTTSEngineDriver::class, (EngineEnum::from(EngineEnum::GOOGLE_TTS))->driverClass());
+    }
+
+    public function test_pexels_search_uses_stock_photo_api_and_formats_results(): void
+    {
+        $driver = new PexelsEngineDriver([
+            'api_key' => 'pexels-token',
+            'base_url' => 'https://api.pexels.com',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'total_results' => 12,
+                'next_page' => 'https://api.pexels.com/v1/search?page=2',
+                'photos' => [
+                    [
+                        'id' => 123,
+                        'alt' => 'Laptop on a desk',
+                        'url' => 'https://www.pexels.com/photo/123',
+                        'width' => 1200,
+                        'height' => 800,
+                        'avg_color' => '#ffffff',
+                        'photographer' => 'Jane Creator',
+                        'photographer_url' => 'https://www.pexels.com/@jane',
+                        'photographer_id' => 456,
+                        'src' => [
+                            'original' => 'https://images.pexels.com/photos/123/original.jpg',
+                            'large' => 'https://images.pexels.com/photos/123/large.jpg',
+                            'medium' => 'https://images.pexels.com/photos/123/medium.jpg',
+                        ],
+                    ],
+                ],
+            ])),
+        ]));
+
+        $response = $driver->generateImage(new AIRequest(
+            prompt: 'laptop desk',
+            engine: EngineEnum::PEXELS,
+            model: EntityEnum::PEXELS_SEARCH,
+            parameters: ['per_page' => 100, 'orientation' => 'landscape']
+        ));
+
+        $photos = json_decode($response->getContent(), true);
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('123', $photos[0]['id']);
+        $this->assertSame('Laptop on a desk', $photos[0]['alt']);
+        $this->assertSame('Jane Creator', $photos[0]['photographer']['name']);
+        $this->assertSame(80, $response->getUsage()['per_page']);
+        $this->assertSame('landscape', $response->getUsage()['orientation']);
     }
 
     public function test_cloudflare_workers_ai_generates_image_from_base64_result(): void
@@ -184,6 +238,48 @@ class MediaProviderDriversTest extends UnitTestCase
         $this->assertSame('ready', $selection['provider']);
     }
 
+    public function test_media_provider_router_supports_any_credential_group(): void
+    {
+        Config::set('ai-engine.media_routing.providers', [
+            'google_tts' => [
+                'any_api_key_config' => [
+                    'services.google_tts.api_key',
+                    'services.google_tts.access_token',
+                ],
+                'models' => [
+                    'audio_generation' => ['model' => 'google-tts', 'estimated_unit_cost' => 0.004],
+                ],
+            ],
+        ]);
+        Config::set('services.google_tts.api_key', null);
+        Config::set('services.google_tts.access_token', null);
+
+        $this->expectException(\InvalidArgumentException::class);
+        app(MediaProviderRouter::class)->select('audio_generation', 'cheapest');
+    }
+
+    public function test_media_provider_router_selects_provider_when_any_credential_is_present(): void
+    {
+        Config::set('ai-engine.media_routing.providers', [
+            'google_tts' => [
+                'any_api_key_config' => [
+                    'services.google_tts.api_key',
+                    'services.google_tts.access_token',
+                ],
+                'models' => [
+                    'audio_generation' => ['model' => 'google-tts', 'estimated_unit_cost' => 0.004],
+                ],
+            ],
+        ]);
+        Config::set('services.google_tts.api_key', null);
+        Config::set('services.google_tts.access_token', 'access-token');
+
+        $selection = app(MediaProviderRouter::class)->select('audio_generation', 'cheapest');
+
+        $this->assertSame('google_tts', $selection['provider']);
+        $this->assertSame('google-tts', $selection['model']);
+    }
+
     public function test_media_provider_router_skips_recently_failed_provider(): void
     {
         Config::set('ai-engine.media_routing.providers', [
@@ -229,6 +325,66 @@ class MediaProviderDriversTest extends UnitTestCase
         $this->assertSame('image', $response->getContentType());
         $this->assertNotEmpty($response->toArray()['files']);
         $this->assertSame('gemini', $response->toArray()['metadata']['provider']);
+    }
+
+    public function test_openai_generates_text_to_speech_audio(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+
+        $driver = new OpenAIEngineDriver([
+            'api_key' => 'openai-token',
+            'base_url' => 'https://api.openai.com/v1',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'audio/mpeg'], 'openai-audio'),
+        ]));
+
+        $response = $driver->generate(new AIRequest(
+            prompt: 'Read this invoice summary.',
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::OPENAI_TTS_1,
+            parameters: ['voice' => 'nova', 'format' => 'mp3']
+        ));
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('audio', $response->getContentType());
+        $this->assertNotEmpty($response->toArray()['files']);
+        $this->assertSame('openai', $response->toArray()['metadata']['provider']);
+        $this->assertSame('nova', $response->toArray()['metadata']['voice']);
+    }
+
+    public function test_google_tts_synthesizes_audio_and_stores_file(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+
+        $driver = new GoogleTTSEngineDriver([
+            'api_key' => 'google-token',
+            'base_url' => 'https://texttospeech.googleapis.com/v1',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'audioContent' => base64_encode('google-audio'),
+            ])),
+        ]));
+
+        $response = $driver->generate(new AIRequest(
+            prompt: 'Read this customer note.',
+            engine: EngineEnum::GOOGLE_TTS,
+            model: EntityEnum::GOOGLE_TTS,
+            parameters: [
+                'voice' => 'en-US-Neural2-F',
+                'language_code' => 'en-US',
+                'audio_encoding' => 'MP3',
+            ]
+        ));
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('audio', $response->getContentType());
+        $this->assertNotEmpty($response->toArray()['files']);
+        $this->assertSame('google_tts', $response->toArray()['metadata']['provider']);
+        $this->assertSame('en-US-Neural2-F', $response->toArray()['metadata']['voice']['name']);
     }
 
     /**

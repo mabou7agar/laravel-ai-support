@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Jobs;
 
 use Illuminate\Bus\Queueable;

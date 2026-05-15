@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Http\Controllers\Admin;
 
 use Illuminate\Http\RedirectResponse;
@@ -25,7 +27,7 @@ class ManifestManagerController extends Controller
     public function store(Request $request, AgentManifestEditorService $editor): RedirectResponse
     {
         $validated = $request->validate([
-            'type' => 'required|string|in:agent,collector,tool,filter',
+            'type' => 'required|string|in:agent,tool,filter',
             'class' => 'required|string|max:255',
             'key' => 'nullable|string|max:120',
         ]);
@@ -44,7 +46,6 @@ class ManifestManagerController extends Controller
             }
 
             $section = match ($type) {
-                'collector' => 'collectors',
                 'tool' => 'tools',
                 'filter' => 'filters',
                 default => '',
@@ -59,7 +60,7 @@ class ManifestManagerController extends Controller
     public function destroy(Request $request, AgentManifestEditorService $editor): RedirectResponse
     {
         $validated = $request->validate([
-            'type' => 'required|string|in:agent,collector,tool,filter',
+            'type' => 'required|string|in:agent,tool,filter',
             'class' => 'nullable|string|max:255',
             'key' => 'nullable|string|max:120',
         ]);
@@ -81,7 +82,6 @@ class ManifestManagerController extends Controller
             }
 
             $section = match ($type) {
-                'collector' => 'collectors',
                 'tool' => 'tools',
                 'filter' => 'filters',
                 default => '',
@@ -96,7 +96,7 @@ class ManifestManagerController extends Controller
     public function update(Request $request, AgentManifestEditorService $editor): RedirectResponse
     {
         $validated = $request->validate([
-            'type' => 'required|string|in:agent,collector,tool,filter',
+            'type' => 'required|string|in:agent,tool,filter',
             'old_class' => 'nullable|string|max:255',
             'class' => 'required|string|max:255',
             'old_key' => 'nullable|string|max:120',
@@ -122,7 +122,6 @@ class ManifestManagerController extends Controller
             }
 
             $section = match ($type) {
-                'collector' => 'collectors',
                 'tool' => 'tools',
                 'filter' => 'filters',
                 default => '',
@@ -139,7 +138,7 @@ class ManifestManagerController extends Controller
     public function scaffold(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'type' => 'required|string|in:agent,collector,tool,filter',
+            'type' => 'required|string|in:agent,tool,filter',
             'name' => 'required|string|max:120',
             'model' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:500',

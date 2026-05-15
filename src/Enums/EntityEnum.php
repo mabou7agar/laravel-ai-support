@@ -41,6 +41,9 @@ class EntityEnum
     public const DALL_E_3 = 'dall-e-3';
     public const DALL_E_2 = 'dall-e-2';
     public const WHISPER_1 = 'whisper-1';
+    public const OPENAI_GPT_4O_MINI_TTS = 'gpt-4o-mini-tts';
+    public const OPENAI_TTS_1 = 'tts-1';
+    public const OPENAI_TTS_1_HD = 'tts-1-hd';
 
     // Anthropic Models
     public const CLAUDE_3_5_SONNET = 'claude-3-5-sonnet-20240620';
@@ -314,7 +317,7 @@ class EntityEnum
         try {
             $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($model);
             if ($dbModel) {
-                return new EngineEnum($dbModel->provider);
+                return EngineEnum::from($dbModel->provider);
             }
         } catch (\Exception $e) {
             // Database not available or table doesn't exist, continue with config check
@@ -325,7 +328,7 @@ class EntityEnum
             // Check if model exists in OpenRouter config
             $openrouterModels = config('ai-engine.engines.openrouter.models', []);
             if (isset($openrouterModels[$model])) {
-                return new EngineEnum(EngineEnum::OPENROUTER);
+                return EngineEnum::from(EngineEnum::OPENROUTER);
             }
         }
 
@@ -334,17 +337,17 @@ class EntityEnum
         foreach ($engines as $engineName => $engineConfig) {
             $models = $engineConfig['models'] ?? [];
             if (isset($models[$model])) {
-                return new EngineEnum($engineName);
+                return EngineEnum::from($engineName);
             }
         }
 
         // Default to OpenRouter for provider/model format
         if (str_contains($model, '/')) {
-            return new EngineEnum(EngineEnum::OPENROUTER);
+            return EngineEnum::from(EngineEnum::OPENROUTER);
         }
 
         // Fallback to OpenAI
-        return new EngineEnum(EngineEnum::OPENAI);
+        return EngineEnum::from(EngineEnum::OPENAI);
     }
 
     /**
@@ -354,7 +357,7 @@ class EntityEnum
     {
         // Use dynamic model data if available
         if ($this->isDynamic() && isset($this->dynamicModel['engine'])) {
-            return new EngineEnum($this->dynamicModel['engine']);
+            return EngineEnum::from($this->dynamicModel['engine']);
         }
 
         switch ($this->value) {
@@ -370,7 +373,10 @@ class EntityEnum
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::WHISPER_1:
-                return new EngineEnum(EngineEnum::OPENAI);
+            case self::OPENAI_GPT_4O_MINI_TTS:
+            case self::OPENAI_TTS_1:
+            case self::OPENAI_TTS_1_HD:
+                return EngineEnum::from(EngineEnum::OPENAI);
             case self::CLAUDE_3_5_SONNET:
             case self::CLAUDE_3_5_SONNET_20241022:
             case self::CLAUDE_3_7_SONNET:
@@ -381,7 +387,7 @@ class EntityEnum
             case self::CLAUDE_OPUS_4_6:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
-                return new EngineEnum(EngineEnum::ANTHROPIC);
+                return EngineEnum::from(EngineEnum::ANTHROPIC);
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
             case self::GEMINI_2_0_FLASH:
@@ -393,13 +399,13 @@ class EntityEnum
             case self::GEMINI_VEO_3_1:
             case self::GEMINI_VEO_3_1_FAST:
             case self::GEMINI_LYRIA_002:
-                return new EngineEnum(EngineEnum::GEMINI);
+                return EngineEnum::from(EngineEnum::GEMINI);
             case self::SD3_LARGE:
             case self::SD3_MEDIUM:
             case self::SDXL_1024:
-                return new EngineEnum(EngineEnum::STABLE_DIFFUSION);
+                return EngineEnum::from(EngineEnum::STABLE_DIFFUSION);
             case self::ELEVEN_MULTILINGUAL_V2:
-                return new EngineEnum(EngineEnum::ELEVEN_LABS);
+                return EngineEnum::from(EngineEnum::ELEVEN_LABS);
             case self::FAL_FLUX_PRO:
             case self::FAL_FLUX_DEV:
             case self::FAL_FLUX_SCHNELL:
@@ -418,60 +424,62 @@ class EntityEnum
             case self::FLUX_PRO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
-                return new EngineEnum(EngineEnum::FAL_AI);
+                return EngineEnum::from(EngineEnum::FAL_AI);
             case self::DEEPSEEK_CHAT:
             case self::DEEPSEEK_REASONER:
-                return new EngineEnum(EngineEnum::DEEPSEEK);
+                return EngineEnum::from(EngineEnum::DEEPSEEK);
             case self::PERPLEXITY_SONAR_LARGE:
             case self::PERPLEXITY_SONAR_MEDIUM:
             case self::PERPLEXITY_SONAR_SMALL:
-                return new EngineEnum(EngineEnum::PERPLEXITY);
+                return EngineEnum::from(EngineEnum::PERPLEXITY);
             case self::SERPER_SEARCH:
             case self::SERPER_NEWS:
             case self::SERPER_IMAGES:
-                return new EngineEnum(EngineEnum::SERPER);
+                return EngineEnum::from(EngineEnum::SERPER);
             case self::UNSPLASH_SEARCH:
-                return new EngineEnum(EngineEnum::UNSPLASH);
+                return EngineEnum::from(EngineEnum::UNSPLASH);
             case self::PEXELS_SEARCH:
-                return new EngineEnum(EngineEnum::PEXELS);
+                return EngineEnum::from(EngineEnum::PEXELS);
             case self::PLAGIARISM_BASIC:
             case self::PLAGIARISM_ADVANCED:
             case self::PLAGIARISM_ACADEMIC:
-                return new EngineEnum(EngineEnum::PLAGIARISM_CHECK);
+                return EngineEnum::from(EngineEnum::PLAGIARISM_CHECK);
             case self::MIDJOURNEY_V6:
             case self::MIDJOURNEY_V5:
             case self::MIDJOURNEY_NIJI:
-                return new EngineEnum(EngineEnum::MIDJOURNEY);
+                return EngineEnum::from(EngineEnum::MIDJOURNEY);
             case self::AZURE_TEXT_ANALYTICS:
             case self::AZURE_TTS:
             case self::AZURE_STT:
             case self::AZURE_TRANSLATOR:
             case self::AZURE_COMPUTER_VISION:
-                return new EngineEnum(EngineEnum::AZURE);
+                return EngineEnum::from(EngineEnum::AZURE);
+            case self::GOOGLE_TTS:
+                return EngineEnum::from(EngineEnum::GOOGLE_TTS);
             case self::OPENROUTER_MISTRAL_7B_FREE:
             case self::OPENROUTER_QWEN_2_5_7B_FREE:
             case self::OPENROUTER_PHI_3_MINI_FREE:
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
-                return new EngineEnum(EngineEnum::OPENROUTER);
+                return EngineEnum::from(EngineEnum::OPENROUTER);
             case self::NVIDIA_NIM_NEMOTRON_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
-                return new EngineEnum(EngineEnum::NVIDIA_NIM);
+                return EngineEnum::from(EngineEnum::NVIDIA_NIM);
             case self::CLOUDFLARE_FLUX_SCHNELL:
             case self::CLOUDFLARE_DREAMSHAPER:
             case self::CLOUDFLARE_WHISPER:
             case self::CLOUDFLARE_MELOTTS:
-                return new EngineEnum(EngineEnum::CLOUDFLARE_WORKERS_AI);
+                return EngineEnum::from(EngineEnum::CLOUDFLARE_WORKERS_AI);
             case self::HUGGINGFACE_FLUX_SCHNELL:
             case self::HUGGINGFACE_WHISPER_LARGE_V3:
             case self::HUGGINGFACE_MMS_TTS:
-                return new EngineEnum(EngineEnum::HUGGINGFACE);
+                return EngineEnum::from(EngineEnum::HUGGINGFACE);
             case self::REPLICATE_FLUX_SCHNELL:
             case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
-                return new EngineEnum(EngineEnum::REPLICATE);
+                return EngineEnum::from(EngineEnum::REPLICATE);
             case self::COMFYUI_DEFAULT_IMAGE:
             case self::COMFYUI_DEFAULT_VIDEO:
-                return new EngineEnum(EngineEnum::COMFYUI);
+                return EngineEnum::from(EngineEnum::COMFYUI);
             default:
                 // Try to detect engine from model name pattern
                 return $this->detectEngineFromModelName();
@@ -509,6 +517,10 @@ class EntityEnum
                 return DallE2Driver::class;
             case self::WHISPER_1:
                 return WhisperDriver::class;
+            case self::OPENAI_GPT_4O_MINI_TTS:
+            case self::OPENAI_TTS_1:
+            case self::OPENAI_TTS_1_HD:
+                return GPT4ODriver::class;
             case self::CLAUDE_3_5_SONNET:
             case self::CLAUDE_3_5_SONNET_20241022:
             case self::CLAUDE_3_7_SONNET:
@@ -705,6 +717,12 @@ class EntityEnum
                 return 'DALL-E 2';
             case self::WHISPER_1:
                 return 'Whisper';
+            case self::OPENAI_GPT_4O_MINI_TTS:
+                return 'GPT-4o Mini TTS';
+            case self::OPENAI_TTS_1:
+                return 'OpenAI TTS 1';
+            case self::OPENAI_TTS_1_HD:
+                return 'OpenAI TTS 1 HD';
             case self::CLAUDE_3_5_SONNET:
                 return 'Claude 3.5 Sonnet';
             case self::CLAUDE_3_5_SONNET_20241022:
@@ -916,6 +934,12 @@ class EntityEnum
                 return 3.0;
             case self::WHISPER_1:
                 return 1.0;
+            case self::OPENAI_GPT_4O_MINI_TTS:
+                return 1.2;
+            case self::OPENAI_TTS_1:
+                return 0.8;
+            case self::OPENAI_TTS_1_HD:
+                return 1.5;
             case self::CLAUDE_3_5_SONNET:
                 return 1.8;
             case self::CLAUDE_3_5_SONNET_20241022:
@@ -1247,6 +1271,9 @@ class EntityEnum
             case self::GEMINI_VEO_3_1_FAST:
                 return 'video';
             case self::WHISPER_1:
+            case self::OPENAI_GPT_4O_MINI_TTS:
+            case self::OPENAI_TTS_1:
+            case self::OPENAI_TTS_1_HD:
             case self::ELEVEN_MULTILINGUAL_V2:
             case self::CLOUDFLARE_WHISPER:
             case self::CLOUDFLARE_MELOTTS:
@@ -1274,6 +1301,8 @@ class EntityEnum
             case self::AZURE_TTS:
                 return 'audio';
             case self::AZURE_STT:
+                return 'audio';
+            case self::GOOGLE_TTS:
                 return 'audio';
             case self::AZURE_TRANSLATOR:
                 return 'text';
@@ -1581,6 +1610,9 @@ class EntityEnum
             self::DALL_E_3,
             self::DALL_E_2,
             self::WHISPER_1,
+            self::OPENAI_GPT_4O_MINI_TTS,
+            self::OPENAI_TTS_1,
+            self::OPENAI_TTS_1_HD,
             self::CLAUDE_3_5_SONNET,
             self::CLAUDE_3_5_SONNET_20241022,
             self::CLAUDE_3_7_SONNET,

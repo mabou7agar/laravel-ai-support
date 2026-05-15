@@ -1,20 +1,25 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Vector;
 
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\Services\Vectorization\TokenCalculator;
 
 class ChunkingService
 {
     protected int $chunkSize;
     protected int $chunkOverlap;
     protected int $minChunkSize;
+    protected TokenCalculator $tokenCalculator;
 
-    public function __construct()
+    public function __construct(?TokenCalculator $tokenCalculator = null)
     {
         $this->chunkSize = config('ai-engine.vector.chunking.chunk_size', 1000);
         $this->chunkOverlap = config('ai-engine.vector.chunking.chunk_overlap', 200);
         $this->minChunkSize = config('ai-engine.vector.chunking.min_chunk_size', 100);
+        $this->tokenCalculator = $tokenCalculator ?? new TokenCalculator();
     }
 
     /**
@@ -313,8 +318,7 @@ class ChunkingService
      */
     public function estimateTokens(string $text): int
     {
-        // Rough estimation: ~4 characters per token
-        return (int) ceil(strlen($text) / 4);
+        return $this->tokenCalculator->estimate($text);
     }
 
     /**
@@ -322,7 +326,7 @@ class ChunkingService
      */
     public function chunkByTokens(string $text, int $maxTokens = 8000): array
     {
-        $maxChars = $maxTokens * 4; // Rough estimation
+        $maxChars = $this->tokenCalculator->charactersForTokens($maxTokens, $this->tokenCalculator->detectProfile($text));
         return $this->chunk($text, ['chunk_size' => $maxChars]);
     }
 

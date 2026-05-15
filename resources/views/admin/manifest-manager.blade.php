@@ -45,7 +45,7 @@
         <form method="POST" action="{{ route('ai-engine.admin.manifest.import') }}">
             @csrf
             <label>Import JSON payload</label>
-            <textarea name="payload" rows="10" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px;" placeholder='{"model_configs":[],"collectors":{},"tools":{},"filters":{}}'></textarea>
+            <textarea name="payload" rows="10" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px;" placeholder='{"model_configs":[],"tools":{},"filters":{}}'></textarea>
             <p style="margin-top: 10px;"><button type="submit">Import Manifest</button></p>
         </form>
     </div>
@@ -59,13 +59,12 @@
                     <label>Type</label>
                     <select name="type" required>
                         <option value="agent">agent (model config)</option>
-                        <option value="collector">collector</option>
                         <option value="tool">tool</option>
                         <option value="filter">filter</option>
                     </select>
                 </div>
                 <div>
-                    <label>Key (required for collector/tool/filter)</label>
+                    <label>Key (required for tool/filter)</label>
                     <input name="key" placeholder="invoice or tenant_scope">
                 </div>
                 <div>
@@ -86,7 +85,6 @@
                     <label>Type</label>
                     <select name="type" required>
                         <option value="agent">agent</option>
-                        <option value="collector">collector</option>
                         <option value="tool">tool</option>
                         <option value="filter">filter</option>
                     </select>
@@ -131,7 +129,7 @@
         @endforelse
     </div>
 
-    @foreach (['collectors' => 'Collectors', 'tools' => 'Tools', 'filters' => 'Filters'] as $section => $title)
+    @foreach (['tools' => 'Tools', 'filters' => 'Filters'] as $section => $title)
         <div class="card">
             <h2>{{ $title }}</h2>
             @forelse ($manifest[$section] as $key => $class)

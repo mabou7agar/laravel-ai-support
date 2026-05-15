@@ -119,7 +119,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 \LaravelAIEngine\Enums\EngineEnum::OLLAMA,
             ] as $engine) {
                 $registry->register($engine, function () use ($engine) {
-                    $engineEnum = new \LaravelAIEngine\Enums\EngineEnum($engine);
+                    $engineEnum = \LaravelAIEngine\Enums\EngineEnum::from($engine);
                     $driverClass = $engineEnum->driverClass();
                     $config = config("ai-engine.engines.{$engine}", []);
 
@@ -255,8 +255,6 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\DecisionPolicyActivateCommand::class,
                 Console\Commands\DecisionPolicyEvaluateCommand::class,
                 Console\Commands\TestRealAgentFlowCommand::class,
-                Console\Commands\TestDataCollectorCommand::class,
-                Console\Commands\ListAutonomousCollectorsCommand::class,
                 Console\Commands\ClearDiscoveryCacheCommand::class,
                 Console\Commands\WarmDiscoveryCacheCommand::class,
                 Console\Commands\InitAgentWorkspaceCommand::class,
@@ -346,9 +344,6 @@ class AIEngineServiceProvider extends ServiceProvider
 
         // Register event listeners
         $this->registerEventListeners();
-
-        // Discover and register AutonomousCollectors
-        $this->discoverAutonomousCollectors();
 
         // Register scheduled tasks
         $this->registerScheduledTasks();
@@ -479,89 +474,6 @@ class AIEngineServiceProvider extends ServiceProvider
         // anonymousComponentPath was introduced in Laravel 9
         if (method_exists($compiler, 'anonymousComponentPath')) {
             $compiler->anonymousComponentPath(__DIR__.'/../resources/views/components', 'ai-engine');
-        }
-    }
-
-    /**
-     * Discover and register AutonomousCollectors from app directories
-     */
-    protected function discoverAutonomousCollectors(): void
-    {
-        try {
-            $manifestCollectors = [];
-            if ($this->app->bound(\LaravelAIEngine\Services\Agent\AgentManifestService::class)) {
-                $manifestCollectors = $this->app
-                    ->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class)
-                    ->collectors();
-            }
-
-            foreach ($manifestCollectors as $name => $manifestCollector) {
-                $className = $manifestCollector['class'] ?? null;
-                if (!$className || !class_exists($className)) {
-                    continue;
-                }
-
-                $config = null;
-                if (method_exists($className, 'getConfig')) {
-                    $config = $className::getConfig();
-                } elseif (method_exists($className, 'create')) {
-                    $config = $className::create();
-                }
-
-                if (!$config) {
-                    continue;
-                }
-
-                \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::register($name, [
-                    'config' => $config,
-                    'goal' => (string) ($config->goal ?? ''),
-                    'description' => (string) ($manifestCollector['description'] ?? ''),
-                    'priority' => (int) ($manifestCollector['priority'] ?? 0),
-                    'source' => 'manifest',
-                ]);
-            }
-
-            $discoveryService = $this->app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class);
-            $collectors = $discoveryService->discoverCollectors(useCache: true, includeRemote: true);
-
-            foreach ($collectors as $name => $collectorData) {
-                if (\LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::has($name)) {
-                    continue;
-                }
-
-                $className = $collectorData['class'] ?? null;
-                $source = $collectorData['source'] ?? 'local';
-                $config = $collectorData['config'] ?? null;
-
-                // For local collectors, instantiate the config
-                if ($source === 'local' && $className && class_exists($className) && method_exists($className, 'getConfig')) {
-                    $config = $className::getConfig();
-                }
-
-                // Register both local and remote collectors
-                // Remote collectors will be handled by the orchestrator routing to nodes
-                if ($config) {
-                    \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::register($name, [
-                        'config' => $config,
-                        'goal' => (string) ($config->goal ?? ''),
-                        'description' => $collectorData['description'] ?? '',
-                        'priority' => $collectorData['priority'] ?? 0,
-                        'source' => $source,
-                    ]);
-                }
-            }
-
-            if (count($collectors) > 0) {
-                \Illuminate\Support\Facades\Log::channel('ai-engine')->debug('Discovered AutonomousCollectors', [
-                    'count' => count($collectors),
-                    'names' => array_keys($collectors),
-                    'manifest_count' => count($manifestCollectors),
-                ]);
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Failed to discover AutonomousCollectors', [
-                'error' => $e->getMessage(),
-            ]);
         }
     }
 

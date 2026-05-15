@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Contracts;
 
 use LaravelAIEngine\DTOs\SubAgentResult;

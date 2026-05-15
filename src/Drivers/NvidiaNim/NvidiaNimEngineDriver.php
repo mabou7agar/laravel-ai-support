@@ -56,7 +56,7 @@ class NvidiaNimEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::NVIDIA_NIM);
+        return EngineEnum::from(EngineEnum::NVIDIA_NIM);
     }
 
     public function test(): bool
@@ -157,7 +157,7 @@ class NvidiaNimEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::NVIDIA_NIM);
+        return EngineEnum::from(EngineEnum::NVIDIA_NIM);
     }
 
     protected function getDefaultModel(): EntityEnum

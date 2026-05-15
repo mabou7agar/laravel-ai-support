@@ -10,6 +10,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
+use LaravelAIEngine\Services\Vectorization\TokenCalculator;
 
 abstract class BaseEngineDriver implements EngineDriverInterface
 {
@@ -220,12 +221,11 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     }
 
     /**
-     * Calculate tokens used (basic implementation)
+     * Calculate tokens used with the package token estimator.
      */
     protected function calculateTokensUsed(string $content): int
     {
-        // Basic estimation: ~4 characters per token
-        return (int) ceil(strlen($content) / 4);
+        return app(TokenCalculator::class)->estimate($content);
     }
 
     /**

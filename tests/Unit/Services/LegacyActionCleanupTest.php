@@ -145,6 +145,27 @@ class LegacyActionCleanupTest extends UnitTestCase
         }
     }
 
+    public function test_legacy_collector_public_surfaces_are_removed(): void
+    {
+        $this->assertFalse(class_exists('LaravelAIEngine\\Facades\\DataCollector'));
+        $this->assertFalse(class_exists('LaravelAIEngine\\Facades\\AutonomousCollector'));
+        $this->assertFalse(class_exists('LaravelAIEngine\\Console\\Commands\\TestDataCollectorCommand'));
+        $this->assertFalse(class_exists('LaravelAIEngine\\Console\\Commands\\ListAutonomousCollectorsCommand'));
+
+        $provider = file_get_contents(__DIR__ . '/../../../src/AIEngineServiceProvider.php');
+        $scaffold = file_get_contents(__DIR__ . '/../../../src/Console/Commands/ScaffoldAgentArtifactCommand.php');
+        $routes = file_get_contents(__DIR__ . '/../../../routes/api.php');
+
+        $this->assertStringNotContainsString('TestDataCollectorCommand', $provider);
+        $this->assertStringNotContainsString('ListAutonomousCollectorsCommand', $provider);
+        $this->assertStringNotContainsString('discoverAutonomousCollectors', $provider);
+        $this->assertStringNotContainsString('api/v1/data-collector', $routes);
+        $this->assertStringNotContainsString('api/v1/autonomous-collector', $routes);
+        $this->assertStringNotContainsString('collector|', $scaffold);
+        $this->assertStringNotContainsString("'collector'", $scaffold);
+        $this->assertStringNotContainsString('DiscoverableAutonomousCollector', $scaffold);
+    }
+
     public function test_provider_and_config_do_not_reference_removed_demo_surfaces(): void
     {
         $provider = file_get_contents(__DIR__ . '/../../../src/AIEngineServiceProvider.php');

@@ -229,11 +229,52 @@ class ModelStatusCommand extends Command
         }
 
         $methodFile = $reflection->getMethod($method)->getFileName();
-        $traitFile = (new ReflectionClass(Vectorizable::class))->getFileName();
 
-        return is_string($methodFile)
-            && is_string($traitFile)
-            && realpath($methodFile) === realpath($traitFile);
+        if (! is_string($methodFile)) {
+            return false;
+        }
+
+        $methodPath = realpath($methodFile);
+        if ($methodPath === false) {
+            return false;
+        }
+
+        foreach ($this->vectorizableTraitFiles() as $traitFile) {
+            $traitPath = realpath($traitFile);
+            if ($traitPath !== false && $methodPath === $traitPath) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function vectorizableTraitFiles(): array
+    {
+        return $this->traitFiles(Vectorizable::class);
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function traitFiles(string $trait): array
+    {
+        $reflection = new ReflectionClass($trait);
+        $files = [];
+        $fileName = $reflection->getFileName();
+
+        if (is_string($fileName)) {
+            $files[] = $fileName;
+        }
+
+        foreach ($reflection->getTraitNames() as $usedTrait) {
+            array_push($files, ...$this->traitFiles($usedTrait));
+        }
+
+        return array_values(array_unique($files));
     }
 
     protected function safeShouldBeIndexed(Model $model, array &$warnings): ?bool

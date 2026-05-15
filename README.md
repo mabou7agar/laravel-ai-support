@@ -574,15 +574,14 @@ Recommended reading order:
 7. `guides/knowledge-base-security`
 8. `guides/direct-generation-recipes`
 9. `guides/entity-list-preview-ux`
-10. `guides/data-collectors`
-11. `guides/rag-indexing`
-12. `guides/graph-rag-neo4j`
-13. `guides/end-to-end-graph-walkthrough`
-14. `guides/copy-paste-playbooks`
-15. `guides/multi-app-federation`
-16. `guides/neo4j-ops-runbook`
-17. `guides/policy-learning`
-18. `guides/testing-playbook`
+10. `guides/rag-indexing`
+11. `guides/graph-rag-neo4j`
+12. `guides/end-to-end-graph-walkthrough`
+13. `guides/copy-paste-playbooks`
+14. `guides/multi-app-federation`
+15. `guides/neo4j-ops-runbook`
+16. `guides/policy-learning`
+17. `guides/testing-playbook`
 19. `guides/troubleshooting`
 
 ## Upgrading Existing Installs

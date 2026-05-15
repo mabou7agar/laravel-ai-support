@@ -48,7 +48,7 @@ class ComfyUIEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::COMFYUI);
+        return EngineEnum::from(EngineEnum::COMFYUI);
     }
 
     public function getAvailableModels(): array
@@ -172,7 +172,7 @@ class ComfyUIEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::COMFYUI);
+        return EngineEnum::from(EngineEnum::COMFYUI);
     }
 
     protected function getDefaultModel(): EntityEnum

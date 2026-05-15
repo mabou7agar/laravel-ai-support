@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
@@ -30,7 +32,7 @@ class WarmDiscoveryCacheCommand extends Command
 
         // Check current cache status
         $status = $warmer->areCachesWarm();
-        if (!$force && $status['autonomous_collectors'] && $status['rag_collections']) {
+        if (!$force && $status['rag_collections']) {
             $this->info('✓ All caches are already warm');
             $this->line('  Use --force to re-warm');
             return self::SUCCESS;
@@ -45,7 +47,6 @@ class WarmDiscoveryCacheCommand extends Command
         $this->table(
             ['Cache Type', 'Items Cached'],
             [
-                ['Autonomous Collectors', $stats['autonomous_collectors']],
                 ['RAG Collections', $stats['rag_collections']],
             ]
         );

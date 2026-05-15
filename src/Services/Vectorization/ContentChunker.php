@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Vectorization;
 
 use Illuminate\Support\Facades\Log;
@@ -31,7 +33,7 @@ class ContentChunker
         // Calculate chunk size
         $chunkSize = config('ai-engine.vectorization.chunk_size');
         if (!$chunkSize) {
-            $chunkSize = (int) ($tokenLimit * 0.9 * 1.3);
+            $chunkSize = $this->tokenCalculator->charactersForTokens((int) floor($tokenLimit * 0.9), $this->tokenCalculator->detectProfile($content));
         }
         
         $overlap = config('ai-engine.vectorization.chunk_overlap', 200);
@@ -96,7 +98,10 @@ class ContentChunker
         $maxChars = config('ai-engine.vectorization.max_content_length');
         
         if (!$maxChars) {
-            $maxChars = (int) ($tokenLimit * 0.9 * 1.3);
+            $maxChars = $this->tokenCalculator->charactersForTokens(
+                (int) floor($tokenLimit * 0.9),
+                $this->tokenCalculator->detectProfile($content)
+            );
         }
 
         if (strlen($content) <= $maxChars) {

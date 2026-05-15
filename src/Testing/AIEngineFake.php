@@ -630,6 +630,26 @@ class AIEngineFake extends UnifiedEngineManager
     }
 
     /**
+     * Assert that a specific temperature was used in any call.
+     */
+    public function assertTemperatureUsed(float $temperature): void
+    {
+        foreach ($this->calls as $call) {
+            $request = $call['request'] ?? null;
+            if ($request instanceof AIRequest && $request->getTemperature() !== null && abs($request->getTemperature() - $temperature) < 0.00001) {
+                return;
+            }
+
+            $opts = $call['options'] ?? [];
+            if (is_array($opts) && isset($opts['temperature']) && abs((float) $opts['temperature'] - $temperature) < 0.00001) {
+                return;
+            }
+        }
+
+        throw new \RuntimeException("Expected temperature [{$temperature}] to be used, but it was not found in any recorded call.");
+    }
+
+    /**
      * Assert that no calls were made to the fake.
      */
     public function assertNoRequests(): void

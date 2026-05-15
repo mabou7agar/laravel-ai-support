@@ -307,7 +307,7 @@ class RequestRouteResolver
         }
 
         try {
-            $engineEnum = new EngineEnum($engine);
+            $engineEnum = EngineEnum::from($engine);
             foreach ($engineEnum->getDefaultModels() as $defaultModel) {
                 if ($this->isCandidateAvailable($engine, $defaultModel->value)
                     && $this->matchesContentType($defaultModel->value, $contentType)) {

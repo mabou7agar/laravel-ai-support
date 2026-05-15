@@ -136,10 +136,18 @@ class HasMediaEmbeddingsTest extends UnitTestCase
         Log::shouldReceive('warning')->zeroOrMoreTimes();
         
         Log::shouldReceive('debug')
+            ->atLeast()
             ->once()
             ->withArgs(function ($message, $context) {
-                return in_array($message, ['Vector content generated', 'Full vector content generated'], true)
-                    && (($context['has_media'] ?? false) === true);
+                if ($message === 'Media content integrated') {
+                    return ($context['media_content_length'] ?? 0) > 0;
+                }
+
+                if (in_array($message, ['📊 Vectorization Summary', 'Full vector content generated'], true)) {
+                    return (($context['has_media'] ?? false) === true);
+                }
+
+                return false;
             });
 
         $model = new TestModelWithBothTraits();

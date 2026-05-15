@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 if (!function_exists('discover_vectorizable_models')) {
     /**
      * Discover all models using the Vectorizable trait

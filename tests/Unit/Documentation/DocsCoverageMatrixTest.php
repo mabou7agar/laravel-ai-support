@@ -53,16 +53,6 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Feature/Api/ConversationListApiTest.php',
             'tests/Feature/Node/NodeApiRoutesTest.php',
         ],
-        'guides/data-collector-recipes' => [
-            'tests/Feature/DataCollector/AutonomousCollectorApiTest.php',
-            'tests/Feature/Actions/ParameterExtractionTest.php',
-            'tests/Unit/DTOs/DataCollectorConfigTest.php',
-        ],
-        'guides/data-collectors' => [
-            'tests/Feature/DataCollector/AutonomousCollectorApiTest.php',
-            'tests/Unit/Services/DataCollector/AutonomousCollectorSessionServiceTest.php',
-            'tests/Unit/Services/Agent/AutonomousCollectorHandlerSummaryTest.php',
-        ],
         'guides/direct-generation-recipes' => [
             'tests/Feature/AIEngineIntegrationTest.php',
             'tests/Feature/Api/GenerateVideoApiTest.php',
@@ -170,10 +160,6 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Console/Commands/GenerateFalReferencePackCommandTest.php',
             'tests/Unit/Console/Commands/GenerateFalCharacterCommandTest.php',
             'tests/Unit/Console/Commands/DocsIndexCommandTest.php',
-        ],
-        'reference/data-collector-api' => [
-            'tests/Feature/DataCollector/AutonomousCollectorApiTest.php',
-            'tests/Feature/Actions/ParameterExtractionTest.php',
         ],
         'reference/env-reference' => [
             'tests/Unit/Support/Config/AIEngineConfigDefaultsTest.php',

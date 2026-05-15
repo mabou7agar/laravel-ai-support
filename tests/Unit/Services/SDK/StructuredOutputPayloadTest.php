@@ -23,7 +23,7 @@ class StructuredOutputPayloadTest extends UnitTestCase
             }
             public function stream(AIRequest $request): \Generator { yield ''; }
             public function validateRequest(AIRequest $request): bool { return true; }
-            public function getEngine(): EngineEnum { return new EngineEnum(EngineEnum::OPENAI); }
+            public function getEngine(): EngineEnum { return EngineEnum::from(EngineEnum::OPENAI); }
             public function getAvailableModels(): array { return []; }
             public function generateJsonAnalysis(string $prompt, string $systemPrompt, ?string $model = null, int $maxTokens = 300): string { return '{}'; }
             public function payload(AIRequest $request): array
@@ -31,7 +31,7 @@ class StructuredOutputPayloadTest extends UnitTestCase
                 return $this->buildChatPayload($request, [['role' => 'user', 'content' => $request->getPrompt()]]);
             }
             protected function getSupportedCapabilities(): array { return ['text']; }
-            protected function getEngineEnum(): EngineEnum { return new EngineEnum(EngineEnum::OPENAI); }
+            protected function getEngineEnum(): EngineEnum { return EngineEnum::from(EngineEnum::OPENAI); }
             protected function getDefaultModel(): EntityEnum { return EntityEnum::GPT_4O; }
             protected function validateConfig(): void {}
         };

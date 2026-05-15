@@ -668,11 +668,11 @@ class AIResponse implements \JsonSerializable
             try {
                 return EngineEnum::fromSlug($engine);
             } catch (\Throwable) {
-                return new EngineEnum($engine);
+                return EngineEnum::from($engine);
             }
         }
 
-        return new EngineEnum(EngineEnum::OPENAI);
+        return EngineEnum::from(EngineEnum::OPENAI);
     }
 
     protected static function resolveModel(mixed $model, EngineEnum $engine): EntityEnum

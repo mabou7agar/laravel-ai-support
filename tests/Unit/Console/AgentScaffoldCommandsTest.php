@@ -26,7 +26,6 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
         $this->assertSame(0, $exitCode);
         $this->assertDirectoryExists(app_path('AI/Configs'));
-        $this->assertDirectoryExists(app_path('AI/Collectors'));
         $this->assertDirectoryExists(app_path('AI/Filters'));
         $this->assertDirectoryExists(app_path('AI/Skills'));
         $this->assertDirectoryExists(app_path('AI/Tools'));
@@ -35,7 +34,6 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $manifest = require $this->manifestPath;
 
         $this->assertArrayHasKey('model_configs', $manifest);
-        $this->assertArrayHasKey('collectors', $manifest);
         $this->assertArrayHasKey('tools', $manifest);
         $this->assertArrayHasKey('filters', $manifest);
         $this->assertArrayHasKey('skill_providers', $manifest);

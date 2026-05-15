@@ -52,7 +52,7 @@ class ReplicateEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::REPLICATE);
+        return EngineEnum::from(EngineEnum::REPLICATE);
     }
 
     public function getAvailableModels(): array
@@ -128,7 +128,7 @@ class ReplicateEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::REPLICATE);
+        return EngineEnum::from(EngineEnum::REPLICATE);
     }
 
     protected function getDefaultModel(): EntityEnum

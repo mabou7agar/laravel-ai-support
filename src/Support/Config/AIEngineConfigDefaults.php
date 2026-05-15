@@ -198,6 +198,21 @@ class AIEngineConfigDefaults
                 'models' => [
                     'image' => ['model' => 'gpt-image-1-mini', 'estimated_unit_cost' => 0.02, 'quality_score' => 2.1, 'latency_score' => 2.0],
                     'audio_transcription' => ['model' => 'whisper-1', 'estimated_unit_cost' => 0.006, 'quality_score' => 1.8, 'latency_score' => 2.0],
+                    'audio_generation' => ['model' => 'gpt-4o-mini-tts', 'estimated_unit_cost' => 0.015, 'quality_score' => 2.1, 'latency_score' => 2.0],
+                ],
+            ],
+            'google_tts' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_GOOGLE_TTS', true),
+                'any_api_key_config' => ['ai-engine.engines.google_tts.api_key', 'ai-engine.engines.google_tts.access_token'],
+                'models' => [
+                    'audio_generation' => ['model' => 'google-tts', 'estimated_unit_cost' => 0.004, 'quality_score' => 1.7, 'latency_score' => 2.0],
+                ],
+            ],
+            'eleven_labs' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_ELEVENLABS', true),
+                'api_key_config' => 'ai-engine.engines.eleven_labs.api_key',
+                'models' => [
+                    'audio_generation' => ['model' => 'eleven_multilingual_v2', 'estimated_unit_cost' => 0.018, 'quality_score' => 2.3, 'latency_score' => 2.0],
                 ],
             ],
         ],
@@ -587,6 +602,9 @@ class AIEngineConfigDefaults
                 'gpt-image-1-mini' => ['enabled' => true, 'credit_index' => 2.0],
                 'dall-e-3' => ['enabled' => true, 'credit_index' => 5.0],
                 'whisper-1' => ['enabled' => true, 'credit_index' => 1.0],
+                'gpt-4o-mini-tts' => ['enabled' => true, 'credit_index' => 1.2, 'content_type' => 'audio'],
+                'tts-1' => ['enabled' => true, 'credit_index' => 0.8, 'content_type' => 'audio'],
+                'tts-1-hd' => ['enabled' => true, 'credit_index' => 1.5, 'content_type' => 'audio'],
             ],
         ],
 
@@ -618,6 +636,20 @@ class AIEngineConfigDefaults
                 'lyria-002' => ['enabled' => true, 'credit_index' => 1.0, 'content_type' => 'audio'],
                 'gemini-1.5-flash' => ['enabled' => true, 'credit_index' => 0.4],
                 'gemini-1.5-pro' => ['enabled' => true, 'credit_index' => 1.5],
+            ],
+        ],
+
+        'google_tts' => [
+            'driver' => 'google_tts',
+            'api_key' => env('GOOGLE_TTS_API_KEY', env('GOOGLE_API_KEY')),
+            'access_token' => env('GOOGLE_TTS_ACCESS_TOKEN'),
+            'base_url' => env('GOOGLE_TTS_BASE_URL', 'https://texttospeech.googleapis.com/v1'),
+            'timeout' => env('GOOGLE_TTS_TIMEOUT', 60),
+            'language_code' => env('GOOGLE_TTS_LANGUAGE_CODE', 'en-US'),
+            'voice' => env('GOOGLE_TTS_VOICE'),
+            'ssml_gender' => env('GOOGLE_TTS_SSML_GENDER'),
+            'models' => [
+                'google-tts' => ['enabled' => true, 'credit_index' => 0.8, 'content_type' => 'audio'],
             ],
         ],
 
@@ -789,6 +821,16 @@ class AIEngineConfigDefaults
                 'qwen' => ['enabled' => true, 'credit_index' => 0.0],
             ],
         ],
+
+        'pexels' => [
+            'driver' => 'pexels',
+            'api_key' => env('PEXELS_API_KEY'),
+            'base_url' => env('PEXELS_BASE_URL', 'https://api.pexels.com'),
+            'timeout' => env('PEXELS_TIMEOUT', 30),
+            'models' => [
+                'pexels-search' => ['enabled' => true, 'credit_index' => 0.05],
+            ],
+        ],
     ],
 
     /*
@@ -896,6 +938,8 @@ class AIEngineConfigDefaults
             'huggingface' => env('AI_HUGGINGFACE_RATE', 1.2),
             'replicate' => env('AI_REPLICATE_RATE', 1.25),
             'comfyui' => env('AI_COMFYUI_RATE', 1.0),
+            'google_tts' => env('AI_GOOGLE_TTS_RATE', 1.2),
+            'eleven_labs' => env('AI_ELEVENLABS_RATE', 1.4),
             'openrouter' => env('AI_OPENROUTER_RATE', 2.5), // 2.5:1 ratio
             'nvidia_nim' => env('AI_NVIDIA_NIM_RATE', 1.5), // 1.5:1 ratio
         ],
@@ -991,6 +1035,7 @@ class AIEngineConfigDefaults
             'huggingface' => ['cloudflare_workers_ai', 'replicate', 'fal_ai', 'comfyui'],
             'replicate' => ['huggingface', 'fal_ai', 'cloudflare_workers_ai', 'comfyui'],
             'comfyui' => ['cloudflare_workers_ai', 'huggingface', 'replicate', 'fal_ai'],
+            'google_tts' => ['openai', 'eleven_labs', 'cloudflare_workers_ai', 'huggingface'],
             'openrouter' => ['openai', 'anthropic', 'gemini'], // OpenRouter as fallback for others
         ],
     ],

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
@@ -23,7 +25,6 @@ class InitAgentWorkspaceCommand extends Command
         $directories = [
             app_path('AI'),
             app_path('AI/Configs'),
-            app_path('AI/Collectors'),
             app_path('AI/Filters'),
             app_path('AI/Skills'),
             app_path('AI/Tools'),
@@ -111,10 +112,6 @@ class InitAgentWorkspaceCommand extends Command
 return [
     'model_configs' => [
         // App\AI\Configs\RecordConfig::class,
-    ],
-
-    'collectors' => [
-        // 'record' => App\AI\Collectors\RecordCollector::class,
     ],
 
     'tools' => [

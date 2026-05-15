@@ -1,12 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Vector;
 
-use OpenAI\Client as OpenAIClient;
+use OpenAI\Contracts\ClientContract as OpenAIClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\Services\Vectorization\TokenCalculator;
 
 class EmbeddingService
 {
@@ -17,13 +20,16 @@ class EmbeddingService
     protected bool $cacheEnabled;
     protected int $cacheTtl;
     protected bool $useFakeEmbeddings;
+    protected TokenCalculator $tokenCalculator;
 
     public function __construct(
         OpenAIClient $client,
-        CreditManager $creditManager
+        CreditManager $creditManager,
+        ?TokenCalculator $tokenCalculator = null
     ) {
         $this->client = $client;
         $this->creditManager = $creditManager;
+        $this->tokenCalculator = $tokenCalculator ?? new TokenCalculator();
         $this->model = config('ai-engine.vector.embedding_model', 'text-embedding-3-large');
         $this->dimensions = $this->getDimensionsForModel($this->model);
         $this->cacheEnabled = config('ai-engine.vector.cache_embeddings', true);
@@ -501,7 +507,6 @@ class EmbeddingService
      */
     protected function estimateTokens(string $text): int
     {
-        // Rough estimate: 1 token ≈ 4 characters
-        return (int) ceil(strlen($text) / 4);
+        return $this->tokenCalculator->estimate($text);
     }
 }

@@ -55,7 +55,7 @@ class HuggingFaceEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::HUGGINGFACE);
+        return EngineEnum::from(EngineEnum::HUGGINGFACE);
     }
 
     public function getAvailableModels(): array
@@ -163,7 +163,7 @@ class HuggingFaceEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::HUGGINGFACE);
+        return EngineEnum::from(EngineEnum::HUGGINGFACE);
     }
 
     protected function getDefaultModel(): EntityEnum

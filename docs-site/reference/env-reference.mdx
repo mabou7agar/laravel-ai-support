@@ -14,14 +14,32 @@ AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini;deepseek;
 
 `AI_ENGINE_REQUEST_PROVIDER_PRIORITY` controls provider resolution for direct requests when callers omit `engine`. The special `native` token means "prefer the model's direct provider first", then try the rest in order.
 
+## Token Estimation
+
+```env
+AI_ENGINE_TOKEN_CHARS_LATIN=4.0
+AI_ENGINE_TOKEN_CHARS_CODE=2.0
+AI_ENGINE_TOKEN_CHARS_CJK=1.0
+```
+
+These ratios control fallback token estimates when a provider does not return exact usage. Lower values charge and chunk more conservatively for dense text such as code or CJK content.
+
 ## Providers
 
 ```env
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
+GOOGLE_TTS_API_KEY=
+GOOGLE_TTS_ACCESS_TOKEN=
+GOOGLE_TTS_BASE_URL=https://texttospeech.googleapis.com/v1
+GOOGLE_TTS_LANGUAGE_CODE=en-US
+GOOGLE_TTS_VOICE=
+GOOGLE_TTS_SSML_GENDER=
 DEEPSEEK_API_KEY=
 OPENROUTER_API_KEY=
+PEXELS_API_KEY=
+PEXELS_BASE_URL=https://api.pexels.com
 NVIDIA_NIM_API_KEY=
 NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
 NVIDIA_NIM_DEFAULT_MODEL=nvidia/llama-3.1-nemotron-70b-instruct

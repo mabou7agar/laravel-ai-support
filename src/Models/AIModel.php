@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -237,7 +239,7 @@ class AIModel extends Model
      */
     public function getEngineEnum(): \LaravelAIEngine\Enums\EngineEnum
     {
-        return new \LaravelAIEngine\Enums\EngineEnum($this->provider);
+        return \LaravelAIEngine\Enums\EngineEnum::from($this->provider);
     }
 
     /**

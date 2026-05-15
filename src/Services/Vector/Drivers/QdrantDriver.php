@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Vector\Drivers;
 
 use LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface;

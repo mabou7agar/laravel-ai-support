@@ -107,84 +107,7 @@ Expected behavior:
 - when `AI_ENGINE_INJECT_USER_CONTEXT=true` and user is authenticated, AI can answer personal basics (name/email/role)
 - response language follows resolved locale
 
-## Playbook 3: Guided Data Collector (Full Flow)
-
-### Step 1: start collector
-
-```bash
-curl -sS "${AI_BASE_URL}/api/v1/data-collector/start" \
-  -H "${JSON_HEADER}" \
-  -H "${AUTH_HEADER}" \
-  -d '{
-    "config_name":"invoice_create",
-    "session_id":"pb-dc-3001"
-  }'
-```
-
-### Step 2: send user input
-
-```bash
-curl -sS "${AI_BASE_URL}/api/v1/data-collector/message" \
-  -H "${JSON_HEADER}" \
-  -H "${AUTH_HEADER}" \
-  -d '{
-    "session_id":"pb-dc-3001",
-    "message":"Customer is ACME, issue date is 2026-03-09"
-  }'
-```
-
-### Step 3: inspect status/data
-
-```bash
-curl -sS "${AI_BASE_URL}/api/v1/data-collector/status/pb-dc-3001" -H "${AUTH_HEADER}"
-curl -sS "${AI_BASE_URL}/api/v1/data-collector/data/pb-dc-3001" -H "${AUTH_HEADER}"
-```
-
-Expected behavior:
-
-- status transitions: `collecting` -> `confirming` -> `completed`
-- response includes `progress`, `remaining_fields`, and confirmation summary
-
-## Playbook 4: Autonomous Collector (Tool-Driven)
-
-### Step 1: start autonomous flow
-
-```bash
-curl -sS "${AI_BASE_URL}/api/v1/autonomous-collector/start" \
-  -H "${JSON_HEADER}" \
-  -H "${AUTH_HEADER}" \
-  -d '{
-    "config_name":"invoice",
-    "session_id":"pb-ac-4001",
-    "initial_message":"Create return request for ACME with 2 Alpha Laptop items"
-  }'
-```
-
-### Step 2: continue and confirm
-
-```bash
-curl -sS "${AI_BASE_URL}/api/v1/autonomous-collector/message" \
-  -H "${JSON_HEADER}" \
-  -H "${AUTH_HEADER}" \
-  -d '{
-    "session_id":"pb-ac-4001",
-    "message":"yes, proceed"
-  }'
-
-curl -sS "${AI_BASE_URL}/api/v1/autonomous-collector/confirm" \
-  -H "${JSON_HEADER}" \
-  -H "${AUTH_HEADER}" \
-  -d '{
-    "session_id":"pb-ac-4001"
-  }'
-```
-
-Expected behavior:
-
-- autonomous tool calls appear in `tool_results`
-- final mutation happens only after confirmation when required
-
-## Playbook 5: Federation (Master + Child)
+## Playbook 3: Federation (Master + Child)
 
 ### Step 1: validate nodes
 
@@ -215,7 +138,7 @@ Expected behavior:
 - ownership resolver picks local vs remote executor
 - response envelope remains stable regardless of route destination
 
-## Playbook 6: Policy Learning (Prompt-Level)
+## Playbook 4: Policy Learning (Prompt-Level)
 
 ```bash
 php artisan ai:decision-feedback:report

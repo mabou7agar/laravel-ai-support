@@ -1,9 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 
 /**
@@ -16,16 +17,11 @@ class ClearDiscoveryCacheCommand extends Command
     protected $signature = 'ai:clear-discovery-cache
                           {--warm : Warm the cache after clearing}';
 
-    protected $description = 'Clear all AI Engine discovery caches (collectors, vector collections, metadata)';
+    protected $description = 'Clear AI Engine discovery caches (vector collections and metadata)';
 
     public function handle(): int
     {
         $this->info('Clearing AI Engine discovery caches...');
-
-        // Clear autonomous collector cache
-        $collectorDiscovery = app(AutonomousCollectorDiscoveryService::class);
-        $collectorDiscovery->clearCache();
-        $this->line('✓ Autonomous collector cache cleared');
 
         // Clear vector collection cache
         $ragDiscovery = app(RAGCollectionDiscovery::class);
@@ -44,10 +40,6 @@ class ClearDiscoveryCacheCommand extends Command
         if ($this->option('warm')) {
             $this->info('');
             $this->info('Warming caches...');
-            
-            // Warm autonomous collectors
-            $collectors = $collectorDiscovery->discoverCollectors(useCache: false);
-            $this->line("✓ Discovered {$collectors->count()} autonomous collectors");
             
             // Warm vector collections
             $collections = $ragDiscovery->discover(useCache: false);

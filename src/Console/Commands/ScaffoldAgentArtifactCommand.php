@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
@@ -10,16 +12,16 @@ use LaravelAIEngine\Services\Agent\AgentManifestService;
 class ScaffoldAgentArtifactCommand extends Command
 {
     protected $signature = 'ai:scaffold
-                            {type? : agent|collector|filter|tool|skill|routing-stage|execution-handler|runtime|rag-retriever|policy}
+                            {type? : agent|filter|tool|skill|routing-stage|execution-handler|runtime|rag-retriever|policy}
                             {name? : Class name (e.g. Invoice)}
-                            {--model= : Model class for agent/collector (e.g. App\\Models\\Invoice)}
+                            {--model= : Model class for model-backed artifacts (e.g. App\\Models\\Invoice)}
                             {--kind= : Tool template kind: simple, lookup, upsert, action}
                             {--action= : Action id for action-backed tool templates}
                             {--description= : Description text used in generated class}
                             {--force : Overwrite file if it already exists}
                             {--no-register : Skip automatic manifest registration}';
 
-    protected $description = 'Scaffold AI agent artifacts (agent config, collector, filter, tool, skill, routing stage, execution handler, runtime, RAG retriever, policy)';
+    protected $description = 'Scaffold AI agent artifacts (agent config, filter, tool, skill, routing stage, execution handler, runtime, RAG retriever, policy)';
 
     /**
      * @var array<string, array{namespace:string,directory:string,suffix:string,manifest:string,map:bool}>
@@ -31,13 +33,6 @@ class ScaffoldAgentArtifactCommand extends Command
             'suffix' => 'Config',
             'manifest' => 'model_configs',
             'map' => false,
-        ],
-        'collector' => [
-            'namespace' => 'App\\AI\\Collectors',
-            'directory' => 'AI/Collectors',
-            'suffix' => 'Collector',
-            'manifest' => 'collectors',
-            'map' => true,
         ],
         'filter' => [
             'namespace' => 'App\\AI\\Filters',
@@ -227,8 +222,6 @@ class ScaffoldAgentArtifactCommand extends Command
         $base = $className;
         if ($type === 'agent') {
             $base = Str::beforeLast($className, 'Config');
-        } elseif ($type === 'collector') {
-            $base = Str::beforeLast($className, 'Collector');
         }
 
         $base = $base === '' ? 'Model' : $base;
@@ -248,7 +241,6 @@ class ScaffoldAgentArtifactCommand extends Command
     {
         return match ($type) {
             'agent' => $this->buildAgentTemplate($namespace, $className),
-            'collector' => $this->buildCollectorTemplate($namespace, $className),
             'filter' => $this->buildFilterTemplate($namespace, $className),
             'tool' => $this->buildToolTemplate($namespace, $className),
             'skill' => $this->buildSkillTemplate($namespace, $className),
@@ -305,67 +297,6 @@ class {$className} extends AutonomousModelConfig
     public static function getTools(): array
     {
         return [];
-    }
-}
-PHP;
-    }
-
-    protected function buildCollectorTemplate(string $namespace, string $className): string
-    {
-        $modelClass = $this->inferModelClass($className, 'collector');
-        $name = Str::snake(Str::beforeLast($className, 'Collector'));
-        $name = $name !== '' ? $name : Str::snake($className);
-        $description = trim((string) ($this->option('description') ?? ''));
-        $description = $description !== '' ? $description : "Autonomous collector for {$name}.";
-
-        return <<<PHP
-<?php
-
-namespace {$namespace};
-
-use LaravelAIEngine\Contracts\DiscoverableAutonomousCollector;
-use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
-
-class {$className} implements DiscoverableAutonomousCollector
-{
-    public static function getName(): string
-    {
-        return '{$name}';
-    }
-
-    public static function getDescription(): string
-    {
-        return '{$this->escapeSingleQuotes($description)}';
-    }
-
-    public static function getPriority(): int
-    {
-        return 0;
-    }
-
-    public static function getModelClass(): ?string
-    {
-        return \\{$modelClass}::class;
-    }
-
-    public static function getFilterConfig(): array
-    {
-        return [];
-    }
-
-    public static function getAllowedOperations(?int \$userId): array
-    {
-        return \$userId ? ['list', 'create', 'update'] : ['list'];
-    }
-
-    public static function getConfig(): AutonomousCollectorConfig
-    {
-        return new AutonomousCollectorConfig(
-            goal: 'Handle {$name} requests',
-            description: self::getDescription(),
-            tools: [],
-            outputSchema: [],
-        );
     }
 }
 PHP;
@@ -732,7 +663,6 @@ PHP;
     {
         $default = [
             'model_configs' => [],
-            'collectors' => [],
             'tools' => [],
             'filters' => [],
             'skill_providers' => [],
@@ -764,7 +694,6 @@ PHP;
     {
         $normalized = [
             'model_configs' => array_values(array_unique(array_values((array) ($manifest['model_configs'] ?? [])))),
-            'collectors' => (array) ($manifest['collectors'] ?? []),
             'tools' => (array) ($manifest['tools'] ?? []),
             'filters' => (array) ($manifest['filters'] ?? []),
             'skill_providers' => (array) ($manifest['skill_providers'] ?? []),

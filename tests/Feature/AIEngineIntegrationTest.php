@@ -67,7 +67,7 @@ class AIEngineIntegrationTest extends TestCase
             EngineEnum::OPENAI,
             AIResponse::success(
                 'A beautiful sunset over mountains',
-                new EngineEnum(EngineEnum::OPENAI),
+                EngineEnum::from(EngineEnum::OPENAI),
                 EntityEnum::DALL_E_3
             )->withFiles(['https://example.com/generated-image.png'])
         );
@@ -200,7 +200,7 @@ class AIEngineIntegrationTest extends TestCase
             EngineEnum::OPENAI,
             AIResponse::success(
                 'OpenAI response',
-                new EngineEnum(EngineEnum::OPENAI),
+                EngineEnum::from(EngineEnum::OPENAI),
                 EntityEnum::GPT_4O
             )
         );
@@ -231,7 +231,7 @@ class AIEngineIntegrationTest extends TestCase
             EngineEnum::ANTHROPIC,
             AIResponse::success(
                 'Anthropic response',
-                new EngineEnum(EngineEnum::ANTHROPIC),
+                EngineEnum::from(EngineEnum::ANTHROPIC),
                 EntityEnum::CLAUDE_3_5_SONNET
             )
         );
@@ -273,7 +273,7 @@ class AIEngineIntegrationTest extends TestCase
             EngineEnum::OPENAI,
             AIResponse::success(
                 'Professional tech response',
-                new EngineEnum(EngineEnum::OPENAI),
+                EngineEnum::from(EngineEnum::OPENAI),
                 EntityEnum::GPT_4O
             )
         );
@@ -342,7 +342,7 @@ class AIEngineIntegrationTest extends TestCase
 
         $driver = \Mockery::mock(EngineDriverInterface::class);
         $driver->shouldReceive('validateRequest')->andReturn(true);
-        $driver->shouldReceive('getEngine')->andReturn(new EngineEnum($engineValue));
+        $driver->shouldReceive('getEngine')->andReturn(EngineEnum::from($engineValue));
         $driver->shouldReceive('supports')->withAnyArgs()->andReturn(true);
         $driver->shouldReceive('getAvailableModels')->andReturn([]);
         $driver->shouldReceive('test')->andReturn(true);

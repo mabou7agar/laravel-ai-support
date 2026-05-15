@@ -10,10 +10,8 @@ use LaravelAIEngine\Http\Controllers\Api\HealthApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\AgentRunController;
 use LaravelAIEngine\Http\Controllers\Api\VectorStoreApiController;
-use LaravelAIEngine\Http\Controllers\DataCollectorController;
 use LaravelAIEngine\Http\Controllers\Api\ProviderToolController;
 use LaravelAIEngine\Http\Controllers\Api\PricingController;
-use LaravelAIEngine\Http\Controllers\AutonomousCollectorController;
 use LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware;
 use LaravelAIEngine\Http\Middleware\StandardizeApiResponseMiddleware;
 
@@ -214,68 +212,4 @@ Route::prefix('api/v1/ai/agent-runs')
             ->name('runs.resume');
         Route::post('/{run}/cancel', [AgentRunController::class, 'cancel'])
             ->name('runs.cancel');
-    });
-
-// Data Collector Chat Routes (v1)
-Route::prefix('api/v1/data-collector')
-    ->middleware($resolveApiMiddleware('data_collector'))
-    ->name('ai-engine.data-collector.')
-    ->group(function () {
-        
-        // Start a new data collection session (with registered config)
-        Route::post('/start', [DataCollectorController::class, 'start'])
-            ->name('start');
-        
-        // Start a new data collection session (with inline config)
-        Route::post('/start-custom', [DataCollectorController::class, 'startCustom'])
-            ->name('start-custom');
-        
-        // Process a message in an active session
-        Route::post('/message', [DataCollectorController::class, 'message'])
-            ->name('message');
-        
-        // Get session status
-        Route::get('/status/{sessionId}', [DataCollectorController::class, 'status'])
-            ->name('status');
-        
-        // Cancel a session
-        Route::post('/cancel', [DataCollectorController::class, 'cancel'])
-            ->name('cancel');
-        
-        // Get collected data
-        Route::get('/data/{sessionId}', [DataCollectorController::class, 'getData'])
-            ->name('data');
-        
-        // Analyze uploaded file and extract data
-        Route::post('/analyze-file', [DataCollectorController::class, 'analyzeFile'])
-            ->name('analyze-file');
-        
-        // Apply extracted data to session
-        Route::post('/apply-extracted', [DataCollectorController::class, 'applyExtracted'])
-            ->name('apply-extracted');
-    });
-
-// Autonomous Collector Routes (v1)
-Route::prefix('api/v1/autonomous-collector')
-    ->middleware($resolveApiMiddleware('autonomous_collector'))
-    ->name('ai-engine.autonomous-collector.')
-    ->group(function () {
-
-        Route::post('/start', [AutonomousCollectorController::class, 'start'])
-            ->name('start');
-
-        Route::post('/message', [AutonomousCollectorController::class, 'message'])
-            ->name('message');
-
-        Route::get('/status/{sessionId}', [AutonomousCollectorController::class, 'status'])
-            ->name('status');
-
-        Route::post('/confirm', [AutonomousCollectorController::class, 'confirm'])
-            ->name('confirm');
-
-        Route::post('/cancel', [AutonomousCollectorController::class, 'cancel'])
-            ->name('cancel');
-
-        Route::get('/data/{sessionId}', [AutonomousCollectorController::class, 'data'])
-            ->name('data');
     });

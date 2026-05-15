@@ -284,7 +284,7 @@ class SerperEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::SERPER);
+        return EngineEnum::from(EngineEnum::SERPER);
     }
 
     /**

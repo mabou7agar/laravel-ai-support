@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services;
 
 use Illuminate\Support\Facades\Log;
@@ -138,7 +140,7 @@ class FileAnalysisService
                 // Add assistant response
                 $aiResponse = new \LaravelAIEngine\DTOs\AIResponse(
                     content: $content,
-                    engine: new \LaravelAIEngine\Enums\EngineEnum($engine),
+                    engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
                     model: new \LaravelAIEngine\Enums\EntityEnum('gpt-4o'),
                     metadata: [
                         'file_analysis' => true,

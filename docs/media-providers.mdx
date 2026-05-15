@@ -6,12 +6,16 @@ Laravel AI Engine supports hosted and local media generation providers for image
 
 | Provider | Engine | Best for | Key env |
 | --- | --- | --- | --- |
+| OpenAI audio | `openai` | TTS and transcription beside chat/agent workflows | `OPENAI_API_KEY` |
 | Cloudflare Workers AI | `cloudflare_workers_ai` | low-cost image, TTS, transcription | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
 | Hugging Face Inference Providers | `huggingface` | provider marketplace for image/audio models | `HUGGINGFACE_API_KEY` or `HF_TOKEN` |
 | Replicate | `replicate` | public image/video/audio model catalog | `REPLICATE_API_TOKEN` |
 | ComfyUI | `comfyui` | local/self-hosted image and video workflows | `COMFYUI_BASE_URL` |
 | Gemini media | `gemini` | Imagen, Veo, and Lyria models | `GEMINI_API_KEY` |
+| Google Text-to-Speech | `google_tts` | Google Cloud TTS voices | `GOOGLE_TTS_API_KEY` or `GOOGLE_TTS_ACCESS_TOKEN` |
+| ElevenLabs | `eleven_labs` | high-quality voices and narration | `ELEVENLABS_API_KEY` |
 | FAL | `fal_ai` | async video and catalog execution | `FAL_AI_API_KEY` |
+| Pexels | `pexels` | stock photo search and curated image discovery | `PEXELS_API_KEY` |
 
 ## Sync Models
 
@@ -29,6 +33,61 @@ php artisan ai:sync-models --provider=huggingface
 php artisan ai:sync-models --provider=replicate
 php artisan ai:sync-models --provider=comfyui
 ```
+
+## Text To Speech
+
+OpenAI TTS is available through the normal OpenAI driver:
+
+```php
+$response = app(\LaravelAIEngine\Services\AIEngineService::class)->generateAudio(
+    new \LaravelAIEngine\DTOs\AIRequest(
+        prompt: 'Read this invoice summary.',
+        engine: 'openai',
+        model: 'gpt-4o-mini-tts',
+        parameters: [
+            'voice' => 'nova',
+            'format' => 'mp3',
+        ],
+    )
+);
+```
+
+Google Cloud Text-to-Speech is available through the dedicated `google_tts` engine:
+
+```php
+$response = app(\LaravelAIEngine\Services\AIEngineService::class)->generateAudio(
+    new \LaravelAIEngine\DTOs\AIRequest(
+        prompt: 'Read this customer note.',
+        engine: 'google_tts',
+        model: 'google-tts',
+        parameters: [
+            'voice' => 'en-US-Neural2-F',
+            'language_code' => 'en-US',
+            'audio_encoding' => 'MP3',
+        ],
+    )
+);
+```
+
+## Pexels Stock Photos
+
+Pexels is a stock-photo search provider, not an LLM. Use it when the application needs licensed photo results instead of generated images:
+
+```php
+$response = app(\LaravelAIEngine\Services\AIEngineService::class)->generateImage(
+    new \LaravelAIEngine\DTOs\AIRequest(
+        prompt: 'laptop on office desk',
+        engine: 'pexels',
+        model: 'pexels-search',
+        parameters: [
+            'per_page' => 10,
+            'orientation' => 'landscape',
+        ],
+    )
+);
+```
+
+The response content is a JSON array of normalized photo results with URLs, dimensions, color metadata, photographer attribution, and the original Pexels URL.
 
 ## Cost-Aware Routing
 
@@ -108,5 +167,6 @@ new \LaravelAIEngine\DTOs\AIRequest(
 - Cloudflare image/audio endpoints use the Workers AI REST model runner.
 - Hugging Face is intentionally generic; pass `provider` or provider-specific parameters when needed.
 - Replicate supports model endpoints and versioned predictions.
+- Pexels returns existing stock-photo results; it does not generate images or support streaming.
 - Video generation should usually be queued or async in application code because provider jobs can run longer than HTTP request timeouts.
 - Stable enum aliases are for built-in defaults. For changing provider catalogs, sync models into `ai_models` and let the dynamic model resolver route by provider/model id.

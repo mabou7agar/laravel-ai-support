@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Media;
 
 use OpenAI\Contracts\ClientContract as OpenAIClient;

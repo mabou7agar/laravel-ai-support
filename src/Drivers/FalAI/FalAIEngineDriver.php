@@ -104,7 +104,7 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::FAL_AI);
+        return EngineEnum::from(EngineEnum::FAL_AI);
     }
 
     public function getAvailableModels(): array
@@ -205,7 +205,7 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::FAL_AI);
+        return EngineEnum::from(EngineEnum::FAL_AI);
     }
 
     protected function getDefaultModel(): EntityEnum

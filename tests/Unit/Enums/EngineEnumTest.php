@@ -17,6 +17,14 @@ use LaravelAIEngine\Drivers\Unsplash\UnsplashEngineDriver;
 
 class EngineEnumTest extends TestCase
 {
+    public function test_engine_enum_is_native_backed_enum()
+    {
+        $reflection = new \ReflectionEnum(EngineEnum::class);
+
+        $this->assertTrue($reflection->isBacked());
+        $this->assertSame('openai', EngineEnum::OpenAI->value);
+    }
+
     protected function engine(string $value): EngineEnum
     {
         return EngineEnum::from($value);

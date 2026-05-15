@@ -47,7 +47,7 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
         $this->assertIsArray($defaults['rag']['decision'] ?? null);
         $this->assertSame(true, $defaults['rag']['decision']['adaptive_feedback']['enabled'] ?? null);
         $this->assertSame(
-            ['gpt-5-mini', 'gpt-4o-mini', 'gpt-4o', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'dall-e-3', 'whisper-1'],
+            ['gpt-5-mini', 'gpt-4o-mini', 'gpt-4o', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'dall-e-3', 'whisper-1', 'gpt-4o-mini-tts', 'tts-1', 'tts-1-hd'],
             array_keys($defaults['engines']['openai']['models'] ?? [])
         );
         $this->assertSame(

@@ -1,9 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services;
 
 use Illuminate\Support\Facades\Log;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 
 /**
@@ -15,7 +16,6 @@ use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 class DiscoveryCacheWarmer
 {
     public function __construct(
-        protected AutonomousCollectorDiscoveryService $collectorDiscovery,
         protected RAGCollectionDiscovery $ragDiscovery
     ) {}
 
@@ -28,7 +28,6 @@ class DiscoveryCacheWarmer
     public function warmAll(bool $force = false): array
     {
         $stats = [
-            'autonomous_collectors' => 0,
             'rag_collections' => 0,
             'duration_ms' => 0,
         ];
@@ -36,13 +35,6 @@ class DiscoveryCacheWarmer
         $startTime = microtime(true);
 
         try {
-            // Warm autonomous collectors cache
-            $collectors = $this->collectorDiscovery->discoverCollectors(
-                useCache: !$force,
-                includeRemote: true
-            );
-            $stats['autonomous_collectors'] = count($collectors);
-
             // Warm RAG collections cache
             $collections = $this->ragDiscovery->discover(
                 useCache: !$force,
@@ -64,19 +56,6 @@ class DiscoveryCacheWarmer
     }
 
     /**
-     * Warm autonomous collectors cache only
-     */
-    public function warmCollectors(bool $force = false): int
-    {
-        $collectors = $this->collectorDiscovery->discoverCollectors(
-            useCache: !$force,
-            includeRemote: true
-        );
-
-        return count($collectors);
-    }
-
-    /**
      * Warm RAG collections cache only
      */
     public function warmRAGCollections(bool $force = false): int
@@ -95,7 +74,6 @@ class DiscoveryCacheWarmer
     public function areCachesWarm(): array
     {
         return [
-            'autonomous_collectors' => \Illuminate\Support\Facades\Cache::has('ai-engine:discovered-autonomous-collectors'),
             'rag_collections' => \Illuminate\Support\Facades\Cache::has('ai_engine:rag_collections'),
         ];
     }

@@ -30,7 +30,7 @@ class AdminManifestManagerTest extends UnitTestCase
         $this->manifestPath = sys_get_temp_dir() . '/ai-engine-manifest-' . uniqid('', true) . '.php';
         config()->set('ai-agent.manifest.path', $this->manifestPath);
 
-        File::put($this->manifestPath, "<?php\n\nreturn ['model_configs' => [], 'collectors' => [], 'tools' => [], 'filters' => []];\n");
+        File::put($this->manifestPath, "<?php\n\nreturn ['model_configs' => [], 'tools' => [], 'filters' => []];\n");
     }
 
     public function test_manifest_manager_page_is_accessible(): void
@@ -54,7 +54,6 @@ class AdminManifestManagerTest extends UnitTestCase
     {
         $payload = json_encode([
             'model_configs' => ['App\\AI\\Configs\\InvoiceConfig'],
-            'collectors' => ['invoice' => 'App\\AI\\Collectors\\InvoiceCollector'],
             'tools' => ['lookup_customer' => 'App\\AI\\Tools\\LookupCustomerTool'],
             'filters' => ['tenant_scope' => 'App\\AI\\Filters\\TenantScopeFilter'],
         ], JSON_PRETTY_PRINT);
@@ -67,7 +66,6 @@ class AdminManifestManagerTest extends UnitTestCase
 
         $manifest = require $this->manifestPath;
         $this->assertContains('App\\AI\\Configs\\InvoiceConfig', $manifest['model_configs']);
-        $this->assertSame('App\\AI\\Collectors\\InvoiceCollector', $manifest['collectors']['invoice'] ?? null);
         $this->assertSame('App\\AI\\Tools\\LookupCustomerTool', $manifest['tools']['lookup_customer'] ?? null);
         $this->assertSame('App\\AI\\Filters\\TenantScopeFilter', $manifest['filters']['tenant_scope'] ?? null);
     }

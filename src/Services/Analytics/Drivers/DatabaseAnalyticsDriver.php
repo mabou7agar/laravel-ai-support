@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Analytics\Drivers;
 
 use LaravelAIEngine\Services\Analytics\Contracts\AnalyticsDriverInterface;

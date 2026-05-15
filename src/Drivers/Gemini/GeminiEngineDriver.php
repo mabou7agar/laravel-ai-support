@@ -75,7 +75,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::GEMINI);
+        return EngineEnum::from(EngineEnum::GEMINI);
     }
 
     /**
@@ -378,7 +378,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::GEMINI);
+        return EngineEnum::from(EngineEnum::GEMINI);
     }
 
     /**

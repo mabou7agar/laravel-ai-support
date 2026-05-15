@@ -54,7 +54,7 @@ class CloudflareWorkersAIEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::CLOUDFLARE_WORKERS_AI);
+        return EngineEnum::from(EngineEnum::CLOUDFLARE_WORKERS_AI);
     }
 
     public function getAvailableModels(): array
@@ -177,7 +177,7 @@ class CloudflareWorkersAIEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::CLOUDFLARE_WORKERS_AI);
+        return EngineEnum::from(EngineEnum::CLOUDFLARE_WORKERS_AI);
     }
 
     protected function getDefaultModel(): EntityEnum

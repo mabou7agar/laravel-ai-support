@@ -9,6 +9,7 @@ use LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
 use LaravelAIEngine\Drivers\Azure\AzureEngineDriver;
 use LaravelAIEngine\Drivers\DeepSeek\DeepSeekEngineDriver;
 use LaravelAIEngine\Drivers\Gemini\GeminiEngineDriver;
+use LaravelAIEngine\Drivers\GoogleTTS\GoogleTTSEngineDriver;
 use LaravelAIEngine\Drivers\StableDiffusion\StableDiffusionEngineDriver;
 use LaravelAIEngine\Drivers\ElevenLabs\ElevenLabsEngineDriver;
 use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
@@ -27,11 +28,33 @@ use LaravelAIEngine\Drivers\Unsplash\UnsplashEngineDriver;
 use LaravelAIEngine\Drivers\Pexels\PexelsEngineDriver;
 
 /**
- * Engine enumeration class (PHP 8.0 compatible)
- * Replaces native enum for Laravel 9 compatibility
+ * Engine enumeration for built-in providers.
  */
-class EngineEnum
+enum EngineEnum: string
 {
+    case OpenAI = 'openai';
+    case Anthropic = 'anthropic';
+    case Gemini = 'gemini';
+    case StableDiffusion = 'stable_diffusion';
+    case ElevenLabs = 'eleven_labs';
+    case FalAI = 'fal_ai';
+    case DeepSeek = 'deepseek';
+    case Perplexity = 'perplexity';
+    case Midjourney = 'midjourney';
+    case Azure = 'azure';
+    case GoogleTts = 'google_tts';
+    case Serper = 'serper';
+    case PlagiarismCheck = 'plagiarism_check';
+    case Unsplash = 'unsplash';
+    case Pexels = 'pexels';
+    case OpenRouter = 'openrouter';
+    case Ollama = 'ollama';
+    case NvidiaNim = 'nvidia_nim';
+    case CloudflareWorkersAI = 'cloudflare_workers_ai';
+    case HuggingFace = 'huggingface';
+    case Replicate = 'replicate';
+    case ComfyUI = 'comfyui';
+
     public const OPENAI = 'openai';
     public const ANTHROPIC = 'anthropic';
     public const GEMINI = 'gemini';
@@ -54,13 +77,6 @@ class EngineEnum
     public const HUGGINGFACE = 'huggingface';
     public const REPLICATE = 'replicate';
     public const COMFYUI = 'comfyui';
-
-    public string $value;
-
-    public function __construct(string $value)
-    {
-        $this->value = $value;
-    }
 
     /**
      * Get the driver class for this engine
@@ -87,6 +103,7 @@ class EngineEnum
             case self::ANTHROPIC:
                 return AnthropicEngineDriver::class;
             case self::GOOGLE_TTS:
+                return GoogleTTSEngineDriver::class;
             case self::GEMINI:
                 return GeminiEngineDriver::class;
             case self::STABLE_DIFFUSION:
@@ -186,7 +203,7 @@ class EngineEnum
     {
         switch ($this->value) {
             case self::OPENAI:
-                return ['text', 'chat', 'images', 'audio', 'embeddings', 'vision'];
+                return ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'speech_to_text', 'text_to_speech', 'tts'];
             case self::ANTHROPIC:
                 return ['text', 'chat', 'vision'];
             case self::GEMINI:
@@ -206,7 +223,7 @@ class EngineEnum
             case self::AZURE:
                 return ['text', 'chat', 'images', 'audio', 'embeddings'];
             case self::GOOGLE_TTS:
-                return ['audio', 'speech'];
+                return ['audio', 'speech', 'text_to_speech', 'tts'];
             case self::SERPER:
                 return ['search'];
             case self::PLAGIARISM_CHECK:
@@ -255,6 +272,9 @@ class EngineEnum
                     EntityEnum::GPT_IMAGE_1_MINI,
                     EntityEnum::DALL_E_3,
                     EntityEnum::WHISPER_1,
+                    EntityEnum::OPENAI_GPT_4O_MINI_TTS,
+                    EntityEnum::OPENAI_TTS_1,
+                    EntityEnum::OPENAI_TTS_1_HD,
                 ];
             case self::ANTHROPIC:
                 return [
@@ -300,7 +320,7 @@ class EngineEnum
                 ];
             case self::GOOGLE_TTS:
                 return [
-                    EntityEnum::GEMINI_1_5_PRO,
+                    EntityEnum::GOOGLE_TTS,
                 ];
             case self::SERPER:
                 return [
@@ -351,49 +371,7 @@ class EngineEnum
      */
     public static function all(): array
     {
-        return [
-            self::OPENAI,
-            self::ANTHROPIC,
-            self::GEMINI,
-            self::STABLE_DIFFUSION,
-            self::ELEVEN_LABS,
-            self::FAL_AI,
-            self::DEEPSEEK,
-            self::PERPLEXITY,
-            self::MIDJOURNEY,
-            self::AZURE,
-            self::GOOGLE_TTS,
-            self::SERPER,
-            self::PLAGIARISM_CHECK,
-            self::UNSPLASH,
-            self::PEXELS,
-            self::OPENROUTER,
-            self::OLLAMA,
-            self::NVIDIA_NIM,
-            self::CLOUDFLARE_WORKERS_AI,
-            self::HUGGINGFACE,
-            self::REPLICATE,
-            self::COMFYUI,
-        ];
-    }
-
-    /**
-     * Get all available engine instances
-     */
-    public static function cases(): array
-    {
-        return array_map(fn($value) => new self($value), self::all());
-    }
-
-    /**
-     * Create engine from value
-     */
-    public static function from(string $value): self
-    {
-        if (!in_array($value, self::all())) {
-            throw new \InvalidArgumentException("Invalid engine value: {$value}");
-        }
-        return new self($value);
+        return array_map(static fn(self $engine): string => $engine->value, self::cases());
     }
 
     /**
@@ -404,15 +382,4 @@ class EngineEnum
         return self::from($slug);
     }
 
-    /**
-     * Try to create engine from value, return null when invalid.
-     */
-    public static function tryFrom(string $value): ?self
-    {
-        try {
-            return self::from($value);
-        } catch (\Throwable) {
-            return null;
-        }
-    }
 }

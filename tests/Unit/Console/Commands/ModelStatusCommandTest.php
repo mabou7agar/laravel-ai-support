@@ -34,6 +34,7 @@ class ModelStatusCommandTest extends UnitTestCase
         $output = Artisan::output();
         $this->assertStringContainsString('"preferred_contract": "no_supported_contract"', $output);
         $this->assertStringContainsString('"indexing_ready": "yes"', $output);
+        $this->assertStringContainsString('"toSearchDocument": "trait_default"', $output);
     }
 
     public function test_it_supports_json_output(): void

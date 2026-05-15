@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Agent\Handlers;
 
 use LaravelAIEngine\DTOs\AgentResponse;

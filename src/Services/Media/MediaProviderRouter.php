@@ -81,6 +81,24 @@ class MediaProviderRouter
 
     private function hasRequiredCredentials(array $config): bool
     {
+        $anyKeys = $config['any_api_key_config'] ?? $config['any_required_config'] ?? [];
+        $anyKeys = is_array($anyKeys) ? $anyKeys : [$anyKeys];
+        $anyKeys = array_values(array_filter(array_map(
+            static fn (mixed $key): string => trim((string) $key),
+            $anyKeys
+        )));
+
+        if ($anyKeys !== []) {
+            foreach ($anyKeys as $key) {
+                $value = config($key);
+                if (is_string($value) && trim($value) !== '') {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         $keys = $config['api_key_config'] ?? $config['required_config'] ?? [];
         $keys = is_array($keys) ? $keys : [$keys];
         $keys = array_values(array_filter(array_map(

@@ -351,7 +351,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::PERPLEXITY);
+        return EngineEnum::from(EngineEnum::PERPLEXITY);
     }
 
     /**

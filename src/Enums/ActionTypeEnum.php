@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Enums;
 
 /**
- * Action Type enumeration class (PHP 8.0 compatible)
- * Replaces native enum for Laravel 9 compatibility
+ * Action type value object used by interactive action payloads.
  */
 class ActionTypeEnum
 {

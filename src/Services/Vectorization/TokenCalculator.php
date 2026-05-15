@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\Vectorization;
 
 use Illuminate\Support\Facades\Log;
@@ -102,9 +104,62 @@ class TokenCalculator
     /**
      * Estimate tokens from text
      */
-    public function estimate(string $text): int
+    public function estimate(string $text, ?string $profile = null): int
     {
-        // Rough estimation: 1.3 chars per token
-        return (int) (strlen($text) / 1.3);
+        $text = trim($text);
+
+        if ($text === '') {
+            return 0;
+        }
+
+        $profile ??= $this->detectProfile($text);
+        $charactersPerToken = $this->charactersPerToken($profile);
+
+        return max(1, (int) ceil(mb_strlen($text, 'UTF-8') / $charactersPerToken));
+    }
+
+    /**
+     * Convert a token budget to an approximate character budget.
+     */
+    public function charactersForTokens(int $tokens, ?string $profile = null): int
+    {
+        $tokens = max(1, $tokens);
+        $profile ??= 'latin';
+
+        return max(1, (int) floor($tokens * $this->charactersPerToken($profile)));
+    }
+
+    /**
+     * Detect the text profile used for estimation.
+     */
+    public function detectProfile(string $text): string
+    {
+        if (preg_match('/[\x{3040}-\x{30ff}\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}]/u', $text) === 1) {
+            return 'cjk';
+        }
+
+        if (preg_match('/[{}();$=<>]|\\b(function|class|return|public|private|protected|const|let|var|import|namespace)\\b/i', $text) === 1) {
+            return 'code';
+        }
+
+        return 'latin';
+    }
+
+    /**
+     * Return the configured character-per-token ratio for a profile.
+     */
+    public function charactersPerToken(string $profile): float
+    {
+        $configured = config("ai-engine.token_estimation.profiles.{$profile}");
+
+        if (is_numeric($configured) && (float) $configured > 0) {
+            return (float) $configured;
+        }
+
+        return match ($profile) {
+            'cjk' => 1.0,
+            'code' => 2.0,
+            default => 4.0,
+        };
     }
 }

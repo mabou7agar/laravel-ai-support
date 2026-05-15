@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Services\DataCollector;
 
 use LaravelAIEngine\DTOs\DataCollectorConfig;
@@ -399,7 +401,7 @@ class DataCollectorChatService
     ): AIResponse {
         return new AIResponse(
             content: $content,
-            engine: new EngineEnum(EngineEnum::OPENAI),
+            engine: EngineEnum::from(EngineEnum::OPENAI),
             model: new EntityEnum(EntityEnum::GPT_4O),
             metadata: $metadata,
             actions: array_map(fn($a) => $a instanceof InteractiveAction ? $a->toArray() : $a, $actions),

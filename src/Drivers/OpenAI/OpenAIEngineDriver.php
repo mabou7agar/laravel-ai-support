@@ -9,6 +9,7 @@ use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use LaravelAIEngine\Drivers\BaseEngineDriver;
+use LaravelAIEngine\Drivers\Concerns\BuildsMediaResponses;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -22,6 +23,8 @@ use OpenAI;
 
 class OpenAIEngineDriver extends BaseEngineDriver
 {
+    use BuildsMediaResponses;
+
     private Client $httpClient;
     private $openAIClient;
 
@@ -56,7 +59,9 @@ class OpenAIEngineDriver extends BaseEngineDriver
         return match ($contentType) {
             'text' => $this->generateText($request),
             'image' => $this->generateImage($request),
-            'audio' => $this->audioToText($request),
+            'audio' => $this->isSpeechToTextModel($request->getModel()->value)
+                ? $this->audioToText($request)
+                : $this->generateAudio($request),
             'embeddings' => $this->generateEmbeddings($request),
             default => throw new \InvalidArgumentException("Unsupported content type: {$contentType}")
         };
@@ -76,7 +81,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
     public function validateRequest(AIRequest $request): bool
     {
         // Check if the prompt is empty
-        if (empty($request->getPrompt())) {
+        if (empty($request->getPrompt()) && !$this->isSpeechToTextModel($request->getModel()->value)) {
             throw new AIEngineException('Prompt is required');
         }
 
@@ -91,6 +96,9 @@ class OpenAIEngineDriver extends BaseEngineDriver
             EntityEnum::DALL_E_3,
             EntityEnum::DALL_E_2,
             EntityEnum::WHISPER_1,
+            EntityEnum::OPENAI_GPT_4O_MINI_TTS,
+            EntityEnum::OPENAI_TTS_1,
+            EntityEnum::OPENAI_TTS_1_HD,
         ];
 
         if (!in_array($request->getModel()->value, $supportedModels)) {
@@ -160,7 +168,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
             // Create AIResponse with proper parameters
             $aiResponse = new AIResponse(
                 content: $content,
-                engine: new EngineEnum(EngineEnum::OPENAI),
+                engine: EngineEnum::from(EngineEnum::OPENAI),
                 model: $request->getModel(),
                 metadata: $response->toArray(),
                 tokensUsed: $response->usage->totalTokens ?? null,
@@ -392,6 +400,46 @@ class OpenAIEngineDriver extends BaseEngineDriver
     }
 
     /**
+     * Implementation-specific text to speech generation.
+     */
+    protected function doGenerateAudio(AIRequest $request): AIResponse
+    {
+        try {
+            $parameters = $request->getParameters();
+            $format = (string) ($parameters['response_format'] ?? $parameters['format'] ?? 'mp3');
+            $voice = (string) ($parameters['voice'] ?? $this->config['default_voice'] ?? 'alloy');
+
+            $payload = array_filter([
+                'model' => $request->getModel()->value,
+                'input' => $request->getPrompt(),
+                'voice' => $voice,
+                'response_format' => $format,
+                'speed' => $parameters['speed'] ?? null,
+                'instructions' => $parameters['instructions'] ?? null,
+            ], static fn ($value): bool => $value !== null && $value !== '');
+
+            $audioData = $this->openAIClient->audio()->speech($payload);
+            $file = $this->storeMediaBytes((string) $audioData, $request, $this->audioExtensionFromFormat($format));
+            $charactersUsed = strlen($request->getPrompt());
+
+            return AIResponse::success(
+                $request->getPrompt(),
+                $request->getEngine(),
+                $request->getModel(),
+                [
+                    'provider' => EngineEnum::OPENAI,
+                    'model' => $request->getModel()->value,
+                    'voice' => $voice,
+                    'response_format' => $format,
+                ]
+            )->withFiles([$file])
+             ->withUsage(creditsUsed: max(1, $charactersUsed / 1000) * $request->getModel()->creditIndex());
+        } catch (\Exception $e) {
+            throw new \RuntimeException('OpenAI speech generation error: ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
      * Implementation-specific audio to text
      */
     protected function doAudioToText(AIRequest $request): AIResponse
@@ -421,6 +469,23 @@ class OpenAIEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             throw new \RuntimeException('OpenAI audio transcription error: ' . $e->getMessage(), 0, $e);
         }
+    }
+
+    protected function isSpeechToTextModel(string $model): bool
+    {
+        return str_contains(strtolower($model), 'whisper');
+    }
+
+    protected function audioExtensionFromFormat(string $format): string
+    {
+        return match (strtolower($format)) {
+            'opus' => 'opus',
+            'aac' => 'aac',
+            'flac' => 'flac',
+            'wav' => 'wav',
+            'pcm' => 'pcm',
+            default => 'mp3',
+        };
     }
 
     /**
@@ -481,7 +546,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     protected function getSupportedCapabilities(): array
     {
-        return ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'streaming', 'speech_to_text'];
+        return ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'streaming', 'speech_to_text', 'text_to_speech', 'tts'];
     }
 
     /**
@@ -489,7 +554,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return new EngineEnum(EngineEnum::OPENAI);
+        return EngineEnum::from(EngineEnum::OPENAI);
     }
 
     /**
