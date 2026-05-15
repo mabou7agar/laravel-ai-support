@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services;
 
-use LaravelAIEngine\DTOs\ActionResponse;
+use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\InteractiveAction;
@@ -281,9 +281,9 @@ class UnifiedEngineManager
         $this->analytics()->trackStreaming($data);
     }
 
-    public function executeAction(InteractiveAction $action, array $payload = []): ActionResponse
+    public function executeAction(InteractiveAction $action, mixed $userId = null, ?string $sessionId = null): ActionResult
     {
-        return $this->actionManager()->executeAction($action, $payload);
+        return $this->actionManager()->executeAction($action, $userId, $sessionId);
     }
 
     public function createAction(array $data): InteractiveAction
@@ -294,16 +294,6 @@ class UnifiedEngineManager
     public function createActions(array $actionsData): array
     {
         return array_map(fn ($data) => InteractiveAction::fromArray($data), $actionsData);
-    }
-
-    public function getSupportedActionTypes(): array
-    {
-        return $this->actionManager()->getSupportedActionTypes();
-    }
-
-    public function validateAction(InteractiveAction $action, array $payload = []): array
-    {
-        return $this->actionManager()->validateAction($action, $payload);
     }
 
     public function streamResponse(string $sessionId, callable $generator, array $options = []): void
@@ -480,9 +470,9 @@ class UnifiedEngineManager
         return null;
     }
 
-    protected function actionManager(): ActionManager
+    protected function actionManager(): \LaravelAIEngine\Services\Actions\ActionManager
     {
-        return app(ActionManager::class);
+        return app(\LaravelAIEngine\Services\Actions\ActionManager::class);
     }
 
     protected function creditManager(): CreditManager

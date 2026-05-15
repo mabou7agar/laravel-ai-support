@@ -3,8 +3,8 @@
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
+use LaravelAIEngine\Contracts\RAGPipelineContract;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
-use LaravelAIEngine\Services\RAG\RAGChatService;
 use LaravelAIEngine\Services\ChatService;
 
 class TestRAGFeaturesCommand extends Command
@@ -23,7 +23,7 @@ class TestRAGFeaturesCommand extends Command
 
     public function handle(
         RAGCollectionDiscovery $discovery,
-        RAGChatService $ragChat,
+        RAGPipelineContract $ragChat,
         ChatService $chatService
     ): int {
         $this->failures = [];
@@ -218,7 +218,7 @@ class TestRAGFeaturesCommand extends Command
     /**
      * Test 3: RAG
      */
-    protected function testRAG(string $modelClass, RAGChatService $ragChat): void
+    protected function testRAG(string $modelClass, RAGPipelineContract $ragChat): void
     {
         $this->line('🤖 Test 3: RAG (AI Decides)');
         $this->line('─────────────────────────────────');

@@ -6,7 +6,7 @@ namespace LaravelAIEngine\Tests\Unit\Traits;
 
 use Illuminate\Database\Eloquent\Model;
 use LaravelAIEngine\DTOs\AIResponse;
-use LaravelAIEngine\Services\RAG\RAGChatService;
+use LaravelAIEngine\Contracts\RAGPipelineContract;
 use LaravelAIEngine\Tests\UnitTestCase;
 use LaravelAIEngine\Traits\Vectorizable;
 use Mockery;
@@ -15,8 +15,8 @@ class VectorizableScopedRAGTest extends UnitTestCase
 {
     public function test_vector_chat_passes_user_id_to_rag_service(): void
     {
-        $rag = Mockery::mock(RAGChatService::class);
-        $rag->shouldReceive('processMessage')
+        $rag = Mockery::mock(RAGPipelineContract::class);
+        $rag->shouldReceive('process')
             ->once()
             ->with(
                 'Tell me about Apollo',
@@ -31,7 +31,7 @@ class VectorizableScopedRAGTest extends UnitTestCase
                 'context_count' => 1,
             ]));
 
-        $this->app->instance(RAGChatService::class, $rag);
+        $this->app->instance(RAGPipelineContract::class, $rag);
 
         $result = ScopedVectorizableRAGModel::vectorChat('Tell me about Apollo', '9');
 
@@ -42,8 +42,8 @@ class VectorizableScopedRAGTest extends UnitTestCase
 
     public function test_intelligent_chat_passes_user_id_option_to_rag_service(): void
     {
-        $rag = Mockery::mock(RAGChatService::class);
-        $rag->shouldReceive('processMessage')
+        $rag = Mockery::mock(RAGPipelineContract::class);
+        $rag->shouldReceive('process')
             ->once()
             ->with(
                 'Tell me about Apollo',
@@ -58,7 +58,7 @@ class VectorizableScopedRAGTest extends UnitTestCase
                 'context_count' => 1,
             ]));
 
-        $this->app->instance(RAGChatService::class, $rag);
+        $this->app->instance(RAGPipelineContract::class, $rag);
 
         $response = ScopedVectorizableRAGModel::intelligentChat('Tell me about Apollo', 'session-1', [
             'collections' => [ScopedVectorizableRAGModel::class],

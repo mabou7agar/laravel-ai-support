@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Support\Providers;
 
-use LaravelAIEngine\Services\ActionHandlers\ButtonActionHandler;
-use LaravelAIEngine\Services\ActionHandlers\QuickReplyActionHandler;
-use LaravelAIEngine\Services\ActionManager;
 use LaravelAIEngine\Services\Analytics\AnalyticsManager as NewAnalyticsManager;
 use LaravelAIEngine\Services\Analytics\Drivers\DatabaseAnalyticsDriver;
 use LaravelAIEngine\Services\Analytics\Drivers\RedisAnalyticsDriver;
@@ -19,13 +16,6 @@ class EnterpriseServiceRegistrar
 {
     public static function register($app): void
     {
-        $app->singleton(ActionManager::class, function () {
-            $manager = new ActionManager();
-            $manager->registerHandler(new ButtonActionHandler());
-            $manager->registerHandler(new QuickReplyActionHandler());
-            return $manager;
-        });
-
         $app->singleton(FailoverManager::class, fn () => new FailoverManager());
 
         if (interface_exists('Ratchet\\MessageComponentInterface')) {

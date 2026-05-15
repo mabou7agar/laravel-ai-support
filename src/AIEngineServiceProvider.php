@@ -7,7 +7,6 @@ namespace LaravelAIEngine;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
-use LaravelAIEngine\Services\ActionManager;
 use LaravelAIEngine\Services\Failover\FailoverManager;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
 use LaravelAIEngine\Services\Analytics\AnalyticsManager as NewAnalyticsManager;
@@ -157,7 +156,6 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->alias(\LaravelAIEngine\Services\UnifiedEngineManager::class, 'unified-engine');
 
         // Enterprise aliases
-        $this->app->alias(ActionManager::class, 'ai-actions');
         $this->app->alias(FailoverManager::class, 'ai-failover');
 
         // Only alias WebSocketManager if it's registered
@@ -194,10 +192,6 @@ class AIEngineServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../resources/views/components' => resource_path('views/components/ai-engine'),
             ], 'ai-engine-components');
-
-            $this->publishes([
-                __DIR__.'/../resources/js' => public_path('vendor/ai-engine/js'),
-            ], 'ai-engine-assets');
 
             $this->publishes([
                 __DIR__.'/../routes/api.php' => base_path('routes/ai-engine-api.php'),
@@ -255,7 +249,6 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\TestChunkingCommand::class,
                 Console\Commands\TestLargeMediaCommand::class,
                 Console\Commands\CreateQdrantIndexesCommand::class,
-                Console\Commands\TestIntentAnalysisCommand::class,
                 Console\Commands\DecisionFeedbackReportCommand::class,
                 Console\Commands\DecisionPolicyCreateCommand::class,
                 Console\Commands\DecisionPolicyActivateCommand::class,
@@ -312,20 +305,6 @@ class AIEngineServiceProvider extends ServiceProvider
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadTranslationsFrom(__DIR__.'/../resources/lang', 'ai-engine');
-
-        // Load optional legacy/demo routes only when explicitly enabled.
-        if (filter_var(config('ai-engine.legacy_chat_routes.enabled', false), FILTER_VALIDATE_BOOLEAN)) {
-            $this->loadRoutesFrom(__DIR__.'/../routes/chat.php');
-        }
-
-        if (filter_var(config('ai-engine.auth_routes.enabled', false), FILTER_VALIDATE_BOOLEAN)) {
-            $this->loadRoutesFrom(__DIR__.'/../routes/auth.php');
-        }
-
-        // Load demo routes conditionally (safe for config cache)
-        if (filter_var(config('ai-engine.enable_demo_routes', false), FILTER_VALIDATE_BOOLEAN)) {
-            $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
-        }
 
         // Load admin UI routes conditionally (safe for config cache)
         if (config('ai-engine.admin_ui.enabled', false)) {
@@ -499,11 +478,6 @@ class AIEngineServiceProvider extends ServiceProvider
         // anonymousComponentPath was introduced in Laravel 9
         if (method_exists($compiler, 'anonymousComponentPath')) {
             $compiler->anonymousComponentPath(__DIR__.'/../resources/views/components', 'ai-engine');
-        }
-
-        // Register class-based components (if they exist)
-        if (class_exists(\LaravelAIEngine\View\Components\AiChat::class)) {
-            $compiler->component('ai-chat', \LaravelAIEngine\View\Components\AiChat::class);
         }
     }
 

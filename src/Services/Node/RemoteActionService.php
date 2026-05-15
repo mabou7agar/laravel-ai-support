@@ -227,8 +227,7 @@ class RemoteActionService
     {
         $startTime = microtime(true);
         
-        // Format payload for ActionExecutionController
-        // Controller expects: action_type, data, session_id, user_id
+        // Controller expects: action_type, data, session_id, user_id.
         $response = NodeHttpClient::makeForAction($node)
             ->post($node->getApiUrl('actions'), [
                 'action_type' => $action,

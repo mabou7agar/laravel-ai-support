@@ -4,18 +4,19 @@ namespace LaravelAIEngine\Tests\Feature\Node;
 
 use Illuminate\Http\Request;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\Http\Middleware\NodeAuthMiddleware;
 use LaravelAIEngine\Http\Middleware\NodeRateLimitMiddleware;
 use LaravelAIEngine\Http\Controllers\Node\NodeApiController;
-use LaravelAIEngine\Services\ActionExecutionService;
 use LaravelAIEngine\Services\ChatService;
+use LaravelAIEngine\Services\Actions\ActionManager;
 use LaravelAIEngine\Services\Node\NodeManifestService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
 class NodeApiRoutesTest extends UnitTestCase
 {
-    protected ActionExecutionService $actions;
+    protected ActionManager $actions;
     protected ChatService $chat;
 
     protected function getEnvironmentSetUp($app): void
@@ -42,7 +43,7 @@ class NodeApiRoutesTest extends UnitTestCase
         $manifest->shouldReceive('collections')->andReturn([]);
         $manifest->shouldReceive('autonomousCollectors')->andReturn([]);
 
-        $actions = Mockery::mock(ActionExecutionService::class);
+        $actions = Mockery::mock(ActionManager::class);
 
         $chat = Mockery::mock(ChatService::class);
 
@@ -50,7 +51,7 @@ class NodeApiRoutesTest extends UnitTestCase
         $this->actions = $actions;
         $this->chat = $chat;
 
-        $this->app->instance(ActionExecutionService::class, $actions);
+        $this->app->instance(ActionManager::class, $actions);
         $this->app->instance(ChatService::class, $chat);
     }
 
@@ -74,10 +75,10 @@ class NodeApiRoutesTest extends UnitTestCase
         $this->assertSame(NodeApiController::class . '@executeTool', $route->getActionName());
 
         $this->actions
-            ->shouldReceive('execute')
+            ->shouldReceive('executeById')
             ->once()
             ->with('view_source', ['model_id' => 10], null, 'session-1')
-            ->andReturn(['opened' => true]);
+            ->andReturn(ActionResult::success('Opened.', ['opened' => true]));
 
         $request = new class extends Request {
             public function validate(array $rules, ...$params): array
@@ -99,7 +100,7 @@ class NodeApiRoutesTest extends UnitTestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame(true, $response->getData(true)['success']);
-        $this->assertSame(true, $response->getData(true)['result']['opened']);
+        $this->assertSame(true, $response->getData(true)['result']['data']['opened']);
     }
 
     public function test_generic_execute_route_is_removed(): void

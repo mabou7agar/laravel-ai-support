@@ -4,6 +4,7 @@ namespace LaravelAIEngine\Services\RAG;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use LaravelAIEngine\Contracts\RAGPipelineContract;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Models\AINode;
 use LaravelAIEngine\Services\Scope\AIScopeOptionsService;
@@ -13,7 +14,7 @@ use LaravelAIEngine\Services\Scope\AIScopeOptionsService;
  */
 class RAGDecisionEngine
 {
-    protected ?RAGChatService $ragService;
+    protected ?RAGPipelineContract $ragPipeline;
     protected ?RAGCollectionDiscovery $discovery;
     protected RAGDecisionStateService $stateService;
     protected RAGPlannerService $decisionService;
@@ -26,7 +27,7 @@ class RAGDecisionEngine
 
     public function __construct(
         AIEngineService $ai,
-        ?RAGChatService $ragService = null,
+        ?RAGPipelineContract $ragPipeline = null,
         ?RAGCollectionDiscovery $discovery = null,
         ?RAGDecisionStateService $stateService = null,
         ?RAGPlannerService $decisionService = null,
@@ -37,7 +38,7 @@ class RAGDecisionEngine
         ?RAGModelMetadataService $modelMetadata = null,
         ?AIScopeOptionsService $scopeOptions = null
     ) {
-        $this->ragService = $ragService;
+        $this->ragPipeline = $ragPipeline;
         $this->discovery = $discovery ?? (app()->bound(RAGCollectionDiscovery::class) ? app(
             RAGCollectionDiscovery::class
         ) : null);
@@ -446,7 +447,7 @@ class RAGDecisionEngine
         array $conversationHistory,
         array $options
     ): array {
-        if (!$this->ragService) {
+        if (!$this->ragPipeline) {
             return ['success' => false, 'error' => 'RAG service not available'];
         }
 
@@ -463,7 +464,7 @@ class RAGDecisionEngine
         }
 
         try {
-            $response = $this->ragService->processMessage(
+            $response = $this->ragPipeline->process(
                 $query,
                 $sessionId,
                 $collections, // availableCollections (3rd arg)

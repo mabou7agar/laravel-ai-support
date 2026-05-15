@@ -2,7 +2,7 @@
 
 namespace LaravelAIEngine\Traits;
 
-use LaravelAIEngine\Services\RAG\RAGChatService;
+use LaravelAIEngine\Contracts\RAGPipelineContract;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\SearchDocument;
 use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
@@ -11,7 +11,7 @@ use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
  * Vectorizable Trait
  *
  * All-in-one trait for vector search, RAG, and AI chat capabilities.
- * Combines functionality from: Vectorizable, HasVectorSearch, HasVectorChat, RAGgable
+ * Combines vector search, RAG, and AI chat helpers.
  *
  * Optional but recommended to override:
  * - toSearchDocument(): Returns the canonical searchable document
@@ -1704,7 +1704,7 @@ PROMPT;
     }
 
     // ==========================================
-    // RAGgable Methods
+    // RAG Methods
     // ==========================================
 
     /**
@@ -1866,7 +1866,7 @@ PROMPT;
         string $sessionId = 'default',
         array $options = []
     ): AIResponse {
-        $ragChat = app(RAGChatService::class);
+        $ragChat = app(RAGPipelineContract::class);
         $userId = $options['user_id'] ?? null;
 
         // Determine which collections to search
@@ -1888,7 +1888,7 @@ PROMPT;
             $collections = $discovery->discover();
         }
 
-        return $ragChat->processMessage(
+        return $ragChat->process(
             $query,
             $sessionId,
             $collections,
@@ -1911,9 +1911,9 @@ PROMPT;
         ?string $userId = null,
         array $options = []
     ): array {
-        $ragChat = app(RAGChatService::class);
+        $ragChat = app(RAGPipelineContract::class);
 
-        $response = $ragChat->processMessage(
+        $response = $ragChat->process(
             $query,
             $userId ?? 'default',
             [static::class],
@@ -1945,17 +1945,25 @@ PROMPT;
         ?string $userId = null,
         array $options = []
     ): array {
-        $ragChat = app(RAGChatService::class);
+        $ragChat = app(RAGPipelineContract::class);
 
-        return $ragChat->processMessageStream(
+        $response = $ragChat->process(
             $query,
             $userId ?? 'default',
-            $callback,
             [static::class],
             [],
             array_merge($options, ['intelligent' => false]),
             $userId
         );
+
+        $callback($response->getContent(), true);
+
+        return [
+            'response' => $response->getContent(),
+            'sources' => $response->getMetadata()['sources'] ?? [],
+            'context_count' => $response->getMetadata()['context_count'] ?? 0,
+            'query' => $query,
+        ];
     }
 
     // ==========================================

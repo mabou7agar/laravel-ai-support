@@ -96,16 +96,6 @@ class CoreServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\JobStatusTracker::class, fn () => new \LaravelAIEngine\Services\JobStatusTracker());
         $app->singleton(\LaravelAIEngine\Services\QueuedAIProcessor::class, fn ($app) => new \LaravelAIEngine\Services\QueuedAIProcessor($app->make(\LaravelAIEngine\Services\JobStatusTracker::class)));
 
-        $app->singleton(\LaravelAIEngine\Services\RAG\RAGChatService::class, function ($app) {
-            return new \LaravelAIEngine\Services\RAG\RAGChatService(
-                $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
-                $app->make(\LaravelAIEngine\Services\AIEngineService::class),
-                $app->make(DriverRegistry::class),
-                $app->make(\LaravelAIEngine\Services\ConversationService::class),
-                null,
-                $app->make(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class)
-            );
-        });
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGRetriever::class, function ($app) {
             $vector = $app->bound(\LaravelAIEngine\Services\Vector\VectorSearchService::class)
                 ? $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class)
@@ -180,7 +170,6 @@ class CoreServiceRegistrar
         });
 
         $app->singleton(\LaravelAIEngine\Services\ModelResolver::class, fn () => new \LaravelAIEngine\Services\ModelResolver());
-        $app->singleton(\LaravelAIEngine\Services\PendingActionService::class, fn () => new \LaravelAIEngine\Services\PendingActionService());
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunSafetyService::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunMaintenanceService::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentRunRetentionService::class);

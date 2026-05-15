@@ -93,7 +93,6 @@ class AIEngineConfigDefaults
                 'generate' => self::csvEnv('AI_ENGINE_API_GENERATE_MIDDLEWARE'),
                 'data_collector' => self::csvEnv('AI_ENGINE_API_DATA_COLLECTOR_MIDDLEWARE'),
                 'autonomous_collector' => self::csvEnv('AI_ENGINE_API_AUTONOMOUS_COLLECTOR_MIDDLEWARE'),
-                'demo' => self::csvEnv('AI_ENGINE_API_DEMO_MIDDLEWARE'),
             ],
 
             // Full replacement is available in published config:
@@ -105,7 +104,6 @@ class AIEngineConfigDefaults
                 'generate' => [],
                 'data_collector' => [],
                 'autonomous_collector' => [],
-                'demo' => [],
             ],
         ],
     ],
@@ -374,17 +372,6 @@ class AIEngineConfigDefaults
 
     /*
     |--------------------------------------------------------------------------
-    | Demo User ID
-    |--------------------------------------------------------------------------
-    |
-    | Optional user ID for explicitly enabled demo workflows. Production
-    | runtime paths do not fall back to this value.
-    |
-    */
-    'demo_user_id' => env('AI_ENGINE_DEMO_USER_ID'),
-
-    /*
-    |--------------------------------------------------------------------------
     | Project Context
     |--------------------------------------------------------------------------
     |
@@ -524,25 +511,6 @@ class AIEngineConfigDefaults
         // Chunk size for large media files (in seconds for video/audio)
         // Large media will be split into chunks of this duration
         'media_chunk_duration' => env('AI_ENGINE_MEDIA_CHUNK_DURATION', 60), // 60 seconds
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Demo Routes
-    |--------------------------------------------------------------------------
-    |
-    | Control whether demo routes are enabled. Set AI_ENGINE_ENABLE_DEMO_ROUTES=true
-    | in your .env file to enable demo routes.
-    |
-    */
-    'enable_demo_routes' => env('AI_ENGINE_ENABLE_DEMO_ROUTES', false),
-    'demo_route_prefix' => env('AI_ENGINE_DEMO_PREFIX', 'ai-demo'),
-    'demo_route_middleware' => ['web'],
-    'legacy_chat_routes' => [
-        'enabled' => env('AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED', false),
-    ],
-    'auth_routes' => [
-        'enabled' => env('AI_ENGINE_AUTH_ROUTES_ENABLED', false),
     ],
 
     /*
@@ -1310,24 +1278,11 @@ class AIEngineConfigDefaults
             'max_tokens_rag' => env('AI_MAX_TOKENS_RAG', 4000),
         ],
 
-        // Intent Analysis - AI-powered message analysis for smarter responses
-        // Analyzes user intent (confirm, reject, modify, provide_data, question, new_request)
-        // and enhances AI prompts with context for more intelligent responses
-        'intent_analysis' => env('AI_INTENT_ANALYSIS_ENABLED', true),
-
-        // Intent Analysis Model - Use faster/cheaper model for simple intent classification
-        // Options: 'gpt-3.5-turbo' (fastest/cheapest), 'gpt-4o-mini' (more accurate)
-        // Intent analysis is a simple task, gpt-3.5-turbo is recommended for performance
-        'intent_model' => env('AI_INTENT_MODEL', 'gpt-3.5-turbo'),
-
         'validation' => [
             'strict_mode' => env('AI_ACTIONS_STRICT_VALIDATION', true),
             'allowed_domains' => env('AI_ACTIONS_ALLOWED_DOMAINS', ''),
         ],
-        'handlers' => [
-            'button' => \LaravelAIEngine\Services\ActionHandlers\ButtonActionHandler::class,
-            'quick_reply' => \LaravelAIEngine\Services\ActionHandlers\QuickReplyActionHandler::class,
-        ],
+        'handlers' => [],
     ],
 
     /*
@@ -1560,9 +1515,9 @@ class AIEngineConfigDefaults
         // Default collections to search (model class names)
         // If empty, the system will AUTO-DISCOVER all models with:
         // - Vectorizable trait
-        // - RAGgable trait
+        // - VectorizableWithMedia trait
         //
-        // Simply add 'use Vectorizable;' or 'use RAGgable;' to your models!
+        // Simply add 'use Vectorizable;' to your models.
         'default_collections' => env('AI_ENGINE_RAG_COLLECTIONS')
             ? explode(',', env('AI_ENGINE_RAG_COLLECTIONS'))
             : [

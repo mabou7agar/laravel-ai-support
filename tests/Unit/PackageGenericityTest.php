@@ -34,18 +34,14 @@ class PackageGenericityTest extends UnitTestCase
 
     public function test_runtime_code_does_not_use_project_workspace_helpers_or_user_one_fallbacks(): void
     {
-        $files = [
-            __DIR__ . '/../../src/Services/GenericEntityResolver.php',
-            __DIR__ . '/../../src/Traits/AutoResolvesRelationships.php',
-        ];
+        $contents = implode("\n", array_map(
+            static fn (string $file): string => file_get_contents($file),
+            glob(__DIR__ . '/../../src/{Http,Services}/**/*.php', GLOB_BRACE) ?: []
+        ));
 
-        foreach ($files as $file) {
-            $contents = file_get_contents($file);
-
-            $this->assertStringNotContainsString('getActiveWorkSpace()', $contents, $file);
-            $this->assertStringNotContainsString('creatorId()', $contents, $file);
-            $this->assertStringNotContainsString('auth()->id() ?? 1', $contents, $file);
-        }
+        $this->assertStringNotContainsString('getActiveWorkSpace()', $contents);
+        $this->assertStringNotContainsString('creatorId()', $contents);
+        $this->assertStringNotContainsString('auth()->id() ?? 1', $contents);
     }
 
     public function test_real_agent_test_command_has_no_invoice_specific_builtin_flow(): void

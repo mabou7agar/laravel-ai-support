@@ -7,9 +7,13 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Services\AIEngineService;
-use LaravelAIEngine\Services\ConversationService;
-use LaravelAIEngine\Services\Drivers\DriverRegistry;
-use LaravelAIEngine\Services\RAG\RAGChatService;
+use LaravelAIEngine\Services\RAG\RAGCollectionResolver;
+use LaravelAIEngine\Services\RAG\RAGContextBuilder;
+use LaravelAIEngine\Services\RAG\RAGPipeline;
+use LaravelAIEngine\Services\RAG\RAGPromptBuilder;
+use LaravelAIEngine\Services\RAG\RAGQueryAnalyzer;
+use LaravelAIEngine\Services\RAG\RAGResponseGenerator;
+use LaravelAIEngine\Services\RAG\RAGRetriever;
 use LaravelAIEngine\Tests\Models\User;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -198,14 +202,16 @@ class GraphRAGAcceptanceTest extends UnitTestCase
                 'gpt-4o-mini'
             ));
 
-        $service = new RAGChatService(
-            $this->app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
-            $ai,
-            $this->createMock(DriverRegistry::class),
-            $this->createMock(ConversationService::class),
+        $service = new RAGPipeline(
+            new RAGQueryAnalyzer(),
+            new RAGCollectionResolver(),
+            $this->app->make(RAGRetriever::class),
+            new RAGContextBuilder(),
+            new RAGPromptBuilder(),
+            new RAGResponseGenerator($ai)
         );
 
-        $response = $service->processMessage(
+        $response = $service->process(
             'what changed on friday and who is it related to?',
             'graph-acceptance-session',
             ['App\\Models\\Mail', 'App\\Models\\Project'],
@@ -216,32 +222,32 @@ class GraphRAGAcceptanceTest extends UnitTestCase
                     'context_enhancement' => 'Need cross-app graph context',
                 ],
                 'model' => 'gpt-4o-mini',
+                'generate_answer' => true,
             ],
             $user->id
         );
 
         $this->assertTrue($response->isSuccessful());
         $this->assertStringContainsString('delayed until Friday', $response->getContent());
-        $this->assertTrue((bool) ($response->getMetadata()['graph_planned'] ?? false));
-        $this->assertSame('semantic_graph_planner', $response->getMetadata()['planner_strategy'] ?? null);
         $sources = $response->getMetadata()['sources'] ?? [];
-        $this->assertCount(3, $sources);
-        $sourcesById = collect($sources)->keyBy(fn (array $source) => $source['entity_ref']['model_id'] ?? $source['model_id'] ?? null);
+        $this->assertNotEmpty($sources);
+        $this->assertContains('graph', array_column($sources, 'type'));
+        $sourcesById = collect($sources)->keyBy(fn (array $source) => $source['metadata']['entity_ref']['model_id'] ?? $source['metadata']['model_id'] ?? $source['id'] ?? null);
         $mailSource = $sourcesById->get(21);
         $projectSource = $sourcesById->get(7);
         $taskSource = $sourcesById->get(81);
-        $this->assertSame('mail', $mailSource['app_slug'] ?? null);
-        $this->assertSame(21, $mailSource['entity_ref']['model_id'] ?? null);
-        $this->assertSame('Launch delay notice', $mailSource['object']['title'] ?? null);
-        $this->assertSame('projects', $projectSource['app_slug'] ?? null);
-        $this->assertSame(7, $projectSource['entity_ref']['model_id'] ?? null);
-        $this->assertSame('Apollo', $projectSource['object']['title'] ?? null);
-        $this->assertSame('tasks', $taskSource['app_slug'] ?? null);
-        $this->assertSame(81, $taskSource['entity_ref']['model_id'] ?? null);
-        $this->assertSame('Prep release notes', $taskSource['object']['title'] ?? null);
-        $this->assertTrue((bool) ($projectSource['graph_planned'] ?? false));
-        $this->assertSame(['BELONGS_TO'], $projectSource['relation_path'] ?? null);
-        $this->assertSame(1, $projectSource['path_length'] ?? null);
+        $this->assertSame('mail', $mailSource['metadata']['app_slug'] ?? null);
+        $this->assertSame(21, $mailSource['metadata']['entity_ref']['model_id'] ?? null);
+        $this->assertSame('Launch delay notice', $mailSource['metadata']['object']['title'] ?? null);
+        $this->assertSame('projects', $projectSource['metadata']['app_slug'] ?? null);
+        $this->assertSame(7, $projectSource['metadata']['entity_ref']['model_id'] ?? null);
+        $this->assertSame('Apollo', $projectSource['metadata']['object']['title'] ?? null);
+        $this->assertSame('tasks', $taskSource['metadata']['app_slug'] ?? null);
+        $this->assertSame(81, $taskSource['metadata']['entity_ref']['model_id'] ?? null);
+        $this->assertSame('Prep release notes', $taskSource['metadata']['object']['title'] ?? null);
+        $this->assertTrue((bool) ($projectSource['metadata']['graph_planned'] ?? false));
+        $this->assertSame(['BELONGS_TO'], $projectSource['metadata']['relation_path'] ?? null);
+        $this->assertSame(1, $projectSource['metadata']['path_length'] ?? null);
         $this->assertStringContainsString(
             'db.index.vector.queryNodes',
             $requests[0]['statement'] ?? ''

@@ -12,7 +12,7 @@ use LaravelAIEngine\Services\Node\NodeHttpClient;
  *
  * Automatically discovers models that can be used for RAG:
  * 1. Models with Vectorizable trait
- * 2. Models with RAGgable trait
+ * 2. Models with Vectorizable or VectorizableWithMedia traits
  */
 class RAGCollectionDiscovery
 {

@@ -6,7 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use LaravelAIEngine\Services\ActionExecutionService;
+use LaravelAIEngine\Services\Actions\ActionManager;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Services\Node\NodeAuthService;
@@ -19,7 +19,7 @@ class NodeApiController extends Controller
 {
     public function __construct(
         protected NodeManifestService $manifestService,
-        protected ActionExecutionService $actionExecutionService,
+        protected ActionManager $actionManager,
         protected ChatService $chatService,
         protected InfrastructureHealthService $infrastructureHealth
     ) {
@@ -339,12 +339,14 @@ class NodeApiController extends Controller
         ]);
 
         try {
-            $result = $this->actionExecutionService->execute(
-                actionType: $validated['action_type'],
-                data: $validated['data'],
-                userId: $request->user()?->id ?? ($validated['user_id'] ?? null),
-                sessionId: $validated['session_id'] ?? null
-            );
+            $result = $this->actionManager
+                ->executeById(
+                    actionId: $validated['action_type'],
+                    params: $validated['data'],
+                    userId: $request->user()?->id ?? ($validated['user_id'] ?? null),
+                    sessionId: $validated['session_id'] ?? null
+                )
+                ->toArray();
 
             return response()->json([
                 'success' => true,

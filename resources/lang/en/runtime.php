@@ -181,55 +181,6 @@ return [
         'collection_failed' => 'Data collection failed: :error',
     ],
 
-    'intelligent_prompt' => [
-        'all_information_collected' => 'All information collected.',
-        'provide_field' => 'Please provide :field',
-        'required_label' => 'true',
-        'optional_label' => 'false (optional)',
-        'rules' => [
-            'provide_data' => [
-                'extract_requested' => 'Extract EXACTLY what was asked for',
-                'keep_complete_values' => "Keep COMPLETE values (e.g., 'Macbook Pro M99' stays as-is)",
-                'model_number_part_name' => 'Model numbers (M1, M99, etc.) are PART OF NAME, NOT quantities',
-                'quantity_explicit' => "Quantity needs explicit number: '2 items', '3 products'",
-                'extract_into_field' => "Extract into ':field' field ONLY",
-            ],
-            'create' => [
-                'extract_all_relevant' => 'Extract ALL relevant information',
-                'do_not_ask_existing' => "Don't ask for what's already provided",
-            ],
-            'update' => [
-                'extract_identifier_values' => 'Extract identifier and new values',
-            ],
-        ],
-        'validation' => [
-            'minimum_characters' => 'Minimum :value characters',
-            'maximum_characters' => 'Maximum :value characters',
-            'valid_email' => 'Must be a valid email address format',
-            'numeric' => 'Must be a number',
-            'valid_url' => 'Must be a valid URL',
-        ],
-    ],
-
-    'ai_enhanced_workflow' => [
-        'not_available' => 'N/A',
-        'required_label' => 'true',
-        'optional_label' => 'false',
-        'required_suffix' => '(required)',
-        'optional_suffix' => '(optional)',
-        'default_field_prompt' => 'What is the :field_name?',
-        'default_error_message' => 'The :field_name field has an error: :validation_error',
-        'prompts' => [
-            'validate_field' => 'Validate field ":field_name" (type :field_type) with value :value_json and return JSON with keys valid, error, suggestion.',
-            'find_matching_entity' => 'Find matches for query ":user_query" from :samples_json and return JSON array [{id, confidence, reason}] with up to :limit items.',
-            'detect_duplicate' => 'Check if new record :new_data_json duplicates any record in :existing_records_json for entity :entity_type. Return JSON {is_duplicate, matching_id, confidence, reason}.',
-            'generate_field_prompt' => 'Generate a concise and friendly question to collect ":field_name". Return only question text.',
-            'generate_error_message' => 'Write a short friendly validation message for field ":field_name" with error ":validation_error". Return message text only.',
-            'infer_field_type' => 'Infer data type for field ":field_name" and return only one of: string, integer, number, email, phone, date, boolean, array, url.',
-            'missing_fields' => 'Given goal ":goal", collected data :collected_data_json and fields :fields_list, return JSON array of missing field names ordered by priority.',
-        ],
-    ],
-
     'action_parameter_extractor' => [
         'function_call_prompt' => "Extract data from: :message\n\nContext:\n:context",
         'function_call_system_prompt' => 'You are a data extraction assistant. Use the provided function to extract structured data.',
@@ -249,40 +200,6 @@ return [
     'workflow_builder' => [
         'fallback_single' => 'What is the :entity name?',
         'fallback_multiple' => 'What :entity would you like to add?',
-    ],
-
-    'intelligent_crud' => [
-        'unknown_entity_type' => 'Unknown entity type: :entity',
-        'default_entity_description' => ':entity items',
-        'entity_not_found' => "I couldn't find a :entity matching ':identifier'. Could you provide more details or check the name/ID?",
-        'entity_not_found_exact' => "I couldn't find a :entity matching ':identifier'. Could you provide the exact name or ID?",
-        'entity_not_found_short' => "I couldn't find a :entity matching ':identifier'. Could you provide more details?",
-        'entity_no_longer_exists' => 'Entity no longer exists',
-        'prompts' => [
-            'detect_operation' => [
-                'default_entities_line' => '- Any entity type mentioned by the user',
-                'fallback' => "{{contextual_prompt}}\n\nDetect CRUD operation from user intent using entities:\n{{available_entities_lines}}\nReturn ONLY JSON with keys operation, entity, identifier.",
-            ],
-            'extract_update_fields' => [
-                'fallback' => "Extract fields to update from message \":user_message\" for entity :entity using current values :current_values_json. Return JSON object or {}.",
-            ],
-        ],
-        'update' => [
-            'which_entity' => 'Which :entity would you like to update? Please provide the name or ID.',
-            'ask_changes' => "What would you like to update for :entity ':name'? (e.g., 'change the price to 150', 'update the name to XYZ')",
-            'found_prompt' => "Found :entity ':name'. What would you like to update? (e.g., 'change the price to 150')",
-            'not_understood' => "I didn't understand what to update. Please specify like 'change the price to 150' or 'update the name to XYZ'",
-            'success' => "✅ :entity ':name' updated successfully!",
-            'failed' => 'Failed to update :entity: :error',
-            'invalid_state' => 'Update operation in invalid state',
-        ],
-        'delete' => [
-            'which_entity' => 'Which :entity would you like to delete? Please provide the name or ID.',
-            'confirm' => "⚠️ Are you sure you want to delete :entity ':name'? This action cannot be undone. (:yes/:no)",
-            'success' => "✅ :entity ':name' has been deleted successfully.",
-            'failed' => 'Failed to delete :entity: :error',
-            'cancelled' => 'Deletion cancelled. The :entity was not deleted.',
-        ],
     ],
 
     'agent_action_execution' => [

@@ -39,8 +39,13 @@ These names should not be used as new extension points:
 | Removed or renamed name | Status | Replacement |
 | --- | --- | --- |
 | `AgentOrchestrator` | removed | `AgentRuntimeContract`, `LaravelAgentProcessor` internally |
-| `RAGService` | renamed | `RAGChatService` |
+| `RAGService` / `RAGChatService` | removed | `RAGPipelineContract`, `RAGDecisionEngine` |
 | `AutonomousRAGAgent` | renamed | `RAGDecisionEngine` |
+| `GenericEntityResolver`, `IntelligentCRUDHandler`, `IntelligentPromptGenerator`, `IntentAnalysisService` | removed | action definitions with `relation_resolvers`, generic module relation config, and tool-driven intake |
+| `HasAIFeatures`, `HasAIActions`, `HasSimpleAIConfig`, `HasAIConfigBuilder`, `AutoResolvesRelationships`, `ResolvesAIRelationships`, `AIConfigurable`, `EntityFieldConfig` | removed | skills, tools, action definitions, and explicit relation resolvers |
+| `IntelligentEntityService`, `DocumentTypeAnalyzer`, `ai:test-intent` | removed | current agent/action/RAG tests and explicit app tools |
+| legacy package demo chat/auth routes, `AIChatController`, `AuthController`, bundled chat Blade widgets, and demo JS assets | removed | versioned package APIs, application-owned UI, and app-defined auth |
+| stale intelligent/entity prompt resources | removed | current action intake, data collector, autonomous collector, agent skill, and RAG prompt resources |
 | `ai-engine:sync-engine-models` | removed from the v2 plan | catalog/model sync commands that remain registered |
 
 Move new behavior into the narrower runtime, routing, execution, RAG, provider-tool, credit, or audit services.

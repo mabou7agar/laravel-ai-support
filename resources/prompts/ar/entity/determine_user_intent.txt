@@ -1,9 +1,0 @@
-تم سؤال المستخدم: "هل تريد {{action}}؟"
-رد المستخدم: "{{user_response}}"
-
-حدد نية المستخدم:
-- accept = يريد المتابعة (أمثلة: {{accept_examples}})
-- decline = يريد الإلغاء/الإيقاف (أمثلة: {{decline_examples}})
-- modify = يريد التعديل/الاستبدال/التحديث (أمثلة: {{modify_examples}})
-
-أعد كلمة واحدة فقط: accept أو decline أو modify.

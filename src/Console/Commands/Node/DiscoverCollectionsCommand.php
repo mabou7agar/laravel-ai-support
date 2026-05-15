@@ -117,10 +117,11 @@ class DiscoverCollectionsCommand extends Command
         }
         $this->line('');
         $this->line('// Use in RAG');
-        $this->line('$response = $rag->processMessage(');
+        $this->line('$rag = app(\\LaravelAIEngine\\Contracts\\RAGPipelineContract::class);');
+        $this->line('$response = $rag->process(');
         $this->line('    message: "Your query",');
         $this->line('    sessionId: "session-123",');
-        $this->line('    availableCollections: $collections,');
+        $this->line('    collections: $collections,');
         $this->line('    options: []');
         $this->line(');');
         

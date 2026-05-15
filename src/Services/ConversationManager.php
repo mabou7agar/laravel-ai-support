@@ -6,29 +6,28 @@ use LaravelAIEngine\Models\Conversation;
 use LaravelAIEngine\Models\Message;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
-use LaravelAIEngine\Services\RAG\RAGChatService;
+use LaravelAIEngine\Contracts\RAGPipelineContract;
 use Illuminate\Support\Collection;
 
 class ConversationManager
 {
-    protected ?RAGChatService $ragService = null;
+    protected ?RAGPipelineContract $ragService = null;
     protected bool $ragServiceResolved = false;
 
     public function __construct()
     {
-        // RAG service is lazy-loaded to avoid circular dependency
-        // ConversationManager -> RAGChatService -> ConversationService -> ConversationManager
+        // RAG service is lazy-loaded to avoid circular dependency during container boot.
     }
 
     /**
      * Get RAG service (lazy loaded to avoid circular dependency)
      */
-    protected function getRagService(): ?RAGChatService
+    protected function getRagService(): ?RAGPipelineContract
     {
         if (!$this->ragServiceResolved) {
             $this->ragServiceResolved = true;
-            if (class_exists(RAGChatService::class)) {
-                $this->ragService = app(RAGChatService::class);
+            if (app()->bound(RAGPipelineContract::class)) {
+                $this->ragService = app(RAGPipelineContract::class);
             }
         }
         return $this->ragService;
@@ -299,9 +298,9 @@ class ConversationManager
         // Get conversation history
         $conversationHistory = $this->getConversationContext($conversationId);
 
-        // Get RAG response using RAGChatService
+        // Get RAG response using the current RAG pipeline.
         // Use intelligent: false to always search (like old VectorRAGBridge behavior)
-        $response = $ragService->processMessage(
+        $response = $ragService->process(
             $query,
             $conversationId,
             [$modelClass],
@@ -356,7 +355,7 @@ class ConversationManager
         $conversationHistory = $this->getConversationContext($conversationId);
 
         // Get RAG response (streaming handled at AI engine level)
-        $response = $ragService->processMessage(
+        $response = $ragService->process(
             $query,
             $conversationId,
             [$modelClass],

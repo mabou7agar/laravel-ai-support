@@ -143,7 +143,7 @@ class AgentResponse
                 'is_complete' => $this->isComplete,
                 'next_step' => $this->nextStep,
             ]),
-            actions: $this->actions
+            actions: $this->actions ?? []
         );
     }
 

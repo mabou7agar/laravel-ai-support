@@ -3,13 +3,13 @@
 namespace LaravelAIEngine\Tests\Unit\Services\RAG;
 
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\Contracts\RAGPipelineContract;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\RAG\RAGDecisionEngine;
 use LaravelAIEngine\Services\RAG\RAGContextService;
 use LaravelAIEngine\Services\RAG\RAGPlannerService;
 use LaravelAIEngine\Services\RAG\RAGStructuredDataService;
 use LaravelAIEngine\Services\RAG\RAGDecisionStateService;
-use LaravelAIEngine\Services\RAG\RAGChatService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
@@ -18,7 +18,7 @@ class RAGDecisionEngineForceRagTest extends UnitTestCase
     public function test_force_rag_bypasses_ai_tool_decision_and_executes_vector_search(): void
     {
         $ai = Mockery::mock(AIEngineService::class);
-        $ragService = Mockery::mock(RAGChatService::class);
+        $ragService = Mockery::mock(RAGPipelineContract::class);
         $stateService = Mockery::mock(RAGDecisionStateService::class);
         $decisionService = Mockery::mock(RAGPlannerService::class);
 
@@ -30,7 +30,7 @@ class RAGDecisionEngineForceRagTest extends UnitTestCase
         $decisionService->shouldNotReceive('decide');
         $decisionService->shouldReceive('recordExecutionOutcome')->once();
 
-        $ragService->shouldReceive('processMessage')
+        $ragService->shouldReceive('process')
             ->once()
             ->with(
                 'find Apollo changes',
@@ -53,7 +53,7 @@ class RAGDecisionEngineForceRagTest extends UnitTestCase
 
         $agent = new RAGDecisionEngine(
             ai: $ai,
-            ragService: $ragService,
+            ragPipeline: $ragService,
             stateService: $stateService,
             decisionService: $decisionService
         );

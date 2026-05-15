@@ -5,14 +5,13 @@ description: Complete HTTP endpoint map for chat, collectors, direct generation,
 
 The Mintlify `API` tab now renders the current OpenAPI reference for the v1 endpoints and the federation contract.
 
-Use this page for the route-family overview, compatibility notes, and legacy endpoints that are intentionally kept outside the generated OpenAPI spec.
+Use this page for the route-family overview and compatibility notes that are intentionally kept outside the generated OpenAPI spec.
 
 ## API Surface at a Glance
 
 There are three route families:
 
 - app-facing v1 APIs (`/api/v1/*`) for product features
-- legacy app APIs (`/ai-demo/*`, `/api/ai-chat/*`) for compatibility
 - node federation contract (`/api/ai-engine/*`) for master/child communication
 
 For PHP runtime usage, the parallel entrypoints are:
@@ -33,13 +32,9 @@ For PHP runtime usage, the parallel entrypoints are:
 - `GET /health`
 - `GET /conversations`
 
-### Actions (`/api/v1/actions`)
+### Agent Actions and Tools
 
-- `POST /execute`
-- `POST /execute-remote`
-- `POST /execute-all`
-- `POST /select-option`
-- `GET /available`
+Actions now run through the agent runtime and registered tools instead of the removed standalone action endpoints. Use `POST /api/v1/agent/chat` for action-taking chat flows, or expose tools through the agent tool registry.
 
 ### Modules (`/api/v1/modules`)
 
@@ -109,28 +104,6 @@ Full contracts are documented in `reference/data-collector-api`.
 - `POST /tools/execute` (protected, node-to-node)
 
 Use this contract for infrastructure, not frontend apps.
-
-## Legacy Compatibility Routes
-
-### AI Demo
-
-- `POST /ai-demo/chat/send`
-- `GET /ai-demo/chat/history/{sessionId}`
-- `POST /ai-demo/chat/clear`
-- `POST /ai-demo/chat/upload`
-- `POST /ai-demo/chat/action`
-- `POST /ai-demo/chat/execute-action`
-- `GET /ai-demo/chat/engines`
-- `GET /ai-demo/chat/actions`
-
-### Legacy AI Chat
-
-- `POST /api/ai-chat/send`
-- `POST /api/ai-chat/action`
-- `POST /api/ai-chat/execute-action`
-- `GET /api/ai-chat/history/{session_id}`
-- `DELETE /api/ai-chat/history/{session_id}`
-- `GET /api/ai-chat/engines`
 
 ## Example: Agent Chat Request
 

@@ -1,9 +1,0 @@
-User was asked: "Would you like to {{action}}?"
-User responded: "{{user_response}}"
-
-Determine the user's intent:
-- accept = user wants to proceed (examples: {{accept_examples}})
-- decline = user wants to cancel/stop (examples: {{decline_examples}})
-- modify = user wants to change/replace/update something (examples: {{modify_examples}})
-
-Respond with ONLY one word: accept, decline, or modify.

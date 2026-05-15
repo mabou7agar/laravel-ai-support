@@ -12,9 +12,7 @@ use LaravelAIEngine\DTOs\ConversationSessionPreviewDTO;
 use LaravelAIEngine\Http\Controllers\Concerns\ExtractsConversationContextPayload;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\ConversationService;
-use LaravelAIEngine\Services\ActionService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
-use Illuminate\Support\Facades\Validator;
 use LaravelAIEngine\Http\Requests\SendMessageRequest;
 
 /**
@@ -29,7 +27,6 @@ class RagChatApiController extends Controller
     public function __construct(
         protected ChatService $chatService,
         protected ConversationService $conversationService,
-        protected ActionService $actionService,
         protected RAGCollectionDiscovery $ragDiscovery,
         protected \LaravelAIEngine\Services\FileAnalysisService $fileAnalysis
     ) {}
@@ -127,19 +124,7 @@ class RagChatApiController extends Controller
             // Get metadata
             $metadata = $response->getMetadata();
 
-            // Generate actions
-            $actions = [];
-            if ($useActions) {
-                try {
-                    $actions = $this->actionService->generateSuggestedActions(
-                        $response->getContent(),
-                        $sessionId,
-                        $metadata
-                    );
-                } catch (\Exception $e) {
-                    Log::warning('Failed to generate actions: ' . $e->getMessage());
-                }
-            }
+            $actions = $useActions ? $response->getActions() : [];
 
             return response()->json([
                 'success' => true,
@@ -166,59 +151,6 @@ class RagChatApiController extends Controller
                 'success' => false,
                 'error' => $e->getMessage(),
                 'trace' => config('app.debug') ? $e->getTraceAsString() : null,
-            ], 500);
-        }
-    }
-
-    /**
-     * Execute an action
-     *
-     * @group Actions
-     * @bodyParam action_id string required Action identifier. Example: view_source_123
-     * @bodyParam action_type string required Action type (button, quick_reply). Example: button
-     * @bodyParam payload object required Action payload data. Example: {"action": "view_source", "model_id": 5}
-     *
-     * @response {
-     *   "success": true,
-     *   "data": {
-     *     "action": "view_source",
-     *     "url": "http://localhost/posts/5",
-     *     "message": "Opening source..."
-     *   }
-     * }
-     */
-    public function executeAction(Request $request): JsonResponse
-    {
-        $validator = Validator::make($request->all(), [
-            'action_id' => 'required|string',
-            'action_type' => 'required|string|in:button,quick_reply',
-            'payload' => 'required|array',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        try {
-            $result = $this->actionService->executeAction(
-                $request->input('action_id'),
-                $request->input('action_type'),
-                $request->input('payload')
-            );
-
-            return response()->json([
-                'success' => $result['success'] ?? false,
-                'data' => $result
-            ], $result['success'] ? 200 : 400);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage(),
             ], 500);
         }
     }

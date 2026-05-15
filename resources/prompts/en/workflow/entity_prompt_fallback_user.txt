@@ -1,2 +1,0 @@
-Generate a very short prompt (max 10 words) in {{language}} {{prompt_type}}.
-Return only the prompt.

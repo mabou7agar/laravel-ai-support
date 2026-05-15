@@ -74,7 +74,7 @@ Check:
 Quick verify:
 
 ```bash
-curl https://middleware.test/ai-demo/chat/send \
+curl https://middleware.test/api/v1/agent/chat \
   -H "Accept-Language: en-US,en;q=0.9,ar;q=0.8" \
   -H "Content-Type: application/json" \
   --data '{"message":"هل يوجد ادي فواتير","session_id":"test"}'

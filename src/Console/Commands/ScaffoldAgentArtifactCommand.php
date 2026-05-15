@@ -168,7 +168,7 @@ class ScaffoldAgentArtifactCommand extends Command
         $this->line('1) Implement real logic in the generated class');
         $this->line($type === 'tool'
             ? '2) Run php artisan ai-engine:tools:test ' . $this->artifactKey($className) . ' --payload=\'{}\''
-            : '2) Run php artisan ai-engine:test-agent');
+            : '2) Run php artisan ai-engine:skills:test "your test message"');
 
         return self::SUCCESS;
     }

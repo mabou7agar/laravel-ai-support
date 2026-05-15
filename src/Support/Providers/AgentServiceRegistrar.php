@@ -118,7 +118,7 @@ class AgentServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionEngine::class, function ($app) {
             return new \LaravelAIEngine\Services\RAG\RAGDecisionEngine(
                 $app->make(\LaravelAIEngine\Services\AIEngineService::class),
-                $app->make(\LaravelAIEngine\Services\RAG\RAGChatService::class),
+                $app->make(\LaravelAIEngine\Contracts\RAGPipelineContract::class),
                 $app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class),
                 $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionStateService::class),
                 $app->make(\LaravelAIEngine\Services\RAG\RAGPlannerService::class),

@@ -181,55 +181,6 @@ return [
         'collection_failed' => 'فشل جمع البيانات: :error',
     ],
 
-    'intelligent_prompt' => [
-        'all_information_collected' => 'تم جمع كل المعلومات.',
-        'provide_field' => 'يرجى تقديم :field',
-        'required_label' => 'نعم',
-        'optional_label' => 'لا (اختياري)',
-        'rules' => [
-            'provide_data' => [
-                'extract_requested' => 'استخرج بالضبط ما تم طلبه',
-                'keep_complete_values' => 'احتفظ بالقيم كاملة كما أدخلها المستخدم',
-                'model_number_part_name' => 'أرقام الموديل جزء من الاسم وليست كمية',
-                'quantity_explicit' => 'الكمية تحتاج رقمًا صريحًا مثل 2 عناصر أو 3 منتجات',
-                'extract_into_field' => "استخرج في الحقل ':field' فقط",
-            ],
-            'create' => [
-                'extract_all_relevant' => 'استخرج كل المعلومات ذات الصلة',
-                'do_not_ask_existing' => 'لا تسأل عن معلومات قدمها المستخدم بالفعل',
-            ],
-            'update' => [
-                'extract_identifier_values' => 'استخرج المعرّف والقيم الجديدة',
-            ],
-        ],
-        'validation' => [
-            'minimum_characters' => 'الحد الأدنى :value حرف',
-            'maximum_characters' => 'الحد الأقصى :value حرف',
-            'valid_email' => 'يجب أن يكون بريدًا إلكترونيًا صالحًا',
-            'numeric' => 'يجب أن يكون رقمًا',
-            'valid_url' => 'يجب أن يكون رابط URL صالحًا',
-        ],
-    ],
-
-    'ai_enhanced_workflow' => [
-        'not_available' => 'غير متاح',
-        'required_label' => 'نعم',
-        'optional_label' => 'لا',
-        'required_suffix' => '(إلزامي)',
-        'optional_suffix' => '(اختياري)',
-        'default_field_prompt' => 'ما قيمة :field_name؟',
-        'default_error_message' => 'يوجد خطأ في الحقل :field_name: :validation_error',
-        'prompts' => [
-            'validate_field' => 'تحقق من الحقل ":field_name" (النوع :field_type) بالقيمة :value_json وأعد JSON بالمفاتيح valid وerror وsuggestion.',
-            'find_matching_entity' => 'ابحث عن المطابقات للاستعلام ":user_query" ضمن :samples_json وأعد JSON Array بشكل [{id, confidence, reason}] بحد أقصى :limit عناصر.',
-            'detect_duplicate' => 'تحقق هل السجل الجديد :new_data_json مكرر داخل :existing_records_json للكيان :entity_type. أعد JSON بالمفاتيح is_duplicate وmatching_id وconfidence وreason.',
-            'generate_field_prompt' => 'أنشئ سؤالًا ودودًا ومختصرًا لجمع ":field_name". أعد نص السؤال فقط.',
-            'generate_error_message' => 'اكتب رسالة تحقق ودية قصيرة للحقل ":field_name" عند الخطأ ":validation_error". أعد نص الرسالة فقط.',
-            'infer_field_type' => 'استنتج نوع بيانات الحقل ":field_name" وأعد نوعًا واحدًا فقط من: string, integer, number, email, phone, date, boolean, array, url.',
-            'missing_fields' => 'بناءً على الهدف ":goal" والبيانات :collected_data_json والحقول :fields_list أعد JSON Array بأسماء الحقول الناقصة مرتبة حسب الأولوية.',
-        ],
-    ],
-
     'action_parameter_extractor' => [
         'function_call_prompt' => "استخرج البيانات من: :message\n\nالسياق:\n:context",
         'function_call_system_prompt' => 'أنت مساعد لاستخراج البيانات. استخدم الدالة المقدمة لإخراج بيانات منظمة.',
@@ -249,40 +200,6 @@ return [
     'workflow_builder' => [
         'fallback_single' => 'ما اسم :entity؟',
         'fallback_multiple' => 'ما هي عناصر :entity التي تريد إضافتها؟',
-    ],
-
-    'intelligent_crud' => [
-        'unknown_entity_type' => 'نوع الكيان غير معروف: :entity',
-        'default_entity_description' => 'عناصر :entity',
-        'entity_not_found' => "لم أتمكن من العثور على :entity يطابق ':identifier'. هل يمكنك تقديم تفاصيل أكثر أو التحقق من الاسم/المعرف؟",
-        'entity_not_found_exact' => "لم أتمكن من العثور على :entity يطابق ':identifier'. هل يمكنك تزويدي بالاسم أو المعرف الدقيق؟",
-        'entity_not_found_short' => "لم أتمكن من العثور على :entity يطابق ':identifier'. هل يمكنك تقديم تفاصيل أكثر؟",
-        'entity_no_longer_exists' => 'الكيان لم يعد موجودًا.',
-        'prompts' => [
-            'detect_operation' => [
-                'default_entities_line' => '- أي نوع كيان يذكره المستخدم',
-                'fallback' => "{{contextual_prompt}}\n\nاكتشف عملية CRUD من نية المستخدم باستخدام الكيانات:\n{{available_entities_lines}}\nأعد JSON فقط بالمفاتيح operation وentity وidentifier.",
-            ],
-            'extract_update_fields' => [
-                'fallback' => 'استخرج الحقول المطلوب تحديثها من الرسالة ":user_message" للكيان :entity باستخدام القيم الحالية :current_values_json. أعد كائن JSON أو {}.',
-            ],
-        ],
-        'update' => [
-            'which_entity' => 'أي :entity تريد تحديثه؟ يرجى تزويدي بالاسم أو المعرف.',
-            'ask_changes' => "ما الذي تريد تحديثه في :entity ':name'؟ (مثال: غيّر السعر إلى 150 أو حدّث الاسم إلى XYZ)",
-            'found_prompt' => "تم العثور على :entity ':name'. ما الذي تريد تحديثه؟ (مثال: غيّر السعر إلى 150)",
-            'not_understood' => "لم أفهم ما الذي تريد تحديثه. يرجى التحديد مثل: غيّر السعر إلى 150 أو حدّث الاسم إلى XYZ",
-            'success' => "✅ تم تحديث :entity ':name' بنجاح!",
-            'failed' => 'فشل تحديث :entity: :error',
-            'invalid_state' => 'عملية التحديث في حالة غير صالحة.',
-        ],
-        'delete' => [
-            'which_entity' => 'أي :entity تريد حذفه؟ يرجى تزويدي بالاسم أو المعرف.',
-            'confirm' => "⚠️ هل أنت متأكد أنك تريد حذف :entity ':name'؟ لا يمكن التراجع عن هذا الإجراء. (:yes/:no)",
-            'success' => "✅ تم حذف :entity ':name' بنجاح.",
-            'failed' => 'فشل حذف :entity: :error',
-            'cancelled' => 'تم إلغاء الحذف. لم يتم حذف :entity.',
-        ],
     ],
 
     'agent_action_execution' => [

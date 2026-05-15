@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\CacheManager;
 use LaravelAIEngine\Services\RateLimitManager;
 use LaravelAIEngine\Services\AnalyticsManager;
 use LaravelAIEngine\Services\ConversationManager;
-use LaravelAIEngine\Services\ActionManager;
+use LaravelAIEngine\Services\Actions\ActionManager;
 use LaravelAIEngine\Services\Failover\FailoverManager;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
 use LaravelAIEngine\Services\Analytics\AnalyticsManager as NewAnalyticsManager;
@@ -296,19 +296,13 @@ class TestPackageCommand extends Command
             return is_dir(__DIR__ . '/../../../resources/views');
         });
 
-        // Test views files
-        $this->test('AI Chat component exists', function () {
-            return file_exists(__DIR__ . '/../../../resources/views/components/ai-chat.blade.php');
-        });
-
-        // Test JS assets
-        $this->test('JavaScript assets directory exists', function () {
-            return is_dir(__DIR__ . '/../../../resources/js');
-        });
-
         // Test routes
-        $this->test('Routes file exists', function () {
-            return file_exists(__DIR__ . '/../../../routes/chat.php');
+        $this->test('API routes file exists', function () {
+            return file_exists(__DIR__ . '/../../../routes/api.php');
+        });
+
+        $this->test('Node API routes file exists', function () {
+            return file_exists(__DIR__ . '/../../../routes/node-api.php');
         });
     }
 
