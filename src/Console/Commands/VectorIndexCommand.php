@@ -5,6 +5,7 @@ namespace LaravelAIEngine\Console\Commands;
 use Illuminate\Console\Command;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
+use LaravelAIEngine\Traits\Vectorizable;
 use Throwable;
 
 class VectorIndexCommand extends Command
@@ -23,19 +24,28 @@ class VectorIndexCommand extends Command
 
     public function handle(VectorSearchService $vectorSearch): int
     {
-        $modelClass = $this->argument('model');
+        // Enable the indexing context so that autoDetectVectorizableFields() is
+        // allowed to call the AI API for field selection during this command.
+        Vectorizable::setIndexingContext(true);
 
-        // If no model specified, index all vectorizable models
-        if (!$modelClass) {
-            return $this->indexAllVectorizableModels($vectorSearch);
+        try {
+            $modelClass = $this->argument('model');
+
+            // If no model specified, index all vectorizable models
+            if (!$modelClass) {
+                return $this->indexAllVectorizableModels($vectorSearch);
+            }
+
+            if (!class_exists($modelClass)) {
+                $this->error("Model class not found: {$modelClass}");
+                return self::FAILURE;
+            }
+
+            return $this->indexModel($modelClass, $vectorSearch);
+        } finally {
+            // Always restore the flag, even if the command throws.
+            Vectorizable::setIndexingContext(false);
         }
-
-        if (!class_exists($modelClass)) {
-            $this->error("Model class not found: {$modelClass}");
-            return self::FAILURE;
-        }
-
-        return $this->indexModel($modelClass, $vectorSearch);
     }
 
     protected function indexAllVectorizableModels(VectorSearchService $vectorSearch): int

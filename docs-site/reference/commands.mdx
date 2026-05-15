@@ -96,12 +96,15 @@ php artisan ai:sync-models --provider=fal_ai
 php artisan ai:sync-models --provider=all
 php artisan ai:list-models
 php artisan ai:analyze-model "App\\Models\\Invoice"
+php artisan ai:docs-index ./docs --recursive --store-name="App Docs"
 php artisan ai:vector-index "App\\Models\\Invoice" --with-relationships
 php artisan ai:vector-search "overdue invoices"
 php artisan ai:vector-status
 ```
 
 `ai:analyze-model` is read-only. It inspects schema, model relationships, and approximate table size to suggest indexing config, but it does not insert, update, delete, or index records.
+
+`ai:docs-index` extracts document text with the shared document extractor and stores document references plus metadata in the package vector-store tables. Use repeated `--metadata=key=value` for tenant, workspace, or user scope.
 
 ## Neo4j GraphRAG
 

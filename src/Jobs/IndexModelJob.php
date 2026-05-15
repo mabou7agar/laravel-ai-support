@@ -9,6 +9,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Database\Eloquent\Model;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
+use LaravelAIEngine\Traits\Vectorizable;
 use Illuminate\Support\Facades\Log;
 
 class IndexModelJob implements ShouldQueue
@@ -46,6 +47,9 @@ class IndexModelJob implements ShouldQueue
      */
     public function handle(VectorSearchService $vectorSearch): void
     {
+        // This is an explicit indexing job, so AI-assisted field selection is allowed.
+        Vectorizable::setIndexingContext(true);
+
         try {
             Log::info('Starting vector indexing job', [
                 'model_type' => get_class($this->model),
@@ -67,6 +71,8 @@ class IndexModelJob implements ShouldQueue
             ]);
 
             throw $e;
+        } finally {
+            Vectorizable::setIndexingContext(false);
         }
     }
 

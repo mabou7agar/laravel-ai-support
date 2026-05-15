@@ -1,7 +1,7 @@
 import 'api_envelope_dto.dart';
 
-class RagChatRequestDto {
-  const RagChatRequestDto({
+class AgentChatRequestDto {
+  const AgentChatRequestDto({
     required this.message,
     required this.sessionId,
     this.engine,
@@ -44,8 +44,8 @@ class RagChatRequestDto {
   }
 }
 
-class RagSourceDto {
-  const RagSourceDto({
+class AgentSourceDto {
+  const AgentSourceDto({
     required this.raw,
     this.id,
     this.title,
@@ -59,8 +59,8 @@ class RagSourceDto {
   final String? type;
   final double? relevance;
 
-  factory RagSourceDto.fromJson(JsonMap json) {
-    return RagSourceDto(
+  factory AgentSourceDto.fromJson(JsonMap json) {
+    return AgentSourceDto(
       raw: json,
       id: json['id'],
       title: json['title'] as String?,
@@ -96,8 +96,8 @@ class AiActionDto {
   }
 }
 
-class RagChatResponseDto {
-  const RagChatResponseDto({
+class AgentChatResponseDto {
+  const AgentChatResponseDto({
     required this.response,
     required this.sessionId,
     required this.ragEnabled,
@@ -113,25 +113,25 @@ class RagChatResponseDto {
   final String sessionId;
   final bool ragEnabled;
   final int contextCount;
-  final List<RagSourceDto> sources;
+  final List<AgentSourceDto> sources;
   final List<AiActionDto> actions;
   final bool hasOptions;
   final List<JsonMap> numberedOptions;
   final JsonMap usage;
 
-  factory RagChatResponseDto.fromJson(JsonMap json) {
+  factory AgentChatResponseDto.fromJson(JsonMap json) {
     final sourcesRaw = json['sources'] as List<dynamic>? ?? const [];
     final actionsRaw = json['actions'] as List<dynamic>? ?? const [];
     final optionsRaw = json['numbered_options'] as List<dynamic>? ?? const [];
 
-    return RagChatResponseDto(
+    return AgentChatResponseDto(
       response: json['response'] as String? ?? '',
       sessionId: json['session_id'] as String? ?? '',
       ragEnabled: json['rag_enabled'] == true,
       contextCount: (json['context_count'] as num?)?.toInt() ?? 0,
       sources: sourcesRaw
           .whereType<JsonMap>()
-          .map(RagSourceDto.fromJson)
+          .map(AgentSourceDto.fromJson)
           .toList(),
       actions: actionsRaw
           .whereType<JsonMap>()

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "ai-engine-collection-2025",
     "name": "Laravel AI Engine - Complete API Collection",
-    "description": "Complete API collection for Laravel AI Engine including Chat, RAG, Smart Actions, Federated Search, Node Management, Vector Operations, and Module Discovery.\n\n## Features\n- 🤖 Multi-engine AI Chat (OpenAI, Anthropic, Gemini)\n- 📚 RAG (Retrieval-Augmented Generation)\n- 🎯 Smart Actions with AI Parameter Extraction\n- ✉️ AI-Generated Email Drafts\n- 📅 Calendar Event Creation (ICS + Google Calendar)\n- 🔍 Vector Search & Semantic Similarity\n- 🌐 Federated Node Architecture\n- 📦 Dynamic Model Registry\n- 🔄 Real-time Streaming\n\n## Smart Actions\nExecute AI-powered actions with automatic parameter extraction:\n- `email.reply` - AI-generated email drafts\n- `calendar.create` - Calendar events with ICS data\n- `ai.summarize` - Content summarization\n- `ai.translate` - Content translation\n- `source.view` - View source documents\n\n## Authentication\nMost endpoints require Bearer token authentication. Set your `api_token` in the environment variables.\n\n## Getting Started\n1. Import this collection and the environment file\n2. Set your `base_url` and `api_token`\n3. Start with the Health Check endpoint to verify connectivity\n4. Try the Smart Actions folder for AI-powered features",
+    "description": "Complete API collection for Laravel AI Engine including Agent Chat, file analysis, vector-store discovery, provider tools, federated search, node management, direct generation, and module discovery.\n\n## Features\n- 🤖 Multi-engine AI Chat (OpenAI, Anthropic, Gemini)\n- 📚 Vector-store retrieval and agent RAG options\n- 🎯 Smart Actions with AI Parameter Extraction\n- ✉️ AI-Generated Email Drafts\n- 📅 Calendar Event Creation (ICS + Google Calendar)\n- 🔍 Vector Search & Semantic Similarity\n- 🌐 Federated Node Architecture\n- 📦 Dynamic Model Registry\n- 🔄 Real-time Streaming\n\n## Smart Actions\nExecute AI-powered actions with automatic parameter extraction:\n- `email.reply` - AI-generated email drafts\n- `calendar.create` - Calendar events with ICS data\n- `ai.summarize` - Content summarization\n- `ai.translate` - Content translation\n- `source.view` - View source documents\n\n## Authentication\nMost endpoints require Bearer token authentication. Set your `api_token` in the environment variables.\n\n## Getting Started\n1. Import this collection and the environment file\n2. Set your `base_url` and `api_token`\n3. Start with the Health Check endpoint to verify connectivity\n4. Try the Agent and Capability APIs folder for chat, conversations, file analysis, and vector-store discovery",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "laravel-ai-engine"
   },
@@ -39,10 +39,11 @@
   ],
   "item": [
     {
-      "name": "RAG APIs",
+      "name": "Agent and Capability APIs",
+      "description": "Application-facing v1 endpoints for agent chat, conversations, uploaded file analysis, vector-store collection discovery, AI catalog, and package health.",
       "item": [
         {
-          "name": "RAG Chat",
+          "name": "Agent Chat",
           "event": [
             {
               "listen": "test",
@@ -58,10 +59,9 @@
                   "    pm.expect(jsonData.success).to.be.true;",
                   "});",
                   "",
-                  "pm.test('Response contains RAG data', function() {",
+                  "pm.test('Response contains expected data', function() {",
                   "    var jsonData = pm.response.json();",
                   "    pm.expect(jsonData.data).to.have.property('response');",
-                  "    pm.expect(jsonData.data).to.have.property('rag_enabled');",
                   "});"
                 ]
               }
@@ -83,51 +83,28 @@
                 "value": "Bearer {{api_token}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"message\": \"What posts do you have about Laravel?\",\n    \"session_id\": \"{{session_id}}\",\n    \"engine\": \"openai\",\n    \"model\": \"gpt-4o\",\n    \"memory\": true,\n    \"actions\": true,\n    \"use_intelligent_rag\": true,\n    \"rag_collections\": [\"App\\\\Models\\\\Post\"]\n}"
-            },
             "url": {
-              "raw": "{{base_url}}/api/v1/rag/chat",
+              "raw": "{{base_url}}/api/v1/agent/chat",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "rag",
+                "agent",
                 "chat"
               ]
             },
-            "description": "Send a message with RAG context retrieval.\n\n**Parameters:**\n- `message` (required): The message to send\n- `session_id` (required): Unique session identifier\n- `engine`: AI engine (openai, anthropic, gemini)\n- `model`: Model to use\n- `memory`: Enable conversation memory\n- `actions`: Enable suggested actions\n- `use_intelligent_rag`: Enable intelligent RAG\n- `rag_collections`: Array of model classes to search"
-          },
-          "response": [
-            {
-              "name": "Success Response",
-              "originalRequest": {
-                "method": "POST",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/rag/chat",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "rag",
-                    "chat"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "body": "{\n    \"success\": true,\n    \"data\": {\n        \"response\": \"Based on your posts, I found several articles about Laravel...\",\n        \"rag_enabled\": true,\n        \"context_count\": 5,\n        \"sources\": [\n            {\n                \"id\": 1,\n                \"title\": \"Getting Started with Laravel\",\n                \"model_type\": \"Post\",\n                \"score\": 0.92\n            }\n        ],\n        \"actions\": [],\n        \"usage\": {\n            \"prompt_tokens\": 150,\n            \"completion_tokens\": 80,\n            \"total_tokens\": 230\n        },\n        \"session_id\": \"rag-session-123\"\n    }\n}"
+            "description": "Send a message through the agent runtime. Tools, actions, retrieval, goal agents, and sub-agents are handled by agent options and registered tools.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"What posts do you have about Laravel?\",\n    \"session_id\": \"{{session_id}}\",\n    \"engine\": \"openai\",\n    \"model\": \"gpt-4o\",\n    \"memory\": true,\n    \"actions\": true,\n    \"use_intelligent_rag\": true,\n    \"rag_collections\": [\n        \"App\\\\Models\\\\Post\"\n    ]\n}"
             }
-          ]
+          },
+          "response": []
         },
         {
-          "name": "Get RAG Collections",
+          "name": "List Agent Conversations",
           "event": [
             {
               "listen": "test",
@@ -138,9 +115,14 @@
                   "    pm.response.to.have.status(200);",
                   "});",
                   "",
-                  "pm.test('Response has collections', function() {",
+                  "pm.test('Response has success flag', function() {",
                   "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData.data.collections).to.be.an('array');",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Response contains expected data', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.data).to.have.property('conversations');",
                   "});"
                 ]
               }
@@ -152,234 +134,6 @@
               {
                 "key": "Accept",
                 "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/rag/collections",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rag",
-                "collections"
-              ]
-            },
-            "description": "Get available RAG collections (Vectorizable models)."
-          },
-          "response": [
-            {
-              "name": "Success Response",
-              "originalRequest": {
-                "method": "GET",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/rag/collections",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "rag",
-                    "collections"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "body": "{\n    \"success\": true,\n    \"data\": {\n        \"collections\": [\n            \"App\\\\Models\\\\Post\",\n            \"App\\\\Models\\\\Article\",\n            \"App\\\\Models\\\\Document\"\n        ],\n        \"count\": 3\n    }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Get RAG Engines",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/rag/engines",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rag",
-                "engines"
-              ]
-            },
-            "description": "Get available AI engines for RAG."
-          },
-          "response": [
-            {
-              "name": "Success Response",
-              "originalRequest": {
-                "method": "GET",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/rag/engines",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "rag",
-                    "engines"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "body": "{\n    \"success\": true,\n    \"data\": {\n        \"engines\": {\n            \"openai\": {\n                \"name\": \"OpenAI\",\n                \"models\": [\"gpt-4o\", \"gpt-4o-mini\"],\n                \"capabilities\": [\"text\", \"vision\", \"function_calling\"]\n            },\n            \"anthropic\": {\n                \"name\": \"Anthropic\",\n                \"models\": [\"claude-3-5-sonnet-20241022\"],\n                \"capabilities\": [\"text\", \"vision\"]\n            }\n        },\n        \"default_engine\": \"openai\",\n        \"default_model\": \"gpt-4o\"\n    }\n}"
-            }
-          ]
-        },
-        {
-          "name": "RAG Health Check",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status code is 200', function() {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test('RAG system is healthy', function() {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData.data.status).to.equal('healthy');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/rag/health",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rag",
-                "health"
-              ]
-            },
-            "description": "Check RAG system health status."
-          },
-          "response": [
-            {
-              "name": "Success Response",
-              "originalRequest": {
-                "method": "GET",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/rag/health",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "rag",
-                    "health"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "body": "{\n    \"success\": true,\n    \"data\": {\n        \"status\": \"healthy\",\n        \"version\": \"1.0.0\",\n        \"rag_enabled\": true,\n        \"collections_count\": 3,\n        \"timestamp\": \"2025-01-01T12:00:00Z\"\n    }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Clear RAG Chat History",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{api_token}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"session_id\": \"{{session_id}}\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/rag/chat/clear",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rag",
-                "chat",
-                "clear"
-              ]
-            },
-            "description": "Clear RAG conversation history."
-          },
-          "response": [
-            {
-              "name": "Success Response",
-              "originalRequest": {
-                "method": "POST",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/rag/chat/clear",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "rag",
-                    "chat",
-                    "clear"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "body": "{\n    \"success\": true,\n    \"data\": {\n        \"message\": \"Chat history cleared successfully\",\n        \"session_id\": \"rag-session-123\"\n    }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Get RAG Chat History",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
               },
               {
                 "key": "Authorization",
@@ -387,141 +141,14 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/rag/chat/history/{{session_id}}?limit=50",
+              "raw": "{{base_url}}/api/v1/agent/conversations?limit=20&page=1",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "rag",
-                "chat",
-                "history",
-                "{{session_id}}"
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "50",
-                  "description": "Maximum number of messages"
-                }
-              ]
-            },
-            "description": "Get RAG conversation history."
-          },
-          "response": [
-            {
-              "name": "Success Response",
-              "originalRequest": {
-                "method": "GET",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/rag/chat/history/{{session_id}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "rag",
-                    "chat",
-                    "history",
-                    "{{session_id}}"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "body": "{\n    \"success\": true,\n    \"data\": {\n        \"messages\": [\n            {\n                \"role\": \"user\",\n                \"content\": \"What posts about Laravel?\",\n                \"timestamp\": \"2025-01-01T12:00:00Z\"\n            },\n            {\n                \"role\": \"assistant\",\n                \"content\": \"Based on your posts...\",\n                \"timestamp\": \"2025-01-01T12:00:01Z\"\n            }\n        ],\n        \"session_id\": \"rag-session-123\",\n        \"total\": 2\n    }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Execute RAG Action",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{api_token}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"action_id\": \"view_source_1\",\n    \"action_type\": \"button\",\n    \"payload\": {\n        \"action\": \"view_source\",\n        \"model_id\": 1,\n        \"model_class\": \"App\\\\Models\\\\Post\"\n    }\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/rag/actions/execute",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rag",
-                "actions",
-                "execute"
-              ]
-            },
-            "description": "Execute a RAG action (e.g., view source, follow-up question).\n\n**Parameters:**\n- `action_id` (required): Action identifier\n- `action_type` (required): Type (button, quick_reply)\n- `payload` (required): Action data"
-          },
-          "response": [
-            {
-              "name": "Success Response",
-              "originalRequest": {
-                "method": "POST",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/rag/actions/execute",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "rag",
-                    "actions",
-                    "execute"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "body": "{\n    \"success\": true,\n    \"data\": {\n        \"action\": \"view_source\",\n        \"url\": \"https://example.com/posts/1\",\n        \"message\": \"Opening source document...\"\n    }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Get RAG Conversations",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{api_token}}"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/rag/conversations?limit=20&page=1",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rag",
+                "agent",
                 "conversations"
               ],
               "query": [
@@ -537,35 +164,212 @@
                 }
               ]
             },
-            "description": "Get authenticated user's RAG conversations with pagination.\n\n**Requires Authentication**"
+            "description": "Get the authenticated user's agent conversations with pagination and summaries."
           },
-          "response": [
+          "response": []
+        },
+        {
+          "name": "Analyze File",
+          "event": [
             {
-              "name": "Success Response",
-              "originalRequest": {
-                "method": "GET",
-                "url": {
-                  "raw": "{{base_url}}/api/v1/rag/conversations",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "rag",
-                    "conversations"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "body": "{\n    \"success\": true,\n    \"data\": {\n        \"conversations\": [\n            {\n                \"conversation_id\": \"rag-conv-123\",\n                \"title\": \"Laravel Posts Discussion\",\n                \"message_count\": 8,\n                \"last_activity_at\": \"2025-01-01T12:00:00Z\"\n            }\n        ],\n        \"pagination\": {\n            \"total\": 3,\n            \"per_page\": 20,\n            \"current_page\": 1,\n            \"last_page\": 1\n        }\n    }\n}"
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has success flag', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});"
+                ]
+              }
             }
-          ]
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{api_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ai/files/analyze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "files",
+                "analyze"
+              ]
+            },
+            "description": "Analyze an uploaded file. Use multipart/form-data with file, session_id, message, and optional engine/model/use_rag fields."
+          },
+          "response": []
+        },
+        {
+          "name": "List Vector Store Collections",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has success flag', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Response contains expected data', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.data).to.have.property('collections');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{api_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ai/vector-stores/collections",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "vector-stores",
+                "collections"
+              ]
+            },
+            "description": "List vector-store collections discovered from package/application configuration."
+          },
+          "response": []
+        },
+        {
+          "name": "AI Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has success flag', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Response contains expected data', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.data).to.have.property('status');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ai/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "health"
+              ]
+            },
+            "description": "Application-facing health check for the AI package capabilities."
+          },
+          "response": []
+        },
+        {
+          "name": "List AI Engines",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has success flag', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Response contains expected data', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.data).to.have.property('engines');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ai/engines",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "engines"
+              ]
+            },
+            "description": "List configured AI engines from the model catalog."
+          },
+          "response": []
         }
-      ],
-      "description": "RAG (Retrieval-Augmented Generation) API endpoints for semantic search and context-aware AI responses."
+      ]
     },
     {
       "name": "Node APIs (Federated)",

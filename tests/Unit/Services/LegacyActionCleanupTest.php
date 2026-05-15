@@ -223,6 +223,7 @@ class LegacyActionCleanupTest extends UnitTestCase
         foreach ($files as $file) {
             $contents = file_get_contents($file);
             $this->assertStringNotContainsString('/api/ai-chat', $contents, $file);
+            $this->assertStringNotContainsString('/api/v1/rag', $contents, $file);
             $this->assertStringNotContainsString('/ai-demo', $contents, $file);
             $this->assertStringNotContainsString('/api/v1/actions', $contents, $file);
             $this->assertStringNotContainsString('AI_ENGINE_API_DEMO_MIDDLEWARE', $contents, $file);
@@ -234,6 +235,12 @@ class LegacyActionCleanupTest extends UnitTestCase
             $this->assertStringNotContainsString('routes/web.php', $contents, $file);
         }
 
+        foreach (glob(__DIR__ . '/../../../bruno/laravel-ai-engine/**/*.bru') ?: [] as $file) {
+            $contents = file_get_contents($file);
+
+            $this->assertStringNotContainsString('/api/v1/rag', $contents, $file);
+        }
+
         foreach ([
             'bruno/laravel-ai-engine/AI Chat',
             'bruno/laravel-ai-engine/Auth',
@@ -241,6 +248,7 @@ class LegacyActionCleanupTest extends UnitTestCase
             'bruno/laravel-ai-engine/Legacy Models',
             'bruno/laravel-ai-engine/Legacy Workflow',
             'bruno/laravel-ai-engine/V1 Actions',
+            'bruno/laravel-ai-engine/V1 RAG',
         ] as $path) {
             $this->assertDirectoryDoesNotExist(__DIR__ . '/../../../' . $path);
         }

@@ -13,10 +13,14 @@ servers:
   - url: http://127.0.0.1:8000
     description: Laravel artisan serve
 tags:
-  - name: Agent Chat
-    description: Primary agent orchestration endpoint for chat, tools, actions, RAG, collectors, and goal/sub-agent workflows.
-  - name: RAG Chat
-    description: Retrieval, collections, and conversation endpoints.
+  - name: Agent Runtime
+    description: Primary agent orchestration endpoints for chat, tools, actions, RAG, collectors, conversations, and goal/sub-agent workflows.
+  - name: File Analysis
+    description: Uploaded file analysis endpoints.
+  - name: Vector Stores
+    description: Vector-store collection discovery endpoints.
+  - name: AI Health
+    description: Application-facing package health checks.
   - name: AI Catalog
     description: Public engine and model catalog endpoints.
   - name: AI Generation
@@ -30,7 +34,7 @@ tags:
 paths:
   /api/v1/agent/chat:
     post:
-      tags: [Agent Chat]
+      tags: [Agent Runtime]
       summary: Send an agent chat message
       description: Primary chat endpoint. Routes through the agent orchestrator for conversation, tools, actions, RAG, collectors, node routing, and goal/sub-agent workflows.
       requestBody:
@@ -38,176 +42,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RagChatRequest'
+              $ref: '#/components/schemas/AgentChatRequest'
       responses:
         '200':
           description: Agent response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RagChatResponse'
+                $ref: '#/components/schemas/AgentChatResponse'
         '422':
           $ref: '#/components/responses/ValidationError'
         '500':
           $ref: '#/components/responses/GenericError'
 
-  /api/v1/rag/chat:
-    post:
-      tags: [RAG Chat]
-      summary: Send a RAG chat message
-      description: Retrieval-specific chat endpoint. Use /api/v1/agent/chat for the full agent orchestration surface.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RagChatRequest'
-      responses:
-        '200':
-          description: Chat response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RagChatResponse'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '500':
-          $ref: '#/components/responses/GenericError'
-
-  /api/v1/rag/chat/history/{session_id}:
+  /api/v1/agent/conversations:
     get:
-      tags: [RAG Chat]
-      summary: Get chat history
-      parameters:
-        - $ref: '#/components/parameters/SessionId'
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-            minimum: 1
-      responses:
-        '200':
-          description: Conversation history
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HistoryResponse'
-        '500':
-          $ref: '#/components/responses/GenericError'
-
-  /api/v1/rag/chat/clear:
-    post:
-      tags: [RAG Chat]
-      summary: Clear chat history
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [session_id]
-              properties:
-                session_id:
-                  type: string
-      responses:
-        '200':
-          description: History cleared
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessWithData'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '500':
-          $ref: '#/components/responses/GenericError'
-
-  /api/v1/rag/analyze-file:
-    post:
-      tags: [RAG Chat]
-      summary: Analyze an uploaded file
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file, session_id]
-              properties:
-                file:
-                  type: string
-                  format: binary
-                message:
-                  type: string
-                session_id:
-                  type: string
-                engine:
-                  type: string
-                model:
-                  type: string
-                use_intelligent_rag:
-                  type: boolean
-                  default: true
-                rag_collections:
-                  type: string
-                  description: JSON-encoded collection array
-      responses:
-        '200':
-          description: File analysis result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FileAnalysisResponse'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '500':
-          $ref: '#/components/responses/GenericError'
-
-  /api/v1/rag/collections:
-    get:
-      tags: [RAG Chat]
-      summary: List available RAG collections
-      responses:
-        '200':
-          description: Available collections
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CollectionsResponse'
-        '500':
-          $ref: '#/components/responses/GenericError'
-
-  /api/v1/rag/engines:
-    get:
-      tags: [RAG Chat]
-      summary: List configured engines and models
-      responses:
-        '200':
-          description: Engine registry summary
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EnginesResponse'
-        '500':
-          $ref: '#/components/responses/GenericError'
-
-  /api/v1/rag/health:
-    get:
-      tags: [RAG Chat]
-      summary: Health check
-      responses:
-        '200':
-          description: Service health
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RagHealthResponse'
-        '500':
-          $ref: '#/components/responses/GenericError'
-
-  /api/v1/rag/conversations:
-    get:
-      tags: [RAG Chat]
+      tags: [Agent Runtime]
       summary: List authenticated user conversations
       parameters:
         - name: limit
@@ -231,6 +81,75 @@ paths:
                 $ref: '#/components/schemas/ConversationsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/files/analyze:
+    post:
+      tags: [File Analysis]
+      summary: Analyze an uploaded file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, session_id]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                message:
+                  type: string
+                session_id:
+                  type: string
+                engine:
+                  type: string
+                model:
+                  type: string
+                use_rag:
+                  type: boolean
+                  default: true
+                rag_collections:
+                  type: string
+                  description: JSON-encoded collection array
+      responses:
+        '200':
+          description: File analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileAnalysisResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/vector-stores/collections:
+    get:
+      tags: [Vector Stores]
+      summary: List available vector-store collections
+      responses:
+        '200':
+          description: Available collections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionsResponse'
+        '500':
+          $ref: '#/components/responses/GenericError'
+
+  /api/v1/ai/health:
+    get:
+      tags: [AI Health]
+      summary: Health check
+      responses:
+        '200':
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
         '500':
           $ref: '#/components/responses/GenericError'
 
@@ -1168,7 +1087,7 @@ components:
               type: integer
             schema:
               type: string
-    RagChatRequest:
+    AgentChatRequest:
       type: object
       required: [message, session_id]
       properties:
@@ -1229,7 +1148,7 @@ components:
           type: object
           additionalProperties: true
           description: Optional goal-agent options, including sub_agents.
-    RagChatResponse:
+    AgentChatResponse:
       type: object
       properties:
         success:
@@ -1346,21 +1265,7 @@ components:
               $ref: '#/components/schemas/StringArray'
             count:
               type: integer
-    EnginesResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            engines:
-              $ref: '#/components/schemas/JsonObject'
-            default_engine:
-              type: string
-            default_model:
-              type: string
-    RagHealthResponse:
+    HealthResponse:
       type: object
       properties:
         success:
@@ -1372,7 +1277,7 @@ components:
               type: string
             version:
               type: string
-            rag_enabled:
+            vector_stores_enabled:
               type: boolean
             collections_count:
               type: integer

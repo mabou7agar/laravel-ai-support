@@ -70,9 +70,7 @@
             "providers": [
                 "LaravelAIEngine\\AIEngineServiceProvider"
             ],
-            "aliases": {
-                "AIEngine": "LaravelAIEngine\\Facades\\AIEngine"
-            }
+            "aliases": {}
         }
     },
     "minimum-stability": "stable",

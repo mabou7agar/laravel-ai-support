@@ -233,6 +233,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\AgentRunRetentionCleanupCommand::class,
                 Console\Commands\BackendStatusCommand::class,
                 Console\Commands\ModelStatusCommand::class,
+                Console\Commands\DocsIndexCommand::class,
                 Console\Commands\VectorIndexCommand::class,
                 Console\Commands\VectorSearchCommand::class,
                 Console\Commands\VectorAnalyticsCommand::class,

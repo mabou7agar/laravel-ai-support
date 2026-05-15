@@ -3,9 +3,13 @@
 namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\ConversationListResponseDTO;
+use LaravelAIEngine\DTOs\ConversationPaginationDTO;
+use LaravelAIEngine\DTOs\ConversationSessionPreviewDTO;
 use LaravelAIEngine\Facades\Engine;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\Models\Conversation;
 
 class ConversationService
 {
@@ -144,5 +148,38 @@ class ConversationService
         }
 
         return false;
+    }
+
+    public function listUserConversations(string|int $userId, int $limit = 20, int $page = 1): ConversationListResponseDTO
+    {
+        $limit = max(1, min(100, $limit));
+        $page = max(1, $page);
+        $offset = ($page - 1) * $limit;
+
+        $query = Conversation::forUser((string) $userId)->active();
+
+        $total = (clone $query)->count();
+
+        $conversations = $query
+            ->withCount('messages')
+            ->with(['latestMessage', 'latestAssistantMessage', 'firstUserMessage'])
+            ->orderBy('last_activity_at', 'desc')
+            ->skip($offset)
+            ->limit($limit)
+            ->get();
+
+        return new ConversationListResponseDTO(
+            conversations: $conversations
+                ->map(static fn ($conversation) => ConversationSessionPreviewDTO::fromConversation($conversation))
+                ->all(),
+            pagination: new ConversationPaginationDTO(
+                total: $total,
+                perPage: $limit,
+                currentPage: $page,
+                lastPage: (int) ceil($total / $limit),
+                from: $total > 0 ? $offset + 1 : 0,
+                to: min($offset + $limit, $total),
+            ),
+        );
     }
 }

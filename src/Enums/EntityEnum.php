@@ -44,12 +44,23 @@ class EntityEnum
 
     // Anthropic Models
     public const CLAUDE_3_5_SONNET = 'claude-3-5-sonnet-20240620';
+    public const CLAUDE_3_5_SONNET_20241022 = 'claude-3-5-sonnet-20241022';
+    public const CLAUDE_3_7_SONNET = 'claude-3-7-sonnet-20250219';
+    public const CLAUDE_SONNET_4_5 = 'claude-sonnet-4-5';
+    public const CLAUDE_OPUS_4_5 = 'claude-opus-4-5';
+    public const CLAUDE_HAIKU_4_5 = 'claude-haiku-4-5-20251001';
+    public const CLAUDE_SONNET_4_6 = 'claude-sonnet-4-6';
+    public const CLAUDE_OPUS_4_6 = 'claude-opus-4-6';
     public const CLAUDE_3_HAIKU = 'claude-3-haiku-20240307';
     public const CLAUDE_3_OPUS = 'claude-3-opus-20240229';
 
     // Gemini Models
     public const GEMINI_1_5_PRO = 'gemini-1.5-pro';
     public const GEMINI_1_5_FLASH = 'gemini-1.5-flash';
+    public const GEMINI_2_0_FLASH = 'gemini-2.0-flash';
+    public const GEMINI_2_0_FLASH_LITE = 'gemini-2.0-flash-lite';
+    public const GEMINI_2_5_PRO = 'gemini-2.5-pro-preview-05-06';
+    public const GEMINI_2_5_FLASH = 'gemini-2.5-flash-preview-04-17';
     public const GEMINI_IMAGEN_4_FAST = 'imagen-4.0-fast-generate-001';
     public const GEMINI_IMAGEN_4 = 'imagen-4.0-generate-001';
     public const GEMINI_VEO_3_1 = 'veo-3.1-generate-preview';
@@ -102,6 +113,9 @@ class EntityEnum
 
     // Unsplash Models
     public const UNSPLASH_SEARCH = 'unsplash-search';
+
+    // Pexels Models
+    public const PEXELS_SEARCH = 'pexels-search';
 
     // Plagiarism Check Models
     public const PLAGIARISM_BASIC = 'plagiarism-basic';
@@ -358,11 +372,22 @@ class EntityEnum
             case self::WHISPER_1:
                 return new EngineEnum(EngineEnum::OPENAI);
             case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_5_SONNET_20241022:
+            case self::CLAUDE_3_7_SONNET:
+            case self::CLAUDE_SONNET_4_5:
+            case self::CLAUDE_OPUS_4_5:
+            case self::CLAUDE_HAIKU_4_5:
+            case self::CLAUDE_SONNET_4_6:
+            case self::CLAUDE_OPUS_4_6:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
                 return new EngineEnum(EngineEnum::ANTHROPIC);
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
+            case self::GEMINI_2_0_FLASH:
+            case self::GEMINI_2_0_FLASH_LITE:
+            case self::GEMINI_2_5_PRO:
+            case self::GEMINI_2_5_FLASH:
             case self::GEMINI_IMAGEN_4_FAST:
             case self::GEMINI_IMAGEN_4:
             case self::GEMINI_VEO_3_1:
@@ -407,6 +432,8 @@ class EntityEnum
                 return new EngineEnum(EngineEnum::SERPER);
             case self::UNSPLASH_SEARCH:
                 return new EngineEnum(EngineEnum::UNSPLASH);
+            case self::PEXELS_SEARCH:
+                return new EngineEnum(EngineEnum::PEXELS);
             case self::PLAGIARISM_BASIC:
             case self::PLAGIARISM_ADVANCED:
             case self::PLAGIARISM_ACADEMIC:
@@ -483,14 +510,25 @@ class EntityEnum
             case self::WHISPER_1:
                 return WhisperDriver::class;
             case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_5_SONNET_20241022:
+            case self::CLAUDE_3_7_SONNET:
+            case self::CLAUDE_SONNET_4_5:
+            case self::CLAUDE_SONNET_4_6:
                 return Claude35SonnetDriver::class;
             case self::CLAUDE_3_HAIKU:
+            case self::CLAUDE_HAIKU_4_5:
                 return Claude3HaikuDriver::class;
             case self::CLAUDE_3_OPUS:
+            case self::CLAUDE_OPUS_4_5:
+            case self::CLAUDE_OPUS_4_6:
                 return Claude3OpusDriver::class;
             case self::GEMINI_1_5_PRO:
+            case self::GEMINI_2_5_PRO:
                 return Gemini15ProDriver::class;
             case self::GEMINI_1_5_FLASH:
+            case self::GEMINI_2_0_FLASH:
+            case self::GEMINI_2_0_FLASH_LITE:
+            case self::GEMINI_2_5_FLASH:
             case self::GEMINI_IMAGEN_4_FAST:
             case self::GEMINI_IMAGEN_4:
             case self::GEMINI_VEO_3_1:
@@ -669,6 +707,20 @@ class EntityEnum
                 return 'Whisper';
             case self::CLAUDE_3_5_SONNET:
                 return 'Claude 3.5 Sonnet';
+            case self::CLAUDE_3_5_SONNET_20241022:
+                return 'Claude 3.5 Sonnet (Oct 2024)';
+            case self::CLAUDE_3_7_SONNET:
+                return 'Claude 3.7 Sonnet';
+            case self::CLAUDE_SONNET_4_5:
+                return 'Claude Sonnet 4.5';
+            case self::CLAUDE_OPUS_4_5:
+                return 'Claude Opus 4.5';
+            case self::CLAUDE_HAIKU_4_5:
+                return 'Claude Haiku 4.5';
+            case self::CLAUDE_SONNET_4_6:
+                return 'Claude Sonnet 4.6';
+            case self::CLAUDE_OPUS_4_6:
+                return 'Claude Opus 4.6';
             case self::CLAUDE_3_HAIKU:
                 return 'Claude 3 Haiku';
             case self::CLAUDE_3_OPUS:
@@ -677,6 +729,14 @@ class EntityEnum
                 return 'Gemini 1.5 Pro';
             case self::GEMINI_1_5_FLASH:
                 return 'Gemini 1.5 Flash';
+            case self::GEMINI_2_0_FLASH:
+                return 'Gemini 2.0 Flash';
+            case self::GEMINI_2_0_FLASH_LITE:
+                return 'Gemini 2.0 Flash Lite';
+            case self::GEMINI_2_5_PRO:
+                return 'Gemini 2.5 Pro';
+            case self::GEMINI_2_5_FLASH:
+                return 'Gemini 2.5 Flash';
             case self::GEMINI_IMAGEN_4_FAST:
                 return 'Imagen 4 Fast';
             case self::GEMINI_IMAGEN_4:
@@ -858,6 +918,20 @@ class EntityEnum
                 return 1.0;
             case self::CLAUDE_3_5_SONNET:
                 return 1.8;
+            case self::CLAUDE_3_5_SONNET_20241022:
+                return 1.9;
+            case self::CLAUDE_3_7_SONNET:
+                return 2.2;
+            case self::CLAUDE_SONNET_4_5:
+                return 2.5;
+            case self::CLAUDE_OPUS_4_5:
+                return 4.0;
+            case self::CLAUDE_HAIKU_4_5:
+                return 1.0;
+            case self::CLAUDE_SONNET_4_6:
+                return 2.5;
+            case self::CLAUDE_OPUS_4_6:
+                return 4.0;
             case self::CLAUDE_3_HAIKU:
                 return 0.8;
             case self::CLAUDE_3_OPUS:
@@ -866,6 +940,14 @@ class EntityEnum
                 return 1.5;
             case self::GEMINI_1_5_FLASH:
                 return 0.4;
+            case self::GEMINI_2_0_FLASH:
+                return 0.5;
+            case self::GEMINI_2_0_FLASH_LITE:
+                return 0.3;
+            case self::GEMINI_2_5_PRO:
+                return 2.5;
+            case self::GEMINI_2_5_FLASH:
+                return 0.6;
             case self::GEMINI_IMAGEN_4_FAST:
                 return 0.8;
             case self::GEMINI_IMAGEN_4:
@@ -929,6 +1011,8 @@ class EntityEnum
             case self::SERPER_IMAGES:
                 return 0.1;
             case self::UNSPLASH_SEARCH:
+                return 0.05;
+            case self::PEXELS_SEARCH:
                 return 0.05;
             case self::PLAGIARISM_BASIC:
                 return 0.5;
@@ -1102,10 +1186,21 @@ class EntityEnum
             case self::GPT_5_MINI:
             case self::GPT_5_NANO:
             case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_5_SONNET_20241022:
+            case self::CLAUDE_3_7_SONNET:
+            case self::CLAUDE_SONNET_4_5:
+            case self::CLAUDE_OPUS_4_5:
+            case self::CLAUDE_HAIKU_4_5:
+            case self::CLAUDE_SONNET_4_6:
+            case self::CLAUDE_OPUS_4_6:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
+            case self::GEMINI_2_0_FLASH:
+            case self::GEMINI_2_0_FLASH_LITE:
+            case self::GEMINI_2_5_PRO:
+            case self::GEMINI_2_5_FLASH:
             case self::OPENROUTER_MISTRAL_7B_FREE:
             case self::OPENROUTER_QWEN_2_5_7B_FREE:
             case self::OPENROUTER_PHI_3_MINI_FREE:
@@ -1160,6 +1255,7 @@ class EntityEnum
             case self::GEMINI_LYRIA_002:
                 return 'audio';
             case self::UNSPLASH_SEARCH:
+            case self::PEXELS_SEARCH:
             case self::PERPLEXITY_SONAR_LARGE:
             case self::PERPLEXITY_SONAR_MEDIUM:
             case self::PERPLEXITY_SONAR_SMALL:
@@ -1212,11 +1308,24 @@ class EntityEnum
             case self::GPT_5_NANO:
                 return 200000;  // GPT-5 has larger context window
             case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_5_SONNET_20241022:
+            case self::CLAUDE_3_7_SONNET:
+            case self::CLAUDE_SONNET_4_5:
+            case self::CLAUDE_OPUS_4_5:
+            case self::CLAUDE_HAIKU_4_5:
+            case self::CLAUDE_SONNET_4_6:
+            case self::CLAUDE_OPUS_4_6:
                 return 200000;
             case self::CLAUDE_3_HAIKU:
                 return 200000;
             case self::CLAUDE_3_OPUS:
                 return 200000;
+            case self::GEMINI_2_0_FLASH:
+            case self::GEMINI_2_0_FLASH_LITE:
+                return 1048576;
+            case self::GEMINI_2_5_PRO:
+            case self::GEMINI_2_5_FLASH:
+                return 1048576;
             case self::GEMINI_1_5_PRO:
                 return 2097152;
             case self::GEMINI_1_5_FLASH:
@@ -1265,9 +1374,20 @@ class EntityEnum
             case self::GPT_4O:
             case self::GPT_5:
             case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_5_SONNET_20241022:
+            case self::CLAUDE_3_7_SONNET:
+            case self::CLAUDE_SONNET_4_5:
+            case self::CLAUDE_OPUS_4_5:
+            case self::CLAUDE_HAIKU_4_5:
+            case self::CLAUDE_SONNET_4_6:
+            case self::CLAUDE_OPUS_4_6:
             case self::CLAUDE_3_OPUS:
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
+            case self::GEMINI_2_0_FLASH:
+            case self::GEMINI_2_0_FLASH_LITE:
+            case self::GEMINI_2_5_PRO:
+            case self::GEMINI_2_5_FLASH:
                 return true;
             case self::GPT_4O_MINI:
             case self::GPT_3_5_TURBO:
@@ -1319,8 +1439,19 @@ class EntityEnum
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
             case self::CLAUDE_3_5_SONNET:
+            case self::CLAUDE_3_5_SONNET_20241022:
+            case self::CLAUDE_3_7_SONNET:
+            case self::CLAUDE_SONNET_4_5:
+            case self::CLAUDE_OPUS_4_5:
+            case self::CLAUDE_HAIKU_4_5:
+            case self::CLAUDE_SONNET_4_6:
+            case self::CLAUDE_OPUS_4_6:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
+            case self::GEMINI_2_0_FLASH:
+            case self::GEMINI_2_0_FLASH_LITE:
+            case self::GEMINI_2_5_PRO:
+            case self::GEMINI_2_5_FLASH:
                 return true;
             case self::GPT_IMAGE_1_5:
             case self::GPT_IMAGE_1:
@@ -1451,10 +1582,21 @@ class EntityEnum
             self::DALL_E_2,
             self::WHISPER_1,
             self::CLAUDE_3_5_SONNET,
+            self::CLAUDE_3_5_SONNET_20241022,
+            self::CLAUDE_3_7_SONNET,
+            self::CLAUDE_SONNET_4_5,
+            self::CLAUDE_OPUS_4_5,
+            self::CLAUDE_HAIKU_4_5,
+            self::CLAUDE_SONNET_4_6,
+            self::CLAUDE_OPUS_4_6,
             self::CLAUDE_3_HAIKU,
             self::CLAUDE_3_OPUS,
             self::GEMINI_1_5_PRO,
             self::GEMINI_1_5_FLASH,
+            self::GEMINI_2_0_FLASH,
+            self::GEMINI_2_0_FLASH_LITE,
+            self::GEMINI_2_5_PRO,
+            self::GEMINI_2_5_FLASH,
             self::GEMINI_IMAGEN_4_FAST,
             self::GEMINI_IMAGEN_4,
             self::GEMINI_VEO_3_1,
@@ -1491,6 +1633,7 @@ class EntityEnum
             self::SERPER_NEWS,
             self::SERPER_IMAGES,
             self::UNSPLASH_SEARCH,
+            self::PEXELS_SEARCH,
             self::PLAGIARISM_BASIC,
             self::PLAGIARISM_ADVANCED,
             self::PLAGIARISM_ACADEMIC,

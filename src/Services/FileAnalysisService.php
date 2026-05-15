@@ -3,6 +3,7 @@
 namespace LaravelAIEngine\Services;
 
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\Services\Media\DocumentService;
 
 /**
  * FileAnalysisService - Complete file analysis service
@@ -17,10 +18,12 @@ class FileAnalysisService
 {
     public function __construct(
         protected ?ChatService $chatService = null,
-        protected ?\LaravelAIEngine\Services\ConversationService $conversationService = null
+        protected ?\LaravelAIEngine\Services\ConversationService $conversationService = null,
+        protected ?DocumentService $documentService = null
     ) {
         $this->chatService = $chatService ?? app(ChatService::class);
         $this->conversationService = $conversationService ?? app(\LaravelAIEngine\Services\ConversationService::class);
+        $this->documentService = $documentService ?? app(DocumentService::class);
     }
 
     /**
@@ -313,104 +316,7 @@ class FileAnalysisService
         $extension = strtolower($file->getClientOriginalExtension());
         $path = $file->getRealPath();
 
-        switch ($extension) {
-            case 'txt':
-                return file_get_contents($path);
-
-            case 'csv':
-                return $this->extractFromCSV($path);
-
-            case 'pdf':
-                return $this->extractFromPDF($path);
-
-            case 'doc':
-            case 'docx':
-                return $this->extractFromWord($path, $extension);
-
-            default:
-                return '';
-        }
-    }
-
-    /**
-     * Extract content from CSV file
-     */
-    protected function extractFromCSV(string $path): string
-    {
-        $handle = fopen($path, 'r');
-        if (!$handle) {
-            return '';
-        }
-        
-        $content = [];
-        $headers = fgetcsv($handle);
-        if ($headers) {
-            $content[] = 'Headers: ' . implode(', ', $headers);
-        }
-        
-        // Read first 50 rows for analysis
-        $rowCount = 0;
-        while (($row = fgetcsv($handle)) !== false && $rowCount < 50) {
-            $content[] = implode(', ', $row);
-            $rowCount++;
-        }
-        
-        fclose($handle);
-        
-        return implode("\n", $content);
-    }
-
-    /**
-     * Extract content from PDF file
-     */
-    protected function extractFromPDF(string $path): string
-    {
-        // Try pdftotext command
-        $output = [];
-        $returnCode = 0;
-        exec("pdftotext -layout " . escapeshellarg($path) . " -", $output, $returnCode);
-        if ($returnCode === 0 && !empty($output)) {
-            return implode("\n", $output);
-        }
-        
-        // Fallback: try Smalot PDF Parser if available
-        if (class_exists(\Smalot\PdfParser\Parser::class)) {
-            try {
-                $parser = new \Smalot\PdfParser\Parser();
-                $pdf = $parser->parseFile($path);
-                return $pdf->getText();
-            } catch (\Exception $e) {
-                Log::warning('PDF parsing failed', ['error' => $e->getMessage()]);
-            }
-        }
-        
-        return '';
-    }
-
-    /**
-     * Extract content from Word documents
-     */
-    protected function extractFromWord(string $path, string $extension): string
-    {
-        // Try antiword for .doc
-        if ($extension === 'doc') {
-            $output = [];
-            exec("antiword " . escapeshellarg($path), $output);
-            if (!empty($output)) {
-                return implode("\n", $output);
-            }
-        }
-        
-        // Try docx2txt for .docx
-        if ($extension === 'docx') {
-            $output = [];
-            exec("docx2txt " . escapeshellarg($path) . " -", $output);
-            if (!empty($output)) {
-                return implode("\n", $output);
-            }
-        }
-        
-        return '';
+        return $this->documentService->extractText($path, $extension);
     }
 
     /**

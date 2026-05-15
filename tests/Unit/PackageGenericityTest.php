@@ -19,7 +19,11 @@ class PackageGenericityTest extends UnitTestCase
         $files = [
             __DIR__ . '/../../src/Http/Requests/SendMessageRequest.php',
             __DIR__ . '/../../src/Services/Vector/VectorAccessControl.php',
-            __DIR__ . '/../../src/Http/Controllers/Api/RagChatApiController.php',
+            __DIR__ . '/../../src/Http/Controllers/Api/AgentChatApiController.php',
+            __DIR__ . '/../../src/Http/Controllers/Api/AgentConversationApiController.php',
+            __DIR__ . '/../../src/Http/Controllers/Api/FileAnalysisApiController.php',
+            __DIR__ . '/../../src/Http/Controllers/Api/HealthApiController.php',
+            __DIR__ . '/../../src/Http/Controllers/Api/VectorStoreApiController.php',
             __DIR__ . '/../../src/Services/Fal/FalMediaWorkflowService.php',
             __DIR__ . '/../../src/Services/Fal/FalReferencePackGenerationService.php',
         ];

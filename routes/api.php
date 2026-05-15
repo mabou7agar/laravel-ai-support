@@ -1,11 +1,15 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use LaravelAIEngine\Http\Controllers\Api\RagChatApiController;
+use LaravelAIEngine\Http\Controllers\Api\AgentChatApiController;
+use LaravelAIEngine\Http\Controllers\Api\AgentConversationApiController;
+use LaravelAIEngine\Http\Controllers\Api\FileAnalysisApiController;
 use LaravelAIEngine\Http\Controllers\Api\GenerateApiController;
 use LaravelAIEngine\Http\Controllers\Api\EngineCatalogController;
+use LaravelAIEngine\Http\Controllers\Api\HealthApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\AgentRunController;
+use LaravelAIEngine\Http\Controllers\Api\VectorStoreApiController;
 use LaravelAIEngine\Http\Controllers\DataCollectorController;
 use LaravelAIEngine\Http\Controllers\Api\ProviderToolController;
 use LaravelAIEngine\Http\Controllers\Api\PricingController;
@@ -54,35 +58,34 @@ Route::prefix('api/v1/agent')
     ->middleware($resolveApiMiddleware('agent'))
     ->name('ai-engine.agent.api.')
     ->group(function () {
-        Route::post('/chat', [RagChatApiController::class, 'sendMessage'])
+        Route::post('/chat', [AgentChatApiController::class, 'sendMessage'])
             ->name('chat.send');
-    });
 
-// RAG API Routes (v1 retrieval endpoints)
-Route::prefix('api/v1/rag')
-    ->middleware($resolveApiMiddleware('rag'))
-    ->name('ai-engine.rag.api.')
-    ->group(function () {
-        // File analysis endpoint
-        Route::post('/analyze-file', [RagChatApiController::class, 'analyzeFile'])
-            ->name('analyze-file');
-        
-        // RAG endpoints
-        Route::get('/collections', [RagChatApiController::class, 'getCollections'])
-            ->name('collections');
-        
-        // Configuration endpoints
-        Route::get('/engines', [RagChatApiController::class, 'getEngines'])
-            ->name('engines');
-        
-        // System endpoints
-        Route::get('/health', [RagChatApiController::class, 'health'])
-            ->name('health');
-        
-        // Conversation management
-        Route::get('/conversations', [RagChatApiController::class, 'getUserConversations'])
+        Route::get('/conversations', [AgentConversationApiController::class, 'index'])
             ->name('conversations.list');
     });
+
+// File analysis API Routes (v1)
+Route::prefix('api/v1/ai/files')
+    ->middleware($resolveApiMiddleware('files'))
+    ->name('ai-engine.files.api.')
+    ->group(function () {
+        Route::post('/analyze', [FileAnalysisApiController::class, 'analyze'])
+            ->name('analyze');
+    });
+
+// Vector store API Routes (v1)
+Route::prefix('api/v1/ai/vector-stores')
+    ->middleware($resolveApiMiddleware('vector_stores'))
+    ->name('ai-engine.vector-stores.api.')
+    ->group(function () {
+        Route::get('/collections', [VectorStoreApiController::class, 'collections'])
+            ->name('collections');
+    });
+
+Route::get('api/v1/ai/health', [HealthApiController::class, 'show'])
+    ->middleware($resolveApiMiddleware('health'))
+    ->name('ai-engine.health.api.show');
 
 // Module Discovery Routes (v1)
 Route::prefix('api/v1/modules')

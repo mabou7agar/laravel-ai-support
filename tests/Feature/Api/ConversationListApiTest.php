@@ -54,7 +54,7 @@ class ConversationListApiTest extends TestCase
 
         $this->actingAs($user);
 
-        $response = $this->getJson('/api/v1/rag/conversations');
+        $response = $this->getJson('/api/v1/agent/conversations');
 
         $response->assertOk()
             ->assertJsonPath('success', true)

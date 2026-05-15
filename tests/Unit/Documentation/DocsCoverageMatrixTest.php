@@ -169,6 +169,7 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Console/InfrastructureHealthCommandTest.php',
             'tests/Unit/Console/Commands/GenerateFalReferencePackCommandTest.php',
             'tests/Unit/Console/Commands/GenerateFalCharacterCommandTest.php',
+            'tests/Unit/Console/Commands/DocsIndexCommandTest.php',
         ],
         'reference/data-collector-api' => [
             'tests/Feature/DataCollector/AutonomousCollectorApiTest.php',

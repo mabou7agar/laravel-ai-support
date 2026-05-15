@@ -9,7 +9,7 @@ Use this page for the route-family overview and compatibility notes that are int
 
 ## API Surface at a Glance
 
-There are three route families:
+There are two route families:
 
 - app-facing v1 APIs (`/api/v1/*`) for product features
 - node federation contract (`/api/ai-engine/*`) for master/child communication
@@ -21,16 +21,22 @@ For PHP runtime usage, the parallel entrypoints are:
 
 ## App-Facing v1 Endpoints
 
-### RAG Chat (`/api/v1/rag`)
+### Agent Runtime (`/api/v1/agent`)
 
-- `POST /chat`
-- `GET /chat/history/{session_id}`
-- `POST /chat/clear`
-- `POST /analyze-file`
-- `GET /collections`
-- `GET /engines`
-- `GET /health`
 - `GET /conversations`
+- `POST /chat`
+
+### File Analysis (`/api/v1/ai/files`)
+
+- `POST /analyze`
+
+### Vector Stores (`/api/v1/ai/vector-stores`)
+
+- `GET /collections`
+
+### AI Health (`/api/v1/ai`)
+
+- `GET /health`
 
 ### Agent Actions and Tools
 
@@ -109,7 +115,7 @@ Use this contract for infrastructure, not frontend apps.
 
 `POST /api/v1/agent/chat`
 
-Use `POST /api/v1/rag/chat` only for retrieval-specific chat flows exposed by the host app.
+Use `POST /api/v1/agent/chat` for chat, tools, actions, RAG, and sub-agent flows. Use `/api/v1/agent/conversations` for conversation sessions, `/api/v1/ai/files/analyze` for uploaded file analysis, and `/api/v1/ai/vector-stores/collections` for vector-store collection discovery.
 
 ```json
 {

@@ -39,6 +39,37 @@ use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
 trait Vectorizable
 {
     /**
+     * Tracks whether we are currently inside an artisan-triggered indexing
+     * flow (e.g. `ai:vector-index`). When false, autoDetectVectorizableFields()
+     * will NOT make an AI API call — it falls back to $fillable-only heuristics
+     * so that ordinary model saves in production never trigger unexpected AI calls.
+     *
+     * Set to true only via Vectorizable::setIndexingContext(true) inside
+     * artisan commands or dedicated indexing jobs.
+     */
+    protected static bool $indexingContext = false;
+
+    /**
+     * Enable or disable the indexing context flag.
+     *
+     * Call Vectorizable::setIndexingContext(true) at the start of any artisan
+     * indexing command, and Vectorizable::setIndexingContext(false) when done
+     * (or just let it fall out of scope — it resets per-process).
+     */
+    public static function setIndexingContext(bool $value): void
+    {
+        static::$indexingContext = $value;
+    }
+
+    /**
+     * Return the current indexing-context flag value.
+     */
+    public static function isInIndexingContext(): bool
+    {
+        return static::$indexingContext;
+    }
+
+    /**
      * Boot the Vectorizable trait for a model.
      * This automatically registers observers.
      */
@@ -340,17 +371,20 @@ trait Vectorizable
 
         $fullContent = implode(' ', $content);
 
-        // Always log which fields were indexed (not just in debug mode)
-        \Log::channel('ai-engine')->info('📊 Vectorization Summary', [
-            'model' => class_basename($this),
-            'model_id' => $this->id ?? 'new',
-            'source' => $source,
-            'indexed_fields' => $usedFields,
-            'field_count' => count($usedFields),
-            'total_content_length' => strlen($fullContent),
-            'has_media' => $hasMedia ?? false,
-            'chunked_fields' => !empty($chunkedFields) ? $chunkedFields : null,
-        ]);
+        // Gate the vectorization summary log behind the debug flag so production
+        // logs are not spammed on every model save.
+        if (config('ai-engine.vectorization.debug', false) || config('ai-engine.debug', false)) {
+            \Log::channel('ai-engine')->debug('📊 Vectorization Summary', [
+                'model' => class_basename($this),
+                'model_id' => $this->id ?? 'new',
+                'source' => $source,
+                'indexed_fields' => $usedFields,
+                'field_count' => count($usedFields),
+                'total_content_length' => strlen($fullContent),
+                'has_media' => $hasMedia ?? false,
+                'chunked_fields' => !empty($chunkedFields) ? $chunkedFields : null,
+            ]);
+        }
 
         if (config('ai-engine.debug')) {
             \Log::channel('ai-engine')->debug('Full vector content generated', [
@@ -774,13 +808,15 @@ trait Vectorizable
 
             $textColumnNames = array_keys($textColumns);
 
-            \Log::channel('ai-engine')->info('Auto-detect: Found text columns', [
-                'model' => $modelClass,
-                'table' => $tableName,
-                'all_columns' => count($columns),
-                'text_columns' => $textColumnNames,
-                'column_types' => $textColumns,
-            ]);
+            if (config('ai-engine.debug', false)) {
+                \Log::channel('ai-engine')->debug('Auto-detect: Found text columns', [
+                    'model' => $modelClass,
+                    'table' => $tableName,
+                    'all_columns' => count($columns),
+                    'text_columns' => $textColumnNames,
+                    'column_types' => $textColumns,
+                ]);
+            }
 
             // If no text columns found, return empty
             if (empty($textColumnNames)) {
@@ -791,16 +827,31 @@ trait Vectorizable
                 return [];
             }
 
-            // Use AI to decide which fields to vectorize
-            $selectedFields = $this->useAIToSelectFields($textColumnNames, $columnInfo);
+            // Use AI to decide which fields to vectorize — but ONLY when running inside
+            // an explicit artisan indexing flow (setIndexingContext(true)).  During normal
+            // model saves in production we fall back to heuristic selection so that no
+            // unexpected AI API call is ever made implicitly.
+            if (static::$indexingContext) {
+                $selectedFields = $this->useAIToSelectFields($textColumnNames, $columnInfo);
+            } else {
+                if (config('ai-engine.debug', false)) {
+                    \Log::channel('ai-engine')->debug('Auto-detect: Skipping AI field selection (not in indexing context), using heuristic', [
+                        'model' => $modelClass,
+                        'table' => $tableName,
+                    ]);
+                }
+                $selectedFields = $this->heuristicFieldSelection($textColumnNames);
+            }
 
-            \Log::channel('ai-engine')->info('Auto-detect: Selected fields for vectorization', [
-                'model' => $modelClass,
-                'table' => $tableName,
-                'selected_fields' => $selectedFields,
-                'total_selected' => count($selectedFields),
-                'source' => 'AI analysis'
-            ]);
+            if (config('ai-engine.debug', false)) {
+                \Log::channel('ai-engine')->debug('Auto-detect: Selected fields for vectorization', [
+                    'model' => $modelClass,
+                    'table' => $tableName,
+                    'selected_fields' => $selectedFields,
+                    'total_selected' => count($selectedFields),
+                    'source' => static::$indexingContext ? 'AI analysis' : 'heuristic (no indexing context)',
+                ]);
+            }
 
             // Cache for 24 hours
             \Cache::put($cacheKey, $selectedFields, now()->addDay());
@@ -1847,7 +1898,7 @@ PROMPT;
     }
 
     // ==========================================
-    // RAG Chat Methods (Static)
+    // RAG Query Methods (Static)
     // ==========================================
 
     /**
@@ -1933,11 +1984,19 @@ PROMPT;
     /**
      * Streaming RAG chat
      *
+     * Builds the RAG context synchronously (vector retrieval + prompt augmentation),
+     * then streams the AI response token-by-token via the engine's streaming API.
+     *
+     * Callback signature: callable(string $chunk, bool $isFirst, bool $isDone)
+     *   - $chunk   : the text token/chunk yielded by the AI engine
+     *   - $isFirst : true only on the very first chunk
+     *   - $isDone  : true only on the final (empty) sentinel call
+     *
      * @param string $query
-     * @param callable $callback
+     * @param callable $callback  fn(string $chunk, bool $isFirst, bool $isDone): void
      * @param string|null $userId
      * @param array $options
-     * @return array
+     * @return array  ['response' => string, 'sources' => array, 'context_count' => int, 'query' => string]
      */
     public static function vectorChatStream(
         string $query,
@@ -1945,24 +2004,68 @@ PROMPT;
         ?string $userId = null,
         array $options = []
     ): array {
-        $ragChat = app(RAGPipelineContract::class);
+        // ── Step 1: Build the RAG context (same as the synchronous pipeline) ──
+        $ragOptions = array_merge($options, [
+            'intelligent'     => false,
+            'rag_collections' => [static::class],
+            'session_id'      => $userId ?? 'default',
+        ]);
 
-        $response = $ragChat->process(
-            $query,
-            $userId ?? 'default',
-            [static::class],
-            [],
-            array_merge($options, ['intelligent' => false]),
-            $userId
+        /** @var \LaravelAIEngine\Services\RAG\RAGQueryAnalyzer $analyzer */
+        $analyzer = app(\LaravelAIEngine\Services\RAG\RAGQueryAnalyzer::class);
+        /** @var \LaravelAIEngine\Services\RAG\RAGCollectionResolver $collectionResolver */
+        $collectionResolver = app(\LaravelAIEngine\Services\RAG\RAGCollectionResolver::class);
+        /** @var \LaravelAIEngine\Services\RAG\RAGRetriever $retriever */
+        $retriever = app(\LaravelAIEngine\Services\RAG\RAGRetriever::class);
+        /** @var \LaravelAIEngine\Services\RAG\RAGContextBuilder $contextBuilder */
+        $contextBuilder = app(\LaravelAIEngine\Services\RAG\RAGContextBuilder::class);
+        /** @var \LaravelAIEngine\Services\RAG\RAGPromptBuilder $promptBuilder */
+        $promptBuilder = app(\LaravelAIEngine\Services\RAG\RAGPromptBuilder::class);
+
+        $analysis        = $analyzer->analyze($query, $ragOptions);
+        $collections     = $collectionResolver->resolve($ragOptions);
+        $sources         = $retriever->retrieve(
+            $analysis['queries'],
+            $collections,
+            $ragOptions,
+            is_int($userId) || is_string($userId) ? $userId : null
         );
+        $context         = $contextBuilder->build($sources);
+        $augmentedPrompt = $promptBuilder->build($query, $context['context'], $ragOptions);
 
-        $callback($response->getContent(), true);
+        // ── Step 2: Stream the augmented prompt through the AI engine ──
+        /** @var \LaravelAIEngine\Services\UnifiedEngineManager $manager */
+        $manager = app(\LaravelAIEngine\Services\UnifiedEngineManager::class);
+
+        $streamOptions = array_filter([
+            'engine'       => $options['engine'] ?? null,
+            'model'        => $options['model'] ?? null,
+            'max_tokens'   => $options['max_tokens'] ?? null,
+            'temperature'  => $options['temperature'] ?? null,
+            'system_prompt' => $options['system_prompt']
+                ?? 'Answer using only the retrieved context. If the context is insufficient, say what is missing.',
+        ], static fn ($v): bool => $v !== null);
+
+        $generator = $manager->streamPrompt($augmentedPrompt, $streamOptions);
+
+        // ── Step 3: Forward each chunk to the caller's callback ──
+        $fullResponse = '';
+        $isFirst      = true;
+
+        foreach ($generator as $chunk) {
+            $fullResponse .= $chunk;
+            $callback($chunk, $isFirst, false);
+            $isFirst = false;
+        }
+
+        // Signal completion with an empty sentinel chunk
+        $callback('', false, true);
 
         return [
-            'response' => $response->getContent(),
-            'sources' => $response->getMetadata()['sources'] ?? [],
-            'context_count' => $response->getMetadata()['context_count'] ?? 0,
-            'query' => $query,
+            'response'      => $fullResponse,
+            'sources'       => $context['sources'] ?? [],
+            'context_count' => count($context['sources'] ?? []),
+            'query'         => $query,
         ];
     }
 

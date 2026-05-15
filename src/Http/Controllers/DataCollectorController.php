@@ -8,6 +8,7 @@ use Illuminate\Routing\Controller;
 use LaravelAIEngine\Services\DataCollector\DataCollectorChatService;
 use LaravelAIEngine\DTOs\DataCollectorConfig;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
+use LaravelAIEngine\Services\Media\DocumentService;
 
 /**
  * Example controller for Data Collector Chat
@@ -19,6 +20,7 @@ class DataCollectorController extends Controller
 {
     public function __construct(
         protected DataCollectorChatService $dataCollector,
+        protected DocumentService $documents,
         protected ?LocaleResourceService $localeResources = null
     ) {}
 
@@ -304,7 +306,7 @@ class DataCollectorController extends Controller
     public function analyzeFile(Request $request): JsonResponse
     {
         $request->validate([
-            'file' => 'required|file|max:10240|mimes:pdf,txt,doc,docx',
+            'file' => 'required|file|max:10240|mimes:pdf,txt,doc,docx,md,markdown,csv,xls,xlsx,ppt,pptx,rtf,odt,json,xml,html,htm',
             'session_id' => 'required|string',
             'fields' => 'nullable|string',
             'field_config' => 'nullable|string',
@@ -445,94 +447,10 @@ class DataCollectorController extends Controller
     protected function extractFileContent($file): string
     {
         $extension = strtolower($file->getClientOriginalExtension());
-        $content = '';
-
-        switch ($extension) {
-            case 'txt':
-                $content = file_get_contents($file->getRealPath());
-                break;
-
-            case 'pdf':
-                $content = $this->extractPdfContent($file);
-                break;
-
-            case 'doc':
-            case 'docx':
-                $content = $this->extractDocContent($file);
-                break;
-        }
+        $content = $this->documents->extractText($file->getRealPath(), $extension);
 
         // Clean and limit content
         $content = trim(preg_replace('/\s+/', ' ', $content));
         return mb_substr($content, 0, 50000); // Limit to ~50k chars
-    }
-
-    /**
-     * Extract text from PDF file
-     */
-    protected function extractPdfContent($file): string
-    {
-        // Try using Smalot PDF Parser if available
-        if (class_exists('\Smalot\PdfParser\Parser')) {
-            try {
-                $parser = new \Smalot\PdfParser\Parser();
-                $pdf = $parser->parseFile($file->getRealPath());
-                return $pdf->getText();
-            } catch (\Exception $e) {
-                \Log::warning('PDF parsing failed: ' . $e->getMessage());
-            }
-        }
-
-        // Fallback: try pdftotext command if available
-        $outputFile = tempnam(sys_get_temp_dir(), 'pdf_');
-        $command = sprintf('pdftotext -layout %s %s 2>/dev/null', 
-            escapeshellarg($file->getRealPath()), 
-            escapeshellarg($outputFile)
-        );
-        
-        exec($command, $output, $returnCode);
-        
-        if ($returnCode === 0 && file_exists($outputFile)) {
-            $content = file_get_contents($outputFile);
-            unlink($outputFile);
-            return $content;
-        }
-
-        return '';
-    }
-
-    /**
-     * Extract text from DOC/DOCX file
-     */
-    protected function extractDocContent($file): string
-    {
-        $extension = strtolower($file->getClientOriginalExtension());
-
-        if ($extension === 'docx') {
-            // Extract from DOCX (ZIP with XML)
-            $zip = new \ZipArchive();
-            if ($zip->open($file->getRealPath()) === true) {
-                $content = '';
-                $xml = $zip->getFromName('word/document.xml');
-                if ($xml) {
-                    $dom = new \DOMDocument();
-                    @$dom->loadXML($xml);
-                    $content = strip_tags($dom->saveXML());
-                }
-                $zip->close();
-                return $content;
-            }
-        }
-
-        // For DOC files, try antiword if available
-        if ($extension === 'doc') {
-            $command = sprintf('antiword %s 2>/dev/null', escapeshellarg($file->getRealPath()));
-            exec($command, $output, $returnCode);
-            if ($returnCode === 0) {
-                return implode("\n", $output);
-            }
-        }
-
-        return '';
     }
 }

@@ -1,11 +1,11 @@
 meta {
   name: Analyze File
   type: http
-  seq: 4
+  seq: 1
 }
 
 post {
-  url: {{baseUrl}}/api/v1/rag/analyze-file
+  url: {{baseUrl}}/api/v1/ai/files/analyze
   body: multipartForm
   auth: bearer
 }
@@ -21,5 +21,6 @@ headers {
 body:multipart-form {
   file: @file({{filePath}})
   message: summarize
-  session_id: {{ragSessionId}}
+  session_id: {{agentSessionId}}
+  use_rag: true
 }

@@ -102,6 +102,14 @@ Engine::vectorStores()
 
 Local storage remains the default. Hosted provider drivers are opt-in to avoid vendor lock-in and unexpected storage costs.
 
+For local package-managed ingestion, use the shared extractor plus local vector-store registry:
+
+```bash
+php artisan ai:docs-index /path/to/docs --recursive --store-name="Support Docs"
+```
+
+`ai:docs-index` extracts text through `DocumentService`, records document metadata in `ai_vector_store_documents`, and keeps tenant/workspace scope in metadata when passed with repeated `--metadata=key=value` options.
+
 ## Realtime, Tracing, and Evaluations
 
 ```php

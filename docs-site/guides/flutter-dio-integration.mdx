@@ -30,7 +30,7 @@ lib/
       ai_engine_client.dart
       dto/
         api_envelope_dto.dart
-        rag_chat_dto.dart
+        agent_chat_dto.dart
         data_collector_dto.dart
         generate_text_dto.dart
 ```
@@ -39,8 +39,8 @@ lib/
 
 If your Laravel app exposes the package on `https://api.example.com`, use the normal package routes directly:
 
-- `POST /api/v1/rag/chat`
-- `GET /api/v1/rag/conversations`
+- `POST /api/v1/agent/chat`
+- `GET /api/v1/agent/conversations`
 - `POST /api/v1/data-collector/start`
 - `POST /api/v1/ai/generate/text`
 
@@ -90,7 +90,7 @@ It provides:
 final client = AiEngineClient(dio);
 
 final response = await client.sendChat(
-  RagChatRequestDto(
+  AgentChatRequestDto(
     message: 'List invoices from this month',
     sessionId: 'mobile-user-42',
     engine: 'openai',
@@ -164,8 +164,8 @@ print(result.content);
 
 For production Flutter apps, start with these endpoints only:
 
-- `/api/v1/rag/chat`
-- `/api/v1/rag/conversations`
+- `/api/v1/agent/chat`
+- `/api/v1/agent/conversations`
 - `/api/v1/data-collector/start`
 - `/api/v1/data-collector/message`
 - `/api/v1/ai/generate/text`

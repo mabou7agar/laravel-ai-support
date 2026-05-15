@@ -16,7 +16,7 @@ class ClearDiscoveryCacheCommand extends Command
     protected $signature = 'ai:clear-discovery-cache
                           {--warm : Warm the cache after clearing}';
 
-    protected $description = 'Clear all AI Engine discovery caches (collectors, RAG collections, metadata)';
+    protected $description = 'Clear all AI Engine discovery caches (collectors, vector collections, metadata)';
 
     public function handle(): int
     {
@@ -27,10 +27,10 @@ class ClearDiscoveryCacheCommand extends Command
         $collectorDiscovery->clearCache();
         $this->line('✓ Autonomous collector cache cleared');
 
-        // Clear RAG collection cache
+        // Clear vector collection cache
         $ragDiscovery = app(RAGCollectionDiscovery::class);
         $ragDiscovery->clearCache();
-        $this->line('✓ RAG collection cache cleared');
+        $this->line('✓ Vector collection cache cleared');
 
         // Clear node metadata cache if exists
         if (class_exists(\LaravelAIEngine\Services\Node\NodeMetadataDiscovery::class)) {
@@ -49,9 +49,9 @@ class ClearDiscoveryCacheCommand extends Command
             $collectors = $collectorDiscovery->discoverCollectors(useCache: false);
             $this->line("✓ Discovered {$collectors->count()} autonomous collectors");
             
-            // Warm RAG collections
+            // Warm vector collections
             $collections = $ragDiscovery->discover(useCache: false);
-            $this->line("✓ Discovered " . count($collections) . " RAG collections");
+            $this->line("✓ Discovered " . count($collections) . " vector collections");
             
             $this->info('Cache warming completed!');
         }

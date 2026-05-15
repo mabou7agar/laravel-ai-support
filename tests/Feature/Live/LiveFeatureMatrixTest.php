@@ -31,7 +31,7 @@ class LiveFeatureMatrixTest extends TestCase
         foreach ($this->selectedFeatures() as $feature) {
             $results[] = match ($feature) {
                 'admin_ui' => $this->runFeature('admin_ui', fn (): array => $this->checkAdminUi()),
-                'rag_api' => $this->runFeature('rag_api', fn (): array => $this->checkRagApi()),
+                'capability_api' => $this->runFeature('capability_api', fn (): array => $this->checkCapabilityApi()),
                 'node_public_api' => $this->runFeature('node_public_api', fn (): array => $this->checkNodePublicApi()),
                 'ai_media' => $this->runFeature('ai_media', fn (): array => $this->checkAiMedia()),
                 'text_generation' => $this->runFeature('text_generation', fn (): array => $this->checkLiveTextGeneration()),
@@ -76,7 +76,7 @@ class LiveFeatureMatrixTest extends TestCase
         if (!is_string($raw) || trim($raw) === '') {
             return [
                 'admin_ui',
-                'rag_api',
+                'capability_api',
                 'node_public_api',
                 'ai_media',
                 'text_generation',
@@ -211,11 +211,11 @@ class LiveFeatureMatrixTest extends TestCase
         ]);
     }
 
-    private function checkRagApi(): array
+    private function checkCapabilityApi(): array
     {
-        $health = $this->getJson('/api/v1/rag/health');
-        $engines = $this->getJson('/api/v1/rag/engines');
-        $collections = $this->getJson('/api/v1/rag/collections');
+        $health = $this->getJson('/api/v1/ai/health');
+        $engines = $this->getJson('/api/v1/ai/engines');
+        $collections = $this->getJson('/api/v1/ai/vector-stores/collections');
 
         $health->assertOk()->assertJsonPath('success', true);
         $engines->assertOk()->assertJsonPath('success', true);
@@ -223,7 +223,7 @@ class LiveFeatureMatrixTest extends TestCase
 
         $collectionsPayload = $collections->json('data.collections') ?? [];
 
-        return $this->passedResult('RAG API surface responded successfully.', [
+        return $this->passedResult('Capability API surface responded successfully.', [
             'collections_count' => is_array($collectionsPayload) ? count($collectionsPayload) : 0,
         ]);
     }

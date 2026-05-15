@@ -1,20 +1,20 @@
 import 'package:dio/dio.dart';
 
 import 'dto/api_envelope_dto.dart';
+import 'dto/agent_chat_dto.dart';
 import 'dto/data_collector_dto.dart';
 import 'dto/generate_text_dto.dart';
-import 'dto/rag_chat_dto.dart';
 
 class AiEngineClient {
   AiEngineClient(this._dio);
 
   final Dio _dio;
 
-  Future<RagChatResponseDto> sendChat(RagChatRequestDto request) async {
-    final json = await _postJson('/api/v1/rag/chat', data: request.toJson());
-    final envelope = ApiEnvelopeDto<RagChatResponseDto>.fromJson(
+  Future<AgentChatResponseDto> sendChat(AgentChatRequestDto request) async {
+    final json = await _postJson('/api/v1/agent/chat', data: request.toJson());
+    final envelope = ApiEnvelopeDto<AgentChatResponseDto>.fromJson(
       json,
-      (raw) => RagChatResponseDto.fromJson(raw as JsonMap),
+      (raw) => AgentChatResponseDto.fromJson(raw as JsonMap),
     );
 
     return _unwrapEnvelope(envelope);
@@ -25,7 +25,7 @@ class AiEngineClient {
     int page = 1,
   }) async {
     final json = await _getJson(
-      '/api/v1/rag/conversations',
+      '/api/v1/agent/conversations',
       queryParameters: <String, dynamic>{'limit': limit, 'page': page},
     );
 

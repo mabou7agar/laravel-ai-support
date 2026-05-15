@@ -9,3 +9,5 @@ Environment notes:
 - `filePath` and `audioPath` must be absolute local paths before sending multipart requests.
 
 Pure HTML admin dashboard/index pages are intentionally not included as Bruno requests.
+
+Current app-facing capability requests are grouped under `V1 Agent`, `V1 Files`, `V1 Vector Stores`, `V1 Health`, `AI Catalog`, and `V1 Generate`.

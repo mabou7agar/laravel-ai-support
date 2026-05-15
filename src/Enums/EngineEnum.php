@@ -24,6 +24,7 @@ use LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver;
 use LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver;
 use LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver;
 use LaravelAIEngine\Drivers\Unsplash\UnsplashEngineDriver;
+use LaravelAIEngine\Drivers\Pexels\PexelsEngineDriver;
 
 /**
  * Engine enumeration class (PHP 8.0 compatible)
@@ -68,6 +69,7 @@ class EngineEnum
     {
         switch ($this->value) {
             case self::PEXELS:
+                return PexelsEngineDriver::class;
             case self::OPENAI:
                 return OpenAIEngineDriver::class;
             case self::UNSPLASH:
@@ -314,7 +316,7 @@ class EngineEnum
                 ];
             case self::PEXELS:
                 return [
-                    EntityEnum::UNSPLASH_SEARCH,
+                    EntityEnum::PEXELS_SEARCH,
                 ];
             case self::OPENROUTER:
                 return [
