@@ -59,7 +59,6 @@ AI_ENGINE_NEO4J_PASSWORD=secret
 - If `AI_ENGINE_NODE_NAME` is missing, the config falls back to `APP_NAME`.
 - If `AI_ENGINE_NODE_SLUG` is missing, runtime services derive it from the resolved node name.
 - If `AI_ENGINE_NODE_LABEL` is missing, it defaults to `master` when `AI_ENGINE_IS_MASTER=true`, otherwise `client`.
-- `AI_ENGINE_NODE_ROLE` is still accepted as a backward-compatible alias, but `AI_ENGINE_NODE_LABEL` is preferred.
 - The node URL should come from `APP_URL`; runtime services read it through `config('app.url')`.
 
 ## Step 3: Create Node Registry File

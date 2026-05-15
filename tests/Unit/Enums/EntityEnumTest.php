@@ -5,6 +5,9 @@ namespace LaravelAIEngine\Tests\Unit\Enums;
 use LaravelAIEngine\Tests\TestCase;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Drivers\DeepSeek\DeepSeekEngineDriver;
+use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
+use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 
 class EntityEnumTest extends TestCase
 {
@@ -66,6 +69,20 @@ class EntityEnumTest extends TestCase
         $this->assertEquals('video', $this->entity(EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO)->getContentType());
         $this->assertEquals('search', $this->entity(EntityEnum::PERPLEXITY_SONAR_LARGE)->getContentType());
         $this->assertEquals('plagiarism', $this->entity(EntityEnum::PLAGIARISM_BASIC)->getContentType());
+    }
+
+    public function test_deepseek_entities_use_existing_driver_class(): void
+    {
+        $this->assertSame(DeepSeekEngineDriver::class, $this->entity(EntityEnum::DEEPSEEK_CHAT)->driverClass());
+        $this->assertSame(DeepSeekEngineDriver::class, $this->entity(EntityEnum::DEEPSEEK_REASONER)->driverClass());
+    }
+
+    public function test_dynamic_provider_models_use_existing_driver_classes(): void
+    {
+        config(['ai-engine.engines.ollama.models.custom-ollama-model' => []]);
+
+        $this->assertSame(OpenRouterEngineDriver::class, $this->entity('meta-llama/custom-openrouter-model')->driverClass());
+        $this->assertSame(OllamaEngineDriver::class, $this->entity('custom-ollama-model')->driverClass());
     }
 
     public function test_entity_credit_indices()

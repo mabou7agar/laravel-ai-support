@@ -43,7 +43,7 @@ php artisan migrate
 
 ## Runtime Architecture
 
-- `Engine` / `AIEngine` facade and `app('ai-engine')` resolve to `UnifiedEngineManager`
+- `Engine` facade and `app('ai-engine')` resolve to `UnifiedEngineManager`
 - `UnifiedEngineManager` is the public fluent entrypoint
 - `AIEngineService` is the direct typed execution API for internal services and explicit `AIRequest` flows
 - `DriverRegistry` is the single driver construction path

@@ -142,7 +142,7 @@ curl -X POST http://localhost/api/v1/data-collector/message \
 curl http://localhost/api/v1/data-collector/status/dc-1001
 ```
 
-If `AI_ENGINE_STANDARDIZE_API_RESPONSES=true`, responses are wrapped in the standard envelope while preserving legacy fields when `AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY=true`.
+If `AI_ENGINE_STANDARDIZE_API_RESPONSES=true`, responses are wrapped in the standard envelope.
 
 For `POST /start-custom`, `fields` can be sent as either:
 
@@ -156,7 +156,7 @@ The `data-collector` Blade component now supports both modes:
 - guided (default): `apiEndpoint="/api/v1/data-collector"` and `collectorMode="guided"`
 - autonomous: `apiEndpoint="/api/v1/autonomous-collector"` and `collectorMode="autonomous"`
 
-It also normalizes standard API envelope responses, so it works whether legacy top-level keys are preserved or not.
+It also normalizes standard API envelope responses.
 
 ## Autonomous Collector API (v1)
 

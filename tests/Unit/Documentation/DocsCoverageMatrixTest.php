@@ -187,7 +187,7 @@ class DocsCoverageMatrixTest extends TestCase
         'reference/upgrade' => [
             'tests/Unit/AIEngineServiceProviderConfigMergeTest.php',
             'tests/Unit/Facades/EngineTest.php',
-            'tests/Unit/Facades/AIEngineFacadeTest.php',
+            'tests/Unit/Services/EngineProxyTest.php',
         ],
     ];
 

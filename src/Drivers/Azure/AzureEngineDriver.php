@@ -105,7 +105,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'text_to_speech',
                 'audio' => $audioData,
             ]
@@ -145,7 +145,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'speech_to_text',
                 'transcription' => $transcriptionData,
             ]
@@ -191,7 +191,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'translator',
                 'translation' => $translationData,
             ]
@@ -241,7 +241,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'text_analytics',
                 'analysis' => $analysisData,
             ]
@@ -294,7 +294,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE->value,
+                'engine' => EngineEnum::AZURE,
                 'service' => 'computer_vision',
                 'vision' => $visionData,
             ]

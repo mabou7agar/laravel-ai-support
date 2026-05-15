@@ -109,7 +109,7 @@ Use this contract for infrastructure, not frontend apps.
 
 `POST /api/v1/agent/chat`
 
-`POST /api/v1/rag/chat` remains available as a backward-compatible alias for existing clients.
+Use `POST /api/v1/rag/chat` only for retrieval-specific chat flows exposed by the host app.
 
 ```json
 {
@@ -233,7 +233,4 @@ curl -X POST https://your-app.test/api/v1/agent/chat \
 
 ```env
 AI_ENGINE_STANDARDIZE_API_RESPONSES=true
-AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY=true
 ```
-
-When legacy-preserve is enabled, top-level legacy keys may still appear for backward compatibility.

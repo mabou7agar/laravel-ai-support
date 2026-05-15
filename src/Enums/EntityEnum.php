@@ -19,8 +19,9 @@ use LaravelAIEngine\Drivers\StableDiffusion\SD3LargeDriver;
 use LaravelAIEngine\Drivers\StableDiffusion\SDXL1024Driver;
 use LaravelAIEngine\Drivers\ElevenLabs\MultilingualV2Driver;
 use LaravelAIEngine\Drivers\FalAI\FluxProDriver;
-use LaravelAIEngine\Drivers\DeepSeek\DeepSeekChatDriver;
-use LaravelAIEngine\Drivers\DeepSeek\DeepSeekReasonerDriver;
+use LaravelAIEngine\Drivers\DeepSeek\DeepSeekEngineDriver;
+use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
+use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 use LaravelAIEngine\Services\Models\DynamicModelResolver;
 
 class EntityEnum
@@ -517,9 +518,8 @@ class EntityEnum
             case self::LUMA_DREAM_MACHINE:
                 return \LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver::class;
             case self::DEEPSEEK_CHAT:
-                return DeepSeekChatDriver::class;
             case self::DEEPSEEK_REASONER:
-                return DeepSeekReasonerDriver::class;
+                return DeepSeekEngineDriver::class;
             case self::OPENROUTER_GPT_5:
                 return GPT4ODriver::class;
             case self::OPENROUTER_GPT_5_MINI:
@@ -571,9 +571,8 @@ class EntityEnum
             case self::OPENROUTER_QWEN_2_5_72B:
                 return GPT4ODriver::class;
             case self::OPENROUTER_DEEPSEEK_V3:
-                return DeepSeekChatDriver::class;
             case self::OPENROUTER_DEEPSEEK_R1:
-                return DeepSeekChatDriver::class;
+                return DeepSeekEngineDriver::class;
             case self::OPENROUTER_LLAMA_3_1_8B_FREE:
                 return GPT4ODriver::class;
             case self::OPENROUTER_LLAMA_3_2_3B_FREE:
@@ -625,9 +624,9 @@ class EntityEnum
             EngineEnum::OPENAI => GPT4ODriver::class,
             EngineEnum::ANTHROPIC => Claude35SonnetDriver::class,
             EngineEnum::GEMINI => Gemini15ProDriver::class,
-            EngineEnum::OPENROUTER => OpenRouterDriver::class,
-            EngineEnum::DEEPSEEK => DeepSeekDriver::class,
-            EngineEnum::OLLAMA => OllamaDriver::class,
+            EngineEnum::OPENROUTER => OpenRouterEngineDriver::class,
+            EngineEnum::DEEPSEEK => DeepSeekEngineDriver::class,
+            EngineEnum::OLLAMA => OllamaEngineDriver::class,
             EngineEnum::NVIDIA_NIM => \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class,
             default => GPT4ODriver::class,
         };

@@ -33,6 +33,27 @@ class LegacyActionCleanupTest extends UnitTestCase
         $this->assertFalse(class_exists('LaravelAIEngine\\Services\\RAG\\RAGChatService'));
     }
 
+    public function test_deprecated_ai_engine_facade_is_removed(): void
+    {
+        $this->assertFalse(class_exists('LaravelAIEngine\\Facades\\AIEngine'));
+    }
+
+    public function test_unused_placeholder_services_are_removed(): void
+    {
+        foreach ([
+            'LaravelAIEngine\\Repositories\\UserRepository',
+            'LaravelAIEngine\\Services\\Chat\\ChatResponseFormatter',
+            'LaravelAIEngine\\Services\\DataLoaderService',
+            'LaravelAIEngine\\Services\\DocumentProcessor',
+            'LaravelAIEngine\\Services\\MemoryOptimizationService',
+            'LaravelAIEngine\\Services\\RAG\\ContextEnhancementService',
+            'LaravelAIEngine\\Services\\RAG\\RAGAnalyzer',
+            'LaravelAIEngine\\Services\\StorageManager',
+        ] as $class) {
+            $this->assertFalse(class_exists($class), "{$class} should not remain as an unused package surface.");
+        }
+    }
+
     public function test_legacy_chat_action_services_are_removed(): void
     {
         $this->assertFalse(class_exists('LaravelAIEngine\\Services\\ActionService'));
@@ -152,6 +173,7 @@ class LegacyActionCleanupTest extends UnitTestCase
             'legacy_chat_routes',
             'auth_routes',
             'AI_ENGINE_API_DEMO_MIDDLEWARE',
+            'AI_ENGINE_NODE_ROLE',
         ] as $needle) {
             $this->assertStringNotContainsString($needle, $config);
         }
@@ -204,6 +226,9 @@ class LegacyActionCleanupTest extends UnitTestCase
             $this->assertStringNotContainsString('/ai-demo', $contents, $file);
             $this->assertStringNotContainsString('/api/v1/actions', $contents, $file);
             $this->assertStringNotContainsString('AI_ENGINE_API_DEMO_MIDDLEWARE', $contents, $file);
+            $this->assertStringNotContainsString('AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED', $contents, $file);
+            $this->assertStringNotContainsString('AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY', $contents, $file);
+            $this->assertStringNotContainsString('AI_ENGINE_NODE_ROLE', $contents, $file);
             $this->assertStringNotContainsString('routes/chat.php', $contents, $file);
             $this->assertStringNotContainsString('routes/auth.php', $contents, $file);
             $this->assertStringNotContainsString('routes/web.php', $contents, $file);

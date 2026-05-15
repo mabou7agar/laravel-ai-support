@@ -60,7 +60,7 @@ The package now has a clear runtime split:
 ## Current Architecture Snapshot (March 2026)
 
 - modular orchestrator services (`IntentRouter`, `AgentPlanner`, execution + response finalization services)
-- unified runtime entrypoint through `UnifiedEngineManager` instead of the removed legacy manager/builder pair
+- unified runtime entrypoint through `UnifiedEngineManager` instead of the removed manager/builder pair
 - autonomous RAG split by responsibility (decision, context/state, execution, policy)
 - manifest/ownership-based node routing
 - standardized API envelope (`success`, `message`, `data`, `error`, `meta`)

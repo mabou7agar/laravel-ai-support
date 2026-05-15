@@ -7,6 +7,13 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
 use LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
 use LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver;
+use LaravelAIEngine\Drivers\Azure\AzureEngineDriver;
+use LaravelAIEngine\Drivers\DeepSeek\DeepSeekEngineDriver;
+use LaravelAIEngine\Drivers\Midjourney\MidjourneyEngineDriver;
+use LaravelAIEngine\Drivers\Perplexity\PerplexityEngineDriver;
+use LaravelAIEngine\Drivers\PlagiarismCheck\PlagiarismCheckEngineDriver;
+use LaravelAIEngine\Drivers\Serper\SerperEngineDriver;
+use LaravelAIEngine\Drivers\Unsplash\UnsplashEngineDriver;
 
 class EngineEnumTest extends TestCase
 {
@@ -58,6 +65,14 @@ class EngineEnumTest extends TestCase
             NvidiaNimEngineDriver::class,
             $this->engine(EngineEnum::NVIDIA_NIM)->driverClass()
         );
+
+        $this->assertEquals(DeepSeekEngineDriver::class, $this->engine(EngineEnum::DEEPSEEK)->driverClass());
+        $this->assertEquals(PerplexityEngineDriver::class, $this->engine(EngineEnum::PERPLEXITY)->driverClass());
+        $this->assertEquals(MidjourneyEngineDriver::class, $this->engine(EngineEnum::MIDJOURNEY)->driverClass());
+        $this->assertEquals(AzureEngineDriver::class, $this->engine(EngineEnum::AZURE)->driverClass());
+        $this->assertEquals(SerperEngineDriver::class, $this->engine(EngineEnum::SERPER)->driverClass());
+        $this->assertEquals(PlagiarismCheckEngineDriver::class, $this->engine(EngineEnum::PLAGIARISM_CHECK)->driverClass());
+        $this->assertEquals(UnsplashEngineDriver::class, $this->engine(EngineEnum::UNSPLASH)->driverClass());
     }
 
     public function test_engine_capabilities()

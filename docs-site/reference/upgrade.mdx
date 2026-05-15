@@ -29,7 +29,6 @@ php artisan ai:test-real-agent --script-file=tests/fixtures/agent-flow.json --js
 Recent releases removed package-core demo assumptions:
 
 - demo routes are disabled unless `AI_ENGINE_ENABLE_DEMO_ROUTES=true`
-- legacy chat compatibility routes are disabled unless `AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED=true`
 - package auth helper routes are disabled unless `AI_ENGINE_AUTH_ROUTES_ENABLED=true`
 - request/user handling no longer falls back to a demo user id
 - workspace/tenant defaults should come from `AIScopeOptionsService`, request options, middleware, or model config hooks
@@ -39,7 +38,7 @@ If your app relied on package demo routes or implicit user/workspace fallbacks, 
 
 ## Breaking Changes
 
-The legacy runtime pair below was removed:
+The removed runtime pair below is no longer part of the package:
 
 - `LaravelAIEngine\Services\AIEngineManager`
 - `LaravelAIEngine\Services\EngineBuilder`
@@ -53,7 +52,7 @@ Use the new runtime shape instead:
 Common replacements:
 
 - `app('ai-engine')` now resolves `UnifiedEngineManager`
-- `AIEngine::engine('openai')->model('gpt-4o')...` still works and now returns `EngineProxy`
+- `Engine::engine('openai')->model('gpt-4o')...` returns `EngineProxy`
 - constructor or service-container references to `AIEngineManager` should be replaced with `UnifiedEngineManager` or `AIEngineService`, depending on whether you need fluent orchestration or direct execution
 
 ## Reference Pack Behavior Change
@@ -122,8 +121,7 @@ Recommended sequence:
 
 See [Qdrant to Neo4j Migration](/reference/qdrant-to-neo4j-migration).
 
-## Backward Compatibility Notes
+## Current Runtime Config
 
-- `default_engine` remains as legacy alias
 - canonical engine key is `ai-engine.default`
 - canonical model key is `ai-engine.default_model`

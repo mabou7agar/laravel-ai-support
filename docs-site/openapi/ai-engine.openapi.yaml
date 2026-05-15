@@ -6,7 +6,7 @@ info:
     Interactive API reference for the Laravel AI Engine package.
 
     This spec covers the current v1 application APIs and the node federation
-    contract. Legacy compatibility routes remain documented in the manual docs.
+    contract.
 servers:
   - url: http://ai.test
     description: Local test host
@@ -16,7 +16,7 @@ tags:
   - name: Agent Chat
     description: Primary agent orchestration endpoint for chat, tools, actions, RAG, collectors, and goal/sub-agent workflows.
   - name: RAG Chat
-    description: Retrieval, collections, conversation endpoints, and legacy chat compatibility.
+    description: Retrieval, collections, and conversation endpoints.
   - name: AI Catalog
     description: Public engine and model catalog endpoints.
   - name: AI Generation
@@ -54,8 +54,8 @@ paths:
   /api/v1/rag/chat:
     post:
       tags: [RAG Chat]
-      summary: Send a chat message (legacy alias)
-      description: Backward-compatible alias for /api/v1/agent/chat. New clients should use the agent endpoint.
+      summary: Send a RAG chat message
+      description: Retrieval-specific chat endpoint. Use /api/v1/agent/chat for the full agent orchestration surface.
       requestBody:
         required: true
         content:

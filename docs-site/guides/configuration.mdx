@@ -16,7 +16,6 @@ AI_ORCHESTRATION_MODEL=gpt-4o-mini
 AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini;deepseek;nvidia_nim;ollama
 
 AI_ENGINE_STANDARDIZE_API_RESPONSES=true
-AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY=true
 
 AI_ENGINE_LOCALIZATION_ENABLED=true
 AI_ENGINE_SUPPORTED_LOCALES=en,ar
@@ -28,7 +27,6 @@ AI_ENGINE_QDRANT_SELF_CHECK_ENABLED=true
 AI_ENGINE_STARTUP_HEALTH_GATE_ENABLED=true
 
 AI_ENGINE_ENABLE_DEMO_ROUTES=false
-AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED=false
 AI_ENGINE_AUTH_ROUTES_ENABLED=false
 ```
 
@@ -40,7 +38,7 @@ AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini
 
 If the native provider is not configured or the model is unavailable there, the resolver walks the remaining providers in order and still applies normal credit checks against the final chosen provider/model.
 
-Demo routes, legacy chat compatibility routes, and package auth helper routes are opt-in. Production apps should keep them disabled and expose their own versioned controllers, middleware, auth, tenant, and workspace policies.
+Demo routes and package auth helper routes are opt-in. Production apps should keep them disabled and expose their own versioned controllers, middleware, auth, tenant, and workspace policies.
 
 ## Generic Routing Profile
 

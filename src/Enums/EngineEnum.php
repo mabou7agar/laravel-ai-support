@@ -6,17 +6,24 @@ namespace LaravelAIEngine\Enums;
 
 use LaravelAIEngine\Drivers\OpenAI\OpenAIEngineDriver;
 use LaravelAIEngine\Drivers\Anthropic\AnthropicEngineDriver;
+use LaravelAIEngine\Drivers\Azure\AzureEngineDriver;
+use LaravelAIEngine\Drivers\DeepSeek\DeepSeekEngineDriver;
 use LaravelAIEngine\Drivers\Gemini\GeminiEngineDriver;
 use LaravelAIEngine\Drivers\StableDiffusion\StableDiffusionEngineDriver;
 use LaravelAIEngine\Drivers\ElevenLabs\ElevenLabsEngineDriver;
 use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
+use LaravelAIEngine\Drivers\Midjourney\MidjourneyEngineDriver;
 use LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
+use LaravelAIEngine\Drivers\Perplexity\PerplexityEngineDriver;
+use LaravelAIEngine\Drivers\PlagiarismCheck\PlagiarismCheckEngineDriver;
+use LaravelAIEngine\Drivers\Serper\SerperEngineDriver;
 use LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver;
 use LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver;
 use LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver;
 use LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver;
+use LaravelAIEngine\Drivers\Unsplash\UnsplashEngineDriver;
 
 /**
  * Engine enumeration class (PHP 8.0 compatible)
@@ -61,14 +68,20 @@ class EngineEnum
     {
         switch ($this->value) {
             case self::PEXELS:
-            case self::UNSPLASH:
-            case self::PLAGIARISM_CHECK:
-            case self::SERPER:
-            case self::AZURE:
-            case self::PERPLEXITY:
-            case self::DEEPSEEK:
             case self::OPENAI:
                 return OpenAIEngineDriver::class;
+            case self::UNSPLASH:
+                return UnsplashEngineDriver::class;
+            case self::PLAGIARISM_CHECK:
+                return PlagiarismCheckEngineDriver::class;
+            case self::SERPER:
+                return SerperEngineDriver::class;
+            case self::AZURE:
+                return AzureEngineDriver::class;
+            case self::PERPLEXITY:
+                return PerplexityEngineDriver::class;
+            case self::DEEPSEEK:
+                return DeepSeekEngineDriver::class;
             case self::ANTHROPIC:
                 return AnthropicEngineDriver::class;
             case self::GOOGLE_TTS:
@@ -78,9 +91,10 @@ class EngineEnum
                 return StableDiffusionEngineDriver::class;
             case self::ELEVEN_LABS:
                 return ElevenLabsEngineDriver::class;
-            case self::MIDJOURNEY:
             case self::FAL_AI:
                 return FalAIEngineDriver::class;
+            case self::MIDJOURNEY:
+                return MidjourneyEngineDriver::class;
             case self::OPENROUTER:
                 return OpenRouterEngineDriver::class;
             case self::OLLAMA:

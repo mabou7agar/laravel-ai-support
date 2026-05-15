@@ -147,7 +147,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::PLAGIARISM_CHECK->value,
+                'engine' => EngineEnum::PLAGIARISM_CHECK,
                 'check_type' => $request->getParameters()['check_type'] ?? 'basic',
                 'language' => $request->getParameters()['language'] ?? 'en',
                 'similarity_threshold' => $request->getParameters()['similarity_threshold'] ?? 15,

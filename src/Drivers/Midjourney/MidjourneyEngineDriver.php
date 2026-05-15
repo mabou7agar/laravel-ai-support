@@ -81,7 +81,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::MIDJOURNEY->value,
+                'engine' => EngineEnum::MIDJOURNEY,
                 'version' => $version,
                 'job_id' => $jobId,
                 'images' => $images,

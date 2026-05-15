@@ -108,7 +108,6 @@ AI_ENGINE_GRAPH_BENCHMARK_LOAD_CONCURRENCY=4
 
 ```env
 AI_ENGINE_STANDARDIZE_API_RESPONSES=true
-AI_ENGINE_API_RESPONSE_PRESERVE_LEGACY=true
 ```
 
 ## Package API Middleware Injection
@@ -161,11 +160,10 @@ AI_ENGINE_INJECT_USER_CONTEXT=true
 ```env
 AI_ENGINE_DEMO_USER_ID=
 AI_ENGINE_ENABLE_DEMO_ROUTES=false
-AI_ENGINE_LEGACY_CHAT_ROUTES_ENABLED=false
 AI_ENGINE_AUTH_ROUTES_ENABLED=false
 ```
 
-Demo routes, legacy chat routes, and package auth helper routes were removed from the package core. Host applications should pass authenticated user, tenant, workspace, and other scope values through request payloads, `AIScopeOptionsService`, middleware, or model config hooks instead of relying on package fallbacks.
+Demo routes and package auth helper routes are outside the package core. Host applications should pass authenticated user, tenant, workspace, and other scope values through request payloads, `AIScopeOptionsService`, middleware, or model config hooks instead of relying on package fallbacks.
 
 ## Agent Conversation Context
 

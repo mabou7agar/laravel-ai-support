@@ -6,7 +6,7 @@ use Illuminate\Console\Command;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\DTOs\AIRequest;
-use LaravelAIEngine\Facades\AIEngine;
+use LaravelAIEngine\Facades\Engine;
 use LaravelAIEngine\Exceptions\AIEngineException;
 
 class TestEnginesCommand extends Command
@@ -155,7 +155,7 @@ class TestEnginesCommand extends Command
                 userId: 'test-user'
             );
 
-            $response = AIEngine::engine($engine->value)
+            $response = Engine::engine($engine->value)
                 ->model($model->value)
                 ->generate($testPrompt, $testParameters);
 

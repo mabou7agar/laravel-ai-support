@@ -1873,15 +1873,11 @@ class AIEngineConfigDefaults
         // through config('ai-engine.nodes.local.*'). If node-specific env vars
         // are omitted, the name falls back to APP_NAME, the URL falls back to
         // APP_URL where it is consumed, the slug is derived later, and the label
-        // defaults from AI_ENGINE_IS_MASTER. AI_ENGINE_NODE_ROLE is kept as a
-        // backward-compatible alias for older app configs.
+        // defaults from AI_ENGINE_IS_MASTER.
         'local' => [
             'name' => env('AI_ENGINE_NODE_NAME', env('APP_NAME', 'Laravel')),
             'slug' => env('AI_ENGINE_NODE_SLUG'),
-            'label' => env('AI_ENGINE_NODE_LABEL', env(
-                'AI_ENGINE_NODE_ROLE',
-                env('AI_ENGINE_IS_MASTER', true) ? 'master' : 'client'
-            )),
+            'label' => env('AI_ENGINE_NODE_LABEL', env('AI_ENGINE_IS_MASTER', true) ? 'master' : 'client'),
             'aliases' => array_values(array_filter(array_map(
                 'trim',
                 explode(',', (string) env('AI_ENGINE_NODE_ALIASES', ''))
