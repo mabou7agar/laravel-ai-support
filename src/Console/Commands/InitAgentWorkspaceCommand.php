@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\Agent\AgentManifestService;
 
 class InitAgentWorkspaceCommand extends Command
 {
-    protected $signature = 'ai-engine:init
+    protected $signature = 'ai:init
                             {--force : Overwrite generated files when they already exist}
                             {--dry-run : Show planned changes without writing files}
                             {--no-manifest : Create directories only and skip manifest file}';
@@ -73,10 +73,10 @@ class InitAgentWorkspaceCommand extends Command
 
         $this->newLine();
         $this->line('Suggested next steps:');
-        $this->line('1) php artisan ai-engine:scaffold agent Invoice --model="App\\Models\\Invoice"');
-        $this->line('2) php artisan ai-engine:scaffold filter TenantScope');
-        $this->line('3) php artisan ai-engine:scaffold tool LookupCustomer');
-        $this->line('4) php artisan ai-engine:scaffold skill CreateInvoice');
+        $this->line('1) php artisan ai:scaffold agent Invoice --model="App\\Models\\Invoice"');
+        $this->line('2) php artisan ai:scaffold filter TenantScope');
+        $this->line('3) php artisan ai:scaffold tool LookupCustomer');
+        $this->line('4) php artisan ai:scaffold skill CreateInvoice');
 
         return self::SUCCESS;
     }

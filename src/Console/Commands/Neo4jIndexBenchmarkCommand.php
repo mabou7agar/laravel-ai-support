@@ -11,7 +11,7 @@ use Throwable;
 
 class Neo4jIndexBenchmarkCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-index-benchmark
+    protected $signature = 'ai:neo4j-index-benchmark
                             {model? : The model class to benchmark (optional - benchmarks discovered vectorizable models if omitted)}
                             {--id=* : Specific model IDs to publish}
                             {--limit= : Max records per model to benchmark}

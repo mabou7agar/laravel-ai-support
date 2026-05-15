@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Agent\AgentManifestService;
 
 class ScaffoldAgentArtifactCommand extends Command
 {
-    protected $signature = 'ai-engine:scaffold
+    protected $signature = 'ai:scaffold
                             {type? : agent|collector|filter|tool|skill|routing-stage|execution-handler|runtime|rag-retriever|policy}
                             {name? : Class name (e.g. Invoice)}
                             {--model= : Model class for agent/collector (e.g. App\\Models\\Invoice)}
@@ -167,8 +167,8 @@ class ScaffoldAgentArtifactCommand extends Command
         $this->line('Next:');
         $this->line('1) Implement real logic in the generated class');
         $this->line($type === 'tool'
-            ? '2) Run php artisan ai-engine:tools:test ' . $this->artifactKey($className) . ' --payload=\'{}\''
-            : '2) Run php artisan ai-engine:skills:test "your test message"');
+            ? '2) Run php artisan ai:tools:test ' . $this->artifactKey($className) . ' --payload=\'{}\''
+            : '2) Run php artisan ai:skills:test "your test message"');
 
         return self::SUCCESS;
     }

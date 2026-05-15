@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class VectorCleanCommand extends Command
 {
-    protected $signature = 'ai-engine:vector-clean
+    protected $signature = 'ai:vector-clean
                             {--model= : Model class to clean}
                             {--orphaned : Remove orphaned vector embeddings}
                             {--analytics= : Clean analytics older than N days}

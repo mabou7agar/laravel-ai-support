@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Streaming\WebSocketManager;
 
 class StreamingServerCommand extends Command
 {
-    protected $signature = 'ai-engine:streaming-server 
+    protected $signature = 'ai:streaming-server
                             {action : Action to perform (start, stop, status, stats)}
                             {--host=0.0.0.0 : Server host}
                             {--port=8080 : Server port}
@@ -23,16 +23,16 @@ class StreamingServerCommand extends Command
             switch ($action) {
                 case 'start':
                     return $this->startServer($webSocketManager);
-                
+
                 case 'stop':
                     return $this->stopServer($webSocketManager);
-                
+
                 case 'status':
                     return $this->showStatus($webSocketManager);
-                
+
                 case 'stats':
                     return $this->showStats($webSocketManager);
-                
+
                 default:
                     $this->error("Unknown action: {$action}");
                     $this->info("Available actions: start, stop, status, stats");
@@ -58,7 +58,7 @@ class StreamingServerCommand extends Command
             $this->info("✅ WebSocket server started successfully!");
             $this->info("Server is listening for connections...");
             $this->info("Press Ctrl+C to stop the server.");
-            
+
             // Keep the command running
             while (true) {
                 sleep(1);
@@ -136,7 +136,7 @@ class StreamingServerCommand extends Command
         if (isset($stats['connections_by_session'])) {
             $this->newLine();
             $this->info('Active Sessions:');
-            
+
             $sessionData = [];
             foreach ($stats['connections_by_session'] as $sessionId => $connectionCount) {
                 $sessionData[] = [$sessionId, $connectionCount];
@@ -176,7 +176,7 @@ class StreamingServerCommand extends Command
     {
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
         $factor = floor(log($bytes, 1024));
-        
+
         return round($bytes / pow(1024, $factor), 2) . ' ' . $units[$factor];
     }
 }

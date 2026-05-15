@@ -10,7 +10,7 @@ use LaravelAIEngine\Console\Commands\Node\Concerns\RequiresMasterNode;
 class PingNodesCommand extends Command
 {
     use RequiresMasterNode;
-    protected $signature = 'ai-engine:node-ping {--all}';
+    protected $signature = 'ai:node-ping {--all}';
     protected $description = 'Ping nodes to check health';
     
     public function handle(NodeRegistryService $registry)

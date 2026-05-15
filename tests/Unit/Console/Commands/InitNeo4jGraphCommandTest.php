@@ -13,7 +13,7 @@ class InitNeo4jGraphCommandTest extends TestCase
     public function test_command_exists(): void
     {
         $this->assertTrue(class_exists(InitNeo4jGraphCommand::class));
-        $this->assertSame('ai-engine:neo4j-init', (new InitNeo4jGraphCommand())->getName());
+        $this->assertSame('ai:neo4j-init', (new InitNeo4jGraphCommand())->getName());
     }
 
     public function test_command_initializes_schema_with_overrides(): void
@@ -22,7 +22,7 @@ class InitNeo4jGraphCommandTest extends TestCase
         $mock->shouldReceive('ensureSchema')->once()->andReturn(true);
         $this->app->instance(Neo4jGraphSyncService::class, $mock);
 
-        $exitCode = Artisan::call('ai-engine:neo4j-init', [
+        $exitCode = Artisan::call('ai:neo4j-init', [
             '--url' => 'http://neo4j.test',
             '--database' => 'tenant_graph',
             '--username' => 'neo4j',
@@ -57,7 +57,7 @@ class InitNeo4jGraphCommandTest extends TestCase
         $mock->shouldReceive('ensureSchema')->once()->andReturn(false);
         $this->app->instance(Neo4jGraphSyncService::class, $mock);
 
-        $exitCode = Artisan::call('ai-engine:neo4j-init');
+        $exitCode = Artisan::call('ai:neo4j-init');
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('Neo4j schema initialization failed.', Artisan::output());

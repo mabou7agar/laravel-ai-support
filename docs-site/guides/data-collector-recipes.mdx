@@ -188,8 +188,8 @@ class PurchaseOrderCollector implements DiscoverableAutonomousCollector
 Then discover and register:
 
 ```bash
-php artisan ai-engine:autonomous-collectors --discover
-php artisan ai-engine:clear-discovery-cache --warm
+php artisan ai:autonomous-collectors --discover
+php artisan ai:clear-discovery-cache --warm
 ```
 
 ## Recipe 6: Localization-First Collector
@@ -215,6 +215,6 @@ Recommendation: keep business prompts in locale templates and lexicons rather th
 
 ```bash
 php artisan ai:test-data-collector --preset=support --detect-locale
-php artisan ai-engine:autonomous-collectors --discover --nodes
-php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
+php artisan ai:autonomous-collectors --discover --nodes
+php artisan ai:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 ```

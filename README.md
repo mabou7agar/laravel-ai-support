@@ -2,7 +2,7 @@
 
 Laravel AI Engine is a Laravel package for AI chat orchestration, deterministic tool execution, GraphRAG/RAG, and node federation across multiple Laravel apps.
 
-## Status (March 2026)
+## Status (May 2026)
 
 Current codebase includes:
 
@@ -133,68 +133,68 @@ That produces names like `chunk_embedding_index_billing_app` and `embedding_bill
 ### Diagnostics
 
 ```bash
-php artisan ai-engine:test-package
-php artisan ai-engine:test-everything
-php artisan ai-engine:test-everything --profile=graph
-php artisan ai-engine:test-everything --profile=all --root-path=/path/to/root/app
-php artisan ai-engine:backend-status
-php artisan ai-engine:model-status "App\\Models\\Project"
-php artisan ai-engine:test-real-agent --script=followup --json
-php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
-php artisan ai-engine:infra-health
+php artisan ai:test-package
+php artisan ai:test-everything
+php artisan ai:test-everything --profile=graph
+php artisan ai:test-everything --profile=all --root-path=/path/to/root/app
+php artisan ai:backend-status
+php artisan ai:model-status "App\\Models\\Project"
+php artisan ai:test-real-agent --script=followup --json
+php artisan ai:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
+php artisan ai:infra-health
 ```
 
-`ai-engine:test-everything` is the umbrella validation command:
+`ai:test-everything` is the umbrella validation command:
 
 - `safe`: package graph and chat slices, plus root mocked chat route when available
 - `graph`: safe plus package live Neo4j graph checks
 - `full`: graph plus root-app live graph/chat tests
 - `all`: full plus billed provider live matrix
 
-`ai-engine:backend-status` shows the effective read backend and whether Neo4j is active or falling back.
+`ai:backend-status` shows the effective read backend and whether Neo4j is active or falling back.
 
-`ai-engine:model-status "App\\Models\\Project"` shows whether a model is ready for indexing, graph publishing, and chat retrieval. Use `--id=<record>` to inspect a real row instead of a blank instance, which is useful when a model only becomes indexable after required attributes are populated.
+`ai:model-status "App\\Models\\Project"` shows whether a model is ready for indexing, graph publishing, and chat retrieval. Use `--id=<record>` to inspect a real row instead of a blank instance, which is useful when a model only becomes indexable after required attributes are populated.
 
-`ai-engine:test-real-agent` includes only generic built-in scripts: `minimal` and `followup`. Use repeated `--message` options for quick checks, and use `--script-file` for app-specific business flows.
+`ai:test-real-agent` includes only generic built-in scripts: `minimal` and `followup`. Use repeated `--message` options for quick checks, and use `--script-file` for app-specific business flows.
 
 ### Federation (Safe Flow)
 
 ```bash
-php artisan ai-engine:node-list
-php artisan ai-engine:node-ping --all
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
-php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
+php artisan ai:node-list
+php artisan ai:node-ping --all
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --autofix
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+php artisan ai:node-cleanup --status=error --days=0 --apply --force
 ```
 
 ### Neo4j GraphRAG and Knowledge Base
 
 ```bash
-php artisan ai-engine:neo4j-init
-php artisan ai-engine:neo4j-sync --fresh
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-diagnose
-php artisan ai-engine:neo4j-repair --apply
-php artisan ai-engine:neo4j-drift --repair --prune
-php artisan ai-engine:neo4j-benchmark "who owns Apollo?" --iterations=5
-php artisan ai-engine:neo4j-index-benchmark "App\\Models\\Project" --limit=10
-php artisan ai-engine:neo4j-load-benchmark --profile=steady
-php artisan ai-engine:neo4j-load-benchmark --mode=mixed --iterations=50 --concurrency=4
-php artisan ai-engine:chat-benchmark "What changed for Apollo?" --iterations=3
-php artisan ai-engine:benchmark-history --type=retrieval --limit=10
-php artisan ai-engine:graph-ranking-feedback relationship
-php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
-php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai:neo4j-init
+php artisan ai:neo4j-sync --fresh
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-diagnose
+php artisan ai:neo4j-repair --apply
+php artisan ai:neo4j-drift --repair --prune
+php artisan ai:neo4j-benchmark "who owns Apollo?" --iterations=5
+php artisan ai:neo4j-index-benchmark "App\\Models\\Project" --limit=10
+php artisan ai:neo4j-load-benchmark --profile=steady
+php artisan ai:neo4j-load-benchmark --mode=mixed --iterations=50 --concurrency=4
+php artisan ai:chat-benchmark "What changed for Apollo?" --iterations=3
+php artisan ai:benchmark-history --type=retrieval --limit=10
+php artisan ai:graph-ranking-feedback relationship
+php artisan ai:neo4j-kb-warm --from-profiles --canonical-user-id=1
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
 ```
 
 ### Prompt Policy Learning (Policy-Level)
 
 ```bash
-php artisan ai-engine:decision-feedback:report
-php artisan ai-engine:decision-policy:evaluate --window-hours=48
-php artisan ai-engine:decision-policy:create v2 --activate
-php artisan ai-engine:decision-policy:activate 2
+php artisan ai:decision-feedback:report
+php artisan ai:decision-policy:evaluate --window-hours=48
+php artisan ai:decision-policy:create v2 --activate
+php artisan ai:decision-policy:activate 2
 ```
 
 ## Entity List UX (Important)
@@ -522,9 +522,9 @@ Gemini defaults to `AI_GEMINI_RATE=1.2`, giving Gemini usage a 20% margin by def
 Use the pricing audit and dry-run commands before enabling live traffic:
 
 ```bash
-php artisan ai-engine:pricing-audit --json
-php artisan ai-engine:pricing-audit --fail-on-warning
-php artisan ai-engine:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video --parameters='{"image_url":"https://example.test/product.png"}'
+php artisan ai:pricing-audit --json
+php artisan ai:pricing-audit --fail-on-warning
+php artisan ai:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video --parameters='{"image_url":"https://example.test/product.png"}'
 ```
 
 Apps can also call `POST /api/v1/ai/pricing/preview` with `engine`, `model`, `prompt`, and `parameters` to show the same credit breakdown before making a live provider request.

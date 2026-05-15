@@ -10,7 +10,7 @@ class CleanupNodesCommand extends Command
 {
     use RequiresMasterNode;
 
-    protected $signature = 'ai-engine:node-cleanup
+    protected $signature = 'ai:node-cleanup
                             {--status=error,inactive : Comma-separated statuses to target}
                             {--days=14 : Consider nodes stale after this many days}
                             {--include-master : Include master nodes in cleanup}

@@ -26,7 +26,7 @@ class SyncNeo4jGraphCommandTest extends TestCase
     public function test_command_exists(): void
     {
         $this->assertTrue(class_exists(SyncNeo4jGraphCommand::class));
-        $this->assertSame('ai-engine:neo4j-sync', (new SyncNeo4jGraphCommand())->getName());
+        $this->assertSame('ai:neo4j-sync', (new SyncNeo4jGraphCommand())->getName());
     }
 
     public function test_command_discovers_and_syncs_records_with_fresh_option(): void
@@ -44,7 +44,7 @@ class SyncNeo4jGraphCommandTest extends TestCase
         $discovery->shouldReceive('discover')->once()->with(false, false)->andReturn([CommandGraphSyncModel::class]);
         $this->app->instance(RAGCollectionDiscovery::class, $discovery);
 
-        $exitCode = Artisan::call('ai-engine:neo4j-sync', [
+        $exitCode = Artisan::call('ai:neo4j-sync', [
             '--fresh' => true,
             '--batch' => 1,
         ]);

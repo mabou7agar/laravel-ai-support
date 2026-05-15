@@ -9,7 +9,7 @@ use LaravelAIEngine\Console\Commands\Node\Concerns\RequiresMasterNode;
 class ListNodesCommand extends Command
 {
     use RequiresMasterNode;
-    protected $signature = 'ai-engine:node-list
+    protected $signature = 'ai:node-list
                             {--status= : Filter by status}
                             {--type= : Filter by type}';
     

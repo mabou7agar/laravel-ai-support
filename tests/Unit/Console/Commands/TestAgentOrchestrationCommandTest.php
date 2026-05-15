@@ -56,7 +56,7 @@ class TestAgentOrchestrationCommandTest extends UnitTestCase
         $this->app->instance(AgentOrchestrationInspector::class, $inspector);
         $this->app->instance(TestEverythingRunner::class, $runner);
 
-        $this->artisan('ai-engine:test-orchestration')
+        $this->artisan('ai:test-orchestration')
             ->expectsOutput('Agent orchestration graph')
             ->expectsOutput('No missing links or complexity violations found.')
             ->expectsOutput('Agent orchestration links and focused tests passed.')
@@ -95,7 +95,7 @@ class TestAgentOrchestrationCommandTest extends UnitTestCase
         $this->app->instance(AgentOrchestrationInspector::class, $inspector);
         $this->app->instance(TestEverythingRunner::class, $runner);
 
-        $this->artisan('ai-engine:test-orchestration', ['--no-phpunit' => true])
+        $this->artisan('ai:test-orchestration', ['--no-phpunit' => true])
             ->expectsOutput('Agent orchestration graph')
             ->assertFailed();
     }

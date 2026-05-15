@@ -1,6 +1,6 @@
 ---
 title: Data Collectors
-description: Full guide for classic and autonomous data collection, from config to API and node federation.
+description: Full guide for guided and autonomous data collection, from config to API and node federation.
 ---
 
 ## What You Have
@@ -8,7 +8,7 @@ description: Full guide for classic and autonomous data collection, from config 
 The package ships with two collector modes:
 
 - `DataCollectorConfig` + `DataCollectorService`: field-first guided collection.
-- `AutonomousCollectorConfig` + `AutonomousCollectorService`: goal-first autonomous collection with tools.
+- `AutonomousCollectorConfig` + `AutonomousCollectorSessionService`: goal-first autonomous collection with tools.
 
 Use guided collector when you know the exact fields you need. Use autonomous collector when the AI needs more freedom to discover and assemble structured output.
 
@@ -228,11 +228,11 @@ Discovery sources:
 Useful commands:
 
 ```bash
-php artisan ai-engine:autonomous-collectors --discover
-php artisan ai-engine:autonomous-collectors --discover --local-only
-php artisan ai-engine:autonomous-collectors --discover --remote-only
-php artisan ai-engine:clear-discovery-cache --warm
-php artisan ai-engine:warm-discovery-cache --force
+php artisan ai:autonomous-collectors --discover
+php artisan ai:autonomous-collectors --discover --local-only
+php artisan ai:autonomous-collectors --discover --remote-only
+php artisan ai:clear-discovery-cache --warm
+php artisan ai:warm-discovery-cache --force
 ```
 
 ## Federation Behavior
@@ -241,7 +241,7 @@ Remote nodes advertise autonomous collectors through node `manifest` and `health
 
 - Local collector configs execute in-process.
 - Remote collector metadata is used for routing decisions across nodes.
-- Run `php artisan ai-engine:node-ping --all` and `php artisan ai-engine:autonomous-collectors --nodes` to verify visibility.
+- Run `php artisan ai:node-ping --all` and `php artisan ai:autonomous-collectors --nodes` to verify visibility.
 
 ## Testing Playbook
 
@@ -250,7 +250,7 @@ Remote nodes advertise autonomous collectors through node `manifest` and `health
 php artisan ai:test-data-collector --preset=course --engine=openai --model=gpt-4o
 
 # discover and list autonomous collectors
-php artisan ai-engine:autonomous-collectors --discover --nodes
+php artisan ai:autonomous-collectors --discover --nodes
 ```
 
 For API tests, cover this minimum matrix:

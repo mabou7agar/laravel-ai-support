@@ -46,7 +46,6 @@ These names should not be used as new extension points:
 | `IntelligentEntityService`, `DocumentTypeAnalyzer`, `ai:test-intent` | removed | current agent/action/RAG tests and explicit app tools |
 | legacy package demo chat/auth routes, `AIChatController`, `AuthController`, bundled chat Blade widgets, and demo JS assets | removed | versioned package APIs, application-owned UI, and app-defined auth |
 | stale intelligent/entity prompt resources | removed | current action intake, data collector, autonomous collector, agent skill, and RAG prompt resources |
-| `ai-engine:sync-engine-models` | removed from the v2 plan | catalog/model sync commands that remain registered |
 
 Move new behavior into the narrower runtime, routing, execution, RAG, provider-tool, credit, or audit services.
 
@@ -72,20 +71,20 @@ Run storage, retention, queue safety, and event streaming live under `ai-agent.r
 New v2 runtime commands:
 
 ```bash
-php artisan ai-engine:agent-runtime:capabilities
-php artisan ai-engine:agent-runtime:validate
-php artisan ai-engine:agent-runs:recover-stuck
-php artisan ai-engine:agent-runs:cleanup-expired
-php artisan ai-engine:agent-runs:retention-cleanup
-php artisan ai-engine:agent-runs:replay-step {step}
+php artisan ai:runtime-capabilities
+php artisan ai:validate-runtime-config
+php artisan ai:agent-runs:recover-stuck
+php artisan ai:agent-runs:cleanup-expired
+php artisan ai:agent-runs:retention-cleanup
+php artisan ai:agent-runs:replay-step {step}
 ```
 
 Scaffolding is still routed through the existing scaffold command where possible:
 
 ```bash
-php artisan ai-engine:scaffold routing-stage BillingQuestion
-php artisan ai-engine:scaffold execution-handler SendInvoice
-php artisan ai-engine:scaffold runtime MyRuntime
+php artisan ai:scaffold routing-stage BillingQuestion
+php artisan ai:scaffold execution-handler SendInvoice
+php artisan ai:scaffold runtime MyRuntime
 ```
 
 ## Old-To-New Flow
@@ -102,14 +101,14 @@ php artisan ai-engine:scaffold runtime MyRuntime
 Use the existing test command for package-level smoke checks:
 
 ```bash
-php artisan ai-engine:test-orchestration --json
+php artisan ai:test-orchestration --json
 ```
 
 Provider-backed checks remain opt-in because they can create billed calls:
 
 ```bash
-AI_ENGINE_RUN_LIVE_TESTS=true php artisan ai-engine:test-orchestration
-AI_ENGINE_RUN_NEO4J_LIVE_TESTS=true php artisan ai-engine:test-orchestration
+AI_ENGINE_RUN_LIVE_TESTS=true php artisan ai:test-orchestration
+AI_ENGINE_RUN_NEO4J_LIVE_TESTS=true php artisan ai:test-orchestration
 ```
 
 Demo fixtures are intentionally separate from package core. Keep demo tables and seeders generic: projects, tasks, customers, invoices, documents, tenant/workspace scope, approval-required tool runs, credit-limited users, and graph-linked records.

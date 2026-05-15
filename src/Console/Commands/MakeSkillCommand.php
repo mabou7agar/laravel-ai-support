@@ -6,7 +6,7 @@ namespace LaravelAIEngine\Console\Commands;
 
 class MakeSkillCommand extends ScaffoldAgentArtifactCommand
 {
-    protected $signature = 'ai-engine:make-skill
+    protected $signature = 'ai:make-skill
                             {name? : Class name (e.g. CreateInvoice)}
                             {--description= : Description text used in generated class}
                             {--force : Overwrite file if it already exists}

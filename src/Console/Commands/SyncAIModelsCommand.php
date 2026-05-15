@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\AIModelRegistry;
 
 class SyncAIModelsCommand extends Command
 {
-    protected $signature = 'ai-engine:sync-models
+    protected $signature = 'ai:sync-models
                             {--provider= : Sync specific provider (openai, anthropic, google, gemini, deepseek, openrouter, fal_ai, fal, media, cloudflare_workers_ai, huggingface, replicate, comfyui, all)}
                             {--auto-discover : Auto-discover new models from APIs}';
 

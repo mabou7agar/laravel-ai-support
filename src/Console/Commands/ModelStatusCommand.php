@@ -19,7 +19,7 @@ use Throwable;
 
 class ModelStatusCommand extends Command
 {
-    protected $signature = 'ai-engine:model-status
+    protected $signature = 'ai:model-status
                             {model : Fully-qualified model class}
                             {--id= : Optional record id to inspect}
                             {--json : Output a JSON payload instead of tables}';

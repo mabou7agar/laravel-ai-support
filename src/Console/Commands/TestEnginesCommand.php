@@ -11,7 +11,7 @@ use LaravelAIEngine\Exceptions\AIEngineException;
 
 class TestEnginesCommand extends Command
 {
-    protected $signature = 'ai-engine:test-engines 
+    protected $signature = 'ai:test-engines
                            {--engine= : Test specific engine only}
                            {--model= : Test specific model only}
                            {--timeout=30 : Request timeout in seconds}

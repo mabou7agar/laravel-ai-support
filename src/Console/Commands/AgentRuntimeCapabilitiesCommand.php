@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeCapabilityService;
 
 class AgentRuntimeCapabilitiesCommand extends Command
 {
-    protected $signature = 'ai-engine:runtime-capabilities
+    protected $signature = 'ai:runtime-capabilities
                             {--json : Print JSON report}';
 
     protected $description = 'Inspect configured agent runtime capabilities';

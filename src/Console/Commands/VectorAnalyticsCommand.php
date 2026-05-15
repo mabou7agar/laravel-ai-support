@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Vector\VectorAnalyticsService;
 
 class VectorAnalyticsCommand extends Command
 {
-    protected $signature = 'ai-engine:vector-analytics
+    protected $signature = 'ai:vector-analytics
                             {--user= : User ID to get analytics for}
                             {--model= : Model class to get analytics for}
                             {--days=30 : Number of days to analyze}

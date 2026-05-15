@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 
 class DecisionPolicyActivateCommand extends Command
 {
-    protected $signature = 'ai-engine:decision-policy:activate
+    protected $signature = 'ai:decision-policy:activate
                             {id : Policy version ID}
                             {--status=active : Target status (active|canary|shadow)}
                             {--json : Output JSON payload}';

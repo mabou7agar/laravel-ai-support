@@ -39,8 +39,8 @@ AI_ENGINE_GRAPH_READS_PREFER_CENTRAL=false
 Then:
 
 ```bash
-php artisan ai-engine:neo4j-init
-php artisan ai-engine:neo4j-sync --fresh
+php artisan ai:neo4j-init
+php artisan ai:neo4j-sync --fresh
 ```
 
 At this stage, you are publishing graph state but not yet preferring graph reads.
@@ -48,8 +48,8 @@ At this stage, you are publishing graph state but not yet preferring graph reads
 ### Phase 3: Verify Graph Integrity
 
 ```bash
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-diagnose
 ```
 
 Check:
@@ -71,7 +71,7 @@ Now semantic retrieval uses central Neo4j.
 ### Phase 5: Warm the KB
 
 ```bash
-php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
 ```
 
 ## Migration Checklist
@@ -124,8 +124,8 @@ Use current keys:
 Recommended validation path:
 
 ```bash
-php artisan ai-engine:test-package
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:test-package
+php artisan ai:neo4j-diagnose
 ```
 
 Then verify a real semantic query and a real follow-up in the host app.

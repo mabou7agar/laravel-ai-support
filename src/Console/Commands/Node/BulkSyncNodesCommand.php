@@ -11,7 +11,7 @@ class BulkSyncNodesCommand extends Command
 {
     use RequiresMasterNode;
 
-    protected $signature = 'ai-engine:nodes-sync
+    protected $signature = 'ai:nodes-sync
                             {--file= : Path to node definitions (.php or .json)}
                             {--autofix : Auto-fix common payload issues before planning}
                             {--autofix-strict : Use strict auto-fix mode (safe normalization only)}

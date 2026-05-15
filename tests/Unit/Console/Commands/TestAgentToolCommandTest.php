@@ -19,7 +19,7 @@ class TestAgentToolCommandTest extends UnitTestCase
         ]);
         $this->app->forgetInstance(ToolRegistry::class);
 
-        $exitCode = Artisan::call('ai-engine:tools:test', [
+        $exitCode = Artisan::call('ai:tools:test', [
             'tool' => 'echo_tool',
             '--payload' => '{"text":"hello"}',
             '--user' => '42',
@@ -38,7 +38,7 @@ class TestAgentToolCommandTest extends UnitTestCase
 
     public function test_tool_test_command_reports_invalid_json_payload(): void
     {
-        $exitCode = Artisan::call('ai-engine:tools:test', [
+        $exitCode = Artisan::call('ai:tools:test', [
             'tool' => 'echo_tool',
             '--payload' => '{bad',
             '--json' => true,

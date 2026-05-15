@@ -28,10 +28,10 @@ All return standard envelope keys: `success`, `message`, `data`, `error`, `meta`
 
 ## Built-in Console Commands
 
-- `php artisan ai-engine:generate-character`
-- `php artisan ai-engine:generate-reference-pack`
-- `php artisan ai-engine:test-ai-media`
-- `php artisan ai-engine:test-fal-media`
+- `php artisan ai:generate-character`
+- `php artisan ai:generate-reference-pack`
+- `php artisan ai:test-ai-media`
+- `php artisan ai:test-fal-media`
 
 ## Credit behavior
 
@@ -65,7 +65,7 @@ When upload succeeds, media responses return your disk URL instead of the provid
 Quick verification:
 
 ```bash
-php artisan ai-engine:test-ai-media --write-test --cleanup
+php artisan ai:test-ai-media --write-test --cleanup
 ```
 
 ## 1) Text generation (HTTP)
@@ -257,7 +257,7 @@ curl -X POST https://your-app.test/api/v1/ai/generate/tts \
 Attach the voice when saving the character:
 
 ```bash
-php artisan ai-engine:generate-character "Front-facing portrait of Mina" \
+php artisan ai:generate-character "Front-facing portrait of Mina" \
   --name="Mina" \
   --save-as="hero-mina" \
   --voice-id="pNInz6obpgDQGcFmaJgB" \
@@ -351,7 +351,7 @@ $videoFiles = $response->getFiles();
 Generate a reusable Nano Banana character set and save it for later Kling/Seedance scenes.
 
 ```bash
-php artisan ai-engine:generate-character \
+php artisan ai:generate-character \
   "Front-facing cinematic portrait of Mina, full body, clean background" \
   --name=Mina \
   --save-as=mina \
@@ -366,7 +366,7 @@ Character/reference-pack commands queue by default. Add `--wait` if you want the
 If you want to approve the identity first, generate only the preview/base image:
 
 ```bash
-php artisan ai-engine:generate-character \
+php artisan ai:generate-character \
   "Front-facing cinematic portrait of Mina, full body, clean background" \
   --name=Mina \
   --save-as=mina-preview \
@@ -376,7 +376,7 @@ php artisan ai-engine:generate-character \
 Then expand that approved preview into the full reference set:
 
 ```bash
-php artisan ai-engine:generate-character \
+php artisan ai:generate-character \
   "Front-facing cinematic portrait of Mina, full body, clean background" \
   --name=Mina \
   --save-as=mina \
@@ -416,7 +416,7 @@ Recommended usage:
 Production reference example with one script-derived look held constant across views:
 
 ```bash
-php artisan ai-engine:generate-character \
+php artisan ai:generate-character \
   "Front-facing cinematic portrait of Mina, full body, clean background" \
   --name=Mina \
   --save-as=mina-production \
@@ -429,7 +429,7 @@ php artisan ai-engine:generate-character \
 Exploration example that starts from an approved look but still allows downstream vendor variants:
 
 ```bash
-php artisan ai-engine:generate-character \
+php artisan ai:generate-character \
   "Front-facing cinematic portrait of Mina, full body, clean background" \
   --name=Mina \
   --save-as=mina-guided \
@@ -443,7 +443,7 @@ php artisan ai-engine:generate-character \
 Multi-look production example with an exact stored look set in exact order:
 
 ```bash
-php artisan ai-engine:generate-character \
+php artisan ai:generate-character \
   "Front-facing cinematic portrait of Mina, full body, clean background" \
   --name=Mina \
   --save-as=mina-scene-pack \
@@ -492,7 +492,7 @@ Then reuse it later with `--use-character=mina` or `--use-last-character`.
 The generic service/command can create reference packs for objects, furniture, vehicles, products, props, and creatures too.
 
 ```bash
-php artisan ai-engine:generate-reference-pack \
+php artisan ai:generate-reference-pack \
   "Modern curved couch, premium fabric, clean studio background" \
   --entity-type=furniture \
   --name="Modern Couch" \
@@ -504,7 +504,7 @@ php artisan ai-engine:generate-reference-pack \
 Preview-first flow also works for non-character entities:
 
 ```bash
-php artisan ai-engine:generate-reference-pack \
+php artisan ai:generate-reference-pack \
   "Modern curved couch, premium fabric, clean studio background" \
   --entity-type=furniture \
   --save-as=modern-couch-preview \
@@ -514,7 +514,7 @@ php artisan ai-engine:generate-reference-pack \
 If you need to force inline execution during local debugging:
 
 ```bash
-php artisan ai-engine:generate-reference-pack \
+php artisan ai:generate-reference-pack \
   "Modern curved couch, premium fabric, clean studio background" \
   --entity-type=furniture \
   --save-as=modern-couch-preview \
@@ -525,7 +525,7 @@ php artisan ai-engine:generate-reference-pack \
 Strict stored mode also works for generic reference packs when the host app already chose the approved look/material direction:
 
 ```bash
-php artisan ai-engine:generate-reference-pack \
+php artisan ai:generate-reference-pack \
   "Modern curved couch, premium fabric, clean studio background" \
   --entity-type=furniture \
   --save-as=modern-couch-production \
@@ -538,7 +538,7 @@ php artisan ai-engine:generate-reference-pack \
 Exact stored-look-set mode also works for products, furniture, and props:
 
 ```bash
-php artisan ai-engine:generate-reference-pack \
+php artisan ai:generate-reference-pack \
   "Modern curved couch, premium fabric, clean studio background" \
   --entity-type=furniture \
   --save-as=modern-couch-scene-pack \
@@ -562,7 +562,7 @@ php artisan ai-engine:generate-reference-pack \
 Queue a long character workflow instead of waiting in the terminal:
 
 ```bash
-php artisan ai-engine:generate-character \
+php artisan ai:generate-character \
   "Front-facing cinematic portrait of Mina, full body, clean background" \
   --name=Mina \
   --save-as=mina \
@@ -574,13 +574,13 @@ php artisan ai-engine:generate-character \
 Check local queued workflow status:
 
 ```bash
-php artisan ai-engine:generate-character --job-status=YOUR_JOB_ID
+php artisan ai:generate-character --job-status=YOUR_JOB_ID
 ```
 
 ## 14) Console video generation from saved character
 
 ```bash
-php artisan ai-engine:test-fal-media \
+php artisan ai:test-fal-media \
   "Mina walks toward camera in a neon alley" \
   --use-character=mina \
   --user-id=123
@@ -595,7 +595,7 @@ Repeat `--use-character`, `--character`, `--reference-image-url`, and `--shot`.
 - first reference image becomes `@Image1`
 
 ```bash
-php artisan ai-engine:test-fal-media \
+php artisan ai:test-fal-media \
   --use-character=mina \
   --use-character=ray \
   --reference-image-url=https://cdn.example.com/cafe-scene.png \
@@ -609,7 +609,7 @@ php artisan ai-engine:test-fal-media \
 Use `--async` to enqueue a long-running FAL video job and print a local `job_id`.
 
 ```bash
-php artisan ai-engine:test-fal-media \
+php artisan ai:test-fal-media \
   "A cinematic chase through a flooded cyberpunk alley" \
   --model=bytedance/seedance-2.0/text-to-video \
   --resolution=720p \
@@ -619,7 +619,7 @@ php artisan ai-engine:test-fal-media \
 Wait locally by polling the job tracker:
 
 ```bash
-php artisan ai-engine:test-fal-media \
+php artisan ai:test-fal-media \
   "A cinematic chase through a flooded cyberpunk alley" \
   --model=bytedance/seedance-2.0/text-to-video \
   --resolution=720p \
@@ -632,7 +632,7 @@ php artisan ai-engine:test-fal-media \
 Inspect an existing async job:
 
 ```bash
-php artisan ai-engine:test-fal-media \
+php artisan ai:test-fal-media \
   --job-status=local-job-id \
   --refresh-status
 ```
@@ -642,7 +642,7 @@ php artisan ai-engine:test-fal-media \
 Use `--dry-run` to inspect the normalized request without calling FAL.
 
 ```bash
-php artisan ai-engine:test-fal-media \
+php artisan ai:test-fal-media \
   "Create 3 keyframes for Mina" \
   --frame-count=3 \
   --aspect-ratio=16:9 \

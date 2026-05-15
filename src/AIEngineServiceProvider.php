@@ -364,7 +364,7 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->callAfterResolving(\Illuminate\Console\Scheduling\Schedule::class, function ($schedule) {
             // Ping nodes every 5 minutes (if nodes are enabled)
             if (config('ai-engine.nodes.enabled', false)) {
-                $schedule->command('ai-engine:node-ping --all')
+                $schedule->command('ai:node-ping --all')
                     ->everyFiveMinutes()
                     ->withoutOverlapping()
                     ->runInBackground()

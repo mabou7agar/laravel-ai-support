@@ -20,24 +20,23 @@ vendor/bin/phpunit tests/Unit/Services/Agent tests/Unit/Services/RAG
 ## 2) Node Runtime Checks
 
 ```bash
-php artisan ai-engine:test-nodes --quick
-php artisan ai-engine:node-ping --all
-php artisan ai-engine:node-list
+php artisan ai:node-ping --all
+php artisan ai:node-list
 ```
 
 ## 3) Real Agent Flows
 
 ```bash
-php artisan ai-engine:test-real-agent --script=minimal --json
-php artisan ai-engine:test-real-agent --script=followup --json
-php artisan ai-engine:test-real-agent --message="list recent records" --message="what is status of first one" --json
-php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
+php artisan ai:test-real-agent --script=minimal --json
+php artisan ai:test-real-agent --script=followup --json
+php artisan ai:test-real-agent --message="list recent records" --message="what is status of first one" --json
+php artisan ai:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 ```
 
 ## 4) Infrastructure Checks
 
 ```bash
-php artisan ai-engine:infra-health
+php artisan ai:infra-health
 ```
 
 ## 5) Regression Focus
@@ -55,9 +54,9 @@ Always verify:
 ## 6) GraphRAG Runtime Checks
 
 ```bash
-php artisan ai-engine:neo4j-diagnose
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai:neo4j-diagnose
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
 ```
 
 Always verify:

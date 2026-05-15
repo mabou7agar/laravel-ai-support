@@ -11,7 +11,7 @@ class ValidateAgentRuntimeConfigCommandTest extends UnitTestCase
 {
     public function test_command_succeeds_for_valid_runtime_config(): void
     {
-        $exitCode = Artisan::call('ai-engine:validate-runtime-config', ['--json' => true]);
+        $exitCode = Artisan::call('ai:validate-runtime-config', ['--json' => true]);
         $payload = json_decode(Artisan::output(), true);
 
         $this->assertSame(0, $exitCode);
@@ -23,7 +23,7 @@ class ValidateAgentRuntimeConfigCommandTest extends UnitTestCase
     {
         config()->set('ai-agent.runtime.default', 'invalid');
 
-        $exitCode = Artisan::call('ai-engine:validate-runtime-config', ['--json' => true]);
+        $exitCode = Artisan::call('ai:validate-runtime-config', ['--json' => true]);
         $payload = json_decode(Artisan::output(), true);
 
         $this->assertSame(1, $exitCode);

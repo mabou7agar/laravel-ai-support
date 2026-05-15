@@ -9,7 +9,7 @@ use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class InfrastructureHealthCommand extends Command
 {
-    protected $signature = 'ai-engine:infra-health
+    protected $signature = 'ai:infra-health
                             {--json : Output report as JSON}
                             {--fail-on-unhealthy : Exit with failure status when checks are not ready}';
 

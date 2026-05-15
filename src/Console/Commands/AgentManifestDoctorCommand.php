@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Agent\AgentManifestDoctor;
 
 class AgentManifestDoctorCommand extends Command
 {
-    protected $signature = 'ai-engine:manifest:doctor
+    protected $signature = 'ai:manifest:doctor
                             {--json : Output diagnostics as JSON}';
 
     protected $description = 'Inspect agent manifest skills, actions, tools, and flow references';

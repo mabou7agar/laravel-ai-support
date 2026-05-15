@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\Graph\Neo4jHttpTransport;
 
 class Neo4jGraphRepairCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-repair
+    protected $signature = 'ai:neo4j-repair
                             {--apply : Apply repairs instead of dry-run diagnostics}
                             {--url=}
                             {--database=}

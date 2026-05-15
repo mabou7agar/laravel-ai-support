@@ -10,7 +10,7 @@ use Throwable;
 
 class SyncNeo4jGraphCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-sync
+    protected $signature = 'ai:neo4j-sync
                             {model? : The model class to sync (optional - syncs all discovered vectorizable models if omitted)}
                             {--id=* : Specific model IDs to sync}
                             {--batch=100 : Batch size for bulk sync}

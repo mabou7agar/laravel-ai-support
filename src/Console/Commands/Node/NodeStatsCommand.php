@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Node\NodeRegistryService;
 class NodeStatsCommand extends Command
 {
     use RequiresMasterNode;
-    protected $signature = 'ai-engine:node-stats';
+    protected $signature = 'ai:node-stats';
     protected $description = 'Show node statistics';
     
     public function handle(NodeRegistryService $registry)

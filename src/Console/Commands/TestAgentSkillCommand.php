@@ -11,7 +11,7 @@ use LaravelAIEngine\Services\Agent\AgentSkillMatcher;
 
 class TestAgentSkillCommand extends Command
 {
-    protected $signature = 'ai-engine:skills:test
+    protected $signature = 'ai:skills:test
                             {message : User message to match against enabled skills}
                             {--include-disabled : Include disabled draft skills}
                             {--smart : Use AI intent matching when deterministic triggers do not match}

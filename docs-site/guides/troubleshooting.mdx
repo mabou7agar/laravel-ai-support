@@ -15,7 +15,7 @@ Check:
 
 Expected for child apps.
 
-`ai-engine:node-*` registry commands should run on master only.
+`ai:node-*` registry commands should run on master only.
 
 ## 3) Follow-up answers keep re-listing results
 
@@ -28,7 +28,7 @@ Check:
 Run:
 
 ```bash
-php artisan ai-engine:decision-feedback:report --json
+php artisan ai:decision-feedback:report --json
 ```
 
 ## 4) Remote routing fails
@@ -43,9 +43,9 @@ Check:
 Run:
 
 ```bash
-php artisan ai-engine:node-ping --all
-php artisan ai-engine:node-list
-php artisan ai-engine:node-update inbusiness --url="https://dash.test"
+php artisan ai:node-ping --all
+php artisan ai:node-list
+php artisan ai:node-update inbusiness --url="https://dash.test"
 ```
 
 ## 5) RAG search quality poor
@@ -59,8 +59,8 @@ Check:
 Run:
 
 ```bash
-php artisan ai-engine:vector-status
-php artisan ai-engine:vector-index "App\\Models\\Invoice" --with-relationships
+php artisan ai:vector-status
+php artisan ai:vector-index "App\\Models\\Invoice" --with-relationships
 ```
 
 ## 6) Arabic request returns English fallback text
@@ -135,7 +135,7 @@ Current behavior:
 If still failing, verify node reachability and auth headers:
 
 ```bash
-php artisan ai-engine:node-ping --all
+php artisan ai:node-ping --all
 ```
 
 ## 10) List responses are too verbose (want compact summaries)
@@ -237,8 +237,8 @@ Check:
 Run:
 
 ```bash
-php artisan ai-engine:neo4j-diagnose
-php artisan ai-engine:neo4j-sync
+php artisan ai:neo4j-diagnose
+php artisan ai:neo4j-sync
 ```
 
 ## 16) Neo4j graph exists but relations are missing
@@ -252,7 +252,7 @@ Cause is usually one of:
 Fix:
 
 ```bash
-php artisan ai-engine:neo4j-sync --fresh
+php artisan ai:neo4j-sync --fresh
 ```
 
 Then verify relation modeling rules on the affected models.
@@ -269,8 +269,8 @@ Check:
 Run:
 
 ```bash
-php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
-php artisan ai-engine:neo4j-stats
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai:neo4j-stats
 ```
 
 ## Related Graph Docs

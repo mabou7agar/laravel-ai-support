@@ -9,7 +9,7 @@ use LaravelAIEngine\Console\Commands\Node\Concerns\RequiresMasterNode;
 class UpdateNodeCommand extends Command
 {
     use RequiresMasterNode;
-    protected $signature = 'ai-engine:node-update
+    protected $signature = 'ai:node-update
                             {node : Node ID or slug}
                             {--url= : Update node URL}
                             {--name= : Update node name}

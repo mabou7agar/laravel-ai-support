@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\ModelAnalyzer;
 
 class ConfigureAllModelsCommand extends Command
 {
-    protected $signature = 'ai-engine:configure-all
+    protected $signature = 'ai:configure-all
                             {--analyze : Show detailed analysis for each model}
                             {--export= : Export configurations to a file}
                             {--format=php : Export format (php, json, markdown)}
@@ -101,7 +101,7 @@ class ConfigureAllModelsCommand extends Command
                     $options['--with-relationships'] = true;
                 }
 
-                $exitCode = $this->call('ai-engine:vector-index', array_merge($arguments, $options));
+                $exitCode = $this->call('ai:vector-index', array_merge($arguments, $options));
 
                 if ($exitCode === 0) {
                     $this->line("   ✅ Successfully indexed");
@@ -335,10 +335,10 @@ class ConfigureAllModelsCommand extends Command
             $this->line("💡 Next Steps:");
             $this->line("   1. Copy the generated configurations to your model files");
             $this->line("   2. Customize the configurations as needed");
-            $this->line("   3. Run: php artisan ai-engine:configure-all --index --with-relationships");
+            $this->line("   3. Run: php artisan ai:configure-all --index --with-relationships");
             $this->newLine();
             $this->line("💡 Or run with --index flag to index immediately:");
-            $this->line("   php artisan ai-engine:configure-all --index --with-relationships");
+            $this->line("   php artisan ai:configure-all --index --with-relationships");
             $this->newLine();
         }
     }

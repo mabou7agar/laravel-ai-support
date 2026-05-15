@@ -231,7 +231,7 @@ class ModelAnalyzer
         int $batchSize,
         bool $useQueue
     ): string {
-        $command = "php artisan ai-engine:vector-index \"{$modelClass}\"";
+        $command = "php artisan ai:vector-index \"{$modelClass}\"";
         
         if ($batchSize !== 100) {
             $command .= " --batch={$batchSize}";

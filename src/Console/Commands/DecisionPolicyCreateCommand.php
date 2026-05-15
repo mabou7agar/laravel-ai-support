@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 
 class DecisionPolicyCreateCommand extends Command
 {
-    protected $signature = 'ai-engine:decision-policy:create
+    protected $signature = 'ai:decision-policy:create
                             {--policy= : Policy key (default: decision)}
                             {--name= : Human-readable policy name}
                             {--template-path= : Prompt template path}

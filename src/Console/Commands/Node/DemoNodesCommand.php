@@ -13,7 +13,7 @@ use LaravelAIEngine\Models\AINode;
 
 class DemoNodesCommand extends Command
 {
-    protected $signature = 'ai-engine:demo-nodes
+    protected $signature = 'ai:demo-nodes
                             {--skip-registration : Skip node registration}
                             {--cleanup : Clean up demo nodes after test}';
     

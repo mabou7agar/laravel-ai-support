@@ -40,7 +40,7 @@ class LiveEndToEndAgentFlowTest extends TestCase
             $options['--local-only'] = true;
         }
 
-        $exitCode = Artisan::call('ai-engine:test-real-agent', $options);
+        $exitCode = Artisan::call('ai:test-real-agent', $options);
         $output = Artisan::output();
         $payload = json_decode($output, true);
 

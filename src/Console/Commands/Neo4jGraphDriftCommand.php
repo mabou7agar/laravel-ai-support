@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Graph\GraphDriftDetectionService;
 
 class Neo4jGraphDriftCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-drift
+    protected $signature = 'ai:neo4j-drift
                             {--model=* : Restrict scan to one or more model classes}
                             {--limit= : Limit scanned records per model}
                             {--repair : Publish missing local entities back to graph}

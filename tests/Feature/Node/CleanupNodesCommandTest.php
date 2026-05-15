@@ -31,7 +31,7 @@ class CleanupNodesCommandTest extends UnitTestCase
             'last_ping_at' => now()->subDays(30),
         ]);
 
-        $this->artisan('ai-engine:node-cleanup', [
+        $this->artisan('ai:node-cleanup', [
             '--status' => 'error',
             '--days' => 14,
         ])->assertExitCode(0);
@@ -66,7 +66,7 @@ class CleanupNodesCommandTest extends UnitTestCase
             'last_ping_at' => now()->subDays(40),
         ]);
 
-        $this->artisan('ai-engine:node-cleanup', [
+        $this->artisan('ai:node-cleanup', [
             '--status' => 'error',
             '--days' => 14,
             '--apply' => true,
@@ -103,7 +103,7 @@ class CleanupNodesCommandTest extends UnitTestCase
             'last_ping_at' => now()->subDays(30),
         ]);
 
-        $this->artisan('ai-engine:node-cleanup', [
+        $this->artisan('ai:node-cleanup', [
             '--days' => 14,
             '--delete' => true,
             '--apply' => true,
@@ -123,7 +123,7 @@ class CleanupNodesCommandTest extends UnitTestCase
             'updated_at' => now()->subMinutes(5),
         ]);
 
-        $this->artisan('ai-engine:node-cleanup', [
+        $this->artisan('ai:node-cleanup', [
             '--status' => 'error',
             '--days' => 0,
             '--apply' => true,

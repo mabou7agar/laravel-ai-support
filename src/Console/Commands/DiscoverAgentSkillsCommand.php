@@ -11,7 +11,7 @@ use LaravelAIEngine\Services\Agent\ProjectAbilityScanner;
 
 class DiscoverAgentSkillsCommand extends Command
 {
-    protected $signature = 'ai-engine:skills:discover
+    protected $signature = 'ai:skills:discover
                             {--write : Write discovered skills to the agent manifest as drafts}
                             {--enable : Enable written skills instead of creating disabled drafts}
                             {--refresh : Refresh model discovery cache}

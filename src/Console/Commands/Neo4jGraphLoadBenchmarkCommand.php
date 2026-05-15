@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Graph\Neo4jRetrievalService;
 
 class Neo4jGraphLoadBenchmarkCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-load-benchmark
+    protected $signature = 'ai:neo4j-load-benchmark
                             {--mode=retrieval : retrieval, chat, or mixed}
                             {--profile= : smoke, interactive, steady, burst, or stress}
                             {--query=* : Retrieval query payload(s)}

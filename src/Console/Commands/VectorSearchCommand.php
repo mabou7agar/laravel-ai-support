@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Vector\VectorSearchService;
 
 class VectorSearchCommand extends Command
 {
-    protected $signature = 'ai-engine:vector-search
+    protected $signature = 'ai:vector-search
                             {model : The model class to search}
                             {query : The search query}
                             {--limit=10 : Number of results to return}

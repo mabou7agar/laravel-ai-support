@@ -6,7 +6,7 @@ namespace LaravelAIEngine\Console\Commands;
 
 class MakeToolCommand extends ScaffoldAgentArtifactCommand
 {
-    protected $signature = 'ai-engine:make-tool
+    protected $signature = 'ai:make-tool
                             {name? : Class name (e.g. LookupCustomer)}
                             {--model= : Optional model class used by generated examples}
                             {--kind= : Tool template kind: simple, lookup, upsert, action}

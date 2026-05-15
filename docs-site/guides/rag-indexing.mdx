@@ -15,18 +15,18 @@ Index models when you need:
 ## Typical Workflow
 
 ```bash
-php artisan ai-engine:list-models
-php artisan ai-engine:analyze-model "App\\Models\\Invoice"
-php artisan ai-engine:vector-index "App\\Models\\Invoice" --with-relationships
-php artisan ai-engine:vector-status
+php artisan ai:list-models
+php artisan ai:analyze-model "App\\Models\\Invoice"
+php artisan ai:vector-index "App\\Models\\Invoice" --with-relationships
+php artisan ai:vector-status
 ```
 
-`ai-engine:analyze-model` is diagnostic only. It does not write to the database, create vectors, or publish graph nodes. It only reads schema metadata, reflects model relationships, and estimates record counts for sizing guidance.
+`ai:analyze-model` is diagnostic only. It does not write to the database, create vectors, or publish graph nodes. It only reads schema metadata, reflects model relationships, and estimates record counts for sizing guidance.
 
 ## Test Retrieval
 
 ```bash
-php artisan ai-engine:vector-search "overdue invoices from last month"
+php artisan ai:vector-search "overdue invoices from last month"
 ```
 
 ## GraphRAG Workflow
@@ -34,16 +34,16 @@ php artisan ai-engine:vector-search "overdue invoices from last month"
 For central Neo4j retrieval:
 
 ```bash
-php artisan ai-engine:neo4j-init
-php artisan ai-engine:neo4j-sync --fresh
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:neo4j-init
+php artisan ai:neo4j-sync --fresh
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-diagnose
 ```
 
 If integrity issues are reported:
 
 ```bash
-php artisan ai-engine:neo4j-repair --apply
+php artisan ai:neo4j-repair --apply
 ```
 
 ## Practical Guidance
@@ -91,7 +91,7 @@ Graph/vector results standardize on:
 Run infrastructure health checks:
 
 ```bash
-php artisan ai-engine:infra-health
+php artisan ai:infra-health
 ```
 
 If `qdrant_self_check` fails, fix connection first before debugging AI behavior.

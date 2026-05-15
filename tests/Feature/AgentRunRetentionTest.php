@@ -55,7 +55,7 @@ class AgentRunRetentionTest extends TestCase
         ]);
         $artifact->forceFill(['created_at' => now()->subDays(10), 'updated_at' => now()->subDays(10)])->save();
 
-        $exitCode = Artisan::call('ai-engine:agent-runs:retention-cleanup', [
+        $exitCode = Artisan::call('ai:agent-runs:retention-cleanup', [
             '--run-days' => 7,
             '--step-days' => 7,
             '--trace-days' => 7,

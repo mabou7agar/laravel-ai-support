@@ -11,7 +11,7 @@ use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
 
 class EvaluateRoutingFixturesCommand extends Command
 {
-    protected $signature = 'ai-engine:evaluate-routing-fixtures
+    protected $signature = 'ai:evaluate-routing-fixtures
                             {--path= : JSON fixture file path}
                             {--json : Print JSON report}';
 

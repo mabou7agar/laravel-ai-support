@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\UnifiedEngineManager;
 
 class SystemHealthCommand extends Command
 {
-    protected $signature = 'ai-engine:system-health 
+    protected $signature = 'ai:system-health
                             {--format=table : Output format (table, json)}
                             {--detailed : Show detailed health information}';
 
@@ -74,7 +74,7 @@ class SystemHealthCommand extends Command
         if (isset($systemStatus['health']) && !empty($systemStatus['health'])) {
             $this->info('Provider Health:');
             $health = $systemStatus['health'];
-            
+
             $overallColor = $health['status'] === 'healthy' ? 'green' : 'red';
             $this->line("Overall Status: <fg={$overallColor}>{$health['status']}</>");
             $this->line("Healthy Providers: {$health['healthy_providers']}/{$health['total_providers']}");
@@ -112,7 +112,7 @@ class SystemHealthCommand extends Command
     {
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
         $factor = floor(log($bytes, 1024));
-        
+
         return round($bytes / pow(1024, $factor), 2) . ' ' . $units[$factor];
     }
 

@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Agent\AgentRunRecoveryService;
 
 class ReplayFailedAgentRunStepCommand extends Command
 {
-    protected $signature = 'ai-engine:agent-runs:replay-step
+    protected $signature = 'ai:agent-runs:replay-step
                             {step : Failed step id or uuid}
                             {--reason= : Optional replay reason}
                             {--json : Print JSON report}';

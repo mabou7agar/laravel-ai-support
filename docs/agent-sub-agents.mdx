@@ -125,9 +125,9 @@ Sub-agents can be linked without writing another handler class:
 Validate the graph and run focused orchestration tests:
 
 ```bash
-php artisan ai-engine:test-orchestration
-php artisan ai-engine:test-orchestration --no-phpunit --json
-php artisan ai-engine:test-orchestration --max-complexity=120 --fail-on-warning
+php artisan ai:test-orchestration
+php artisan ai:test-orchestration --no-phpunit --json
+php artisan ai:test-orchestration --max-complexity=120 --fail-on-warning
 ```
 
 The command reports missing tool links, missing sub-agent links, and graph complexity before optionally running the focused agent orchestration PHPUnit stage.

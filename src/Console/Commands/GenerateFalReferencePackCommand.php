@@ -10,7 +10,7 @@ use LaravelAIEngine\Services\Fal\FalReferencePackGenerationService;
 
 class GenerateFalReferencePackCommand extends Command
 {
-    protected $signature = 'ai-engine:generate-reference-pack
+    protected $signature = 'ai:generate-reference-pack
                             {prompt? : Prompt used to generate the reference pack}
                             {--entity-type=character : character|object|furniture|vehicle|product|prop|creature}
                             {--name= : Reference pack display name}
@@ -162,7 +162,7 @@ class GenerateFalReferencePackCommand extends Command
             $this->line('Next step:');
             if (($options['preview_only'] ?? false) === true) {
                 $targetCount = max(2, (int) ($options['frame_count'] ?? 4));
-                $this->line("php artisan ai-engine:generate-reference-pack \"{$prompt}\" --entity-type={$options['entity_type']} --from-reference-pack={$alias} --frame-count={$targetCount} --look-size=" . (int) ($options['look_size'] ?? 4));
+                $this->line("php artisan ai:generate-reference-pack \"{$prompt}\" --entity-type={$options['entity_type']} --from-reference-pack={$alias} --frame-count={$targetCount} --look-size=" . (int) ($options['look_size'] ?? 4));
             } else {
                 $this->line('Inject the saved alias into your own workflow service or reuse it through the existing FAL media helpers.');
             }

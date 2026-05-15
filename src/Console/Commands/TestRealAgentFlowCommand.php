@@ -10,7 +10,7 @@ use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
 
 class TestRealAgentFlowCommand extends Command
 {
-    protected $signature = 'ai-engine:test-real-agent
+    protected $signature = 'ai:test-real-agent
                             {--message=* : Ordered test messages (repeat option)}
                             {--script=followup : Built-in script when no messages provided (followup|minimal)}
                             {--script-file= : JSON file containing a messages array}

@@ -13,7 +13,7 @@ class ModelStatusCommandTest extends UnitTestCase
 {
     public function test_it_reports_canonical_contract_models_as_ready(): void
     {
-        Artisan::call('ai-engine:model-status', [
+        Artisan::call('ai:model-status', [
             'model' => CanonicalVectorModel::class,
             '--json' => true,
         ]);
@@ -26,7 +26,7 @@ class ModelStatusCommandTest extends UnitTestCase
 
     public function test_it_reports_models_without_search_document_contract_as_not_supported(): void
     {
-        Artisan::call('ai-engine:model-status', [
+        Artisan::call('ai:model-status', [
             'model' => DefaultVectorModel::class,
             '--json' => true,
         ]);
@@ -38,7 +38,7 @@ class ModelStatusCommandTest extends UnitTestCase
 
     public function test_it_supports_json_output(): void
     {
-        Artisan::call('ai-engine:model-status', [
+        Artisan::call('ai:model-status', [
             'model' => CanonicalVectorModel::class,
             '--json' => true,
         ]);

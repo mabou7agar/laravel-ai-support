@@ -12,7 +12,7 @@ class MonitorNodesCommand extends Command
 {
     use RequiresMasterNode;
     
-    protected $signature = 'ai-engine:monitor-nodes
+    protected $signature = 'ai:monitor-nodes
                             {--interval=60 : Check interval in seconds}
                             {--auto-recover : Attempt auto-recovery}
                             {--once : Run once and exit}';

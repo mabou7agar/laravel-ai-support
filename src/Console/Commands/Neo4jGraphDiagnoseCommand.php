@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Graph\Neo4jHttpTransport;
 
 class Neo4jGraphDiagnoseCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-diagnose
+    protected $signature = 'ai:neo4j-diagnose
                             {--url=}
                             {--database=}
                             {--username=}

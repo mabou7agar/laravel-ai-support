@@ -32,9 +32,9 @@ New policy versions can override this template per policy key/runtime context.
 3. create/activate improved policy version
 
 ```bash
-php artisan ai-engine:decision-feedback:report
-php artisan ai-engine:decision-policy:evaluate --window-hours=48
-php artisan ai-engine:decision-policy:create v2 --activate
+php artisan ai:decision-feedback:report
+php artisan ai:decision-policy:evaluate --window-hours=48
+php artisan ai:decision-policy:create v2 --activate
 ```
 
 ## Recommended Production Cadence
@@ -46,7 +46,7 @@ php artisan ai-engine:decision-policy:create v2 --activate
 ## Canary Before Activation
 
 ```bash
-php artisan ai-engine:test-real-agent --script=followup --report-feedback --json
+php artisan ai:test-real-agent --script=followup --report-feedback --json
 ```
 
 ## Important

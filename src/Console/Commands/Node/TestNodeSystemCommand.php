@@ -11,7 +11,7 @@ use LaravelAIEngine\Models\AINode;
 
 class TestNodeSystemCommand extends Command
 {
-    protected $signature = 'ai-engine:test-nodes
+    protected $signature = 'ai:test-nodes
                             {--quick : Run quick tests only}
                             {--detailed : Show detailed output}';
     
@@ -160,12 +160,12 @@ class TestNodeSystemCommand extends Command
         // Test 10: Commands
         $this->test('Artisan Commands', function() {
             $commands = [
-                'ai-engine:monitor-nodes',
-                'ai-engine:node-register',
-                'ai-engine:node-list',
-                'ai-engine:node-ping',
-                'ai-engine:node-stats',
-                'ai-engine:nodes-sync',
+                'ai:monitor-nodes',
+                'ai:node-register',
+                'ai:node-list',
+                'ai:node-ping',
+                'ai:node-stats',
+                'ai:nodes-sync',
             ];
             
             $registered = collect(\Artisan::all())->keys();

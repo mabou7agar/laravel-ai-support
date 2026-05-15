@@ -26,7 +26,7 @@ class ReplayFailedAgentRunStepCommandTest extends TestCase
             'metadata' => ['trace_id' => 'trace-1'],
         ]);
 
-        $this->artisan('ai-engine:agent-runs:replay-step', [
+        $this->artisan('ai:agent-runs:replay-step', [
             'step' => $failed->uuid,
             '--reason' => 'retry after fix',
             '--json' => true,

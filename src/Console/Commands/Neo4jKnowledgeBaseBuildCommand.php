@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Graph\GraphKnowledgeBaseBuilderService;
 
 class Neo4jKnowledgeBaseBuildCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-kb-build
+    protected $signature = 'ai:neo4j-kb-build
                             {--canonical-user-id= : Explicit canonical user id for scoped KB building}
                             {--email= : Explicit normalized user email for scoped KB building}
                             {--user= : Authenticated user id for scoped result warming}

@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\ChatService;
 
 class TestRAGFeaturesCommand extends Command
 {
-    protected $signature = 'ai-engine:test-rag
+    protected $signature = 'ai:test-rag
                             {--model= : Specific model class to test}
                             {--user-id= : User ID for scoped vector/RAG retrieval}
                             {--query= : Factual query to use for RAG retrieval checks}
@@ -195,7 +195,7 @@ class TestRAGFeaturesCommand extends Command
             if ($results->isEmpty()) {
                 $this->warn('⚠️  No results found');
                 $this->line('   Make sure the model is indexed:');
-                $this->line("   php artisan ai-engine:vector-index \"{$modelClass}\"");
+                $this->line("   php artisan ai:vector-index \"{$modelClass}\"");
             } else {
                 $this->info("✅ Found {$results->count()} result(s):");
                 foreach ($results as $index => $result) {
@@ -645,7 +645,7 @@ class TestRAGFeaturesCommand extends Command
 
             if ($pending > 0) {
                 $this->warn("⚠️  {$pending} records need indexing");
-                $this->line("   Run: php artisan ai-engine:vector-index \"{$modelClass}\"");
+                $this->line("   Run: php artisan ai:vector-index \"{$modelClass}\"");
             } else {
                 $this->info('✅ All records indexed');
             }

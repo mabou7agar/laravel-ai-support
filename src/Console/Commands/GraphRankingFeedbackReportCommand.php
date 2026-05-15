@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Graph\GraphRankingFeedbackService;
 
 class GraphRankingFeedbackReportCommand extends Command
 {
-    protected $signature = 'ai-engine:graph-ranking-feedback
+    protected $signature = 'ai:graph-ranking-feedback
                             {query_kind=generic : Query kind to inspect}';
 
     protected $description = 'Show adaptive graph ranking feedback state for a query kind';

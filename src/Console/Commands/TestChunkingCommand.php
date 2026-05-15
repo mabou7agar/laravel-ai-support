@@ -9,7 +9,7 @@ use LaravelAIEngine\Traits\Vectorizable;
 
 class TestChunkingCommand extends Command
 {
-    protected $signature = 'ai-engine:test-chunking 
+    protected $signature = 'ai:test-chunking
                             {--strategy=split : Strategy to test (split or truncate)}
                             {--size=50000 : Content size in characters}
                             {--cleanup : Clean up test data after running}';
@@ -70,7 +70,7 @@ class TestChunkingCommand extends Command
     protected function createTestTable()
     {
         Schema::dropIfExists('test_chunking_posts');
-        
+
         Schema::create('test_chunking_posts', function ($table) {
             $table->id();
             $table->string('title');
@@ -84,10 +84,10 @@ class TestChunkingCommand extends Command
         // Create test model class
         $model = new class extends Model {
             use Vectorizable;
-            
+
             protected $table = 'test_chunking_posts';
             protected $guarded = [];
-            
+
             public function __construct(array $attributes = [])
             {
                 parent::__construct($attributes);
@@ -97,9 +97,9 @@ class TestChunkingCommand extends Command
 
         // Generate content of specified size
         $content = $this->generateContent($size);
-        
+
         $this->line("   📝 Creating test post with {$size} chars content...");
-        
+
         $post = $model->create([
             'title' => 'Test Chunking Post',
             'content' => $content,
@@ -122,7 +122,7 @@ class TestChunkingCommand extends Command
 
         // Get all chunks
         $chunks = $post->getVectorContentChunks();
-        
+
         $this->line('   📊 Results:');
         $this->line('   ─────────────────────────────');
         $this->line('   Total chunks: ' . count($chunks));
@@ -134,7 +134,7 @@ class TestChunkingCommand extends Command
             $chunkNum = $index + 1;
             $length = strlen($chunk);
             $preview = substr($chunk, 0, 50) . '...';
-            
+
             $this->line("   Chunk {$chunkNum}:");
             $this->line("      Length: " . number_format($length) . " chars");
             $this->line("      Preview: {$preview}");
@@ -144,7 +144,7 @@ class TestChunkingCommand extends Command
         // Show statistics
         $totalLength = array_sum(array_map('strlen', $chunks));
         $avgLength = $totalLength / count($chunks);
-        
+
         $this->line('   📈 Statistics:');
         $this->line('   ─────────────────────────────');
         $this->line('   Total content: ' . number_format($totalLength) . ' chars');
@@ -172,7 +172,7 @@ class TestChunkingCommand extends Command
 
         // Get truncated content
         $content = $post->getVectorContent();
-        
+
         $this->line('   📊 Results:');
         $this->line('   ─────────────────────────────');
         $this->line('   Content length: ' . number_format(strlen($content)) . ' chars');
@@ -189,7 +189,7 @@ class TestChunkingCommand extends Command
         if (strlen($content) < $originalLength) {
             $lost = $originalLength - strlen($content);
             $lostPercent = ($lost / $originalLength) * 100;
-            
+
             $this->line('   ⚠️  Content was truncated:');
             $this->line('   ─────────────────────────────');
             $this->line('   Original: ' . number_format($originalLength) . ' chars');
@@ -229,16 +229,16 @@ class TestChunkingCommand extends Command
     protected function detectOverlap(string $chunk1, string $chunk2): int
     {
         $maxOverlap = min(strlen($chunk1), strlen($chunk2));
-        
+
         for ($i = $maxOverlap; $i > 0; $i--) {
             $end1 = substr($chunk1, -$i);
             $start2 = substr($chunk2, 0, $i);
-            
+
             if ($end1 === $start2) {
                 return $i;
             }
         }
-        
+
         return 0;
     }
 
@@ -246,11 +246,11 @@ class TestChunkingCommand extends Command
     {
         // Try daily log file first
         $logFile = storage_path('logs/ai-engine-' . date('Y-m-d') . '.log');
-        
+
         if (!file_exists($logFile)) {
             $logFile = storage_path('logs/ai-engine.log');
         }
-        
+
         if (!file_exists($logFile)) {
             $this->warn('   ⚠️  Log file not found');
             return;
@@ -261,17 +261,17 @@ class TestChunkingCommand extends Command
 
         // Get last 30 lines
         $lines = array_slice(file($logFile), -30);
-        
+
         $found = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'Content split into chunks') || 
+            if (str_contains($line, 'Content split into chunks') ||
                 str_contains($line, 'Vector content generated') ||
                 str_contains($line, 'Large fields chunked')) {
                 $this->line('   ' . trim($line));
                 $found = true;
             }
         }
-        
+
         if (!$found) {
             $this->line('   ℹ️  No relevant log entries found');
         }

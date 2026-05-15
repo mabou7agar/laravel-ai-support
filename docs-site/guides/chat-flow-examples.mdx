@@ -74,10 +74,10 @@ description: Real conversation patterns and expected system behavior.
 ## Run These As Canary
 
 ```bash
-php artisan ai-engine:test-real-agent --message="list recent records" --message="what is the status of the first one?" --json
-php artisan ai-engine:test-real-agent --message="create chart of account" --json
-php artisan ai-engine:test-real-agent --script=followup --json
-php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
+php artisan ai:test-real-agent --message="list recent records" --message="what is the status of the first one?" --json
+php artisan ai:test-real-agent --message="create chart of account" --json
+php artisan ai:test-real-agent --script=followup --json
+php artisan ai:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 ```
 
 For HTTP copy-paste requests/responses, see `guides/copy-paste-playbooks`.

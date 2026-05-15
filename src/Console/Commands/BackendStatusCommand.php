@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Graph\GraphBackendResolver;
 
 class BackendStatusCommand extends Command
 {
-    protected $signature = 'ai-engine:backend-status';
+    protected $signature = 'ai:backend-status';
 
     protected $description = 'Show the currently configured vector and graph retrieval backends';
 

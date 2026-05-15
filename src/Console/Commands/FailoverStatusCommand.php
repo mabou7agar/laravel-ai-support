@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Failover\FailoverManager;
 
 class FailoverStatusCommand extends Command
 {
-    protected $signature = 'ai-engine:failover-status 
+    protected $signature = 'ai:failover-status
                             {--provider= : Check specific provider}
                             {--reset= : Reset provider health status}
                             {--format=table : Output format (table, json)}';
@@ -99,7 +99,7 @@ class FailoverStatusCommand extends Command
         $this->info("Resetting health status for provider: {$provider}");
 
         $failoverManager->resetProviderHealth($provider);
-        
+
         $this->info("✅ Provider health reset successfully.");
         return 0;
     }
@@ -107,7 +107,7 @@ class FailoverStatusCommand extends Command
     protected function displayProviderTable(array $providerHealth): void
     {
         $this->info('Provider Health:');
-        
+
         $tableData = [];
         foreach ($providerHealth as $provider => $health) {
             $statusColor = $health['status'] === 'healthy' ? 'green' : 'red';

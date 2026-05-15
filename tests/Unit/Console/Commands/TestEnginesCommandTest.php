@@ -18,7 +18,7 @@ class TestEnginesCommandTest extends TestCase
     public function test_command_signature()
     {
         $command = new TestEnginesCommand();
-        $this->assertEquals('ai-engine:test-engines', $command->getName());
+        $this->assertEquals('ai:test-engines', $command->getName());
     }
 
     public function test_command_runs_successfully()
@@ -26,7 +26,7 @@ class TestEnginesCommandTest extends TestCase
         // Mock the engine drivers to avoid actual API calls
         $this->mockAllEngineDrivers();
 
-        $exitCode = Artisan::call('ai-engine:test-engines', [
+        $exitCode = Artisan::call('ai:test-engines', [
             '--engine' => 'openai',
             '--quick' => true
         ]);
@@ -42,7 +42,7 @@ class TestEnginesCommandTest extends TestCase
     {
         $this->mockAllEngineDrivers();
 
-        $exitCode = Artisan::call('ai-engine:test-engines', [
+        $exitCode = Artisan::call('ai:test-engines', [
             '--engine' => 'openai'
         ]);
 
@@ -57,7 +57,7 @@ class TestEnginesCommandTest extends TestCase
     {
         $this->mockAllEngineDrivers();
 
-        $exitCode = Artisan::call('ai-engine:test-engines', [
+        $exitCode = Artisan::call('ai:test-engines', [
             '--model' => 'gpt-4o'
         ]);
 
@@ -71,7 +71,7 @@ class TestEnginesCommandTest extends TestCase
     {
         $this->mockAllEngineDrivers();
 
-        $exitCode = Artisan::call('ai-engine:test-engines', [
+        $exitCode = Artisan::call('ai:test-engines', [
             '--engine' => 'openai',
             '--verbose' => true,
             '--quick' => true
@@ -90,7 +90,7 @@ class TestEnginesCommandTest extends TestCase
 
         $exportPath = storage_path('app/test-results.json');
         
-        $exitCode = Artisan::call('ai-engine:test-engines', [
+        $exitCode = Artisan::call('ai:test-engines', [
             '--engine' => 'openai',
             '--export' => $exportPath,
             '--quick' => true
@@ -104,7 +104,7 @@ class TestEnginesCommandTest extends TestCase
 
     public function test_command_handles_invalid_engine()
     {
-        $exitCode = Artisan::call('ai-engine:test-engines', [
+        $exitCode = Artisan::call('ai:test-engines', [
             '--engine' => 'invalid-engine'
         ]);
 
@@ -119,7 +119,7 @@ class TestEnginesCommandTest extends TestCase
         // Clear API keys
         config(['ai-engine.engines.openai.api_key' => '']);
 
-        $exitCode = Artisan::call('ai-engine:test-engines', [
+        $exitCode = Artisan::call('ai:test-engines', [
             '--engine' => 'openai',
             '--quick' => true
         ]);
@@ -132,7 +132,7 @@ class TestEnginesCommandTest extends TestCase
     {
         $this->mockAllEngineDrivers();
 
-        $exitCode = Artisan::call('ai-engine:test-engines', [
+        $exitCode = Artisan::call('ai:test-engines', [
             '--quick' => true
         ]);
 

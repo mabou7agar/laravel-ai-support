@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Agent\AgentRunMaintenanceService;
 
 class RecoverStuckAgentRunsCommand extends Command
 {
-    protected $signature = 'ai-engine:agent-runs:recover-stuck
+    protected $signature = 'ai:agent-runs:recover-stuck
                             {--minutes= : Mark pending/running runs older than this many minutes as failed}
                             {--dry-run : Report matching runs without updating them}
                             {--json : Print JSON report}';

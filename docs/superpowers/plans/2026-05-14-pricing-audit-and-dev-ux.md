@@ -18,7 +18,7 @@
 
 - [ ] **Step 1: Write failing command tests**
 
-Add tests that call `ai-engine:pricing-audit --json` and `ai-engine:pricing-simulate --json` and assert provider rates, warnings, and FAL input image totals are included.
+Add tests that call `ai:pricing-audit --json` and `ai:pricing-simulate --json` and assert provider rates, warnings, and FAL input image totals are included.
 
 - [ ] **Step 2: Run the new tests and verify they fail**
 
@@ -39,7 +39,7 @@ The service returns normalized arrays for configured engine rates, additional in
 
 - [ ] **Step 2: Implement console commands**
 
-`ai-engine:pricing-audit` lists rates and warnings. `ai-engine:pricing-simulate` accepts engine, model, prompt, and JSON parameters, then prints base engine credits, additional input credits, engine rate, and final credits.
+`ai:pricing-audit` lists rates and warnings. `ai:pricing-simulate` accepts engine, model, prompt, and JSON parameters, then prints base engine credits, additional input credits, engine rate, and final credits.
 
 - [ ] **Step 3: Run pricing command tests**
 

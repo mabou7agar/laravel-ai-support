@@ -31,7 +31,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         );
         $this->app->instance(Neo4jHttpTransport::class, $transport);
 
-        $this->artisan('ai-engine:neo4j-stats')
+        $this->artisan('ai:neo4j-stats')
             ->expectsOutput('Node labels')
             ->expectsOutput('Relations')
             ->expectsOutput('Indexes')
@@ -50,7 +50,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         config()->set('ai-engine.vector.default_driver', 'qdrant');
         config()->set('ai-engine.vector.drivers.qdrant.host', 'http://qdrant.test:6333');
 
-        $this->artisan('ai-engine:backend-status')
+        $this->artisan('ai:backend-status')
             ->expectsOutput('Interpretation:')
             ->expectsOutput('- Reads currently prefer: neo4j_graph')
             ->expectsOutput('- Graph path is enabled.')
@@ -70,7 +70,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         config()->set('ai-engine.vector.default_driver', 'qdrant');
         config()->set('ai-engine.vector.drivers.qdrant.host', 'http://qdrant.test:6333');
 
-        $this->artisan('ai-engine:backend-status')
+        $this->artisan('ai:backend-status')
             ->expectsOutput('Interpretation:')
             ->expectsOutput('- Reads currently prefer: vector_qdrant')
             ->expectsOutput('- Graph path is enabled.')
@@ -90,7 +90,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         );
         $this->app->instance(Neo4jHttpTransport::class, $transport);
 
-        $this->artisan('ai-engine:neo4j-diagnose')
+        $this->artisan('ai:neo4j-diagnose')
             ->expectsOutput('No graph integrity issues detected.')
             ->assertSuccessful();
     }
@@ -105,7 +105,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         );
         $this->app->instance(Neo4jHttpTransport::class, $transport);
 
-        $this->artisan('ai-engine:neo4j-repair')
+        $this->artisan('ai:neo4j-repair')
             ->expectsOutput('Dry-run only. Use --apply to execute repairs.')
             ->assertSuccessful();
     }
@@ -158,7 +158,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         $this->app->instance(GraphQueryPlanner::class, $planner);
         $this->app->instance(Neo4jRetrievalService::class, $retrieval);
 
-        $this->artisan('ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=7')
+        $this->artisan('ai:neo4j-kb-warm --from-profiles --canonical-user-id=7')
             ->expectsOutput('Warmed 1 graph plan cache entry.')
             ->expectsOutput('Warmed 1 scoped retrieval cache entry.')
             ->assertSuccessful();
@@ -191,7 +191,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
 
         $this->app->instance(GraphKnowledgeBaseBuilderService::class, $builder);
 
-        $this->artisan('ai-engine:neo4j-kb-build --canonical-user-id=7 --profiles-limit=10 --entity-limit=12 --max-results=4')
+        $this->artisan('ai:neo4j-kb-build --canonical-user-id=7 --profiles-limit=10 --entity-limit=12 --max-results=4')
             ->expectsTable(['Artifact', 'Count'], [
                 ['plans_warmed', 3],
                 ['results_warmed', 2],
@@ -227,7 +227,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         $this->app->instance(GraphQueryPlanner::class, $planner);
         $this->app->instance(Neo4jRetrievalService::class, $retrieval);
 
-        $this->artisan('ai-engine:neo4j-benchmark', [
+        $this->artisan('ai:neo4j-benchmark', [
             'query' => 'who replied to apollo?',
             '--iterations' => 2,
             '--max-results' => 3,
@@ -264,7 +264,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
 
         $this->app->instance(ChatService::class, $chat);
 
-        $this->artisan('ai-engine:chat-benchmark', [
+        $this->artisan('ai:chat-benchmark', [
             'message' => 'what changed on friday for apollo?',
             '--iterations' => 2,
             '--engine' => 'openai',
@@ -294,7 +294,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         $sync->shouldReceive('publish')->times(2)->andReturn(true);
         $this->app->instance(Neo4jGraphSyncService::class, $sync);
 
-        $this->artisan('ai-engine:neo4j-index-benchmark', [
+        $this->artisan('ai:neo4j-index-benchmark', [
             'model' => GraphBenchmarkRecord::class,
             '--iterations' => 1,
             '--limit' => 2,
@@ -312,7 +312,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
             'details' => 'strategy=ownership',
         ]);
 
-        $exitCode = Artisan::call('ai-engine:benchmark-history', [
+        $exitCode = Artisan::call('ai:benchmark-history', [
             '--type' => 'retrieval',
             '--limit' => 5,
         ]);
@@ -348,7 +348,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         ]);
         $this->app->instance(GraphDriftDetectionService::class, $drift);
 
-        $this->artisan('ai-engine:neo4j-drift', ['--repair' => true, '--prune' => true])
+        $this->artisan('ai:neo4j-drift', ['--repair' => true, '--prune' => true])
             ->expectsOutput('Repair completed. Published 1 missing entities and pruned 1 stale entities.')
             ->assertSuccessful();
     }
@@ -359,7 +359,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         $retrieval->shouldReceive('retrieveRelevantContext')->times(4)->andReturn(collect());
         $this->app->instance(Neo4jRetrievalService::class, $retrieval);
 
-        $this->artisan('ai-engine:neo4j-load-benchmark', [
+        $this->artisan('ai:neo4j-load-benchmark', [
             '--mode' => 'retrieval',
             '--iterations' => 4,
             '--concurrency' => 1,
@@ -375,7 +375,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
         $retrieval->shouldReceive('retrieveRelevantContext')->times(5)->andReturn(collect());
         $this->app->instance(Neo4jRetrievalService::class, $retrieval);
 
-        $this->artisan('ai-engine:neo4j-load-benchmark', [
+        $this->artisan('ai:neo4j-load-benchmark', [
             '--profile' => 'smoke',
             '--concurrency' => 1,
         ])
@@ -391,7 +391,7 @@ class Neo4jGraphCommandsTest extends UnitTestCase
             'relation_helpful' => true,
         ]);
 
-        $this->artisan('ai-engine:graph-ranking-feedback', [
+        $this->artisan('ai:graph-ranking-feedback', [
             'query_kind' => 'relationship',
         ])
             ->expectsOutputToContain('relationship')

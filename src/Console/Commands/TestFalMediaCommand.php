@@ -10,7 +10,7 @@ use LaravelAIEngine\Services\Fal\FalMediaWorkflowService;
 
 class TestFalMediaCommand extends Command
 {
-    protected $signature = 'ai-engine:test-fal-media
+    protected $signature = 'ai:test-fal-media
                             {prompt? : Prompt to send to FAL}
                             {--model= : FAL model slug. Auto-resolved when omitted}
                             {--user-id= : User ID used for credit checks and deductions}
@@ -27,7 +27,7 @@ class TestFalMediaCommand extends Command
                             {--source-image=* : Source image URL(s) for edit workflows}
                             {--reference-image-url=* : Reference image URL(s) for Kling/Seedance}
                             {--character=* : Character JSON object; repeatable}
-                            {--use-character=* : Saved character alias(es) from ai-engine:generate-character}
+                            {--use-character=* : Saved character alias(es) from ai:generate-character}
                             {--use-last-character : Reuse the most recently generated character}
                             {--shot=* : Shot JSON object with prompt and optional duration; repeatable}
                             {--generate-audio=1 : Enable or disable native audio generation}

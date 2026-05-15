@@ -12,7 +12,7 @@ use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 
 class DecisionPolicyEvaluateCommand extends Command
 {
-    protected $signature = 'ai-engine:decision-policy:evaluate
+    protected $signature = 'ai:decision-policy:evaluate
                             {--policy= : Policy key to evaluate}
                             {--hours= : Lookback window in hours}
                             {--min-samples= : Minimum decision samples for promotion}

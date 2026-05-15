@@ -40,9 +40,9 @@ FAL input media defaults:
 ## Audit pricing
 
 ```bash
-php artisan ai-engine:pricing-audit
-php artisan ai-engine:pricing-audit --json
-php artisan ai-engine:pricing-audit --fail-on-warning
+php artisan ai:pricing-audit
+php artisan ai:pricing-audit --json
+php artisan ai:pricing-audit --fail-on-warning
 ```
 
 The audit command reports engine rates, env override names, additional input media rates, and warnings for zero or discounted provider rates.
@@ -62,12 +62,12 @@ The package reuses the existing `ai_models.pricing` JSON column for optional app
 ]
 ```
 
-`ai-engine:pricing-audit` compares that floor against `credit_index * engine_rate` and warns when the configured charge is lower.
+`ai:pricing-audit` compares that floor against `credit_index * engine_rate` and warns when the configured charge is lower.
 
 ## Simulate a request
 
 ```bash
-php artisan ai-engine:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video \
+php artisan ai:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video \
   --prompt="Animate this product" \
   --parameters='{"image_url":"https://example.test/product.png"}'
 ```
@@ -105,6 +105,6 @@ Content-Type: application/json
 }
 ```
 
-The preview endpoint returns the same breakdown as `ai-engine:pricing-simulate` and never calls providers or deducts credits.
+The preview endpoint returns the same breakdown as `ai:pricing-simulate` and never calls providers or deducts credits.
 
-Keep production pricing above provider cost by leaving provider rates at `1.0` or higher. Use `ai-engine:pricing-audit --fail-on-warning` in CI or deploy checks to detect accidental discounted or zero rates.
+Keep production pricing above provider cost by leaving provider rates at `1.0` or higher. Use `ai:pricing-audit --fail-on-warning` in CI or deploy checks to detect accidental discounted or zero rates.

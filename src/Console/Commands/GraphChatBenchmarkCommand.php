@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\Graph\GraphBenchmarkHistoryService;
 
 class GraphChatBenchmarkCommand extends Command
 {
-    protected $signature = 'ai-engine:chat-benchmark
+    protected $signature = 'ai:chat-benchmark
                             {message : Chat message to benchmark}
                             {--collection=* : Restrict RAG to one or more model classes}
                             {--iterations= : Number of benchmark iterations}

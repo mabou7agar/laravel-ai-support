@@ -10,7 +10,7 @@ use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 
 class TestAgentToolCommand extends Command
 {
-    protected $signature = 'ai-engine:tools:test
+    protected $signature = 'ai:tools:test
                             {tool : Registered tool name}
                             {--payload= : JSON object payload passed to the tool}
                             {--session= : Session id for the test context}

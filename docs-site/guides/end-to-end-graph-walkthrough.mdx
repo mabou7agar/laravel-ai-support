@@ -42,9 +42,9 @@ AI_ENGINE_NEO4J_PASSWORD=secret
 ## 3) Initialize and Sync
 
 ```bash
-php artisan ai-engine:neo4j-init
-php artisan ai-engine:neo4j-sync --fresh
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:neo4j-init
+php artisan ai:neo4j-sync --fresh
+php artisan ai:neo4j-diagnose
 ```
 
 Expected result:
@@ -91,8 +91,8 @@ Expected behavior:
 ## 6) Warm the KB
 
 ```bash
-php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
-php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai:neo4j-kb-warm --from-profiles --canonical-user-id=1
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
 ```
 
 Expected result:
@@ -106,7 +106,7 @@ Expected result:
 The host app should schedule:
 
 ```php
-Schedule::command('ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
+Schedule::command('ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
     ->hourly()
     ->withoutOverlapping();
 ```
@@ -133,10 +133,10 @@ Useful examples:
 If results are wrong or incomplete:
 
 ```bash
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-diagnose
-php artisan ai-engine:neo4j-repair --apply
-php artisan ai-engine:neo4j-sync --fresh
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-diagnose
+php artisan ai:neo4j-repair --apply
+php artisan ai:neo4j-sync --fresh
 ```
 
 ## Related Docs

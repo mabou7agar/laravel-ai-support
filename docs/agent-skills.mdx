@@ -15,7 +15,7 @@ For application workflows, prefer this public model:
 Chat -> skill detection -> declared tools/actions -> confirmation -> execution
 ```
 
-Use RAG, Qdrant, Neo4j, and capability search to find context and choose the right skill/tool. Do not put business workflow logic inside RAG prompts. Collectors remain available for schema-driven data collection and legacy flows, but new application actions should normally be modeled as skills backed by tools/actions.
+Use RAG, Qdrant, Neo4j, and capability search to find context and choose the right skill/tool. Do not put business workflow logic inside RAG prompts. Collectors remain available for schema-driven data collection, but new application actions should normally be modeled as skills backed by tools/actions.
 
 ## Structure
 
@@ -60,8 +60,8 @@ Class-based skills are auto-discovered from `app/AI/Skills` when manifest fallba
 ## Scaffold a skill
 
 ```bash
-php artisan ai-engine:make-skill CreateInvoice
-php artisan ai-engine:scaffold skill CreateInvoice
+php artisan ai:make-skill CreateInvoice
+php artisan ai:scaffold skill CreateInvoice
 ```
 
 This creates an `App\AI\Skills\CreateInvoiceSkill` class extending `AgentSkill` and registers it in the agent manifest under `skill_providers`.
@@ -73,8 +73,8 @@ Generated skills are disabled by default and marked as review-required.
 Use the simple tool template for custom service calls:
 
 ```bash
-php artisan ai-engine:make-tool LookupCustomer
-php artisan ai-engine:tools:test lookup_customer --payload='{"input":"ACME"}'
+php artisan ai:make-tool LookupCustomer
+php artisan ai:tools:test lookup_customer --payload='{"input":"ACME"}'
 ```
 
 The generated class extends `SimpleAgentTool`, so most app tools only need stable metadata and a `handle()` method:
@@ -106,8 +106,8 @@ class LookupCustomerTool extends SimpleAgentTool
 For common Eloquent-backed tools, generate property-only templates:
 
 ```bash
-php artisan ai-engine:make-tool FindCustomer --kind=lookup --model="App\\Models\\Customer"
-php artisan ai-engine:make-tool UpsertCustomer --kind=upsert --model="App\\Models\\Customer"
+php artisan ai:make-tool FindCustomer --kind=lookup --model="App\\Models\\Customer"
+php artisan ai:make-tool UpsertCustomer --kind=upsert --model="App\\Models\\Customer"
 ```
 
 Lookup tools extend `ModelBackedLookupTool` and define `$model`, `$search`, and `$returns`.
@@ -116,7 +116,7 @@ Upsert tools extend `ModelBackedUpsertTool` and define `$model`, `$identity`, `$
 When the app already exposes an action, prefer a thin action-backed tool:
 
 ```bash
-php artisan ai-engine:make-tool CreateInvoice --kind=action --action=invoices.create
+php artisan ai:make-tool CreateInvoice --kind=action --action=invoices.create
 ```
 
 `ActionBackedTool` reads the action schema from `ActionRegistry` and executes through `ActionOrchestrator`, so relation resolution, validation, confirmation, idempotency, audit logging, and policies stay in the action flow instead of being duplicated in tool code.
@@ -124,9 +124,9 @@ php artisan ai-engine:make-tool CreateInvoice --kind=action --action=invoices.cr
 ## Scan project abilities
 
 ```bash
-php artisan ai-engine:skills:discover
-php artisan ai-engine:skills:discover --json
-php artisan ai-engine:skills:discover --write
+php artisan ai:skills:discover
+php artisan ai:skills:discover --json
+php artisan ai:skills:discover --write
 ```
 
 The scanner proposes draft skills from registered actions, tools, autonomous collectors, and model discovery metadata.
@@ -136,8 +136,8 @@ Use `--write` to add draft definitions to `app/AI/agent-manifest.php`. Draft ski
 ## Test a skill match
 
 ```bash
-php artisan ai-engine:skills:test "create invoice for ACME"
-php artisan ai-engine:skills:test "create invoice for ACME" --include-disabled --json
+php artisan ai:skills:test "create invoice for ACME"
+php artisan ai:skills:test "create invoice for ACME" --include-disabled --json
 ```
 
 The command shows the matched skill, score, trigger, and compiled execution plan. Action-backed skills compile to the existing `update_action_draft` tool so validation, confirmation, and execution stay inside the action flow.
@@ -167,8 +167,8 @@ Tool execution still passes through `AgentExecutionPolicyService`, so host appli
 ## Diagnose the manifest
 
 ```bash
-php artisan ai-engine:manifest:doctor
-php artisan ai-engine:manifest:doctor --json
+php artisan ai:manifest:doctor
+php artisan ai:manifest:doctor --json
 ```
 
 The doctor reports disabled draft skills, non-executable skills, and skills that reference missing actions or tools.
@@ -177,19 +177,19 @@ JSON output also includes an `inventory` section with discovered skill, action, 
 Recommended development loop:
 
 ```bash
-php artisan ai-engine:init
-php artisan ai-engine:make-tool LookupCustomer
-php artisan ai-engine:tools:test lookup_customer --payload='{"input":"ACME"}' --json
-php artisan ai-engine:make-skill CreateInvoice
-php artisan ai-engine:skills:discover --write
-php artisan ai-engine:manifest:doctor --json
-php artisan ai-engine:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video --parameters='{"image_url":"https://example.test/product.png"}'
+php artisan ai:init
+php artisan ai:make-tool LookupCustomer
+php artisan ai:tools:test lookup_customer --payload='{"input":"ACME"}' --json
+php artisan ai:make-skill CreateInvoice
+php artisan ai:skills:discover --write
+php artisan ai:manifest:doctor --json
+php artisan ai:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video --parameters='{"image_url":"https://example.test/product.png"}'
 ```
 
 Use the orchestration validator when skills also link to sub-agents through `metadata.sub_agents`:
 
 ```bash
-php artisan ai-engine:test-orchestration
+php artisan ai:test-orchestration
 ```
 
 It validates skill-to-tool and skill-to-sub-agent links, then can run the focused orchestration tests.

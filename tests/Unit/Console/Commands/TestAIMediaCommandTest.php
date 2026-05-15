@@ -19,7 +19,7 @@ class TestAIMediaCommandTest extends TestCase
     {
         $command = new TestAIMediaCommand();
 
-        $this->assertSame('ai-engine:test-ai-media', $command->getName());
+        $this->assertSame('ai:test-ai-media', $command->getName());
     }
 
     public function test_command_outputs_json_summary_and_recent_rows(): void
@@ -38,7 +38,7 @@ class TestAIMediaCommandTest extends TestCase
             'url' => 'https://cdn.example.com/hero.png',
         ]);
 
-        $exitCode = Artisan::call('ai-engine:test-ai-media', [
+        $exitCode = Artisan::call('ai:test-ai-media', [
             '--json' => true,
         ]);
 
@@ -54,7 +54,7 @@ class TestAIMediaCommandTest extends TestCase
         Storage::fake('public');
         config()->set('ai-engine.media_library.disk', 'public');
 
-        $exitCode = Artisan::call('ai-engine:test-ai-media', [
+        $exitCode = Artisan::call('ai:test-ai-media', [
             '--write-test' => true,
             '--cleanup' => true,
             '--json' => true,

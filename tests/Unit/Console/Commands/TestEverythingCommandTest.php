@@ -63,7 +63,7 @@ class TestEverythingCommandTest extends UnitTestCase
 
         $this->app->instance(TestEverythingRunner::class, $runner);
 
-        $this->artisan('ai-engine:test-everything')
+        $this->artisan('ai:test-everything')
             ->expectsOutput('Running 3 validation stage(s)...')
             ->expectsOutput('All selected validation stages passed.')
             ->assertSuccessful();
@@ -111,7 +111,7 @@ class TestEverythingCommandTest extends UnitTestCase
 
         $this->app->instance(TestEverythingRunner::class, $runner);
 
-        $this->artisan('ai-engine:test-everything', [
+        $this->artisan('ai:test-everything', [
             '--profile' => 'all',
             '--root-path' => $rootPath,
         ])->assertSuccessful();
@@ -136,7 +136,7 @@ class TestEverythingCommandTest extends UnitTestCase
 
         $this->app->instance(TestEverythingRunner::class, $runner);
 
-        $this->artisan('ai-engine:test-everything', ['--stop-on-failure' => true])
+        $this->artisan('ai:test-everything', ['--stop-on-failure' => true])
             ->expectsOutput('Running 3 validation stage(s)...')
             ->expectsOutput('Failed stage: package_graph_core')
             ->expectsOutput('failing stage output')

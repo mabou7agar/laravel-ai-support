@@ -29,7 +29,7 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
 
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
-        Artisan::call('ai-engine:test-real-agent', [
+        Artisan::call('ai:test-real-agent', [
             '--message' => ['list invoices', 'what is status of first one'],
             '--session' => 'real-test-session',
             '--json' => true,
@@ -55,7 +55,7 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
 
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
-        $exitCode = Artisan::call('ai-engine:test-real-agent', [
+        $exitCode = Artisan::call('ai:test-real-agent', [
             '--message' => ['list invoices'],
             '--stop-on-error' => true,
             '--json' => true,
@@ -79,7 +79,7 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
 
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
-        $exitCode = Artisan::call('ai-engine:test-real-agent', [
+        $exitCode = Artisan::call('ai:test-real-agent', [
             '--message' => ['show me recent updates'],
             '--json' => true,
         ]);
@@ -108,7 +108,7 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
 
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
-        Artisan::call('ai-engine:test-real-agent', [
+        Artisan::call('ai:test-real-agent', [
             '--message' => ['hello'],
             '--local-only' => true,
             '--json' => true,
@@ -133,7 +133,7 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
 
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
-        Artisan::call('ai-engine:test-real-agent', [
+        Artisan::call('ai:test-real-agent', [
             '--message' => ['Tell me about Apollo'],
             '--rag-model' => ['App\\Models\\Document'],
             '--json' => true,
@@ -170,7 +170,7 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
 
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
-        $exitCode = Artisan::call('ai-engine:test-real-agent', [
+        $exitCode = Artisan::call('ai:test-real-agent', [
             '--script-file' => $scriptPath,
             '--json' => true,
         ]);
@@ -190,7 +190,7 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
 
         $this->app->instance(AgentRuntimeContract::class, $runtime);
 
-        $exitCode = Artisan::call('ai-engine:test-real-agent', [
+        $exitCode = Artisan::call('ai:test-real-agent', [
             '--script' => 'domain-flow',
             '--json' => true,
         ]);

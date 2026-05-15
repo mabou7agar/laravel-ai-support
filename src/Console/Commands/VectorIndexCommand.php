@@ -9,7 +9,7 @@ use Throwable;
 
 class VectorIndexCommand extends Command
 {
-    protected $signature = 'ai-engine:vector-index
+    protected $signature = 'ai:vector-index
                             {model? : The model class to index (optional - indexes all vectorizable models if not provided)}
                             {--id=* : Specific model IDs to index}
                             {--batch=100 : Batch size for indexing}

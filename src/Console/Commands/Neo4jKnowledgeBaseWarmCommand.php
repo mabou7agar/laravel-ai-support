@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Graph\Neo4jRetrievalService;
 
 class Neo4jKnowledgeBaseWarmCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-kb-warm
+    protected $signature = 'ai:neo4j-kb-warm
                             {query?* : Query strings to warm}
                             {--from-profiles : Warm from recorded graph query profiles}
                             {--collection=* : Restrict warmup to specific model classes}

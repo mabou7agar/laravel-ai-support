@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Graph\Neo4jGraphSyncService;
 
 class InitNeo4jGraphCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-init
+    protected $signature = 'ai:neo4j-init
                             {--url= : Override the Neo4j base URL}
                             {--database= : Override the Neo4j database name}
                             {--username= : Override the Neo4j username}

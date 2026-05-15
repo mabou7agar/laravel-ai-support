@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Agent\AgentRunRetentionService;
 
 class AgentRunRetentionCleanupCommand extends Command
 {
-    protected $signature = 'ai-engine:agent-runs:retention-cleanup
+    protected $signature = 'ai:agent-runs:retention-cleanup
                             {--dry-run : Report matching records without changing them}
                             {--json : Print JSON report}
                             {--run-days= : Override run retention days}

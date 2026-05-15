@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Agent\AgentRunMaintenanceService;
 
 class CleanupExpiredAgentRunsCommand extends Command
 {
-    protected $signature = 'ai-engine:agent-runs:cleanup-expired
+    protected $signature = 'ai:agent-runs:cleanup-expired
                             {--days= : Delete expired runs older than this many days}
                             {--dry-run : Report matching runs without deleting them}
                             {--json : Print JSON report}';

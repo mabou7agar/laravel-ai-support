@@ -34,7 +34,7 @@ class DecisionPolicyEvaluateCommandTest extends TestCase
         $this->seedPolicyEvents($active, false);
         $this->seedPolicyEvents($canary, true);
 
-        Artisan::call('ai-engine:decision-policy:evaluate', [
+        Artisan::call('ai:decision-policy:evaluate', [
             '--policy' => 'decision',
             '--promote' => true,
             '--min-samples' => 2,

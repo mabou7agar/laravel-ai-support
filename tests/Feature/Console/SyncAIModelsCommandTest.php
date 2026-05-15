@@ -25,7 +25,7 @@ class SyncAIModelsCommandTest extends TestCase
             ]),
         ]);
 
-        $this->artisan('ai-engine:sync-models', ['--provider' => 'openai'])
+        $this->artisan('ai:sync-models', ['--provider' => 'openai'])
             ->expectsOutput('🔄 Syncing AI Models...')
             ->expectsOutput('📡 Syncing OpenAI models...')
             ->expectsOutput('✅ Synced 3 OpenAI models')
@@ -76,7 +76,7 @@ class SyncAIModelsCommandTest extends TestCase
             ]),
         ]);
 
-        $this->artisan('ai-engine:sync-models', ['--provider' => 'fal_ai'])
+        $this->artisan('ai:sync-models', ['--provider' => 'fal_ai'])
             ->expectsOutput('🔄 Syncing AI Models...')
             ->expectsOutput('📡 Syncing FAL models...')
             ->expectsOutput('✅ Synced 2 FAL models')
@@ -97,7 +97,7 @@ class SyncAIModelsCommandTest extends TestCase
 
     public function test_sync_models_command_registers_low_cost_media_provider_models(): void
     {
-        $this->artisan('ai-engine:sync-models', ['--provider' => 'media'])
+        $this->artisan('ai:sync-models', ['--provider' => 'media'])
             ->expectsOutput('🔄 Syncing AI Models...')
             ->expectsOutput('📡 Syncing low-cost media provider models...')
             ->assertSuccessful();

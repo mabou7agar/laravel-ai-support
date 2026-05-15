@@ -28,10 +28,10 @@ Child nodes expose:
 ## Safe Node Management Commands
 
 ```bash
-php artisan ai-engine:node-list
-php artisan ai-engine:node-ping --all
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
-php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
+php artisan ai:node-list
+php artisan ai:node-ping --all
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+php artisan ai:node-cleanup --status=error --days=0 --apply --force
 ```
 
 ## Why This Pattern Scales

@@ -12,7 +12,7 @@ use LaravelAIEngine\Services\AIMediaManager;
 
 class TestAIMediaCommand extends Command
 {
-    protected $signature = 'ai-engine:test-ai-media
+    protected $signature = 'ai:test-ai-media
                             {--write-test : Write a small test object to the configured media disk}
                             {--cleanup : Delete the test file and AIMedia row after writing it}
                             {--limit=5 : Number of recent AIMedia rows to display}

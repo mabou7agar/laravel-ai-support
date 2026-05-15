@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Diagnostics\TestEverythingRunner;
 
 class TestEverythingCommand extends Command
 {
-    protected $signature = 'ai-engine:test-everything
+    protected $signature = 'ai:test-everything
                             {--profile=safe : safe|graph|full|all}
                             {--graph-live : Include package live Neo4j graph checks}
                             {--root-live : Include root-app live graph/chat checks}

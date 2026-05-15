@@ -24,7 +24,7 @@ use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class TestPackageCommand extends Command
 {
-    protected $signature = 'ai-engine:test-package
+    protected $signature = 'ai:test-package
                             {--skip-events : Skip event system tests}
                             {--skip-services : Skip service tests}
                             {--skip-config : Skip configuration tests}';
@@ -100,7 +100,7 @@ class TestPackageCommand extends Command
         });
 
         $this->test('infra-health command is registered', function () {
-            return $this->getApplication()->has('ai-engine:infra-health');
+            return $this->getApplication()->has('ai:infra-health');
         });
     }
 

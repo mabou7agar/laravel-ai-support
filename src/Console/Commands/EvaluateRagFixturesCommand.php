@@ -10,7 +10,7 @@ use LaravelAIEngine\Services\RAG\RAGContextBuilder;
 
 class EvaluateRagFixturesCommand extends Command
 {
-    protected $signature = 'ai-engine:evaluate-rag-fixtures
+    protected $signature = 'ai:evaluate-rag-fixtures
                             {--path= : JSON fixture file path}
                             {--json : Print JSON report}';
 

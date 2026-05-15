@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Graph\Neo4jHttpTransport;
 
 class Neo4jGraphStatsCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-stats
+    protected $signature = 'ai:neo4j-stats
                             {--url=}
                             {--database=}
                             {--username=}

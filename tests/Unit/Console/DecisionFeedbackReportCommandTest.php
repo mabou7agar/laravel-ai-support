@@ -24,7 +24,7 @@ class DecisionFeedbackReportCommandTest extends UnitTestCase
             ['selected_entity' => ['entity_id' => 9, 'entity_type' => 'invoice']]
         );
 
-        Artisan::call('ai-engine:decision-feedback:report', ['--json' => true]);
+        Artisan::call('ai:decision-feedback:report', ['--json' => true]);
         $output = Artisan::output();
         $payload = json_decode($output, true);
 
@@ -42,7 +42,7 @@ class DecisionFeedbackReportCommandTest extends UnitTestCase
         $feedback = $this->app->make(RAGDecisionFeedbackService::class);
         $feedback->recordParseFailure('next', 'invalid');
 
-        Artisan::call('ai-engine:decision-feedback:report', ['--json' => true, '--reset' => true]);
+        Artisan::call('ai:decision-feedback:report', ['--json' => true, '--reset' => true]);
         $output = Artisan::output();
         $payload = json_decode($output, true);
 

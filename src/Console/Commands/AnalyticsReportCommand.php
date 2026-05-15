@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Analytics\AnalyticsManager;
 
 class AnalyticsReportCommand extends Command
 {
-    protected $signature = 'ai-engine:analytics-report 
+    protected $signature = 'ai:analytics-report
                             {--period=monthly : Report period (daily, weekly, monthly, yearly)}
                             {--format=table : Output format (table, json, csv)}
                             {--engine= : Filter by specific engine}

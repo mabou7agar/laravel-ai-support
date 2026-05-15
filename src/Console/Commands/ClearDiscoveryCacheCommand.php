@@ -9,11 +9,11 @@ use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 /**
  * Clear all discovery caches
  * 
- * Usage: php artisan ai-engine:clear-discovery-cache
+ * Usage: php artisan ai:clear-discovery-cache
  */
 class ClearDiscoveryCacheCommand extends Command
 {
-    protected $signature = 'ai-engine:clear-discovery-cache
+    protected $signature = 'ai:clear-discovery-cache
                           {--warm : Warm the cache after clearing}';
 
     protected $description = 'Clear all AI Engine discovery caches (collectors, RAG collections, metadata)';
@@ -34,7 +34,7 @@ class ClearDiscoveryCacheCommand extends Command
 
         // Clear node metadata cache if exists
         if (class_exists(\LaravelAIEngine\Services\Node\NodeMetadataDiscovery::class)) {
-            \Illuminate\Support\Facades\Cache::forget('ai-engine:node-metadata');
+            \Illuminate\Support\Facades\Cache::forget('ai:node-metadata');
             $this->line('✓ Node metadata cache cleared');
         }
 

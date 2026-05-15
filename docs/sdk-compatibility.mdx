@@ -127,11 +127,11 @@ Realtime support returns provider-specific session descriptors so host applicati
 ## Scaffolding
 
 ```bash
-php artisan ai-engine:make-agent Invoice --model="App\\Models\\Invoice"
-php artisan ai-engine:make-tool LookupCustomer
+php artisan ai:make-agent Invoice --model="App\\Models\\Invoice"
+php artisan ai:make-tool LookupCustomer
 ```
 
-These commands reuse the generic `ai-engine:scaffold` implementation and register generated classes in the agent manifest unless `--no-register` is passed.
+These commands reuse the generic `ai:scaffold` implementation and register generated classes in the agent manifest unless `--no-register` is passed.
 
 ## Testing
 

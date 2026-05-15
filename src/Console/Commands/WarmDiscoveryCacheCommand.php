@@ -8,11 +8,11 @@ use LaravelAIEngine\Services\DiscoveryCacheWarmer;
 /**
  * Warm discovery caches
  * 
- * Usage: php artisan ai-engine:warm-discovery-cache
+ * Usage: php artisan ai:warm-discovery-cache
  */
 class WarmDiscoveryCacheCommand extends Command
 {
-    protected $signature = 'ai-engine:warm-discovery-cache
+    protected $signature = 'ai:warm-discovery-cache
                           {--force : Force re-discovery even if cache exists}';
 
     protected $description = 'Pre-populate AI Engine discovery caches to improve performance';

@@ -12,7 +12,7 @@ class InfrastructureHealthCommandTest extends UnitTestCase
         config()->set('ai-engine.infrastructure.remote_node_migration_guard.enabled', false);
         config()->set('ai-engine.infrastructure.qdrant_self_check.enabled', false);
 
-        $exitCode = Artisan::call('ai-engine:infra-health', ['--json' => true]);
+        $exitCode = Artisan::call('ai:infra-health', ['--json' => true]);
         $payload = json_decode(Artisan::output(), true);
 
         $this->assertSame(0, $exitCode);
@@ -29,7 +29,7 @@ class InfrastructureHealthCommandTest extends UnitTestCase
         config()->set('ai-engine.infrastructure.remote_node_migration_guard.required_tables', ['__missing_infra_table__']);
         config()->set('ai-engine.infrastructure.qdrant_self_check.enabled', false);
 
-        $exitCode = Artisan::call('ai-engine:infra-health', ['--fail-on-unhealthy' => true]);
+        $exitCode = Artisan::call('ai:infra-health', ['--fail-on-unhealthy' => true]);
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('remote_node_migrations', Artisan::output());

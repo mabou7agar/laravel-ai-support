@@ -21,7 +21,7 @@ class GenerateFalCharacterCommandTest extends TestCase
     {
         $command = new GenerateFalCharacterCommand();
 
-        $this->assertSame('ai-engine:generate-character', $command->getName());
+        $this->assertSame('ai:generate-character', $command->getName());
     }
 
     public function test_dry_run_prepares_grouped_character_generation_workflow(): void
@@ -67,7 +67,7 @@ class GenerateFalCharacterCommandTest extends TestCase
         $this->app->instance(FalCharacterGenerationService::class, $service);
         $this->app->instance(FalAsyncCharacterGenerationService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:generate-character', [
+        $exitCode = Artisan::call('ai:generate-character', [
             'prompt' => 'Front-facing portrait of Mina',
             '--frame-count' => 8,
             '--look-size' => 4,
@@ -146,7 +146,7 @@ class GenerateFalCharacterCommandTest extends TestCase
         $this->app->instance(FalCharacterGenerationService::class, $service);
         $this->app->instance(FalAsyncCharacterGenerationService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:generate-character', [
+        $exitCode = Artisan::call('ai:generate-character', [
             'prompt' => 'Front-facing portrait of Mina',
             '--name' => 'Mina',
             '--save-as' => 'hero-mina',
@@ -211,7 +211,7 @@ class GenerateFalCharacterCommandTest extends TestCase
         $this->app->instance(FalCharacterGenerationService::class, $service);
         $this->app->instance(FalAsyncCharacterGenerationService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:generate-character', [
+        $exitCode = Artisan::call('ai:generate-character', [
             'prompt' => 'Front-facing portrait of Mina',
             '--frame-count' => 8,
             '--look-size' => 4,
@@ -268,7 +268,7 @@ class GenerateFalCharacterCommandTest extends TestCase
         $this->app->instance(FalCharacterGenerationService::class, $service);
         $this->app->instance(FalAsyncCharacterGenerationService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:generate-character', [
+        $exitCode = Artisan::call('ai:generate-character', [
             'prompt' => 'Front-facing portrait of Mina',
             '--name' => 'Mina',
             '--save-as' => 'mina-preview',

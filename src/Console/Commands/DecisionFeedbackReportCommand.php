@@ -8,7 +8,7 @@ use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
 
 class DecisionFeedbackReportCommand extends Command
 {
-    protected $signature = 'ai-engine:decision-feedback:report
+    protected $signature = 'ai:decision-feedback:report
                             {--json : Output report as JSON}
                             {--reset : Clear adaptive feedback state after report}';
 

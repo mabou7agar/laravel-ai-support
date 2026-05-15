@@ -7,38 +7,38 @@ use LaravelAIEngine\Services\Vector\VectorSearchService;
 
 class VectorStatusCommand extends Command
 {
-    protected $signature = 'ai-engine:vector-status 
+    protected $signature = 'ai:vector-status
                             {model? : The model class to check status}';
-    
+
     protected $description = 'Show vector indexing status for models';
 
     public function handle(VectorSearchService $vectorSearch): int
     {
         $modelClass = $this->argument('model');
-        
+
         if ($modelClass) {
             return $this->showModelStatus($modelClass, $vectorSearch);
         }
-        
+
         return $this->showAllStatus($vectorSearch);
     }
-    
+
     protected function showModelStatus(string $modelClass, VectorSearchService $vectorSearch): int
     {
         if (!class_exists($modelClass)) {
             $this->error("Model class not found: {$modelClass}");
             return self::FAILURE;
         }
-        
+
         $this->info("📊 Vector Indexing Status");
         $this->newLine();
-        
+
         $this->line("<fg=cyan>{$modelClass}</>");
         $this->line(str_repeat('─', 60));
-        
+
         try {
             $stats = $this->getModelStats($modelClass, $vectorSearch);
-            
+
             $this->table(
                 ['Metric', 'Value'],
                 [
@@ -49,37 +49,37 @@ class VectorStatusCommand extends Command
                     ['Status', $stats['status']],
                 ]
             );
-            
+
             if ($stats['has_relationships']) {
                 $this->newLine();
                 $this->line("<fg=green>✓</> Relationships configured: " . implode(', ', $stats['relationships']));
             }
-            
+
             return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to get status: {$e->getMessage()}");
             return self::FAILURE;
         }
     }
-    
+
     protected function showAllStatus(VectorSearchService $vectorSearch): int
     {
         $this->info("📊 All Vectorizable Models Status");
         $this->newLine();
-        
+
         $models = \discover_vectorizable_models();
-        
+
         if (empty($models)) {
             $this->warn('No vectorizable models found.');
             return self::SUCCESS;
         }
-        
+
         $rows = [];
-        
+
         foreach ($models as $modelClass) {
             try {
                 $stats = $this->getModelStats($modelClass, $vectorSearch);
-                
+
                 $rows[] = [
                     class_basename($modelClass),
                     number_format($stats['total_records']),
@@ -97,19 +97,19 @@ class VectorStatusCommand extends Command
                 ];
             }
         }
-        
+
         $this->table(
             ['Model', 'Total', 'Indexed', 'Pending', 'Status'],
             $rows
         );
-        
+
         return self::SUCCESS;
     }
-    
+
     protected function getModelStats(string $modelClass, VectorSearchService $vectorSearch): array
     {
         $total = $modelClass::count();
-        
+
         // Get actual indexed count from vector database
         try {
             $collectionName = $this->getCollectionName($modelClass);
@@ -121,11 +121,11 @@ class VectorStatusCommand extends Command
             $indexed = 0;
             $pending = $total;
         }
-        
+
         $model = new $modelClass;
-        $hasRelationships = property_exists($model, 'vectorRelationships') && 
+        $hasRelationships = property_exists($model, 'vectorRelationships') &&
                            !empty($model->vectorRelationships);
-        
+
         // Determine status
         if ($indexed === 0 && $total > 0) {
             $status = '<fg=red>Not Indexed</>';
@@ -136,7 +136,7 @@ class VectorStatusCommand extends Command
         } else {
             $status = '<fg=gray>Empty</>';
         }
-        
+
         return [
             'collection' => $collectionName,
             'total_records' => $total,
@@ -147,7 +147,7 @@ class VectorStatusCommand extends Command
             'relationships' => $hasRelationships ? $model->vectorRelationships : [],
         ];
     }
-    
+
     protected function getCollectionName(string $modelClass): string
     {
         return strtolower(str_replace('\\', '_', $modelClass));

@@ -6,7 +6,7 @@ namespace LaravelAIEngine\Console\Commands;
 
 class MakeAgentCommand extends ScaffoldAgentArtifactCommand
 {
-    protected $signature = 'ai-engine:make-agent
+    protected $signature = 'ai:make-agent
                             {name? : Class name (e.g. Invoice)}
                             {--model= : Model class for agent (e.g. App\\Models\\Invoice)}
                             {--description= : Description text used in generated class}

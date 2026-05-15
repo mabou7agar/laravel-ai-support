@@ -189,22 +189,22 @@ Expected behavior:
 ### Step 1: validate nodes
 
 ```bash
-php artisan ai-engine:node-list
-php artisan ai-engine:node-ping --all
+php artisan ai:node-list
+php artisan ai:node-ping --all
 ```
 
 ### Step 2: safe bulk sync
 
 ```bash
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --autofix
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
 ```
 
 ### Step 3: run cross-node scenario
 
 ```bash
-php artisan ai-engine:test-real-agent \
+php artisan ai:test-real-agent \
   --message="list recent records" \
   --message="show details of the first one" \
   --json
@@ -218,10 +218,10 @@ Expected behavior:
 ## Playbook 6: Policy Learning (Prompt-Level)
 
 ```bash
-php artisan ai-engine:decision-feedback:report
-php artisan ai-engine:decision-policy:evaluate --window-hours=48
-php artisan ai-engine:decision-policy:create v2 --activate
-php artisan ai-engine:test-real-agent --script=followup --report-feedback --json
+php artisan ai:decision-feedback:report
+php artisan ai:decision-policy:evaluate --window-hours=48
+php artisan ai:decision-policy:create v2 --activate
+php artisan ai:test-real-agent --script=followup --report-feedback --json
 ```
 
 Expected behavior:

@@ -56,26 +56,26 @@ These contracts keep indexing, graph shape, and response payloads explicit.
 1. Initialize schema:
 
 ```bash
-php artisan ai-engine:neo4j-init
+php artisan ai:neo4j-init
 ```
 
 2. Bulk sync models:
 
 ```bash
-php artisan ai-engine:neo4j-sync --fresh
+php artisan ai:neo4j-sync --fresh
 ```
 
 3. Inspect graph state:
 
 ```bash
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-diagnose
 ```
 
 4. Repair common integrity issues:
 
 ```bash
-php artisan ai-engine:neo4j-repair --apply
+php artisan ai:neo4j-repair --apply
 ```
 
 ## Knowledge Base Layer
@@ -101,13 +101,13 @@ Security rules:
 Targeted warmup:
 
 ```bash
-php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
+php artisan ai:neo4j-kb-warm --from-profiles --canonical-user-id=1
 ```
 
 Background build:
 
 ```bash
-php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
 ```
 
 The build command:
@@ -123,7 +123,7 @@ In a Laravel 11+ host app, schedule the build from `routes/console.php`:
 ```php
 use Illuminate\Support\Facades\Schedule;
 
-Schedule::command('ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
+Schedule::command('ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
     ->hourly()
     ->withoutOverlapping()
     ->when(static function (): bool {

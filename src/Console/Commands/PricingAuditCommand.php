@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Billing\PricingInspectionService;
 
 class PricingAuditCommand extends Command
 {
-    protected $signature = 'ai-engine:pricing-audit
+    protected $signature = 'ai:pricing-audit
                             {--fail-on-warning : Return a failure exit code when warnings are present}
                             {--json : Output a JSON payload instead of tables}';
 

@@ -45,7 +45,7 @@ class GenerateFalReferencePackCommandTest extends TestCase
         $this->app->instance(FalReferencePackGenerationService::class, $service);
         $this->app->instance(FalAsyncReferencePackGenerationService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:generate-reference-pack', [
+        $exitCode = Artisan::call('ai:generate-reference-pack', [
             'prompt' => 'Modern curved couch',
             '--entity-type' => 'furniture',
             '--dry-run' => true,
@@ -100,7 +100,7 @@ class GenerateFalReferencePackCommandTest extends TestCase
         $this->app->instance(FalReferencePackGenerationService::class, $service);
         $this->app->instance(FalAsyncReferencePackGenerationService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:generate-reference-pack', [
+        $exitCode = Artisan::call('ai:generate-reference-pack', [
             'prompt' => 'Modern curved couch',
             '--entity-type' => 'furniture',
         ]);
@@ -165,7 +165,7 @@ class GenerateFalReferencePackCommandTest extends TestCase
         $this->app->instance(FalReferencePackGenerationService::class, $service);
         $this->app->instance(FalAsyncReferencePackGenerationService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:generate-reference-pack', [
+        $exitCode = Artisan::call('ai:generate-reference-pack', [
             'prompt' => 'Generate Mina',
             '--look-id' => 'festival_blue',
             '--look-payload' => '{"label":"Festival Blue","instruction":"Keep the blue styling direction consistent across every view."}',
@@ -230,7 +230,7 @@ class GenerateFalReferencePackCommandTest extends TestCase
         $this->app->instance(FalReferencePackGenerationService::class, $service);
         $this->app->instance(FalAsyncReferencePackGenerationService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:generate-reference-pack', [
+        $exitCode = Artisan::call('ai:generate-reference-pack', [
             'prompt' => 'Generate Mina set',
             '--look-set' => '[{"id":"business-street-look","name":"Commercial Street Business Look","instruction":"Keep the commercial business wardrobe locked."},{"id":"airport-disguise","name":"Airport Security Disguise","instruction":"Keep the airport disguise wardrobe locked."}]',
         ]);

@@ -26,7 +26,7 @@ class AgentRunMaintenanceCommandsTest extends TestCase
             'status' => AIAgentRun::STATUS_RUNNING,
         ]);
 
-        $exitCode = Artisan::call('ai-engine:agent-runs:recover-stuck', [
+        $exitCode = Artisan::call('ai:agent-runs:recover-stuck', [
             '--minutes' => 30,
             '--json' => true,
         ]);
@@ -55,7 +55,7 @@ class AgentRunMaintenanceCommandsTest extends TestCase
             'expired_at' => now(),
         ]);
 
-        $exitCode = Artisan::call('ai-engine:agent-runs:cleanup-expired', [
+        $exitCode = Artisan::call('ai:agent-runs:cleanup-expired', [
             '--days' => 7,
             '--json' => true,
         ]);
@@ -79,7 +79,7 @@ class AgentRunMaintenanceCommandsTest extends TestCase
             'updated_at' => now()->subHour(),
         ]);
 
-        $exitCode = Artisan::call('ai-engine:agent-runs:recover-stuck', [
+        $exitCode = Artisan::call('ai:agent-runs:recover-stuck', [
             '--minutes' => 30,
             '--dry-run' => true,
             '--json' => true,

@@ -13,7 +13,7 @@ use LaravelAIEngine\Services\RAG\RAGContextBuilder;
 
 class BenchmarkOrchestrationV2Command extends Command
 {
-    protected $signature = 'ai-engine:benchmark-orchestration-v2
+    protected $signature = 'ai:benchmark-orchestration-v2
                             {--path= : JSON benchmark fixture file path}
                             {--iterations=25 : Iterations per benchmark group}
                             {--json : Print JSON report}';

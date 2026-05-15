@@ -85,9 +85,9 @@ AI_ENGINE_NEO4J_PASSWORD=secret
 ## Step 4: Dry-Run Then Apply
 
 ```bash
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --autofix
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
 ```
 
 Recommended sequence:
@@ -99,7 +99,7 @@ Recommended sequence:
 ## Step 5: Verify Routing
 
 ```bash
-php artisan ai-engine:test-real-agent --message="list recent records" --json
+php artisan ai:test-real-agent --message="list recent records" --json
 ```
 
 Expected:
@@ -110,7 +110,7 @@ Expected:
 ## Step 6: Cleanup Stale Nodes
 
 ```bash
-php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
+php artisan ai:node-cleanup --status=error --days=0 --apply --force
 ```
 
 ## Operating Pattern for Many Apps

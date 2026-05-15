@@ -18,16 +18,16 @@ Laravel AI Engine supports hosted and local media generation providers for image
 Register the low-cost media providers into the `ai_models` table:
 
 ```bash
-php artisan ai-engine:sync-models --provider=media
+php artisan ai:sync-models --provider=media
 ```
 
 You can sync one provider:
 
 ```bash
-php artisan ai-engine:sync-models --provider=cloudflare_workers_ai
-php artisan ai-engine:sync-models --provider=huggingface
-php artisan ai-engine:sync-models --provider=replicate
-php artisan ai-engine:sync-models --provider=comfyui
+php artisan ai:sync-models --provider=cloudflare_workers_ai
+php artisan ai:sync-models --provider=huggingface
+php artisan ai:sync-models --provider=replicate
+php artisan ai:sync-models --provider=comfyui
 ```
 
 ## Cost-Aware Routing

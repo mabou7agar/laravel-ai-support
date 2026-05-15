@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Graph\GraphBenchmarkHistoryService;
 
 class GraphBenchmarkHistoryCommand extends Command
 {
-    protected $signature = 'ai-engine:benchmark-history
+    protected $signature = 'ai:benchmark-history
                             {--type= : One of retrieval, chat, indexing}
                             {--limit=10 : Number of history entries to show}';
 

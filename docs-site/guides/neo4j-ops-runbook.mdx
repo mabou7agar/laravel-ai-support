@@ -19,10 +19,10 @@ It covers the normal sequence:
 ## 1) First-Time Setup
 
 ```bash
-php artisan ai-engine:neo4j-init
-php artisan ai-engine:neo4j-sync --fresh
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:neo4j-init
+php artisan ai:neo4j-sync --fresh
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-diagnose
 ```
 
 Expected outcome:
@@ -37,13 +37,13 @@ Expected outcome:
 Incremental refresh:
 
 ```bash
-php artisan ai-engine:neo4j-sync
+php artisan ai:neo4j-sync
 ```
 
 Fresh rebuild when graph state is stale or after major mapping changes:
 
 ```bash
-php artisan ai-engine:neo4j-sync --fresh
+php artisan ai:neo4j-sync --fresh
 ```
 
 Use `--fresh` when:
@@ -56,8 +56,8 @@ Use `--fresh` when:
 ## 3) Diagnose Before Repair
 
 ```bash
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-diagnose
 ```
 
 Look for:
@@ -74,19 +74,19 @@ Look for:
 Dry-run first if available in your environment, then apply:
 
 ```bash
-php artisan ai-engine:neo4j-repair --apply
+php artisan ai:neo4j-repair --apply
 ```
 
 Re-run diagnostics after repair:
 
 ```bash
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:neo4j-diagnose
 ```
 
 If issues persist, the safe fallback is:
 
 ```bash
-php artisan ai-engine:neo4j-sync --fresh
+php artisan ai:neo4j-sync --fresh
 ```
 
 ## 5) Knowledge Base Operations
@@ -94,13 +94,13 @@ php artisan ai-engine:neo4j-sync --fresh
 Targeted warmup:
 
 ```bash
-php artisan ai-engine:neo4j-kb-warm --from-profiles --canonical-user-id=1
+php artisan ai:neo4j-kb-warm --from-profiles --canonical-user-id=1
 ```
 
 Background build:
 
 ```bash
-php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
 ```
 
 Use `neo4j-kb-warm` when:
@@ -119,7 +119,7 @@ Use `neo4j-kb-build` when:
 Recommended host-app schedule:
 
 ```php
-Schedule::command('ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
+Schedule::command('ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
     ->hourly()
     ->withoutOverlapping();
 ```
@@ -137,9 +137,9 @@ Expected behavior:
 Run:
 
 ```bash
-php artisan ai-engine:neo4j-diagnose
-php artisan ai-engine:neo4j-repair --apply
-php artisan ai-engine:neo4j-sync --fresh
+php artisan ai:neo4j-diagnose
+php artisan ai:neo4j-repair --apply
+php artisan ai:neo4j-sync --fresh
 ```
 
 Then verify relation publishing rules on the affected models.
@@ -157,8 +157,8 @@ Check:
 Run:
 
 ```bash
-php artisan ai-engine:neo4j-stats
-php artisan ai-engine:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
 ```
 
 ### Cross-app results leak or look over-broad
@@ -173,8 +173,8 @@ Check:
 Then run:
 
 ```bash
-php artisan ai-engine:neo4j-sync
-php artisan ai-engine:neo4j-diagnose
+php artisan ai:neo4j-sync
+php artisan ai:neo4j-diagnose
 ```
 
 ## 8) Post-Deploy Verification
@@ -183,8 +183,8 @@ After deploying graph-related changes:
 
 ```bash
 php artisan optimize:clear
-php artisan ai-engine:neo4j-diagnose
-php artisan ai-engine:test-package
+php artisan ai:neo4j-diagnose
+php artisan ai:test-package
 ```
 
 Host-app verification:

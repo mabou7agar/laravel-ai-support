@@ -84,21 +84,21 @@ class AgentManifestDoctor
             ],
             'developer_commands' => [
                 'scaffold' => [
-                    'ai-engine:init',
-                    'ai-engine:make-agent',
-                    'ai-engine:make-tool',
-                    'ai-engine:make-skill',
-                    'ai-engine:scaffold skill',
+                    'ai:init',
+                    'ai:make-agent',
+                    'ai:make-tool',
+                    'ai:make-skill',
+                    'ai:scaffold skill',
                 ],
                 'diagnostics' => [
-                    'ai-engine:manifest:doctor',
-                    'ai-engine:skills:discover',
-                    'ai-engine:skills:test',
-                    'ai-engine:test-orchestration',
+                    'ai:manifest:doctor',
+                    'ai:skills:discover',
+                    'ai:skills:test',
+                    'ai:test-orchestration',
                 ],
                 'pricing' => [
-                    'ai-engine:pricing-audit',
-                    'ai-engine:pricing-simulate',
+                    'ai:pricing-audit',
+                    'ai:pricing-simulate',
                 ],
             ],
         ];

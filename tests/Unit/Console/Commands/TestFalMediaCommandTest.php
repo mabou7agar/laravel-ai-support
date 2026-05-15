@@ -24,7 +24,7 @@ class TestFalMediaCommandTest extends TestCase
     {
         $command = new TestFalMediaCommand();
 
-        $this->assertSame('ai-engine:test-fal-media', $command->getName());
+        $this->assertSame('ai:test-fal-media', $command->getName());
     }
 
     public function test_dry_run_shows_prepared_request_without_calling_service(): void
@@ -39,7 +39,7 @@ class TestFalMediaCommandTest extends TestCase
         $service->shouldNotReceive('generate');
         $this->app->instance(FalMediaWorkflowService::class, $service);
 
-        $exitCode = Artisan::call('ai-engine:test-fal-media', [
+        $exitCode = Artisan::call('ai:test-fal-media', [
             'prompt' => 'Create hero keyframes',
             '--frame-count' => 2,
             '--aspect-ratio' => '16:9',
@@ -90,7 +90,7 @@ class TestFalMediaCommandTest extends TestCase
 
         $this->app->instance(FalMediaWorkflowService::class, $service);
 
-        $exitCode = Artisan::call('ai-engine:test-fal-media', [
+        $exitCode = Artisan::call('ai:test-fal-media', [
             'prompt' => 'Turn this into a cinematic portrait',
             '--source-image' => ['https://example.com/base.png'],
             '--character' => ['{"name":"Mina","frontal_image_url":"https://example.com/front.png"}'],
@@ -135,7 +135,7 @@ class TestFalMediaCommandTest extends TestCase
 
         $this->app->instance(FalMediaWorkflowService::class, $service);
 
-        $exitCode = Artisan::call('ai-engine:test-fal-media', [
+        $exitCode = Artisan::call('ai:test-fal-media', [
             'prompt' => 'Make the scene move like a trailer shot',
             '--reference-image-url' => ['https://example.com/ref.png'],
         ]);
@@ -182,7 +182,7 @@ class TestFalMediaCommandTest extends TestCase
 
         $this->app->instance(FalMediaWorkflowService::class, $service);
 
-        $exitCode = Artisan::call('ai-engine:test-fal-media', [
+        $exitCode = Artisan::call('ai:test-fal-media', [
             '--character' => [
                 '{"name":"Mina","frontal_image_url":"https://example.com/mina.png"}',
                 '{"name":"Ray","frontal_image_url":"https://example.com/ray.png"}',
@@ -237,7 +237,7 @@ class TestFalMediaCommandTest extends TestCase
 
         $this->app->instance(FalMediaWorkflowService::class, $service);
 
-        $exitCode = Artisan::call('ai-engine:test-fal-media', [
+        $exitCode = Artisan::call('ai:test-fal-media', [
             'prompt' => 'Make Mina walk toward camera',
             '--use-last-character' => true,
         ]);
@@ -282,7 +282,7 @@ class TestFalMediaCommandTest extends TestCase
             ]);
         $this->app->instance(FalAsyncVideoService::class, $asyncService);
 
-        $exitCode = Artisan::call('ai-engine:test-fal-media', [
+        $exitCode = Artisan::call('ai:test-fal-media', [
             'prompt' => 'Create a neon city chase',
             '--model' => EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO,
             '--async' => true,
@@ -293,7 +293,7 @@ class TestFalMediaCommandTest extends TestCase
 
     public function test_command_fails_for_invalid_character_json(): void
     {
-        $exitCode = Artisan::call('ai-engine:test-fal-media', [
+        $exitCode = Artisan::call('ai:test-fal-media', [
             'prompt' => 'Create a character turnaround',
             '--character' => ['{invalid-json}'],
         ]);

@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\AIModelRegistry;
 
 class ListAIModelsCommand extends Command
 {
-    protected $signature = 'ai-engine:list-models
+    protected $signature = 'ai:list-models
                             {--provider= : Filter by provider}
                             {--vision : Show only vision models}
                             {--function-calling : Show only function calling models}

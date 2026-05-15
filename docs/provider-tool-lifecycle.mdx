@@ -23,7 +23,7 @@ Generic FAL catalog models synced into `ai_models` can execute through the FAL d
 Before using a discovered FAL endpoint, sync the active provider catalog:
 
 ```bash
-php artisan ai-engine:sync-models --provider=fal_ai --auto-discover
+php artisan ai:sync-models --provider=fal_ai --auto-discover
 ```
 
 If a requested model is not active in `ai_models`, the API returns a `422` validation-style response instead of starting a provider run.

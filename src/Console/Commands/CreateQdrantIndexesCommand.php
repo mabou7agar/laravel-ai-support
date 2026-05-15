@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 class CreateQdrantIndexesCommand extends Command
 {
-    protected $signature = 'ai-engine:create-indexes 
+    protected $signature = 'ai:create-indexes
                             {collection? : The Qdrant collection name (optional if using --all)}
                             {field? : The field name to create index for (optional if using --all)}
                             {--type=integer : The field type (integer, keyword, float, bool)}
@@ -89,7 +89,7 @@ class CreateQdrantIndexesCommand extends Command
 
                 foreach ($indexes as $field => $type) {
                     $result = $this->createIndex($collection, $field, $type, true);
-                    
+
                     if ($result === 'created') {
                         $totalCreated++;
                     } elseif ($result === 'exists') {
@@ -167,7 +167,7 @@ class CreateQdrantIndexesCommand extends Command
         foreach ($files as $file) {
             try {
                 $content = file_get_contents($file->getRealPath());
-                
+
                 // Check if file uses Vectorizable trait
                 if (!str_contains($content, 'use LaravelAIEngine\Traits\Vectorizable') &&
                     !str_contains($content, 'Vectorizable')) {
@@ -176,7 +176,7 @@ class CreateQdrantIndexesCommand extends Command
 
                 // Extract class name
                 $className = $this->extractClassName($content);
-                
+
                 if ($className && class_exists($className)) {
                     $traits = class_uses_recursive($className);
                     if (isset($traits['LaravelAIEngine\Traits\Vectorizable'])) {
@@ -228,7 +228,7 @@ class CreateQdrantIndexesCommand extends Command
         // Get indexes from getVectorMetadata() if available
         if (method_exists($instance, 'getVectorMetadata')) {
             $metadata = $instance->getVectorMetadata();
-            
+
             foreach ($metadata as $key => $value) {
                 // Infer type from value
                 $type = $this->inferFieldType($key, $value);
@@ -298,7 +298,7 @@ class CreateQdrantIndexesCommand extends Command
 
     /**
      * Create a single index
-     * 
+     *
      * @return string|int 'created', 'exists', 'failed', or Command constant
      */
     protected function createIndex(string $collection, string $field, string $type, bool $silent = false): string|int
@@ -320,13 +320,13 @@ class CreateQdrantIndexesCommand extends Command
                 } else {
                     $this->info("✅ Successfully created index for '{$field}' in '{$collection}'");
                 }
-                
+
                 Log::channel('ai-engine')->info('Created Qdrant index', [
                     'collection' => $collection,
                     'field' => $field,
                     'type' => $type,
                 ]);
-                
+
                 return $silent ? 'created' : Command::SUCCESS;
             }
 
@@ -345,14 +345,14 @@ class CreateQdrantIndexesCommand extends Command
             } else {
                 $this->error("❌ Failed to create index: " . $response->body());
             }
-            
+
             Log::channel('ai-engine')->error('Failed to create Qdrant index', [
                 'collection' => $collection,
                 'field' => $field,
                 'type' => $type,
                 'response' => $response->body(),
             ]);
-            
+
             return $silent ? 'failed' : Command::FAILURE;
 
         } catch (\Exception $e) {
@@ -361,13 +361,13 @@ class CreateQdrantIndexesCommand extends Command
             } else {
                 $this->error("❌ Error: " . $e->getMessage());
             }
-            
+
             Log::channel('ai-engine')->error('Exception creating Qdrant index', [
                 'collection' => $collection,
                 'field' => $field,
                 'error' => $e->getMessage(),
             ]);
-            
+
             return $silent ? 'failed' : Command::FAILURE;
         }
     }

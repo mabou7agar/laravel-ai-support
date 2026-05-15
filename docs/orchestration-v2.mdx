@@ -211,7 +211,7 @@ Use the API or artisan command to inspect capabilities before selecting a runtim
 
 ```bash
 curl "$APP_URL/api/v1/ai/agent-runs/capabilities"
-php artisan ai-engine:agent-runtime:capabilities
+php artisan ai:runtime-capabilities
 ```
 
 ## Retention, Recovery, And Replay
@@ -219,10 +219,10 @@ php artisan ai-engine:agent-runtime:capabilities
 Retention settings live under `ai-agent.run_retention`. Use:
 
 ```bash
-php artisan ai-engine:agent-runs:retention-cleanup
-php artisan ai-engine:agent-runs:recover-stuck
-php artisan ai-engine:agent-runs:cleanup-expired
-php artisan ai-engine:agent-runs:replay-step {step}
+php artisan ai:agent-runs:retention-cleanup
+php artisan ai:agent-runs:recover-stuck
+php artisan ai:agent-runs:cleanup-expired
+php artisan ai:agent-runs:replay-step {step}
 ```
 
 Replay creates a new step linked to the failed step instead of rewriting history.

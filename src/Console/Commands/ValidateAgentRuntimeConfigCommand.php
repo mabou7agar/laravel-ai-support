@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeConfigValidator;
 
 class ValidateAgentRuntimeConfigCommand extends Command
 {
-    protected $signature = 'ai-engine:validate-runtime-config
+    protected $signature = 'ai:validate-runtime-config
                             {--json : Print JSON report}';
 
     protected $description = 'Validate agent runtime and tool configuration';

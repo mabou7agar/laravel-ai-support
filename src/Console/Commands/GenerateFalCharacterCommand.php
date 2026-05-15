@@ -10,7 +10,7 @@ use LaravelAIEngine\Services\Fal\FalCharacterGenerationService;
 
 class GenerateFalCharacterCommand extends Command
 {
-    protected $signature = 'ai-engine:generate-character
+    protected $signature = 'ai:generate-character
                             {prompt? : Prompt used to generate the character}
                             {--name= : Character display name}
                             {--save-as= : Alias used later with --use-character}
@@ -152,9 +152,9 @@ class GenerateFalCharacterCommand extends Command
             $this->line('Use it with:');
             if (($parameters['preview_only'] ?? false) === true) {
                 $targetCount = max(2, (int) ($parameters['frame_count'] ?? 4));
-                $this->line("php artisan ai-engine:generate-character \"{$prompt}\" --from-character={$alias} --frame-count={$targetCount} --look-size=" . (int) ($parameters['look_size'] ?? 4));
+                $this->line("php artisan ai:generate-character \"{$prompt}\" --from-character={$alias} --frame-count={$targetCount} --look-size=" . (int) ($parameters['look_size'] ?? 4));
             } else {
-                $this->line("php artisan ai-engine:test-fal-media \"Your scene prompt\" --use-character={$alias}");
+                $this->line("php artisan ai:test-fal-media \"Your scene prompt\" --use-character={$alias}");
             }
 
             return self::SUCCESS;

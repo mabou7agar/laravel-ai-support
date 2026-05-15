@@ -11,7 +11,7 @@ use LaravelAIEngine\Services\Agent\Runtime\LangGraphRunMapper;
 
 class EvaluateRuntimeFixturesCommand extends Command
 {
-    protected $signature = 'ai-engine:evaluate-runtime-fixtures
+    protected $signature = 'ai:evaluate-runtime-fixtures
                             {--path= : JSON fixture file path}
                             {--json : Print JSON report}';
 

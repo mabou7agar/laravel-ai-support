@@ -7,7 +7,7 @@ use LaravelAIEngine\Services\Vector\VectorDriverManager;
 
 class VectorFixIndexesCommand extends Command
 {
-    protected $signature = 'vector:fix-indexes 
+    protected $signature = 'ai:vector-fix-indexes
                             {collection? : Specific collection to fix (optional, fixes all if not provided)}
                             {--dry-run : Show what would be fixed without making changes}
                             {--list : List all collections and their index types}';
@@ -17,7 +17,7 @@ class VectorFixIndexesCommand extends Command
     public function handle(VectorDriverManager $driverManager): int
     {
         $driver = $driverManager->driver();
-        
+
         if (!method_exists($driver, 'autoFixIndexTypes')) {
             $this->error('Current vector driver does not support auto-fix functionality.');
             return 1;
@@ -49,23 +49,23 @@ class VectorFixIndexesCommand extends Command
         try {
             $host = config('ai-engine.vector.drivers.qdrant.host');
             $apiKey = config('ai-engine.vector.drivers.qdrant.api_key');
-            
+
             $client = new \GuzzleHttp\Client([
                 'base_uri' => $host,
                 'headers' => ['api-key' => $apiKey, 'Content-Type' => 'application/json'],
                 'timeout' => 30,
             ]);
-            
+
             $response = $client->get('/collections');
             $data = json_decode($response->getBody()->getContents(), true);
-            
+
             foreach ($data['result']['collections'] ?? [] as $col) {
                 $name = $col['name'];
                 $count = $driver->count($name);
-                
+
                 $this->newLine();
                 $this->info("📦 {$name} ({$count} vectors)");
-                
+
                 $indexes = $driver->getExistingIndexesWithTypes($name);
                 if (empty($indexes)) {
                     $this->warn('   No indexes');
@@ -75,7 +75,7 @@ class VectorFixIndexesCommand extends Command
                         $expectedType = $driver->getFieldType($name, $field);
                         $normalizedCurrent = $this->normalizeType($type);
                         $normalizedExpected = $this->normalizeType($expectedType);
-                        
+
                         if ($normalizedCurrent !== $normalizedExpected) {
                             $this->error("   ⚠️  {$field}: {$type} (should be {$expectedType})");
                         } else {
@@ -84,7 +84,7 @@ class VectorFixIndexesCommand extends Command
                     }
                 }
             }
-            
+
             $this->newLine();
             return 0;
         } catch (\Exception $e) {
@@ -96,7 +96,7 @@ class VectorFixIndexesCommand extends Command
     protected function fixCollection($driver, string $collection, bool $dryRun): int
     {
         $this->info("🔧 Fixing indexes for collection: {$collection}");
-        
+
         if (!$driver->collectionExists($collection)) {
             $this->error("Collection '{$collection}' does not exist.");
             return 1;
@@ -104,7 +104,7 @@ class VectorFixIndexesCommand extends Command
 
         // Get current and expected types
         $currentTypes = $driver->getExistingIndexesWithTypes($collection);
-        
+
         if (empty($currentTypes)) {
             $this->warn('No indexes found in this collection.');
             return 0;
@@ -116,7 +116,7 @@ class VectorFixIndexesCommand extends Command
             $expectedType = $driver->getFieldType($collection, $field);
             $normalizedCurrent = $this->normalizeType($currentType);
             $normalizedExpected = $this->normalizeType($expectedType);
-            
+
             if ($normalizedCurrent !== $normalizedExpected) {
                 $toFix[$field] = [
                     'current' => $currentType,
@@ -132,7 +132,7 @@ class VectorFixIndexesCommand extends Command
 
         $this->newLine();
         $this->warn('Found ' . count($toFix) . ' index(es) with type mismatches:');
-        
+
         foreach ($toFix as $field => $types) {
             $this->line("  • {$field}: {$types['current']} → {$types['expected']}");
         }
@@ -150,7 +150,7 @@ class VectorFixIndexesCommand extends Command
         }
 
         $fixed = $driver->autoFixIndexTypes($collection);
-        
+
         if (!empty($fixed)) {
             $this->newLine();
             $this->info('✅ Fixed ' . count($fixed) . ' index(es):');
@@ -170,28 +170,28 @@ class VectorFixIndexesCommand extends Command
         try {
             $host = config('ai-engine.vector.drivers.qdrant.host');
             $apiKey = config('ai-engine.vector.drivers.qdrant.api_key');
-            
+
             $client = new \GuzzleHttp\Client([
                 'base_uri' => $host,
                 'headers' => ['api-key' => $apiKey, 'Content-Type' => 'application/json'],
                 'timeout' => 30,
             ]);
-            
+
             $response = $client->get('/collections');
             $data = json_decode($response->getBody()->getContents(), true);
-            
+
             $allToFix = [];
-            
+
             foreach ($data['result']['collections'] ?? [] as $col) {
                 $name = $col['name'];
                 $currentTypes = $driver->getExistingIndexesWithTypes($name);
-                
+
                 foreach ($currentTypes as $field => $currentType) {
                     // Use getFieldType which detects from actual data (handles UUID vs int)
                     $expectedType = $driver->getFieldType($name, $field);
                     $normalizedCurrent = $this->normalizeType($currentType);
                     $normalizedExpected = $this->normalizeType($expectedType);
-                    
+
                     if ($normalizedCurrent !== $normalizedExpected) {
                         if (!isset($allToFix[$name])) {
                             $allToFix[$name] = [];
@@ -234,11 +234,11 @@ class VectorFixIndexesCommand extends Command
 
             $this->newLine();
             $this->info('Fixing indexes...');
-            
+
             $results = $driver->autoFixAllCollections();
-            
+
             $totalFixed = array_sum(array_map('count', $results));
-            
+
             $this->newLine();
             $this->info("✅ Fixed {$totalFixed} index(es) across " . count($results) . " collection(s).");
 
@@ -252,7 +252,7 @@ class VectorFixIndexesCommand extends Command
     protected function normalizeType(string $type): string
     {
         $type = strtolower(trim($type));
-        
+
         $typeMap = [
             'int' => 'integer',
             'int64' => 'integer',
@@ -264,7 +264,7 @@ class VectorFixIndexesCommand extends Command
             'text' => 'keyword',
             'boolean' => 'bool',
         ];
-        
+
         return $typeMap[$type] ?? $type;
     }
 }

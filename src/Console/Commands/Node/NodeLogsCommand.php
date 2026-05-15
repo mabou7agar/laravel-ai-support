@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\File;
 
 class NodeLogsCommand extends Command
 {
-    protected $signature = 'ai-engine:node-logs
+    protected $signature = 'ai:node-logs
                             {--lines=50 : Number of lines to show}
                             {--follow : Follow the log file}
                             {--errors-only : Show only errors}

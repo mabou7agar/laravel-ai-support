@@ -9,7 +9,7 @@ use LaravelAIEngine\Console\Commands\Node\Concerns\RequiresMasterNode;
 class RegisterNodeCommand extends Command
 {
     use RequiresMasterNode;
-    protected $signature = 'ai-engine:node-register
+    protected $signature = 'ai:node-register
                             {name : Node name}
                             {url : Node URL}
                             {--description= : Node description (what it does)}

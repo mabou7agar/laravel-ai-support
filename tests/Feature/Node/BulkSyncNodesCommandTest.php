@@ -36,7 +36,7 @@ class BulkSyncNodesCommandTest extends UnitTestCase
             ],
         ]);
 
-        $this->artisan('ai-engine:nodes-sync', ['--file' => $file])
+        $this->artisan('ai:nodes-sync', ['--file' => $file])
             ->assertExitCode(0);
 
         $this->assertDatabaseCount('ai_nodes', 0);
@@ -70,7 +70,7 @@ class BulkSyncNodesCommandTest extends UnitTestCase
             ],
         ]);
 
-        $this->artisan('ai-engine:nodes-sync', [
+        $this->artisan('ai:nodes-sync', [
             '--file' => $file,
             '--apply' => true,
             '--force' => true,
@@ -131,7 +131,7 @@ class BulkSyncNodesCommandTest extends UnitTestCase
             ],
         ]);
 
-        $this->artisan('ai-engine:nodes-sync', [
+        $this->artisan('ai:nodes-sync', [
             '--file' => $file,
             '--apply' => true,
             '--prune' => true,
@@ -171,7 +171,7 @@ class BulkSyncNodesCommandTest extends UnitTestCase
             ],
         ]);
 
-        $this->artisan('ai-engine:nodes-sync', [
+        $this->artisan('ai:nodes-sync', [
             '--file' => $file,
             '--apply' => true,
             '--force' => true,
@@ -201,7 +201,7 @@ class BulkSyncNodesCommandTest extends UnitTestCase
             ],
         ]);
 
-        $this->artisan('ai-engine:nodes-sync', [
+        $this->artisan('ai:nodes-sync', [
             '--file' => $file,
             '--autofix' => true,
             '--apply' => true,
@@ -234,7 +234,7 @@ class BulkSyncNodesCommandTest extends UnitTestCase
             ],
         ]);
 
-        $this->artisan('ai-engine:nodes-sync', [
+        $this->artisan('ai:nodes-sync', [
             '--file' => $file,
             '--autofix-strict' => true,
         ])->assertExitCode(1);
@@ -258,7 +258,7 @@ class BulkSyncNodesCommandTest extends UnitTestCase
             ],
         ]);
 
-        $this->artisan('ai-engine:nodes-sync', [
+        $this->artisan('ai:nodes-sync', [
             '--file' => $file,
             '--autofix' => true,
             '--autofix-strict' => true,
@@ -289,7 +289,7 @@ class BulkSyncNodesCommandTest extends UnitTestCase
             ],
         ]);
 
-        $this->artisan('ai-engine:nodes-sync', [
+        $this->artisan('ai:nodes-sync', [
             '--file' => $file,
             '--autofix' => true,
             '--apply' => true,

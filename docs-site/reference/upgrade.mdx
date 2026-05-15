@@ -15,13 +15,14 @@ php artisan vendor:publish --tag=ai-engine-config --force
 php artisan vendor:publish --tag=ai-engine-migrations --force
 php artisan migrate
 php artisan optimize:clear
-php artisan ai-engine:test-package
-php artisan ai-engine:test-nodes --quick
-php artisan ai-engine:test-real-agent --script=minimal --json
-php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
+php artisan ai:test-package
+php artisan ai:node-list
+php artisan ai:node-ping --all
+php artisan ai:test-real-agent --script=minimal --json
+php artisan ai:test-real-agent --script-file=tests/fixtures/agent-flow.json --json
 ```
 
-`ai-engine:test-real-agent` keeps package built-ins generic. Use `--message` for quick checks and `--script-file` for app-specific business flows.
+`ai:test-real-agent` keeps package built-ins generic. Use `--message` for quick checks and `--script-file` for app-specific business flows.
 
 ## Generic Package Defaults
 
@@ -97,16 +98,16 @@ If they are missing, re-run published migrations.
 ## If You Use Federation
 
 ```bash
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --autofix
-php artisan ai-engine:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
-php artisan ai-engine:node-list
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --autofix
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+php artisan ai:node-list
 ```
 
 ## If You Have Stale Nodes
 
 ```bash
-php artisan ai-engine:node-cleanup --status=error --days=0 --apply --force
+php artisan ai:node-cleanup --status=error --days=0 --apply --force
 ```
 
 ## If You Are Moving To Central Neo4j GraphRAG

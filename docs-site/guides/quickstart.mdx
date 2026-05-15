@@ -28,9 +28,10 @@ AI_ENGINE_NODE_JWT_SECRET=change_me
 ## 3) Basic Health Checks
 
 ```bash
-php artisan ai-engine:test-package
-php artisan ai-engine:test-nodes --quick
-php artisan ai-engine:infra-health
+php artisan ai:test-package
+php artisan ai:node-list
+php artisan ai:node-ping --all
+php artisan ai:infra-health
 ```
 
 Expected: all checks pass.
@@ -55,7 +56,7 @@ $response = Engine::engine('openai')
 ## 4) First Real Conversation Test
 
 ```bash
-php artisan ai-engine:test-real-agent --script=minimal --json
+php artisan ai:test-real-agent --script=minimal --json
 ```
 
 Use `--script-file=path/to/agent-flow.json` when the smoke test should exercise your own app-specific workflow.
@@ -69,8 +70,8 @@ Expected:
 ## 5) Initialize Agent Workspace (Recommended)
 
 ```bash
-php artisan ai-engine:init
-php artisan ai-engine:scaffold agent Invoice --model="App\\Models\\Invoice"
+php artisan ai:init
+php artisan ai:scaffold agent Invoice --model="App\\Models\\Invoice"
 ```
 
 ## 6) Enable Admin UI (Optional but Useful)

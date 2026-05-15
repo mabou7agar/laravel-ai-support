@@ -163,7 +163,7 @@ class ManifestManagerController extends Controller
             $params['--no-register'] = true;
         }
 
-        $exitCode = Artisan::call('ai-engine:scaffold', $params);
+        $exitCode = Artisan::call('ai:scaffold', $params);
         $output = trim((string) Artisan::output());
 
         if ($exitCode !== 0) {

@@ -34,8 +34,8 @@ For local-only testing, use command option `--local-only`.
 ## Step 4: Validate End-to-End
 
 ```bash
-php artisan ai-engine:test-real-agent --script=followup --local-only --json
-php artisan ai-engine:test-real-agent --script-file=tests/fixtures/agent-flow.json --local-only --json
+php artisan ai:test-real-agent --script=followup --local-only --json
+php artisan ai:test-real-agent --script-file=tests/fixtures/agent-flow.json --local-only --json
 ```
 
 ## Step 5: Validate API Contract
@@ -66,5 +66,5 @@ Fix quickly:
 
 ```bash
 php artisan optimize:clear
-php artisan ai-engine:test-package
+php artisan ai:test-package
 ```

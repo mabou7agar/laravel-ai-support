@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class TestMediaEmbeddingsCommand extends Command
 {
-    protected $signature = 'ai-engine:test-media-embeddings 
+    protected $signature = 'ai:test-media-embeddings
                             {--cleanup : Clean up test data after running}';
 
     protected $description = 'Test HasMediaEmbeddings trait functionality';
@@ -75,11 +75,11 @@ class TestMediaEmbeddingsCommand extends Command
         } catch (\Exception $e) {
             $this->error('❌ Test failed: ' . $e->getMessage());
             $this->error('Stack trace: ' . $e->getTraceAsString());
-            
+
             if ($this->option('cleanup')) {
                 $this->cleanup();
             }
-            
+
             return Command::FAILURE;
         }
     }
@@ -112,7 +112,7 @@ class TestMediaEmbeddingsCommand extends Command
 
         $this->line('   📝 Created model: ' . $model->title);
         $this->line('   📏 Vector content length: ' . strlen($vectorContent));
-        
+
         if (str_contains($vectorContent, 'Test Post')) {
             $this->line('   ✅ Title found in vector content');
         } else {
@@ -138,7 +138,7 @@ class TestMediaEmbeddingsCommand extends Command
 
         $this->line('   📝 Created model with media: ' . $model->title);
         $this->line('   📏 Vector content length: ' . strlen($vectorContent));
-        
+
         if (str_contains($vectorContent, 'Integration Test')) {
             $this->line('   ✅ Text content included');
         } else {
@@ -148,7 +148,7 @@ class TestMediaEmbeddingsCommand extends Command
         // Check if getMediaVectorContent method exists
         if (method_exists($model, 'getMediaVectorContent')) {
             $this->line('   ✅ getMediaVectorContent method exists');
-            
+
             $mediaContent = $model->getMediaVectorContent();
             $this->line('   📏 Media content length: ' . strlen($mediaContent));
         } else {
@@ -190,7 +190,7 @@ class TestMediaEmbeddingsCommand extends Command
 
         $this->line('   📝 Created model without explicit $vectorizable');
         $this->line('   📏 Vector content length: ' . strlen($vectorContent));
-        
+
         if (!empty($vectorContent)) {
             $this->line('   ✅ Auto-detection worked');
         } else {
@@ -202,12 +202,12 @@ class TestMediaEmbeddingsCommand extends Command
     {
         // Try daily log file first (ai-engine-YYYY-MM-DD.log)
         $logFile = storage_path('logs/ai-engine-' . date('Y-m-d') . '.log');
-        
+
         // Fallback to non-dated log file
         if (!file_exists($logFile)) {
             $logFile = storage_path('logs/ai-engine.log');
         }
-        
+
         if (!file_exists($logFile)) {
             $this->warn('   ⚠️  Log file not found');
             $this->line('   💡 Tip: Logs are written to storage/logs/ai-engine-YYYY-MM-DD.log');
@@ -219,17 +219,17 @@ class TestMediaEmbeddingsCommand extends Command
 
         // Get last 30 lines
         $lines = array_slice(file($logFile), -30);
-        
+
         $found = false;
         foreach ($lines as $line) {
-            if (str_contains($line, 'Vector content generated') || 
+            if (str_contains($line, 'Vector content generated') ||
                 str_contains($line, 'Auto-detect') ||
                 str_contains($line, 'Large fields skipped')) {
                 $this->line('   ' . trim($line));
                 $found = true;
             }
         }
-        
+
         if (!$found) {
             $this->line('   ℹ️  No relevant log entries found');
         }
@@ -259,7 +259,7 @@ class TestMediaPost extends Model
     public function __construct(array $attributes = [])
     {
         parent::__construct($attributes);
-        
+
         // Set vectorizable fields after trait is loaded
         $this->vectorizable = ['title', 'content'];
         $this->mediaFields = [
@@ -279,11 +279,11 @@ class TestMediaPostAutoDetect extends Model
 
     protected $table = 'test_media_posts';
     protected $guarded = [];
-    
+
     public function __construct(array $attributes = [])
     {
         parent::__construct($attributes);
-        
+
         // No $vectorizable - should auto-detect
         $this->mediaFields = [];
     }

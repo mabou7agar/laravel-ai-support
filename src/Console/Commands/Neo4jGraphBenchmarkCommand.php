@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Graph\Neo4jRetrievalService;
 
 class Neo4jGraphBenchmarkCommand extends Command
 {
-    protected $signature = 'ai-engine:neo4j-benchmark
+    protected $signature = 'ai:neo4j-benchmark
                             {query : Natural-language query to benchmark}
                             {--collection=* : Restrict retrieval to one or more model classes}
                             {--iterations= : Number of benchmark iterations}

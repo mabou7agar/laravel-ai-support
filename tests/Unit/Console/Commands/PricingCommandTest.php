@@ -17,7 +17,7 @@ class PricingCommandTest extends TestCase
         Config::set('ai-engine.credits.engine_rates.gemini', 1.2);
         Config::set('ai-engine.credits.engine_rates.fal_ai', 1.3);
 
-        Artisan::call('ai-engine:pricing-audit', ['--json' => true]);
+        Artisan::call('ai:pricing-audit', ['--json' => true]);
 
         $payload = json_decode(Artisan::output(), true);
 
@@ -32,7 +32,7 @@ class PricingCommandTest extends TestCase
         Config::set('ai-engine.credits.engine_rates.fal_ai', 0.75);
         Config::set('ai-engine.credits.engine_rates.gemini', 0.0);
 
-        Artisan::call('ai-engine:pricing-audit', ['--json' => true]);
+        Artisan::call('ai:pricing-audit', ['--json' => true]);
 
         $payload = json_decode(Artisan::output(), true);
 
@@ -45,7 +45,7 @@ class PricingCommandTest extends TestCase
     {
         Config::set('ai-engine.credits.engine_rates.gemini', 0.0);
 
-        $exitCode = Artisan::call('ai-engine:pricing-audit', [
+        $exitCode = Artisan::call('ai:pricing-audit', [
             '--json' => true,
             '--fail-on-warning' => true,
         ]);
@@ -71,7 +71,7 @@ class PricingCommandTest extends TestCase
             'is_deprecated' => false,
         ]);
 
-        Artisan::call('ai-engine:pricing-audit', ['--json' => true]);
+        Artisan::call('ai:pricing-audit', ['--json' => true]);
 
         $payload = json_decode(Artisan::output(), true);
 
@@ -83,7 +83,7 @@ class PricingCommandTest extends TestCase
     {
         Config::set('ai-engine.credits.engine_rates.fal_ai', 1.3);
 
-        Artisan::call('ai-engine:pricing-simulate', [
+        Artisan::call('ai:pricing-simulate', [
             'engine' => 'fal_ai',
             'model' => EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
             '--prompt' => 'Animate this product',

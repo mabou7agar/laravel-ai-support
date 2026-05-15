@@ -22,7 +22,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
     public function test_init_command_creates_workspace_and_manifest(): void
     {
-        $exitCode = Artisan::call('ai-engine:init');
+        $exitCode = Artisan::call('ai:init');
 
         $this->assertSame(0, $exitCode);
         $this->assertDirectoryExists(app_path('AI/Configs'));
@@ -44,7 +44,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
     public function test_init_dry_run_does_not_write_files(): void
     {
-        $exitCode = Artisan::call('ai-engine:init', ['--dry-run' => true]);
+        $exitCode = Artisan::call('ai:init', ['--dry-run' => true]);
 
         $this->assertSame(0, $exitCode);
         $this->assertDirectoryDoesNotExist(app_path('AI/Configs'));
@@ -53,14 +53,14 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
     public function test_scaffold_agent_and_filter_registers_manifest_entries(): void
     {
-        $agentExitCode = Artisan::call('ai-engine:scaffold', [
+        $agentExitCode = Artisan::call('ai:scaffold', [
             'type' => 'agent',
             'name' => 'Invoice',
             '--model' => 'App\\Models\\Invoice',
             '--description' => 'Invoice agent configuration',
         ]);
 
-        $filterExitCode = Artisan::call('ai-engine:scaffold', [
+        $filterExitCode = Artisan::call('ai:scaffold', [
             'type' => 'filter',
             'name' => 'TenantScope',
         ]);
@@ -83,12 +83,12 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
     public function test_make_agent_and_make_tool_aliases_reuse_scaffold_registration(): void
     {
-        $agentExitCode = Artisan::call('ai-engine:make-agent', [
+        $agentExitCode = Artisan::call('ai:make-agent', [
             'name' => 'Project',
             '--model' => 'App\\Models\\Project',
         ]);
 
-        $toolExitCode = Artisan::call('ai-engine:make-tool', [
+        $toolExitCode = Artisan::call('ai:make-tool', [
             'name' => 'LookupCustomer',
         ]);
 
@@ -110,13 +110,13 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
     public function test_make_tool_can_generate_model_lookup_and_action_backed_templates(): void
     {
-        $lookupExitCode = Artisan::call('ai-engine:make-tool', [
+        $lookupExitCode = Artisan::call('ai:make-tool', [
             'name' => 'FindCustomer',
             '--kind' => 'lookup',
             '--model' => 'App\\Models\\Customer',
         ]);
 
-        $actionExitCode = Artisan::call('ai-engine:make-tool', [
+        $actionExitCode = Artisan::call('ai:make-tool', [
             'name' => 'CreateInvoice',
             '--kind' => 'action',
             '--action' => 'invoices.create',
@@ -137,7 +137,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
     public function test_make_skill_generates_class_based_skill(): void
     {
-        $exitCode = Artisan::call('ai-engine:make-skill', [
+        $exitCode = Artisan::call('ai:make-skill', [
             'name' => 'CreateInvoice',
             '--description' => 'Create invoices through approved tools.',
         ]);
@@ -161,7 +161,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
 
     public function test_scaffold_skill_registers_manifest_provider(): void
     {
-        $exitCode = Artisan::call('ai-engine:scaffold', [
+        $exitCode = Artisan::call('ai:scaffold', [
             'type' => 'skill',
             'name' => 'CreateInvoice',
             '--description' => 'Create invoices through approved services.',
@@ -194,7 +194,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         ];
 
         foreach ($types as $type => [$name, $path, $section, $key, $expected]) {
-            $exitCode = Artisan::call('ai-engine:scaffold', [
+            $exitCode = Artisan::call('ai:scaffold', [
                 'type' => $type,
                 'name' => $name,
             ]);
@@ -226,7 +226,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         app(\LaravelAIEngine\Services\Actions\ActionRegistry::class)->clearCache();
         app(\LaravelAIEngine\Services\Actions\ActionRegistry::class)->registerBatch((array) config('ai-agent.actions', []));
 
-        $exitCode = Artisan::call('ai-engine:skills:discover', [
+        $exitCode = Artisan::call('ai:skills:discover', [
             '--write' => true,
         ]);
 
@@ -255,7 +255,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         ], true) . ";\n");
         app(\LaravelAIEngine\Services\Agent\AgentManifestService::class)->refresh();
 
-        $exitCode = Artisan::call('ai-engine:skills:test', [
+        $exitCode = Artisan::call('ai:skills:test', [
             'message' => 'create invoice for ACME',
             '--json' => true,
         ]);
@@ -285,7 +285,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         ], true) . ";\n");
         app(\LaravelAIEngine\Services\Agent\AgentManifestService::class)->refresh();
 
-        $exitCode = Artisan::call('ai-engine:manifest:doctor', [
+        $exitCode = Artisan::call('ai:manifest:doctor', [
             '--json' => true,
         ]);
 
@@ -312,7 +312,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         ], true) . ";\n");
         app(\LaravelAIEngine\Services\Agent\AgentManifestService::class)->refresh();
 
-        $exitCode = Artisan::call('ai-engine:manifest:doctor', [
+        $exitCode = Artisan::call('ai:manifest:doctor', [
             '--json' => true,
         ]);
 
@@ -321,9 +321,9 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertSame(0, $exitCode);
         $this->assertContains('create_invoice', $payload['inventory']['skills']);
         $this->assertContains('run_skill', $payload['inventory']['tools']);
-        $this->assertContains('ai-engine:make-tool', $payload['developer_commands']['scaffold']);
-        $this->assertContains('ai-engine:make-skill', $payload['developer_commands']['scaffold']);
-        $this->assertContains('ai-engine:pricing-simulate', $payload['developer_commands']['pricing']);
+        $this->assertContains('ai:make-tool', $payload['developer_commands']['scaffold']);
+        $this->assertContains('ai:make-skill', $payload['developer_commands']['scaffold']);
+        $this->assertContains('ai:pricing-simulate', $payload['developer_commands']['pricing']);
     }
 
     protected function tearDown(): void

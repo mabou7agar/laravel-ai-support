@@ -11,7 +11,7 @@ class AgentRuntimeCapabilitiesCommandTest extends UnitTestCase
 {
     public function test_command_prints_runtime_capability_report_as_json(): void
     {
-        $exitCode = Artisan::call('ai-engine:runtime-capabilities', ['--json' => true]);
+        $exitCode = Artisan::call('ai:runtime-capabilities', ['--json' => true]);
         $payload = json_decode(Artisan::output(), true);
 
         $this->assertSame(0, $exitCode);

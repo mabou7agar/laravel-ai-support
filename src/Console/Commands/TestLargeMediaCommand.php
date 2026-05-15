@@ -10,7 +10,7 @@ use LaravelAIEngine\Traits\HasMediaEmbeddings;
 
 class TestLargeMediaCommand extends Command
 {
-    protected $signature = 'ai-engine:test-large-media 
+    protected $signature = 'ai:test-large-media
                             {--url= : Custom media URL to test}
                             {--type=video : Media type (video, image, document, audio)}
                             {--cleanup : Clean up test data after running}';
@@ -70,7 +70,7 @@ class TestLargeMediaCommand extends Command
     protected function createTestTable()
     {
         Schema::dropIfExists('test_large_media');
-        
+
         Schema::create('test_large_media', function ($table) {
             $table->id();
             $table->string('title');
@@ -128,10 +128,10 @@ class TestLargeMediaCommand extends Command
         // Create test model class
         $model = new class extends Model {
             use Vectorizable, HasMediaEmbeddings;
-            
+
             protected $table = 'test_large_media';
             protected $guarded = [];
-            
+
             public function __construct(array $attributes = [])
             {
                 parent::__construct($attributes);
@@ -143,7 +143,7 @@ class TestLargeMediaCommand extends Command
         // Check URL accessibility and size
         $this->line('   🔍 Checking URL...');
         $urlInfo = $this->checkUrl($url);
-        
+
         if (!$urlInfo['accessible']) {
             $this->warn('   ⚠️  URL not accessible');
             $this->line('   Error: ' . ($urlInfo['error'] ?? 'Unknown'));
@@ -151,14 +151,14 @@ class TestLargeMediaCommand extends Command
         }
 
         $this->line('   ✅ URL accessible');
-        
+
         if (isset($urlInfo['size'])) {
             $sizeMB = round($urlInfo['size'] / 1048576, 2);
             $this->line('   📏 File size: ' . number_format($urlInfo['size']) . ' bytes (' . $sizeMB . ' MB)');
-            
+
             $maxSize = config('ai-engine.vectorization.max_media_file_size', 10485760);
             $maxSizeMB = round($maxSize / 1048576, 2);
-            
+
             if ($urlInfo['size'] > $maxSize) {
                 $this->warn('   ⚠️  File exceeds limit (' . $maxSizeMB . ' MB)');
                 $this->line('   Expected: Download will be skipped');
@@ -186,14 +186,14 @@ class TestLargeMediaCommand extends Command
 
         // Try to get vector content
         $this->line('   🔄 Generating vector content...');
-        
+
         try {
             $startTime = microtime(true);
             $vectorContent = $post->getVectorContent();
             $endTime = microtime(true);
-            
+
             $processingTime = round(($endTime - $startTime) * 1000, 2);
-            
+
             $this->line('   ✅ Vector content generated');
             $this->line('   ⏱️  Processing time: ' . $processingTime . ' ms');
             $this->line('   📏 Content length: ' . number_format(strlen($vectorContent)) . ' chars');
@@ -228,7 +228,7 @@ class TestLargeMediaCommand extends Command
 
         try {
             $headers = @get_headers($url, 1);
-            
+
             if ($headers === false) {
                 $result['error'] = 'Failed to get headers';
                 return $result;
@@ -247,8 +247,8 @@ class TestLargeMediaCommand extends Command
 
             // Get file size
             if (isset($headers['Content-Length'])) {
-                $size = is_array($headers['Content-Length']) 
-                    ? end($headers['Content-Length']) 
+                $size = is_array($headers['Content-Length'])
+                    ? end($headers['Content-Length'])
                     : $headers['Content-Length'];
                 $result['size'] = (int) $size;
             }
@@ -264,11 +264,11 @@ class TestLargeMediaCommand extends Command
     {
         // Try daily log file first
         $logFile = storage_path('logs/ai-engine-' . date('Y-m-d') . '.log');
-        
+
         if (!file_exists($logFile)) {
             $logFile = storage_path('logs/ai-engine.log');
         }
-        
+
         if (!file_exists($logFile)) {
             $this->warn('   ⚠️  Log file not found');
             return;
@@ -279,7 +279,7 @@ class TestLargeMediaCommand extends Command
 
         // Get last 50 lines
         $lines = array_slice(file($logFile), -50);
-        
+
         $found = false;
         $relevantPatterns = [
             'Media file too large',
@@ -299,7 +299,7 @@ class TestLargeMediaCommand extends Command
                 }
             }
         }
-        
+
         if (!$found) {
             $this->line('   ℹ️  No relevant log entries found');
         }

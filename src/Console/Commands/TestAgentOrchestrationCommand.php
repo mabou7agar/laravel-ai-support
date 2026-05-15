@@ -10,7 +10,7 @@ use LaravelAIEngine\Services\Diagnostics\TestEverythingRunner;
 
 class TestAgentOrchestrationCommand extends Command
 {
-    protected $signature = 'ai-engine:test-orchestration
+    protected $signature = 'ai:test-orchestration
                             {--phpunit=./vendor/bin/phpunit : PHPUnit binary relative to package root}
                             {--no-phpunit : Only inspect registered tools, skills, and sub-agents}
                             {--stop-on-failure : Stop PHPUnit stages after the first failure}

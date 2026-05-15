@@ -9,7 +9,7 @@ use LaravelAIEngine\Services\Billing\PricingInspectionService;
 
 class PricingSimulateCommand extends Command
 {
-    protected $signature = 'ai-engine:pricing-simulate
+    protected $signature = 'ai:pricing-simulate
                             {engine : Engine slug, for example openai, gemini, fal_ai}
                             {model : Model id, for example gpt-4o or fal-ai/kling-video/o3/standard/image-to-video}
                             {--prompt= : Prompt text used for text/character-based calculations}
