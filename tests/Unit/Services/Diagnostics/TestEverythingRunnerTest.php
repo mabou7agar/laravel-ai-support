@@ -47,4 +47,23 @@ class TestEverythingRunnerTest extends UnitTestCase
         $this->assertSame(1, $results[0]['exit_code']);
         $this->assertStringContainsString('bad', $results[0]['output']);
     }
+
+    public function test_runner_redacts_secret_values_from_diagnostic_results(): void
+    {
+        $secret = 'super-secret-value';
+
+        $results = app(TestEverythingRunner::class)->runStages([
+            [
+                'name' => 'secret-stage',
+                'command' => "php -r 'fwrite(STDOUT, \"AI_ENGINE_NEO4J_PASSWORD={$secret}\\n\");' AI_ENGINE_NEO4J_PASSWORD={$secret}",
+                'workdir' => dirname(__DIR__, 4),
+            ],
+        ]);
+
+        $this->assertCount(1, $results);
+        $this->assertStringNotContainsString($secret, $results[0]['command']);
+        $this->assertStringNotContainsString($secret, $results[0]['output']);
+        $this->assertStringContainsString('[redacted]', $results[0]['command']);
+        $this->assertStringContainsString('[redacted]', $results[0]['output']);
+    }
 }

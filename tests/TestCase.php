@@ -69,6 +69,7 @@ abstract class TestCase extends Orchestra
         Config::set('ai-engine.cache.enabled', true);
         Config::set('ai-engine.webhooks.enabled', false);
         Config::set('ai-engine.nodes.enabled', false);
+        Config::set('ai-engine.nodes.local.slug', null);
         Config::set('ai-engine.nodes.jwt.secret', 'test-jwt-secret');
         Config::set('ai-engine.infrastructure.startup_health_gate.enabled', false);
         Config::set('ai-engine.infrastructure.qdrant_self_check.enabled', false);

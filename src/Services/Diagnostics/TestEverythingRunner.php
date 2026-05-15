@@ -52,12 +52,12 @@ class TestEverythingRunner
         if (! is_resource($process)) {
             return [
                 'name' => $stage['name'],
-                'command' => $stage['command'],
+                'command' => $this->redactSecrets($stage['command']),
                 'workdir' => $stage['workdir'],
                 'status' => 'failed',
                 'exit_code' => 1,
                 'duration_ms' => (microtime(true) - $startedAt) * 1000,
-                'output' => 'Unable to start process.',
+                'output' => $this->redactSecrets('Unable to start process.'),
             ];
         }
 
@@ -74,12 +74,12 @@ class TestEverythingRunner
 
         return [
             'name' => $stage['name'],
-            'command' => $stage['command'],
+            'command' => $this->redactSecrets($stage['command']),
             'workdir' => $stage['workdir'],
             'status' => $exitCode === 0 ? 'passed' : 'failed',
             'exit_code' => $exitCode,
             'duration_ms' => (microtime(true) - $startedAt) * 1000,
-            'output' => $output,
+            'output' => $this->redactSecrets($output),
         ];
     }
 
@@ -90,6 +90,15 @@ class TestEverythingRunner
             escapeshellarg(PHP_BINARY),
             $command,
             1
+        );
+    }
+
+    protected function redactSecrets(string $value): string
+    {
+        return (string) preg_replace_callback(
+            '/\b([A-Z0-9_]*(?:API[_-]?KEY|PASSWORD|SECRET|TOKEN|CREDENTIAL)[A-Z0-9_]*)=([^\s;]+)/i',
+            static fn (array $matches): string => $matches[1].'=[redacted]',
+            $value
         );
     }
 }

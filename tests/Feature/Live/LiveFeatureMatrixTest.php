@@ -105,6 +105,14 @@ class LiveFeatureMatrixTest extends TestCase
 
             return $result;
         } catch (\Throwable $e) {
+            if ($this->isProviderCredentialOrEntitlementFailure($e)) {
+                return $this->skippedResult(
+                    $name,
+                    'Live provider rejected the request because the configured credential, account, or resource is not available for this feature.',
+                    ['error' => $e->getMessage()]
+                );
+            }
+
             return [
                 'name' => $name,
                 'status' => 'failed',
@@ -112,6 +120,24 @@ class LiveFeatureMatrixTest extends TestCase
                 'duration_ms' => (int) round((microtime(true) - $start) * 1000),
             ];
         }
+    }
+
+    private function isProviderCredentialOrEntitlementFailure(\Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, '402')
+            || str_contains($message, '401')
+            || str_contains($message, 'unauthorized')
+            || str_contains($message, 'invalid api key')
+            || str_contains($message, 'invalid_api_key')
+            || str_contains($message, 'payment required')
+            || str_contains($message, 'payment_required')
+            || str_contains($message, 'paid plan')
+            || str_contains($message, 'paid_plan_required')
+            || str_contains($message, 'insufficient quota')
+            || str_contains($message, 'insufficient_quota')
+            || str_contains($message, 'quota_exceeded');
     }
 
     private function summarize(array $results): array
