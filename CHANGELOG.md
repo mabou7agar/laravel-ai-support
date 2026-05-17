@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Realtime and MCP/App HTTP APIs** — `/api/v1/ai/mcp/tools`, `/api/v1/ai/mcp/tools/{tool}/call`, and `/api/v1/ai/realtime/tools/dispatch` expose the bridge to host clients and brokers.
 - **Observability hooks and exporters** — traces and evaluations can now export through configured `ObservabilityExporter` classes, including built-in HTTP, OpenTelemetry OTLP, LangSmith, and log exporters.
 - **OpenAI Responses live smoke** — added an opt-in billed live test for remembered `previous_response_id` continuation.
+- **Structured chat collection** — chat can now collect a target JSON object from conversation, ask for missing fields in the user's language, confirm, close the session, and call an HTTP or Laravel-event callback.
+- **Structured collection field helpers** — `StructuredCollectionDefinition` now includes typed helpers such as `addText()`, `addEmail()`, `addDate()`, `addSelect()`, `addMultiSelect()`, and related UI field builders while keeping `addField()` as the generic escape hatch.
+- **Localized collection field presentation** — structured collection responses now include `collection.fields` with required state, UI type, formats, and localized select-like option labels while storing canonical option values.
 - **AgentChat engine validation** — API validation now accepts any configured or built-in engine instead of only OpenAI, Anthropic, and Gemini.
 
 ---

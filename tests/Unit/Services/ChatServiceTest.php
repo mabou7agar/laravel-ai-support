@@ -10,6 +10,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
+use LaravelAIEngine\Services\Agent\StructuredCollectionSessionService;
 use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\ConversationTranscriptService;
 use LaravelAIEngine\Tests\UnitTestCase;
@@ -169,5 +170,54 @@ class ChatServiceTest extends UnitTestCase
         $this->assertSame('array', $response->metadata['response_points_format']);
         $this->assertCount(2, $response->metadata['response_points']);
         $this->assertSame('create_invoice', $response->metadata['suggestions'][0]['id']);
+    }
+
+    public function test_process_message_short_circuits_to_structured_collection_when_enabled(): void
+    {
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->andReturn('laravel');
+        $runtime->shouldNotReceive('process');
+
+        $collection = Mockery::mock(StructuredCollectionSessionService::class);
+        $collection->shouldReceive('handle')
+            ->once()
+            ->withArgs(function (string $message, string $sessionId, mixed $userId, array $options): bool {
+                return $message === 'collect this lead'
+                    && $sessionId === 'collection-chat'
+                    && $userId === 'user-1'
+                    && ($options['collection']['name'] ?? null) === 'lead_capture';
+            })
+            ->andReturn(AIResponse::success(
+                content: 'What email should I use?',
+                engine: 'openai',
+                model: 'gpt-4o-mini',
+                metadata: ['collection' => ['status' => 'collecting']]
+            ));
+
+        $service = new ChatService(
+            Mockery::mock(ConversationService::class),
+            $runtime,
+            collectionSessions: $collection
+        );
+
+        $response = $service->processMessage(
+            message: 'collect this lead',
+            sessionId: 'collection-chat',
+            useMemory: false,
+            userId: 'user-1',
+            extraOptions: [
+                'collection' => [
+                    'name' => 'lead_capture',
+                    'schema' => [
+                        'type' => 'object',
+                        'required' => ['email'],
+                        'properties' => ['email' => ['type' => 'string']],
+                    ],
+                ],
+            ]
+        );
+
+        $this->assertSame('What email should I use?', $response->getContent());
+        $this->assertSame('collecting', $response->metadata['collection']['status']);
     }
 }

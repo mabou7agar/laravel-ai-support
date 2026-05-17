@@ -9,6 +9,7 @@ use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\Events\AISessionStarted;
 use LaravelAIEngine\Contracts\AgentRuntimeContract;
 use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
+use LaravelAIEngine\Services\Agent\StructuredCollectionSessionService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
@@ -17,7 +18,8 @@ class ChatService
     public function __construct(
         protected ConversationTranscriptService $conversationTranscripts,
         protected AgentRuntimeContract $agentRuntime,
-        protected ?ChatResponsePresentationService $responsePresentation = null
+        protected ?ChatResponsePresentationService $responsePresentation = null,
+        protected ?StructuredCollectionSessionService $collectionSessions = null
     ) {
     }
 
@@ -73,13 +75,6 @@ class ChatService
 
         $this->fireSessionStarted($sessionId, $userId, $engine, $model, $useMemory, $useActions, $useRag);
 
-        // Delegate decisions to the configured agent runtime.
-        Log::channel('ai-engine')->debug('ChatService delegating to agent runtime', [
-            'session_id' => $sessionId,
-            'user_id' => $userId,
-            'runtime' => $this->agentRuntime->name(),
-        ]);
-
         $options = $this->buildRuntimeOptions(
             $engine,
             $model,
@@ -91,6 +86,25 @@ class ChatService
             $conversationHistory,
             $extraOptions
         );
+
+        $collectionResponse = $this->structuredCollections()->handle($message, $sessionId, $userId, $options);
+        if ($collectionResponse instanceof AIResponse) {
+            if ($conversationId !== null) {
+                $collectionResponse = $collectionResponse->withConversationId($conversationId);
+            }
+
+            $this->persistTranscriptTurn($conversationId, $message, $collectionResponse);
+
+            return $collectionResponse;
+        }
+
+        // Delegate decisions to the configured agent runtime.
+        Log::channel('ai-engine')->debug('ChatService delegating to agent runtime', [
+            'session_id' => $sessionId,
+            'user_id' => $userId,
+            'runtime' => $this->agentRuntime->name(),
+        ]);
+
         $agentResponse = $this->agentRuntime->process($message, $sessionId, $userId, $options);
 
         $this->updateSessionNode($sessionId, $agentResponse);
@@ -183,6 +197,11 @@ class ChatService
     protected function presentation(): ChatResponsePresentationService
     {
         return $this->responsePresentation ??= app(ChatResponsePresentationService::class);
+    }
+
+    protected function structuredCollections(): StructuredCollectionSessionService
+    {
+        return $this->collectionSessions ??= app(StructuredCollectionSessionService::class);
     }
 
     protected function toAIResponse(

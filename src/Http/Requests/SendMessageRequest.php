@@ -53,6 +53,24 @@ class SendMessageRequest extends FormRequest
             'response_suggestions' => 'sometimes|boolean',
             'suggestions' => 'sometimes|boolean',
             'response_suggestion_limit' => 'sometimes|integer|min:0|max:25',
+            'collection' => 'sometimes|array',
+            'collection.enabled' => 'sometimes|boolean',
+            'collection.name' => 'sometimes|string|max:255',
+            'collection.description' => 'sometimes|nullable|string|max:1000',
+            'collection.schema' => 'required_with:collection|array',
+            'collection.schema.type' => 'sometimes|string|in:object',
+            'collection.schema.properties' => 'required_with:collection.schema|array',
+            'collection.schema.required' => 'sometimes|array',
+            'collection.schema.required.*' => 'string',
+            'collection.confirm_before_complete' => 'sometimes|boolean',
+            'collection.close_on_complete' => 'sometimes|boolean',
+            'collection.callback' => 'sometimes|array',
+            'collection.callback.type' => 'sometimes|string|in:url,event,none',
+            'collection.callback.url' => 'required_if:collection.callback.type,url|url',
+            'collection.callback.method' => 'sometimes|string|in:POST,PUT,PATCH,post,put,patch',
+            'collection.callback.headers' => 'sometimes|array',
+            'collection.callback.timeout' => 'sometimes|integer|min:1|max:120',
+            'collection.metadata' => 'sometimes|array',
         ];
     }
 
@@ -116,7 +134,8 @@ class SendMessageRequest extends FormRequest
             goalAgent: $validated['goal_agent'] ?? null,
             responsePointsFormat: $validated['response_points_format'] ?? null,
             responseSuggestions: $validated['response_suggestions'] ?? $validated['suggestions'] ?? null,
-            responseSuggestionLimit: $validated['response_suggestion_limit'] ?? null
+            responseSuggestionLimit: $validated['response_suggestion_limit'] ?? null,
+            collection: $validated['collection'] ?? null
         );
     }
 }

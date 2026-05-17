@@ -24,4 +24,8 @@ return [
         'selection_item_not_found' => "I couldn't find item #:position in the previous list. Please check the number and try again.",
         'selection_details_unavailable' => "I found the :type but couldn't retrieve its details. Please try again.",
     ],
+
+    'structured_collection' => [
+        'awaiting_confirmation' => "Please confirm the collected data:\n:summary",
+    ],
 ];

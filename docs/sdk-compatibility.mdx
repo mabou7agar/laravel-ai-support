@@ -252,6 +252,127 @@ Built-in exporter classes are available for common backends:
 ],
 ```
 
+## Structured Chat Collection
+
+Use structured collection when a chat session should gather a target JSON object, ask for missing fields, confirm, close, and call back with the final payload. The package keeps the field keys stable and asks the AI to extract values and respond in the user's current language.
+
+```php
+use LaravelAIEngine\DTOs\StructuredCollectionDefinition;
+
+$collection = StructuredCollectionDefinition::make('lead_capture')
+    ->description('Collect lead details from chat.')
+    ->addText('name', required: true, description: 'Lead name')
+    ->addEmail('email', required: true)
+    ->addSelect('level', [
+        ['value' => 'beginner', 'labels' => ['en' => 'Beginner', 'ar' => 'مبتدئ']],
+        ['value' => 'advanced', 'labels' => ['en' => 'Advanced', 'ar' => 'متقدم']],
+    ])
+    ->addTextarea('notes')
+    ->confirmBeforeComplete()
+    ->closeOnComplete()
+    ->callbackUrl('https://app.test/api/ai/lead-callback', headers: [
+        'Authorization' => 'Bearer '.config('services.ai_callback.token'),
+    ]);
+```
+
+`addField()` remains the generic method for custom JSON-schema properties. Convenience methods such as `addText()`, `addTextarea()`, `addEmail()`, `addUrl()`, `addPhone()`, `addNumber()`, `addInteger()`, `addBoolean()`, `addDate()`, `addDateTime()`, `addTime()`, `addSelect()`, `addMultiSelect()`, `addRadio()`, `addCheckboxes()`, `addFile()`, `addHidden()`, `addJson()`, `addArray()`, and `addObject()` add schema plus UI metadata.
+
+Select-like fields store stable canonical values while the API response returns localized labels in `collection.fields`:
+
+```json
+{
+  "collection": {
+    "data": {"level": "beginner"},
+    "fields": [
+      {
+        "name": "level",
+        "type": "string",
+        "ui": "select",
+        "required": false,
+        "options": [
+          {"value": "beginner", "label": "مبتدئ"},
+          {"value": "advanced", "label": "متقدم"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+Send the definition with chat:
+
+```php
+$response = app(\LaravelAIEngine\Services\ChatService::class)->processMessage(
+    message: 'اسمي أحمد',
+    sessionId: 'lead-session-123',
+    userId: 'user-uuid',
+    extraOptions: [
+        'collection' => $collection->toArray(),
+    ],
+);
+```
+
+Or pass the same payload to `/api/v1/agent/chat`:
+
+```json
+{
+  "message": "اسمي أحمد",
+  "session_id": "lead-session-123",
+  "collection": {
+    "name": "lead_capture",
+    "schema": {
+      "type": "object",
+      "required": ["name", "email"],
+      "properties": {
+        "name": {"type": "string"},
+        "email": {"type": "string", "format": "email"},
+        "level": {
+          "type": "string",
+          "enum": ["beginner", "advanced"],
+          "metadata": {
+            "ui": "select",
+            "options": [
+              {"value": "beginner", "labels": {"en": "Beginner", "ar": "مبتدئ"}},
+              {"value": "advanced", "labels": {"en": "Advanced", "ar": "متقدم"}}
+            ]
+          }
+        },
+        "notes": {"type": "string"}
+      }
+    },
+    "confirm_before_complete": true,
+    "close_on_complete": true,
+    "callback": {
+      "type": "url",
+      "url": "https://app.test/api/ai/lead-callback",
+      "method": "POST"
+    }
+  }
+}
+```
+
+When the required fields are complete and the user confirms, the callback receives:
+
+```json
+{
+  "session_id": "lead-session-123",
+  "user_id": "user-uuid",
+  "status": "completed",
+  "collection": "lead_capture",
+  "data": {
+    "name": "Ahmed",
+    "email": "ahmed@example.com"
+  },
+  "metadata": {
+    "language": "ar",
+    "confirmed": true,
+    "completed_at": "2026-05-18T01:30:00+03:00"
+  }
+}
+```
+
+Every completion also fires `LaravelAIEngine\Events\AgentStructuredCollectionCompleted`, so apps can use Laravel listeners instead of HTTP callbacks by setting `callback.type` to `event`.
+
 ## Scaffolding
 
 ```bash

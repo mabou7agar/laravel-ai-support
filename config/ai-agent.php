@@ -371,6 +371,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Structured Collection Sessions
+    |--------------------------------------------------------------------------
+    |
+    | Generic chat-driven data collection. Host apps provide a JSON schema
+    | per request; the agent extracts fields, asks for missing values in the
+    | user's language, confirms, closes the session, and emits a callback.
+    |
+    */
+    'structured_collection' => [
+        'ttl_seconds' => (int) env('AI_AGENT_STRUCTURED_COLLECTION_TTL', 3600),
+        'max_tokens' => (int) env('AI_AGENT_STRUCTURED_COLLECTION_MAX_TOKENS', 900),
+        'temperature' => (float) env('AI_AGENT_STRUCTURED_COLLECTION_TEMPERATURE', 0.1),
+        'callback_timeout' => (int) env('AI_AGENT_STRUCTURED_COLLECTION_CALLBACK_TIMEOUT', 10),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Capability Providers
     |--------------------------------------------------------------------------
     |

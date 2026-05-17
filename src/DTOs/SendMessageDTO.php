@@ -25,7 +25,8 @@ class SendMessageDTO
         public readonly ?array $goalAgent = null,
         public readonly ?string $responsePointsFormat = null,
         public readonly ?bool $responseSuggestions = null,
-        public readonly ?int $responseSuggestionLimit = null
+        public readonly ?int $responseSuggestionLimit = null,
+        public readonly ?array $collection = null
     ) {}
 
     public function toArray(): array
@@ -50,6 +51,7 @@ class SendMessageDTO
             'response_points_format' => $this->responsePointsFormat,
             'response_suggestions' => $this->responseSuggestions,
             'response_suggestion_limit' => $this->responseSuggestionLimit,
+            'collection' => $this->collection,
         ];
     }
 
@@ -62,6 +64,7 @@ class SendMessageDTO
             'goal_agent' => $this->goalAgent,
             'response_points_format' => $this->responsePointsFormat,
             'response_suggestion_limit' => $this->responseSuggestionLimit,
+            'collection' => $this->collection,
         ], static fn ($value) => $value !== null && $value !== false && $value !== []);
 
         if ($this->responseSuggestions !== null) {

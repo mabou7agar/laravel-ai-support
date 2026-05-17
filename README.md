@@ -171,6 +171,26 @@ curl -X POST http://127.0.0.1:8000/api/v1/ai/realtime/tools/dispatch \
 
 Register observability exporters in `ai-engine.observability.exporters` to send traces and evaluations to HTTP collectors, OpenTelemetry OTLP, LangSmith, or logs.
 
+### Structured Chat Collection
+
+```php
+use LaravelAIEngine\DTOs\StructuredCollectionDefinition;
+
+$collection = StructuredCollectionDefinition::make('lead_capture')
+    ->addText('name', required: true)
+    ->addEmail('email', required: true)
+    ->addSelect('level', [
+        ['value' => 'beginner', 'labels' => ['en' => 'Beginner', 'ar' => 'مبتدئ']],
+        ['value' => 'advanced', 'labels' => ['en' => 'Advanced', 'ar' => 'متقدم']],
+    ])
+    ->addTextarea('notes')
+    ->confirmBeforeComplete()
+    ->closeOnComplete()
+    ->callbackUrl('https://app.test/api/ai/lead-callback');
+```
+
+Pass `$collection->toArray()` as the chat `collection` option. `addField()` remains the generic JSON-schema escape hatch, while helpers such as `addText()`, `addEmail()`, `addDate()`, `addSelect()`, and `addMultiSelect()` add schema plus UI metadata. The agent extracts canonical values, asks for missing values in the user's language, returns localized `collection.fields` options for frontends, asks for confirmation, closes the session, then sends the completed JSON payload to the callback and fires `AgentStructuredCollectionCompleted`.
+
 ### Federation (Safe Flow)
 
 ```bash

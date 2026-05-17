@@ -1,0 +1,57 @@
+meta {
+  name: Structured Collection Chat
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/agent/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "message": "اسمي أحمد ومستواي مبتدئ",
+    "session_id": "{{agentSessionId}}",
+    "memory": true,
+    "actions": false,
+    "use_rag": false,
+    "collection": {
+      "name": "lead_capture",
+      "schema": {
+        "type": "object",
+        "required": ["name", "email", "level"],
+        "properties": {
+          "name": {"type": "string"},
+          "email": {"type": "string", "format": "email"},
+          "level": {
+            "type": "string",
+            "enum": ["beginner", "advanced"],
+            "metadata": {
+              "ui": "select",
+              "options": [
+                {"value": "beginner", "labels": {"en": "Beginner", "ar": "مبتدئ"}},
+                {"value": "advanced", "labels": {"en": "Advanced", "ar": "متقدم"}}
+              ]
+            }
+          },
+          "notes": {"type": "string"}
+        }
+      },
+      "confirm_before_complete": true,
+      "close_on_complete": true,
+      "callback": {
+        "type": "event"
+      }
+    }
+  }
+}

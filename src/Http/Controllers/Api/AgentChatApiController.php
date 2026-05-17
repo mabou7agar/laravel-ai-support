@@ -57,6 +57,7 @@ class AgentChatApiController extends Controller
                     'response_points_format' => $metadata['response_points_format'] ?? 'text',
                     'response_text_without_points' => $metadata['response_text_without_points'] ?? null,
                     'suggestions' => $metadata['suggestions'] ?? [],
+                    'collection' => $metadata['collection'] ?? null,
                     'actions' => array_map(fn ($action) => is_array($action) ? $action : $action->toArray(), $actions),
                     'usage' => $response->getUsage() ?? [],
                     'session_id' => $dto->sessionId,

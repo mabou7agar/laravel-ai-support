@@ -24,4 +24,8 @@ return [
         'selection_item_not_found' => 'لم أجد العنصر رقم :position في القائمة السابقة. يرجى التحقق من الرقم والمحاولة مرة أخرى.',
         'selection_details_unavailable' => 'وجدت :type لكن تعذر جلب تفاصيله. يرجى المحاولة مرة أخرى.',
     ],
+
+    'structured_collection' => [
+        'awaiting_confirmation' => "يرجى تأكيد البيانات التالية:\n:summary",
+    ],
 ];

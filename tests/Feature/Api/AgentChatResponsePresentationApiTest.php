@@ -105,4 +105,64 @@ class AgentChatResponsePresentationApiTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.response', 'ok');
     }
+
+    public function test_agent_chat_api_accepts_structured_collection_options(): void
+    {
+        $chat = Mockery::mock(ChatService::class);
+        $chat->shouldReceive('processMessage')
+            ->once()
+            ->withArgs(function (...$args): bool {
+                $collection = $args[11]['collection'] ?? null;
+
+                return ($args[0] ?? null) === 'اسمي أحمد'
+                    && is_array($collection)
+                    && ($collection['name'] ?? null) === 'lead_capture'
+                    && (($collection['schema']['required'] ?? []) === ['name', 'email'])
+                    && (($collection['confirm_before_complete'] ?? null) === true);
+            })
+            ->andReturn(AIResponse::success(
+                content: 'ما البريد الإلكتروني؟',
+                engine: 'openai',
+                model: 'gpt-4o-mini',
+                metadata: [
+                    'collection' => [
+                        'name' => 'lead_capture',
+                        'status' => 'collecting',
+                        'missing_fields' => ['email'],
+                        'data' => ['name' => 'Ahmed'],
+                        'language' => 'ar',
+                    ],
+                ]
+            ));
+
+        $this->app->instance(ChatService::class, $chat);
+
+        $this->postJson('/api/v1/agent/chat', [
+            'message' => 'اسمي أحمد',
+            'session_id' => 'api-collection',
+            'memory' => false,
+            'actions' => false,
+            'use_rag' => false,
+            'collection' => [
+                'name' => 'lead_capture',
+                'schema' => [
+                    'type' => 'object',
+                    'required' => ['name', 'email'],
+                    'properties' => [
+                        'name' => ['type' => 'string'],
+                        'email' => ['type' => 'string', 'format' => 'email'],
+                    ],
+                ],
+                'confirm_before_complete' => true,
+                'close_on_complete' => true,
+                'callback' => ['type' => 'event'],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.response', 'ما البريد الإلكتروني؟')
+            ->assertJsonPath('data.collection.status', 'collecting')
+            ->assertJsonPath('data.collection.language', 'ar')
+            ->assertJsonPath('data.collection.missing_fields.0', 'email');
+    }
 }

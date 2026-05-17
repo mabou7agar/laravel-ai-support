@@ -35,6 +35,14 @@ class AgentServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Agent\ResponsePointExtractor::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentResponseSuggestionService::class)
         ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\StructuredCollectionCallbackService::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\StructuredCollectionFieldPresenter::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\StructuredCollectionSessionService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\StructuredCollectionSessionService(
+            $app->make(\LaravelAIEngine\Services\AIEngineService::class),
+            $app->make(\LaravelAIEngine\Services\Agent\StructuredCollectionCallbackService::class),
+            $app->make(\LaravelAIEngine\Services\Agent\StructuredCollectionFieldPresenter::class),
+            $app->make(\LaravelAIEngine\Services\Localization\LocaleResourceService::class)
+        ));
         $app->singleton(\LaravelAIEngine\Contracts\ConversationMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationMemory());
         $app->singleton(\LaravelAIEngine\Contracts\ActionAuditLogger::class, fn () => new \LaravelAIEngine\Services\Actions\NullActionAuditLogger());
         $app->singleton(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ConversationContextCompactor(
