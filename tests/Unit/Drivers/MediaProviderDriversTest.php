@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Config;
 use LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver;
 use LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver;
+use LaravelAIEngine\Drivers\ElevenLabs\ElevenLabsEngineDriver;
 use LaravelAIEngine\Drivers\Gemini\GeminiEngineDriver;
 use LaravelAIEngine\Drivers\GoogleTTS\GoogleTTSEngineDriver;
 use LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver;
@@ -354,6 +355,46 @@ class MediaProviderDriversTest extends UnitTestCase
         $this->assertSame('nova', $response->toArray()['metadata']['voice']);
     }
 
+    public function test_openai_speech_to_speech_uses_transcription_then_tts(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+
+        $audio = tempnam(sys_get_temp_dir(), 'ai-engine-openai-sts-');
+        file_put_contents($audio, 'source-audio');
+
+        $driver = new OpenAIEngineDriver([
+            'api_key' => 'openai-token',
+            'base_url' => 'https://api.openai.com/v1',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'text' => 'Please confirm the invoice details.',
+            ])),
+            new Response(200, ['Content-Type' => 'audio/mpeg'], 'openai-sts-audio'),
+        ]));
+
+        $response = $driver->speechToSpeech(new AIRequest(
+            prompt: '',
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::OPENAI_GPT_4O_MINI_TTS,
+            files: [$audio],
+            parameters: [
+                'voice' => 'alloy',
+                'format' => 'mp3',
+                'transcription_model' => EntityEnum::OPENAI_GPT_4O_TRANSCRIBE,
+            ]
+        ));
+
+        @unlink($audio);
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('audio', $response->getContentType());
+        $this->assertNotEmpty($response->toArray()['files']);
+        $this->assertSame('speech_to_speech', $response->toArray()['metadata']['service']);
+        $this->assertSame('Please confirm the invoice details.', $response->toArray()['metadata']['transcript']);
+    }
+
     public function test_google_tts_synthesizes_audio_and_stores_file(): void
     {
         Storage::fake('public');
@@ -428,6 +469,175 @@ class MediaProviderDriversTest extends UnitTestCase
         $this->assertSame('gemini', $response->toArray()['metadata']['provider']);
         $this->assertSame('Kore', $response->toArray()['metadata']['voice']);
         $this->assertSame('wav', $response->toArray()['metadata']['audio_format']);
+    }
+
+    public function test_elevenlabs_transcribes_audio_with_scribe(): void
+    {
+        $audio = tempnam(sys_get_temp_dir(), 'ai-engine-stt-');
+        file_put_contents($audio, 'audio-bytes');
+
+        $driver = new ElevenLabsEngineDriver([
+            'api_key' => 'eleven-token',
+            'base_url' => 'https://api.elevenlabs.io',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'text' => 'Create an invoice for Acme.',
+                'language_code' => 'en',
+            ])),
+        ]));
+
+        $response = $driver->audioToText(new AIRequest(
+            prompt: '',
+            engine: EngineEnum::ELEVENLABS,
+            model: EntityEnum::ELEVEN_SCRIBE_V2,
+            files: [$audio],
+            parameters: ['language_code' => 'en']
+        ));
+
+        @unlink($audio);
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('Create an invoice for Acme.', $response->getContent());
+        $this->assertSame('speech_to_text', $response->toArray()['metadata']['service']);
+        $this->assertSame('scribe_v2', $response->toArray()['metadata']['model']);
+    }
+
+    public function test_elevenlabs_converts_speech_to_speech_and_stores_audio(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+
+        $audio = tempnam(sys_get_temp_dir(), 'ai-engine-sts-');
+        file_put_contents($audio, 'source-audio');
+
+        $driver = new ElevenLabsEngineDriver([
+            'api_key' => 'eleven-token',
+            'base_url' => 'https://api.elevenlabs.io',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'audio/mpeg'], 'converted-audio'),
+        ]));
+
+        $response = $driver->speechToSpeech(new AIRequest(
+            prompt: '',
+            engine: EngineEnum::ELEVENLABS,
+            model: EntityEnum::ELEVEN_MULTILINGUAL_STS_V2,
+            files: [$audio],
+            parameters: [
+                'voice_id' => 'JBFqnCBsd6RMkjVDRZzb',
+                'output_format' => 'mp3_44100_128',
+            ]
+        ));
+
+        @unlink($audio);
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('audio', $response->getContentType());
+        $this->assertNotEmpty($response->toArray()['files']);
+        $this->assertSame('speech_to_speech', $response->toArray()['metadata']['service']);
+        $this->assertSame('eleven_multilingual_sts_v2', $response->toArray()['metadata']['model']);
+    }
+
+    public function test_gemini_transcribes_audio_with_generate_content_inline_audio(): void
+    {
+        $audio = tempnam(sys_get_temp_dir(), 'ai-engine-gemini-stt-');
+        file_put_contents($audio, 'gemini-audio');
+
+        $driver = new GeminiEngineDriver([
+            'api_key' => 'gemini-token',
+            'base_url' => 'https://generativelanguage.googleapis.com',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'candidates' => [
+                    [
+                        'content' => [
+                            'parts' => [
+                                ['text' => 'Create an invoice for Acme.'],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+        ]));
+
+        $response = $driver->audioToText(new AIRequest(
+            prompt: 'Transcribe this audio.',
+            engine: EngineEnum::GEMINI,
+            model: EntityEnum::GEMINI_2_5_FLASH,
+            files: [$audio],
+            parameters: ['mime_type' => 'audio/wav']
+        ));
+
+        @unlink($audio);
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('Create an invoice for Acme.', $response->getContent());
+        $this->assertSame('speech_to_text', $response->toArray()['metadata']['service']);
+    }
+
+    public function test_gemini_speech_to_speech_uses_audio_understanding_then_native_tts(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+
+        $audio = tempnam(sys_get_temp_dir(), 'ai-engine-gemini-sts-');
+        file_put_contents($audio, 'gemini-source-audio');
+
+        $driver = new GeminiEngineDriver([
+            'api_key' => 'gemini-token',
+            'base_url' => 'https://generativelanguage.googleapis.com',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'candidates' => [
+                    [
+                        'content' => [
+                            'parts' => [
+                                ['text' => 'Please confirm the invoice details.'],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'candidates' => [
+                    [
+                        'content' => [
+                            'parts' => [
+                                [
+                                    'inlineData' => [
+                                        'mimeType' => 'audio/pcm;rate=24000',
+                                        'data' => base64_encode('gemini-sts-pcm'),
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+        ]));
+
+        $response = $driver->speechToSpeech(new AIRequest(
+            prompt: 'Answer politely based on this audio.',
+            engine: EngineEnum::GEMINI,
+            model: EntityEnum::GEMINI_2_5_FLASH,
+            files: [$audio],
+            parameters: [
+                'mime_type' => 'audio/wav',
+                'tts_model' => EntityEnum::GEMINI_2_5_FLASH_TTS,
+                'voice' => 'Kore',
+            ]
+        ));
+
+        @unlink($audio);
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('audio', $response->getContentType());
+        $this->assertNotEmpty($response->toArray()['files']);
+        $this->assertSame('speech_to_speech', $response->toArray()['metadata']['service']);
+        $this->assertSame('Please confirm the invoice details.', $response->toArray()['metadata']['transcript']);
     }
 
     /**

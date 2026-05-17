@@ -7,12 +7,15 @@ namespace LaravelAIEngine\Services\Actions;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Services\Agent\IntentSignalService;
 use LaravelAIEngine\Services\AIEngineService;
 
 class ActionPayloadExtractor
 {
-    public function __construct(protected AIEngineService $ai)
-    {
+    public function __construct(
+        protected AIEngineService $ai,
+        protected ?IntentSignalService $intentSignals = null
+    ) {
     }
 
     /**
@@ -346,11 +349,16 @@ class ActionPayloadExtractor
             return false;
         }
 
-        if (preg_match('/\b(no|not|don\'t|do not|cancel|stop|instead)\b/u', $normalized) === 1) {
+        if ($this->signals()->isNegative($normalized)) {
             return false;
         }
 
-        return preg_match('/\b(yes|approve|approved|confirm|create|add|go ahead|proceed|ok|okay|sure)\b/u', $normalized) === 1;
+        return $this->signals()->isAffirmative($normalized);
+    }
+
+    protected function signals(): IntentSignalService
+    {
+        return $this->intentSignals ??= app(IntentSignalService::class);
     }
 
     /**

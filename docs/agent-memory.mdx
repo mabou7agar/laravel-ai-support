@@ -1,0 +1,56 @@
+# Agent Memory
+
+The package has two conversation-memory layers.
+
+`ConversationContextCompactor` is short-term memory. It keeps recent turns, compacts older turns into `metadata.conversation_summary`, and keeps prompt size bounded.
+
+`ai_conversation_memories` is durable scoped memory. It stores small facts and preferences extracted from compacted turns, then retrieves only relevant records for the next prompt.
+
+Use this for stable conversation context such as reply language, user preferences, unresolved goals, workspace constraints, and decisions. Do not store invoices, customers, products, files, secrets, or business records here. Those belong in application tables, RAG, graph, vector stores, or capability memory.
+
+## Configuration
+
+```env
+AI_AGENT_CONVERSATION_MEMORY_ENABLED=true
+AI_AGENT_MEMORY_EXTRACT_ON_COMPACTION=true
+AI_AGENT_MEMORY_EXTRACTOR=ai
+AI_AGENT_MEMORY_MAX_EXTRACTION_INPUT_CHARS=6000
+AI_AGENT_MEMORY_MAX_PER_TURN=6
+AI_AGENT_MEMORY_MAX_PROMPT_CHARS=1200
+AI_AGENT_MEMORY_MIN_SCORE=0.45
+AI_AGENT_MEMORY_TTL_DAYS=180
+AI_AGENT_MEMORY_TENANT_KEY=tenant_id
+AI_AGENT_MEMORY_WORKSPACE_KEY=workspace_id
+```
+
+Extraction runs only when compaction happens. It is AI-aware by default and does not rely on package-level English trigger patterns. Set `AI_AGENT_MEMORY_EXTRACTOR=none` to disable extraction, or bind a custom extractor class through `ai-agent.conversation_memory.extractor_class`.
+
+## Scope
+
+Every memory can be scoped by:
+
+| Scope | Source |
+| --- | --- |
+| `user_id` | `UnifiedActionContext::$userId` |
+| `tenant_id` | configured tenant metadata key |
+| `workspace_id` | configured workspace metadata key |
+| `session_id` | `UnifiedActionContext::$sessionId` |
+| `namespace` | memory category |
+
+SQL is always the source of truth. Optional vector hits are rehydrated through SQL before prompt injection, so vector metadata filters are never trusted as authorization.
+
+## Optional Semantic Index
+
+```env
+AI_AGENT_MEMORY_SEMANTIC_ENABLED=false
+AI_AGENT_MEMORY_SEMANTIC_DRIVER=qdrant
+AI_AGENT_MEMORY_SEMANTIC_COLLECTION=ai_conversation_memories
+AI_AGENT_MEMORY_SEMANTIC_INDEX_ON_WRITE=false
+AI_AGENT_MEMORY_VECTOR_SCOPE_FIELDS=user_id,tenant_id,workspace_id,session_id,namespace
+```
+
+Semantic retrieval is optional. If the vector driver, collection, or embedding setup is unavailable, the package falls back to SQL lexical retrieval.
+
+## Intent Signals
+
+Confirmation, denial, and relation-choice helpers use `LocaleResourceService` lexicons through `IntentSignalService`. Apps can extend lexicon files or enable `ai-agent.intent_understanding.mode=ai_first` for model-backed multilingual intent classification.

@@ -418,6 +418,8 @@ AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS=240
 
 This memory is for conversation state only. Business records and capability documents should still be indexed through the host app's RAG, graph, or capability-memory sync pipeline.
 
+Durable conversation memory is also available through `ai_conversation_memories`. It extracts small scoped facts from compacted turns, retrieves only relevant memories under `AI_AGENT_MEMORY_MAX_PROMPT_CHARS`, and can optionally use a configured vector index while SQL remains the authorization source of truth. See `docs/agent-memory.mdx`.
+
 ## Search Document and Graph Contracts
 
 Use explicit contracts for indexed and graph-aware models:
@@ -456,6 +458,42 @@ AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX=fal_ai:bytedance/seedance-2.0/text-to-video
 AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX=gemini:gemini-2.5-flash-preview-tts,eleven_labs:eleven_multilingual_v2
 AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX=openai:whisper-1
 ```
+
+These values are read through `config('ai-engine.testing.live_provider_matrix.*')`, so set them before running `php artisan config:cache` in cached environments.
+
+OpenRouter has a dedicated live smoke for routed multimodal features:
+
+```bash
+AI_ENGINE_RUN_OPENROUTER_LIVE_TESTS=true \
+php vendor/bin/phpunit -c phpunit.xml.dist tests/Feature/Live/OpenRouterLiveFeatureTest.php
+```
+
+Optional overrides:
+
+```env
+AI_ENGINE_OPENROUTER_LIVE_TEXT_MODEL=openai/gpt-4o-mini
+AI_ENGINE_OPENROUTER_LIVE_IMAGE_MODEL=google/gemini-2.5-flash-image
+AI_ENGINE_OPENROUTER_LIVE_TTS_MODEL=openai/gpt-4o-mini-tts-2025-12-15
+AI_ENGINE_OPENROUTER_LIVE_STT_MODEL=openai/whisper-1
+AI_ENGINE_OPENROUTER_LIVE_EMBEDDING_MODEL=openai/text-embedding-3-small
+AI_ENGINE_OPENROUTER_LIVE_CHAT_AUDIO_MODEL=openai/gpt-audio-mini
+AI_ENGINE_OPENROUTER_LIVE_MULTIMODAL_MODEL=google/gemini-2.5-flash
+```
+
+To let OpenRouter prefer free/cheapest routed chat models, enable the optional cost optimizer:
+
+```env
+OPENROUTER_COST_OPTIMIZATION_ENABLED=true
+OPENROUTER_COST_OPTIMIZATION_MODE=free_first
+OPENROUTER_FREE_MODELS=meta-llama/llama-3.1-8b-instruct:free,google/gemma-3-27b-it:free
+OPENROUTER_INCLUDE_REQUESTED_MODEL_FALLBACK=true
+OPENROUTER_SORT_BY_PRICE=true
+OPENROUTER_PREFERRED_MAX_LATENCY_P90=3
+OPENROUTER_MAX_PROMPT_PRICE=0
+OPENROUTER_MAX_COMPLETION_PRICE=0
+```
+
+Per request, pass `cost_optimization: true` plus an optional `models` list when one workflow should use a specific free/cheap pool. The driver sends OpenRouter `models` fallbacks and `provider.sort.by=price`; it keeps the requested model as a paid fallback unless disabled.
 
 Graph retrieval now prefers matched chunk context plus `entity_ref` and `object` payloads for follow-ups and UI reuse.
 

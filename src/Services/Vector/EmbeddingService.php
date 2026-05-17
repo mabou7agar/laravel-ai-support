@@ -34,10 +34,7 @@ class EmbeddingService
         $this->dimensions = $this->getDimensionsForModel($this->model);
         $this->cacheEnabled = config('ai-engine.vector.cache_embeddings', true);
         $this->cacheTtl = config('ai-engine.vector.cache_ttl', 86400); // 24 hours
-        $this->useFakeEmbeddings = (bool) config(
-            'ai-engine.vector.testing.use_fake_embeddings',
-            env('AI_ENGINE_USE_FAKE_EMBEDDINGS', false)
-        );
+        $this->useFakeEmbeddings = (bool) config('ai-engine.vector.testing.use_fake_embeddings', false);
     }
 
     /**
@@ -239,7 +236,7 @@ class EmbeddingService
      */
     protected function embedWithOpenRouter(string $text, ?string $userId = null): array
     {
-        $apiKey = config('ai-engine.engines.openrouter.api_key') ?? env('OPENROUTER_API_KEY');
+        $apiKey = config('ai-engine.engines.openrouter.api_key');
         if (!$apiKey) {
             throw new \Exception('OpenRouter API key not configured');
         }

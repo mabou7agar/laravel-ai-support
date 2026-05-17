@@ -154,11 +154,11 @@ enum EngineEnum: string
     public function capabilities(): array
     {
         return match ($this) {
-            self::OpenAI             => ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'speech_to_text', 'text_to_speech', 'tts'],
+            self::OpenAI             => ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'],
             self::Anthropic          => ['text', 'chat', 'vision'],
-            self::Gemini             => ['text', 'chat', 'vision', 'embeddings'],
+            self::Gemini             => ['text', 'chat', 'vision', 'embeddings', 'audio', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'],
             self::StableDiffusion    => ['images', 'video'],
-            self::ElevenLabs         => ['audio', 'speech'],
+            self::ElevenLabs         => ['audio', 'speech', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'],
             self::FalAI              => ['images', 'video', 'audio'],
             self::DeepSeek           => ['text', 'chat'],
             self::Perplexity         => ['text', 'search'],
@@ -169,7 +169,7 @@ enum EngineEnum: string
             self::PlagiarismCheck    => ['plagiarism'],
             self::Unsplash           => ['images', 'search'],
             self::Pexels             => ['images', 'search'],
-            self::OpenRouter         => ['text', 'chat', 'images', 'vision', 'embeddings'],
+            self::OpenRouter         => ['text', 'chat', 'streaming', 'images', 'image_generation', 'vision', 'audio', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts', 'embeddings'],
             self::Ollama             => ['text', 'chat', 'embeddings'],
             self::NvidiaNim          => ['text', 'chat', 'streaming'],
             self::CloudflareWorkersAI => ['images', 'audio', 'speech_to_text', 'text_to_speech'],
@@ -199,6 +199,9 @@ enum EngineEnum: string
                 EntityEnum::GPT_IMAGE_1_MINI,
                 EntityEnum::DALL_E_3,
                 EntityEnum::WHISPER_1,
+                EntityEnum::OPENAI_GPT_4O_TRANSCRIBE,
+                EntityEnum::OPENAI_GPT_4O_MINI_TRANSCRIBE,
+                EntityEnum::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE,
                 EntityEnum::OPENAI_GPT_4O_MINI_TTS,
                 EntityEnum::OPENAI_TTS_1,
                 EntityEnum::OPENAI_TTS_1_HD,
@@ -210,6 +213,7 @@ enum EngineEnum: string
             self::Gemini => [
                 EntityEnum::GEMINI_1_5_PRO,
                 EntityEnum::GEMINI_1_5_FLASH,
+                EntityEnum::GEMINI_2_5_FLASH,
                 EntityEnum::GEMINI_2_5_FLASH_TTS,
             ],
             self::StableDiffusion => [
@@ -218,6 +222,8 @@ enum EngineEnum: string
             ],
             self::ElevenLabs => [
                 EntityEnum::ELEVEN_MULTILINGUAL_V2,
+                EntityEnum::ELEVEN_MULTILINGUAL_STS_V2,
+                EntityEnum::ELEVEN_SCRIBE_V2,
             ],
             self::FalAI => [
                 EntityEnum::FLUX_PRO,

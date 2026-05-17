@@ -190,12 +190,12 @@ class TestEverythingCommand extends Command
                 array_merge($this->neo4jEnv(), [
                     'AI_ENGINE_RUN_LIVE_TESTS' => 'true',
                     'AI_ENGINE_RUN_NEO4J_LIVE_TESTS' => 'true',
-                    'AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX') ?: 'openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini',
-                    'AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX') ?: 'openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini',
-                    'AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX') ?: 'openai:gpt-image-1-mini,fal_ai:fal-ai/nano-banana-2',
-                    'AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX') ?: 'fal_ai:bytedance/seedance-2.0/text-to-video',
-                    'AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX') ?: 'eleven_labs:eleven_multilingual_v2',
-                    'AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX' => getenv('AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX') ?: 'openai:whisper-1',
+                    'AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX' => $this->liveProviderMatrix('text', 'openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini'),
+                    'AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX' => $this->liveProviderMatrix('agent', 'openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini'),
+                    'AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX' => $this->liveProviderMatrix('image', 'openai:gpt-image-1-mini,fal_ai:fal-ai/nano-banana-2'),
+                    'AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX' => $this->liveProviderMatrix('video', 'fal_ai:bytedance/seedance-2.0/text-to-video'),
+                    'AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX' => $this->liveProviderMatrix('tts', 'eleven_labs:eleven_multilingual_v2'),
+                    'AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX' => $this->liveProviderMatrix('transcribe', 'openai:whisper-1'),
                 ]),
                 $this->rootEnvFile()
             ),
@@ -341,10 +341,17 @@ class TestEverythingCommand extends Command
     protected function neo4jEnv(): array
     {
         return array_filter([
-            'AI_ENGINE_NEO4J_URL' => $this->option('neo4j-url') ?: (string) (config('ai-engine.graph.neo4j.url') ?: getenv('AI_ENGINE_NEO4J_URL') ?: ''),
-            'AI_ENGINE_NEO4J_DATABASE' => $this->option('neo4j-database') ?: (string) (config('ai-engine.graph.neo4j.database') ?: getenv('AI_ENGINE_NEO4J_DATABASE') ?: ''),
-            'AI_ENGINE_NEO4J_USERNAME' => $this->option('neo4j-username') ?: (string) (config('ai-engine.graph.neo4j.username') ?: getenv('AI_ENGINE_NEO4J_USERNAME') ?: ''),
-            'AI_ENGINE_NEO4J_PASSWORD' => $this->option('neo4j-password') ?: (string) (config('ai-engine.graph.neo4j.password') ?: getenv('AI_ENGINE_NEO4J_PASSWORD') ?: ''),
+            'AI_ENGINE_NEO4J_URL' => $this->option('neo4j-url') ?: (string) config('ai-engine.graph.neo4j.url', ''),
+            'AI_ENGINE_NEO4J_DATABASE' => $this->option('neo4j-database') ?: (string) config('ai-engine.graph.neo4j.database', ''),
+            'AI_ENGINE_NEO4J_USERNAME' => $this->option('neo4j-username') ?: (string) config('ai-engine.graph.neo4j.username', ''),
+            'AI_ENGINE_NEO4J_PASSWORD' => $this->option('neo4j-password') ?: (string) config('ai-engine.graph.neo4j.password', ''),
         ], static fn ($value): bool => is_string($value) && trim($value) !== '');
+    }
+
+    protected function liveProviderMatrix(string $feature, string $default): string
+    {
+        $value = trim((string) config("ai-engine.testing.live_provider_matrix.{$feature}", $default));
+
+        return $value !== '' ? $value : $default;
     }
 }

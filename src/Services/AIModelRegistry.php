@@ -1110,26 +1110,44 @@ class AIModelRegistry
 
         $name = strtolower($modelData['name'] ?? '');
         $id = strtolower($modelData['id'] ?? '');
+        $modality = strtolower((string) ($modelData['architecture']['modality'] ?? ''));
+        $supportedParameters = array_values((array) ($modelData['supported_parameters'] ?? []));
+        $haystack = trim($name.' '.$id.' '.$modality.' '.strtolower(implode(' ', $supportedParameters)));
 
-        if (str_contains($name, 'vision') || str_contains($id, 'vision')) {
+        if (str_contains($haystack, 'vision') || str_contains($modality, 'image->text') || str_contains($modality, 'image')) {
             $capabilities[] = 'vision';
+        }
+
+        if (str_contains($modality, '->image') || str_contains($haystack, 'image-generation')) {
+            $capabilities[] = 'image_generation';
+        }
+
+        if (str_contains($haystack, 'audio')) {
+            $capabilities[] = 'audio';
+        }
+
+        if (str_contains($haystack, 'whisper') || str_contains($haystack, 'transcribe') || str_contains($haystack, 'speech-to-text') || str_contains($haystack, 'stt')) {
+            $capabilities[] = 'speech_to_text';
+        }
+
+        if (str_contains($haystack, 'tts') || str_contains($haystack, 'text-to-speech')) {
+            $capabilities[] = 'text_to_speech';
+            $capabilities[] = 'tts';
+        }
+
+        if (str_contains($haystack, 'embedding')) {
+            $capabilities[] = 'embeddings';
         }
 
         if (str_contains($name, 'code') || str_contains($id, 'code')) {
             $capabilities[] = 'coding';
         }
 
-        if (isset($modelData['architecture']['modality'])) {
-            $modality = $modelData['architecture']['modality'];
-            if (str_contains($modality, 'image')) {
-                $capabilities[] = 'vision';
-            }
-            if (str_contains($modality, 'text')) {
-                $capabilities[] = 'function_calling';
-            }
+        if (str_contains($modality, 'text') || in_array('tools', $supportedParameters, true) || in_array('tool_choice', $supportedParameters, true)) {
+            $capabilities[] = 'function_calling';
         }
 
-        return $capabilities;
+        return array_values(array_unique($capabilities));
     }
 
     /**

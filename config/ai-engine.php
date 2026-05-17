@@ -70,6 +70,25 @@ return array_replace_recursive($defaults, [
         'eleven_labs' => [
             'api_key' => env('ELEVENLABS_API_KEY'),
         ],
+        'openrouter' => [
+            'api_key' => env('OPENROUTER_API_KEY'),
+            'default_model' => env('OPENROUTER_DEFAULT_MODEL', data_get($defaults, 'engines.openrouter.default_model')),
+            'cost_optimization' => [
+                'enabled' => env('OPENROUTER_COST_OPTIMIZATION_ENABLED', data_get($defaults, 'engines.openrouter.cost_optimization.enabled', false)),
+                'mode' => env('OPENROUTER_COST_OPTIMIZATION_MODE', data_get($defaults, 'engines.openrouter.cost_optimization.mode', 'free_first')),
+                'free_models' => array_filter(array_map('trim', preg_split('/[;,]+/', (string) env(
+                    'OPENROUTER_FREE_MODELS',
+                    implode(',', data_get($defaults, 'engines.openrouter.cost_optimization.free_models', []))
+                )) ?: [])),
+                'include_requested_model_fallback' => env('OPENROUTER_INCLUDE_REQUESTED_MODEL_FALLBACK', data_get($defaults, 'engines.openrouter.cost_optimization.include_requested_model_fallback', true)),
+                'sort_by_price' => env('OPENROUTER_SORT_BY_PRICE', data_get($defaults, 'engines.openrouter.cost_optimization.sort_by_price', true)),
+                'preferred_max_latency_p90' => env('OPENROUTER_PREFERRED_MAX_LATENCY_P90'),
+                'max_price' => [
+                    'prompt' => env('OPENROUTER_MAX_PROMPT_PRICE'),
+                    'completion' => env('OPENROUTER_MAX_COMPLETION_PRICE'),
+                ],
+            ],
+        ],
         'pexels' => [
             'api_key' => env('PEXELS_API_KEY'),
             'base_url' => env('PEXELS_BASE_URL', 'https://api.pexels.com'),
@@ -93,5 +112,16 @@ return array_replace_recursive($defaults, [
         'auto_index' => env('AI_ENGINE_VECTOR_AUTO_INDEX', data_get($defaults, 'vector.auto_index', false)),
         'driver' => env('AI_ENGINE_VECTOR_DRIVER', data_get($defaults, 'vector.driver', 'qdrant')),
         'embedding_model' => env('AI_ENGINE_VECTOR_EMBEDDING_MODEL', data_get($defaults, 'vector.embedding_model', 'text-embedding-3-large')),
+    ],
+    'testing' => [
+        'root_app_path' => env('AI_ENGINE_TEST_ROOT_APP_PATH', data_get($defaults, 'testing.root_app_path')),
+        'live_provider_matrix' => [
+            'text' => env('AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX', data_get($defaults, 'testing.live_provider_matrix.text')),
+            'agent' => env('AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX', data_get($defaults, 'testing.live_provider_matrix.agent')),
+            'image' => env('AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX', data_get($defaults, 'testing.live_provider_matrix.image')),
+            'video' => env('AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX', data_get($defaults, 'testing.live_provider_matrix.video')),
+            'tts' => env('AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX', data_get($defaults, 'testing.live_provider_matrix.tts')),
+            'transcribe' => env('AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX', data_get($defaults, 'testing.live_provider_matrix.transcribe')),
+        ],
     ],
 ]);

@@ -26,20 +26,22 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->mergeConfigFrom(
-            __DIR__.'/../config/ai-engine.php',
-            'ai-engine'
-        );
+        if (!$this->app->configurationIsCached()) {
+            $this->mergeConfigFrom(
+                __DIR__.'/../config/ai-engine.php',
+                'ai-engine'
+            );
 
-        $this->mergeConfigFrom(
-            __DIR__.'/../config/ai-agent.php',
-            'ai-agent'
-        );
+            $this->mergeConfigFrom(
+                __DIR__.'/../config/ai-agent.php',
+                'ai-agent'
+            );
 
-        $this->mergeNestedConfig(
-            'ai-engine',
-            \LaravelAIEngine\Support\Config\AIEngineConfigDefaults::defaults()
-        );
+            $this->mergeNestedConfig(
+                'ai-engine',
+                \LaravelAIEngine\Support\Config\AIEngineConfigDefaults::defaults()
+            );
+        }
 
         // Register AI Engine log channel
         $this->registerLogChannel();
@@ -82,7 +84,7 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->make('config')->set('logging.channels.ai-engine', [
             'driver' => 'single',
             'path' => storage_path('logs/ai-engine.log'),
-            'level' => env('LOG_LEVEL', 'debug'),
+            'level' => (string) config('logging.level', 'debug'),
             'days' => 14,
         ]);
     }

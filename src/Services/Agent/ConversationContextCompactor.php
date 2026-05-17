@@ -5,9 +5,21 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Agent;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Repositories\ConversationMemoryRepository;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryExtractor;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPolicy;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemorySemanticIndex;
 
 class ConversationContextCompactor
 {
+    public function __construct(
+        protected ?ConversationMemoryPolicy $memoryPolicy = null,
+        protected ?ConversationMemoryExtractor $memoryExtractor = null,
+        protected ?ConversationMemoryRepository $memoryRepository = null,
+        protected ?ConversationMemorySemanticIndex $memorySemanticIndex = null,
+    ) {
+    }
+
     public function compact(UnifiedActionContext $context): void
     {
         $beforeChars = $this->historyChars($context->conversationHistory);
@@ -42,6 +54,7 @@ class ConversationContextCompactor
         $context->metadata['conversation_compacted_messages'] = (int) ($context->metadata['conversation_compacted_messages'] ?? 0) + count($older);
         $context->metadata['conversation_last_compacted_at'] = now()->toIso8601String();
         $context->conversationHistory = $recent;
+        $this->extractConversationMemories($context, $older);
         $this->storeMetrics($context, $beforeChars);
     }
 
@@ -189,6 +202,83 @@ class ConversationContextCompactor
         $metrics = $this->metrics($context);
         $metrics['pre_compaction_history_size_chars'] = $beforeChars;
         $context->metadata['conversation_context_metrics'] = $metrics;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $older
+     */
+    private function extractConversationMemories(UnifiedActionContext $context, array $older): void
+    {
+        if ($older === []) {
+            return;
+        }
+
+        try {
+            $policy = $this->memoryPolicy();
+            if (!$policy->enabled() || !$policy->extractOnCompaction()) {
+                return;
+            }
+
+            $items = $this->memoryExtractor()->extract($older, $this->memoryScope($context));
+            foreach ($items as $item) {
+                $stored = $this->memoryRepository()->upsert($item);
+                if ($policy->semanticIndexOnWrite()) {
+                    $this->memorySemanticIndex()->index($stored);
+                }
+            }
+
+            $context->metadata['conversation_memory_extracted'] = (int) ($context->metadata['conversation_memory_extracted'] ?? 0) + count($items);
+            unset($context->metadata['conversation_memory_extraction_error']);
+        } catch (\Throwable $exception) {
+            $context->metadata['conversation_memory_extraction_error'] = $exception->getMessage();
+        }
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function memoryScope(UnifiedActionContext $context): array
+    {
+        $tenantKey = (string) $this->config('ai-agent.conversation_memory.scopes.tenant_key', 'tenant_id');
+        $workspaceKey = (string) $this->config('ai-agent.conversation_memory.scopes.workspace_key', 'workspace_id');
+
+        return [
+            'user_id' => $context->userId !== null ? (string) $context->userId : null,
+            'tenant_id' => $this->metadataString($context, $tenantKey) ?? $this->metadataString($context, 'tenant_id'),
+            'workspace_id' => $this->metadataString($context, $workspaceKey) ?? $this->metadataString($context, 'workspace_id'),
+            'session_id' => $context->sessionId,
+        ];
+    }
+
+    private function metadataString(UnifiedActionContext $context, string $key): ?string
+    {
+        $value = $context->metadata[$key] ?? null;
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_scalar($value) ? (string) $value : null;
+    }
+
+    private function memoryPolicy(): ConversationMemoryPolicy
+    {
+        return $this->memoryPolicy ??= app(ConversationMemoryPolicy::class);
+    }
+
+    private function memoryExtractor(): ConversationMemoryExtractor
+    {
+        return $this->memoryExtractor ??= app(ConversationMemoryExtractor::class);
+    }
+
+    private function memoryRepository(): ConversationMemoryRepository
+    {
+        return $this->memoryRepository ??= app(ConversationMemoryRepository::class);
+    }
+
+    private function memorySemanticIndex(): ConversationMemorySemanticIndex
+    {
+        return $this->memorySemanticIndex ??= app(ConversationMemorySemanticIndex::class);
     }
 
     private function config(string $key, mixed $default): mixed

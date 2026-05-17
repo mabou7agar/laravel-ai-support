@@ -41,6 +41,9 @@ class EntityEnum
     public const DALL_E_3 = 'dall-e-3';
     public const DALL_E_2 = 'dall-e-2';
     public const WHISPER_1 = 'whisper-1';
+    public const OPENAI_GPT_4O_TRANSCRIBE = 'gpt-4o-transcribe';
+    public const OPENAI_GPT_4O_MINI_TRANSCRIBE = 'gpt-4o-mini-transcribe';
+    public const OPENAI_GPT_4O_TRANSCRIBE_DIARIZE = 'gpt-4o-transcribe-diarize';
     public const OPENAI_GPT_4O_MINI_TTS = 'gpt-4o-mini-tts';
     public const OPENAI_TTS_1 = 'tts-1';
     public const OPENAI_TTS_1_HD = 'tts-1-hd';
@@ -102,6 +105,8 @@ class EntityEnum
 
     // ElevenLabs Models
     public const ELEVEN_MULTILINGUAL_V2 = 'eleven_multilingual_v2';
+    public const ELEVEN_MULTILINGUAL_STS_V2 = 'eleven_multilingual_sts_v2';
+    public const ELEVEN_SCRIBE_V2 = 'scribe_v2';
 
     // DeepSeek Models
     public const DEEPSEEK_CHAT = 'deepseek-chat';
@@ -265,7 +270,11 @@ class EntityEnum
 
         // Try to load dynamic model info if not a predefined constant
         if (!$this->isPredefinedModel()) {
-            $this->dynamicModel = $this->getResolver()->resolve($value);
+            try {
+                $this->dynamicModel = $this->getResolver()->resolve($value);
+            } catch (\Throwable) {
+                $this->dynamicModel = null;
+            }
         }
     }
 
@@ -376,6 +385,9 @@ class EntityEnum
             case self::DALL_E_3:
             case self::DALL_E_2:
             case self::WHISPER_1:
+            case self::OPENAI_GPT_4O_TRANSCRIBE:
+            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
+            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
             case self::OPENAI_GPT_4O_MINI_TTS:
             case self::OPENAI_TTS_1:
             case self::OPENAI_TTS_1_HD:
@@ -411,6 +423,8 @@ class EntityEnum
             case self::SDXL_1024:
                 return EngineEnum::StableDiffusion;
             case self::ELEVEN_MULTILINGUAL_V2:
+            case self::ELEVEN_MULTILINGUAL_STS_V2:
+            case self::ELEVEN_SCRIBE_V2:
                 return EngineEnum::ElevenLabs;
             case self::FAL_FLUX_PRO:
             case self::FAL_FLUX_DEV:
@@ -522,6 +536,9 @@ class EntityEnum
             case self::DALL_E_2:
                 return DallE2Driver::class;
             case self::WHISPER_1:
+            case self::OPENAI_GPT_4O_TRANSCRIBE:
+            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
+            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
                 return WhisperDriver::class;
             case self::OPENAI_GPT_4O_MINI_TTS:
             case self::OPENAI_TTS_1:
@@ -561,6 +578,8 @@ class EntityEnum
             case self::SDXL_1024:
                 return SDXL1024Driver::class;
             case self::ELEVEN_MULTILINGUAL_V2:
+            case self::ELEVEN_MULTILINGUAL_STS_V2:
+            case self::ELEVEN_SCRIBE_V2:
                 return MultilingualV2Driver::class;
             case self::FAL_FLUX_PRO:
             case self::FLUX_PRO:
@@ -726,6 +745,12 @@ class EntityEnum
                 return 'DALL-E 2';
             case self::WHISPER_1:
                 return 'Whisper';
+            case self::OPENAI_GPT_4O_TRANSCRIBE:
+                return 'GPT-4o Transcribe';
+            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
+                return 'GPT-4o Mini Transcribe';
+            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
+                return 'GPT-4o Transcribe Diarize';
             case self::OPENAI_GPT_4O_MINI_TTS:
                 return 'GPT-4o Mini TTS';
             case self::OPENAI_TTS_1:
@@ -788,6 +813,10 @@ class EntityEnum
                 return 'Stable Diffusion XL';
             case self::ELEVEN_MULTILINGUAL_V2:
                 return 'ElevenLabs Multilingual v2';
+            case self::ELEVEN_MULTILINGUAL_STS_V2:
+                return 'ElevenLabs Multilingual STS v2';
+            case self::ELEVEN_SCRIBE_V2:
+                return 'ElevenLabs Scribe v2';
             case self::FLUX_PRO:
                 return 'Flux Pro';
             case self::FAL_NANO_BANANA_2:
@@ -949,6 +978,12 @@ class EntityEnum
                 return 3.0;
             case self::WHISPER_1:
                 return 1.0;
+            case self::OPENAI_GPT_4O_TRANSCRIBE:
+                return 1.2;
+            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
+                return 0.8;
+            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
+                return 1.5;
             case self::OPENAI_GPT_4O_MINI_TTS:
                 return 1.2;
             case self::OPENAI_TTS_1:
@@ -1011,6 +1046,10 @@ class EntityEnum
                 return 2.5;
             case self::ELEVEN_MULTILINGUAL_V2:
                 return 2.0;
+            case self::ELEVEN_MULTILINGUAL_STS_V2:
+                return 2.5;
+            case self::ELEVEN_SCRIBE_V2:
+                return 1.0;
             case self::FAL_FLUX_PRO:
             case self::FLUX_PRO:
                 return 3.5;
@@ -1292,10 +1331,15 @@ class EntityEnum
             case self::GEMINI_VEO_3_1_FAST:
                 return 'video';
             case self::WHISPER_1:
+            case self::OPENAI_GPT_4O_TRANSCRIBE:
+            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
+            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
             case self::OPENAI_GPT_4O_MINI_TTS:
             case self::OPENAI_TTS_1:
             case self::OPENAI_TTS_1_HD:
             case self::ELEVEN_MULTILINGUAL_V2:
+            case self::ELEVEN_MULTILINGUAL_STS_V2:
+            case self::ELEVEN_SCRIBE_V2:
             case self::CLOUDFLARE_WHISPER:
             case self::CLOUDFLARE_MELOTTS:
             case self::HUGGINGFACE_WHISPER_LARGE_V3:
@@ -1335,6 +1379,23 @@ class EntityEnum
             case self::AZURE_COMPUTER_VISION:
                 return 'image';
             default:
+                $model = strtolower($this->value);
+                if (str_contains($model, 'embedding')) {
+                    return 'embeddings';
+                }
+
+                if (str_contains($model, 'whisper') || str_contains($model, 'transcribe') || str_contains($model, 'speech-to-text') || str_contains($model, 'stt')) {
+                    return 'audio';
+                }
+
+                if (str_contains($model, 'tts') || str_contains($model, 'text-to-speech') || str_contains($model, 'speech')) {
+                    return 'audio';
+                }
+
+                if (str_contains($model, 'image') || str_contains($model, 'imagen')) {
+                    return 'image';
+                }
+
                 return 'text'; // Default content type for unknown models
         }
     }
@@ -1634,6 +1695,9 @@ class EntityEnum
             self::DALL_E_3,
             self::DALL_E_2,
             self::WHISPER_1,
+            self::OPENAI_GPT_4O_TRANSCRIBE,
+            self::OPENAI_GPT_4O_MINI_TRANSCRIBE,
+            self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE,
             self::OPENAI_GPT_4O_MINI_TTS,
             self::OPENAI_TTS_1,
             self::OPENAI_TTS_1_HD,
@@ -1683,6 +1747,8 @@ class EntityEnum
             self::KLING_VIDEO,
             self::LUMA_DREAM_MACHINE,
             self::ELEVEN_MULTILINGUAL_V2,
+            self::ELEVEN_MULTILINGUAL_STS_V2,
+            self::ELEVEN_SCRIBE_V2,
             self::DEEPSEEK_CHAT,
             self::DEEPSEEK_REASONER,
             self::PERPLEXITY_SONAR_LARGE,

@@ -586,6 +586,18 @@ class AIEngineConfigDefaults
         'health_middleware'        => ['web'],
     ],
 
+    'testing' => [
+        'root_app_path' => null,
+        'live_provider_matrix' => [
+            'text' => 'openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini',
+            'agent' => 'openai:gpt-4o-mini,openrouter:openai/gpt-4o-mini',
+            'image' => 'openai:gpt-image-1-mini,fal_ai:fal-ai/nano-banana-2',
+            'video' => 'fal_ai:bytedance/seedance-2.0/text-to-video',
+            'tts' => 'eleven_labs:eleven_multilingual_v2',
+            'transcribe' => 'openai:whisper-1',
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Default AI Engine
@@ -807,8 +819,24 @@ class AIEngineConfigDefaults
             'site_url' => env('OPENROUTER_SITE_URL', env('APP_URL')),
             'site_name' => env('OPENROUTER_SITE_NAME', env('APP_NAME')),
             'timeout' => env('OPENROUTER_TIMEOUT', 30),
+            'default_model' => env('OPENROUTER_DEFAULT_MODEL', 'meta-llama/llama-3.1-8b-instruct:free'),
             'transforms' => [],
             'route' => null,
+            'cost_optimization' => [
+                'enabled' => false,
+                'mode' => 'free_first',
+                'free_models' => [
+                    'meta-llama/llama-3.1-8b-instruct:free',
+                    'google/gemma-3-27b-it:free',
+                ],
+                'include_requested_model_fallback' => true,
+                'sort_by_price' => true,
+                'preferred_max_latency_p90' => null,
+                'max_price' => [
+                    'prompt' => null,
+                    'completion' => null,
+                ],
+            ],
             'models' => [
                 'openai/gpt-5-mini' => ['enabled' => true, 'credit_index' => 2.5],
                 'openai/gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.6],
@@ -2190,4 +2218,5 @@ class AIEngineConfigDefaults
             $parts
         ), static fn (string $item): bool => $item !== ''));
     }
+
 }

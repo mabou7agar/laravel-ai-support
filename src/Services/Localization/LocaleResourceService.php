@@ -165,6 +165,28 @@ class LocaleResourceService
         return false;
     }
 
+    public function containsLexicon(string $message, string $key, ?string $locale = null): bool
+    {
+        $normalized = mb_strtolower(trim($message));
+        if ($normalized === '') {
+            return false;
+        }
+
+        foreach ($this->candidateLocales($locale) as $candidate) {
+            foreach ($this->lexicon($key, $candidate) as $keyword) {
+                if (mb_strlen($keyword) < 4) {
+                    continue;
+                }
+
+                if (str_contains($normalized, $keyword)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     public function responseBoolean(string $response, ?string $locale = null): ?bool
     {
         $normalized = mb_strtolower(trim($response));

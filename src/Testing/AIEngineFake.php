@@ -266,6 +266,51 @@ class AIEngineFake extends UnifiedEngineManager
         return $response;
     }
 
+    public function audioToText(AIRequest $request): AIResponse
+    {
+        $this->calls[] = [
+            'method' => 'audioToText',
+            'type' => 'speech_to_text',
+            'request' => $request,
+        ];
+
+        $response = $this->nextResponse($request->getMetadata());
+
+        if ($response->getContent() === '') {
+            return AIResponse::success(
+                content: 'Fake transcription',
+                metadata: array_merge($request->getMetadata(), ['service' => 'speech_to_text'])
+            );
+        }
+
+        return $response;
+    }
+
+    public function speechToText(AIRequest $request): AIResponse
+    {
+        return $this->audioToText($request);
+    }
+
+    public function speechToSpeech(AIRequest $request): AIResponse
+    {
+        $this->calls[] = [
+            'method' => 'speechToSpeech',
+            'type' => 'speech_to_speech',
+            'request' => $request,
+        ];
+
+        $response = $this->nextResponse($request->getMetadata());
+
+        if ($response->getFiles() === [] && $response->getContent() === '') {
+            return AIResponse::success(
+                content: 'https://example.com/fake-speech-to-speech.mp3',
+                metadata: array_merge($request->getMetadata(), ['service' => 'speech_to_speech'])
+            )->withFiles(['https://example.com/fake-speech-to-speech.mp3']);
+        }
+
+        return $response;
+    }
+
     public function generatePrompt(string $prompt, array $options = []): AIResponse
     {
         $this->calls[] = [
@@ -556,6 +601,16 @@ class AIEngineFake extends UnifiedEngineManager
     public function assertEmbeddingsRequested(callable|null $callback = null): void
     {
         $this->assertCallType('generateEmbeddings', 'embeddings request', $callback);
+    }
+
+    public function assertAudioTranscribed(callable|null $callback = null): void
+    {
+        $this->assertCallType('audioToText', 'speech-to-text request', $callback);
+    }
+
+    public function assertSpeechToSpeechGenerated(callable|null $callback = null): void
+    {
+        $this->assertCallType('speechToSpeech', 'speech-to-speech request', $callback);
     }
 
     /**

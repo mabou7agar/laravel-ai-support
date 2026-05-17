@@ -24,8 +24,8 @@ class CreateQdrantIndexesCommand extends Command
 
     public function handle(): int
     {
-        $this->qdrantHost = rtrim(config('ai-engine.vector.drivers.qdrant.host', env('QDRANT_HOST', 'http://localhost:6333')), '/');
-        $this->qdrantApiKey = config('ai-engine.vector.drivers.qdrant.api_key', env('QDRANT_API_KEY'));
+        $this->qdrantHost = rtrim((string) config('ai-engine.vector.drivers.qdrant.host', 'http://localhost:6333'), '/');
+        $this->qdrantApiKey = config('ai-engine.vector.drivers.qdrant.api_key');
 
         if ($this->option('all')) {
             return $this->createAllIndexes();

@@ -42,14 +42,17 @@ class LiveEndToEndAgentFlowTest extends TestCase
 
         $exitCode = Artisan::call('ai:test-real-agent', $options);
         $output = Artisan::output();
-        $payload = json_decode($output, true);
+        $payload = $this->decodeCommandJson($output);
+        $outputDebug = trim($output) !== ''
+            ? $output
+            : 'No JSON command output captured; raw output length ' . strlen($output) . '.';
 
         $this->assertSame(0, $exitCode, $output);
-        $this->assertIsArray($payload, $output);
-        $this->assertIsArray($payload['summary'] ?? null, $output);
-        $this->assertSame(0, $payload['summary']['failed_turns'] ?? null, $output);
-        $this->assertGreaterThan(0, $payload['summary']['successful_turns'] ?? 0, $output);
-        $this->assertNotEmpty($payload['turns'] ?? [], $output);
+        $this->assertIsArray($payload, $outputDebug);
+        $this->assertIsArray($payload['summary'] ?? null, $outputDebug);
+        $this->assertSame(0, $payload['summary']['failed_turns'] ?? null, $outputDebug);
+        $this->assertGreaterThan(0, $payload['summary']['successful_turns'] ?? 0, $outputDebug);
+        $this->assertNotEmpty($payload['turns'] ?? [], $outputDebug);
     }
 
     private function configureLiveProvider(string $engine, string $model): void

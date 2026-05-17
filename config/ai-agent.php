@@ -310,6 +310,37 @@ return [
         'summary_message_chars' => env('AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS', 240),
     ],
 
+    'conversation_memory' => [
+        'enabled' => env('AI_AGENT_CONVERSATION_MEMORY_ENABLED', true),
+        'driver' => env('AI_AGENT_CONVERSATION_MEMORY_DRIVER', 'database'),
+        'extract_on_compaction' => env('AI_AGENT_MEMORY_EXTRACT_ON_COMPACTION', true),
+        'extractor' => env('AI_AGENT_MEMORY_EXTRACTOR', 'ai'),
+        'extractor_class' => env('AI_AGENT_MEMORY_EXTRACTOR_CLASS'),
+        'engine' => env('AI_AGENT_MEMORY_ENGINE', env('AI_ENGINE_DEFAULT')),
+        'model' => env('AI_AGENT_MEMORY_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL'))),
+        'max_extraction_input_chars' => (int) env('AI_AGENT_MEMORY_MAX_EXTRACTION_INPUT_CHARS', 6000),
+        'max_memories_per_turn' => (int) env('AI_AGENT_MEMORY_MAX_PER_TURN', 6),
+        'max_prompt_chars' => (int) env('AI_AGENT_MEMORY_MAX_PROMPT_CHARS', 1200),
+        'min_score' => (float) env('AI_AGENT_MEMORY_MIN_SCORE', 0.45),
+        'ttl_days' => (int) env('AI_AGENT_MEMORY_TTL_DAYS', 180),
+        'scopes' => [
+            'tenant_key' => env('AI_AGENT_MEMORY_TENANT_KEY', 'tenant_id'),
+            'workspace_key' => env('AI_AGENT_MEMORY_WORKSPACE_KEY', 'workspace_id'),
+        ],
+        'semantic' => [
+            'enabled' => env('AI_AGENT_MEMORY_SEMANTIC_ENABLED', false),
+            'driver' => env('AI_AGENT_MEMORY_SEMANTIC_DRIVER', env('AI_ENGINE_VECTOR_DRIVER')),
+            'collection' => env('AI_AGENT_MEMORY_SEMANTIC_COLLECTION', env('AI_ENGINE_MEMORY_COLLECTION')),
+            'embedding_engine' => env('AI_AGENT_MEMORY_EMBEDDING_ENGINE', env('AI_ENGINE_DEFAULT')),
+            'embedding_model' => env('AI_AGENT_MEMORY_EMBEDDING_MODEL', env('AI_ENGINE_VECTOR_EMBEDDING_MODEL')),
+            'index_on_write' => env('AI_AGENT_MEMORY_SEMANTIC_INDEX_ON_WRITE', false),
+            'payload_scope_fields' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+                'AI_AGENT_MEMORY_VECTOR_SCOPE_FIELDS',
+                'user_id,tenant_id,workspace_id,session_id,namespace'
+            ))))),
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Capability Providers
@@ -375,6 +406,17 @@ return [
         'structured_field_terms' => ['status', 'created', 'updated', 'assigned', 'owner', 'workspace', 'project', 'user', 'type'],
         'selection_reference_terms' => ['one', 'record', 'item', 'entry', 'message', 'result'],
         'pending_entity_terms' => ['record', 'item', 'entry'],
+    ],
+
+    'intent_understanding' => [
+        'mode' => env('AI_AGENT_INTENT_UNDERSTANDING_MODE', 'heuristic'),
+        'engine' => env('AI_AGENT_INTENT_ENGINE', env('AI_ENGINE_DEFAULT')),
+        'model' => env('AI_AGENT_INTENT_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o-mini'))),
+        'max_tokens' => (int) env('AI_AGENT_INTENT_MAX_TOKENS', 500),
+        'temperature' => (float) env('AI_AGENT_INTENT_TEMPERATURE', 0.0),
+        'cache_ttl_seconds' => (int) env('AI_AGENT_INTENT_CACHE_TTL', 120),
+        'fallback_to_heuristics' => env('AI_AGENT_INTENT_FALLBACK_TO_HEURISTICS', true),
+        'min_confidence' => (float) env('AI_AGENT_INTENT_MIN_CONFIDENCE', 0.6),
     ],
 
     'skill_providers' => [

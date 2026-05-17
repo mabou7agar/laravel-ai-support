@@ -2,8 +2,11 @@
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
+use LaravelAIEngine\DTOs\AgentIntentDecision;
+use LaravelAIEngine\Services\Agent\AgentIntentUnderstandingService;
 use LaravelAIEngine\Services\Agent\MessageRoutingClassifier;
 use LaravelAIEngine\Tests\UnitTestCase;
+use Mockery;
 
 class MessageRoutingClassifierTest extends UnitTestCase
 {
@@ -77,5 +80,28 @@ class MessageRoutingClassifierTest extends UnitTestCase
 
         $this->assertSame('search_rag', $decision['route']);
         $this->assertSame('contextual_follow_up', $decision['mode']);
+    }
+
+    public function test_ai_intent_can_drive_multilingual_routing_when_enabled(): void
+    {
+        config()->set('ai-agent.intent_understanding.mode', 'ai_first');
+
+        $intent = Mockery::mock(AgentIntentUnderstandingService::class);
+        $intent->shouldReceive('decide')
+            ->once()
+            ->with('ابحث في سياسة الاسترجاع')
+            ->andReturn(new AgentIntentDecision(
+                route: 'search_rag',
+                mode: 'semantic_retrieval',
+                confidence: 0.93,
+                intent: 'semantic_retrieval',
+                reason: 'Arabic semantic retrieval request.',
+            ));
+
+        $decision = (new MessageRoutingClassifier($intent))->classify('ابحث في سياسة الاسترجاع');
+
+        $this->assertSame('search_rag', $decision['route']);
+        $this->assertSame('semantic_retrieval', $decision['mode']);
+        $this->assertSame('ai_intent', $decision['source']);
     }
 }

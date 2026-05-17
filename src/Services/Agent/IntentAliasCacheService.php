@@ -7,10 +7,16 @@ namespace LaravelAIEngine\Services\Agent;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 class IntentAliasCacheService
 {
     private const DEFAULT_TTL_DAYS = 30;
+
+    public function __construct(
+        private ?LocaleResourceService $localeResources = null,
+    ) {
+    }
 
     public function rememberAction(
         string|int $scope,
@@ -116,11 +122,19 @@ class IntentAliasCacheService
             return false;
         }
 
-        if (preg_match('/^(yes|no|ok|okay|confirm|نعم|لا|ايوه|أيوه)$/iu', $phrase) === 1) {
+        if ($this->locale()->isLexiconMatch($phrase, 'intent.confirm')
+            || $this->locale()->isLexiconMatch($phrase, 'intent.reject')
+            || $this->locale()->isLexiconMatch($phrase, 'intent.deny')
+            || $this->locale()->isLexiconMatch($phrase, 'intent.cancel')) {
             return false;
         }
 
         return str_word_count($phrase) <= 14;
+    }
+
+    private function locale(): LocaleResourceService
+    {
+        return $this->localeResources ??= app(LocaleResourceService::class);
     }
 
     private function phraseKey(string|int $scope, string $locale, string $normalized): string

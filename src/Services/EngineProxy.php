@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\Contracts\ProviderToolInterface;
+use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\StructuredOutputSchema;
 
@@ -279,9 +280,31 @@ class EngineProxy
         return $this->withParameters(['audio_minutes' => $minutes])->generate($prompt);
     }
 
-    public function audioToText(string $audioPath): AIResponse
+    public function audioToText(string $audioPath, array $parameters = []): AIResponse
     {
-        return $this->withFiles([$audioPath])->generate('');
+        if ($parameters !== []) {
+            $this->withParameters($parameters);
+        }
+
+        $options = $this->releaseOptions();
+
+        return $this->manager->audioToText($this->buildAudioOperationRequest('', [$audioPath], $options));
+    }
+
+    public function speechToText(string $audioPath, array $parameters = []): AIResponse
+    {
+        return $this->audioToText($audioPath, $parameters);
+    }
+
+    public function speechToSpeech(string $audioPath, string $prompt = '', array $parameters = []): AIResponse
+    {
+        if ($parameters !== []) {
+            $this->withParameters($parameters);
+        }
+
+        $options = $this->releaseOptions();
+
+        return $this->manager->speechToSpeech($this->buildAudioOperationRequest($prompt, [$audioPath], $options));
     }
 
     public function estimateCost(string $prompt): array
@@ -379,6 +402,28 @@ class EngineProxy
         $this->maxRetries = 3;
         $this->backoffStrategy = 'exponential';
         $this->fallbackEngine = null;
+    }
+
+    protected function buildAudioOperationRequest(string $prompt, array $files, array $options): AIRequest
+    {
+        return new AIRequest(
+            prompt: $prompt,
+            engine: $options['engine'] ?? null,
+            model: $options['model'] ?? null,
+            parameters: is_array($options['parameters'] ?? null) ? $options['parameters'] : [],
+            userId: isset($options['user']) ? (string) $options['user'] : ($options['user_id'] ?? null),
+            conversationId: isset($options['conversation_id']) ? (string) $options['conversation_id'] : null,
+            context: is_array($options['context'] ?? null) ? $options['context'] : [],
+            files: array_merge(is_array($options['files'] ?? null) ? $options['files'] : [], $files),
+            systemPrompt: isset($options['system_prompt']) ? (string) $options['system_prompt'] : null,
+            messages: is_array($options['messages'] ?? null) ? $options['messages'] : [],
+            maxTokens: isset($options['max_tokens']) ? (int) $options['max_tokens'] : null,
+            temperature: isset($options['temperature']) ? (float) $options['temperature'] : null,
+            seed: isset($options['seed']) ? (int) $options['seed'] : null,
+            metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : [],
+            functions: is_array($options['functions'] ?? null) ? $options['functions'] : [],
+            functionCall: is_array($options['function_call'] ?? null) ? $options['function_call'] : null
+        );
     }
 
     protected function sleepForRetry(int $attempt, string $backoffStrategy): void

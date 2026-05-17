@@ -11,6 +11,7 @@ use LaravelAIEngine\DTOs\AgentSkillDefinition;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
+use LaravelAIEngine\Services\Agent\IntentSignalService;
 use LaravelAIEngine\Services\AIEngineService;
 use Throwable;
 
@@ -18,18 +19,21 @@ class RunSkillTool extends AgentTool
 {
     private ?ToolRegistry $tools;
     private ?AgentExecutionPolicyService $policy;
+    private ?IntentSignalService $intentSignals = null;
 
     public function __construct(
         private readonly AgentSkillRegistry $skills,
         private readonly ConversationMemory $memory,
         private readonly AIEngineService $ai,
         mixed $policy = null,
-        mixed $tools = null
+        mixed $tools = null,
+        ?IntentSignalService $intentSignals = null
     ) {
         $this->policy = $policy instanceof AgentExecutionPolicyService ? $policy : null;
         $this->tools = $tools instanceof ToolRegistry
             ? $tools
             : ($policy instanceof ToolRegistry ? $policy : null);
+        $this->intentSignals = $intentSignals;
     }
 
     public function getName(): string
@@ -748,21 +752,26 @@ class RunSkillTool extends AgentTool
     private function looksLikeApproval(string $message): bool
     {
         $normalized = mb_strtolower(trim($message));
-        if ($normalized === '' || preg_match('/\b(no|not|don\'t|do not|cancel|stop|instead)\b/u', $normalized) === 1) {
+        if ($normalized === '' || $this->signals()->isNegative($normalized)) {
             return false;
         }
 
-        return preg_match('/\b(yes|approve|approved|confirm|create|go ahead|proceed|ok|okay|sure)\b/u', $normalized) === 1;
+        return $this->signals()->isAffirmative($normalized);
     }
 
     private function looksLikeExplicitApproval(string $message): bool
     {
         $normalized = mb_strtolower(trim($message));
-        if ($normalized === '' || preg_match('/\b(no|not|don\'t|do not|cancel|stop|instead)\b/u', $normalized) === 1) {
+        if ($normalized === '' || $this->signals()->isNegative($normalized)) {
             return false;
         }
 
-        return preg_match('/\b(yes|approve|approved|confirm|confirmed|go ahead|proceed|ok|okay|sure)\b/u', $normalized) === 1;
+        return $this->signals()->isAffirmative($normalized);
+    }
+
+    private function signals(): IntentSignalService
+    {
+        return $this->intentSignals ??= app(IntentSignalService::class);
     }
 
     private function decodeJson(string $content): ?array

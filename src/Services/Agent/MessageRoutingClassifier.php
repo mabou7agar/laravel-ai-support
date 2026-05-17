@@ -6,6 +6,11 @@ namespace LaravelAIEngine\Services\Agent;
 
 class MessageRoutingClassifier
 {
+    public function __construct(
+        protected ?AgentIntentUnderstandingService $intentUnderstanding = null,
+    ) {
+    }
+
     /**
      * @param array<string, mixed> $signals
      * @return array{route:string,mode:string,reason:string,source:string}
@@ -16,6 +21,11 @@ class MessageRoutingClassifier
 
         if ($normalized === '') {
             return $this->decision('conversational', 'conversational', 'empty message treated as chat');
+        }
+
+        $understood = $this->understoodDecision($message);
+        if ($understood !== null) {
+            return $understood;
         }
 
         if ($this->isConversational($message)) {
@@ -64,6 +74,38 @@ class MessageRoutingClassifier
         $classification = $this->classify($message, $signals);
 
         return $classification['mode'] === 'contextual_follow_up';
+    }
+
+    protected function understoodDecision(string $message): ?array
+    {
+        $mode = strtolower((string) config('ai-agent.intent_understanding.mode', 'heuristic'));
+        if (!in_array($mode, ['ai_first', 'hybrid'], true)) {
+            return null;
+        }
+
+        try {
+            $decision = $this->intentUnderstanding()->decide($message);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($decision->confidence < (float) config('ai-agent.intent_understanding.min_confidence', 0.6)) {
+            return null;
+        }
+
+        return match ($decision->intent) {
+            'chat' => $this->decision('conversational', 'conversational', $decision->reason ?: 'AI intent classified chat', 'ai_intent'),
+            'semantic_retrieval' => $this->decision('search_rag', 'semantic_retrieval', $decision->reason ?: 'AI intent classified semantic retrieval', 'ai_intent'),
+            'contextual_follow_up' => $this->decision('search_rag', 'contextual_follow_up', $decision->reason ?: 'AI intent classified contextual follow-up', 'ai_intent'),
+            'structured_query' => $this->decision('ask_ai', 'structured_query', $decision->reason ?: 'AI intent classified structured query', 'ai_intent'),
+            'action_request', 'confirm', 'reject', 'choose_existing', 'create_new', 'skill_request' => $this->decision('ask_ai', 'action_flow', $decision->reason ?: 'AI intent classified action flow', 'ai_intent'),
+            default => null,
+        };
+    }
+
+    protected function intentUnderstanding(): AgentIntentUnderstandingService
+    {
+        return $this->intentUnderstanding ??= app(AgentIntentUnderstandingService::class);
     }
 
     protected function isConversational(string $message): bool
@@ -282,13 +324,13 @@ class MessageRoutingClassifier
     /**
      * @return array{route:string,mode:string,reason:string,source:string}
      */
-    protected function decision(string $route, string $mode, string $reason): array
+    protected function decision(string $route, string $mode, string $reason, string $source = 'heuristic'): array
     {
         return [
             'route' => $route,
             'mode' => $mode,
             'reason' => $reason,
-            'source' => 'heuristic',
+            'source' => $source,
         ];
     }
 }

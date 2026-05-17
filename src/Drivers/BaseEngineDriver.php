@@ -105,6 +105,18 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     }
 
     /**
+     * Convert speech audio to speech audio.
+     */
+    public function speechToSpeech(AIRequest $request): AIResponse
+    {
+        if (!$this->supports('speech_to_speech') && !$this->supports('sts')) {
+            throw new \InvalidArgumentException('Speech to speech not supported by this engine');
+        }
+
+        return $this->doSpeechToSpeech($request);
+    }
+
+    /**
      * Generate embeddings (default implementation throws exception)
      */
     public function generateEmbeddings(AIRequest $request): AIResponse
@@ -170,6 +182,14 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     protected function doAudioToText(AIRequest $request): AIResponse
     {
         throw new \BadMethodCallException('Audio to text not implemented');
+    }
+
+    /**
+     * Implementation-specific speech to speech.
+     */
+    protected function doSpeechToSpeech(AIRequest $request): AIResponse
+    {
+        throw new \BadMethodCallException('Speech to speech not implemented');
     }
 
     /**

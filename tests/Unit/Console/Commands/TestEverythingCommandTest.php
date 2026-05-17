@@ -73,6 +73,8 @@ class TestEverythingCommandTest extends UnitTestCase
     {
         $rootPath = $this->makeFakeRootApp();
 
+        config()->set('ai-engine.testing.live_provider_matrix.text', 'openrouter:test-free:free');
+
         $runner = Mockery::mock(TestEverythingRunner::class);
         $runner->shouldReceive('runStages')
             ->once()
@@ -92,6 +94,7 @@ class TestEverythingCommandTest extends UnitTestCase
                 $this->assertStringContainsString('AI_ENGINE_RUN_NEO4J_LIVE_TESTS', $stages[2]['command']);
                 $this->assertStringContainsString('tests/Feature/GraphChatRouteTest.php', $stages[3]['command']);
                 $this->assertStringContainsString('AI_ENGINE_RUN_LIVE_TESTS', $stages[4]['command']);
+                $this->assertStringContainsString('openrouter:test-free:free', $stages[4]['command']);
                 $this->assertStringContainsString('tests/Feature/RealGraphRAGWorkflowTest.php', $stages[5]['command']);
 
                 return true;

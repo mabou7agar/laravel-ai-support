@@ -96,6 +96,9 @@ class OpenAIEngineDriver extends BaseEngineDriver
             EntityEnum::DALL_E_3,
             EntityEnum::DALL_E_2,
             EntityEnum::WHISPER_1,
+            EntityEnum::OPENAI_GPT_4O_TRANSCRIBE,
+            EntityEnum::OPENAI_GPT_4O_MINI_TRANSCRIBE,
+            EntityEnum::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE,
             EntityEnum::OPENAI_GPT_4O_MINI_TTS,
             EntityEnum::OPENAI_TTS_1,
             EntityEnum::OPENAI_TTS_1_HD,
@@ -450,18 +453,32 @@ class OpenAIEngineDriver extends BaseEngineDriver
                 throw new \InvalidArgumentException('Audio file is required');
             }
 
-            $response = $this->openAIClient->audio()->transcribe([
-                'model' => 'whisper-1',
-                'file' => fopen($audioFile, 'r'),
-                'response_format' => 'json',
-            ]);
+            $parameters = $request->getParameters();
+            $model = $this->isSpeechToTextModel($request->getModel()->value)
+                ? $request->getModel()->value
+                : (string) ($parameters['transcription_model'] ?? EntityEnum::OPENAI_GPT_4O_TRANSCRIBE);
 
-            $duration = $request->getParameters()['audio_minutes'] ?? 1.0;
+            $payload = array_filter([
+                'model' => $model,
+                'file' => fopen($audioFile, 'r'),
+                'response_format' => $parameters['response_format'] ?? 'json',
+                'language' => $parameters['language'] ?? null,
+                'prompt' => $parameters['transcription_prompt'] ?? null,
+            ], static fn ($value): bool => $value !== null && $value !== '');
+
+            $response = $this->openAIClient->audio()->transcribe($payload);
+
+            $duration = $parameters['audio_minutes'] ?? 1.0;
 
             return AIResponse::success(
                 $response->text,
                 $request->getEngine(),
-                $request->getModel()
+                $request->getModel(),
+                [
+                    'provider' => EngineEnum::OpenAI->value,
+                    'service' => 'speech_to_text',
+                    'model' => $model,
+                ]
             )->withUsage(
                 creditsUsed: $duration * $request->getModel()->creditIndex()
             );
@@ -471,9 +488,69 @@ class OpenAIEngineDriver extends BaseEngineDriver
         }
     }
 
+    protected function doSpeechToSpeech(AIRequest $request): AIResponse
+    {
+        $parameters = $request->getParameters();
+        $transcriptionModel = EntityEnum::from((string) ($parameters['transcription_model'] ?? EntityEnum::OPENAI_GPT_4O_TRANSCRIBE));
+        $ttsModel = $this->isSpeechToTextModel($request->getModel()->value)
+            ? EntityEnum::from((string) ($parameters['tts_model'] ?? EntityEnum::OPENAI_GPT_4O_MINI_TTS))
+            : $request->getModel();
+
+        $transcriptionRequest = new AIRequest(
+            prompt: '',
+            engine: $request->getEngine(),
+            model: $transcriptionModel,
+            parameters: $parameters,
+            userId: $request->getUserId(),
+            conversationId: $request->getConversationId(),
+            context: $request->getContext(),
+            files: $request->getFiles(),
+            systemPrompt: $request->getSystemPrompt(),
+            messages: $request->getMessages(),
+            maxTokens: $request->getMaxTokens(),
+            temperature: $request->getTemperature(),
+            seed: $request->getSeed(),
+            metadata: $request->getMetadata()
+        );
+
+        $transcription = $this->audioToText($transcriptionRequest);
+
+        if (!$transcription->isSuccessful()) {
+            return $transcription;
+        }
+
+        $speechRequest = new AIRequest(
+            prompt: $transcription->getContent(),
+            engine: $request->getEngine(),
+            model: $ttsModel,
+            parameters: $parameters,
+            userId: $request->getUserId(),
+            conversationId: $request->getConversationId(),
+            context: $request->getContext(),
+            systemPrompt: $request->getSystemPrompt(),
+            messages: $request->getMessages(),
+            maxTokens: $request->getMaxTokens(),
+            temperature: $request->getTemperature(),
+            seed: $request->getSeed(),
+            metadata: $request->getMetadata()
+        );
+
+        $response = $this->generateAudio($speechRequest);
+
+        return $response->withMetadata([
+            'provider' => EngineEnum::OpenAI->value,
+            'service' => 'speech_to_speech',
+            'transcript' => $transcription->getContent(),
+            'transcription_model' => $transcriptionModel->value,
+            'tts_model' => $ttsModel->value,
+        ]);
+    }
+
     protected function isSpeechToTextModel(string $model): bool
     {
-        return str_contains(strtolower($model), 'whisper');
+        $model = strtolower($model);
+
+        return str_contains($model, 'whisper') || str_contains($model, 'transcribe');
     }
 
     protected function audioExtensionFromFormat(string $format): string
@@ -546,7 +623,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     protected function getSupportedCapabilities(): array
     {
-        return ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'streaming', 'speech_to_text', 'text_to_speech', 'tts'];
+        return ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'streaming', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'];
     }
 
     /**

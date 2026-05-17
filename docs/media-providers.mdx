@@ -6,14 +6,15 @@ Laravel AI Engine supports hosted and local media generation providers for image
 
 | Provider | Engine | Best for | Key env |
 | --- | --- | --- | --- |
-| OpenAI audio | `openai` | TTS and transcription beside chat/agent workflows | `OPENAI_API_KEY` |
+| OpenAI audio | `openai` | TTS, transcription, and STT-to-TTS speech conversion beside chat/agent workflows | `OPENAI_API_KEY` |
 | Cloudflare Workers AI | `cloudflare_workers_ai` | low-cost image, TTS, transcription | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
 | Hugging Face Inference Providers | `huggingface` | provider marketplace for image/audio models | `HUGGINGFACE_API_KEY` or `HF_TOKEN` |
 | Replicate | `replicate` | public image/video/audio model catalog | `REPLICATE_API_TOKEN` |
 | ComfyUI | `comfyui` | local/self-hosted image and video workflows | `COMFYUI_BASE_URL` |
-| Gemini media | `gemini` | Imagen, Veo, native TTS, and Lyria models | `GEMINI_API_KEY` |
+| Gemini media | `gemini` | Imagen, Veo, audio understanding/STT, native TTS, STS pipeline, and Lyria models | `GEMINI_API_KEY` |
 | Google Text-to-Speech | `google_tts` | Google Cloud TTS voices | `GOOGLE_TTS_API_KEY` or `GOOGLE_TTS_ACCESS_TOKEN` |
-| ElevenLabs | `eleven_labs` | high-quality voices and narration | `ELEVENLABS_API_KEY` |
+| ElevenLabs | `eleven_labs` | high-quality voices, STT, native speech-to-speech voice conversion, and narration | `ELEVENLABS_API_KEY` |
+| OpenRouter | `openrouter` | routed chat, vision, image generation, embeddings, STT, TTS, and STS pipeline | `OPENROUTER_API_KEY` |
 | FAL | `fal_ai` | async video and catalog execution | `FAL_AI_API_KEY` |
 | Pexels | `pexels` | stock photo search and curated image discovery | `PEXELS_API_KEY` |
 
@@ -101,6 +102,184 @@ new \LaravelAIEngine\DTOs\AIRequest(
 ```
 
 `lyria-002` remains available for music generation style workflows. Media routing now defaults Gemini `audio_generation` to native TTS and keeps Lyria under `music_generation`.
+
+## Speech To Text
+
+Use `audioToText()` or `speechToText()` when the input is an audio file and the output should be text:
+
+```php
+$response = Engine::engine('openai')
+    ->model('gpt-4o-transcribe')
+    ->speechToText(storage_path('app/audio/order.wav'));
+```
+
+ElevenLabs Scribe is supported through the same API:
+
+```php
+$response = Engine::engine('eleven_labs')
+    ->model('scribe_v2')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'language_code' => 'en',
+        'diarize' => true,
+    ]);
+```
+
+Gemini STT uses audio understanding through `generateContent` with inline audio:
+
+```php
+$response = Engine::engine('gemini')
+    ->model('gemini-2.5-flash-preview-04-17')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'mime_type' => 'audio/wav',
+    ]);
+```
+
+Cloudflare Workers AI and Hugging Face STT remain available through their Whisper-compatible audio models.
+
+OpenRouter STT is available through its OpenAI-compatible transcription endpoint:
+
+```php
+$response = Engine::engine('openrouter')
+    ->model('openai/whisper-1')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'language' => 'en',
+    ]);
+```
+
+## Speech To Speech
+
+Use `speechToSpeech()` when the input and output are both audio:
+
+```php
+$response = Engine::engine('eleven_labs')
+    ->model('eleven_multilingual_sts_v2')
+    ->speechToSpeech(storage_path('app/audio/source.wav'), parameters: [
+        'voice_id' => 'JBFqnCBsd6RMkjVDRZzb',
+        'output_format' => 'mp3_44100_128',
+    ]);
+```
+
+ElevenLabs uses its native speech-to-speech endpoint. OpenAI, Gemini, and OpenRouter use a stable package pipeline: speech-to-text first, then provider TTS. For true low-latency live voice conversations, use `Engine::realtime()` with OpenAI Realtime or Gemini Live descriptors and connect from the host application over WebRTC or WebSocket.
+
+OpenRouter STS uses `/audio/transcriptions` first, then `/audio/speech`:
+
+```php
+$response = Engine::engine('openrouter')
+    ->model('openai/whisper-1')
+    ->speechToSpeech(storage_path('app/audio/source.wav'), parameters: [
+        'tts_model' => 'openai/gpt-4o-mini-tts-2025-12-15',
+        'voice' => 'nova',
+    ]);
+```
+
+```php
+$response = Engine::engine('gemini')
+    ->model('gemini-2.5-flash-preview-04-17')
+    ->speechToSpeech(storage_path('app/audio/source.wav'), 'Reply naturally to this audio.', [
+        'tts_model' => 'gemini-2.5-flash-preview-tts',
+        'voice' => 'Kore',
+        'mime_type' => 'audio/wav',
+    ]);
+```
+
+## OpenRouter Multimodal
+
+OpenRouter supports package-level `generateImage()`, `generateAudio()`, `speechToText()`, `speechToSpeech()`, and `generateEmbeddings()` calls. The driver also converts local image and audio files in `withFiles()` into OpenRouter chat content parts, so vision and audio-understanding models can receive multimodal input through normal chat calls.
+
+OpenRouter chat also supports package tools, `withStructuredOutput()`, real SSE streaming, routing parameters, provider preferences, web-search/plugin options, trace metadata, and normalized `/models` catalog metadata.
+
+Run the routed multimodal live smoke when changing OpenRouter support:
+
+```bash
+AI_ENGINE_RUN_OPENROUTER_LIVE_TESTS=true \
+php vendor/bin/phpunit -c phpunit.xml.dist tests/Feature/Live/OpenRouterLiveFeatureTest.php
+```
+
+The test covers text, streaming, forced tool-call responses, provider routing preferences, web plugin execution, structured output, full `/models` catalog normalization, embeddings, real image+audio multimodal chat input, image generation, TTS, STT, chat audio-output streaming, and the package STS pipeline. Override model IDs with `AI_ENGINE_OPENROUTER_LIVE_TEXT_MODEL`, `AI_ENGINE_OPENROUTER_LIVE_IMAGE_MODEL`, `AI_ENGINE_OPENROUTER_LIVE_TTS_MODEL`, `AI_ENGINE_OPENROUTER_LIVE_STT_MODEL`, `AI_ENGINE_OPENROUTER_LIVE_EMBEDDING_MODEL`, `AI_ENGINE_OPENROUTER_LIVE_CHAT_AUDIO_MODEL`, and `AI_ENGINE_OPENROUTER_LIVE_MULTIMODAL_MODEL`.
+
+For OpenAI-backed OpenRouter chat audio-output models, streaming currently requires `audio.format=pcm16`; use `/audio/speech` for normal MP3 TTS output.
+
+### OpenRouter Cost Optimization
+
+Enable the optional OpenRouter cost optimizer when an app can trade model stability/quality for lower spend:
+
+```env
+OPENROUTER_COST_OPTIMIZATION_ENABLED=true
+OPENROUTER_COST_OPTIMIZATION_MODE=free_first
+OPENROUTER_FREE_MODELS=meta-llama/llama-3.1-8b-instruct:free,google/gemma-3-27b-it:free
+OPENROUTER_INCLUDE_REQUESTED_MODEL_FALLBACK=true
+OPENROUTER_SORT_BY_PRICE=true
+```
+
+When enabled, chat requests send an OpenRouter `models` fallback list with free variants first, then the requested model when fallback is enabled. The driver also adds `provider.sort.by=price` with `partition=none` unless the request already provides an explicit provider `order`.
+
+Use request parameters for workflow-level control:
+
+```php
+$response = Engine::engine('openrouter')
+    ->model('openai/gpt-4o-mini')
+    ->withParameters([
+        'cost_optimization' => true,
+        'models' => [
+            'meta-llama/llama-3.1-8b-instruct:free',
+            'google/gemma-3-27b-it:free',
+            'openai/gpt-4o-mini',
+        ],
+        'provider' => [
+            'max_price' => [
+                'prompt' => 0,
+                'completion' => 0,
+            ],
+        ],
+    ])
+    ->generate('Draft a short reply.');
+```
+
+Keep paid fallback enabled for important user-facing flows. Free OpenRouter models can be rate-limited, unavailable, or weaker at tool/structured-output tasks.
+
+```php
+$image = Engine::engine('openrouter')
+    ->model('google/gemini-2.5-flash-image')
+    ->generateImage('Generate a product hero image.');
+
+$audio = Engine::engine('openrouter')
+    ->model('openai/gpt-4o-mini-tts-2025-12-15')
+    ->generateAudio('Read this summary.', 1.0);
+
+$embeddings = app(\LaravelAIEngine\Services\AIEngineService::class)->generateEmbeddings(
+    new \LaravelAIEngine\DTOs\AIRequest(
+        prompt: 'Embed this text.',
+        engine: 'openrouter',
+        model: 'openai/text-embedding-3-small',
+    )
+);
+```
+
+```php
+$response = Engine::engine('openrouter')
+    ->model('openai/gpt-4o-mini')
+    ->withStructuredOutput([
+        'type' => 'object',
+        'properties' => [
+            'status' => ['type' => 'string'],
+        ],
+        'required' => ['status'],
+    ], 'status_response')
+    ->withTools([
+        [
+            'name' => 'lookup_invoice',
+            'description' => 'Look up an invoice.',
+            'parameters' => [
+                'type' => 'object',
+                'properties' => [
+                    'invoice_id' => ['type' => 'string'],
+                ],
+                'required' => ['invoice_id'],
+            ],
+        ],
+    ])
+    ->generate('Return invoice status as JSON.');
+```
 
 ## Pexels Stock Photos
 

@@ -45,6 +45,31 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
         $this->assertSame(1, $payload['summary']['tool_counts']['vector_search']);
     }
 
+    public function test_command_outputs_json_when_live_response_excerpt_contains_multibyte_text(): void
+    {
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $arabicResponse = str_repeat('سأستخدم اللغة العربية للتواصل معك في هذه المساحة. ', 8);
+
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::conversational($arabicResponse, new UnifiedActionContext('s-ar', 1)));
+
+        $this->app->instance(AgentRuntimeContract::class, $runtime);
+
+        $exitCode = Artisan::call('ai:test-real-agent', [
+            '--message' => ['what language should you use?'],
+            '--session' => 'real-test-arabic',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertIsArray($payload, Artisan::output());
+        $this->assertSame(1, $payload['summary']['successful_turns']);
+        $this->assertNotEmpty($payload['turns'][0]['response_excerpt'] ?? null);
+    }
+
     public function test_command_handles_exceptions_and_returns_failure(): void
     {
         $runtime = Mockery::mock(AgentRuntimeContract::class);

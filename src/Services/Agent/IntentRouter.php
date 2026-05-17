@@ -28,7 +28,8 @@ class IntentRouter
         protected ?AgentSkillRegistry $skillRegistry = null,
         protected ?AgentSkillMatcher $skillMatcher = null,
         protected ?AgentSkillExecutionPlanner $skillPlanner = null,
-        protected ?RAGPromptPolicyService $promptPolicyService = null
+        protected ?RAGPromptPolicyService $promptPolicyService = null,
+        protected ?IntentSignalService $intentSignals = null
     ) {
         $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
             ? app(MessageRoutingClassifier::class)
@@ -585,8 +586,9 @@ PROMPT;
         return $decision;
     }
 
-    protected function getUserProfile(?string $userId): string
+    protected function getUserProfile(int|string|null $userId): string
     {
+        $userId = $userId !== null ? (string) $userId : null;
         if (!$userId) {
             return '- No user profile available';
         }
@@ -807,11 +809,16 @@ PROMPT;
             return false;
         }
 
-        if (preg_match('/\b(no|not|don\'t|do not|cancel|stop|instead)\b/u', $normalized) === 1) {
+        if ($this->signals()->isNegative($normalized)) {
             return false;
         }
 
-        return preg_match('/\b(yes|approve|approved|confirm|create|add|go ahead|proceed|ok|okay|sure)\b/u', $normalized) === 1;
+        return $this->signals()->isAffirmative($normalized);
+    }
+
+    protected function signals(): IntentSignalService
+    {
+        return $this->intentSignals ??= app(IntentSignalService::class);
     }
 
     protected function formatPausedSessions(array $sessions): string

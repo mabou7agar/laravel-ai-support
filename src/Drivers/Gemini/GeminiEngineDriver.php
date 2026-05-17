@@ -333,6 +333,101 @@ class GeminiEngineDriver extends BaseEngineDriver
         }
     }
 
+    protected function doAudioToText(AIRequest $request): AIResponse
+    {
+        try {
+            $audioFile = $request->getFiles()[0] ?? null;
+            if (!$audioFile || !is_readable($audioFile)) {
+                throw new \InvalidArgumentException('Readable audio file is required for Gemini speech-to-text');
+            }
+
+            $parameters = $request->getParameters();
+            $mimeType = (string) ($parameters['mime_type'] ?? $parameters['audio_mime_type'] ?? $this->detectAudioMimeType($audioFile));
+            $prompt = $request->getPrompt() !== ''
+                ? $request->getPrompt()
+                : 'Transcribe this audio. Return only the spoken text.';
+
+            $payload = [
+                'contents' => [
+                    [
+                        'role' => 'user',
+                        'parts' => [
+                            ['text' => $prompt],
+                            [
+                                'inlineData' => [
+                                    'mimeType' => $mimeType,
+                                    'data' => base64_encode((string) file_get_contents($audioFile)),
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+                'generationConfig' => array_filter([
+                    'temperature' => $request->getTemperature() ?? $parameters['temperature'] ?? 0.0,
+                    'maxOutputTokens' => $request->getMaxTokens() ?? $parameters['max_output_tokens'] ?? 2048,
+                ], static fn ($value): bool => $value !== null),
+            ];
+
+            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:generateContent", [
+                'json' => $payload,
+                'query' => ['key' => $this->getApiKey()],
+            ]);
+
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
+            $content = $this->extractText($data);
+
+            return AIResponse::success($content, $request->getEngine(), $request->getModel(), [
+                'provider' => 'gemini',
+                'service' => 'speech_to_text',
+                'model' => $request->getModel()->value,
+                'mime_type' => $mimeType,
+                'raw' => $data,
+            ])->withUsage(
+                tokensUsed: $this->extractTokenUsage($data, $content, 'gemini'),
+                creditsUsed: max(1, (float) ($parameters['audio_minutes'] ?? 1.0)) * $request->getModel()->creditIndex()
+            );
+        } catch (\Exception $e) {
+            return $this->handleApiError($e, $request, 'speech-to-text');
+        }
+    }
+
+    protected function doSpeechToSpeech(AIRequest $request): AIResponse
+    {
+        $parameters = $request->getParameters();
+        $transcription = $this->audioToText($request);
+
+        if (!$transcription->isSuccessful()) {
+            return $transcription;
+        }
+
+        $ttsModel = EntityEnum::from((string) ($parameters['tts_model'] ?? EntityEnum::GEMINI_2_5_FLASH_TTS));
+        $ttsRequest = new AIRequest(
+            prompt: $transcription->getContent(),
+            engine: $request->getEngine(),
+            model: $ttsModel,
+            parameters: $parameters,
+            userId: $request->getUserId(),
+            conversationId: $request->getConversationId(),
+            context: $request->getContext(),
+            systemPrompt: $request->getSystemPrompt(),
+            messages: $request->getMessages(),
+            maxTokens: $request->getMaxTokens(),
+            temperature: $request->getTemperature(),
+            seed: $request->getSeed(),
+            metadata: $request->getMetadata()
+        );
+
+        $response = $this->generateAudio($ttsRequest);
+
+        return $response->withMetadata([
+            'provider' => 'gemini',
+            'service' => 'speech_to_speech',
+            'transcript' => $transcription->getContent(),
+            'transcription_model' => $request->getModel()->value,
+            'tts_model' => $ttsModel->value,
+        ]);
+    }
+
     private function generatePredictAudio(AIRequest $request): AIResponse
     {
         try {
@@ -374,6 +469,39 @@ class GeminiEngineDriver extends BaseEngineDriver
                 ],
             ],
         ];
+    }
+
+    private function extractText(array $data): string
+    {
+        $parts = (array) ($data['candidates'][0]['content']['parts'] ?? []);
+        $text = '';
+
+        foreach ($parts as $part) {
+            if (is_string($part['text'] ?? null)) {
+                $text .= $part['text'];
+            }
+        }
+
+        return $text;
+    }
+
+    private function detectAudioMimeType(string $path): string
+    {
+        if (function_exists('mime_content_type')) {
+            $mime = mime_content_type($path);
+            if (is_string($mime) && str_starts_with($mime, 'audio/')) {
+                return $mime;
+            }
+        }
+
+        return match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+            'mp3' => 'audio/mpeg',
+            'wav' => 'audio/wav',
+            'm4a' => 'audio/mp4',
+            'ogg' => 'audio/ogg',
+            'flac' => 'audio/flac',
+            default => 'audio/wav',
+        };
     }
 
     private function extractInlineAudio(array $data): ?array
@@ -494,7 +622,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     protected function getSupportedCapabilities(): array
     {
-        return ['text', 'chat', 'vision', 'embeddings', 'streaming', 'image', 'images', 'video', 'audio'];
+        return ['text', 'chat', 'vision', 'embeddings', 'streaming', 'image', 'images', 'video', 'audio', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'];
     }
 
     /**

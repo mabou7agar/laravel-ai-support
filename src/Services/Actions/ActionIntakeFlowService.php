@@ -7,9 +7,15 @@ namespace LaravelAIEngine\Services\Actions;
 use Illuminate\Support\Facades\Cache;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\IntentSignalService;
 
 class ActionIntakeFlowService
 {
+    public function __construct(
+        protected ?IntentSignalService $intentSignals = null,
+    ) {
+    }
+
     public function pendingRelation(UnifiedActionContext $context, int|string $ownerKey, string $scope): ?array
     {
         $pending = Cache::get($this->relationKey($context, $ownerKey, $scope));
@@ -121,19 +127,9 @@ class ActionIntakeFlowService
 
     public function relationDecision(string $message): array
     {
-        $normalized = strtolower(trim(preg_replace('/\s+/', ' ', $message) ?? ''));
-
         return [
-            'use_existing' => preg_match('/\b(use|choose|select|keep)\s+(?:this\s+|the\s+)?existing\b/i', $normalized) === 1
-                || str_contains($normalized, 'use this')
-                || str_contains($normalized, 'use it')
-                || str_contains($normalized, 'use existing')
-                || str_contains($normalized, 'استخدم الموجود'),
-            'create_new' => preg_match('/\b(create|add|make)\s+(?:a\s+|the\s+)?new\b/i', $normalized) === 1
-                || str_contains($normalized, 'create new')
-                || str_contains($normalized, 'new one')
-                || str_contains($normalized, 'create missing')
-                || str_contains($normalized, 'انشئ جديد'),
+            'use_existing' => $this->signals()->isRelationUseExisting($message),
+            'create_new' => $this->signals()->isRelationCreateNew($message),
         ];
     }
 
@@ -145,5 +141,10 @@ class ActionIntakeFlowService
     protected function call(?callable $callback, array $arguments): mixed
     {
         return $callback ? $callback(...$arguments) : null;
+    }
+
+    protected function signals(): IntentSignalService
+    {
+        return $this->intentSignals ??= app(IntentSignalService::class);
     }
 }

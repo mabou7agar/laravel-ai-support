@@ -10,12 +10,14 @@ use LaravelAIEngine\Contracts\ActionFlowHandler;
 use LaravelAIEngine\Contracts\ConversationMemory;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\IntentSignalService;
 
 class ActionDraftService
 {
     public function __construct(
         private readonly ActionFlowHandler $actions,
-        private readonly ConversationMemory $memory
+        private readonly ConversationMemory $memory,
+        private ?IntentSignalService $intentSignals = null
     ) {
     }
 
@@ -263,11 +265,16 @@ class ActionDraftService
             return false;
         }
 
-        if (preg_match('/\b(no|not|don\'t|do not|cancel|stop|instead)\b/u', $message) === 1) {
+        if ($this->signals()->isNegative($message)) {
             return false;
         }
 
-        return preg_match('/\b(yes|approve|approved|confirm|create|add|go ahead|proceed|ok|okay|sure)\b/u', $message) === 1;
+        return $this->signals()->isAffirmative($message);
+    }
+
+    private function signals(): IntentSignalService
+    {
+        return $this->intentSignals ??= app(IntentSignalService::class);
     }
 
     /**

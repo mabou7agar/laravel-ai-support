@@ -78,9 +78,34 @@ class ProviderToolPayloadMapper
     {
         return match ($provider) {
             EngineEnum::OpenAI->value     => $this->mapOpenAITool($tool),
+            EngineEnum::OpenRouter->value => $this->mapOpenRouterTool($tool),
             EngineEnum::Anthropic->value  => $this->mapAnthropicTool($tool),
             EngineEnum::Gemini->value     => $this->mapGeminiTool($tool),
             default => null,
+        };
+    }
+
+    protected function mapOpenRouterTool(array $tool): ?array
+    {
+        return match ((string) ($tool['type'] ?? '')) {
+            'web_search' => [
+                'tool' => [
+                    'type' => 'function',
+                    'function' => [
+                        'name' => 'web_search',
+                        'description' => 'Search the web for fresh information.',
+                        'parameters' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'query' => ['type' => 'string'],
+                            ],
+                            'required' => ['query'],
+                        ],
+                    ],
+                ],
+            ],
+            'image_generation' => null,
+            default => $this->mapOpenAITool($tool),
         };
     }
 

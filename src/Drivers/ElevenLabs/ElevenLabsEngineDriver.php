@@ -17,11 +17,11 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
 {
     private Client $httpClient;
 
-    public function __construct(array $config)
+    public function __construct(array $config, ?Client $httpClient = null)
     {
         parent::__construct($config);
         
-        $this->httpClient = new Client([
+        $this->httpClient = $httpClient ?? new Client([
             'timeout' => $this->getTimeout(),
             'base_uri' => $this->getBaseUrl(),
             'headers' => $this->buildHeaders(),
@@ -36,7 +36,11 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
         $contentType = $request->getModel()->getContentType();
         
         return match ($contentType) {
-            'audio' => $this->generateAudio($request),
+            'audio' => match ($request->getModel()->value) {
+                EntityEnum::ELEVEN_SCRIBE_V2 => $this->audioToText($request),
+                EntityEnum::ELEVEN_MULTILINGUAL_STS_V2 => $this->speechToSpeech($request),
+                default => $this->generateAudio($request),
+            },
             'speech' => $this->audioToText($request),
             default => throw new \InvalidArgumentException("Unsupported content type: {$contentType}")
         };
@@ -214,15 +218,152 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     }
 
     /**
-     * Speech to text (not directly supported by ElevenLabs)
+     * Speech to text using ElevenLabs Scribe.
      */
-    public function speechToText(AIRequest $request): AIResponse
+    protected function doAudioToText(AIRequest $request): AIResponse
     {
-        return AIResponse::error(
-            'Speech-to-text not supported by ElevenLabs',
-            $request->getEngine(),
-            $request->getModel()
-        );
+        try {
+            $audioFile = $request->getFiles()[0] ?? null;
+            if (!$audioFile || !is_readable($audioFile)) {
+                throw new \InvalidArgumentException('Readable audio file is required for ElevenLabs speech-to-text');
+            }
+
+            $parameters = $request->getParameters();
+            $multipart = [
+                [
+                    'name' => 'file',
+                    'contents' => fopen($audioFile, 'r'),
+                    'filename' => basename($audioFile),
+                ],
+                [
+                    'name' => 'model_id',
+                    'contents' => (string) ($parameters['model_id'] ?? $request->getModel()->value),
+                ],
+            ];
+
+            foreach ([
+                'language_code',
+                'tag_audio_events',
+                'num_speakers',
+                'timestamps_granularity',
+                'diarize',
+                'diarization_threshold',
+                'additional_formats',
+                'file_format',
+                'cloud_storage_url',
+                'source_url',
+                'webhook',
+                'webhook_id',
+                'temperature',
+                'seed',
+                'use_multi_channel',
+                'webhook_metadata',
+                'entity_detection',
+                'no_verbatim',
+                'detect_speaker_roles',
+                'entity_redaction',
+                'entity_redaction_mode',
+                'keyterms',
+            ] as $field) {
+                if (array_key_exists($field, $parameters) && $parameters[$field] !== null && $parameters[$field] !== '') {
+                    $multipart[] = ['name' => $field, 'contents' => $this->stringifyMultipartValue($parameters[$field])];
+                }
+            }
+
+            $response = $this->httpClient->post('/v1/speech-to-text', [
+                'multipart' => $multipart,
+                'headers' => ['xi-api-key' => $this->getApiKey()],
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true) ?: [];
+            $text = (string) ($data['text'] ?? '');
+
+            return AIResponse::success($text, $request->getEngine(), $request->getModel(), [
+                'provider' => EngineEnum::ElevenLabs->value,
+                'service' => 'speech_to_text',
+                'model' => (string) ($parameters['model_id'] ?? $request->getModel()->value),
+                'language_code' => $data['language_code'] ?? $parameters['language_code'] ?? null,
+                'raw' => $data,
+            ])->withUsage(creditsUsed: max(1, (float) ($parameters['audio_minutes'] ?? 1.0)) * $request->getModel()->creditIndex());
+        } catch (RequestException $e) {
+            return AIResponse::error(
+                'ElevenLabs speech-to-text API error: ' . $e->getMessage(),
+                $request->getEngine(),
+                $request->getModel()
+            );
+        } catch (\Exception $e) {
+            return AIResponse::error(
+                'ElevenLabs speech-to-text error: ' . $e->getMessage(),
+                $request->getEngine(),
+                $request->getModel()
+            );
+        }
+    }
+
+    /**
+     * Speech to speech voice conversion.
+     */
+    protected function doSpeechToSpeech(AIRequest $request): AIResponse
+    {
+        try {
+            $audioFile = $request->getFiles()[0] ?? null;
+            if (!$audioFile || !is_readable($audioFile)) {
+                throw new \InvalidArgumentException('Readable audio file is required for ElevenLabs speech-to-speech');
+            }
+
+            $parameters = $request->getParameters();
+            $voiceId = (string) ($parameters['voice_id'] ?? $this->config['default_voice_id'] ?? 'pNInz6obpgDQGcFmaJgB');
+            $modelId = (string) ($parameters['model_id'] ?? $request->getModel()->value);
+            $outputFormat = (string) ($parameters['output_format'] ?? 'mp3_44100_128');
+
+            $multipart = [
+                [
+                    'name' => 'audio',
+                    'contents' => fopen($audioFile, 'r'),
+                    'filename' => basename($audioFile),
+                ],
+                [
+                    'name' => 'model_id',
+                    'contents' => $modelId,
+                ],
+            ];
+
+            foreach (['voice_settings', 'seed', 'remove_background_noise', 'file_format'] as $field) {
+                if (array_key_exists($field, $parameters) && $parameters[$field] !== null && $parameters[$field] !== '') {
+                    $multipart[] = ['name' => $field, 'contents' => $this->stringifyMultipartValue($parameters[$field])];
+                }
+            }
+
+            $response = $this->httpClient->post("/v1/speech-to-speech/{$voiceId}", [
+                'query' => ['output_format' => $outputFormat],
+                'multipart' => $multipart,
+                'headers' => ['xi-api-key' => $this->getApiKey()],
+            ]);
+
+            $audioData = $response->getBody()->getContents();
+            $filename = $this->saveAudioFile($audioData, $request);
+
+            return AIResponse::success('', $request->getEngine(), $request->getModel(), [
+                'provider' => EngineEnum::ElevenLabs->value,
+                'service' => 'speech_to_speech',
+                'model' => $modelId,
+                'voice_id' => $voiceId,
+                'output_format' => $outputFormat,
+            ])->withFiles([$filename])
+              ->withUsage(creditsUsed: max(1, (float) ($parameters['audio_minutes'] ?? 1.0)) * $request->getModel()->creditIndex());
+        } catch (RequestException $e) {
+            return AIResponse::error(
+                'ElevenLabs speech-to-speech API error: ' . $e->getMessage(),
+                $request->getEngine(),
+                $request->getModel()
+            );
+        } catch (\Exception $e) {
+            return AIResponse::error(
+                'ElevenLabs speech-to-speech error: ' . $e->getMessage(),
+                $request->getEngine(),
+                $request->getModel()
+            );
+        }
     }
 
     /**
@@ -323,6 +464,8 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return [
                 ['id' => 'eleven_multilingual_v2', 'name' => 'Eleven Multilingual v2'],
+                ['id' => 'eleven_multilingual_sts_v2', 'name' => 'Eleven Multilingual STS v2'],
+                ['id' => 'scribe_v2', 'name' => 'Scribe v2'],
                 ['id' => 'eleven_turbo_v2', 'name' => 'Eleven Turbo v2'],
                 ['id' => 'eleven_monolingual_v1', 'name' => 'Eleven Monolingual v1'],
             ];
@@ -334,7 +477,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
      */
     protected function getSupportedCapabilities(): array
     {
-        return ['audio', 'tts', 'voice_cloning', 'streaming'];
+        return ['audio', 'speech', 'tts', 'text_to_speech', 'speech_to_text', 'speech_to_speech', 'sts', 'voice_cloning', 'streaming'];
     }
 
     /**
@@ -369,10 +512,22 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
     protected function buildHeaders(): array
     {
         return [
-            'Content-Type' => 'application/json',
             'xi-api-key' => $this->getApiKey(),
             'User-Agent' => 'Laravel-AI-Engine/1.0',
         ];
+    }
+
+    private function stringifyMultipartValue(mixed $value): string
+    {
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if (is_array($value)) {
+            return json_encode($value, JSON_THROW_ON_ERROR);
+        }
+
+        return (string) $value;
     }
 
     /**

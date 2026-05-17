@@ -33,4 +33,24 @@ class AIEngineFakeTest extends UnitTestCase
 
         $this->assertCount(3, $fake->calls());
     }
+
+    public function test_fake_records_speech_to_text_and_speech_to_speech_from_proxy(): void
+    {
+        $fake = new AIEngineFake();
+
+        $fake->engine(EngineEnum::ELEVENLABS)
+            ->model(EntityEnum::ELEVEN_SCRIBE_V2)
+            ->speechToText('/tmp/input.wav');
+
+        $fake->engine(EngineEnum::ELEVENLABS)
+            ->model(EntityEnum::ELEVEN_MULTILINGUAL_STS_V2)
+            ->speechToSpeech('/tmp/input.wav', parameters: ['voice_id' => 'voice_123']);
+
+        $fake->assertAudioTranscribed();
+        $fake->assertSpeechToSpeechGenerated();
+        $fake->assertEngineUsed(EngineEnum::ELEVENLABS);
+        $fake->assertModelUsed(EntityEnum::ELEVEN_MULTILINGUAL_STS_V2);
+
+        $this->assertCount(4, $fake->calls());
+    }
 }

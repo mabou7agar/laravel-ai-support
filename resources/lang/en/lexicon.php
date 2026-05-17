@@ -6,7 +6,7 @@ return [
     ],
 
     'intent' => [
-        'confirm' => ['yes', 'y', 'ok', 'okay', 'confirm', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead', 'create', 'do it', 'make it'],
+        'confirm' => ['yes', 'y', 'ok', 'okay', 'confirm', 'sure', 'yep', 'yeah', 'yup', 'proceed', 'go ahead', 'do it', 'make it'],
         'reject' => ['no', 'n', 'cancel', 'stop', 'abort', 'nevermind', 'never mind', 'reject', 'nope'],
         'greeting' => ['hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon', 'good evening'],
         'cancel' => ['cancel', 'stop', 'quit', 'exit', 'abort', 'nevermind', 'never mind'],
@@ -22,6 +22,11 @@ return [
     'response' => [
         'affirmative' => ['yes', 'y', 'true', 'confirm', 'approved'],
         'negative' => ['no', 'n', 'false', 'reject', 'decline'],
+    ],
+
+    'relation' => [
+        'use_existing' => ['use existing', 'use this', 'use it', 'choose existing', 'select existing', 'keep existing'],
+        'create_new' => ['create new', 'new one', 'create missing', 'add new', 'make new'],
     ],
 
     'entities' => [

@@ -4,10 +4,15 @@ namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\ConversationMemoryItem;
+use LaravelAIEngine\DTOs\ConversationMemoryQuery;
+use LaravelAIEngine\DTOs\ConversationMemoryResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Contracts\RAGPipelineContract;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPromptBuilder;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryRetriever;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\RAG\RAGDecisionEngine;
@@ -97,6 +102,79 @@ class AgentConversationServiceTest extends UnitTestCase
             'You asked me to remember that you are validating a Laravel AI package.',
             $response->message
         );
+    }
+
+    public function test_execute_conversational_injects_retrieved_scoped_memory(): void
+    {
+        config()->set('ai-agent.conversation_memory.enabled', true);
+        config()->set('ai-agent.conversation_memory.scopes.tenant_key', 'tenant_id');
+        config()->set('ai-agent.conversation_memory.scopes.workspace_key', 'workspace_id');
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ragRouter = Mockery::mock(RAGExecutionRouter::class);
+        $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
+        $selection = Mockery::mock(AgentSelectionService::class);
+        $retriever = Mockery::mock(ConversationMemoryRetriever::class);
+        $promptBuilder = Mockery::mock(ConversationMemoryPromptBuilder::class);
+        $ragRouter->shouldNotReceive('execute');
+
+        $results = [
+            new ConversationMemoryResult(
+                item: ConversationMemoryItem::fromArray([
+                    'namespace' => 'preferences',
+                    'key' => 'reply_language',
+                    'summary' => 'User prefers Arabic replies.',
+                ]),
+                score: 0.91
+            ),
+        ];
+
+        $retriever->shouldReceive('retrieve')
+            ->once()
+            ->with(Mockery::on(function (ConversationMemoryQuery $query): bool {
+                return $query->message === 'which language should you use?'
+                    && $query->userId === '42'
+                    && $query->tenantId === 'tenant-a'
+                    && $query->workspaceId === 'workspace-a'
+                    && $query->sessionId === 'session-memory';
+            }))
+            ->andReturn($results);
+
+        $promptBuilder->shouldReceive('build')
+            ->once()
+            ->with($results)
+            ->andReturn("Relevant remembered context:\n- [preferences] User prefers Arabic replies.");
+
+        $ai->shouldReceive('generate')
+            ->once()
+            ->with(Mockery::on(function ($request): bool {
+                return str_contains($request->prompt, 'Relevant remembered context')
+                    && str_contains($request->prompt, 'User prefers Arabic replies.');
+            }))
+            ->andReturn(AIResponse::success('I should reply in Arabic.', 'openai', 'gpt-4o-mini'));
+
+        $service = new AgentConversationService(
+            $ai,
+            $ragRouter,
+            $selectedEntity,
+            $selection,
+            null,
+            null,
+            $retriever,
+            $promptBuilder
+        );
+        $context = new UnifiedActionContext('session-memory', '42', metadata: [
+            'tenant_id' => 'tenant-a',
+            'workspace_id' => 'workspace-a',
+        ]);
+
+        $response = $service->executeConversational('which language should you use?', $context, [
+            'engine' => 'openai',
+            'model' => 'gpt-4o-mini',
+        ]);
+
+        $this->assertSame('I should reply in Arabic.', $response->message);
+        $this->assertSame("Relevant remembered context:\n- [preferences] User prefers Arabic replies.", $context->metadata['retrieved_memory']);
     }
 
     public function test_execute_conversational_returns_failure_when_ai_engine_fails(): void

@@ -562,6 +562,90 @@ class AIEngineService
     }
 
     /**
+     * Convert speech audio to text through the selected provider.
+     */
+    public function audioToText(AIRequest $request): AIResponse
+    {
+        return $this->runDriverOperation($request, 'audioToText');
+    }
+
+    /**
+     * Alias for audioToText().
+     */
+    public function speechToText(AIRequest $request): AIResponse
+    {
+        return $this->audioToText($request);
+    }
+
+    /**
+     * Convert speech audio to speech audio through the selected provider.
+     */
+    public function speechToSpeech(AIRequest $request): AIResponse
+    {
+        return $this->runDriverOperation($request, 'speechToSpeech');
+    }
+
+    protected function runDriverOperation(AIRequest $request, string $method): AIResponse
+    {
+        $startTime = microtime(true);
+        $requestId = uniqid('ai_req_');
+        $request = $this->requestRouteResolver->resolve($request);
+
+        if (!$request->userId && $this->isAuthenticatedSafely()) {
+            $request = $request->withUserId($this->resolveUserId());
+        }
+
+        if ($this->scopeOptions instanceof AIScopeOptionsService) {
+            $request = $request->withMetadata(
+                $this->scopeOptions->merge($request->userId, $request->getMetadata())
+            );
+        }
+
+        $creditsEnabled = config('ai-engine.credits.enabled', false) && $this->shouldProcessCredits();
+        if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
+            throw new InsufficientCreditsException('Insufficient credits for this request');
+        }
+
+        Event::dispatch(new AIRequestStarted(
+            request: $request,
+            requestId: $requestId,
+            metadata: $request->metadata
+        ));
+
+        $driver = $this->getDriver($request->engine);
+        if (!method_exists($driver, $method)) {
+            throw new AIEngineException("Driver [{$request->engine->value}] does not support operation [{$method}].");
+        }
+
+        $response = $driver->{$method}($request);
+        $creditsUsed = $this->creditManager->calculateCredits($request);
+        CreditManager::accumulate($creditsUsed);
+
+        if ($creditsEnabled && $response->success && $request->userId) {
+            $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
+        }
+
+        if ($response->success) {
+            $response = $response->withUsage(
+                tokensUsed: $response->tokensUsed,
+                creditsUsed: $creditsUsed
+            );
+        }
+
+        $processingTime = microtime(true) - $startTime;
+
+        Event::dispatch(new AIRequestCompleted(
+            request: $request,
+            response: $response,
+            requestId: $requestId,
+            executionTime: $processingTime,
+            metadata: array_merge($request->metadata, $response->metadata)
+        ));
+
+        return $response;
+    }
+
+    /**
      * Resolve the user ID for credit management
      * Supports custom resolvers via config for multi-tenant applications
      */

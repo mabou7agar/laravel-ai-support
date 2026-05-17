@@ -44,7 +44,7 @@ class TestRealAgentFlowCommand extends Command
                 $this->line(json_encode([
                     'success' => false,
                     'error' => $e->getMessage(),
-                ], JSON_PRETTY_PRINT));
+                ], $this->jsonOptions()));
             } else {
                 $this->error($e->getMessage());
             }
@@ -123,7 +123,7 @@ class TestRealAgentFlowCommand extends Command
                 $this->line(json_encode([
                     'summary' => $summary,
                     'turns' => $outputResults,
-                ], JSON_PRETTY_PRINT));
+                ], $this->jsonOptions()));
             } else {
                 $this->displaySummary($summary, $outputResults);
             }
@@ -352,10 +352,15 @@ class TestRealAgentFlowCommand extends Command
     protected function excerpt(string $value, int $limit = 120): string
     {
         $clean = preg_replace('/\s+/', ' ', trim($value)) ?? '';
-        if (strlen($clean) <= $limit) {
+        if (mb_strlen($clean, 'UTF-8') <= $limit) {
             return $clean;
         }
 
-        return substr($clean, 0, $limit) . '...';
+        return mb_substr($clean, 0, $limit, 'UTF-8') . '...';
+    }
+
+    protected function jsonOptions(): int
+    {
+        return JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
     }
 }

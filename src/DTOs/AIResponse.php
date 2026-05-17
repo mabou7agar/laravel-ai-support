@@ -339,6 +339,32 @@ class AIResponse implements \JsonSerializable
     }
 
     /**
+     * Add provider function/tool call information.
+     */
+    public function withFunctionCall(?array $functionCall): self
+    {
+        return new self(
+            content: $this->content,
+            engine: $this->engine,
+            model: $this->model,
+            metadata: $this->metadata,
+            tokensUsed: $this->tokensUsed,
+            creditsUsed: $this->creditsUsed,
+            latency: $this->latency,
+            requestId: $this->requestId,
+            usage: $this->usage,
+            cached: $this->cached,
+            finishReason: $this->finishReason,
+            files: $this->files,
+            actions: $this->actions,
+            error: $this->error,
+            success: $this->success,
+            conversationId: $this->conversationId,
+            functionCall: $functionCall
+        );
+    }
+
+    /**
      * Check if the response was successful
      */
     public function isSuccessful(): bool

@@ -40,6 +40,9 @@ use LaravelAIEngine\Services\UnifiedEngineManager;
  * @method static \LaravelAIEngine\Services\TemplateManager template(string $name)
  * @method static \LaravelAIEngine\Services\AnalyticsManager analytics()
  * @method static \LaravelAIEngine\DTOs\AIRequest createRequest(string $prompt, string $engine = null, string $model = null, int $maxTokens = null, float $temperature = null, string $systemPrompt = null, array $parameters = [])
+ * @method static \LaravelAIEngine\DTOs\AIResponse audioToText(\LaravelAIEngine\DTOs\AIRequest $request)
+ * @method static \LaravelAIEngine\DTOs\AIResponse speechToText(\LaravelAIEngine\DTOs\AIRequest $request)
+ * @method static \LaravelAIEngine\DTOs\AIResponse speechToSpeech(\LaravelAIEngine\DTOs\AIRequest $request)
  * @method static array estimateCost(array $operations)
  * 
  * @see \LaravelAIEngine\Services\UnifiedEngineManager

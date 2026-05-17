@@ -8,11 +8,14 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Contracts\Auth\Authenticatable;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\ConversationMemoryQuery;
 use LaravelAIEngine\DTOs\RAGExecutionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPromptBuilder;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryRetriever;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\Services\RAG\RAGExecutionRouter;
 
@@ -24,7 +27,9 @@ class AgentConversationService
         protected SelectedEntityContextService $selectedEntityContext,
         protected AgentSelectionService $selectionService,
         protected ?LocaleResourceService $localeResources = null,
-        protected ?RoutingContextResolver $routingContextResolver = null
+        protected ?RoutingContextResolver $routingContextResolver = null,
+        protected ?ConversationMemoryRetriever $memoryRetriever = null,
+        protected ?ConversationMemoryPromptBuilder $memoryPromptBuilder = null
     ) {
         $this->routingContextResolver ??= new RoutingContextResolver($this->selectedEntityContext);
     }
@@ -118,6 +123,11 @@ class AgentConversationService
 
         $conversationHistory = $context->conversationHistory ?? [];
         $historyText = '';
+        $memoryText = $this->retrieveMemoryPrompt($message, $context, $options);
+        if ($memoryText !== '') {
+            $historyText .= "{$memoryText}\n\n";
+        }
+
         $conversationSummary = trim((string) ($context->metadata['conversation_summary'] ?? $options['conversation_summary'] ?? ''));
         if ($conversationSummary !== '') {
             $historyText .= "Earlier conversation summary:\n{$conversationSummary}\n\n";
@@ -127,19 +137,21 @@ class AgentConversationService
             $historyText .= "{$msg['role']}: {$msg['content']}\n";
         }
 
+        $userId = $context->userId !== null ? (string) $context->userId : null;
         $locale = $this->locale()->resolveLocale(app()->getLocale());
         $prompt = $this->locale()->renderPromptTemplate(
             'agent/conversational_response',
             [
                 'history_text' => trim($historyText),
+                'memory_text' => $memoryText,
                 'user_message' => $message,
-                'user_profile_context' => $this->buildUserProfileContext($context->userId),
+                'user_profile_context' => $this->buildUserProfileContext($userId),
             ],
             $locale
         );
 
         if ($prompt === '') {
-            $userProfileContext = $this->buildUserProfileContext($context->userId);
+            $userProfileContext = $this->buildUserProfileContext($userId);
             $prompt = <<<PROMPT
 You are a helpful AI assistant. Respond naturally to the user's message.
 
@@ -196,6 +208,65 @@ PROMPT;
                 $context->metadata[$metadataKey] = $options[$optionKey];
             }
         }
+    }
+
+    protected function retrieveMemoryPrompt(string $message, UnifiedActionContext $context, array $options): string
+    {
+        if (!(bool) config('ai-agent.conversation_memory.enabled', true)) {
+            unset($context->metadata['retrieved_memory']);
+
+            return '';
+        }
+
+        try {
+            $results = $this->memoryRetriever()->retrieve(new ConversationMemoryQuery(
+                message: $message,
+                userId: $context->userId !== null ? (string) $context->userId : null,
+                tenantId: $this->scopeValue($context, $options, (string) config('ai-agent.conversation_memory.scopes.tenant_key', 'tenant_id'), 'tenant_id'),
+                workspaceId: $this->scopeValue($context, $options, (string) config('ai-agent.conversation_memory.scopes.workspace_key', 'workspace_id'), 'workspace_id'),
+                sessionId: $context->sessionId,
+                limit: (int) config('ai-agent.conversation_memory.max_memories_per_turn', 6),
+                metadata: $options,
+            ));
+
+            $text = $this->memoryPromptBuilder()->build($results);
+            if ($text === '') {
+                unset($context->metadata['retrieved_memory']);
+            } else {
+                $context->metadata['retrieved_memory'] = $text;
+            }
+
+            return $text;
+        } catch (\Throwable $exception) {
+            $context->metadata['retrieved_memory_error'] = $exception->getMessage();
+
+            return '';
+        }
+    }
+
+    protected function scopeValue(UnifiedActionContext $context, array $options, string $configuredKey, string $fallbackKey): ?string
+    {
+        $value = $options[$configuredKey]
+            ?? $options[$fallbackKey]
+            ?? $context->metadata[$configuredKey]
+            ?? $context->metadata[$fallbackKey]
+            ?? null;
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_scalar($value) ? (string) $value : null;
+    }
+
+    protected function memoryRetriever(): ConversationMemoryRetriever
+    {
+        return $this->memoryRetriever ??= app(ConversationMemoryRetriever::class);
+    }
+
+    protected function memoryPromptBuilder(): ConversationMemoryPromptBuilder
+    {
+        return $this->memoryPromptBuilder ??= app(ConversationMemoryPromptBuilder::class);
     }
 
     protected function formatRagPipelineResponse(
@@ -284,7 +355,7 @@ PROMPT;
         return $this->localeResources;
     }
 
-    protected function buildUserProfileContext(?string $userId): string
+    protected function buildUserProfileContext(int|string|null $userId): string
     {
         if (!config('ai-engine.inject_user_context', true)) {
             return 'User context injection is disabled.';
@@ -311,8 +382,9 @@ PROMPT;
         return implode("\n", $lines);
     }
 
-    protected function resolveUser(?string $userId): ?Authenticatable
+    protected function resolveUser(int|string|null $userId): ?Authenticatable
     {
+        $userId = $userId !== null ? (string) $userId : null;
         $authenticatedUser = auth()->user();
         if ($authenticatedUser instanceof Authenticatable) {
             if ($userId === null || $userId === '' || (string) $authenticatedUser->getAuthIdentifier() === (string) $userId) {

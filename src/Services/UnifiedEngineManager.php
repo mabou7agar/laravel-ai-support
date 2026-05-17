@@ -184,6 +184,21 @@ class UnifiedEngineManager
         return $this->aiEngineService->generateAudio($request);
     }
 
+    public function audioToText(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->audioToText($request);
+    }
+
+    public function speechToText(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->speechToText($request);
+    }
+
+    public function speechToSpeech(AIRequest $request): AIResponse
+    {
+        return $this->aiEngineService->speechToSpeech($request);
+    }
+
     public function generatePrompt(string $prompt, array $options = []): AIResponse
     {
         return $this->processRequest($this->buildPromptRequest($prompt, $options, false));

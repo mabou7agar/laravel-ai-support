@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Agent\Collectors;
 
 use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
+use LaravelAIEngine\Services\Agent\IntentSignalService;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 class CollectorConfirmationService
 {
     public function __construct(
         protected ?LocaleResourceService $localeResources = null,
+        protected ?IntentSignalService $intentSignals = null,
     ) {
     }
 
@@ -53,8 +55,7 @@ class CollectorConfirmationService
             return true;
         }
 
-        $hasConfirmationIntent = (bool) preg_match('/\b(yes|confirm|confirmed|approve|approved|proceed|go ahead|do it)\b/iu', $lastUserMessage);
-        if (!$hasConfirmationIntent) {
+        if (!$this->signals()->isAffirmative($lastUserMessage)) {
             return false;
         }
 
@@ -167,5 +168,10 @@ class CollectorConfirmationService
         }
 
         return $this->localeResources;
+    }
+
+    protected function signals(): IntentSignalService
+    {
+        return $this->intentSignals ??= app(IntentSignalService::class);
     }
 }

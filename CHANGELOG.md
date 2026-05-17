@@ -13,6 +13,22 @@ No changes yet.
 
 ---
 
+## [2.2.34] — 2026-05-17
+
+### Added
+
+- **Token-efficient agent memory** — added durable scoped conversation memories with repository, DTOs, prompt builder, extractor, optional semantic index integration, and docs for long-running chat sessions.
+- **OpenRouter multimodal coverage** — expanded OpenRouter support for routed chat, streaming, structured/tool calls, model catalog metadata, embeddings, image generation, TTS, STT, STS, multimodal chat inputs, and optional free/cheap model routing.
+- **Live provider matrix coverage** — added/expanded live checks for text, image, queued FAL video, TTS, transcription, agent flow, AIMedia persistence, and OpenRouter routed features.
+
+### Fixed
+
+- **Live agent JSON output with multilingual responses** — `ai:test-real-agent --json` now builds UTF-8 safe excerpts and uses invalid UTF-8 substitution, preventing Arabic or other multibyte responses from collapsing command JSON to a blank line.
+- **Live matrix JSON parsing** — live tests can now decode command JSON even when host applications print boot diagnostics before the command payload.
+- **Optional Neo4j live checks** — live matrix GraphRAG now reports an unreachable Neo4j Query API endpoint as a skipped infrastructure dependency unless `AI_ENGINE_LIVE_REQUIRE_ALL=true` is used.
+
+---
+
 ## [2.2.33] — 2026-05-17
 
 ### Added
@@ -261,7 +277,8 @@ No changes yet.
 
 ---
 
-[Unreleased]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v2.2.33...HEAD
+[Unreleased]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v2.2.34...HEAD
+[2.2.34]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v2.2.33...v2.2.34
 [2.2.33]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.5.0...v2.2.33
 [1.5.0]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.3.0...v1.4.0

@@ -150,6 +150,64 @@ abstract class TestCase extends Orchestra
         $this->app->instance(\GuzzleHttp\Client::class, $mock);
     }
 
+    protected function decodeCommandJson(string $output): ?array
+    {
+        $decoded = json_decode($output, true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+
+        $length = strlen($output);
+        for ($start = 0; $start < $length; $start++) {
+            if ($output[$start] !== '{') {
+                continue;
+            }
+
+            $depth = 0;
+            $inString = false;
+            $escaped = false;
+
+            for ($index = $start; $index < $length; $index++) {
+                $char = $output[$index];
+
+                if ($escaped) {
+                    $escaped = false;
+                    continue;
+                }
+
+                if ($char === '\\') {
+                    $escaped = $inString;
+                    continue;
+                }
+
+                if ($char === '"') {
+                    $inString = !$inString;
+                    continue;
+                }
+
+                if ($inString) {
+                    continue;
+                }
+
+                if ($char === '{') {
+                    $depth++;
+                }
+
+                if ($char === '}') {
+                    $depth--;
+                    if ($depth === 0) {
+                        $candidate = substr($output, $start, $index - $start + 1);
+                        $decoded = json_decode($candidate, true);
+
+                        return is_array($decoded) ? $decoded : null;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     protected function tearDown(): void
     {
         \Mockery::close();
