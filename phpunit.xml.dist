@@ -7,7 +7,7 @@
          cacheResult="false"
          processIsolation="false"
          stopOnFailure="false"
-         executionOrder="random"
+         executionOrder="default"
          failOnWarning="true"
          failOnRisky="true"
          failOnEmptyTestSuite="true"
