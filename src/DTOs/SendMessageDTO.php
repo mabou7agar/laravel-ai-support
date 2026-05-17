@@ -22,7 +22,10 @@ class SendMessageDTO
         public readonly bool $agentGoal = false,
         public readonly ?string $target = null,
         public readonly ?array $subAgents = null,
-        public readonly ?array $goalAgent = null
+        public readonly ?array $goalAgent = null,
+        public readonly ?string $responsePointsFormat = null,
+        public readonly ?bool $responseSuggestions = null,
+        public readonly ?int $responseSuggestionLimit = null
     ) {}
 
     public function toArray(): array
@@ -44,16 +47,27 @@ class SendMessageDTO
             'target' => $this->target,
             'sub_agents' => $this->subAgents,
             'goal_agent' => $this->goalAgent,
+            'response_points_format' => $this->responsePointsFormat,
+            'response_suggestions' => $this->responseSuggestions,
+            'response_suggestion_limit' => $this->responseSuggestionLimit,
         ];
     }
 
     public function agentOptions(): array
     {
-        return array_filter([
+        $options = array_filter([
             'agent_goal' => $this->agentGoal,
             'target' => $this->target,
             'sub_agents' => $this->subAgents,
             'goal_agent' => $this->goalAgent,
+            'response_points_format' => $this->responsePointsFormat,
+            'response_suggestion_limit' => $this->responseSuggestionLimit,
         ], static fn ($value) => $value !== null && $value !== false && $value !== []);
+
+        if ($this->responseSuggestions !== null) {
+            $options['response_suggestions'] = $this->responseSuggestions;
+        }
+
+        return $options;
     }
 }

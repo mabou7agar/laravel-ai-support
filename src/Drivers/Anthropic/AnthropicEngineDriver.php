@@ -127,6 +127,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
             }
 
             $this->applyStreamingToolPayload($payload, $request);
+            $payload = array_replace_recursive($payload, $this->providerPayloadOptions($request, 'anthropic'));
             $providerTools = array_merge($payload['tools'] ?? [], $payload['mcp_servers'] ?? []);
 
             if ((bool) config('ai-engine.provider_tools.lifecycle.enabled', true)
@@ -332,21 +333,22 @@ class AnthropicEngineDriver extends BaseEngineDriver
 
     private function buildRequestHeaders(AIRequest $request): array
     {
-        if (empty($request->getFunctions())) {
-            return [];
+        $headers = (array) ($request->getProviderOptions('anthropic')['headers'] ?? []);
+
+        if (!empty($request->getFunctions())) {
+            $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
+                EngineEnum::Anthropic->value,
+                $request->getFunctions()
+            );
+
+            if (!empty($split['beta_headers'])) {
+                $toolBeta = implode(',', $split['beta_headers']);
+                $headers['anthropic-beta'] = isset($headers['anthropic-beta']) && $headers['anthropic-beta'] !== ''
+                    ? $headers['anthropic-beta'] . ',' . $toolBeta
+                    : $toolBeta;
+            }
         }
 
-        $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
-            EngineEnum::Anthropic->value,
-            $request->getFunctions()
-        );
-
-        if (empty($split['beta_headers'])) {
-            return [];
-        }
-
-        return [
-            'anthropic-beta' => implode(',', $split['beta_headers']),
-        ];
+        return array_filter($headers, static fn ($value): bool => $value !== null && $value !== '');
     }
 }

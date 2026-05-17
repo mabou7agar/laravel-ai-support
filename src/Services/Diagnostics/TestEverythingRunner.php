@@ -76,7 +76,7 @@ class TestEverythingRunner
             'name' => $stage['name'],
             'command' => $this->redactSecrets($stage['command']),
             'workdir' => $stage['workdir'],
-            'status' => $exitCode === 0 ? 'passed' : 'failed',
+            'status' => $this->stageStatus($exitCode, $output),
             'exit_code' => $exitCode,
             'duration_ms' => (microtime(true) - $startedAt) * 1000,
             'output' => $this->redactSecrets($output),
@@ -91,6 +91,15 @@ class TestEverythingRunner
             $command,
             1
         );
+    }
+
+    protected function stageStatus(int $exitCode, string $output): string
+    {
+        if ($exitCode === 0 && str_contains($output, 'AI_ENGINE_STAGE_SKIPPED:')) {
+            return 'skipped';
+        }
+
+        return $exitCode === 0 ? 'passed' : 'failed';
     }
 
     protected function redactSecrets(string $value): string

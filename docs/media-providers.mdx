@@ -235,6 +235,25 @@ $response = Engine::engine('openrouter')
     ->generate('Draft a short reply.');
 ```
 
+Provider-routing options can also be passed with `withProviderOptions()`:
+
+```php
+$response = Engine::engine('openrouter')
+    ->model('openai/gpt-4o-mini')
+    ->withProviderOptions([
+        'provider' => [
+            'only' => ['openai', 'anthropic'],
+            'ignore' => ['slow-provider'],
+            'data_collection' => 'deny',
+            'require_parameters' => true,
+            'sort' => ['by' => 'price'],
+        ],
+        'route' => 'fallback',
+        'transforms' => ['middle-out'],
+    ], 'openrouter')
+    ->generate('Summarize this document');
+```
+
 Keep paid fallback enabled for important user-facing flows. Free OpenRouter models can be rate-limited, unavailable, or weaker at tool/structured-output tasks.
 
 ```php

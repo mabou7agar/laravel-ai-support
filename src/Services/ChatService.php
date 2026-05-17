@@ -8,15 +8,18 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\Events\AISessionStarted;
 use LaravelAIEngine\Contracts\AgentRuntimeContract;
+use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
 class ChatService
 {
     public function __construct(
-        protected ConversationService $conversationService,
-        protected AgentRuntimeContract $agentRuntime
-    ) {}
+        protected ConversationTranscriptService $conversationTranscripts,
+        protected AgentRuntimeContract $agentRuntime,
+        protected ?ChatResponsePresentationService $responsePresentation = null
+    ) {
+    }
 
     /**
      * Process a chat message and generate AI response
@@ -52,10 +55,10 @@ class ChatService
             'user_id' => $userId,
         ]);
 
-        // Load conversation history if memory is enabled
+        // Load transcript history when enabled. Durable extracted memories are handled by the agent runtime.
         $conversationId = null;
         if ($useMemory) {
-            $conversationId = $this->conversationService->getOrCreateConversation(
+            $conversationId = $this->conversationTranscripts->getOrCreateConversation(
                 $sessionId,
                 $userId,
                 $engine,
@@ -64,7 +67,7 @@ class ChatService
 
             // Use passed conversation history if available, otherwise load from DB
             if (empty($conversationHistory)) {
-                $conversationHistory = $this->conversationService->getConversationHistory($sessionId, 50, $userId);
+                $conversationHistory = $this->conversationTranscripts->getConversationHistory($sessionId, 50, $userId);
             }
         }
 
@@ -92,7 +95,11 @@ class ChatService
 
         $this->updateSessionNode($sessionId, $agentResponse);
 
-        return $this->toAIResponse($agentResponse, $engine, $model, $conversationId);
+        $response = $this->toAIResponse($agentResponse, $engine, $model, $conversationId);
+        $this->persistTranscriptTurn($conversationId, $message, $response);
+        $response = $this->presentation()->apply($response, $message, $options, $agentResponse->context);
+
+        return $response;
     }
 
     protected function buildRuntimeOptions(
@@ -110,6 +117,8 @@ class ChatService
             'engine' => $engine,
             'model' => $model,
             'use_memory' => $useMemory,
+            'use_transcript_history' => $useMemory,
+            'use_conversation_memory' => $useMemory,
             'use_actions' => $useActions,
             'use_rag' => $useRag,
             'rag_collections' => $ragCollections,
@@ -156,6 +165,24 @@ class ChatService
         }
 
         Cache::forget("session_node:{$sessionId}");
+    }
+
+    protected function persistTranscriptTurn(?string $conversationId, string $message, AIResponse $response): void
+    {
+        if ($conversationId === null) {
+            return;
+        }
+
+        try {
+            $this->conversationTranscripts->saveMessages($conversationId, $message, $response);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to persist conversation transcript turn: ' . $e->getMessage());
+        }
+    }
+
+    protected function presentation(): ChatResponsePresentationService
+    {
+        return $this->responsePresentation ??= app(ChatResponsePresentationService::class);
     }
 
     protected function toAIResponse(

@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use LaravelAIEngine\Http\Controllers\Api\AgentChatApiController;
 use LaravelAIEngine\Http\Controllers\Api\AgentConversationApiController;
+use LaravelAIEngine\Http\Controllers\Api\AgentIntegrationController;
 use LaravelAIEngine\Http\Controllers\Api\FileAnalysisApiController;
 use LaravelAIEngine\Http\Controllers\Api\GenerateApiController;
 use LaravelAIEngine\Http\Controllers\Api\EngineCatalogController;
@@ -194,6 +195,25 @@ Route::prefix('api/v1/ai/provider-tools')
             ->name('fal.catalog.execute');
         Route::post('/fal/catalog/webhook', [ProviderToolController::class, 'falCatalogWebhook'])
             ->name('fal.catalog.webhook');
+    });
+
+Route::prefix('api/v1/ai/mcp')
+    ->middleware($resolveApiMiddleware('generate'))
+    ->name('ai-engine.mcp.api.')
+    ->group(function () {
+        Route::get('/tools', [AgentIntegrationController::class, 'tools'])
+            ->name('tools.index');
+        Route::post('/tools/{tool}/call', [AgentIntegrationController::class, 'callTool'])
+            ->where('tool', '[A-Za-z0-9_.:-]+')
+            ->name('tools.call');
+    });
+
+Route::prefix('api/v1/ai/realtime')
+    ->middleware($resolveApiMiddleware('generate'))
+    ->name('ai-engine.realtime.api.')
+    ->group(function () {
+        Route::post('/tools/dispatch', [AgentIntegrationController::class, 'dispatchRealtimeTool'])
+            ->name('tools.dispatch');
     });
 
 Route::prefix('api/v1/ai/agent-runs')

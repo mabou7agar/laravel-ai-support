@@ -453,7 +453,19 @@ abstract class BaseEngineDriver implements EngineDriverInterface
             $payload['temperature'] = $request->getTemperature() ?? 0.7;
         }
 
-        return array_merge($payload, $additionalParams);
+        return array_replace_recursive(
+            $payload,
+            $this->providerPayloadOptions($request),
+            $additionalParams
+        );
+    }
+
+    protected function providerPayloadOptions(AIRequest $request, ?string $provider = null): array
+    {
+        $options = $request->getProviderOptions($provider ?? $this->getEngineEnum()->value);
+        unset($options['headers'], $options['query'], $options['remember_response'], $options['use_previous_response']);
+
+        return $options;
     }
 
     protected function applyStructuredOutputPayload(array $payload, AIRequest $request): array

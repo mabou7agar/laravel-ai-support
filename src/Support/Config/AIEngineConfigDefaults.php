@@ -233,6 +233,24 @@ class AIEngineConfigDefaults
             'enabled' => env('AI_ENGINE_PROVIDER_TOOL_LIFECYCLE_ENABLED', true),
             'store_payloads' => env('AI_ENGINE_PROVIDER_TOOL_STORE_PAYLOADS', true),
         ],
+        'versions' => [
+            'anthropic' => [
+                'web_search' => [
+                    'type' => env('AI_ENGINE_ANTHROPIC_WEB_SEARCH_TYPE', 'web_search_20250305'),
+                ],
+                'code_execution' => [
+                    'type' => env('AI_ENGINE_ANTHROPIC_CODE_EXECUTION_TYPE', 'code_execution_20250825'),
+                    'beta_header' => env('AI_ENGINE_ANTHROPIC_CODE_EXECUTION_BETA', 'code-execution-2025-08-25'),
+                ],
+                'computer_use' => [
+                    'type' => env('AI_ENGINE_ANTHROPIC_COMPUTER_USE_TYPE', 'computer_20250124'),
+                    'beta_header' => env('AI_ENGINE_ANTHROPIC_COMPUTER_USE_BETA', 'computer-use-2025-01-24'),
+                ],
+                'mcp_server' => [
+                    'beta_header' => env('AI_ENGINE_ANTHROPIC_MCP_BETA', 'mcp-client-2025-04-04'),
+                ],
+            ],
+        ],
         'approvals' => [
             'enabled' => env('AI_ENGINE_PROVIDER_TOOL_APPROVALS_ENABLED', true),
             'expires_after_minutes' => (int) env('AI_ENGINE_PROVIDER_TOOL_APPROVAL_EXPIRES_AFTER', 0),
@@ -326,6 +344,34 @@ class AIEngineConfigDefaults
     */
     'prompt_templates' => [
         'path' => env('AI_ENGINE_PROMPT_TEMPLATES_PATH'),
+    ],
+
+    'provider_response_state' => [
+        'ttl_seconds' => (int) env('AI_ENGINE_PROVIDER_RESPONSE_STATE_TTL', 86400),
+    ],
+
+    'observability' => [
+        'exporters' => [],
+        'http' => [
+            'endpoint' => env('AI_ENGINE_OBSERVABILITY_HTTP_ENDPOINT'),
+            'timeout' => (int) env('AI_ENGINE_OBSERVABILITY_HTTP_TIMEOUT', 10),
+            'headers' => [],
+        ],
+        'opentelemetry' => [
+            'endpoint' => env('AI_ENGINE_OTEL_EXPORTER_OTLP_ENDPOINT'),
+            'timeout' => (int) env('AI_ENGINE_OTEL_EXPORTER_TIMEOUT', 10),
+            'headers' => [],
+            'service_name' => env('AI_ENGINE_OTEL_SERVICE_NAME', 'laravel-ai-engine'),
+        ],
+        'langsmith' => [
+            'endpoint' => env('LANGSMITH_ENDPOINT', 'https://api.smith.langchain.com/runs'),
+            'api_key' => env('LANGSMITH_API_KEY'),
+            'project' => env('LANGSMITH_PROJECT', env('APP_NAME', 'laravel-ai-engine')),
+            'timeout' => (int) env('LANGSMITH_TIMEOUT', 10),
+        ],
+        'log' => [
+            'channel' => env('AI_ENGINE_OBSERVABILITY_LOG_CHANNEL', 'ai-engine'),
+        ],
     ],
 
     /*

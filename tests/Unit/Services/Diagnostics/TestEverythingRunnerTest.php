@@ -48,6 +48,22 @@ class TestEverythingRunnerTest extends UnitTestCase
         $this->assertStringContainsString('bad', $results[0]['output']);
     }
 
+    public function test_runner_marks_skip_marker_as_skipped_without_failure(): void
+    {
+        $results = app(TestEverythingRunner::class)->runStages([
+            [
+                'name' => 'optional-live',
+                'command' => "php -r 'fwrite(STDOUT, \"AI_ENGINE_STAGE_SKIPPED: optional service unavailable\\n\");'",
+                'workdir' => dirname(__DIR__, 4),
+            ],
+        ], true);
+
+        $this->assertCount(1, $results);
+        $this->assertSame('optional-live', $results[0]['name']);
+        $this->assertSame('skipped', $results[0]['status']);
+        $this->assertSame(0, $results[0]['exit_code']);
+    }
+
     public function test_runner_redacts_secret_values_from_diagnostic_results(): void
     {
         $secret = 'super-secret-value';

@@ -99,6 +99,10 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(\LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\FileStoreService::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\RealtimeSessionService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\RealtimeToolBrokerService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\McpAppToolAdapter::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\ObservabilityExporterService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\SDK\ProviderResponseStateService::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\TraceRecorderService::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\EvaluationService::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\VectorStoreService::class);

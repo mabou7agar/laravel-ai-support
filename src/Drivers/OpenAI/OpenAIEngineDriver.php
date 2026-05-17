@@ -224,8 +224,16 @@ class OpenAIEngineDriver extends BaseEngineDriver
             'tools' => $split['tools'],
             'temperature' => $request->getTemperature(),
             'max_output_tokens' => $request->getMaxTokens(),
-            'metadata' => $request->getMetadata(),
+            'metadata' => array_diff_key($request->getMetadata(), ['provider_options' => true]),
         ], static fn ($value): bool => $value !== null && $value !== []);
+
+        $responseOptions = $this->openAIResponsesOptions($request);
+        $previousResponseId = $this->resolvePreviousOpenAIResponseId($request, $responseOptions);
+        if ($previousResponseId !== null && !isset($responseOptions['previous_response_id'])) {
+            $responseOptions['previous_response_id'] = $previousResponseId;
+        }
+
+        $payload = array_replace_recursive($payload, $responseOptions);
 
         $toolRunResult = null;
         if ((bool) config('ai-engine.provider_tools.lifecycle.enabled', true)
@@ -259,7 +267,20 @@ class OpenAIEngineDriver extends BaseEngineDriver
             $data = $this->parseJsonResponse($response->getBody()->getContents());
             $content = $data['output_text'] ?? $this->extractResponsesOutputText((array) ($data['output'] ?? []));
 
-            $metadata = ['openai_response' => is_array($data) ? $data : []];
+            $metadata = [
+                'openai_response' => is_array($data) ? $data : [],
+                'openai_response_id' => is_string($data['id'] ?? null) ? $data['id'] : null,
+                'openai_previous_response_id' => $payload['previous_response_id'] ?? null,
+            ];
+            $metadata = array_filter($metadata, static fn ($value): bool => $value !== null);
+
+            if (is_string($data['id'] ?? null) && $this->shouldRememberOpenAIResponse($request, $responseOptions)) {
+                $this->responseState()->remember('openai', (string) $request->getConversationId(), (string) $data['id'], [
+                    'model' => $request->getModel()->value,
+                    'request_id' => $data['id'],
+                ]);
+            }
+
             if ($toolRunResult !== null) {
                 $run = app(ProviderToolRunService::class)->complete($toolRunResult->run, is_array($data) ? $data : []);
                 $artifacts = app(HostedArtifactService::class)->recordFromProviderResponse($run, is_array($data) ? $data : [], [
@@ -283,6 +304,46 @@ class OpenAIEngineDriver extends BaseEngineDriver
 
             throw $e;
         }
+    }
+
+    protected function openAIResponsesOptions(AIRequest $request): array
+    {
+        $options = $this->providerPayloadOptions($request, 'openai');
+        unset($options['remember_response'], $options['use_previous_response']);
+
+        return $options;
+    }
+
+    protected function shouldRememberOpenAIResponse(AIRequest $request, array $options): bool
+    {
+        return (string) $request->getConversationId() !== ''
+            && (bool) ($request->getProviderOptions('openai')['remember_response'] ?? $options['store'] ?? false);
+    }
+
+    protected function resolvePreviousOpenAIResponseId(AIRequest $request, array $options): ?string
+    {
+        if (isset($options['previous_response_id']) && is_string($options['previous_response_id']) && $options['previous_response_id'] !== '') {
+            return $options['previous_response_id'];
+        }
+
+        if (!(bool) ($request->getProviderOptions('openai')['use_previous_response'] ?? false)) {
+            return null;
+        }
+
+        $conversationId = $request->getConversationId();
+        if (!is_string($conversationId) || $conversationId === '') {
+            return null;
+        }
+
+        $state = $this->responseState()->previous('openai', $conversationId);
+        $responseId = $state['response_id'] ?? null;
+
+        return is_string($responseId) && $responseId !== '' ? $responseId : null;
+    }
+
+    protected function responseState(): \LaravelAIEngine\Services\SDK\ProviderResponseStateService
+    {
+        return app(\LaravelAIEngine\Services\SDK\ProviderResponseStateService::class);
     }
 
     protected function extractResponsesOutputText(array $output): string

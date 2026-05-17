@@ -53,7 +53,7 @@ class TestEverythingCommand extends Command
             ));
         }
 
-        $failures = array_values(array_filter($results, fn (array $result): bool => $result['status'] !== 'passed'));
+        $failures = array_values(array_filter($results, fn (array $result): bool => $result['status'] === 'failed'));
 
         if ($failures !== []) {
             foreach ($failures as $failure) {
@@ -63,6 +63,13 @@ class TestEverythingCommand extends Command
             }
 
             return self::FAILURE;
+        }
+
+        $skipped = array_values(array_filter($results, fn (array $result): bool => $result['status'] === 'skipped'));
+        if ($skipped !== []) {
+            $this->info('Selected validation stages completed with skips.');
+
+            return self::SUCCESS;
         }
 
         $this->info('All selected validation stages passed.');
@@ -241,7 +248,8 @@ class TestEverythingCommand extends Command
                     'AI_ENGINE_RUN_NEO4J_LIVE_TESTS' => 'true',
                     'AI_ENGINE_RUN_LIVE_TESTS' => 'true',
                 ]),
-                $this->rootEnvFile()
+                $this->rootEnvFile(),
+                $this->neo4jQueryApiPreflight()
             ),
         ];
     }
@@ -294,7 +302,7 @@ class TestEverythingCommand extends Command
      * @param  array<int, string>  $commandParts
      * @param  array<string, string>  $env
      */
-    protected function buildShellCommand(string $workdir, array $commandParts, array $env = [], ?string $envFile = null): string
+    protected function buildShellCommand(string $workdir, array $commandParts, array $env = [], ?string $envFile = null, string $preflight = ''): string
     {
         $commandParts = $this->withPhpBinaryForPhpunit($commandParts);
         $exports = '';
@@ -316,7 +324,7 @@ class TestEverythingCommand extends Command
 
         return sprintf(
             'bash -lc %s',
-            escapeshellarg($prefix.$exports.$command)
+            escapeshellarg($prefix.$exports.$preflight.$command)
         );
     }
 
@@ -353,5 +361,12 @@ class TestEverythingCommand extends Command
         $value = trim((string) config("ai-engine.testing.live_provider_matrix.{$feature}", $default));
 
         return $value !== '' ? $value : $default;
+    }
+
+    protected function neo4jQueryApiPreflight(): string
+    {
+        return <<<'SHELL'
+if command -v curl >/dev/null 2>&1; then neo4j_url="${AI_ENGINE_NEO4J_URL%/}/db/${AI_ENGINE_NEO4J_DATABASE:-neo4j}/query/v2"; neo4j_status=$(curl -sS --max-time 3 -o /dev/null -w "%{http_code}" "$neo4j_url" || true); if [ "$neo4j_status" = "000" ]; then echo "AI_ENGINE_STAGE_SKIPPED: Live Neo4j Query API endpoint is not reachable ($neo4j_url)."; exit 0; fi; else echo "AI_ENGINE_STAGE_SKIPPED: curl is required for the root live Neo4j preflight."; exit 0; fi;
+SHELL;
     }
 }

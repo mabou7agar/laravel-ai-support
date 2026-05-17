@@ -1,0 +1,37 @@
+meta {
+  name: Dispatch Realtime Tool
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/realtime/tools/dispatch
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "event": {
+      "id": "call_001",
+      "name": "{{mcpToolName}}",
+      "arguments": {
+        "message": "Use this input for the realtime tool call."
+      }
+    },
+    "session_id": "{{agentSessionId}}",
+    "user_id": "{{userId}}",
+    "approved": false,
+    "metadata": {
+      "source": "bruno"
+    }
+  }
+}

@@ -2,7 +2,9 @@
 
 The package has two conversation-memory layers.
 
-`ConversationContextCompactor` is short-term memory. It keeps recent turns, compacts older turns into `metadata.conversation_summary`, and keeps prompt size bounded.
+`ConversationTranscriptService` manages normal chat transcripts in `ai_conversations` and conversation messages. `ConversationService` remains as a backward-compatible alias for this transcript/session history surface.
+
+`ConversationContextCompactor` is short-term prompt memory. It keeps recent turns, compacts older turns into `metadata.conversation_summary`, and keeps prompt size bounded.
 
 `ai_conversation_memories` is durable scoped memory. It stores small facts and preferences extracted from compacted turns, then retrieves only relevant records for the next prompt.
 
@@ -54,3 +56,29 @@ Semantic retrieval is optional. If the vector driver, collection, or embedding s
 ## Intent Signals
 
 Confirmation, denial, and relation-choice helpers use `LocaleResourceService` lexicons through `IntentSignalService`. Apps can extend lexicon files or enable `ai-agent.intent_understanding.mode=ai_first` for model-backed multilingual intent classification.
+
+## ChatService Flow
+
+`ChatService::processMessage()` still accepts `useMemory` for backward compatibility. Internally, that flag now means:
+
+- load and persist transcript history through `ConversationTranscriptService`
+- pass `use_conversation_memory` to the agent runtime for durable scoped memory retrieval
+- pass `use_transcript_history` to make the transcript behavior explicit to downstream code
+
+After the agent runtime returns, `ChatService` persists the user turn and assistant response when transcript history is enabled. Durable memories are still extracted during compaction, not on every chat turn.
+
+## Response Presentation
+
+Agent chat can expose list-style responses as structured points without forcing every app to parse rendered text:
+
+```json
+{
+  "response_points_format": "array",
+  "response_suggestions": true,
+  "response_suggestion_limit": 5
+}
+```
+
+`response_points_format` accepts `text`, `array`, `both`, or `none`. `text` keeps the assistant message unchanged. `array` returns extracted bullet/numbered items in `data.response_points` and removes those point lines from `data.response`. `both` keeps the text and also returns `data.response_points`.
+
+Suggestions are generated from registered action definitions, skills, and tools. The package does not hardcode invoices, email, or any business module. If a host app registers a `create_invoice` action or an email-reply skill/tool with matching labels, descriptions, triggers, parameters, or custom `suggest` callbacks, chat responses can include matching `data.suggestions`.

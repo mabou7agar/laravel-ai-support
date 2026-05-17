@@ -8,6 +8,11 @@ class EvaluationService
 {
     protected array $runs = [];
 
+    public function __construct(
+        protected ?ObservabilityExporterService $exporters = null
+    ) {
+    }
+
     public function evaluate(string $name, mixed $actual, mixed $expected = null, ?callable $assertion = null): array
     {
         $passed = $assertion !== null
@@ -23,6 +28,7 @@ class EvaluationService
         ];
 
         $this->runs[] = $run;
+        $this->exporters?->export('evaluation', $run);
 
         return $run;
     }

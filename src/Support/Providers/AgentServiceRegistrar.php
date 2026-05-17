@@ -25,6 +25,16 @@ class AgentServiceRegistrar
             $app->make(\LaravelAIEngine\Services\AIEngineService::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner::class, fn () => new \LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner());
+        $app->singleton(\LaravelAIEngine\Services\Agent\ResponsePointExtractor::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentResponseSuggestionService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentResponseSuggestionService(
+            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class),
+            $app->make(\LaravelAIEngine\Contracts\ActionFlowHandler::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\ChatResponsePresentationService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ChatResponsePresentationService(
+            $app->make(\LaravelAIEngine\Services\Agent\ResponsePointExtractor::class),
+            $app->make(\LaravelAIEngine\Services\Agent\AgentResponseSuggestionService::class)
+        ));
         $app->singleton(\LaravelAIEngine\Contracts\ConversationMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationMemory());
         $app->singleton(\LaravelAIEngine\Contracts\ActionAuditLogger::class, fn () => new \LaravelAIEngine\Services\Actions\NullActionAuditLogger());
         $app->singleton(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ConversationContextCompactor(

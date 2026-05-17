@@ -377,6 +377,51 @@ class OpenRouterEngineDriverTest extends UnitTestCase
         });
     }
 
+    public function test_openrouter_accepts_provider_routing_options_from_provider_options(): void
+    {
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => 'routed ok'],
+                ]],
+            ]),
+        ]);
+
+        $request = (new AIRequest(
+            prompt: 'Use privacy constrained routing.',
+            engine: EngineEnum::OPENROUTER,
+            model: 'openai/gpt-4o-mini'
+        ))->withProviderOptions([
+            'provider' => [
+                'only' => ['openai', 'anthropic'],
+                'ignore' => ['slow-provider'],
+                'data_collection' => 'deny',
+                'require_parameters' => true,
+                'sort' => ['by' => 'throughput'],
+            ],
+            'route' => 'fallback',
+            'transforms' => ['middle-out'],
+        ], 'openrouter');
+
+        $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
+        $response = $driver->generateText($request);
+
+        $this->assertTrue($response->isSuccessful());
+
+        Http::assertSent(function ($request): bool {
+            $payload = $request->data();
+
+            return ($payload['provider']['only'] ?? null) === ['openai', 'anthropic']
+                && ($payload['provider']['ignore'] ?? null) === ['slow-provider']
+                && ($payload['provider']['data_collection'] ?? null) === 'deny'
+                && ($payload['provider']['require_parameters'] ?? null) === true
+                && ($payload['provider']['sort']['by'] ?? null) === 'throughput'
+                && ($payload['route'] ?? null) === 'fallback'
+                && ($payload['transforms'] ?? null) === ['middle-out']
+                && !array_key_exists('provider_options', $payload);
+        });
+    }
+
     public function test_openrouter_captures_chat_tool_calls_from_response(): void
     {
         Http::fake([

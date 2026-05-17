@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use LaravelAIEngine\DTOs\SendMessageDTO;
+use LaravelAIEngine\Enums\EngineEnum;
 
 class SendMessageRequest extends FormRequest
 {
@@ -25,7 +26,11 @@ class SendMessageRequest extends FormRequest
         return [
             'message' => 'required|string|max:4000',
             'session_id' => 'required|string|max:255',
-            'engine' => 'sometimes|string|in:openai,anthropic,gemini',
+            'engine' => ['sometimes', 'string', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (!$this->isSupportedEngine((string) $value)) {
+                    $fail('Invalid AI engine selected');
+                }
+            }],
             'model' => 'sometimes|string',
             'memory' => 'sometimes|boolean',
             'actions' => 'sometimes|boolean',
@@ -44,6 +49,10 @@ class SendMessageRequest extends FormRequest
             'sub_agents.*' => 'sometimes',
             'goal_agent' => 'sometimes|array',
             'user_id' => 'sometimes|nullable|string|max:255',
+            'response_points_format' => 'sometimes|string|in:text,array,both,none',
+            'response_suggestions' => 'sometimes|boolean',
+            'suggestions' => 'sometimes|boolean',
+            'response_suggestion_limit' => 'sometimes|integer|min:0|max:25',
         ];
     }
 
@@ -58,6 +67,27 @@ class SendMessageRequest extends FormRequest
             'session_id.required' => 'Session ID is required',
             'engine.in' => 'Invalid AI engine selected',
         ];
+    }
+
+    protected function isSupportedEngine(string $engine): bool
+    {
+        $engine = trim($engine);
+        if ($engine === '') {
+            return false;
+        }
+
+        $configured = array_keys((array) config('ai-engine.engines', []));
+        if (in_array($engine, $configured, true)) {
+            return true;
+        }
+
+        try {
+            EngineEnum::from($engine);
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**
@@ -83,7 +113,10 @@ class SendMessageRequest extends FormRequest
             agentGoal: $validated['agent_goal'] ?? false,
             target: $validated['target'] ?? null,
             subAgents: $validated['sub_agents'] ?? null,
-            goalAgent: $validated['goal_agent'] ?? null
+            goalAgent: $validated['goal_agent'] ?? null,
+            responsePointsFormat: $validated['response_points_format'] ?? null,
+            responseSuggestions: $validated['response_suggestions'] ?? $validated['suggestions'] ?? null,
+            responseSuggestionLimit: $validated['response_suggestion_limit'] ?? null
         );
     }
 }

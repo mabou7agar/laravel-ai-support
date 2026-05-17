@@ -6,6 +6,7 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use LaravelAIEngine\Tests\TestCase;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -66,5 +67,42 @@ class AnthropicEngineDriverTest extends TestCase
         ]);
         
         $driver->validateConfig();
+    }
+
+    public function test_provider_options_are_merged_into_anthropic_payload_and_headers(): void
+    {
+        $history = [];
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'id' => 'msg_options',
+                'content' => [['type' => 'text', 'text' => 'ok']],
+                'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+                'model' => 'claude-sonnet-4-5',
+            ])),
+        ]);
+        $handlerStack = HandlerStack::create($mock);
+        $handlerStack->push(Middleware::history($history));
+
+        $driver = new AnthropicEngineDriver([
+            'api_key' => 'test-key',
+            'base_url' => 'https://api.anthropic.com',
+        ], new Client(['handler' => $handlerStack]));
+
+        $response = $driver->generateText(
+            (new AIRequest('Hello', EngineEnum::ANTHROPIC, EntityEnum::CLAUDE_SONNET_4_5))
+                ->withProviderOptions([
+                    'thinking' => ['type' => 'enabled', 'budget_tokens' => 1024],
+                    'headers' => ['anthropic-beta' => 'fine-grained-tool-streaming-2025-05-14'],
+                ], 'anthropic')
+        );
+
+        $this->assertTrue($response->isSuccessful());
+
+        $payload = json_decode((string) $history[0]['request']->getBody(), true);
+        $this->assertSame('enabled', $payload['thinking']['type']);
+        $this->assertSame(
+            'fine-grained-tool-streaming-2025-05-14',
+            $history[0]['request']->getHeaderLine('anthropic-beta')
+        );
     }
 }

@@ -43,4 +43,55 @@ class OpenAIResponsesApiToolTest extends UnitTestCase
         $this->assertTrue($response->isSuccessful());
         $this->assertSame('done', $response->content);
     }
+
+    public function test_openai_responses_api_merges_provider_options_and_remembers_response_state(): void
+    {
+        $client = Mockery::mock(Client::class);
+        $client->shouldReceive('post')
+            ->twice()
+            ->with('https://api.openai.test/v1/responses', Mockery::on(function (array $options): bool {
+                static $call = 0;
+                $call++;
+
+                if ($call === 1) {
+                    return ($options['json']['background'] ?? null) === true
+                        && ($options['json']['include'] ?? null) === ['reasoning.encrypted_content']
+                        && !isset($options['json']['previous_response_id']);
+                }
+
+                return ($options['json']['previous_response_id'] ?? null) === 'resp_first'
+                    && ($options['json']['store'] ?? null) === true;
+            }))
+            ->andReturn(
+                new Response(200, [], json_encode(['id' => 'resp_first', 'output_text' => 'first'])),
+                new Response(200, [], json_encode(['id' => 'resp_second', 'output_text' => 'second']))
+            );
+
+        $driver = new OpenAIEngineDriver([
+            'api_key' => 'test',
+            'base_url' => 'https://api.openai.test/v1',
+        ], $client);
+
+        $first = (new AIRequest('First', EngineEnum::OPENAI, EntityEnum::GPT_4O, conversationId: 'thread-1'))
+            ->withMetadata(['openai_responses_api' => true])
+            ->withProviderOptions([
+                'background' => true,
+                'include' => ['reasoning.encrypted_content'],
+                'remember_response' => true,
+            ], 'openai');
+
+        $second = (new AIRequest('Second', EngineEnum::OPENAI, EntityEnum::GPT_4O, conversationId: 'thread-1'))
+            ->withMetadata(['openai_responses_api' => true])
+            ->withProviderOptions([
+                'store' => true,
+                'use_previous_response' => true,
+            ], 'openai');
+
+        $firstResponse = $driver->generateText($first);
+        $secondResponse = $driver->generateText($second);
+
+        $this->assertSame('resp_first', $firstResponse->getMetadata()['openai_response_id']);
+        $this->assertSame('resp_second', $secondResponse->getMetadata()['openai_response_id']);
+        $this->assertSame('resp_first', $secondResponse->getMetadata()['openai_previous_response_id']);
+    }
 }

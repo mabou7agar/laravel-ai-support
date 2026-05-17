@@ -8,6 +8,11 @@ class TraceRecorderService
 {
     protected array $spans = [];
 
+    public function __construct(
+        protected ?ObservabilityExporterService $exporters = null
+    ) {
+    }
+
     public function start(string $name, array $metadata = []): string
     {
         $id = 'trace_' . bin2hex(random_bytes(8));
@@ -36,6 +41,8 @@ class TraceRecorderService
         $this->spans[$id]['duration_ms'] = (int) round(($endedAt - $this->spans[$id]['started_at']) * 1000);
         $this->spans[$id]['status'] = $status;
         $this->spans[$id]['metadata'] = array_merge($this->spans[$id]['metadata'], $metadata);
+
+        $this->exporters?->export('trace', $this->spans[$id]);
 
         return $this->spans[$id];
     }

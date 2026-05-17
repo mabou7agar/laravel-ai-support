@@ -1,0 +1,32 @@
+meta {
+  name: Call MCP Tool
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/mcp/tools/{{mcpToolName}}/call
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "arguments": {
+      "message": "Use this input for the selected tool."
+    },
+    "session_id": "{{agentSessionId}}",
+    "user_id": "{{userId}}",
+    "metadata": {
+      "source": "bruno"
+    }
+  }
+}

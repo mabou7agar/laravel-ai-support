@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('ai_job_statuses')) {
+            return;
+        }
+
         Schema::create('ai_job_statuses', function (Blueprint $table) {
             $table->id();
             $table->string('job_id')->unique()->index();

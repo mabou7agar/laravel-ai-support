@@ -9,7 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- **Conversation transcript naming** — extracted transcript/session history behavior into `ConversationTranscriptService` while keeping `ConversationService` as a compatibility alias.
+- **Chat transcript persistence** — `ChatService` now persists the user and assistant turn after the agent runtime returns when transcript history is enabled.
+- **Agent response presentation** — chat can now return bullet/numbered response points as arrays and include generic next-step suggestions from registered actions, skills, and tools.
+- **Modern provider passthrough** — normal `AIRequest` and `EngineProxy` flows now support `withProviderOptions()` for provider-specific request fields across OpenAI, Anthropic, Gemini, OpenRouter, and FAL-compatible media payloads.
+- **OpenAI Responses state** — OpenAI Responses calls can remember and reuse previous response ids per conversation when explicitly enabled.
+- **Provider tool versioning** — Anthropic hosted tool type names and beta headers are configurable while preserving existing defaults.
+- **Realtime and MCP/App bridges** — added a realtime tool broker for provider realtime tool calls and an MCP/App-compatible adapter for registered tools and skills.
+- **Realtime and MCP/App HTTP APIs** — `/api/v1/ai/mcp/tools`, `/api/v1/ai/mcp/tools/{tool}/call`, and `/api/v1/ai/realtime/tools/dispatch` expose the bridge to host clients and brokers.
+- **Observability hooks and exporters** — traces and evaluations can now export through configured `ObservabilityExporter` classes, including built-in HTTP, OpenTelemetry OTLP, LangSmith, and log exporters.
+- **OpenAI Responses live smoke** — added an opt-in billed live test for remembered `previous_response_id` continuation.
+- **AgentChat engine validation** — API validation now accepts any configured or built-in engine instead of only OpenAI, Anthropic, and Gemini.
 
 ---
 

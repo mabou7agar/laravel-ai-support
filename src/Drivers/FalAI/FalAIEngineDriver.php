@@ -238,7 +238,11 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     public function prepareImageOperation(AIRequest $request): array
     {
-        $parameters = $request->getParameters();
+        $parameters = array_replace_recursive(
+            $request->getParameters(),
+            $request->getProviderOptions(EngineEnum::FalAI->value),
+            $request->getProviderOptions('fal')
+        );
         $requestedModel = $request->getModel()->value;
         $characterSources = $this->normalizeCharacterSources($parameters['character_sources'] ?? []);
         $sourceImages = $this->normalizeStringList($parameters['source_images'] ?? []);
@@ -331,7 +335,11 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     public function prepareVideoOperation(AIRequest $request): array
     {
-        $parameters = $request->getParameters();
+        $parameters = array_replace_recursive(
+            $request->getParameters(),
+            $request->getProviderOptions(EngineEnum::FalAI->value),
+            $request->getProviderOptions('fal')
+        );
         $characterSources = $this->normalizeCharacterSources($parameters['character_sources'] ?? []);
         $referenceImageUrls = $this->normalizeStringList($parameters['reference_image_urls'] ?? []);
         $referenceVideoUrls = array_values(array_unique(array_merge(

@@ -341,6 +341,34 @@ return [
         ],
     ],
 
+    'response_presentation' => [
+        'points_format' => env('AI_AGENT_RESPONSE_POINTS_FORMAT', 'text'), // text, array, both
+        'suggestions' => [
+            'enabled' => env('AI_AGENT_RESPONSE_SUGGESTIONS_ENABLED', true),
+            'limit' => (int) env('AI_AGENT_RESPONSE_SUGGESTIONS_LIMIT', 5),
+            'stop_words' => [
+                'the',
+                'a',
+                'an',
+                'and',
+                'or',
+                'to',
+                'for',
+                'from',
+                'with',
+                'this',
+                'that',
+                'current',
+                'available',
+                'deterministic',
+                'data',
+                'user',
+                'message',
+                'response',
+            ],
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Capability Providers

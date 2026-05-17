@@ -119,4 +119,33 @@ class ProviderToolPayloadMapperTest extends UnitTestCase
 
         $this->assertArrayHasKey('codeExecution', $gemini['tools'][0]);
     }
+
+    public function test_anthropic_hosted_tool_versions_are_configurable(): void
+    {
+        config()->set('ai-engine.provider_tools.versions.anthropic', [
+            'code_execution' => [
+                'type' => 'code_execution_20990101',
+                'beta_header' => 'code-execution-2099-01-01',
+            ],
+            'computer_use' => [
+                'type' => 'computer_20990101',
+                'beta_header' => 'computer-use-2099-01-01',
+            ],
+            'mcp_server' => [
+                'beta_header' => 'mcp-client-2099-01-01',
+            ],
+        ]);
+
+        $split = (new ProviderToolPayloadMapper())->splitForProvider(EngineEnum::ANTHROPIC, [
+            (new CodeInterpreter())->toArray(),
+            (new ComputerUse())->toArray(),
+            (new McpServer('docs', 'https://mcp.example.test'))->toArray(),
+        ]);
+
+        $this->assertSame('code_execution_20990101', $split['tools'][0]['type']);
+        $this->assertSame('computer_20990101', $split['tools'][1]['type']);
+        $this->assertContains('code-execution-2099-01-01', $split['beta_headers']);
+        $this->assertContains('computer-use-2099-01-01', $split['beta_headers']);
+        $this->assertContains('mcp-client-2099-01-01', $split['beta_headers']);
+    }
 }

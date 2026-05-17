@@ -180,9 +180,11 @@ class ProviderToolPayloadMapper
 
     protected function mapAnthropicTool(array $tool): ?array
     {
+        $versions = (array) config('ai-engine.provider_tools.versions.anthropic', []);
+
         return match ((string) ($tool['type'] ?? '')) {
             'web_search' => array_filter([
-                'type' => 'web_search_20250305',
+                'type' => (string) data_get($versions, 'web_search.type', 'web_search_20250305'),
                 'name' => 'web_search',
                 'max_uses' => $tool['max'] ?? null,
                 'allowed_domains' => array_values((array) ($tool['allow'] ?? [])),
@@ -196,20 +198,20 @@ class ProviderToolPayloadMapper
             ], static fn ($value): bool => $value !== null && $value !== []),
             'code_interpreter' => [
                 'tool' => [
-                    'type' => 'code_execution_20250825',
+                    'type' => (string) data_get($versions, 'code_execution.type', 'code_execution_20250825'),
                     'name' => 'code_execution',
                 ],
-                'beta_headers' => ['code-execution-2025-08-25'],
+                'beta_headers' => [(string) data_get($versions, 'code_execution.beta_header', 'code-execution-2025-08-25')],
             ],
             'computer_use' => [
                 'tool' => array_filter([
-                    'type' => 'computer_20250124',
+                    'type' => (string) data_get($versions, 'computer_use.type', 'computer_20250124'),
                     'name' => 'computer',
                     'display_width_px' => $tool['display_width'] ?? null,
                     'display_height_px' => $tool['display_height'] ?? null,
                     'display_number' => $tool['display_number'] ?? null,
                 ], static fn ($value): bool => $value !== null && $value !== []),
-                'beta_headers' => ['computer-use-2025-01-24'],
+                'beta_headers' => [(string) data_get($versions, 'computer_use.beta_header', 'computer-use-2025-01-24')],
             ],
             'mcp_server' => [
                 'mcp_server' => array_filter([
@@ -218,7 +220,7 @@ class ProviderToolPayloadMapper
                     'url' => $tool['url'] ?? null,
                     'authorization_token' => $tool['authorization_token'] ?? null,
                 ], static fn ($value): bool => $value !== null && $value !== []),
-                'beta_headers' => ['mcp-client-2025-04-04'],
+                'beta_headers' => [(string) data_get($versions, 'mcp_server.beta_header', 'mcp-client-2025-04-04')],
             ],
             default => null,
         };

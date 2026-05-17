@@ -131,11 +131,15 @@ class GeminiEngineDriver extends BaseEngineDriver
 
             $this->applyToolPayload($payload, $request);
             $this->applyGeminiStructuredOutputPayload($payload, $request);
+            $providerOptions = $request->getProviderOptions(EngineEnum::Gemini->value);
+            $queryOptions = (array) ($providerOptions['query'] ?? []);
+            unset($providerOptions['query'], $providerOptions['headers']);
+            $payload = array_replace_recursive($payload, $providerOptions);
 
             $url = "/v1beta/models/{$request->getModel()->value}:generateContent";
             $response = $this->httpClient->post($url, [
                 'json' => $payload,
-                'query' => ['key' => $this->getApiKey()],
+                'query' => array_replace(['key' => $this->getApiKey()], $queryOptions),
             ]);
 
             $data = $this->parseJsonResponse($response->getBody()->getContents());

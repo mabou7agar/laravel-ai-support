@@ -602,7 +602,10 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
     protected function buildChatCompletionPayload(AIRequest $request, array $messages): array
     {
-        $parameters = $request->getParameters();
+        $parameters = array_replace_recursive(
+            $request->getParameters(),
+            $request->getProviderOptions(EngineEnum::OpenRouter->value)
+        );
         $payload = [
             'model' => $request->getModel()->value,
             'messages' => $messages,

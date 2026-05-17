@@ -46,6 +46,10 @@ class CoreServiceRegistrar
         $app->singleton(DriverRegistry::class, fn ($app) => new DriverRegistry($app));
 
         $app->singleton(ConversationManager::class, fn () => new ConversationManager());
+        $app->singleton(\LaravelAIEngine\Services\ConversationService::class, fn ($app) => new \LaravelAIEngine\Services\ConversationService(
+            $app->make(ConversationManager::class)
+        ));
+        $app->alias(\LaravelAIEngine\Services\ConversationService::class, \LaravelAIEngine\Services\ConversationTranscriptService::class);
         if (!$app->bound(\LaravelAIEngine\Contracts\AIScopeResolver::class)) {
             $app->singleton(\LaravelAIEngine\Contracts\AIScopeResolver::class, fn () => new \LaravelAIEngine\Services\Scope\DefaultAIScopeResolver());
         }

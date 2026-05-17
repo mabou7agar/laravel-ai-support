@@ -105,6 +105,24 @@ class EngineProxy
         return $this;
     }
 
+    public function withProviderOptions(array $options, ?string $provider = null): self
+    {
+        $metadata = $this->options['metadata'] ?? [];
+        $metadata = is_array($metadata) ? $metadata : [];
+        $providerOptions = is_array($metadata['provider_options'] ?? null) ? $metadata['provider_options'] : [];
+
+        if ($provider !== null && $provider !== '') {
+            $providerOptions[$provider] = array_replace_recursive((array) ($providerOptions[$provider] ?? []), $options);
+        } else {
+            $providerOptions['*'] = array_replace_recursive((array) ($providerOptions['*'] ?? []), $options);
+        }
+
+        $metadata['provider_options'] = $providerOptions;
+        $this->options['metadata'] = $metadata;
+
+        return $this;
+    }
+
     public function withParameters(array $parameters): self
     {
         $existing = $this->options['parameters'] ?? [];

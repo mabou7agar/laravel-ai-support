@@ -1,0 +1,19 @@
+meta {
+  name: List MCP Tools
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/ai/mcp/tools
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}

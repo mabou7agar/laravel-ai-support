@@ -186,6 +186,29 @@ class AIRequest
         return $this->functionCall;
     }
 
+    public function getProviderOptions(?string $provider = null): array
+    {
+        $options = $this->metadata['provider_options'] ?? $this->parameters['provider_options'] ?? [];
+        if (!is_array($options)) {
+            return [];
+        }
+
+        $generic = (array) ($options['*'] ?? $options['default'] ?? []);
+        $providerSpecific = $provider !== null ? (array) ($options[$provider] ?? []) : [];
+        $direct = array_diff_key($options, array_flip(['*', 'default']));
+
+        if ($provider !== null) {
+            unset($direct[$provider]);
+            foreach (array_keys($direct) as $key) {
+                if (is_array($direct[$key]) && in_array($key, ['openai', 'anthropic', 'gemini', 'openrouter', 'fal_ai', 'fal'], true)) {
+                    unset($direct[$key]);
+                }
+            }
+        }
+
+        return array_replace_recursive($generic, $direct, $providerSpecific);
+    }
+
     public function wasEngineExplicitlyProvided(): bool
     {
         return (bool) ($this->metadata['_request_resolution']['engine_explicit'] ?? true);
@@ -550,6 +573,22 @@ class AIRequest
         );
     }
 
+    public function withProviderOptions(array $options, ?string $provider = null): self
+    {
+        $current = $this->metadata['provider_options'] ?? [];
+        if (!is_array($current)) {
+            $current = [];
+        }
+
+        if ($provider !== null && $provider !== '') {
+            $current[$provider] = array_replace_recursive((array) ($current[$provider] ?? []), $options);
+        } else {
+            $current['*'] = array_replace_recursive((array) ($current['*'] ?? []), $options);
+        }
+
+        return $this->withMetadata(['provider_options' => $current]);
+    }
+
     /**
      * Set functions for function calling
      */
@@ -673,6 +712,7 @@ class AIRequest
             'temperature' => $this->temperature,
             'seed' => $this->seed,
             'metadata' => $this->getMetadata(),
+            'provider_options' => $this->getProviderOptions(),
             'functions' => $this->functions,
             'function_call' => $this->functionCall,
         ];

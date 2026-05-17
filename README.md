@@ -20,6 +20,7 @@ Current codebase includes:
 - host-app background KB build flow
 - host-app capability memory primitives for semantic tool/action/module routing
 - compacted agent conversation memory for long chat sessions
+- provider-tool lifecycle APIs, MCP/App tool bridge, realtime tool dispatch, hosted artifacts, and observability exporters
 
 ## Compatibility
 
@@ -156,6 +157,19 @@ php artisan ai:infra-health
 `ai:model-status "App\\Models\\Project"` shows whether a model is ready for indexing, graph publishing, and chat retrieval. Use `--id=<record>` to inspect a real row instead of a blank instance, which is useful when a model only becomes indexable after required attributes are populated.
 
 `ai:test-real-agent` includes only generic built-in scripts: `minimal` and `followup`. Use repeated `--message` options for quick checks, and use `--script-file` for app-specific business flows.
+
+### Provider, MCP, and Realtime APIs
+
+```bash
+curl http://127.0.0.1:8000/api/v1/ai/provider-tools/runs
+curl http://127.0.0.1:8000/api/v1/ai/provider-tools/artifacts
+curl http://127.0.0.1:8000/api/v1/ai/mcp/tools
+curl -X POST http://127.0.0.1:8000/api/v1/ai/realtime/tools/dispatch \
+  -H "Content-Type: application/json" \
+  -d '{"event":{"id":"call_1","name":"run_skill","arguments":{"message":"Draft a reply"}},"session_id":"thread-1"}'
+```
+
+Register observability exporters in `ai-engine.observability.exporters` to send traces and evaluations to HTTP collectors, OpenTelemetry OTLP, LangSmith, or logs.
 
 ### Federation (Safe Flow)
 
@@ -418,7 +432,18 @@ AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS=240
 
 This memory is for conversation state only. Business records and capability documents should still be indexed through the host app's RAG, graph, or capability-memory sync pipeline.
 
-Durable conversation memory is also available through `ai_conversation_memories`. It extracts small scoped facts from compacted turns, retrieves only relevant memories under `AI_AGENT_MEMORY_MAX_PROMPT_CHARS`, and can optionally use a configured vector index while SQL remains the authorization source of truth. See `docs/agent-memory.mdx`.
+Durable conversation memory is also available through `ai_conversation_memories`. Normal chat transcripts stay in `ai_conversations` through `ConversationTranscriptService` (`ConversationService` remains a compatibility alias), while durable memory extracts small scoped facts from compacted turns, retrieves only relevant memories under `AI_AGENT_MEMORY_MAX_PROMPT_CHARS`, and can optionally use a configured vector index while SQL remains the authorization source of truth. See `docs/agent-memory.mdx`.
+
+Agent chat responses can also return bullet/numbered response points as structured arrays and include next-step suggestions from registered actions, skills, and tools:
+
+```json
+{
+  "response_points_format": "array",
+  "response_suggestions": true
+}
+```
+
+Use `response_points_format=text|array|both|none`. Suggestions are generic: register an invoice action, email reply skill, or any other capability and the package matches against its metadata instead of hardcoding business modules.
 
 ## Search Document and Graph Contracts
 
@@ -494,6 +519,31 @@ OPENROUTER_MAX_COMPLETION_PRICE=0
 ```
 
 Per request, pass `cost_optimization: true` plus an optional `models` list when one workflow should use a specific free/cheap pool. The driver sends OpenRouter `models` fallbacks and `provider.sort.by=price`; it keeps the requested model as a paid fallback unless disabled.
+
+Use `withProviderOptions()` when a provider adds fields faster than the package API. Normal chat/media requests now support generic and provider-specific passthrough options:
+
+```php
+$response = Engine::engine('openrouter')
+    ->model('openai/gpt-4o-mini')
+    ->withProviderOptions([
+        'provider' => [
+            'only' => ['openai', 'anthropic'],
+            'data_collection' => 'deny',
+            'require_parameters' => true,
+        ],
+        'route' => 'fallback',
+    ], 'openrouter')
+    ->generate('Summarize this ticket');
+```
+
+For OpenAI Responses state, set a conversation id and opt into remembering/reusing response ids:
+
+```php
+$request = AIRequest::make('Continue the previous analysis', 'openai', 'gpt-4o')
+    ->setConversationId('thread-123')
+    ->withMetadata(['openai_responses_api' => true])
+    ->withProviderOptions(['use_previous_response' => true], 'openai');
+```
 
 Graph retrieval now prefers matched chunk context plus `entity_ref` and `object` payloads for follow-ups and UI reuse.
 
