@@ -70,6 +70,61 @@ class FalReferencePackGenerationServiceTest extends TestCase
         $this->assertSame('front', $workflow[0]['view']);
     }
 
+    public function test_reference_pack_prompts_request_clean_images_without_labels_or_cards(): void
+    {
+        $service = new FalReferencePackGenerationService(
+            Mockery::mock(AIEngineService::class),
+            app(FalCharacterStore::class)
+        );
+
+        $request = $service->prepareRequest('Generate Mina', [
+            'entity_type' => 'character',
+            'frame_count' => 1,
+        ]);
+
+        $this->assertStringContainsString('Do not include any text', $request->getPrompt());
+        $this->assertStringContainsString('UI cards', $request->getPrompt());
+    }
+
+    public function test_reference_pack_edit_steps_use_reference_images_without_character_cards(): void
+    {
+        $service = new FalReferencePackGenerationService(
+            Mockery::mock(AIEngineService::class),
+            app(FalCharacterStore::class)
+        );
+
+        $workflow = $service->prepareWorkflow('Generate Mina', [
+            'entity_type' => 'character',
+            'name' => 'Mina',
+            'frame_count' => 2,
+        ]);
+
+        $request = $service->prepareStepRequest('Generate Mina', [
+            'entity_type' => 'character',
+            'name' => 'Mina',
+            'frame_count' => 2,
+        ], '42', $workflow[1], [[
+            'url' => 'https://example.com/mina-front.png',
+            'stored_url' => 'https://example.com/mina-front.png',
+            'source_url' => 'https://v3.fal.media/files/mina-front.png',
+            'provider_url' => 'https://v3.fal.media/files/mina-front.png',
+            'entity_type' => 'character',
+            'look_mode' => 'vendor',
+            'look_index' => 1,
+            'look_variant' => 'signature',
+            'look_label' => 'Signature look',
+            'look_instruction' => 'Keep styling locked.',
+            'view_index' => 1,
+            'view' => 'front',
+            'view_label' => 'Front portrait',
+            'label' => 'Look 1: Signature / Front portrait',
+            'step' => 1,
+        ]]);
+
+        $this->assertSame(['https://example.com/mina-front.png'], $request->getParameters()['source_images']);
+        $this->assertArrayNotHasKey('character_sources', $request->getParameters());
+    }
+
     public function test_prepare_workflow_uses_guided_mode_by_default_when_look_id_is_provided(): void
     {
         $service = new FalReferencePackGenerationService(
