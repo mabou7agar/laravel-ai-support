@@ -46,6 +46,7 @@ abstract class UnitTestCase extends Orchestra
         Config::set('ai-engine.credits.enabled', true);
         Config::set('ai-engine.credits.default_balance', 100.0);
         Config::set('ai-engine.cache.enabled', true);
+        Config::set('ai-engine.rate_limiting.driver', 'array');
         Config::set('ai-engine.webhooks.enabled', false);
         Config::set('ai-engine.nodes.enabled', false);
         Config::set('ai-engine.nodes.local.slug', null);
