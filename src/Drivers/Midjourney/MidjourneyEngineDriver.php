@@ -49,16 +49,12 @@ class MidjourneyEngineDriver implements EngineDriverInterface
     public function generate(AIRequest $request): AIResponse
     {
         try {
-            switch ($request->getModel()) {
-                case EntityEnum::MIDJOURNEY_V6:
-                    return $this->generateImage($request, 'v6');
-                case EntityEnum::MIDJOURNEY_V5:
-                    return $this->generateImage($request, 'v5');
-                case EntityEnum::MIDJOURNEY_NIJI:
-                    return $this->generateImage($request, 'niji');
-                default:
-                    throw new AIEngineException("Entity {$request->getModel()->value} not supported by Midjourney driver");
-            }
+            return match ($request->getModel()->value) {
+                EntityEnum::MIDJOURNEY_V6   => $this->generateImage($request, 'v6'),
+                EntityEnum::MIDJOURNEY_V5   => $this->generateImage($request, 'v5'),
+                EntityEnum::MIDJOURNEY_NIJI => $this->generateImage($request, 'niji'),
+                default => throw new AIEngineException("Entity {$request->getModel()->value} not supported by Midjourney driver"),
+            };
         } catch (RequestException $e) {
             throw new AIEngineException('Midjourney API request failed: ' . $e->getMessage());
         }
@@ -83,7 +79,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::MIDJOURNEY,
+                'engine' => EngineEnum::Midjourney->value,
                 'version' => $version,
                 'job_id' => $jobId,
                 'images' => $images,
@@ -365,7 +361,7 @@ class MidjourneyEngineDriver implements EngineDriverInterface
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::MIDJOURNEY;
+        return EngineEnum::Midjourney;
     }
 
     public function supports(string $capability): bool

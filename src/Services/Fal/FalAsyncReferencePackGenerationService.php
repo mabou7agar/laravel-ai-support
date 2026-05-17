@@ -617,7 +617,7 @@ class FalAsyncReferencePackGenerationService
     {
         return new AIRequest(
             prompt: (string) ($request['prompt'] ?? ''),
-            engine: (string) ($request['engine'] ?? EngineEnum::FAL_AI),
+            engine: (string) ($request['engine'] ?? EngineEnum::FalAI->value),
             model: (string) ($request['model'] ?? ''),
             parameters: is_array($request['parameters'] ?? null) ? $request['parameters'] : [],
             userId: is_string($request['user_id'] ?? null) ? $request['user_id'] : null
@@ -705,7 +705,7 @@ class FalAsyncReferencePackGenerationService
 
     private function resolveDriver(): FalAIEngineDriver
     {
-        $driver = $this->driverRegistry->resolve(EngineEnum::FAL_AI);
+        $driver = $this->driverRegistry->resolve(EngineEnum::FalAI);
 
         if (!$driver instanceof FalAIEngineDriver) {
             throw new AIEngineException('FAL async reference pack service requires the concrete FAL engine driver.');

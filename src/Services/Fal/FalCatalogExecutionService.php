@@ -36,7 +36,7 @@ class FalCatalogExecutionService
         $run = $this->runs->create([
             'uuid' => (string) Str::uuid(),
             'provider' => 'fal_ai',
-            'engine' => EngineEnum::FAL_AI,
+            'engine' => EngineEnum::FalAI->value,
             'ai_model' => $modelId,
             'status' => 'running',
             'request_id' => $request->getMetadata()['request_id'] ?? null,
@@ -62,7 +62,7 @@ class FalCatalogExecutionService
 
                 return AIResponse::error(
                     'FAL catalog request failed: ' . $response->body(),
-                    EngineEnum::FAL_AI,
+                    EngineEnum::FalAI,
                     $request->getModel()
                 )->withMetadata(['provider_tool_run_id' => $run->uuid]);
             }
@@ -83,7 +83,7 @@ class FalCatalogExecutionService
 
             return AIResponse::success(
                 json_encode($data, JSON_UNESCAPED_SLASHES),
-                EngineEnum::FAL_AI,
+                EngineEnum::FalAI,
                 $request->getModel()
             )->withFiles($files)->withMetadata([
                 'provider_tool_run_id' => $run->uuid,
@@ -100,7 +100,7 @@ class FalCatalogExecutionService
 
             return AIResponse::error(
                 'FAL catalog request failed: ' . $e->getMessage(),
-                EngineEnum::FAL_AI,
+                EngineEnum::FalAI,
                 $request->getModel(),
                 ['provider_tool_run_id' => $run->uuid]
             );
@@ -121,7 +121,7 @@ class FalCatalogExecutionService
         $run = $this->runs->create([
             'uuid' => (string) Str::uuid(),
             'provider' => 'fal_ai',
-            'engine' => EngineEnum::FAL_AI,
+            'engine' => EngineEnum::FalAI->value,
             'ai_model' => $modelId,
             'status' => 'queued',
             'request_id' => $request->getMetadata()['request_id'] ?? null,

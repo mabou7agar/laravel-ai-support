@@ -401,8 +401,8 @@ class DataCollectorChatService
     ): AIResponse {
         return new AIResponse(
             content: $content,
-            engine: EngineEnum::from(EngineEnum::OPENAI),
-            model: new EntityEnum(EntityEnum::GPT_4O),
+            engine: EngineEnum::OpenAI,
+            model: EntityEnum::from(EntityEnum::GPT_4O),
             metadata: $metadata,
             actions: array_map(fn($a) => $a instanceof InteractiveAction ? $a->toArray() : $a, $actions),
             success: $success,

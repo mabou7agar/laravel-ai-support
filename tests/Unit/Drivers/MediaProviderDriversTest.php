@@ -387,6 +387,49 @@ class MediaProviderDriversTest extends UnitTestCase
         $this->assertSame('en-US-Neural2-F', $response->toArray()['metadata']['voice']['name']);
     }
 
+    public function test_gemini_native_tts_generates_wav_from_inline_audio(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+
+        $driver = new GeminiEngineDriver([
+            'api_key' => 'gemini-token',
+            'base_url' => 'https://generativelanguage.googleapis.com',
+            'timeout' => 30,
+        ], $this->mockClient([
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'candidates' => [
+                    [
+                        'content' => [
+                            'parts' => [
+                                [
+                                    'inlineData' => [
+                                        'mimeType' => 'audio/pcm;rate=24000',
+                                        'data' => base64_encode('gemini-pcm-audio'),
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+        ]));
+
+        $response = $driver->generate(new AIRequest(
+            prompt: 'Read this invoice summary.',
+            engine: EngineEnum::GEMINI,
+            model: EntityEnum::GEMINI_2_5_FLASH_TTS,
+            parameters: ['voice' => 'Kore']
+        ));
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('audio', $response->getContentType());
+        $this->assertNotEmpty($response->toArray()['files']);
+        $this->assertSame('gemini', $response->toArray()['metadata']['provider']);
+        $this->assertSame('Kore', $response->toArray()['metadata']['voice']);
+        $this->assertSame('wav', $response->toArray()['metadata']['audio_format']);
+    }
+
     /**
      * @param array<int, Response> $responses
      */

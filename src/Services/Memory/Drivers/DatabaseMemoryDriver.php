@@ -34,8 +34,8 @@ class DatabaseMemoryDriver implements MemoryDriverInterface
                 $content,
                 \LaravelAIEngine\DTOs\AIResponse::success(
                     $content,
-                    \LaravelAIEngine\Enums\EngineEnum::OPENAI,
-                    \LaravelAIEngine\Enums\EntityEnum::GPT_4O,
+                    \LaravelAIEngine\Enums\EngineEnum::OpenAI,
+                    \LaravelAIEngine\Enums\EntityEnum::from(\LaravelAIEngine\Enums\EntityEnum::GPT_4O),
                     $metadata
                 )
             );

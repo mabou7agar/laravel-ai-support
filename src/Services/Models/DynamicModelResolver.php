@@ -54,20 +54,20 @@ class DynamicModelResolver
     protected function mapProviderToEngine(string $provider): string
     {
         return match(strtolower($provider)) {
-            'openai' => EngineEnum::OPENAI,
-            'anthropic' => EngineEnum::ANTHROPIC,
-            'google', 'gemini' => EngineEnum::GEMINI,
-            'stability', 'stable-diffusion' => EngineEnum::STABLE_DIFFUSION,
-            'elevenlabs' => EngineEnum::ELEVENLABS,
-            'fal', 'fal-ai', 'fal_ai' => EngineEnum::FAL_AI,
-            'deepseek' => EngineEnum::DEEPSEEK,
-            'perplexity' => EngineEnum::PERPLEXITY,
-            'openrouter' => EngineEnum::OPENROUTER,
-            'cloudflare_workers_ai', 'cloudflare' => EngineEnum::CLOUDFLARE_WORKERS_AI,
-            'huggingface', 'hugging_face' => EngineEnum::HUGGINGFACE,
-            'replicate' => EngineEnum::REPLICATE,
-            'comfyui', 'comfy' => EngineEnum::COMFYUI,
-            default => EngineEnum::OPENAI,
+            'openai'                          => EngineEnum::OpenAI->value,
+            'anthropic'                       => EngineEnum::Anthropic->value,
+            'google', 'gemini'                => EngineEnum::Gemini->value,
+            'stability', 'stable-diffusion'   => EngineEnum::StableDiffusion->value,
+            'elevenlabs'                      => EngineEnum::ElevenLabs->value,
+            'fal', 'fal-ai', 'fal_ai'         => EngineEnum::FalAI->value,
+            'deepseek'                        => EngineEnum::DeepSeek->value,
+            'perplexity'                      => EngineEnum::Perplexity->value,
+            'openrouter'                      => EngineEnum::OpenRouter->value,
+            'cloudflare_workers_ai', 'cloudflare' => EngineEnum::CloudflareWorkersAI->value,
+            'huggingface', 'hugging_face'     => EngineEnum::HuggingFace->value,
+            'replicate'                       => EngineEnum::Replicate->value,
+            'comfyui', 'comfy'                => EngineEnum::ComfyUI->value,
+            default                           => EngineEnum::OpenAI->value,
         };
     }
 

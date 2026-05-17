@@ -224,9 +224,109 @@ class HostedArtifactService
             return false;
         }
 
+        if (!$this->isAllowedRemoteUrl($url)) {
+            return false;
+        }
+
+        if (!$this->isAllowedExtension($url)) {
+            return false;
+        }
+
+        if (!$this->isAllowedMimeType($artifact['mime_type'] ?? null)) {
+            return false;
+        }
+
+        if (!$this->isAllowedRemoteSize($artifact)) {
+            return false;
+        }
+
         $type = (string) ($artifact['artifact_type'] ?? $this->inferArtifactType($url, ''));
 
         return in_array($type, ['image', 'video', 'audio', 'file'], true);
+    }
+
+    private function isAllowedRemoteUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+
+        if ((bool) config('ai-engine.provider_tools.artifacts.block_private_urls', true) !== true) {
+            return true;
+        }
+
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if ($host === '' || $host === 'localhost' || str_ends_with($host, '.localhost')) {
+            return false;
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP) === false) {
+            return true;
+        }
+
+        return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+    }
+
+    private function isAllowedExtension(string $url): bool
+    {
+        $allowed = array_values(array_filter(array_map(
+            static fn ($extension): string => strtolower(ltrim((string) $extension, '.')),
+            (array) config('ai-engine.provider_tools.artifacts.allowed_extensions', [])
+        )));
+
+        if ($allowed === []) {
+            return true;
+        }
+
+        $extension = strtolower(pathinfo(parse_url($url, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
+
+        return $extension !== '' && in_array($extension, $allowed, true);
+    }
+
+    private function isAllowedMimeType(?string $mimeType): bool
+    {
+        if ($mimeType === null || trim($mimeType) === '') {
+            return true;
+        }
+
+        $mimeType = strtolower(strtok($mimeType, ';') ?: $mimeType);
+        $allowed = array_values(array_filter(array_map(
+            static fn ($allowedType): string => strtolower((string) $allowedType),
+            (array) config('ai-engine.provider_tools.artifacts.allowed_mime_types', [])
+        )));
+
+        if ($allowed === []) {
+            return true;
+        }
+
+        foreach ($allowed as $allowedType) {
+            if ($allowedType === $mimeType) {
+                return true;
+            }
+
+            if (str_ends_with($allowedType, '/*') && str_starts_with($mimeType, substr($allowedType, 0, -1))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isAllowedRemoteSize(array $artifact): bool
+    {
+        $maxBytes = (int) config('ai-engine.provider_tools.artifacts.max_remote_bytes', 0);
+        if ($maxBytes <= 0) {
+            return true;
+        }
+
+        $size = $artifact['size'] ?? $artifact['bytes'] ?? $artifact['metadata']['size'] ?? null;
+        if (!is_numeric($size)) {
+            return true;
+        }
+
+        return (int) $size <= $maxBytes;
     }
 
     private function inferSource(AIProviderToolRun $run, array $artifact): string

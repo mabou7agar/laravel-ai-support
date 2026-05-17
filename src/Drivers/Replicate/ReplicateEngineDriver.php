@@ -52,7 +52,7 @@ class ReplicateEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::REPLICATE);
+        return EngineEnum::Replicate;
     }
 
     public function getAvailableModels(): array
@@ -111,7 +111,7 @@ class ReplicateEngineDriver extends BaseEngineDriver
             $files = $this->normalizeOutputFiles($data['output'] ?? []);
 
             return AIResponse::success('', $request->getEngine(), $request->getModel(), [
-                'provider' => EngineEnum::REPLICATE,
+                'provider' => EngineEnum::Replicate->value,
                 'prediction_id' => $data['id'] ?? null,
                 'status' => $data['status'] ?? null,
                 'metrics' => $data['metrics'] ?? [],
@@ -128,12 +128,12 @@ class ReplicateEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::REPLICATE);
+        return EngineEnum::Replicate;
     }
 
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(EntityEnum::REPLICATE_FLUX_SCHNELL);
+        return EntityEnum::from(EntityEnum::REPLICATE_FLUX_SCHNELL);
     }
 
     protected function validateConfig(): void

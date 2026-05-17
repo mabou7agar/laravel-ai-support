@@ -68,6 +68,9 @@ class EntityEnum
     public const GEMINI_IMAGEN_4 = 'imagen-4.0-generate-001';
     public const GEMINI_VEO_3_1 = 'veo-3.1-generate-preview';
     public const GEMINI_VEO_3_1_FAST = 'veo-3.1-fast-generate-preview';
+    public const GEMINI_2_5_FLASH_TTS = 'gemini-2.5-flash-preview-tts';
+    public const GEMINI_2_5_PRO_TTS = 'gemini-2.5-pro-preview-tts';
+    public const GEMINI_3_1_FLASH_TTS_PREVIEW = 'gemini-3.1-flash-tts-preview';
     public const GEMINI_LYRIA_002 = 'lyria-002';
 
     // Stable Diffusion Models
@@ -328,7 +331,7 @@ class EntityEnum
             // Check if model exists in OpenRouter config
             $openrouterModels = config('ai-engine.engines.openrouter.models', []);
             if (isset($openrouterModels[$model])) {
-                return EngineEnum::from(EngineEnum::OPENROUTER);
+                return EngineEnum::OpenRouter;
             }
         }
 
@@ -343,11 +346,11 @@ class EntityEnum
 
         // Default to OpenRouter for provider/model format
         if (str_contains($model, '/')) {
-            return EngineEnum::from(EngineEnum::OPENROUTER);
+            return EngineEnum::OpenRouter;
         }
 
         // Fallback to OpenAI
-        return EngineEnum::from(EngineEnum::OPENAI);
+        return EngineEnum::OpenAI;
     }
 
     /**
@@ -376,7 +379,7 @@ class EntityEnum
             case self::OPENAI_GPT_4O_MINI_TTS:
             case self::OPENAI_TTS_1:
             case self::OPENAI_TTS_1_HD:
-                return EngineEnum::from(EngineEnum::OPENAI);
+                return EngineEnum::OpenAI;
             case self::CLAUDE_3_5_SONNET:
             case self::CLAUDE_3_5_SONNET_20241022:
             case self::CLAUDE_3_7_SONNET:
@@ -387,7 +390,7 @@ class EntityEnum
             case self::CLAUDE_OPUS_4_6:
             case self::CLAUDE_3_HAIKU:
             case self::CLAUDE_3_OPUS:
-                return EngineEnum::from(EngineEnum::ANTHROPIC);
+                return EngineEnum::Anthropic;
             case self::GEMINI_1_5_PRO:
             case self::GEMINI_1_5_FLASH:
             case self::GEMINI_2_0_FLASH:
@@ -398,14 +401,17 @@ class EntityEnum
             case self::GEMINI_IMAGEN_4:
             case self::GEMINI_VEO_3_1:
             case self::GEMINI_VEO_3_1_FAST:
+            case self::GEMINI_2_5_FLASH_TTS:
+            case self::GEMINI_2_5_PRO_TTS:
+            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
             case self::GEMINI_LYRIA_002:
-                return EngineEnum::from(EngineEnum::GEMINI);
+                return EngineEnum::Gemini;
             case self::SD3_LARGE:
             case self::SD3_MEDIUM:
             case self::SDXL_1024:
-                return EngineEnum::from(EngineEnum::STABLE_DIFFUSION);
+                return EngineEnum::StableDiffusion;
             case self::ELEVEN_MULTILINGUAL_V2:
-                return EngineEnum::from(EngineEnum::ELEVEN_LABS);
+                return EngineEnum::ElevenLabs;
             case self::FAL_FLUX_PRO:
             case self::FAL_FLUX_DEV:
             case self::FAL_FLUX_SCHNELL:
@@ -424,62 +430,62 @@ class EntityEnum
             case self::FLUX_PRO:
             case self::KLING_VIDEO:
             case self::LUMA_DREAM_MACHINE:
-                return EngineEnum::from(EngineEnum::FAL_AI);
+                return EngineEnum::FalAI;
             case self::DEEPSEEK_CHAT:
             case self::DEEPSEEK_REASONER:
-                return EngineEnum::from(EngineEnum::DEEPSEEK);
+                return EngineEnum::DeepSeek;
             case self::PERPLEXITY_SONAR_LARGE:
             case self::PERPLEXITY_SONAR_MEDIUM:
             case self::PERPLEXITY_SONAR_SMALL:
-                return EngineEnum::from(EngineEnum::PERPLEXITY);
+                return EngineEnum::Perplexity;
             case self::SERPER_SEARCH:
             case self::SERPER_NEWS:
             case self::SERPER_IMAGES:
-                return EngineEnum::from(EngineEnum::SERPER);
+                return EngineEnum::Serper;
             case self::UNSPLASH_SEARCH:
-                return EngineEnum::from(EngineEnum::UNSPLASH);
+                return EngineEnum::Unsplash;
             case self::PEXELS_SEARCH:
-                return EngineEnum::from(EngineEnum::PEXELS);
+                return EngineEnum::Pexels;
             case self::PLAGIARISM_BASIC:
             case self::PLAGIARISM_ADVANCED:
             case self::PLAGIARISM_ACADEMIC:
-                return EngineEnum::from(EngineEnum::PLAGIARISM_CHECK);
+                return EngineEnum::PlagiarismCheck;
             case self::MIDJOURNEY_V6:
             case self::MIDJOURNEY_V5:
             case self::MIDJOURNEY_NIJI:
-                return EngineEnum::from(EngineEnum::MIDJOURNEY);
+                return EngineEnum::Midjourney;
             case self::AZURE_TEXT_ANALYTICS:
             case self::AZURE_TTS:
             case self::AZURE_STT:
             case self::AZURE_TRANSLATOR:
             case self::AZURE_COMPUTER_VISION:
-                return EngineEnum::from(EngineEnum::AZURE);
+                return EngineEnum::Azure;
             case self::GOOGLE_TTS:
-                return EngineEnum::from(EngineEnum::GOOGLE_TTS);
+                return EngineEnum::GoogleTts;
             case self::OPENROUTER_MISTRAL_7B_FREE:
             case self::OPENROUTER_QWEN_2_5_7B_FREE:
             case self::OPENROUTER_PHI_3_MINI_FREE:
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
-                return EngineEnum::from(EngineEnum::OPENROUTER);
+                return EngineEnum::OpenRouter;
             case self::NVIDIA_NIM_NEMOTRON_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
-                return EngineEnum::from(EngineEnum::NVIDIA_NIM);
+                return EngineEnum::NvidiaNim;
             case self::CLOUDFLARE_FLUX_SCHNELL:
             case self::CLOUDFLARE_DREAMSHAPER:
             case self::CLOUDFLARE_WHISPER:
             case self::CLOUDFLARE_MELOTTS:
-                return EngineEnum::from(EngineEnum::CLOUDFLARE_WORKERS_AI);
+                return EngineEnum::CloudflareWorkersAI;
             case self::HUGGINGFACE_FLUX_SCHNELL:
             case self::HUGGINGFACE_WHISPER_LARGE_V3:
             case self::HUGGINGFACE_MMS_TTS:
-                return EngineEnum::from(EngineEnum::HUGGINGFACE);
+                return EngineEnum::HuggingFace;
             case self::REPLICATE_FLUX_SCHNELL:
             case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
-                return EngineEnum::from(EngineEnum::REPLICATE);
+                return EngineEnum::Replicate;
             case self::COMFYUI_DEFAULT_IMAGE:
             case self::COMFYUI_DEFAULT_VIDEO:
-                return EngineEnum::from(EngineEnum::COMFYUI);
+                return EngineEnum::ComfyUI;
             default:
                 // Try to detect engine from model name pattern
                 return $this->detectEngineFromModelName();
@@ -545,6 +551,9 @@ class EntityEnum
             case self::GEMINI_IMAGEN_4:
             case self::GEMINI_VEO_3_1:
             case self::GEMINI_VEO_3_1_FAST:
+            case self::GEMINI_2_5_FLASH_TTS:
+            case self::GEMINI_2_5_PRO_TTS:
+            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
             case self::GEMINI_LYRIA_002:
                 return Gemini15FlashDriver::class;
             case self::SD3_LARGE:
@@ -670,15 +679,15 @@ class EntityEnum
         $engine = $this->detectEngineFromModelName();
 
         // Map engines to their default drivers
-        return match ($engine->value) {
-            EngineEnum::OPENAI => GPT4ODriver::class,
-            EngineEnum::ANTHROPIC => Claude35SonnetDriver::class,
-            EngineEnum::GEMINI => Gemini15ProDriver::class,
-            EngineEnum::OPENROUTER => OpenRouterEngineDriver::class,
-            EngineEnum::DEEPSEEK => DeepSeekEngineDriver::class,
-            EngineEnum::OLLAMA => OllamaEngineDriver::class,
-            EngineEnum::NVIDIA_NIM => \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class,
-            default => GPT4ODriver::class,
+        return match ($engine) {
+            EngineEnum::OpenAI       => GPT4ODriver::class,
+            EngineEnum::Anthropic    => Claude35SonnetDriver::class,
+            EngineEnum::Gemini       => Gemini15ProDriver::class,
+            EngineEnum::OpenRouter   => OpenRouterEngineDriver::class,
+            EngineEnum::DeepSeek     => DeepSeekEngineDriver::class,
+            EngineEnum::Ollama       => OllamaEngineDriver::class,
+            EngineEnum::NvidiaNim    => \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class,
+            default                  => GPT4ODriver::class,
         };
     }
 
@@ -763,6 +772,12 @@ class EntityEnum
                 return 'Veo 3.1';
             case self::GEMINI_VEO_3_1_FAST:
                 return 'Veo 3.1 Fast';
+            case self::GEMINI_2_5_FLASH_TTS:
+                return 'Gemini 2.5 Flash TTS';
+            case self::GEMINI_2_5_PRO_TTS:
+                return 'Gemini 2.5 Pro TTS';
+            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
+                return 'Gemini 3.1 Flash TTS Preview';
             case self::GEMINI_LYRIA_002:
                 return 'Lyria 002';
             case self::SD3_LARGE:
@@ -980,6 +995,12 @@ class EntityEnum
                 return 8.0;
             case self::GEMINI_VEO_3_1_FAST:
                 return 4.0;
+            case self::GEMINI_2_5_FLASH_TTS:
+                return 0.8;
+            case self::GEMINI_2_5_PRO_TTS:
+                return 1.5;
+            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
+                return 1.0;
             case self::GEMINI_LYRIA_002:
                 return 1.0;
             case self::SD3_LARGE:
@@ -1279,6 +1300,9 @@ class EntityEnum
             case self::CLOUDFLARE_MELOTTS:
             case self::HUGGINGFACE_WHISPER_LARGE_V3:
             case self::HUGGINGFACE_MMS_TTS:
+            case self::GEMINI_2_5_FLASH_TTS:
+            case self::GEMINI_2_5_PRO_TTS:
+            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
             case self::GEMINI_LYRIA_002:
                 return 'audio';
             case self::UNSPLASH_SEARCH:
@@ -1633,6 +1657,9 @@ class EntityEnum
             self::GEMINI_IMAGEN_4,
             self::GEMINI_VEO_3_1,
             self::GEMINI_VEO_3_1_FAST,
+            self::GEMINI_2_5_FLASH_TTS,
+            self::GEMINI_2_5_PRO_TTS,
+            self::GEMINI_3_1_FLASH_TTS_PREVIEW,
             self::GEMINI_LYRIA_002,
             self::SD3_LARGE,
             self::SD3_MEDIUM,

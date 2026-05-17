@@ -453,7 +453,7 @@ AI_ENGINE_LIVE_TEXT_PROVIDER_MATRIX=openai:gpt-4o-mini,openrouter:openai/gpt-4o-
 AI_ENGINE_LIVE_AGENT_PROVIDER_MATRIX=openai:gpt-4o-mini
 AI_ENGINE_LIVE_IMAGE_PROVIDER_MATRIX=openai:dall-e-3
 AI_ENGINE_LIVE_VIDEO_PROVIDER_MATRIX=fal_ai:bytedance/seedance-2.0/text-to-video
-AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX=eleven_labs:eleven_multilingual_v2
+AI_ENGINE_LIVE_TTS_PROVIDER_MATRIX=gemini:gemini-2.5-flash-preview-tts,eleven_labs:eleven_multilingual_v2
 AI_ENGINE_LIVE_TRANSCRIBE_PROVIDER_MATRIX=openai:whisper-1
 ```
 
@@ -492,7 +492,7 @@ Built-in direct generation endpoints:
 - `POST /api/v1/ai/generate/transcribe`
 - `POST /api/v1/ai/generate/tts`
 
-For consistent TTS per saved character, store `voice_id` and optional ElevenLabs voice settings when you save the character, then call `/api/v1/ai/generate/tts` with `use_character` or `use_last_character`.
+For consistent TTS per saved character, store `voice_id` and optional voice settings when you save the character, then call `/api/v1/ai/generate/tts` with `use_character` or `use_last_character`. OpenAI, Gemini native TTS, Google Cloud Text-to-Speech, ElevenLabs, and lower-cost media providers can all be routed through the same direct audio generation flow.
 
 Authenticated calls are credit-enforced (same policy as chat/RAG), including image/audio endpoints.
 
@@ -518,6 +518,8 @@ FAL output units are charged through the model `credit_index` and engine rate. T
 ```
 
 Gemini defaults to `AI_GEMINI_RATE=1.2`, giving Gemini usage a 20% margin by default. Override `AI_FAL_AI_RATE` or `AI_GEMINI_RATE` in the host app when your subscription tiers need different margins.
+
+Gemini `audio_generation` defaults to native TTS (`gemini-2.5-flash-preview-tts`). The driver converts Gemini inline PCM audio to WAV files before returning media URLs. `lyria-002` remains available for music-generation style routing under `music_generation`.
 
 Use the pricing audit and dry-run commands before enabling live traffic:
 

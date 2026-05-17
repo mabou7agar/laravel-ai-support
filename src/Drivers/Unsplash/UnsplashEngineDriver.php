@@ -60,7 +60,7 @@ class UnsplashEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::UNSPLASH;
+        return EngineEnum::Unsplash;
     }
 
     /**
@@ -79,8 +79,8 @@ class UnsplashEngineDriver extends BaseEngineDriver
         try {
             $testRequest = new AIRequest(
                 prompt: 'nature',
-                engine: EngineEnum::UNSPLASH,
-                model: EntityEnum::UNSPLASH_SEARCH
+                engine: EngineEnum::Unsplash,
+                model: EntityEnum::from(EntityEnum::UNSPLASH_SEARCH)
             );
             
             $response = $this->searchImages($testRequest);
@@ -357,7 +357,7 @@ class UnsplashEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::UNSPLASH);
+        return EngineEnum::Unsplash;
     }
 
     /**
@@ -365,7 +365,7 @@ class UnsplashEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::UNSPLASH_SEARCH;
+        return EntityEnum::from(EntityEnum::UNSPLASH_SEARCH);
     }
 
     /**

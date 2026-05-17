@@ -32,7 +32,7 @@ class FalAsyncVideoService
             throw new AIEngineException('Async FAL workflow only supports video models.');
         }
 
-        if ($request->getEngine()->value !== EngineEnum::FAL_AI) {
+        if ($request->getEngine()->value !== EngineEnum::FalAI->value) {
             throw new AIEngineException('Async media workflow is only supported for the FAL engine.');
         }
 
@@ -302,7 +302,7 @@ class FalAsyncVideoService
     {
         return new AIRequest(
             prompt: (string) ($request['prompt'] ?? ''),
-            engine: (string) ($request['engine'] ?? EngineEnum::FAL_AI),
+            engine: (string) ($request['engine'] ?? EngineEnum::FalAI->value),
             model: (string) ($request['model'] ?? ''),
             parameters: is_array($request['parameters'] ?? null) ? $request['parameters'] : []
         );
@@ -384,7 +384,7 @@ class FalAsyncVideoService
 
     private function resolveDriver(): FalAIEngineDriver
     {
-        $driver = $this->driverRegistry->resolve(EngineEnum::FAL_AI);
+        $driver = $this->driverRegistry->resolve(EngineEnum::FalAI);
 
         if (!$driver instanceof FalAIEngineDriver) {
             throw new AIEngineException('FAL async video service requires the concrete FAL engine driver.');

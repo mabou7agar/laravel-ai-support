@@ -64,7 +64,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::PERPLEXITY;
+        return EngineEnum::Perplexity;
     }
 
     /**
@@ -83,8 +83,8 @@ class PerplexityEngineDriver extends BaseEngineDriver
         try {
             $testRequest = new AIRequest(
                 prompt: 'Hello',
-                engine: EngineEnum::PERPLEXITY,
-                model: EntityEnum::PERPLEXITY_LLAMA_3_1_SONAR_LARGE_128K_ONLINE
+                engine: EngineEnum::Perplexity,
+                model: EntityEnum::from(EntityEnum::PERPLEXITY_SONAR_LARGE)
             );
             
             $response = $this->generateText($testRequest);
@@ -351,7 +351,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::PERPLEXITY);
+        return EngineEnum::Perplexity;
     }
 
     /**
@@ -359,7 +359,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::LLAMA_3_1_SONAR_LARGE_ONLINE;
+        return EntityEnum::from(EntityEnum::PERPLEXITY_SONAR_LARGE);
     }
 
     /**

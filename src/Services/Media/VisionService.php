@@ -254,7 +254,7 @@ class VisionService
     {
         return new AIRequest(
             prompt: $operation,
-            engine: EngineEnum::OPENAI,
+            engine: EngineEnum::OpenAI,
             model: $this->model,
             parameters: $parameters,
             userId: $userId,
@@ -298,7 +298,7 @@ class VisionService
         }
 
         $model = new EntityEnum($this->model);
-        $engineRate = (float) config('ai-engine.credits.engine_rates.' . EngineEnum::OPENAI, 1.0);
+        $engineRate = (float) config('ai-engine.credits.engine_rates.' . EngineEnum::OpenAI->value, 1.0);
 
         return $tokensUsed * $model->creditIndex() * $engineRate;
     }
@@ -311,7 +311,7 @@ class VisionService
         }
 
         $model = new EntityEnum($this->model);
-        $engineRate = (float) config('ai-engine.credits.engine_rates.' . EngineEnum::OPENAI, 1.0);
+        $engineRate = (float) config('ai-engine.credits.engine_rates.' . EngineEnum::OpenAI->value, 1.0);
 
         return max(1.0, $imageCount * $model->creditIndex() * $engineRate);
     }

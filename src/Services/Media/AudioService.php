@@ -279,7 +279,7 @@ class AudioService
     {
         return new AIRequest(
             prompt: $operation,
-            engine: EngineEnum::OPENAI,
+            engine: EngineEnum::OpenAI,
             model: $this->model,
             parameters: $parameters,
             userId: $userId,

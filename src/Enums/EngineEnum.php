@@ -59,7 +59,7 @@ enum EngineEnum: string
     public const ANTHROPIC = 'anthropic';
     public const GEMINI = 'gemini';
     public const STABLE_DIFFUSION = 'stable_diffusion';
-    public const ELEVEN_LABS = 'eleven_labs';
+    public const ELEVENLABS = 'eleven_labs';
     public const FAL_AI = 'fal_ai';
     public const DEEPSEEK = 'deepseek';
     public const PERPLEXITY = 'perplexity';
@@ -83,54 +83,30 @@ enum EngineEnum: string
      */
     public function driverClass(): string
     {
-        switch ($this->value) {
-            case self::PEXELS:
-                return PexelsEngineDriver::class;
-            case self::OPENAI:
-                return OpenAIEngineDriver::class;
-            case self::UNSPLASH:
-                return UnsplashEngineDriver::class;
-            case self::PLAGIARISM_CHECK:
-                return PlagiarismCheckEngineDriver::class;
-            case self::SERPER:
-                return SerperEngineDriver::class;
-            case self::AZURE:
-                return AzureEngineDriver::class;
-            case self::PERPLEXITY:
-                return PerplexityEngineDriver::class;
-            case self::DEEPSEEK:
-                return DeepSeekEngineDriver::class;
-            case self::ANTHROPIC:
-                return AnthropicEngineDriver::class;
-            case self::GOOGLE_TTS:
-                return GoogleTTSEngineDriver::class;
-            case self::GEMINI:
-                return GeminiEngineDriver::class;
-            case self::STABLE_DIFFUSION:
-                return StableDiffusionEngineDriver::class;
-            case self::ELEVEN_LABS:
-                return ElevenLabsEngineDriver::class;
-            case self::FAL_AI:
-                return FalAIEngineDriver::class;
-            case self::MIDJOURNEY:
-                return MidjourneyEngineDriver::class;
-            case self::OPENROUTER:
-                return OpenRouterEngineDriver::class;
-            case self::OLLAMA:
-                return OllamaEngineDriver::class;
-            case self::NVIDIA_NIM:
-                return NvidiaNimEngineDriver::class;
-            case self::CLOUDFLARE_WORKERS_AI:
-                return CloudflareWorkersAIEngineDriver::class;
-            case self::HUGGINGFACE:
-                return HuggingFaceEngineDriver::class;
-            case self::REPLICATE:
-                return ReplicateEngineDriver::class;
-            case self::COMFYUI:
-                return ComfyUIEngineDriver::class;
-            default:
-                throw new \InvalidArgumentException("Unknown engine: {$this->value}");
-        }
+        return match ($this) {
+            self::Pexels             => PexelsEngineDriver::class,
+            self::OpenAI             => OpenAIEngineDriver::class,
+            self::Unsplash           => UnsplashEngineDriver::class,
+            self::PlagiarismCheck    => PlagiarismCheckEngineDriver::class,
+            self::Serper             => SerperEngineDriver::class,
+            self::Azure              => AzureEngineDriver::class,
+            self::Perplexity         => PerplexityEngineDriver::class,
+            self::DeepSeek           => DeepSeekEngineDriver::class,
+            self::Anthropic          => AnthropicEngineDriver::class,
+            self::GoogleTts          => GoogleTTSEngineDriver::class,
+            self::Gemini             => GeminiEngineDriver::class,
+            self::StableDiffusion    => StableDiffusionEngineDriver::class,
+            self::ElevenLabs         => ElevenLabsEngineDriver::class,
+            self::FalAI              => FalAIEngineDriver::class,
+            self::Midjourney         => MidjourneyEngineDriver::class,
+            self::OpenRouter         => OpenRouterEngineDriver::class,
+            self::Ollama             => OllamaEngineDriver::class,
+            self::NvidiaNim          => NvidiaNimEngineDriver::class,
+            self::CloudflareWorkersAI => CloudflareWorkersAIEngineDriver::class,
+            self::HuggingFace        => HuggingFaceEngineDriver::class,
+            self::Replicate          => ReplicateEngineDriver::class,
+            self::ComfyUI            => ComfyUIEngineDriver::class,
+        };
     }
 
     /**
@@ -138,54 +114,30 @@ enum EngineEnum: string
      */
     public function label(): string
     {
-        switch ($this->value) {
-            case self::OPENAI:
-                return 'OpenAI';
-            case self::ANTHROPIC:
-                return 'Anthropic';
-            case self::GEMINI:
-                return 'Google Gemini';
-            case self::STABLE_DIFFUSION:
-                return 'Stability AI';
-            case self::ELEVEN_LABS:
-                return 'ElevenLabs';
-            case self::FAL_AI:
-                return 'FAL AI';
-            case self::DEEPSEEK:
-                return 'DeepSeek';
-            case self::PERPLEXITY:
-                return 'Perplexity';
-            case self::MIDJOURNEY:
-                return 'Midjourney';
-            case self::AZURE:
-                return 'Azure OpenAI';
-            case self::GOOGLE_TTS:
-                return 'Google Text-to-Speech';
-            case self::SERPER:
-                return 'Serper Search';
-            case self::PLAGIARISM_CHECK:
-                return 'Plagiarism Check';
-            case self::UNSPLASH:
-                return 'Unsplash';
-            case self::PEXELS:
-                return 'Pexels';
-            case self::OPENROUTER:
-                return 'OpenRouter';
-            case self::OLLAMA:
-                return 'Ollama (Local)';
-            case self::NVIDIA_NIM:
-                return 'NVIDIA NIM';
-            case self::CLOUDFLARE_WORKERS_AI:
-                return 'Cloudflare Workers AI';
-            case self::HUGGINGFACE:
-                return 'Hugging Face';
-            case self::REPLICATE:
-                return 'Replicate';
-            case self::COMFYUI:
-                return 'ComfyUI';
-            default:
-                return ucfirst(str_replace('_', ' ', $this->value));
-        }
+        return match ($this) {
+            self::OpenAI             => 'OpenAI',
+            self::Anthropic          => 'Anthropic',
+            self::Gemini             => 'Google Gemini',
+            self::StableDiffusion    => 'Stability AI',
+            self::ElevenLabs         => 'ElevenLabs',
+            self::FalAI              => 'FAL AI',
+            self::DeepSeek           => 'DeepSeek',
+            self::Perplexity         => 'Perplexity',
+            self::Midjourney         => 'Midjourney',
+            self::Azure              => 'Azure OpenAI',
+            self::GoogleTts          => 'Google Text-to-Speech',
+            self::Serper             => 'Serper Search',
+            self::PlagiarismCheck    => 'Plagiarism Check',
+            self::Unsplash           => 'Unsplash',
+            self::Pexels             => 'Pexels',
+            self::OpenRouter         => 'OpenRouter',
+            self::Ollama             => 'Ollama (Local)',
+            self::NvidiaNim          => 'NVIDIA NIM',
+            self::CloudflareWorkersAI => 'Cloudflare Workers AI',
+            self::HuggingFace        => 'Hugging Face',
+            self::Replicate          => 'Replicate',
+            self::ComfyUI            => 'ComfyUI',
+        };
     }
 
     /**
@@ -201,54 +153,30 @@ enum EngineEnum: string
      */
     public function capabilities(): array
     {
-        switch ($this->value) {
-            case self::OPENAI:
-                return ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'speech_to_text', 'text_to_speech', 'tts'];
-            case self::ANTHROPIC:
-                return ['text', 'chat', 'vision'];
-            case self::GEMINI:
-                return ['text', 'chat', 'vision', 'embeddings'];
-            case self::STABLE_DIFFUSION:
-                return ['images', 'video'];
-            case self::ELEVEN_LABS:
-                return ['audio', 'speech'];
-            case self::FAL_AI:
-                return ['images', 'video', 'audio'];
-            case self::DEEPSEEK:
-                return ['text', 'chat'];
-            case self::PERPLEXITY:
-                return ['text', 'search'];
-            case self::MIDJOURNEY:
-                return ['images'];
-            case self::AZURE:
-                return ['text', 'chat', 'images', 'audio', 'embeddings'];
-            case self::GOOGLE_TTS:
-                return ['audio', 'speech', 'text_to_speech', 'tts'];
-            case self::SERPER:
-                return ['search'];
-            case self::PLAGIARISM_CHECK:
-                return ['plagiarism'];
-            case self::UNSPLASH:
-                return ['images', 'search'];
-            case self::PEXELS:
-                return ['images', 'search'];
-            case self::OPENROUTER:
-                return ['text', 'chat', 'images', 'vision', 'embeddings'];
-            case self::OLLAMA:
-                return ['text', 'chat', 'embeddings'];
-            case self::NVIDIA_NIM:
-                return ['text', 'chat', 'streaming'];
-            case self::CLOUDFLARE_WORKERS_AI:
-                return ['images', 'audio', 'speech_to_text', 'text_to_speech'];
-            case self::HUGGINGFACE:
-                return ['images', 'video', 'audio', 'speech_to_text', 'text_to_speech'];
-            case self::REPLICATE:
-                return ['images', 'video', 'audio'];
-            case self::COMFYUI:
-                return ['images', 'video', 'audio'];
-            default:
-                return [];
-        }
+        return match ($this) {
+            self::OpenAI             => ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'speech_to_text', 'text_to_speech', 'tts'],
+            self::Anthropic          => ['text', 'chat', 'vision'],
+            self::Gemini             => ['text', 'chat', 'vision', 'embeddings'],
+            self::StableDiffusion    => ['images', 'video'],
+            self::ElevenLabs         => ['audio', 'speech'],
+            self::FalAI              => ['images', 'video', 'audio'],
+            self::DeepSeek           => ['text', 'chat'],
+            self::Perplexity         => ['text', 'search'],
+            self::Midjourney         => ['images'],
+            self::Azure              => ['text', 'chat', 'images', 'audio', 'embeddings'],
+            self::GoogleTts          => ['audio', 'speech', 'text_to_speech', 'tts'],
+            self::Serper             => ['search'],
+            self::PlagiarismCheck    => ['plagiarism'],
+            self::Unsplash           => ['images', 'search'],
+            self::Pexels             => ['images', 'search'],
+            self::OpenRouter         => ['text', 'chat', 'images', 'vision', 'embeddings'],
+            self::Ollama             => ['text', 'chat', 'embeddings'],
+            self::NvidiaNim          => ['text', 'chat', 'streaming'],
+            self::CloudflareWorkersAI => ['images', 'audio', 'speech_to_text', 'text_to_speech'],
+            self::HuggingFace        => ['images', 'video', 'audio', 'speech_to_text', 'text_to_speech'],
+            self::Replicate          => ['images', 'video', 'audio'],
+            self::ComfyUI            => ['images', 'video', 'audio'],
+        };
     }
 
     /**
@@ -260,114 +188,98 @@ enum EngineEnum: string
     }
 
     /**
-     * Get default models for this engine
+     * Get default models for this engine (returns EntityEnum instances)
      */
     public function getDefaultModels(): array
     {
-        switch ($this->value) {
-            case self::OPENAI:
-                return [
-                    EntityEnum::GPT_4O,
-                    EntityEnum::GPT_4O_MINI,
-                    EntityEnum::GPT_IMAGE_1_MINI,
-                    EntityEnum::DALL_E_3,
-                    EntityEnum::WHISPER_1,
-                    EntityEnum::OPENAI_GPT_4O_MINI_TTS,
-                    EntityEnum::OPENAI_TTS_1,
-                    EntityEnum::OPENAI_TTS_1_HD,
-                ];
-            case self::ANTHROPIC:
-                return [
-                    EntityEnum::CLAUDE_3_5_SONNET,
-                    EntityEnum::CLAUDE_3_HAIKU,
-                ];
-            case self::GEMINI:
-                return [
-                    EntityEnum::GEMINI_1_5_PRO,
-                    EntityEnum::GEMINI_1_5_FLASH,
-                ];
-            case self::STABLE_DIFFUSION:
-                return [
-                    EntityEnum::SD3_LARGE,
-                    EntityEnum::SDXL_1024,
-                ];
-            case self::ELEVEN_LABS:
-                return [
-                    EntityEnum::ELEVEN_MULTILINGUAL_V2,
-                ];
-            case self::FAL_AI:
-                return [
-                    EntityEnum::FLUX_PRO,
-                    EntityEnum::KLING_VIDEO,
-                ];
-            case self::DEEPSEEK:
-                return [
-                    EntityEnum::DEEPSEEK_CHAT,
-                    EntityEnum::DEEPSEEK_REASONER,
-                ];
-            case self::PERPLEXITY:
-                return [
-                    EntityEnum::PERPLEXITY_SONAR_LARGE,
-                ];
-            case self::MIDJOURNEY:
-                return [
-                    EntityEnum::FLUX_PRO,
-                ];
-            case self::AZURE:
-                return [
-                    EntityEnum::GPT_4O,
-                    EntityEnum::GPT_4O_MINI,
-                ];
-            case self::GOOGLE_TTS:
-                return [
-                    EntityEnum::GOOGLE_TTS,
-                ];
-            case self::SERPER:
-                return [
-                    EntityEnum::SERPER_SEARCH,
-                ];
-            case self::PLAGIARISM_CHECK:
-                return [
-                    EntityEnum::GPT_4O,
-                ];
-            case self::UNSPLASH:
-                return [
-                    EntityEnum::UNSPLASH_SEARCH,
-                ];
-            case self::PEXELS:
-                return [
-                    EntityEnum::PEXELS_SEARCH,
-                ];
-            case self::OPENROUTER:
-                return [
-                    EntityEnum::OPENROUTER_GPT_5,
-                    EntityEnum::OPENROUTER_GEMINI_2_5_PRO,
-                    EntityEnum::OPENROUTER_CLAUDE_4_OPUS,
-                    EntityEnum::OPENROUTER_CLAUDE_4_SONNET,
-                    EntityEnum::OPENROUTER_GPT_5_MINI,
-                    EntityEnum::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL,
-                    EntityEnum::OPENROUTER_LLAMA_3_3_70B,
-                ];
-            case self::OLLAMA:
-                return [
-                    EntityEnum::OLLAMA_LLAMA2,
-                    EntityEnum::OLLAMA_LLAMA3,
-                    EntityEnum::OLLAMA_MISTRAL,
-                    EntityEnum::OLLAMA_CODELLAMA,
-                ];
-            case self::NVIDIA_NIM:
-                return [
-                    EntityEnum::NVIDIA_NIM_NEMOTRON_70B,
-                    EntityEnum::NVIDIA_NIM_LLAMA_3_1_70B,
-                    EntityEnum::NVIDIA_NIM_LLAMA_3_1_8B,
-                ];
-            default:
-                return [];
-        }
+        $ids = match ($this) {
+            self::OpenAI => [
+                EntityEnum::GPT_4O,
+                EntityEnum::GPT_4O_MINI,
+                EntityEnum::GPT_IMAGE_1_MINI,
+                EntityEnum::DALL_E_3,
+                EntityEnum::WHISPER_1,
+                EntityEnum::OPENAI_GPT_4O_MINI_TTS,
+                EntityEnum::OPENAI_TTS_1,
+                EntityEnum::OPENAI_TTS_1_HD,
+            ],
+            self::Anthropic => [
+                EntityEnum::CLAUDE_3_5_SONNET,
+                EntityEnum::CLAUDE_3_HAIKU,
+            ],
+            self::Gemini => [
+                EntityEnum::GEMINI_1_5_PRO,
+                EntityEnum::GEMINI_1_5_FLASH,
+                EntityEnum::GEMINI_2_5_FLASH_TTS,
+            ],
+            self::StableDiffusion => [
+                EntityEnum::SD3_LARGE,
+                EntityEnum::SDXL_1024,
+            ],
+            self::ElevenLabs => [
+                EntityEnum::ELEVEN_MULTILINGUAL_V2,
+            ],
+            self::FalAI => [
+                EntityEnum::FLUX_PRO,
+                EntityEnum::KLING_VIDEO,
+            ],
+            self::DeepSeek => [
+                EntityEnum::DEEPSEEK_CHAT,
+                EntityEnum::DEEPSEEK_REASONER,
+            ],
+            self::Perplexity => [
+                EntityEnum::PERPLEXITY_SONAR_LARGE,
+            ],
+            self::Midjourney => [
+                EntityEnum::FLUX_PRO,
+            ],
+            self::Azure => [
+                EntityEnum::GPT_4O,
+                EntityEnum::GPT_4O_MINI,
+            ],
+            self::GoogleTts => [
+                EntityEnum::GOOGLE_TTS,
+            ],
+            self::Serper => [
+                EntityEnum::SERPER_SEARCH,
+            ],
+            self::PlagiarismCheck => [
+                EntityEnum::GPT_4O,
+            ],
+            self::Unsplash => [
+                EntityEnum::UNSPLASH_SEARCH,
+            ],
+            self::Pexels => [
+                EntityEnum::PEXELS_SEARCH,
+            ],
+            self::OpenRouter => [
+                EntityEnum::OPENROUTER_GPT_5,
+                EntityEnum::OPENROUTER_GEMINI_2_5_PRO,
+                EntityEnum::OPENROUTER_CLAUDE_4_OPUS,
+                EntityEnum::OPENROUTER_CLAUDE_4_SONNET,
+                EntityEnum::OPENROUTER_GPT_5_MINI,
+                EntityEnum::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL,
+                EntityEnum::OPENROUTER_LLAMA_3_3_70B,
+            ],
+            self::Ollama => [
+                EntityEnum::OLLAMA_LLAMA2,
+                EntityEnum::OLLAMA_LLAMA3,
+                EntityEnum::OLLAMA_MISTRAL,
+                EntityEnum::OLLAMA_CODELLAMA,
+            ],
+            self::NvidiaNim => [
+                EntityEnum::NVIDIA_NIM_NEMOTRON_70B,
+                EntityEnum::NVIDIA_NIM_LLAMA_3_1_70B,
+                EntityEnum::NVIDIA_NIM_LLAMA_3_1_8B,
+            ],
+            default => [],
+        };
+
+        return array_map(static fn(string $id) => EntityEnum::from($id), $ids);
     }
 
     /**
-     * Get all available engines
+     * Get all available engine value strings
      */
     public static function all(): array
     {
@@ -381,5 +293,4 @@ enum EngineEnum: string
     {
         return self::from($slug);
     }
-
 }

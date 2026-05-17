@@ -403,11 +403,11 @@ class OllamaEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::OLLAMA);
+        return EngineEnum::Ollama;
     }
 
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(EntityEnum::OLLAMA_LLAMA3);
+        return EntityEnum::from(EntityEnum::OLLAMA_LLAMA3);
     }
 }

@@ -40,14 +40,19 @@ Provider-style tools are serializable and can be passed through `EngineProxy::wi
 - `LaravelAIEngine\Tools\Provider\GoogleMapsGrounding`
 - `LaravelAIEngine\Tools\Provider\ImageGenerationTool`
 - `LaravelAIEngine\Tools\Provider\ToolSearch`
+- `LaravelAIEngine\Tools\Provider\HostedShell`
+- `LaravelAIEngine\Tools\Provider\ApplyPatchTool`
+- `LaravelAIEngine\Tools\Provider\ProviderSkill`
 - `LaravelAIEngine\Tools\SimilaritySearch`
 
 Drivers receive these as request functions and keep custom functions on the existing function-calling path.
 OpenAI, Anthropic, and Gemini drivers map supported provider tools to native provider payloads where possible, while custom functions remain on the existing function-calling path.
 
+OpenAI mappings include web search, file search, code interpreter, computer use, remote MCP, image generation, tool search, hosted shell, apply patch, and provider skills. Gemini mappings include Google Search grounding, URL context, Google Maps grounding, file retrieval metadata, and code execution through the existing `CodeInterpreter` provider tool. Anthropic mappings include web search, web fetch, code execution, computer use, and remote MCP with the required beta headers returned by the mapper.
+
 Provider-hosted tool calls are tracked through the provider tool lifecycle tables. Computer use, MCP servers, and code execution require approval by default; web search and file search are audited without a blocking approval unless an app marks the tool with `requires_approval`.
 
-Generated files, provider file IDs, containers, and citations are recorded as hosted artifacts. Downloadable generated files are linked to `ai_media` when the media library is enabled.
+Generated files, provider file IDs, containers, and citations are recorded as hosted artifacts. Downloadable generated files are linked to `ai_media` when the media library is enabled. Remote artifact persistence rejects private/local URLs by default and can be constrained with configured MIME type, extension, and size limits.
 
 Apps can expose approvals, audit history, continuations, and artifacts through the built-in `/api/v1/ai/provider-tools` API group. The same group includes direct and queued generic FAL catalog execution for models synced into `ai_models`.
 
@@ -118,6 +123,10 @@ use LaravelAIEngine\DTOs\RealtimeSessionConfig;
 $session = Engine::realtime()->create(
     RealtimeSessionConfig::make('openai', 'gpt-4o-realtime-preview')
         ->withVoice('alloy')
+        ->withAudioFormats('pcm16', 'pcm16')
+        ->withTurnDetection(['type' => 'server_vad'])
+        ->withTemperature(0.2)
+        ->withMaxResponseOutputTokens(512)
 );
 
 $span = Engine::traces()->start('support-agent.run');
@@ -130,7 +139,9 @@ Engine::evaluations()->assertPassed(
 );
 ```
 
-Realtime support returns provider-specific session descriptors so host applications can attach their own WebSocket/WebRTC clients. Tracing and evaluation services provide package-level recording primitives that can be exported to a provider or observability backend.
+Realtime support returns provider-specific session descriptors so host applications can attach their own WebSocket/WebRTC clients. OpenAI descriptors use snake_case fields expected by the Realtime session API. Gemini Live descriptors use Gemini-style camelCase fields such as `responseModalities`, `systemInstruction`, and `generationConfig`.
+
+Use `withProviderOptions()` for provider-specific fields that the package should pass through without needing a package release. Tracing and evaluation services provide package-level recording primitives that can be exported to a provider or observability backend.
 
 ## Scaffolding
 

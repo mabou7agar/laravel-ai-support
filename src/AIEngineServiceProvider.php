@@ -108,20 +108,19 @@ class AIEngineServiceProvider extends ServiceProvider
     {
         $this->app->afterResolving(DriverRegistry::class, function (DriverRegistry $registry): void {
             foreach ([
-                \LaravelAIEngine\Enums\EngineEnum::OPENAI,
-                \LaravelAIEngine\Enums\EngineEnum::ANTHROPIC,
-                \LaravelAIEngine\Enums\EngineEnum::GEMINI,
-                \LaravelAIEngine\Enums\EngineEnum::STABLE_DIFFUSION,
-                \LaravelAIEngine\Enums\EngineEnum::ELEVEN_LABS,
-                \LaravelAIEngine\Enums\EngineEnum::FAL_AI,
-                \LaravelAIEngine\Enums\EngineEnum::OPENROUTER,
-                \LaravelAIEngine\Enums\EngineEnum::NVIDIA_NIM,
-                \LaravelAIEngine\Enums\EngineEnum::OLLAMA,
-            ] as $engine) {
-                $registry->register($engine, function () use ($engine) {
-                    $engineEnum = \LaravelAIEngine\Enums\EngineEnum::from($engine);
+                \LaravelAIEngine\Enums\EngineEnum::OpenAI,
+                \LaravelAIEngine\Enums\EngineEnum::Anthropic,
+                \LaravelAIEngine\Enums\EngineEnum::Gemini,
+                \LaravelAIEngine\Enums\EngineEnum::StableDiffusion,
+                \LaravelAIEngine\Enums\EngineEnum::ElevenLabs,
+                \LaravelAIEngine\Enums\EngineEnum::FalAI,
+                \LaravelAIEngine\Enums\EngineEnum::OpenRouter,
+                \LaravelAIEngine\Enums\EngineEnum::NvidiaNim,
+                \LaravelAIEngine\Enums\EngineEnum::Ollama,
+            ] as $engineEnum) {
+                $registry->register($engineEnum, function () use ($engineEnum) {
                     $driverClass = $engineEnum->driverClass();
-                    $config = config("ai-engine.engines.{$engine}", []);
+                    $config = config("ai-engine.engines.{$engineEnum->value}", []);
 
                     return new $driverClass($config);
                 });
@@ -308,6 +307,11 @@ class AIEngineServiceProvider extends ServiceProvider
         // Load admin UI routes conditionally (safe for config cache)
         if (config('ai-engine.admin_ui.enabled', false)) {
             $this->loadRoutesFrom(__DIR__.'/../routes/admin.php');
+        }
+
+        // Load health-check endpoint (opt-out via ai-engine.admin.health_endpoint_enabled = false)
+        if (config('ai-engine.admin.health_endpoint_enabled', true)) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/health.php');
         }
 
         // Load API routes (check for published version first)

@@ -11,7 +11,7 @@ Laravel AI Engine supports hosted and local media generation providers for image
 | Hugging Face Inference Providers | `huggingface` | provider marketplace for image/audio models | `HUGGINGFACE_API_KEY` or `HF_TOKEN` |
 | Replicate | `replicate` | public image/video/audio model catalog | `REPLICATE_API_TOKEN` |
 | ComfyUI | `comfyui` | local/self-hosted image and video workflows | `COMFYUI_BASE_URL` |
-| Gemini media | `gemini` | Imagen, Veo, and Lyria models | `GEMINI_API_KEY` |
+| Gemini media | `gemini` | Imagen, Veo, native TTS, and Lyria models | `GEMINI_API_KEY` |
 | Google Text-to-Speech | `google_tts` | Google Cloud TTS voices | `GOOGLE_TTS_API_KEY` or `GOOGLE_TTS_ACCESS_TOKEN` |
 | ElevenLabs | `eleven_labs` | high-quality voices and narration | `ELEVENLABS_API_KEY` |
 | FAL | `fal_ai` | async video and catalog execution | `FAL_AI_API_KEY` |
@@ -68,6 +68,39 @@ $response = app(\LaravelAIEngine\Services\AIEngineService::class)->generateAudio
     )
 );
 ```
+
+Gemini native text-to-speech is available through the normal Gemini driver. The package calls `generateContent` with audio response modalities, extracts inline PCM audio, wraps it as WAV, and stores it through the configured media disk:
+
+```php
+$response = app(\LaravelAIEngine\Services\AIEngineService::class)->generateAudio(
+    new \LaravelAIEngine\DTOs\AIRequest(
+        prompt: 'Read this invoice summary.',
+        engine: 'gemini',
+        model: 'gemini-2.5-flash-preview-tts',
+        parameters: [
+            'voice' => 'Kore',
+        ],
+    )
+);
+```
+
+For multi-speaker TTS, pass Gemini speech config directly:
+
+```php
+new \LaravelAIEngine\DTOs\AIRequest(
+    prompt: 'Speaker 1: Hello. Speaker 2: Welcome.',
+    engine: 'gemini',
+    model: 'gemini-2.5-flash-preview-tts',
+    parameters: [
+        'speaker_voice_configs' => [
+            ['speaker' => 'Speaker 1', 'voiceConfig' => ['prebuiltVoiceConfig' => ['voiceName' => 'Kore']]],
+            ['speaker' => 'Speaker 2', 'voiceConfig' => ['prebuiltVoiceConfig' => ['voiceName' => 'Puck']]],
+        ],
+    ],
+);
+```
+
+`lyria-002` remains available for music generation style workflows. Media routing now defaults Gemini `audio_generation` to native TTS and keeps Lyria under `music_generation`.
 
 ## Pexels Stock Photos
 
@@ -170,3 +203,4 @@ new \LaravelAIEngine\DTOs\AIRequest(
 - Pexels returns existing stock-photo results; it does not generate images or support streaming.
 - Video generation should usually be queued or async in application code because provider jobs can run longer than HTTP request timeouts.
 - Stable enum aliases are for built-in defaults. For changing provider catalogs, sync models into `ai_models` and let the dynamic model resolver route by provider/model id.
+- Gemini inline TTS audio is stored as WAV so browser and app clients receive a normal downloadable file instead of raw PCM bytes.

@@ -672,7 +672,7 @@ class AIResponse implements \JsonSerializable
             }
         }
 
-        return EngineEnum::from(EngineEnum::OPENAI);
+        return EngineEnum::OpenAI;
     }
 
     protected static function resolveModel(mixed $model, EngineEnum $engine): EntityEnum
@@ -686,20 +686,20 @@ class AIResponse implements \JsonSerializable
         }
 
         return match ($engine->value) {
-            EngineEnum::ANTHROPIC => new EntityEnum(EntityEnum::CLAUDE_3_5_SONNET),
-            EngineEnum::GEMINI => new EntityEnum(EntityEnum::GEMINI_1_5_FLASH),
-            EngineEnum::STABLE_DIFFUSION => new EntityEnum(EntityEnum::SD3_LARGE),
-            EngineEnum::ELEVEN_LABS => new EntityEnum(EntityEnum::ELEVEN_MULTILINGUAL_V2),
-            EngineEnum::FAL_AI => new EntityEnum(EntityEnum::FAL_FLUX_PRO),
-            EngineEnum::DEEPSEEK => new EntityEnum(EntityEnum::DEEPSEEK_CHAT),
-            EngineEnum::PERPLEXITY => new EntityEnum(EntityEnum::PERPLEXITY_SONAR_LARGE),
-            EngineEnum::MIDJOURNEY => new EntityEnum(EntityEnum::MIDJOURNEY_V6),
-            EngineEnum::AZURE => new EntityEnum(EntityEnum::AZURE_TEXT_ANALYTICS),
-            EngineEnum::SERPER => new EntityEnum(EntityEnum::SERPER_SEARCH),
-            EngineEnum::PLAGIARISM_CHECK => new EntityEnum(EntityEnum::PLAGIARISM_BASIC),
-            EngineEnum::UNSPLASH => new EntityEnum(EntityEnum::UNSPLASH_SEARCH),
-            EngineEnum::OLLAMA => new EntityEnum(EntityEnum::OLLAMA_LLAMA3),
-            default => new EntityEnum(EntityEnum::GPT_4O_MINI),
+            EngineEnum::Anthropic->value      => EntityEnum::from(EntityEnum::CLAUDE_3_5_SONNET),
+            EngineEnum::Gemini->value         => EntityEnum::from(EntityEnum::GEMINI_1_5_FLASH),
+            EngineEnum::StableDiffusion->value => EntityEnum::from(EntityEnum::SD3_LARGE),
+            EngineEnum::ElevenLabs->value     => EntityEnum::from(EntityEnum::ELEVEN_MULTILINGUAL_V2),
+            EngineEnum::FalAI->value          => EntityEnum::from(EntityEnum::FAL_FLUX_PRO),
+            EngineEnum::DeepSeek->value       => EntityEnum::from(EntityEnum::DEEPSEEK_CHAT),
+            EngineEnum::Perplexity->value     => EntityEnum::from(EntityEnum::PERPLEXITY_SONAR_LARGE),
+            EngineEnum::Midjourney->value     => EntityEnum::from(EntityEnum::MIDJOURNEY_V6),
+            EngineEnum::Azure->value          => EntityEnum::from(EntityEnum::AZURE_TEXT_ANALYTICS),
+            EngineEnum::Serper->value         => EntityEnum::from(EntityEnum::SERPER_SEARCH),
+            EngineEnum::PlagiarismCheck->value => EntityEnum::from(EntityEnum::PLAGIARISM_BASIC),
+            EngineEnum::Unsplash->value       => EntityEnum::from(EntityEnum::UNSPLASH_SEARCH),
+            EngineEnum::Ollama->value         => EntityEnum::from(EntityEnum::OLLAMA_LLAMA3),
+            default                           => EntityEnum::from(EntityEnum::GPT_4O_MINI),
         };
     }
 }

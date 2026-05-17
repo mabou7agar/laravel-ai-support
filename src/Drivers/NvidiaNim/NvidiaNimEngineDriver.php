@@ -56,7 +56,7 @@ class NvidiaNimEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::NVIDIA_NIM);
+        return EngineEnum::NvidiaNim;
     }
 
     public function test(): bool
@@ -157,12 +157,12 @@ class NvidiaNimEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::NVIDIA_NIM);
+        return EngineEnum::NvidiaNim;
     }
 
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(
+        return EntityEnum::from(
             $this->config['default_model'] ?? EntityEnum::NVIDIA_NIM_NEMOTRON_70B
         );
     }

@@ -482,12 +482,14 @@ trait HasVectorContent
             $truncated = substr($truncated, 0, $cutPoint + 1);
         }
 
-        \Log::info('Truncated vector content', [
-            'model' => get_class($this),
-            'original_length' => strlen($content),
-            'truncated_length' => strlen($truncated),
-            'max_chars' => $maxChars
-        ]);
+        if (config('ai-engine.vectorization.debug', false) || config('ai-engine.debug', false)) {
+            \Log::debug('Truncated vector content', [
+                'model' => get_class($this),
+                'original_length' => strlen($content),
+                'truncated_length' => strlen($truncated),
+                'max_chars' => $maxChars
+            ]);
+        }
 
         return $truncated;
     }

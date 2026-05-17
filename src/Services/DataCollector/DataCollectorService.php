@@ -3218,7 +3218,7 @@ class DataCollectorService
         
         try {
             $response = $this->aiEngine
-                ->engine(EngineEnum::OPENAI)
+                ->engine(EngineEnum::OpenAI->value)
                 ->model(EntityEnum::GPT_4O_MINI)
                 ->withSystemPrompt("You are a field detector. Respond with only the field name or NONE.")
                 ->withMaxTokens(20)
@@ -3273,7 +3273,7 @@ class DataCollectorService
         
         try {
             $response = $this->aiEngine
-                ->engine(EngineEnum::OPENAI)
+                ->engine(EngineEnum::OpenAI->value)
                 ->model(EntityEnum::GPT_4O_MINI)
                 ->withSystemPrompt("You are an intent classifier. Analyze user intent and respond with only one token.")
                 ->withMaxTokens(10)
@@ -3320,7 +3320,7 @@ class DataCollectorService
         
         try {
             $response = $this->aiEngine
-                ->engine(EngineEnum::OPENAI)
+                ->engine(EngineEnum::OpenAI->value)
                 ->model(EntityEnum::GPT_4O_MINI)
                 ->withSystemPrompt("You are an intent classifier. Respond with only one token.")
                 ->withMaxTokens(10)

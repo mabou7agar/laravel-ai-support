@@ -447,12 +447,12 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
         $provider = $this->getEngineEnum()->value;
         if (!in_array($provider, [
-            EngineEnum::OPENAI,
-            EngineEnum::DEEPSEEK,
-            EngineEnum::PERPLEXITY,
-            EngineEnum::OPENROUTER,
-            EngineEnum::NVIDIA_NIM,
-            EngineEnum::OLLAMA,
+            EngineEnum::OpenAI->value,
+            EngineEnum::DeepSeek->value,
+            EngineEnum::Perplexity->value,
+            EngineEnum::OpenRouter->value,
+            EngineEnum::NvidiaNim->value,
+            EngineEnum::Ollama->value,
         ], true)) {
             return $payload;
         }

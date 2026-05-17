@@ -113,7 +113,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::OPENAI);
+        return EngineEnum::OpenAI;
     }
 
     /**
@@ -168,7 +168,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
             // Create AIResponse with proper parameters
             $aiResponse = new AIResponse(
                 content: $content,
-                engine: EngineEnum::from(EngineEnum::OPENAI),
+                engine: EngineEnum::OpenAI,
                 model: $request->getModel(),
                 metadata: $response->toArray(),
                 tokensUsed: $response->usage->totalTokens ?? null,
@@ -211,7 +211,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
     protected function generateTextWithResponsesApi(AIRequest $request, array $messages): AIResponse
     {
         $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
-            EngineEnum::OPENAI,
+            EngineEnum::OpenAI->value,
             $request->getFunctions()
         );
 
@@ -427,7 +427,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
                 $request->getEngine(),
                 $request->getModel(),
                 [
-                    'provider' => EngineEnum::OPENAI,
+                    'provider' => EngineEnum::OpenAI->value,
                     'model' => $request->getModel()->value,
                     'voice' => $voice,
                     'response_format' => $format,
@@ -554,7 +554,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::OPENAI);
+        return EngineEnum::OpenAI;
     }
 
     /**
@@ -562,7 +562,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::GPT_4O_MINI;
+        return EntityEnum::from(EntityEnum::GPT_4O_MINI);
     }
 
     /**

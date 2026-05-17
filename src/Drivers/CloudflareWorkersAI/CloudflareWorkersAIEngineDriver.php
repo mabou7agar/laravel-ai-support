@@ -54,7 +54,7 @@ class CloudflareWorkersAIEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::CLOUDFLARE_WORKERS_AI);
+        return EngineEnum::CloudflareWorkersAI;
     }
 
     public function getAvailableModels(): array
@@ -98,7 +98,7 @@ class CloudflareWorkersAIEngineDriver extends BaseEngineDriver
             }
 
             return AIResponse::success('', $request->getEngine(), $request->getModel(), [
-                'provider' => EngineEnum::CLOUDFLARE_WORKERS_AI,
+                'provider' => EngineEnum::CloudflareWorkersAI->value,
                 'model' => $request->getModel()->value,
             ])->withFiles($files)->withUsage(creditsUsed: count($files) * $request->getModel()->creditIndex());
         } catch (RequestException $e) {
@@ -124,7 +124,7 @@ class CloudflareWorkersAIEngineDriver extends BaseEngineDriver
         }
 
         return AIResponse::success('', $request->getEngine(), $request->getModel(), [
-            'provider' => EngineEnum::CLOUDFLARE_WORKERS_AI,
+            'provider' => EngineEnum::CloudflareWorkersAI->value,
             'model' => $request->getModel()->value,
         ])->withFiles($files)->withUsage(creditsUsed: max(1, strlen($request->getPrompt()) / 1000) * $request->getModel()->creditIndex());
     }
@@ -145,7 +145,7 @@ class CloudflareWorkersAIEngineDriver extends BaseEngineDriver
         $text = (string) ($data['result']['text'] ?? $data['text'] ?? $data['result']['response'] ?? '');
 
         return AIResponse::success($text, $request->getEngine(), $request->getModel(), [
-            'provider' => EngineEnum::CLOUDFLARE_WORKERS_AI,
+            'provider' => EngineEnum::CloudflareWorkersAI->value,
             'model' => $request->getModel()->value,
         ])->withUsage(creditsUsed: $request->getModel()->creditIndex());
     }
@@ -177,12 +177,12 @@ class CloudflareWorkersAIEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::CLOUDFLARE_WORKERS_AI);
+        return EngineEnum::CloudflareWorkersAI;
     }
 
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(EntityEnum::CLOUDFLARE_FLUX_SCHNELL);
+        return EntityEnum::from(EntityEnum::CLOUDFLARE_FLUX_SCHNELL);
     }
 
     protected function validateConfig(): void

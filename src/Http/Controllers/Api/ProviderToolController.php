@@ -197,7 +197,7 @@ class ProviderToolController extends Controller
         $parameters = $validated['input'] ?? $validated['parameters'] ?? [];
         $aiRequest = new AIRequest(
             prompt: (string) ($validated['prompt'] ?? ''),
-            engine: EngineEnum::FAL_AI,
+            engine: EngineEnum::FalAI,
             model: (string) $validated['model'],
             parameters: is_array($parameters) ? $parameters : [],
             metadata: is_array($validated['metadata'] ?? null) ? $validated['metadata'] : []

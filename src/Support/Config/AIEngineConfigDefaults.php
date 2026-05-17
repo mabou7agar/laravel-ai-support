@@ -180,7 +180,8 @@ class AIEngineConfigDefaults
                 'models' => [
                     'image' => ['model' => 'imagen-4.0-fast-generate-001', 'estimated_unit_cost' => 0.02, 'quality_score' => 2.2, 'latency_score' => 2.0],
                     'video' => ['model' => 'veo-3.1-fast-generate-preview', 'estimated_unit_cost' => 0.05, 'quality_score' => 2.4, 'latency_score' => 8.0],
-                    'audio_generation' => ['model' => 'lyria-002', 'estimated_unit_cost' => 0.04, 'quality_score' => 2.0, 'latency_score' => 6.0],
+                    'audio_generation' => ['model' => 'gemini-2.5-flash-preview-tts', 'estimated_unit_cost' => 0.004, 'quality_score' => 2.0, 'latency_score' => 2.0],
+                    'music_generation' => ['model' => 'lyria-002', 'estimated_unit_cost' => 0.04, 'quality_score' => 2.0, 'latency_score' => 6.0],
                 ],
             ],
             'fal_ai' => [
@@ -269,6 +270,10 @@ class AIEngineConfigDefaults
             'enabled' => env('AI_ENGINE_PROVIDER_TOOL_ARTIFACTS_ENABLED', true),
             'persist_remote_files' => env('AI_ENGINE_PROVIDER_TOOL_PERSIST_REMOTE_ARTIFACTS', true),
             'max_per_run' => (int) env('AI_ENGINE_PROVIDER_TOOL_MAX_ARTIFACTS', 100),
+            'max_remote_bytes' => (int) env('AI_ENGINE_PROVIDER_TOOL_MAX_REMOTE_ARTIFACT_BYTES', 50 * 1024 * 1024),
+            'block_private_urls' => env('AI_ENGINE_PROVIDER_TOOL_BLOCK_PRIVATE_ARTIFACT_URLS', true),
+            'allowed_extensions' => ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'ogg', 'pdf', 'txt', 'csv', 'json', 'xlsx', 'docx', 'zip'],
+            'allowed_mime_types' => ['image/*', 'video/*', 'audio/*', 'application/pdf', 'text/*', 'application/json', 'application/zip', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
         ],
     ],
 
@@ -562,6 +567,23 @@ class AIEngineConfigDefaults
             ))),
             'allow_localhost' => env('AI_ENGINE_ADMIN_ALLOW_LOCALHOST', true),
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Admin Utility Settings
+    |--------------------------------------------------------------------------
+    |
+    | Controls administrative endpoints provided by the package, such as the
+    | HTTP health-check route used by load balancers and Kubernetes probes.
+    |
+    | health_endpoint_enabled  – set to false to disable GET /ai-engine/health
+    | health_middleware         – middleware stack applied to the health route
+    |
+    */
+    'admin' => [
+        'health_endpoint_enabled' => env('AI_ENGINE_HEALTH_ENDPOINT_ENABLED', true),
+        'health_middleware'        => ['web'],
     ],
 
     /*

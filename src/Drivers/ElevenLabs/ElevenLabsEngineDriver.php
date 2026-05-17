@@ -71,7 +71,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::ELEVENLABS;
+        return EngineEnum::ElevenLabs;
     }
 
     /**
@@ -90,8 +90,8 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
         try {
             $testRequest = new AIRequest(
                 prompt: 'Hello world',
-                engine: EngineEnum::ELEVENLABS,
-                model: EntityEnum::ELEVENLABS_MULTILINGUAL_V2
+                engine: EngineEnum::ElevenLabs,
+                model: EntityEnum::from(EntityEnum::ELEVEN_MULTILINGUAL_V2)
             );
             
             $response = $this->generateAudio($testRequest);
@@ -342,7 +342,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::ELEVEN_LABS);
+        return EngineEnum::ElevenLabs;
     }
 
     /**
@@ -350,7 +350,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::ELEVEN_MULTILINGUAL_V2;
+        return EntityEnum::from(EntityEnum::ELEVEN_MULTILINGUAL_V2);
     }
 
     /**

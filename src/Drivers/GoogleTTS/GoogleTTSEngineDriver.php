@@ -59,7 +59,7 @@ class GoogleTTSEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::GOOGLE_TTS);
+        return EngineEnum::GoogleTts;
     }
 
     public function getAvailableModels(): array
@@ -109,7 +109,7 @@ class GoogleTTSEngineDriver extends BaseEngineDriver
                 $request->getEngine(),
                 $request->getModel(),
                 [
-                    'provider' => EngineEnum::GOOGLE_TTS,
+                    'provider' => EngineEnum::GoogleTts->value,
                     'model' => $request->getModel()->value,
                     'voice' => $voice,
                     'audio_encoding' => $audioEncoding,
@@ -188,12 +188,12 @@ class GoogleTTSEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::GOOGLE_TTS);
+        return EngineEnum::GoogleTts;
     }
 
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(EntityEnum::GOOGLE_TTS);
+        return EntityEnum::from(EntityEnum::GOOGLE_TTS);
     }
 
     protected function getBaseUrl(): string

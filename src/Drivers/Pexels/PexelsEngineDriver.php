@@ -56,7 +56,7 @@ class PexelsEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::PEXELS);
+        return EngineEnum::Pexels;
     }
 
     /**
@@ -75,7 +75,7 @@ class PexelsEngineDriver extends BaseEngineDriver
         try {
             $testRequest = new AIRequest(
                 prompt: 'nature',
-                engine: EngineEnum::from(EngineEnum::PEXELS),
+                engine: EngineEnum::Pexels,
                 model: EntityEnum::from(EntityEnum::PEXELS_SEARCH)
             );
 
@@ -303,7 +303,7 @@ class PexelsEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::PEXELS);
+        return EngineEnum::Pexels;
     }
 
     /**

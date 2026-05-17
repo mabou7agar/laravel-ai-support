@@ -709,3 +709,18 @@ These points make tool creation easier without removing the existing low-level `
 - [x] Add `ai-engine:tools:test` to execute a registered tool with a JSON payload.
 - [x] Document when to use simple tools, model-backed tools, action-backed tools, and skill orchestration.
 - [x] Add focused tests for the easier tool API, scaffolds, and command behavior.
+
+## Phase 18: Provider Parity And Release Guardrails
+
+These points cover the remaining post-release audit gaps that make the package safer in real applications.
+
+- [x] Keep native enum cases while preserving stable string aliases used by existing package internals and tests.
+- [x] Add OpenAI hosted shell, apply-patch, and provider skill tool descriptors to the provider tool mapper.
+- [x] Add Gemini code execution tool mapping through the existing `CodeInterpreter` provider tool.
+- [x] Add provider tool classes for hosted shell, apply patch, and provider skills.
+- [x] Add Gemini native TTS models and route Gemini TTS through `generateContent` audio responses instead of legacy predict payloads.
+- [x] Store Gemini inline PCM audio as downloadable WAV media with voice/audio metadata.
+- [x] Extend realtime session descriptors with audio formats, turn detection, temperature, token caps, and provider-specific config casing.
+- [x] Harden hosted artifact persistence with URL scheme checks, private-host blocking, extension allow-lists, and MIME allow-lists.
+- [x] Add config defaults for hosted artifact max bytes, allowed MIME types, allowed extensions, and private URL blocking.
+- [x] Verify focused provider-tool, realtime, Gemini media, hosted-artifact, and enum tests before checking these items.

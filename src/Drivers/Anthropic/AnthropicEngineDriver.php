@@ -78,7 +78,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::ANTHROPIC;
+        return EngineEnum::Anthropic;
     }
 
     /**
@@ -98,8 +98,8 @@ class AnthropicEngineDriver extends BaseEngineDriver
             // Create a simple test request
             $testRequest = new AIRequest(
                 prompt: 'Hello',
-                engine: EngineEnum::ANTHROPIC,
-                model: EntityEnum::CLAUDE_3_5_SONNET
+                engine: EngineEnum::Anthropic,
+                model: EntityEnum::from(EntityEnum::CLAUDE_3_5_SONNET)
             );
             
             $response = $this->generateText($testRequest);
@@ -267,7 +267,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::ANTHROPIC);
+        return EngineEnum::Anthropic;
     }
 
     /**
@@ -275,7 +275,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::CLAUDE_3_5_SONNET;
+        return EntityEnum::from(EntityEnum::CLAUDE_3_5_SONNET);
     }
 
     /**
@@ -317,7 +317,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
         }
 
         $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
-            EngineEnum::ANTHROPIC,
+            EngineEnum::Anthropic->value,
             $request->getFunctions()
         );
 
@@ -337,7 +337,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
         }
 
         $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
-            EngineEnum::ANTHROPIC,
+            EngineEnum::Anthropic->value,
             $request->getFunctions()
         );
 

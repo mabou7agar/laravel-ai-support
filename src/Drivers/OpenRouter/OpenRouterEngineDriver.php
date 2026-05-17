@@ -155,7 +155,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::OPENROUTER);
+        return EngineEnum::OpenRouter;
     }
 
     /**
@@ -233,7 +233,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::OPENROUTER);
+        return EngineEnum::OpenRouter;
     }
 
     /**

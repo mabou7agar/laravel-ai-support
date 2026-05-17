@@ -20,6 +20,10 @@ class RealtimeTraceEvaluationTest extends UnitTestCase
         $openai = $service->create(
             RealtimeSessionConfig::make('openai', 'gpt-4o-realtime-preview')
                 ->withVoice('alloy')
+                ->withAudioFormats('pcm16', 'pcm16')
+                ->withTurnDetection(['type' => 'server_vad'])
+                ->withTemperature(0.2)
+                ->withMaxResponseOutputTokens(512)
                 ->withTools([(new WebSearch())->toArray()])
         );
 
@@ -31,8 +35,12 @@ class RealtimeTraceEvaluationTest extends UnitTestCase
 
         $this->assertSame('/v1/realtime/sessions', $openai['endpoint']);
         $this->assertSame('alloy', $openai['payload']['voice']);
+        $this->assertSame('pcm16', $openai['payload']['input_audio_format']);
+        $this->assertSame('server_vad', $openai['payload']['turn_detection']['type']);
+        $this->assertSame(0.2, $openai['payload']['temperature']);
+        $this->assertSame(512, $openai['payload']['max_response_output_tokens']);
         $this->assertStringContainsString('BidiGenerateContent', $gemini['endpoint']);
-        $this->assertSame(['audio'], $gemini['payload']['response_modalities']);
+        $this->assertSame(['audio'], $gemini['payload']['responseModalities']);
     }
 
     public function test_trace_recorder_and_evaluation_services_record_results(): void

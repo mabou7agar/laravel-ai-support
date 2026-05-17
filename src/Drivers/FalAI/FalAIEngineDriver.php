@@ -104,7 +104,7 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::FAL_AI);
+        return EngineEnum::FalAI;
     }
 
     public function getAvailableModels(): array
@@ -133,8 +133,8 @@ class FalAIEngineDriver extends BaseEngineDriver
         try {
             $request = new AIRequest(
                 prompt: 'A small blue cube on a white background',
-                engine: EngineEnum::FAL_AI,
-                model: EntityEnum::FAL_FLUX_PRO
+                engine: EngineEnum::FalAI,
+                model: EntityEnum::from(EntityEnum::FAL_FLUX_PRO)
             );
 
             return $this->generateImage($request)->isSuccessful();
@@ -205,12 +205,12 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::FAL_AI);
+        return EngineEnum::FalAI;
     }
 
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(EntityEnum::FAL_FLUX_PRO);
+        return EntityEnum::from(EntityEnum::FAL_FLUX_PRO);
     }
 
     protected function validateConfig(): void
@@ -560,7 +560,7 @@ class FalAIEngineDriver extends BaseEngineDriver
             'images_generated' => count($images),
             'total_cost' => count($images) * $request->getModel()->creditIndex(),
         ])->withMetadata([
-            'engine' => EngineEnum::FAL_AI,
+            'engine' => EngineEnum::FalAI->value,
             'model' => $request->getModel()->value,
             'resolved_model' => $operation['resolved_model'] ?? $request->getModel()->value,
             'resolved_endpoint' => $operation['endpoint'] ?? $request->getModel()->value,
@@ -587,7 +587,7 @@ class FalAIEngineDriver extends BaseEngineDriver
                 'videos_generated' => 1,
                 'total_cost' => $request->getModel()->creditIndex(),
             ])->withMetadata([
-                'engine' => EngineEnum::FAL_AI,
+                'engine' => EngineEnum::FalAI->value,
                 'model' => $request->getModel()->value,
                 'resolved_model' => $operation['resolved_model'] ?? $request->getModel()->value,
                 'resolved_endpoint' => $operation['endpoint'] ?? $request->getModel()->value,
@@ -667,7 +667,7 @@ class FalAIEngineDriver extends BaseEngineDriver
             }
 
             $stored = $this->saveRemoteFile($imageData['url'], 'images', [
-                'engine' => EngineEnum::FAL_AI,
+                'engine' => EngineEnum::FalAI->value,
                 'ai_model' => $data['model'] ?? null,
                 'content_type' => 'image',
                 'collection_name' => 'generated-images',
@@ -709,7 +709,7 @@ class FalAIEngineDriver extends BaseEngineDriver
         }
 
         $stored = $this->saveRemoteFile($videoData['url'], 'videos', [
-            'engine' => EngineEnum::FAL_AI,
+            'engine' => EngineEnum::FalAI->value,
             'ai_model' => $data['model'] ?? null,
             'content_type' => 'video',
             'collection_name' => 'generated-videos',

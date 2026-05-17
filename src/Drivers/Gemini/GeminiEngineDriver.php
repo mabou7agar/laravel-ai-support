@@ -75,7 +75,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::GEMINI);
+        return EngineEnum::Gemini;
     }
 
     /**
@@ -94,8 +94,8 @@ class GeminiEngineDriver extends BaseEngineDriver
         try {
             $testRequest = new AIRequest(
                 prompt: 'Hello',
-                engine: EngineEnum::GEMINI,
-                model: EntityEnum::GEMINI_1_5_PRO
+                engine: EngineEnum::Gemini,
+                model: EntityEnum::from(EntityEnum::GEMINI_1_5_PRO)
             );
             
             $response = $this->generateText($testRequest);
@@ -279,6 +279,62 @@ class GeminiEngineDriver extends BaseEngineDriver
 
     public function generateAudio(AIRequest $request): AIResponse
     {
+        if ($request->getModel()->value === EntityEnum::GEMINI_LYRIA_002) {
+            return $this->generatePredictAudio($request);
+        }
+
+        try {
+            $parameters = $request->getParameters();
+            $voice = (string) ($parameters['voice'] ?? config('ai-engine.engines.gemini.tts_voice', 'Kore'));
+
+            $payload = [
+                'contents' => [
+                    [
+                        'role' => 'user',
+                        'parts' => [['text' => $request->getPrompt()]],
+                    ],
+                ],
+                'generationConfig' => array_filter([
+                    'responseModalities' => ['AUDIO'],
+                    'speechConfig' => $parameters['speechConfig']
+                        ?? $parameters['speech_config']
+                        ?? $this->buildSpeechConfig($voice, $parameters),
+                ], static fn ($value): bool => $value !== null && $value !== []),
+            ];
+
+            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:generateContent", [
+                'json' => $payload,
+                'query' => ['key' => $this->getApiKey()],
+            ]);
+
+            $data = $this->parseJsonResponse($response->getBody()->getContents());
+            $audio = $this->extractInlineAudio($data);
+            $files = [];
+
+            if ($audio !== null) {
+                $files[] = $this->storeMediaBytes(
+                    $this->wrapPcmAsWav($audio['bytes'], $audio['sample_rate']),
+                    $request,
+                    'wav'
+                );
+            }
+
+            return AIResponse::success('', $request->getEngine(), $request->getModel(), [
+                'provider' => 'gemini',
+                'model' => $request->getModel()->value,
+                'voice' => $voice,
+                'mime_type' => $audio['mime_type'] ?? null,
+                'sample_rate' => $audio['sample_rate'] ?? 24000,
+                'audio_format' => 'wav',
+                'raw' => $data,
+            ])->withFiles($files)->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
+        } catch (\Exception $e) {
+            return $this->handleApiError($e, $request, 'audio generation');
+        }
+    }
+
+    private function generatePredictAudio(AIRequest $request): AIResponse
+    {
         try {
             $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:predict", [
                 'json' => [
@@ -299,6 +355,74 @@ class GeminiEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return $this->handleApiError($e, $request, 'audio generation');
         }
+    }
+
+    private function buildSpeechConfig(string $voice, array $parameters): array
+    {
+        if (isset($parameters['speaker_voice_configs']) && is_array($parameters['speaker_voice_configs'])) {
+            return [
+                'multiSpeakerVoiceConfig' => [
+                    'speakerVoiceConfigs' => array_values($parameters['speaker_voice_configs']),
+                ],
+            ];
+        }
+
+        return [
+            'voiceConfig' => [
+                'prebuiltVoiceConfig' => [
+                    'voiceName' => $voice,
+                ],
+            ],
+        ];
+    }
+
+    private function extractInlineAudio(array $data): ?array
+    {
+        foreach ((array) ($data['candidates'][0]['content']['parts'] ?? []) as $part) {
+            $inline = $part['inlineData'] ?? $part['inline_data'] ?? null;
+            if (!is_array($inline) || !is_string($inline['data'] ?? null)) {
+                continue;
+            }
+
+            $mimeType = (string) ($inline['mimeType'] ?? $inline['mime_type'] ?? 'audio/pcm;rate=24000');
+            $bytes = base64_decode($inline['data'], true);
+
+            if ($bytes === false) {
+                continue;
+            }
+
+            return [
+                'bytes' => $bytes,
+                'mime_type' => $mimeType,
+                'sample_rate' => $this->sampleRateFromMimeType($mimeType),
+            ];
+        }
+
+        return null;
+    }
+
+    private function sampleRateFromMimeType(string $mimeType): int
+    {
+        if (preg_match('/rate=(\d+)/', $mimeType, $matches) === 1) {
+            return max(1, (int) $matches[1]);
+        }
+
+        return 24000;
+    }
+
+    private function wrapPcmAsWav(string $pcm, int $sampleRate = 24000, int $channels = 1, int $bitsPerSample = 16): string
+    {
+        $byteRate = $sampleRate * $channels * intdiv($bitsPerSample, 8);
+        $blockAlign = $channels * intdiv($bitsPerSample, 8);
+        $dataLength = strlen($pcm);
+
+        return 'RIFF'
+            . pack('V', 36 + $dataLength)
+            . 'WAVEfmt '
+            . pack('VvvVVvv', 16, 1, $channels, $sampleRate, $byteRate, $blockAlign, $bitsPerSample)
+            . 'data'
+            . pack('V', $dataLength)
+            . $pcm;
     }
 
     /**
@@ -378,7 +502,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::GEMINI);
+        return EngineEnum::Gemini;
     }
 
     /**
@@ -386,7 +510,7 @@ class GeminiEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(EntityEnum::GEMINI_1_5_FLASH);
+        return EntityEnum::from(EntityEnum::GEMINI_1_5_FLASH);
     }
 
     /**
@@ -441,7 +565,7 @@ class GeminiEngineDriver extends BaseEngineDriver
         }
 
         $split = app(ProviderToolPayloadMapper::class)->splitForProvider(
-            EngineEnum::GEMINI,
+            EngineEnum::Gemini->value,
             $request->getFunctions()
         );
 

@@ -323,7 +323,7 @@ class RequestRouteResolver
 
     protected function fallbackRouteForContentType(string $contentType): ?array
     {
-        $defaultEngine = (string) config('ai-engine.default', EngineEnum::OPENAI);
+        $defaultEngine = (string) config('ai-engine.default', EngineEnum::OpenAI->value);
         $priorities = array_values(array_unique(array_merge(
             [$defaultEngine],
             $this->providerPriority(null)
@@ -349,7 +349,7 @@ class RequestRouteResolver
             return false;
         }
 
-        if ($engine === EngineEnum::OPENROUTER) {
+        if ($engine === EngineEnum::OpenRouter->value) {
             return str_contains($model, '/')
                 || array_key_exists($model, (array) config('ai-engine.engines.openrouter.models', []))
                 || AIModel::active()->where('provider', 'openrouter')->where('model_id', $model)->exists();
@@ -376,11 +376,11 @@ class RequestRouteResolver
     {
         $config = (array) config("ai-engine.engines.{$engine}", []);
 
-        if ($engine === EngineEnum::OLLAMA) {
+        if ($engine === EngineEnum::Ollama->value) {
             return !empty($config['base_url']);
         }
 
-        if ($engine === EngineEnum::OPENROUTER) {
+        if ($engine === EngineEnum::OpenRouter->value) {
             return trim((string) ($config['api_key'] ?? '')) !== '';
         }
 
@@ -445,15 +445,15 @@ class RequestRouteResolver
         }
 
         $fallback = [
-            EngineEnum::OPENAI,
-            EngineEnum::ANTHROPIC,
-            EngineEnum::GEMINI,
-            EngineEnum::DEEPSEEK,
-            EngineEnum::OPENROUTER,
-            EngineEnum::OLLAMA,
-            EngineEnum::FAL_AI,
-            EngineEnum::STABLE_DIFFUSION,
-            EngineEnum::ELEVEN_LABS,
+            EngineEnum::OpenAI->value,
+            EngineEnum::Anthropic->value,
+            EngineEnum::Gemini->value,
+            EngineEnum::DeepSeek->value,
+            EngineEnum::OpenRouter->value,
+            EngineEnum::Ollama->value,
+            EngineEnum::FalAI->value,
+            EngineEnum::StableDiffusion->value,
+            EngineEnum::ElevenLabs->value,
         ];
 
         return array_values(array_unique(array_merge($resolved, $fallback)));
@@ -486,7 +486,7 @@ class RequestRouteResolver
     {
         try {
             $engine = (new \LaravelAIEngine\Enums\EntityEnum($modelId))->engine()->value;
-            return $engine === EngineEnum::OPENROUTER ? null : $engine;
+            return $engine === EngineEnum::OpenRouter->value ? null : $engine;
         } catch (\Throwable) {
             return null;
         }
@@ -504,10 +504,10 @@ class RequestRouteResolver
     protected function providerToEngine(string $provider): ?string
     {
         return match ($provider) {
-            'google' => EngineEnum::GEMINI,
-            'stability', 'stability_ai' => EngineEnum::STABLE_DIFFUSION,
-            'elevenlabs' => EngineEnum::ELEVEN_LABS,
-            'fal', 'falai', 'fal_ai' => EngineEnum::FAL_AI,
+            'google' => EngineEnum::Gemini->value,
+            'stability', 'stability_ai' => EngineEnum::StableDiffusion->value,
+            'elevenlabs' => EngineEnum::ElevenLabs->value,
+            'fal', 'falai', 'fal_ai' => EngineEnum::FalAI->value,
             'openai', 'anthropic', 'deepseek', 'perplexity', 'midjourney', 'openrouter', 'ollama', 'serper', 'unsplash' => $provider,
             default => null,
         };
@@ -516,10 +516,10 @@ class RequestRouteResolver
     protected function engineToProvider(string $engine): ?string
     {
         return match ($engine) {
-            EngineEnum::GEMINI => 'google',
-            EngineEnum::STABLE_DIFFUSION => 'stability',
-            EngineEnum::ELEVEN_LABS => 'elevenlabs',
-            EngineEnum::FAL_AI => 'fal_ai',
+            EngineEnum::Gemini->value         => 'google',
+            EngineEnum::StableDiffusion->value => 'stability',
+            EngineEnum::ElevenLabs->value     => 'elevenlabs',
+            EngineEnum::FalAI->value          => 'fal_ai',
             default => $engine,
         };
     }

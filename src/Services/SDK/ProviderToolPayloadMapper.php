@@ -68,15 +68,18 @@ class ProviderToolPayloadMapper
             'google_maps',
             'image_generation',
             'tool_search',
+            'hosted_shell',
+            'apply_patch',
+            'provider_skill',
         ], true);
     }
 
     protected function mapProviderTool(string $provider, array $tool): ?array
     {
         return match ($provider) {
-            EngineEnum::OPENAI => $this->mapOpenAITool($tool),
-            EngineEnum::ANTHROPIC => $this->mapAnthropicTool($tool),
-            EngineEnum::GEMINI => $this->mapGeminiTool($tool),
+            EngineEnum::OpenAI->value     => $this->mapOpenAITool($tool),
+            EngineEnum::Anthropic->value  => $this->mapAnthropicTool($tool),
+            EngineEnum::Gemini->value     => $this->mapGeminiTool($tool),
             default => null,
         };
     }
@@ -127,6 +130,24 @@ class ProviderToolPayloadMapper
                 'type' => 'tool_search',
                 'namespaces' => array_values((array) ($tool['namespaces'] ?? [])),
                 'max_results' => $tool['max_results'] ?? null,
+            ], static fn ($value): bool => $value !== null && $value !== []),
+            'hosted_shell' => array_filter([
+                'type' => 'hosted_shell',
+                'container' => array_replace_recursive(
+                    ['type' => 'auto'],
+                    (array) ($tool['container'] ?? [])
+                ),
+            ], static fn ($value): bool => $value !== null && $value !== []),
+            'apply_patch' => array_filter([
+                'type' => 'apply_patch',
+                'workspace' => $tool['workspace'] ?? null,
+                'allowed_paths' => array_values((array) ($tool['allowed_paths'] ?? [])),
+            ], static fn ($value): bool => $value !== null && $value !== []),
+            'provider_skill' => array_filter([
+                'type' => 'skill',
+                'name' => $tool['name'] ?? null,
+                'version' => $tool['version'] ?? null,
+                'input_schema' => (array) ($tool['input_schema'] ?? []),
             ], static fn ($value): bool => $value !== null && $value !== []),
             default => null,
         };
@@ -197,6 +218,7 @@ class ProviderToolPayloadMapper
                 ],
                 'tool_config' => $this->geminiMapsToolConfig($tool),
             ],
+            'code_interpreter' => ['codeExecution' => (object) []],
             default => null,
         };
     }

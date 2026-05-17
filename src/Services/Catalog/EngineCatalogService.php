@@ -114,7 +114,7 @@ class EngineCatalogService
     {
         $config = (array) config("ai-engine.engines.{$engine}", []);
 
-        if ($engine === EngineEnum::OLLAMA) {
+        if ($engine === EngineEnum::Ollama->value) {
             return !empty($config['base_url']);
         }
 
@@ -150,10 +150,10 @@ class EngineCatalogService
     protected function providerToEngine(string $provider): ?string
     {
         return match ($provider) {
-            'google' => EngineEnum::GEMINI,
-            'stability', 'stability_ai' => EngineEnum::STABLE_DIFFUSION,
-            'elevenlabs' => EngineEnum::ELEVEN_LABS,
-            'fal', 'falai', 'fal_ai' => EngineEnum::FAL_AI,
+            'google'                    => EngineEnum::Gemini->value,
+            'stability', 'stability_ai' => EngineEnum::StableDiffusion->value,
+            'elevenlabs'                => EngineEnum::ElevenLabs->value,
+            'fal', 'falai', 'fal_ai'   => EngineEnum::FalAI->value,
             'openai', 'anthropic', 'deepseek', 'perplexity', 'midjourney', 'azure', 'google_tts', 'serper', 'plagiarism_check', 'unsplash', 'pexels', 'openrouter', 'ollama' => $provider,
             default => null,
         };
@@ -162,10 +162,10 @@ class EngineCatalogService
     protected function engineToProvider(string $engine): string
     {
         return match ($engine) {
-            EngineEnum::GEMINI => 'google',
-            EngineEnum::STABLE_DIFFUSION => 'stability',
-            EngineEnum::ELEVEN_LABS => 'elevenlabs',
-            EngineEnum::FAL_AI => 'fal_ai',
+            EngineEnum::Gemini->value         => 'google',
+            EngineEnum::StableDiffusion->value => 'stability',
+            EngineEnum::ElevenLabs->value     => 'elevenlabs',
+            EngineEnum::FalAI->value          => 'fal_ai',
             default => $engine,
         };
     }

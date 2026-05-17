@@ -73,7 +73,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::STABLE_DIFFUSION;
+        return EngineEnum::StableDiffusion;
     }
 
     /**
@@ -92,8 +92,8 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
         try {
             $testRequest = new AIRequest(
                 prompt: 'A simple test image',
-                engine: EngineEnum::STABLE_DIFFUSION,
-                model: EntityEnum::STABLE_DIFFUSION_3_MEDIUM
+                engine: EngineEnum::StableDiffusion,
+                model: EntityEnum::from(EntityEnum::SD3_MEDIUM)
             );
             
             $response = $this->generateImage($testRequest);
@@ -292,7 +292,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::STABLE_DIFFUSION);
+        return EngineEnum::StableDiffusion;
     }
 
     /**
@@ -300,7 +300,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::SD3_LARGE;
+        return EntityEnum::from(EntityEnum::SD3_LARGE);
     }
 
     /**

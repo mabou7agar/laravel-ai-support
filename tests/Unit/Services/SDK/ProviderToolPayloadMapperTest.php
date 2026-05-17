@@ -7,11 +7,14 @@ namespace LaravelAIEngine\Tests\Unit\Services\SDK;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
 use LaravelAIEngine\Tests\UnitTestCase;
+use LaravelAIEngine\Tools\Provider\ApplyPatchTool;
 use LaravelAIEngine\Tools\Provider\CodeInterpreter;
 use LaravelAIEngine\Tools\Provider\ComputerUse;
 use LaravelAIEngine\Tools\Provider\FileSearch;
 use LaravelAIEngine\Tools\Provider\GoogleMapsGrounding;
+use LaravelAIEngine\Tools\Provider\HostedShell;
 use LaravelAIEngine\Tools\Provider\McpServer;
+use LaravelAIEngine\Tools\Provider\ProviderSkill;
 use LaravelAIEngine\Tools\Provider\WebFetch;
 use LaravelAIEngine\Tools\Provider\WebSearch;
 
@@ -91,5 +94,29 @@ class ProviderToolPayloadMapperTest extends UnitTestCase
         $this->assertArrayHasKey('googleMaps', $gemini['tools'][0]);
         $this->assertTrue($gemini['tools'][0]['googleMaps']['enableWidget']);
         $this->assertSame(30.0444, $gemini['tool_config']['toolConfig']['retrievalConfig']['latLng']['latitude']);
+    }
+
+    public function test_maps_new_provider_hosted_tool_shapes(): void
+    {
+        $mapper = new ProviderToolPayloadMapper();
+
+        $openai = $mapper->splitForProvider(EngineEnum::OPENAI, [
+            (new HostedShell())->container(['type' => 'auto', 'memory_limit' => '2g'])->toArray(),
+            (new ApplyPatchTool())->workspace('/workspace/app')->toArray(),
+            (new ProviderSkill('invoice_planner'))->version('v1')->inputSchema(['type' => 'object'])->toArray(),
+        ]);
+
+        $this->assertSame('hosted_shell', $openai['tools'][0]['type']);
+        $this->assertSame('2g', $openai['tools'][0]['container']['memory_limit']);
+        $this->assertSame('apply_patch', $openai['tools'][1]['type']);
+        $this->assertSame('/workspace/app', $openai['tools'][1]['workspace']);
+        $this->assertSame('skill', $openai['tools'][2]['type']);
+        $this->assertSame('invoice_planner', $openai['tools'][2]['name']);
+
+        $gemini = $mapper->splitForProvider(EngineEnum::GEMINI, [
+            (new CodeInterpreter())->toArray(),
+        ]);
+
+        $this->assertArrayHasKey('codeExecution', $gemini['tools'][0]);
     }
 }

@@ -69,7 +69,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::DEEPSEEK;
+        return EngineEnum::DeepSeek;
     }
 
     /**
@@ -88,8 +88,8 @@ class DeepSeekEngineDriver extends BaseEngineDriver
         try {
             $testRequest = new AIRequest(
                 prompt: 'Hello',
-                engine: EngineEnum::DEEPSEEK,
-                model: EntityEnum::DEEPSEEK_CHAT
+                engine: EngineEnum::DeepSeek,
+                model: EntityEnum::from(EntityEnum::DEEPSEEK_CHAT)
             );
 
             $response = $this->generateText($testRequest);
@@ -257,7 +257,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::DEEPSEEK);
+        return EngineEnum::DeepSeek;
     }
 
     /**
@@ -265,7 +265,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::DEEPSEEK_CHAT;
+        return EntityEnum::from(EntityEnum::DEEPSEEK_CHAT);
     }
 
     /**

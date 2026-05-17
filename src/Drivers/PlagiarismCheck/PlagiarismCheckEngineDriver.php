@@ -43,16 +43,12 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
     public function generate(AIRequest $request): AIResponse
     {
         try {
-            switch ($request->getModel()) {
-                case EntityEnum::PLAGIARISM_BASIC:
-                    return $this->checkPlagiarismBasic($request);
-                case EntityEnum::PLAGIARISM_ADVANCED:
-                    return $this->checkPlagiarismAdvanced($request);
-                case EntityEnum::PLAGIARISM_ACADEMIC:
-                    return $this->checkPlagiarismAcademic($request);
-                default:
-                    throw new AIEngineException("Entity {$request->getModel()->value} not supported by Plagiarism Check driver");
-            }
+            return match ($request->getModel()->value) {
+                EntityEnum::PLAGIARISM_BASIC    => $this->checkPlagiarismBasic($request),
+                EntityEnum::PLAGIARISM_ADVANCED => $this->checkPlagiarismAdvanced($request),
+                EntityEnum::PLAGIARISM_ACADEMIC => $this->checkPlagiarismAcademic($request),
+                default => throw new AIEngineException("Entity {$request->getModel()->value} not supported by Plagiarism Check driver"),
+            };
         } catch (RequestException $e) {
             throw new AIEngineException('Plagiarism Check API request failed: ' . $e->getMessage());
         }
@@ -149,7 +145,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::PLAGIARISM_CHECK,
+                'engine' => EngineEnum::PlagiarismCheck->value,
                 'check_type' => $request->getParameters()['check_type'] ?? 'basic',
                 'language' => $request->getParameters()['language'] ?? 'en',
                 'similarity_threshold' => $request->getParameters()['similarity_threshold'] ?? 15,
@@ -286,7 +282,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::PLAGIARISM_CHECK;
+        return EngineEnum::PlagiarismCheck;
     }
 
     public function supports(string $capability): bool

@@ -45,20 +45,14 @@ class AzureEngineDriver implements EngineDriverInterface
     public function generate(AIRequest $request): AIResponse
     {
         try {
-            switch ($request->getModel()) {
-                case EntityEnum::AZURE_TTS:
-                    return $this->generateSpeech($request);
-                case EntityEnum::AZURE_STT:
-                    return $this->transcribeAudio($request);
-                case EntityEnum::AZURE_TRANSLATOR:
-                    return $this->translateText($request);
-                case EntityEnum::AZURE_TEXT_ANALYTICS:
-                    return $this->analyzeText($request);
-                case EntityEnum::AZURE_COMPUTER_VISION:
-                    return $this->analyzeImage($request);
-                default:
-                    throw new AIEngineException("Entity {$request->getModel()->value} not supported by Azure driver");
-            }
+            return match ($request->getModel()->value) {
+                EntityEnum::AZURE_TTS             => $this->generateSpeech($request),
+                EntityEnum::AZURE_STT             => $this->transcribeAudio($request),
+                EntityEnum::AZURE_TRANSLATOR      => $this->translateText($request),
+                EntityEnum::AZURE_TEXT_ANALYTICS  => $this->analyzeText($request),
+                EntityEnum::AZURE_COMPUTER_VISION => $this->analyzeImage($request),
+                default => throw new AIEngineException("Entity {$request->getModel()->value} not supported by Azure driver"),
+            };
         } catch (RequestException $e) {
             throw new AIEngineException('Azure Cognitive Services API request failed: ' . $e->getMessage());
         }
@@ -107,7 +101,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE,
+                'engine' => EngineEnum::Azure->value,
                 'service' => 'text_to_speech',
                 'audio' => $audioData,
             ]
@@ -147,7 +141,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE,
+                'engine' => EngineEnum::Azure->value,
                 'service' => 'speech_to_text',
                 'transcription' => $transcriptionData,
             ]
@@ -193,7 +187,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE,
+                'engine' => EngineEnum::Azure->value,
                 'service' => 'translator',
                 'translation' => $translationData,
             ]
@@ -243,7 +237,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE,
+                'engine' => EngineEnum::Azure->value,
                 'service' => 'text_analytics',
                 'analysis' => $analysisData,
             ]
@@ -296,7 +290,7 @@ class AzureEngineDriver implements EngineDriverInterface
             ],
             metadata: [
                 'model' => $request->getModel()->value,
-                'engine' => EngineEnum::AZURE,
+                'engine' => EngineEnum::Azure->value,
                 'service' => 'computer_vision',
                 'vision' => $visionData,
             ]
@@ -382,43 +376,37 @@ class AzureEngineDriver implements EngineDriverInterface
     public function validateRequest(AIRequest $request): bool
     {
         // Check if model is supported
-        if (!in_array($request->getModel(), [
+        $modelValue = $request->getModel()->value;
+        if (!in_array($modelValue, [
             EntityEnum::AZURE_TTS,
             EntityEnum::AZURE_STT,
             EntityEnum::AZURE_TRANSLATOR,
             EntityEnum::AZURE_TEXT_ANALYTICS,
             EntityEnum::AZURE_COMPUTER_VISION,
-        ])) {
-            throw new AIEngineException("Model {$request->getModel()->value} is not supported by Azure driver");
+        ], true)) {
+            throw new AIEngineException("Model {$modelValue} is not supported by Azure driver");
         }
 
         // Validate based on service type
-        switch ($request->getModel()) {
-            case EntityEnum::AZURE_TTS:
-                if (empty($request->getPrompt())) {
-                    throw new AIEngineException('Text is required for text-to-speech');
-                }
-                break;
-
-            case EntityEnum::AZURE_STT:
-                if (empty($request->getParameters()['audio_file'])) {
-                    throw new AIEngineException('Audio file is required for speech-to-text');
-                }
-                break;
-
-            case EntityEnum::AZURE_COMPUTER_VISION:
-                if (empty($request->getParameters()['image_url']) && empty($request->getParameters()['image_file'])) {
-                    throw new AIEngineException('Image URL or file is required for computer vision');
-                }
-                break;
-        }
+        match ($modelValue) {
+            EntityEnum::AZURE_TTS => empty($request->getPrompt())
+                ? throw new AIEngineException('Text is required for text-to-speech')
+                : null,
+            EntityEnum::AZURE_STT => empty($request->getParameters()['audio_file'])
+                ? throw new AIEngineException('Audio file is required for speech-to-text')
+                : null,
+            EntityEnum::AZURE_COMPUTER_VISION => (empty($request->getParameters()['image_url']) && empty($request->getParameters()['image_file']))
+                ? throw new AIEngineException('Image URL or file is required for computer vision')
+                : null,
+            default => null,
+        };
 
         return true;
     }
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::AZURE;
+        return EngineEnum::Azure;
     }
 
     public function supports(string $capability): bool

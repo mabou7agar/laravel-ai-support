@@ -25,6 +25,14 @@ class EngineEnumTest extends TestCase
         $this->assertSame('openai', EngineEnum::OpenAI->value);
     }
 
+    public function test_engine_enum_exposes_stable_string_aliases_for_package_internals()
+    {
+        $this->assertSame(EngineEnum::OpenAI->value, EngineEnum::OPENAI);
+        $this->assertSame(EngineEnum::Anthropic->value, EngineEnum::ANTHROPIC);
+        $this->assertSame(EngineEnum::Gemini->value, EngineEnum::GEMINI);
+        $this->assertSame(EngineEnum::FalAI->value, EngineEnum::FAL_AI);
+    }
+
     protected function engine(string $value): EngineEnum
     {
         return EngineEnum::from($value);

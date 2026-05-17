@@ -48,7 +48,7 @@ class ComfyUIEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::COMFYUI);
+        return EngineEnum::ComfyUI;
     }
 
     public function getAvailableModels(): array
@@ -100,7 +100,7 @@ class ComfyUIEngineDriver extends BaseEngineDriver
 
             if (($request->getParameters()['async'] ?? false) === true || $promptId === '') {
                 return AIResponse::success('', $request->getEngine(), $request->getModel(), [
-                    'provider' => EngineEnum::COMFYUI,
+                    'provider' => EngineEnum::ComfyUI->value,
                     'prompt_id' => $promptId,
                     'status' => 'submitted',
                     'cost_tier' => 'local',
@@ -111,7 +111,7 @@ class ComfyUIEngineDriver extends BaseEngineDriver
             $files = $this->extractHistoryFiles($promptId, $history);
 
             return AIResponse::success('', $request->getEngine(), $request->getModel(), [
-                'provider' => EngineEnum::COMFYUI,
+                'provider' => EngineEnum::ComfyUI->value,
                 'prompt_id' => $promptId,
                 'cost_tier' => 'local',
             ])->withFiles($files)->withUsage(creditsUsed: 0.0);
@@ -172,12 +172,12 @@ class ComfyUIEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::COMFYUI);
+        return EngineEnum::ComfyUI;
     }
 
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(EntityEnum::COMFYUI_DEFAULT_IMAGE);
+        return EntityEnum::from(EntityEnum::COMFYUI_DEFAULT_IMAGE);
     }
 
     protected function validateConfig(): void

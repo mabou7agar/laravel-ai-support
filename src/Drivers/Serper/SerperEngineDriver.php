@@ -60,7 +60,7 @@ class SerperEngineDriver extends BaseEngineDriver
      */
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::SERPER;
+        return EngineEnum::Serper;
     }
 
     /**
@@ -79,8 +79,8 @@ class SerperEngineDriver extends BaseEngineDriver
         try {
             $testRequest = new AIRequest(
                 prompt: 'test search',
-                engine: EngineEnum::SERPER,
-                model: EntityEnum::SERPER_SEARCH
+                engine: EngineEnum::Serper,
+                model: EntityEnum::from(EntityEnum::SERPER_SEARCH)
             );
             
             $response = $this->searchWeb($testRequest);
@@ -284,7 +284,7 @@ class SerperEngineDriver extends BaseEngineDriver
      */
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::SERPER);
+        return EngineEnum::Serper;
     }
 
     /**
@@ -292,7 +292,7 @@ class SerperEngineDriver extends BaseEngineDriver
      */
     protected function getDefaultModel(): EntityEnum
     {
-        return EntityEnum::SERPER_SEARCH;
+        return EntityEnum::from(EntityEnum::SERPER_SEARCH);
     }
 
     /**

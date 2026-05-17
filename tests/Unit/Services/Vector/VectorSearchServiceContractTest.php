@@ -1,12 +1,14 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaravelAIEngine\Tests\Unit\Services\Vector;
 
 use Illuminate\Database\Eloquent\Model;
+use LaravelAIEngine\Services\Tenant\MultiTenantVectorService;
 use LaravelAIEngine\Services\Vector\ChunkingService;
 use LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
-use LaravelAIEngine\Services\Tenant\MultiTenantVectorService;
 use LaravelAIEngine\Services\Vector\VectorAccessControl;
 use LaravelAIEngine\Services\Vector\VectorDriverManager;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
@@ -15,7 +17,7 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class VectorSearchServiceContractTest extends UnitTestCase
 {
-    public function test_index_prefers_search_document_chunks_and_metadata(): void
+    public function test_indexes_multi_chunk_document_using_search_document_chunks_and_metadata(): void
     {
         config()->set('ai-engine.vector.multi_chunk_enabled', true);
         config()->set('ai-engine.vector.max_content_size', 5500);
@@ -44,17 +46,15 @@ class VectorSearchServiceContractTest extends UnitTestCase
         $embeddingService = $this->createMock(EmbeddingService::class);
         $embeddingService->expects($this->exactly(2))
             ->method('embed')
-            ->with($this->callback(fn (string $text): bool => in_array($text, ['alpha', 'beta'], true)))
+            ->with($this->callback(static fn (string $text): bool => in_array($text, ['alpha', 'beta'], true)))
             ->willReturn([0.1, 0.2, 0.3]);
-
-        $accessControl = $this->createMock(VectorAccessControl::class);
 
         $service = new VectorSearchService(
             $driverManager,
             $embeddingService,
-            $accessControl,
-            $this->app->make(SearchDocumentBuilder::class),
-            $this->app->make(ChunkingService::class)
+            $this->createMock(VectorAccessControl::class),
+            app(SearchDocumentBuilder::class),
+            app(ChunkingService::class)
         );
 
         $model = new class extends Model {
@@ -79,7 +79,7 @@ class VectorSearchServiceContractTest extends UnitTestCase
         $this->assertTrue($service->index($model));
     }
 
-    public function test_delete_from_index_removes_chunk_ids_for_same_model(): void
+    public function test_deletes_only_chunk_ids_belonging_to_the_same_model_from_the_index(): void
     {
         $driver = $this->createMock(VectorDriverInterface::class);
         $driver->expects($this->exactly(2))
@@ -111,8 +111,8 @@ class VectorSearchServiceContractTest extends UnitTestCase
             $driverManager,
             $this->createMock(EmbeddingService::class),
             $this->createMock(VectorAccessControl::class),
-            $this->app->make(SearchDocumentBuilder::class),
-            $this->app->make(ChunkingService::class)
+            app(SearchDocumentBuilder::class),
+            app(ChunkingService::class)
         );
 
         $model = new class extends Model {
@@ -123,24 +123,25 @@ class VectorSearchServiceContractTest extends UnitTestCase
         $this->assertTrue($service->deleteFromIndex($model));
     }
 
-    public function test_index_metadata_reuses_tenant_workspace_scope_shape(): void
+    public function test_stores_tenant_and_workspace_scope_metadata_on_indexed_vectors(): void
     {
         config()->set('ai-engine.vector.multi_chunk_enabled', false);
+
+        $expectedScopeKey = sha1(json_encode([
+            'tenant_id' => 'tenant-1',
+            'workspace_id' => 'workspace-9',
+        ], JSON_THROW_ON_ERROR));
 
         $driver = $this->createMock(VectorDriverInterface::class);
         $driver->expects($this->once())
             ->method('upsert')
             ->with(
                 'vec_scoped_records',
-                $this->callback(function (array $points): bool {
+                $this->callback(function (array $points) use ($expectedScopeKey): bool {
                     $metadata = $points[0]['metadata'];
-
                     $this->assertSame('tenant-1', $metadata['tenant_id']);
                     $this->assertSame('workspace-9', $metadata['workspace_id']);
-                    $this->assertSame(sha1(json_encode([
-                        'tenant_id' => 'tenant-1',
-                        'workspace_id' => 'workspace-9',
-                    ], JSON_THROW_ON_ERROR)), $metadata['scope_key']);
+                    $this->assertSame($expectedScopeKey, $metadata['scope_key']);
 
                     return true;
                 })
@@ -159,8 +160,8 @@ class VectorSearchServiceContractTest extends UnitTestCase
             $driverManager,
             $embeddingService,
             $this->createMock(VectorAccessControl::class),
-            $this->app->make(SearchDocumentBuilder::class),
-            $this->app->make(ChunkingService::class),
+            app(SearchDocumentBuilder::class),
+            app(ChunkingService::class),
             new MultiTenantVectorService()
         );
 

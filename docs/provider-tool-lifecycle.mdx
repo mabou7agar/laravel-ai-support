@@ -7,7 +7,9 @@ Laravel AI Engine records provider-hosted tool work in four reusable tables:
 - `ai_provider_tool_artifacts` stores generated files, provider file IDs, containers, and citations.
 - `ai_provider_tool_audit_events` stores approval and run lifecycle events.
 
-Tools such as `computer_use`, `mcp_server`, and `code_interpreter` require approval by default. Apps can approve a pending request with `ProviderToolApprovalService::approve($approvalKey)` and retry the AI request with:
+Tools such as `computer_use`, `mcp_server`, and `code_interpreter` require approval by default. Apps can also expose provider-hosted tools such as OpenAI hosted shell, apply patch, provider skills, and Gemini code execution through the same mapper and lifecycle services.
+
+Apps can approve a pending request with `ProviderToolApprovalService::approve($approvalKey)` and retry the AI request with:
 
 ```php
 $request = $request->withMetadata([
@@ -17,6 +19,22 @@ $request = $request->withMetadata([
 ```
 
 Hosted artifacts are extracted from provider responses and linked to `ai_media` when a downloadable file URL is returned. Citation URLs are audited without downloading the source page.
+
+Remote persistence is guarded by package config:
+
+```php
+'provider_tools' => [
+    'artifacts' => [
+        'persist_remote_files' => true,
+        'block_private_urls' => true,
+        'max_remote_bytes' => 50 * 1024 * 1024,
+        'allowed_extensions' => ['png', 'jpg', 'mp4', 'wav', 'pdf', 'csv', 'json'],
+        'allowed_mime_types' => ['image/*', 'video/*', 'audio/*', 'application/pdf', 'text/*'],
+    ],
+],
+```
+
+Keep `block_private_urls` enabled for user-facing apps. It prevents package-managed downloads from `localhost`, private IPs, and reserved IP ranges while still recording the artifact row for audit and manual handling.
 
 Generic FAL catalog models synced into `ai_models` can execute through the FAL driver. The request parameters become the endpoint payload, and the prompt is mapped to `prompt` unless the synced schema declares another prompt-like field.
 

@@ -31,10 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pest bootstrap** — `pestphp/pest` is declared for Laravel teams that prefer Pest syntax, while the existing PHPUnit suite remains supported.
 - **Token estimation profiles** — `TokenCalculator` now detects latin, code, and CJK text profiles and exposes configurable character-per-token ratios through `ai-engine.token_estimation.profiles`.
 - **Node and chunking coverage** — added dedicated tests for `NodeHttpClient` header forwarding and `ContentChunker` token-budget behavior.
+- **Provider-hosted tool parity** — added provider tool descriptors for OpenAI hosted shell, apply patch, and provider skills; Gemini code execution now maps through the existing `CodeInterpreter` provider tool.
+- **Gemini native TTS** — added Gemini TTS aliases and native `generateContent` audio handling. Inline PCM responses are wrapped as WAV files and stored through the media disk.
+- **Realtime session options** — `RealtimeSessionConfig` now supports audio formats, turn detection, temperature, max response tokens, and provider-specific option passthrough.
+- **Hosted artifact hardening** — remote artifact persistence now blocks private/local URLs by default and supports configured extension, MIME type, and size guards.
 
 ### Fixed
 
-- **Broken facade auto-alias** — removed the stale `AIEngine` auto-alias that pointed to a non-existent facade class. The supported facade remains `LaravelAIEngine\Facades\Engine`.
+- **Broken facade auto-alias** — added `LaravelAIEngine\Facades\AIEngine` as an alias facade for the existing `Engine` facade so Laravel auto-alias resolution no longer crashes on boot.
 - **Duplicate migration timestamps** — `create_ai_job_statuses_table` and `create_credit_packages_table` now use unique migration timestamps, so fresh installs have deterministic ordering.
 - **AIEngineFake safe surface** — `AIEngineFake` no longer depends on real engine or memory services and overrides the public manager API used in tests.
 - **OpenAI client resolution without a key** — OpenAI-backed services can now be resolved without `OPENAI_API_KEY`; a clear error is thrown only when an OpenAI resource is actually used.
@@ -44,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`EngineEnum` is now a native PHP 8.1 backed enum** while preserving string constants for config and array-key usage.
+- **Gemini media routing** now defaults `audio_generation` to native Gemini TTS and keeps `lyria-002` under `music_generation`.
 - **Published config is annotated** instead of being a minimal delegation file, so apps get visible defaults for engines, token estimation, vector settings, cache, credits, and debug toggles.
 - **Strict typing is enabled across source files** with `declare(strict_types=1);`.
 - **Token calculations no longer use a single hardcoded characters-per-token heuristic** in base drivers, vector chunking, embedding fallback accounting, and vectorization truncation.

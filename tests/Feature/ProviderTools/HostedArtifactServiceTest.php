@@ -140,4 +140,33 @@ class HostedArtifactServiceTest extends TestCase
             'provider_file_id' => 'manual_file',
         ]);
     }
+
+    public function test_hosted_artifact_persistence_blocks_unsafe_remote_urls_and_disallowed_extensions(): void
+    {
+        Storage::fake('public');
+        Http::preventStrayRequests();
+
+        config()->set('ai-engine.provider_tools.artifacts.block_private_urls', true);
+        config()->set('ai-engine.provider_tools.artifacts.allowed_extensions', ['png']);
+        config()->set('ai-engine.provider_tools.artifacts.allowed_mime_types', ['image/png']);
+
+        $run = app(ProviderToolRunRepository::class)->create([
+            'uuid' => (string) Str::uuid(),
+            'provider' => 'openai',
+            'engine' => 'openai',
+            'ai_model' => 'gpt-4o',
+            'status' => 'running',
+            'tool_names' => ['code_interpreter'],
+            'request_payload' => [],
+            'metadata' => [],
+        ]);
+
+        $artifacts = app(HostedArtifactService::class)->recordFromProviderResponse($run, [
+            'image_url' => 'http://127.0.0.1/private.png',
+            'file_url' => 'https://cdn.example.test/result.php',
+        ]);
+
+        $this->assertCount(2, $artifacts);
+        $this->assertSame(0, AIProviderToolArtifact::query()->whereNotNull('media_id')->count());
+    }
 }

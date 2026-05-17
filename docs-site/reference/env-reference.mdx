@@ -45,6 +45,20 @@ NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
 NVIDIA_NIM_DEFAULT_MODEL=nvidia/llama-3.1-nemotron-70b-instruct
 ```
 
+Gemini native TTS uses `GEMINI_API_KEY`. Google Cloud Text-to-Speech remains separate and uses `GOOGLE_TTS_API_KEY` or `GOOGLE_TTS_ACCESS_TOKEN`.
+
+## Provider Tool Artifacts
+
+```env
+AI_ENGINE_PROVIDER_TOOL_ARTIFACTS_ENABLED=true
+AI_ENGINE_PROVIDER_TOOL_PERSIST_REMOTE_ARTIFACTS=true
+AI_ENGINE_PROVIDER_TOOL_MAX_ARTIFACTS=100
+AI_ENGINE_PROVIDER_TOOL_MAX_REMOTE_ARTIFACT_BYTES=52428800
+AI_ENGINE_PROVIDER_TOOL_BLOCK_PRIVATE_ARTIFACT_URLS=true
+```
+
+Allowed artifact MIME types and extensions are configured in `config/ai-engine.php` because they are arrays. Keep private URL blocking enabled for user-facing apps.
+
 Optional live provider matrices:
 
 ```env

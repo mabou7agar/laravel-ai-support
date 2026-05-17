@@ -55,7 +55,7 @@ class HuggingFaceEngineDriver extends BaseEngineDriver
 
     public function getEngine(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::HUGGINGFACE);
+        return EngineEnum::HuggingFace;
     }
 
     public function getAvailableModels(): array
@@ -102,7 +102,7 @@ class HuggingFaceEngineDriver extends BaseEngineDriver
         $data = json_decode($response->getBody()->getContents(), true) ?: [];
 
         return AIResponse::success((string) ($data['text'] ?? ''), $request->getEngine(), $request->getModel(), [
-            'provider' => EngineEnum::HUGGINGFACE,
+            'provider' => EngineEnum::HuggingFace->value,
             'raw' => $data,
         ])->withUsage(creditsUsed: $request->getModel()->creditIndex());
     }
@@ -131,7 +131,7 @@ class HuggingFaceEngineDriver extends BaseEngineDriver
             }
 
             return AIResponse::success('', $request->getEngine(), $request->getModel(), [
-                'provider' => EngineEnum::HUGGINGFACE,
+                'provider' => EngineEnum::HuggingFace->value,
                 'model' => $request->getModel()->value,
             ])->withFiles($files)->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
         } catch (RequestException $e) {
@@ -163,12 +163,12 @@ class HuggingFaceEngineDriver extends BaseEngineDriver
 
     protected function getEngineEnum(): EngineEnum
     {
-        return EngineEnum::from(EngineEnum::HUGGINGFACE);
+        return EngineEnum::HuggingFace;
     }
 
     protected function getDefaultModel(): EntityEnum
     {
-        return new EntityEnum(EntityEnum::HUGGINGFACE_FLUX_SCHNELL);
+        return EntityEnum::from(EntityEnum::HUGGINGFACE_FLUX_SCHNELL);
     }
 
     protected function validateConfig(): void
