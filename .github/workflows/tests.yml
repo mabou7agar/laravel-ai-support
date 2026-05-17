@@ -31,4 +31,15 @@ jobs:
         run: composer update --prefer-dist --no-interaction
 
       - name: Run tests
-        run: vendor/bin/phpunit --order-by=default --display-errors --display-warnings --display-deprecations --display-notices
+        run: |
+          set +e
+          vendor/bin/phpunit --order-by=default --display-errors --display-warnings --display-deprecations --display-notices 2>&1 | tee /tmp/phpunit.log
+          status=${PIPESTATUS[0]}
+
+          if [ "$status" -ne 0 ]; then
+            tail -n 120 /tmp/phpunit.log
+            message=$(tail -n 40 /tmp/phpunit.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=PHPUnit failed::$message"
+          fi
+
+          exit "$status"
