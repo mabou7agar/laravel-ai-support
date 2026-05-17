@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No changes yet.
+
+---
+
+## [2.2.33] — 2026-05-17
+
 ### Added
 
 - **PexelsEngineDriver** — new image-search driver backed by the Pexels API, with `PEXELS` constant in `EngineEnum` and `PEXELS_SEARCH` support wired through `EntityEnum`.
@@ -255,7 +261,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v2.2.33...HEAD
+[2.2.33]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.5.0...v2.2.33
 [1.5.0]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.2.0...v1.3.0
