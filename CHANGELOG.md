@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Committed PHPUnit configuration** — added `phpunit.xml.dist` so clean clones and GitHub Actions run the package suite instead of exiting with PHPUnit usage output.
 - **Laravel 13 install compatibility** — widened Illuminate package constraints to include Laravel 13 after validating clean package discovery, config publishing, migrations, and health command execution.
 - **CI determinism** — package tests now run in default order in CI and use `actions/checkout@v5`, removing random-order flakiness and the Node 20 checkout deprecation warning.
+- **Job test isolation** — `ProcessAIRequestJobTest` now uses the lightweight package unit base so CI does not open nested SQLite transactions for non-database job assertions.
 - **Broken facade auto-alias** — added `LaravelAIEngine\Facades\AIEngine` as an alias facade for the existing `Engine` facade so Laravel auto-alias resolution no longer crashes on boot.
 - **Duplicate migration timestamps** — `create_ai_job_statuses_table` and `create_credit_packages_table` now use unique migration timestamps, so fresh installs have deterministic ordering.
 - **AIEngineFake safe surface** — `AIEngineFake` no longer depends on real engine or memory services and overrides the public manager API used in tests.

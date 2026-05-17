@@ -2,7 +2,6 @@
 
 namespace LaravelAIEngine\Tests\Unit\Jobs;
 
-use LaravelAIEngine\Tests\TestCase;
 use LaravelAIEngine\Jobs\ProcessAIRequestJob;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
@@ -10,10 +9,11 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\JobStatusTracker;
+use LaravelAIEngine\Tests\UnitTestCase;
 use Illuminate\Support\Facades\Event;
 use Mockery;
 
-class ProcessAIRequestJobTest extends TestCase
+class ProcessAIRequestJobTest extends UnitTestCase
 {
     public function test_job_processes_ai_request_successfully()
     {
