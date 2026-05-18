@@ -39,6 +39,7 @@ Source of truth: `composer.json`.
 composer require m-tech-stack/laravel-ai-engine
 php artisan vendor:publish --tag=ai-engine-config
 php artisan vendor:publish --tag=ai-engine-migrations
+php artisan vendor:publish --tag=ai-engine-collection-ui
 php artisan migrate
 ```
 
@@ -184,12 +185,15 @@ $collection = StructuredCollectionDefinition::make('lead_capture')
         ['value' => 'advanced', 'labels' => ['en' => 'Advanced', 'ar' => 'متقدم']],
     ])
     ->addTextarea('notes')
+    ->withPreview('html')
     ->confirmBeforeComplete()
     ->closeOnComplete()
     ->callbackUrl('https://app.test/api/ai/lead-callback');
 ```
 
 Pass `$collection->toArray()` as the chat `collection` option. `addField()` remains the generic JSON-schema escape hatch, while helpers such as `addText()`, `addEmail()`, `addDate()`, `addSelect()`, and `addMultiSelect()` add schema plus UI metadata. The agent extracts canonical values, asks for missing values in the user's language, returns localized `collection.fields` options for frontends, asks for confirmation, closes the session, then sends the completed JSON payload to the callback and fires `AgentStructuredCollectionCompleted`.
+
+`withPreview('html')` adds a safe package-rendered preview under `collection.preview`; the HTML is escaped and uses external assets from `/vendor/ai-engine/structured-collection.css` and `/vendor/ai-engine/structured-collection.js`. Use `withPreview('component')` when the frontend should render the package component contract itself.
 
 ### Federation (Safe Flow)
 
@@ -540,10 +544,22 @@ OPENROUTER_MAX_COMPLETION_PRICE=0
 
 Per request, pass `cost_optimization: true` plus an optional `models` list when one workflow should use a specific free/cheap pool. The driver sends OpenRouter `models` fallbacks and `provider.sort.by=price`; it keeps the requested model as a paid fallback unless disabled.
 
+Provider shortcuts are available for built-in engines, so common calls can use the provider name directly while keeping `engine('provider')` as the explicit escape hatch:
+
+```php
+$response = Engine::openai()
+    ->model('gpt-4o-mini')
+    ->generate('Summarize this ticket');
+
+$image = Engine::fal()
+    ->model('fal-ai/flux-pro')
+    ->generateImage('A clean product mockup on a white desk');
+```
+
 Use `withProviderOptions()` when a provider adds fields faster than the package API. Normal chat/media requests now support generic and provider-specific passthrough options:
 
 ```php
-$response = Engine::engine('openrouter')
+$response = Engine::openrouter()
     ->model('openai/gpt-4o-mini')
     ->withProviderOptions([
         'provider' => [

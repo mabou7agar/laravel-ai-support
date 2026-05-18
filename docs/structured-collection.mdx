@@ -1,0 +1,170 @@
+# Structured Collection
+
+Structured collection lets chat gather a target JSON object, ask for missing required fields, confirm the result, close the session, and call back with the final payload.
+
+The package keeps field keys and stored values stable. The assistant can speak in the user's language, but JSON keys and select values stay canonical.
+
+## Builder API
+
+```php
+use LaravelAIEngine\DTOs\StructuredCollectionDefinition;
+
+$collection = StructuredCollectionDefinition::make('lead_capture')
+    ->description('Collect lead details from chat.')
+    ->addText('name', required: true, description: 'Lead name')
+    ->addEmail('email', required: true)
+    ->addSelect('level', [
+        ['value' => 'beginner', 'labels' => ['en' => 'Beginner', 'ar' => 'مبتدئ']],
+        ['value' => 'advanced', 'labels' => ['en' => 'Advanced', 'ar' => 'متقدم']],
+    ], required: true)
+    ->addTextarea('notes')
+    ->withPreview('html')
+    ->confirmBeforeComplete()
+    ->closeOnComplete()
+    ->callbackUrl('https://app.test/api/ai/lead-callback', headers: [
+        'Authorization' => 'Bearer '.config('services.ai_callback.token'),
+    ]);
+```
+
+`addField()` remains the generic JSON-schema method. Convenience builders add schema plus UI metadata:
+
+```php
+addText()
+addTextarea()
+addEmail()
+addUrl()
+addPhone()
+addNumber()
+addInteger()
+addBoolean()
+addDate()
+addDateTime()
+addTime()
+addSelect()
+addMultiSelect()
+addRadio()
+addCheckboxes()
+addFile()
+addHidden()
+addJson()
+addArray()
+addObject()
+```
+
+## ChatService Usage
+
+```php
+$response = app(\LaravelAIEngine\Services\ChatService::class)->processMessage(
+    message: 'اسمي أحمد ومستواي مبتدئ',
+    sessionId: 'lead-session-123',
+    userId: 'user-uuid',
+    extraOptions: [
+        'collection' => $collection->toArray(),
+    ],
+);
+```
+
+## API Usage
+
+```json
+{
+  "message": "اسمي أحمد ومستواي مبتدئ",
+  "session_id": "lead-session-123",
+  "memory": false,
+  "actions": false,
+  "use_rag": false,
+  "collection": {
+    "name": "lead_capture",
+    "schema": {
+      "type": "object",
+      "required": ["name", "email", "level"],
+      "properties": {
+        "name": {"type": "string", "metadata": {"ui": "text"}},
+        "email": {"type": "string", "format": "email", "metadata": {"ui": "email"}},
+        "level": {
+          "type": "string",
+          "enum": ["beginner", "advanced"],
+          "metadata": {
+            "ui": "select",
+            "options": [
+              {"value": "beginner", "labels": {"en": "Beginner", "ar": "مبتدئ"}},
+              {"value": "advanced", "labels": {"en": "Advanced", "ar": "متقدم"}}
+            ]
+          }
+        }
+      }
+    },
+    "presentation": {
+      "preview": true,
+      "mode": "html"
+    },
+    "confirm_before_complete": true,
+    "close_on_complete": true,
+    "callback": {"type": "event"}
+  }
+}
+```
+
+## Response Shape
+
+Select-like fields return canonical values in `data` and localized labels in `fields`:
+
+```json
+{
+  "collection": {
+    "name": "lead_capture",
+    "status": "collecting",
+    "data": {
+      "name": "أحمد",
+      "level": "beginner"
+    },
+    "missing_fields": ["email"],
+    "language": "ar",
+    "fields": [
+      {
+        "name": "level",
+        "type": "string",
+        "ui": "select",
+        "required": true,
+        "options": [
+          {"value": "beginner", "label": "مبتدئ"},
+          {"value": "advanced", "label": "متقدم"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+When all required fields are present, the package renders the confirmation summary deterministically so optional fields cannot leak into the confirmation prompt.
+
+## Completion Callback
+
+When the user confirms, the callback receives:
+
+```json
+{
+  "session_id": "lead-session-123",
+  "user_id": "user-uuid",
+  "status": "completed",
+  "collection": "lead_capture",
+  "data": {
+    "name": "Ahmed",
+    "email": "ahmed@example.com",
+    "level": "beginner"
+  },
+  "metadata": {
+    "language": "ar",
+    "confirmed": true,
+    "completed_at": "2026-05-18T01:30:00+03:00"
+  }
+}
+```
+
+Every completion also fires `LaravelAIEngine\Events\AgentStructuredCollectionCompleted`, so apps can use Laravel listeners instead of HTTP callbacks by setting `callback.type` to `event`.
+
+## Preview Modes
+
+Use `withPreview('html')` for quick chat previews, `withPreview('component')` for frontend-rendered components, or `withPreview('schema')` for schema-only preview payloads.
+
+See [Frontend previews](frontend-preview.mdx) for rendering and security guidance.

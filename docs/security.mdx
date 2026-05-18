@@ -1,0 +1,73 @@
+# Security
+
+Laravel AI Engine exposes powerful capabilities: hosted tools, web search, code execution, computer use, callbacks, generated files, vector retrieval, and app actions. Keep these capabilities explicit and scoped.
+
+## Hosted Tools
+
+Treat these tools as high-risk by default:
+
+- computer use
+- remote MCP
+- code execution
+- hosted shell
+- apply patch
+- provider skills that can call external systems
+
+Use the provider tool approval layer before exposing them to end users. Approvals and audit events are persisted through the provider tool lifecycle tables.
+
+## Preview HTML
+
+Structured collection previews are package-rendered and escaped. The package does not ask AI to return HTML or JavaScript.
+
+Recommended defaults:
+
+- Use `component` mode when your frontend framework can render the form.
+- Use `html` mode only in trusted chat surfaces.
+- Keep JavaScript in published external assets.
+- Use CSP in production.
+- Never execute HTML returned directly by a model.
+
+## Callback URLs
+
+Callbacks are server-to-server integrations. Protect them with app tokens:
+
+```php
+->callbackUrl('https://app.test/api/ai/lead-callback', headers: [
+    'Authorization' => 'Bearer '.config('services.ai_callback.token'),
+])
+```
+
+Callbacks should be idempotent. Store the `session_id`, collection name, user id, and final data hash before writing business records.
+
+## Tenant, Workspace, And User Scope
+
+Do not rely on vector metadata alone for authorization. Use SQL/application records as the source of truth.
+
+Recommended pattern:
+
+1. Pass `user_id`, `tenant_id`, and `workspace_id` through request context.
+2. Filter retrieval with metadata for recall quality.
+3. Rehydrate candidate records through repositories.
+4. Enforce ownership in application services before returning or writing data.
+
+## Hosted Artifacts
+
+Remote artifact persistence rejects private/local URLs by default. Keep private URL blocking enabled for user-facing apps:
+
+```php
+'provider_tools' => [
+    'artifacts' => [
+        'persist_remote_files' => true,
+        'block_private_urls' => true,
+        'max_remote_bytes' => 50 * 1024 * 1024,
+        'allowed_extensions' => ['png', 'jpg', 'mp4', 'wav', 'pdf', 'csv', 'json'],
+        'allowed_mime_types' => ['image/*', 'video/*', 'audio/*', 'application/pdf', 'text/*'],
+    ],
+],
+```
+
+## Credit Guards
+
+Synchronous media services check credits before provider calls and only deduct after successful provider responses. Async FAL video jobs reserve credits before submission and finalize only after the provider accepts or completes the job.
+
+Use [Pricing and billing](pricing-billing.mdx) to audit rates and prevent accidental free or discounted production usage.

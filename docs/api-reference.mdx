@@ -1,0 +1,170 @@
+# API Reference
+
+This page summarizes the package HTTP surfaces most apps use directly. Route registration is versioned under `/api/v1/...`.
+
+## Agent Chat
+
+```http
+POST /api/v1/agent/chat
+Accept: application/json
+Content-Type: application/json
+```
+
+```json
+{
+  "message": "Create an invoice for Ahmed",
+  "session_id": "thread-123",
+  "engine": "openai",
+  "model": "gpt-4o-mini",
+  "memory": true,
+  "actions": true,
+  "use_rag": true,
+  "response_points_format": "array",
+  "response_suggestions": true,
+  "response_suggestion_limit": 5
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "response": "What email should I use for Ahmed?",
+    "rag_enabled": false,
+    "sources": [],
+    "response_points": [],
+    "suggestions": [],
+    "collection": null,
+    "actions": [],
+    "usage": [],
+    "session_id": "thread-123"
+  },
+  "meta": {
+    "status_code": 200,
+    "schema": "ai-engine.v1"
+  }
+}
+```
+
+## Structured Output
+
+```php
+$response = Engine::openai()
+    ->withStructuredOutput([
+        'type' => 'object',
+        'properties' => [
+            'answer' => ['type' => 'string'],
+        ],
+        'required' => ['answer'],
+        'additionalProperties' => false,
+    ], name: 'answer_payload')
+    ->generate('Return a short answer.');
+```
+
+`withStructuredOutput()` accepts a JSON schema array or `LaravelAIEngine\DTOs\StructuredOutputSchema`. OpenAI-compatible drivers emit a native `response_format` JSON schema payload; Gemini emits `responseMimeType` and `responseSchema`.
+
+## Engine Facade Shortcuts
+
+```php
+$text = Engine::openai()
+    ->model('gpt-4o-mini')
+    ->generate('Write a concise summary.');
+
+$image = Engine::fal()
+    ->model('fal-ai/flux-pro')
+    ->generateImage('A neutral product photo');
+
+$response = Engine::engine($providerSlug)
+    ->model($model)
+    ->generate($prompt);
+```
+
+Shortcuts return the same `EngineProxy` as `Engine::engine('provider')`. Use shortcuts for static provider choices and `engine($slug)` when tenant, workspace, or runtime policy selects the provider dynamically.
+
+## Structured Collection Payload
+
+```json
+{
+  "message": "اسمي أحمد ومستواي مبتدئ",
+  "session_id": "lead-session-123",
+  "collection": {
+    "name": "lead_capture",
+    "schema": {
+      "type": "object",
+      "required": ["name", "email", "level"],
+      "properties": {
+        "name": {"type": "string", "metadata": {"ui": "text"}},
+        "email": {"type": "string", "format": "email", "metadata": {"ui": "email"}},
+        "level": {
+          "type": "string",
+          "enum": ["beginner", "advanced"],
+          "metadata": {
+            "ui": "select",
+            "options": [
+              {"value": "beginner", "labels": {"en": "Beginner", "ar": "مبتدئ"}},
+              {"value": "advanced", "labels": {"en": "Advanced", "ar": "متقدم"}}
+            ]
+          }
+        }
+      }
+    },
+    "presentation": {"preview": true, "mode": "html"},
+    "confirm_before_complete": true,
+    "close_on_complete": true,
+    "callback": {"type": "event"}
+  }
+}
+```
+
+## Provider Tools
+
+```http
+GET /api/v1/ai/provider-tools/runs
+GET /api/v1/ai/provider-tools/runs/{run}
+POST /api/v1/ai/provider-tools/runs/{run}/continue
+GET /api/v1/ai/provider-tools/approvals
+POST /api/v1/ai/provider-tools/approvals/{approvalKey}/approve
+POST /api/v1/ai/provider-tools/approvals/{approvalKey}/reject
+GET /api/v1/ai/provider-tools/artifacts
+GET /api/v1/ai/provider-tools/artifacts/{artifact}/download
+POST /api/v1/ai/provider-tools/fal/catalog/execute
+POST /api/v1/ai/provider-tools/fal/catalog/webhook
+```
+
+## MCP And Realtime
+
+```http
+GET /api/v1/ai/mcp/tools
+POST /api/v1/ai/mcp/tools/{tool}/call
+POST /api/v1/ai/realtime/tools/dispatch
+```
+
+## Pricing Preview
+
+```http
+POST /api/v1/ai/pricing/preview
+Content-Type: application/json
+```
+
+```json
+{
+  "engine": "fal_ai",
+  "model": "fal-ai/kling-video/o3/standard/image-to-video",
+  "prompt": "Animate this product",
+  "parameters": {
+    "image_url": "https://example.test/product.png"
+  }
+}
+```
+
+The preview endpoint never calls providers and never deducts credits.
+
+## Health
+
+```http
+GET /api/v1/ai/health
+```
+
+Use this for load balancer readiness and deployment health checks.

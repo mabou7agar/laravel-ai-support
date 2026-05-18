@@ -29,6 +29,10 @@ class StructuredCollectionDefinition
             'properties' => is_array($data['fields'] ?? null) ? $data['fields'] : [],
             'required' => [],
         ];
+        $metadata = is_array($data['metadata'] ?? null) ? $data['metadata'] : [];
+        if (is_array($data['presentation'] ?? null)) {
+            $metadata['presentation'] = $data['presentation'];
+        }
 
         return new self(
             name: (string) ($data['name'] ?? $data['id'] ?? 'structured_collection'),
@@ -37,7 +41,7 @@ class StructuredCollectionDefinition
             confirmBeforeComplete: (bool) ($data['confirm_before_complete'] ?? true),
             closeOnComplete: (bool) ($data['close_on_complete'] ?? true),
             callback: is_array($data['callback'] ?? null) ? $data['callback'] : null,
-            metadata: is_array($data['metadata'] ?? null) ? $data['metadata'] : []
+            metadata: $metadata
         );
     }
 
@@ -268,8 +272,24 @@ class StructuredCollectionDefinition
         );
     }
 
+    public function withPreview(string $mode = 'html', bool $enabled = true, array $assets = []): self
+    {
+        $mode = in_array($mode, ['html', 'component', 'schema'], true) ? $mode : 'html';
+        $metadata = $this->metadata;
+        $metadata['presentation'] = array_filter([
+            'preview' => $enabled,
+            'mode' => $mode,
+            'assets' => $assets !== [] ? $assets : null,
+        ], static fn (mixed $value): bool => $value !== null);
+
+        return new self($this->name, $this->description, $this->schema, $this->confirmBeforeComplete, $this->closeOnComplete, $this->callback, $metadata);
+    }
+
     public function toArray(): array
     {
+        $metadata = $this->metadata;
+        unset($metadata['presentation']);
+
         return array_filter([
             'name' => $this->name,
             'description' => $this->description,
@@ -277,8 +297,26 @@ class StructuredCollectionDefinition
             'confirm_before_complete' => $this->confirmBeforeComplete,
             'close_on_complete' => $this->closeOnComplete,
             'callback' => $this->callback,
-            'metadata' => $this->metadata,
+            'presentation' => $this->presentation(),
+            'metadata' => $metadata,
         ], static fn (mixed $value): bool => $value !== null && $value !== []);
+    }
+
+    public function presentation(): array
+    {
+        $presentation = is_array($this->metadata['presentation'] ?? null) ? $this->metadata['presentation'] : [];
+        if ($presentation === []) {
+            return [];
+        }
+
+        $mode = (string) ($presentation['mode'] ?? 'html');
+        $presentation['mode'] = in_array($mode, ['html', 'component', 'schema'], true) ? $mode : 'html';
+        $presentation['preview'] = (bool) ($presentation['preview'] ?? true);
+        if (isset($presentation['assets']) && !is_array($presentation['assets'])) {
+            unset($presentation['assets']);
+        }
+
+        return $presentation;
     }
 
     public function schema(): array

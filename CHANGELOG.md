@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.35] — 2026-05-18
+
 ### Changed
 
 - **Conversation transcript naming** — extracted transcript/session history behavior into `ConversationTranscriptService` while keeping `ConversationService` as a compatibility alias.
@@ -24,7 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Structured chat collection** — chat can now collect a target JSON object from conversation, ask for missing fields in the user's language, confirm, close the session, and call an HTTP or Laravel-event callback.
 - **Structured collection field helpers** — `StructuredCollectionDefinition` now includes typed helpers such as `addText()`, `addEmail()`, `addDate()`, `addSelect()`, `addMultiSelect()`, and related UI field builders while keeping `addField()` as the generic escape hatch.
 - **Localized collection field presentation** — structured collection responses now include `collection.fields` with required state, UI type, formats, and localized select-like option labels while storing canonical option values.
+- **Structured collection previews** — structured collection can optionally return safe package-rendered HTML, component, or schema previews with external CSS/JS assets for chat UIs.
+- **Focused SDK documentation** — split the overloaded SDK compatibility page into focused guides for provider tools, structured collection, frontend previews, vector stores, realtime/observability, chat actions, API reference, and security.
 - **AgentChat engine validation** — API validation now accepts any configured or built-in engine instead of only OpenAI, Anthropic, and Gemini.
+- **Provider facade shortcuts** — `Engine::openai()`, `Engine::openrouter()`, `Engine::fal()`, and the other built-in provider shortcuts now return the same fluent proxy as `Engine::engine('provider')`.
 
 ---
 

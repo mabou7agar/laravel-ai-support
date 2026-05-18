@@ -12,6 +12,7 @@ use LaravelAIEngine\DTOs\StructuredCollectionDefinition;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Agent\StructuredCollectionCallbackService;
 use LaravelAIEngine\Services\Agent\StructuredCollectionFieldPresenter;
+use LaravelAIEngine\Services\Agent\StructuredCollectionPreviewRenderer;
 use LaravelAIEngine\Services\Agent\StructuredCollectionSessionService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -62,7 +63,8 @@ class StructuredCollectionSessionServiceTest extends UnitTestCase
         $service = new StructuredCollectionSessionService(
             $ai,
             new StructuredCollectionCallbackService(),
-            new StructuredCollectionFieldPresenter()
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
         );
 
         $first = $service->handle('اسمي أحمد', 'lead-session', 'user-uuid', [
@@ -110,7 +112,8 @@ class StructuredCollectionSessionServiceTest extends UnitTestCase
         $service = new StructuredCollectionSessionService(
             Mockery::mock(AIEngineService::class),
             new StructuredCollectionCallbackService(),
-            new StructuredCollectionFieldPresenter()
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
         );
 
         $this->assertNull($service->handle('hello', 'no-collection', null, []));
@@ -137,7 +140,8 @@ class StructuredCollectionSessionServiceTest extends UnitTestCase
         $service = new StructuredCollectionSessionService(
             $ai,
             new StructuredCollectionCallbackService(),
-            new StructuredCollectionFieldPresenter()
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
         );
 
         $response = $service->handle('أريد تدريب', 'training-session', null, [
@@ -183,7 +187,8 @@ class StructuredCollectionSessionServiceTest extends UnitTestCase
         $service = new StructuredCollectionSessionService(
             $ai,
             new StructuredCollectionCallbackService(),
-            new StructuredCollectionFieldPresenter()
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
         );
 
         $service->handle('اسمي أحمد ومستواي مبتدئ', 'training-confirmation', null, [
@@ -196,5 +201,36 @@ class StructuredCollectionSessionServiceTest extends UnitTestCase
         $this->assertSame('awaiting_confirmation', $response->metadata['collection']['status']);
         $this->assertStringContainsString('تأكيد', $response->getContent());
         $this->assertStringNotContainsString('تاريخ البدء', $response->getContent());
+    }
+
+    public function test_collection_response_includes_preview_when_enabled(): void
+    {
+        $definition = StructuredCollectionDefinition::make('training_request')
+            ->addText('name', required: true)
+            ->withPreview('component');
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                'data_patch' => ['name' => 'Ahmed'],
+                'assistant_message' => 'Please confirm.',
+                'language' => 'en',
+            ], JSON_THROW_ON_ERROR), 'openai', 'gpt-4o-mini'));
+
+        $service = new StructuredCollectionSessionService(
+            $ai,
+            new StructuredCollectionCallbackService(),
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
+        );
+
+        $response = $service->handle('My name is Ahmed', 'preview-session', null, [
+            'collection' => $definition->toArray(),
+        ]);
+
+        $this->assertNotNull($response);
+        $this->assertSame('component', $response->metadata['collection']['preview']['type']);
+        $this->assertSame('ai-structured-collection-form', $response->metadata['collection']['preview']['component']['name']);
     }
 }

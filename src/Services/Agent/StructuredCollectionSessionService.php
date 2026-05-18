@@ -20,6 +20,7 @@ class StructuredCollectionSessionService
         protected AIEngineService $ai,
         protected StructuredCollectionCallbackService $callbacks,
         protected StructuredCollectionFieldPresenter $fields,
+        protected ?StructuredCollectionPreviewRenderer $previews = null,
         protected ?LocaleResourceService $locales = null
     ) {
     }
@@ -227,22 +228,35 @@ PROMPT;
         string $status,
         array $extra = []
     ): AIResponse {
+        $fields = $this->fields->present($definition, isset($state['language']) ? (string) $state['language'] : null);
+        $collection = array_merge([
+            'name' => $definition->name,
+            'status' => $status,
+            'data' => $state['data'] ?? [],
+            'missing_fields' => $state['missing_fields'] ?? $this->missingRequired($definition, (array) ($state['data'] ?? [])),
+            'language' => $state['language'] ?? null,
+            'schema' => $definition->schema(),
+            'fields' => $fields,
+        ], $extra);
+
+        $preview = $this->previews()->render($definition, $collection, $fields, $status);
+        if ($preview !== null) {
+            $collection['preview'] = $preview;
+        }
+
         return AIResponse::success(
             content: $message,
             engine: (string) ($options['engine'] ?? 'openai'),
             model: (string) ($options['model'] ?? 'gpt-4o-mini'),
             metadata: [
-                'collection' => array_merge([
-                    'name' => $definition->name,
-                    'status' => $status,
-                    'data' => $state['data'] ?? [],
-                    'missing_fields' => $state['missing_fields'] ?? $this->missingRequired($definition, (array) ($state['data'] ?? [])),
-                    'language' => $state['language'] ?? null,
-                    'schema' => $definition->schema(),
-                    'fields' => $this->fields->present($definition, isset($state['language']) ? (string) $state['language'] : null),
-                ], $extra),
+                'collection' => $collection,
             ]
         );
+    }
+
+    protected function previews(): StructuredCollectionPreviewRenderer
+    {
+        return $this->previews ??= new StructuredCollectionPreviewRenderer();
     }
 
     protected function completionPayload(string $sessionId, mixed $userId, StructuredCollectionDefinition $definition, array $state): array

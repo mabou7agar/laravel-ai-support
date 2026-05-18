@@ -1,0 +1,56 @@
+.ai-collection-form {
+    display: grid;
+    gap: 0.75rem;
+    width: 100%;
+    max-width: 36rem;
+}
+
+.ai-collection-field,
+.ai-collection-choice-field {
+    display: grid;
+    gap: 0.375rem;
+}
+
+.ai-collection-field > span,
+.ai-collection-choice-field > legend {
+    font-weight: 600;
+}
+
+.ai-collection-field input,
+.ai-collection-field select,
+.ai-collection-field textarea {
+    width: 100%;
+    border: 1px solid #d0d5dd;
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.625rem;
+    font: inherit;
+}
+
+.ai-collection-field textarea {
+    min-height: 5rem;
+    resize: vertical;
+}
+
+.ai-collection-field[data-ai-missing="true"] input,
+.ai-collection-field[data-ai-missing="true"] select,
+.ai-collection-field[data-ai-missing="true"] textarea,
+.ai-collection-choice-field[data-ai-missing="true"] {
+    border-color: #d92d20;
+}
+
+.ai-collection-field-description {
+    color: #667085;
+    font-size: 0.875rem;
+}
+
+.ai-collection-field-checkbox,
+.ai-collection-choice-field label {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.ai-collection-field-checkbox input,
+.ai-collection-choice-field input {
+    width: auto;
+}

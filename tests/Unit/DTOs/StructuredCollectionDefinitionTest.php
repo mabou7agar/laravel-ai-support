@@ -102,4 +102,17 @@ class StructuredCollectionDefinitionTest extends UnitTestCase
         $this->assertSame('array', $schema['properties']['tags']['type']);
         $this->assertSame('object', $schema['properties']['billing']['type']);
     }
+
+    public function test_preview_presentation_can_be_enabled_without_replacing_generic_field_api(): void
+    {
+        $definition = StructuredCollectionDefinition::make('training_request')
+            ->addText('name', required: true)
+            ->withPreview('html');
+
+        $payload = $definition->toArray();
+
+        $this->assertSame('html', $payload['presentation']['mode']);
+        $this->assertTrue($payload['presentation']['preview']);
+        $this->assertSame('html', StructuredCollectionDefinition::fromArray($payload)->presentation()['mode']);
+    }
 }

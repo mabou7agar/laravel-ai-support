@@ -118,7 +118,8 @@ class AgentChatResponsePresentationApiTest extends TestCase
                     && is_array($collection)
                     && ($collection['name'] ?? null) === 'lead_capture'
                     && (($collection['schema']['required'] ?? []) === ['name', 'email'])
-                    && (($collection['confirm_before_complete'] ?? null) === true);
+                    && (($collection['confirm_before_complete'] ?? null) === true)
+                    && (($collection['presentation']['mode'] ?? null) === 'html');
             })
             ->andReturn(AIResponse::success(
                 content: 'ما البريد الإلكتروني؟',
@@ -131,6 +132,14 @@ class AgentChatResponsePresentationApiTest extends TestCase
                         'missing_fields' => ['email'],
                         'data' => ['name' => 'Ahmed'],
                         'language' => 'ar',
+                        'preview' => [
+                            'type' => 'html',
+                            'html' => '<form data-ai-collection="lead_capture"></form>',
+                            'assets' => [
+                                'css' => ['/vendor/ai-engine/structured-collection.css'],
+                                'js' => ['/vendor/ai-engine/structured-collection.js'],
+                            ],
+                        ],
                     ],
                 ]
             ));
@@ -153,6 +162,10 @@ class AgentChatResponsePresentationApiTest extends TestCase
                         'email' => ['type' => 'string', 'format' => 'email'],
                     ],
                 ],
+                'presentation' => [
+                    'preview' => true,
+                    'mode' => 'html',
+                ],
                 'confirm_before_complete' => true,
                 'close_on_complete' => true,
                 'callback' => ['type' => 'event'],
@@ -163,6 +176,8 @@ class AgentChatResponsePresentationApiTest extends TestCase
             ->assertJsonPath('data.response', 'ما البريد الإلكتروني؟')
             ->assertJsonPath('data.collection.status', 'collecting')
             ->assertJsonPath('data.collection.language', 'ar')
-            ->assertJsonPath('data.collection.missing_fields.0', 'email');
+            ->assertJsonPath('data.collection.missing_fields.0', 'email')
+            ->assertJsonPath('data.collection.preview.type', 'html')
+            ->assertJsonPath('data.collection.preview.assets.js.0', '/vendor/ai-engine/structured-collection.js');
     }
 }

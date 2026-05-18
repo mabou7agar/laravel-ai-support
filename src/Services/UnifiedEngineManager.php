@@ -32,6 +32,136 @@ class UnifiedEngineManager
         return (new EngineProxy($this))->engine($engine);
     }
 
+    public function openai(): EngineProxy
+    {
+        return $this->provider(EngineEnum::OpenAI);
+    }
+
+    public function anthropic(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Anthropic);
+    }
+
+    public function gemini(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Gemini);
+    }
+
+    public function stableDiffusion(): EngineProxy
+    {
+        return $this->provider(EngineEnum::StableDiffusion);
+    }
+
+    public function elevenLabs(): EngineProxy
+    {
+        return $this->provider(EngineEnum::ElevenLabs);
+    }
+
+    public function falAi(): EngineProxy
+    {
+        return $this->provider(EngineEnum::FalAI);
+    }
+
+    public function fal(): EngineProxy
+    {
+        return $this->falAi();
+    }
+
+    public function deepseek(): EngineProxy
+    {
+        return $this->provider(EngineEnum::DeepSeek);
+    }
+
+    public function perplexity(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Perplexity);
+    }
+
+    public function midjourney(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Midjourney);
+    }
+
+    public function azure(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Azure);
+    }
+
+    public function googleTts(): EngineProxy
+    {
+        return $this->provider(EngineEnum::GoogleTts);
+    }
+
+    public function serper(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Serper);
+    }
+
+    public function plagiarismCheck(): EngineProxy
+    {
+        return $this->provider(EngineEnum::PlagiarismCheck);
+    }
+
+    public function unsplash(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Unsplash);
+    }
+
+    public function pexels(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Pexels);
+    }
+
+    public function openrouter(): EngineProxy
+    {
+        return $this->provider(EngineEnum::OpenRouter);
+    }
+
+    public function ollama(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Ollama);
+    }
+
+    public function nvidiaNim(): EngineProxy
+    {
+        return $this->provider(EngineEnum::NvidiaNim);
+    }
+
+    public function cloudflareWorkersAi(): EngineProxy
+    {
+        return $this->provider(EngineEnum::CloudflareWorkersAI);
+    }
+
+    public function huggingFace(): EngineProxy
+    {
+        return $this->provider(EngineEnum::HuggingFace);
+    }
+
+    public function replicate(): EngineProxy
+    {
+        return $this->provider(EngineEnum::Replicate);
+    }
+
+    public function comfyUi(): EngineProxy
+    {
+        return $this->provider(EngineEnum::ComfyUI);
+    }
+
+    public function __call(string $method, array $parameters): EngineProxy
+    {
+        if ($parameters !== []) {
+            throw new \BadMethodCallException("Provider shortcut [{$method}] does not accept arguments.");
+        }
+
+        $engine = $this->resolveProviderShortcut($method);
+
+        if ($engine === null) {
+            throw new \BadMethodCallException("Provider shortcut [{$method}] is not available.");
+        }
+
+        return $this->provider($engine);
+    }
+
     public function model(string $model): EngineProxy
     {
         return (new EngineProxy($this))->model($model);
@@ -352,6 +482,37 @@ class UnifiedEngineManager
     public function getPerformanceMetrics(array $filters = []): array
     {
         return $this->analytics()->getPerformanceMetrics($filters);
+    }
+
+    protected function provider(EngineEnum $engine): EngineProxy
+    {
+        return $this->engine($engine->value);
+    }
+
+    protected function resolveProviderShortcut(string $method): ?EngineEnum
+    {
+        $normalized = $this->normalizeProviderShortcut($method);
+
+        if ($normalized === 'fal') {
+            return EngineEnum::FalAI;
+        }
+
+        foreach (EngineEnum::cases() as $engine) {
+            if ($normalized === $this->normalizeProviderShortcut($engine->value)) {
+                return $engine;
+            }
+
+            if ($normalized === $this->normalizeProviderShortcut($engine->name)) {
+                return $engine;
+            }
+        }
+
+        return null;
+    }
+
+    protected function normalizeProviderShortcut(string $value): string
+    {
+        return strtolower((string) preg_replace('/[^a-zA-Z0-9]/', '', $value));
     }
 
     protected function buildRequest(

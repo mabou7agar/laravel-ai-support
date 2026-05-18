@@ -1,0 +1,111 @@
+# Quickstart: Chat Actions
+
+Use this path when you want a chat UI that can answer, collect data, suggest actions, call tools, ask for confirmation, and execute application work.
+
+## Choose The Entry Point
+
+| Use case | Entry point |
+| --- | --- |
+| Server-side Laravel chat | `ChatService::processMessage()` |
+| Browser/mobile chat | `POST /api/v1/agent/chat` |
+| App-defined business actions | actions, tools, and skills |
+| Gather a target JSON object | `StructuredCollectionDefinition` |
+| Long-running provider tools | provider tool lifecycle APIs |
+
+## Basic Chat API
+
+```json
+{
+  "message": "Create an invoice for Ahmed",
+  "session_id": "thread-123",
+  "memory": true,
+  "actions": true,
+  "use_rag": true,
+  "response_points_format": "array",
+  "response_suggestions": true
+}
+```
+
+The response can include:
+
+- `response` for rendered text
+- `response_points` for bullet/numbered points as data
+- `suggestions` from registered actions, skills, and tools
+- `actions` when the agent runtime returns interactive actions
+- `collection` when structured collection is active
+- conversation context fields when transcript/memory is enabled
+
+## Skills And Tools
+
+Use tools for concrete callable operations. Use skills when you want a higher-level capability that can coordinate one or more tools.
+
+Typical invoice flow:
+
+1. Register `find_customer`, `create_customer`, `find_product`, `create_product`, and `create_invoice` tools.
+2. Register an invoice skill that describes the target JSON and the related tools.
+3. Let the agent decide when to call the skill or tools.
+4. Use structured collection when the UI must close the chat and call a callback with collected data.
+
+## Scaffolding
+
+```bash
+php artisan ai:make-agent Invoice --model="App\\Models\\Invoice"
+php artisan ai:make-tool LookupCustomer
+php artisan ai:make-skill CreateInvoice
+```
+
+These commands reuse the generic `ai:scaffold` implementation and register generated classes in the agent manifest unless `--no-register` is passed.
+
+## Structured Collection Flow
+
+```php
+$collection = StructuredCollectionDefinition::make('invoice_request')
+    ->addText('customer_name', required: true)
+    ->addEmail('customer_email')
+    ->addArray('items', required: true)
+    ->withPreview('component')
+    ->callbackEvent();
+```
+
+Pass `$collection->toArray()` as `collection`. The package asks only for missing required fields, confirms the final JSON, and dispatches the callback/event after confirmation.
+
+## Suggestions
+
+Enable suggestions when the chat should recommend next steps:
+
+```json
+{
+  "response_suggestions": true,
+  "response_suggestion_limit": 5
+}
+```
+
+Suggestions are generic. Register an invoice action, email reply skill, or any other capability and the package matches against metadata instead of hardcoding business modules.
+
+## Testing
+
+```php
+$fake = Engine::fake(['Done']);
+
+Engine::generatePrompt('Summarize this');
+
+$fake->assertPrompted(fn (array $request) => $request['prompt'] === 'Summarize this');
+```
+
+The fake records prompt, request, and message calls and returns queued `AIResponse` objects, arrays, or strings.
+
+## Scope
+
+Pass scope consistently through request options or context metadata:
+
+```json
+{
+  "user_id": "user-uuid",
+  "context": {
+    "tenant_id": "tenant-1",
+    "workspace_id": "workspace-9"
+  }
+}
+```
+
+Application tools and actions should use repository/service layers to enforce tenant, workspace, and user ownership before reading or writing records.

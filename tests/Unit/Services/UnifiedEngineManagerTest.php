@@ -41,6 +41,54 @@ class UnifiedEngineManagerTest extends TestCase
         $this->assertInstanceOf(EngineProxy::class, $result);
     }
 
+    /**
+     * @dataProvider providerShortcutProvider
+     */
+    public function test_provider_shortcuts_return_engine_proxy_for_builtin_engines(string $method, string $engine): void
+    {
+        $result = $this->manager->{$method}();
+
+        $this->assertInstanceOf(EngineProxy::class, $result);
+        $this->assertProxyOption($result, 'engine', $engine);
+    }
+
+    public function test_unknown_provider_shortcut_throws_clear_exception(): void
+    {
+        $this->expectException(\BadMethodCallException::class);
+        $this->expectExceptionMessage('Provider shortcut [notAProvider] is not available');
+
+        $this->manager->notAProvider();
+    }
+
+    public static function providerShortcutProvider(): array
+    {
+        return [
+            'openai' => ['openai', EngineEnum::OPENAI],
+            'anthropic' => ['anthropic', EngineEnum::ANTHROPIC],
+            'gemini' => ['gemini', EngineEnum::GEMINI],
+            'stable diffusion' => ['stableDiffusion', EngineEnum::STABLE_DIFFUSION],
+            'eleven labs' => ['elevenLabs', EngineEnum::ELEVENLABS],
+            'fal ai' => ['falAi', EngineEnum::FAL_AI],
+            'fal alias' => ['fal', EngineEnum::FAL_AI],
+            'deepseek' => ['deepseek', EngineEnum::DEEPSEEK],
+            'perplexity' => ['perplexity', EngineEnum::PERPLEXITY],
+            'midjourney' => ['midjourney', EngineEnum::MIDJOURNEY],
+            'azure' => ['azure', EngineEnum::AZURE],
+            'google tts' => ['googleTts', EngineEnum::GOOGLE_TTS],
+            'serper' => ['serper', EngineEnum::SERPER],
+            'plagiarism check' => ['plagiarismCheck', EngineEnum::PLAGIARISM_CHECK],
+            'unsplash' => ['unsplash', EngineEnum::UNSPLASH],
+            'pexels' => ['pexels', EngineEnum::PEXELS],
+            'openrouter' => ['openrouter', EngineEnum::OPENROUTER],
+            'ollama' => ['ollama', EngineEnum::OLLAMA],
+            'nvidia nim' => ['nvidiaNim', EngineEnum::NVIDIA_NIM],
+            'cloudflare workers ai' => ['cloudflareWorkersAi', EngineEnum::CLOUDFLARE_WORKERS_AI],
+            'hugging face' => ['huggingFace', EngineEnum::HUGGINGFACE],
+            'replicate' => ['replicate', EngineEnum::REPLICATE],
+            'comfy ui' => ['comfyUi', EngineEnum::COMFYUI],
+        ];
+    }
+
     public function test_memory_returns_memory_proxy()
     {
         $result = $this->manager->memory('redis');
@@ -236,6 +284,17 @@ class UnifiedEngineManagerTest extends TestCase
         $this->assertSame(12.5, $result['total_credits']);
         $this->assertSame(config('ai-engine.credits.currency', 'credits'), $result['currency']);
         $this->assertCount(1, $result['breakdown']);
+    }
+
+    protected function assertProxyOption(EngineProxy $proxy, string $key, mixed $expected): void
+    {
+        $property = new \ReflectionProperty($proxy, 'options');
+        $property->setAccessible(true);
+
+        $options = $property->getValue($proxy);
+
+        $this->assertIsArray($options);
+        $this->assertSame($expected, $options[$key] ?? null);
     }
 
     protected function tearDown(): void

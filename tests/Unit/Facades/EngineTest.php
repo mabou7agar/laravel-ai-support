@@ -39,6 +39,20 @@ class EngineTest extends TestCase
         $this->assertInstanceOf(EngineProxy::class, $result);
     }
 
+    public function test_provider_shortcut_facade_returns_engine_proxy()
+    {
+        $engineProxy = Mockery::mock(EngineProxy::class);
+
+        $this->unifiedEngineManager
+            ->shouldReceive('openai')
+            ->once()
+            ->andReturn($engineProxy);
+
+        $result = Engine::openai();
+
+        $this->assertInstanceOf(EngineProxy::class, $result);
+    }
+
     public function test_memory_facade_returns_memory_proxy()
     {
         $memoryProxy = Mockery::mock(MemoryProxy::class);

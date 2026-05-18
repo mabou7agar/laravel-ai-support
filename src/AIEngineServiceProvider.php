@@ -190,6 +190,10 @@ class AIEngineServiceProvider extends ServiceProvider
             ], 'ai-engine-views');
 
             $this->publishes([
+                __DIR__.'/../resources/assets' => public_path('vendor/ai-engine'),
+            ], 'ai-engine-collection-ui');
+
+            $this->publishes([
                 __DIR__.'/../resources/lang' => lang_path('vendor/ai-engine'),
             ], 'ai-engine-lang');
 

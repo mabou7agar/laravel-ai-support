@@ -384,6 +384,14 @@ return [
         'max_tokens' => (int) env('AI_AGENT_STRUCTURED_COLLECTION_MAX_TOKENS', 900),
         'temperature' => (float) env('AI_AGENT_STRUCTURED_COLLECTION_TEMPERATURE', 0.1),
         'callback_timeout' => (int) env('AI_AGENT_STRUCTURED_COLLECTION_CALLBACK_TIMEOUT', 10),
+        'preview' => [
+            'enabled' => (bool) env('AI_AGENT_STRUCTURED_COLLECTION_PREVIEW_ENABLED', false),
+            'mode' => env('AI_AGENT_STRUCTURED_COLLECTION_PREVIEW_MODE', 'component'),
+            'assets' => [
+                'css' => ['/vendor/ai-engine/structured-collection.css'],
+                'js' => ['/vendor/ai-engine/structured-collection.js'],
+            ],
+        ],
     ],
 
     /*

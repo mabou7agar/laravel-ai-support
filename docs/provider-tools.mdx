@@ -1,0 +1,112 @@
+# Provider Tools
+
+Provider tools let applications expose hosted capabilities such as web search, file search, code execution, computer use, remote MCP servers, hosted shell, apply patch, image generation, and provider skills through the normal engine request path.
+
+## Tool Classes
+
+Provider-style tools are serializable and can be passed through `EngineProxy::withTools()`:
+
+- `LaravelAIEngine\Tools\Provider\WebSearch`
+- `LaravelAIEngine\Tools\Provider\WebFetch`
+- `LaravelAIEngine\Tools\Provider\FileSearch`
+- `LaravelAIEngine\Tools\Provider\CodeInterpreter`
+- `LaravelAIEngine\Tools\Provider\ComputerUse`
+- `LaravelAIEngine\Tools\Provider\McpServer`
+- `LaravelAIEngine\Tools\Provider\GoogleMapsGrounding`
+- `LaravelAIEngine\Tools\Provider\ImageGenerationTool`
+- `LaravelAIEngine\Tools\Provider\ToolSearch`
+- `LaravelAIEngine\Tools\Provider\HostedShell`
+- `LaravelAIEngine\Tools\Provider\ApplyPatchTool`
+- `LaravelAIEngine\Tools\Provider\ProviderSkill`
+- `LaravelAIEngine\Tools\SimilaritySearch`
+
+```php
+use LaravelAIEngine\Facades\Engine;
+use LaravelAIEngine\Tools\Provider\FileSearch;
+use LaravelAIEngine\Tools\Provider\WebSearch;
+
+$response = Engine::engine('openai')
+    ->model('gpt-4o')
+    ->withTools([
+        (new WebSearch())->max(5),
+        (new FileSearch())->vectorStoreIds(['vs_123']),
+    ])
+    ->generate('Answer using approved sources.');
+```
+
+## Provider Mapping
+
+OpenAI mappings include web search, file search, code interpreter, computer use, remote MCP, image generation, tool search, hosted shell, apply patch, and provider skills.
+
+Gemini mappings include Google Search grounding, URL context, Google Maps grounding, file retrieval metadata, and code execution through `CodeInterpreter`.
+
+Anthropic mappings include web search, web fetch, code execution, computer use, and remote MCP with required beta headers returned by the mapper.
+
+Custom package functions remain on the existing function-calling path, so provider-hosted tools and app tools can be mixed in the same request.
+
+## Provider Tool Versions
+
+Provider tool versions that require fast-moving beta headers are configurable. Anthropic defaults preserve package behavior, and host apps can override the type/header without waiting for a package release:
+
+```php
+'provider_tools' => [
+    'versions' => [
+        'anthropic' => [
+            'code_execution' => [
+                'type' => 'code_execution_20250825',
+                'beta_header' => 'code-execution-2025-08-25',
+            ],
+            'computer_use' => [
+                'type' => 'computer_20250124',
+                'beta_header' => 'computer-use-2025-01-24',
+            ],
+            'mcp_server' => [
+                'beta_header' => 'mcp-client-2025-04-04',
+            ],
+        ],
+    ],
+],
+```
+
+## Approvals
+
+Computer use, MCP servers, code execution, hosted shell, and patch-style tools should be treated as high-risk. The package routes these through the provider tool approval/audit layer before execution when approval is required.
+
+Apps can approve a pending request with `ProviderToolApprovalService::approve($approvalKey)` and retry the AI request with:
+
+```php
+$request = $request->withMetadata([
+    'provider_tool_run_id' => $runUuid,
+    'provider_tool_approval_keys' => [$approvalKey],
+]);
+```
+
+## Provider Options
+
+Use `AIRequest::withProviderOptions()` when a provider adds request fields before the package has a first-class method. Generic options apply to every provider; provider-specific options override them for one driver:
+
+```php
+$request = AIRequest::make('Analyze this file', 'openai', 'gpt-4o')
+    ->withProviderOptions(['store' => true])
+    ->withProviderOptions(['background' => true], 'openai');
+```
+
+OpenAI Responses state can be reused by setting a conversation id and opting in:
+
+```php
+$first = AIRequest::make('Analyze this file', 'openai', 'gpt-4o')
+    ->setConversationId('support-thread-123')
+    ->withMetadata(['openai_responses_api' => true])
+    ->withProviderOptions(['remember_response' => true], 'openai');
+
+$next = AIRequest::make('Use the previous result', 'openai', 'gpt-4o')
+    ->setConversationId('support-thread-123')
+    ->withMetadata(['openai_responses_api' => true])
+    ->withProviderOptions(['use_previous_response' => true], 'openai');
+```
+
+The package stores the last provider response id in cache under the configured TTL and sends it as `previous_response_id` only when `use_previous_response` is enabled.
+
+## API Surface
+
+Use `/api/v1/ai/provider-tools` for approvals, continuations, artifacts, and generic FAL catalog execution. See [Provider tool lifecycle](provider-tool-lifecycle.mdx) for the full endpoint list.

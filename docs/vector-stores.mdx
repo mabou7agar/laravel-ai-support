@@ -1,0 +1,60 @@
+# Vector Stores
+
+Laravel AI Engine supports local package-managed vector stores and opt-in provider-hosted file/vector stores.
+
+Use local stores when you need application ownership, tenant/workspace filtering, Qdrant, Neo4j, or hybrid GraphRAG. Use provider-hosted stores when a provider feature requires provider file IDs or hosted retrieval.
+
+## Local Vector Stores
+
+```php
+use LaravelAIEngine\Files\Document;
+use LaravelAIEngine\Facades\Engine;
+
+$store = Engine::vectorStores()->create('Knowledge Base');
+
+Engine::vectorStores()->add(
+    $store['id'],
+    Document::fromStorage('manual.pdf', 'local')
+);
+```
+
+When migrations are loaded, vector stores and document references are persisted in `ai_vector_stores` and `ai_vector_store_documents`. If those tables are unavailable, the service falls back to an in-memory store for lightweight tests and custom host adapters.
+
+## Provider Stores
+
+```php
+$file = Engine::fileStores()
+    ->provider('openai')
+    ->upload(Document::fromStorage('manual.pdf', 'local'));
+
+$store = Engine::vectorStores()
+    ->provider('openai')
+    ->create('Support Docs');
+
+Engine::vectorStores()
+    ->provider('openai')
+    ->add($store['id'], Document::fromPath('/tmp/manual.pdf'));
+```
+
+Hosted provider storage is opt-in to avoid vendor lock-in and unexpected storage costs.
+
+## Docs Indexing
+
+```bash
+php artisan ai:docs-index /path/to/docs --recursive --store-name="Support Docs"
+```
+
+`ai:docs-index` extracts text through `DocumentService`, records document metadata, and keeps tenant/workspace scope in metadata when passed with repeated `--metadata=key=value` options.
+
+## Qdrant And Neo4j Together
+
+Qdrant is best for nearest-neighbor semantic retrieval. Neo4j is best for entity relationships, ownership, permissions, and explainable links.
+
+The recommended production pattern is:
+
+- Use Qdrant for semantic recall.
+- Use Neo4j for linked business context and relationship expansion.
+- Rehydrate SQL records before prompt injection.
+- Never trust vector metadata filters alone for authorization.
+
+See [Hybrid Graph Vector RAG](hybrid-graph-vector-rag.mdx) and [Agent memory](agent-memory.mdx) for scoped retrieval and durable conversation memory.

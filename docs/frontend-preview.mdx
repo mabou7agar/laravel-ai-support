@@ -1,0 +1,100 @@
+# Frontend Previews
+
+Structured collection can optionally return a preview object so chat UIs can show a live form beside the assistant message.
+
+The preview is package-rendered. The package never asks AI to generate HTML or JavaScript.
+
+## Publish Assets
+
+```bash
+php artisan vendor:publish --tag=ai-engine-collection-ui
+```
+
+This publishes:
+
+- `/vendor/ai-engine/structured-collection.css`
+- `/vendor/ai-engine/structured-collection.js`
+
+## HTML Mode
+
+```php
+$collection = StructuredCollectionDefinition::make('lead_capture')
+    ->addText('name', required: true)
+    ->addEmail('email', required: true)
+    ->withPreview('html');
+```
+
+Response:
+
+```json
+{
+  "collection": {
+    "preview": {
+      "type": "html",
+      "html": "<form class=\"ai-collection-form\" data-ai-collection=\"lead_capture\">...</form>",
+      "assets": {
+        "css": ["/vendor/ai-engine/structured-collection.css"],
+        "js": ["/vendor/ai-engine/structured-collection.js"]
+      }
+    }
+  }
+}
+```
+
+Render this only in trusted app surfaces. The HTML is escaped by the package, but host apps should still use normal CSP and avoid mixing it with untrusted third-party scripts.
+
+## Component Mode
+
+```php
+$collection = StructuredCollectionDefinition::make('lead_capture')
+    ->addText('name', required: true)
+    ->addEmail('email', required: true)
+    ->withPreview('component');
+```
+
+Response:
+
+```json
+{
+  "preview": {
+    "type": "component",
+    "component": {
+      "name": "ai-structured-collection-form",
+      "props": {
+        "name": "lead_capture",
+        "status": "collecting",
+        "data": {},
+        "missing_fields": ["name", "email"],
+        "fields": []
+      }
+    },
+    "assets": {
+      "css": ["/vendor/ai-engine/structured-collection.css"],
+      "js": ["/vendor/ai-engine/structured-collection.js"]
+    }
+  }
+}
+```
+
+Use this mode for Vue, React, Livewire, or mobile apps that already have their own form renderer.
+
+## Browser Event
+
+The published JavaScript dispatches `ai-collection-change` when a rendered field changes:
+
+```js
+document.addEventListener('ai-collection-change', (event) => {
+  console.log(event.detail.collection);
+  console.log(event.detail.data);
+});
+```
+
+Apps can send the updated data back as normal chat text, use it to patch local UI state, or submit it through an application-specific endpoint.
+
+## Safety Rules
+
+- Do not let AI return arbitrary HTML.
+- Keep package-rendered HTML escaped.
+- Keep JavaScript in external published assets.
+- Use `component` mode when your frontend framework should own rendering.
+- Treat callback URLs as server-to-server integrations and protect them with an app token.

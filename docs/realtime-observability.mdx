@@ -1,0 +1,87 @@
+# Realtime And Observability
+
+Realtime descriptors, tool brokers, traces, and evaluations let host apps connect provider realtime clients without moving application policy out of Laravel.
+
+## Realtime Sessions
+
+```php
+use LaravelAIEngine\DTOs\RealtimeSessionConfig;
+use LaravelAIEngine\Facades\Engine;
+
+$session = Engine::realtime()->create(
+    RealtimeSessionConfig::make('openai', 'gpt-4o-realtime-preview')
+        ->withVoice('alloy')
+        ->withAudioFormats('pcm16', 'pcm16')
+        ->withTurnDetection(['type' => 'server_vad'])
+        ->withTemperature(0.2)
+        ->withMaxResponseOutputTokens(512)
+);
+```
+
+Realtime support returns provider-specific session descriptors so host applications can attach their own WebSocket/WebRTC clients. OpenAI descriptors use snake_case fields expected by Realtime APIs. Gemini Live descriptors use Gemini-style camelCase fields such as `responseModalities`, `systemInstruction`, and `generationConfig`.
+
+## Realtime Tool Broker
+
+`LaravelAIEngine\Services\SDK\RealtimeToolBrokerService` dispatches provider realtime tool calls through the package `ToolRegistry` and returns a structured result payload for the host client to send back to the provider.
+
+Tools that require confirmation return `approval_required` instead of executing.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/realtime/tools/dispatch \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": {"id": "call_1", "name": "run_skill", "arguments": {"message": "Draft a reply"}},
+    "session_id": "support-thread-123",
+    "user_id": "user-1",
+    "approved": false
+  }'
+```
+
+## MCP/App Bridge
+
+`LaravelAIEngine\Services\SDK\McpAppToolAdapter` exports registered tools and enabled skills in an MCP/App-compatible schema and can call local tools through the same registry.
+
+```bash
+curl -H "Accept: application/json" \
+  http://localhost:8000/api/v1/ai/mcp/tools
+
+curl -X POST http://localhost:8000/api/v1/ai/mcp/tools/run_skill/call \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "arguments": {"message": "Draft a reply"},
+    "session_id": "support-thread-123",
+    "user_id": "user-1"
+  }'
+```
+
+## Tracing And Evaluations
+
+```php
+$span = Engine::traces()->start('support-agent.run');
+Engine::traces()->end($span, metadata: ['tokens' => 420]);
+
+Engine::evaluations()->assertPassed(
+    'contains source',
+    'Answer [1]',
+    assertion: fn (string $answer) => str_contains($answer, '[')
+);
+```
+
+Register exporters in `ai-engine.observability.exporters`:
+
+```php
+'observability' => [
+    'exporters' => [
+        LaravelAIEngine\Services\SDK\Exporters\HttpObservabilityExporter::class,
+        LaravelAIEngine\Services\SDK\Exporters\OpenTelemetryObservabilityExporter::class,
+        LaravelAIEngine\Services\SDK\Exporters\LangSmithObservabilityExporter::class,
+        LaravelAIEngine\Services\SDK\Exporters\LogObservabilityExporter::class,
+    ],
+    'http' => [
+        'endpoint' => env('AI_ENGINE_OBSERVABILITY_HTTP_ENDPOINT'),
+        'headers' => ['Authorization' => 'Bearer '.env('OBSERVABILITY_TOKEN')],
+    ],
+],
+```

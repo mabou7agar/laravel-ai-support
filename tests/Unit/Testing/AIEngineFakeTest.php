@@ -53,4 +53,19 @@ class AIEngineFakeTest extends UnitTestCase
 
         $this->assertCount(4, $fake->calls());
     }
+
+    public function test_fake_supports_provider_shortcut_proxy_methods(): void
+    {
+        $fake = new AIEngineFake(['ok']);
+
+        $fake->openai()
+            ->model(EntityEnum::GPT_4O_MINI)
+            ->generate('hello');
+
+        $fake->assertPrompted('hello');
+        $fake->assertEngineUsed(EngineEnum::OPENAI);
+        $fake->assertModelUsed(EntityEnum::GPT_4O_MINI);
+
+        $this->assertCount(2, $fake->calls());
+    }
 }
