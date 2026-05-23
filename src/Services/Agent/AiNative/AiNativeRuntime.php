@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent\AiNative;
 
+use Illuminate\Support\Str;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AgentResponse;
@@ -384,20 +385,17 @@ class AiNativeRuntime
      */
     private function confirmationFromCurrentPayloadAfterRepeatedWriteQuestion(UnifiedActionContext $context, array &$state, array $plan): ?AgentResponse
     {
-        if (!$this->skillPolicy->hasRuntimeFeedback($state, 'tool_confirmation_question_requires_tool_call')) {
-            return null;
-        }
-
         $message = mb_strtolower(trim((string) ($plan['message'] ?? '')));
-        if ($message === '' || !str_contains($message, '?')) {
+        if (!$this->isWriteConfirmationQuestion($message)) {
             return null;
         }
 
-        $payload = data_get($state, 'task_frame.current_payload');
-        if (!is_array($payload) || $payload === []) {
+        $payload = $this->payloadForWriteConfirmationQuestion($state, $plan);
+        if ($payload === []) {
             return null;
         }
 
+        $targetEntity = $this->entityFromWriteConfirmationQuestion($message, $state);
         $activeObjective = trim((string) data_get($state, 'task_frame.active_objective', ''));
         if ($activeObjective === '') {
             return null;
@@ -421,6 +419,10 @@ class AiNativeRuntime
         foreach ($toolNames as $toolName) {
             $tool = $this->tools->get($toolName);
             if (!$tool instanceof AgentTool || !$tool->requiresConfirmation()) {
+                continue;
+            }
+
+            if ($targetEntity !== null && !$this->toolMatchesEntity((string) $toolName, $tool, $targetEntity)) {
                 continue;
             }
 
@@ -457,6 +459,48 @@ class AiNativeRuntime
     }
 
     /**
+     * @param array<string, mixed> $state
+     */
+    private function entityFromWriteConfirmationQuestion(string $message, array $state): ?string
+    {
+        $entities = [];
+        foreach (array_merge(
+            (array) ($state['recent_outcomes'] ?? []),
+            (array) data_get($state, 'task_frame.recent_outcomes', [])
+        ) as $outcome) {
+            if (!is_array($outcome)) {
+                continue;
+            }
+
+            $entity = mb_strtolower(trim((string) ($outcome['entity_type'] ?? '')));
+            if ($entity !== '') {
+                $entities[$entity] = true;
+            }
+        }
+
+        foreach (array_keys($entities) as $entity) {
+            if (str_contains($message, $entity) || str_contains($message, Str::plural($entity))) {
+                return $entity;
+            }
+        }
+
+        return null;
+    }
+
+    private function toolMatchesEntity(string $toolName, AgentTool $tool, string $entity): bool
+    {
+        $toolEntity = mb_strtolower(trim((string) $tool->getEntityType()));
+        if ($toolEntity === $entity) {
+            return true;
+        }
+
+        $toolName = mb_strtolower($toolName);
+
+        return str_contains($toolName, $entity)
+            || str_contains($toolName, Str::plural($entity));
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
@@ -479,6 +523,122 @@ class AiNativeRuntime
         }
 
         return $arguments;
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $plan
+     * @return array<string, mixed>
+     */
+    private function payloadForWriteConfirmationQuestion(array $state, array $plan): array
+    {
+        $payload = [];
+        foreach ([
+            data_get($state, 'task_frame.current_payload'),
+            $plan['data']['current_payload'] ?? null,
+            $plan['data']['payload'] ?? null,
+            $plan['data'] ?? null,
+        ] as $candidate) {
+            if (is_array($candidate)) {
+                $payload = array_replace_recursive($payload, $candidate);
+            }
+        }
+
+        $latestOutcome = $this->latestNamedOutcome($state);
+        $entity = trim((string) ($latestOutcome['entity_type'] ?? ''));
+        $label = trim((string) ($latestOutcome['label'] ?? ''));
+        if ($label !== '') {
+            $payload['name'] ??= $label;
+            if ($entity !== '') {
+                $payload[$entity.'_name'] ??= $label;
+            }
+        }
+
+        $email = $this->firstEmail((string) ($plan['message'] ?? ''));
+        if ($email !== null) {
+            $payload['email'] ??= $email;
+            if ($entity !== '') {
+                $payload[$entity.'_email'] ??= $email;
+            }
+        }
+
+        return array_filter($payload, static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== []);
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     * @return array<string, mixed>
+     */
+    private function latestNamedOutcome(array $state): array
+    {
+        $outcomes = array_reverse(array_merge(
+            (array) ($state['recent_outcomes'] ?? []),
+            (array) data_get($state, 'task_frame.recent_outcomes', [])
+        ));
+
+        foreach ($outcomes as $outcome) {
+            if (!is_array($outcome)) {
+                continue;
+            }
+
+            if (trim((string) ($outcome['label'] ?? '')) !== '') {
+                return $outcome;
+            }
+        }
+
+        return [];
+    }
+
+    private function firstEmail(string $message): ?string
+    {
+        if (preg_match('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', $message, $matches) !== 1) {
+            return null;
+        }
+
+        return mb_strtolower($matches[0]);
+    }
+
+    private function isWriteConfirmationQuestion(string $message): bool
+    {
+        if ($message === '' || !str_contains($message, '?')) {
+            return false;
+        }
+
+        $missingInputTerms = array_map('strval', (array) config('ai-agent.ai_native.write_confirmation_question_terms.missing_input', [
+            'what',
+            'which',
+            'please provide',
+            'enter',
+            'instead',
+            ' or ',
+        ]));
+        if ($this->containsAnyTerm($message, $missingInputTerms)) {
+            return false;
+        }
+
+        $approvalTerms = array_map('strval', (array) config('ai-agent.ai_native.write_confirmation_question_terms.approval', [
+            'would you like',
+            'would you like to',
+            'should i',
+            'do you want',
+            'shall i',
+            'can i',
+            'may i',
+        ]));
+        $writeTerms = array_map('strval', (array) config('ai-agent.ai_native.write_confirmation_question_terms.actions', [
+            'create',
+            'update',
+            'delete',
+            'send',
+            'generate',
+            'run',
+            'execute',
+            'submit',
+            'approve',
+        ]));
+
+        return $this->containsAnyTerm($message, $approvalTerms)
+            && $this->containsAnyTerm($message, $writeTerms);
     }
 
     /**

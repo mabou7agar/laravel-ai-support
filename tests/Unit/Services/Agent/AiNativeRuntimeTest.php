@@ -9,7 +9,10 @@ use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AgentSkillDefinition;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
+use LaravelAIEngine\Services\Agent\AiNative\AgentTaskStateService;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeSuggestedToolArgumentResolver;
 use LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime;
+use LaravelAIEngine\Services\Agent\AiNative\ToolOutcomeNormalizer;
 use LaravelAIEngine\Services\Agent\IntentSignalService;
 use LaravelAIEngine\Services\Agent\Tools\AgentTool;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
@@ -1271,6 +1274,9 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertStringContainsString('Product: Laptop', $response->message);
         $this->assertStringContainsString('Quantity: 1', $response->message);
         $this->assertStringContainsString('Unit Price: 1000', $response->message);
+        $this->assertStringContainsString('Line Total: 1000', $response->message);
+        $this->assertStringContainsString('Subtotal: 1000', $response->message);
+        $this->assertStringContainsString('Total: 1000', $response->message);
         $this->assertStringContainsString('Choose Confirm to continue, or Change to edit before execution.', $response->message);
         $this->assertStringNotContainsString('customer_id', $response->message);
         $this->assertStringNotContainsString('product_id', $response->message);
@@ -1841,15 +1847,6 @@ class AiNativeRuntimeTest extends UnitTestCase
                     ],
                 ],
             ],
-            [
-                'action' => 'tool_call',
-                'tool' => 'create_customer',
-                'arguments' => [
-                    'name' => 'Missing Corp',
-                    'email' => 'missing@example.com',
-                ],
-                'message' => 'Create customer?',
-            ],
         ], $toolLog);
 
         $response = $runtime->process('Customer email is missing@example.com.', new UnifiedActionContext('ai-native-free-text-write-confirmation', 77, metadata: [
@@ -1881,7 +1878,6 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertSame('Missing Corp', $response->data['pending_tool']['params']['name']);
         $this->assertSame('missing@example.com', $response->data['pending_tool']['params']['email']);
         $this->assertArrayNotHasKey('create_customer', $toolLog);
-        $this->assertSame('tool_confirmation_question_requires_tool_call', $response->metadata['ai_native']['runtime_feedback'][0]['reason']);
     }
 
     public function test_repeated_free_text_write_confirmation_opens_matching_tool_confirmation_from_payload(): void
@@ -1899,11 +1895,6 @@ class AiNativeRuntimeTest extends UnitTestCase
                         'customer_email' => 'missing@example.com',
                     ],
                 ],
-            ],
-            [
-                'action' => 'ask_user',
-                'message' => 'Would you like me to create this customer with the provided email?',
-                'required_inputs' => ['name', 'email'],
             ],
         ], $toolLog);
 
@@ -1936,6 +1927,148 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertSame('Missing Corp', $response->data['pending_tool']['params']['name']);
         $this->assertSame('missing@example.com', $response->data['pending_tool']['params']['email']);
         $this->assertArrayNotHasKey('create_customer', $toolLog);
+    }
+
+    public function test_free_text_write_confirmation_can_use_recent_lookup_label_when_payload_is_missing(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 4);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'ask_user',
+                'message' => "Would you like to create a new customer with the name 'Missing Corp' and the email 'missing@example.com'?",
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Customer email is missing@example.com.', new UnifiedActionContext('ai-native-free-text-write-confirmation-from-recent-outcome', 77, metadata: [
+            'ai_native' => [
+                'task_frame' => [
+                    'active_objective' => 'create_invoice',
+                ],
+                'recent_outcomes' => [
+                    [
+                        'tool' => 'lookup_customer',
+                        'outcome' => 'not_found',
+                        'success' => false,
+                        'entity_type' => 'customer',
+                        'label' => 'Missing Corp',
+                        'result' => ['success' => false, 'data' => ['found' => false]],
+                    ],
+                ],
+                'tool_results' => [
+                    [
+                        'tool' => 'lookup_customer',
+                        'params' => ['query' => 'Missing Corp'],
+                        'result' => ['success' => false, 'data' => ['found' => false]],
+                    ],
+                ],
+            ],
+        ]));
+
+        $this->assertTrue($response->needsUserInput);
+        $this->assertSame('create_customer', $response->data['pending_tool']['name']);
+        $this->assertSame('Missing Corp', $response->data['pending_tool']['params']['name']);
+        $this->assertSame('missing@example.com', $response->data['pending_tool']['params']['email']);
+        $this->assertArrayNotHasKey('create_customer', $toolLog);
+    }
+
+    public function test_free_text_write_confirmation_does_not_open_unrelated_looser_tool_for_entity_miss(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 2);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'ask_user',
+                'message' => "Would you like to create a new customer with the name 'Missing Corp'?",
+            ],
+            [
+                'action' => 'ask_user',
+                'message' => 'What email should I use for Missing Corp?',
+                'required_inputs' => [
+                    ['name' => 'email', 'type' => 'email', 'required' => true],
+                ],
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Create invoice for Missing Corp.', new UnifiedActionContext('ai-native-free-text-write-confirmation-skips-unrelated-tool', 77, metadata: [
+            'ai_native' => [
+                'task_frame' => [
+                    'active_objective' => 'create_invoice',
+                ],
+                'recent_outcomes' => [
+                    [
+                        'tool' => 'lookup_customer',
+                        'outcome' => 'not_found',
+                        'success' => false,
+                        'entity_type' => 'customer',
+                        'label' => 'Missing Corp',
+                    ],
+                ],
+            ],
+        ]));
+
+        $this->assertTrue($response->needsUserInput);
+        $this->assertArrayNotHasKey('pending_tool', array_filter($response->metadata['ai_native'] ?? []));
+        $this->assertArrayNotHasKey('create_product', $toolLog);
+    }
+
+    public function test_relation_create_tool_requires_matching_lookup_miss_before_confirmation(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 2);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'create_product',
+                'arguments' => ['name' => 'Missing Corp'],
+                'message' => 'Create product?',
+            ],
+            [
+                'action' => 'ask_user',
+                'message' => 'What customer email should I use?',
+                'required_inputs' => [
+                    ['name' => 'email', 'type' => 'email', 'required' => true],
+                ],
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Create invoice for Missing Corp.', new UnifiedActionContext('ai-native-relation-create-requires-lookup-miss', 77, metadata: [
+            'ai_native' => [
+                'task_frame' => [
+                    'active_objective' => 'create_invoice',
+                ],
+            ],
+        ]));
+
+        $this->assertTrue($response->needsUserInput);
+        $this->assertArrayNotHasKey('pending_tool', array_filter($response->metadata['ai_native'] ?? []));
+        $this->assertArrayNotHasKey('create_product', $toolLog);
+    }
+
+    public function test_helper_write_does_not_complete_different_active_skill_objective(): void
+    {
+        $service = new AgentTaskStateService(new ToolOutcomeNormalizer());
+        $state = [
+            'task_frame' => [
+                'active_objective' => 'create_invoice',
+                'status' => 'confirming',
+            ],
+        ];
+
+        $service->recordToolResult(
+            $state,
+            'create_customer',
+            ['name' => 'Missing Corp', 'email' => 'missing@example.com'],
+            ActionResult::success('Customer created.', ['id' => 501, 'name' => 'Missing Corp']),
+            true
+        );
+
+        $this->assertSame('working', $state['task_frame']['status']);
+        $this->assertSame('create_invoice', $state['task_frame']['active_objective']);
+        $this->assertSame('create_customer', $state['task_frame']['completed_writes'][0]['tool']);
     }
 
     public function test_confirmed_write_can_pause_for_suggested_write_confirmation_and_retry_original_write(): void
@@ -2148,6 +2281,62 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertSame(12, $toolLog['create_invoice'][1]['items'][0]['product_id']);
         $this->assertArrayNotHasKey('suggested_tool_continuation', $context->metadata['ai_native']);
         $this->assertArrayNotHasKey('pending_tool', array_filter($context->metadata['ai_native'] ?? []));
+    }
+
+    public function test_suggested_tool_arguments_prefer_list_records_over_top_level_payload_label(): void
+    {
+        $resolver = new AiNativeSuggestedToolArgumentResolver();
+        $tool = new class extends AgentTool {
+            public function getName(): string
+            {
+                return 'create_product';
+            }
+
+            public function getDescription(): string
+            {
+                return 'Create a product.';
+            }
+
+            public function getParameters(): array
+            {
+                return [
+                    'name' => ['type' => 'string', 'required' => true],
+                    'price' => ['type' => 'number', 'required' => false],
+                ];
+            }
+
+            public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+            {
+                return ActionResult::success('ok', $parameters);
+            }
+        };
+
+        $continuation = [
+            'tool_result' => [
+                'success' => false,
+                'data' => [
+                    'current_payload' => [
+                        'customer_name' => 'Nader Unique',
+                        'items' => [
+                            ['product_name' => 'Test Widget', 'quantity' => 2, 'unit_price' => 50],
+                            ['product_name' => 'Setup Fee', 'quantity' => 1, 'unit_price' => 30],
+                        ],
+                    ],
+                    'suggested_tools' => ['find_product', 'create_product'],
+                ],
+            ],
+        ];
+
+        $candidates = $resolver->candidates($continuation);
+        $arguments = array_map(
+            static fn (array $candidate): array => $resolver->argumentsFor($tool, $candidate, $continuation),
+            $candidates
+        );
+
+        $this->assertSame([
+            ['name' => 'Test Widget', 'price' => 50],
+            ['name' => 'Setup Fee', 'price' => 30],
+        ], $arguments);
     }
 
     public function test_confirmed_suggested_write_retries_original_confirmed_payload_before_ai_can_drift(): void

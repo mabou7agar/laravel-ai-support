@@ -42,6 +42,10 @@ class AiNativeSuggestedToolArgumentResolver
         }
 
         if ($candidates === []) {
+            $candidates = $this->listRecordCandidates($payload);
+        }
+
+        if ($candidates === []) {
             $value = $this->candidateSearchValue($payload, null);
             if ($value !== null) {
                 $candidates[] = [
@@ -54,6 +58,41 @@ class AiNativeSuggestedToolArgumentResolver
         }
 
         return $this->uniqueCandidates($candidates);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<int, array<string, mixed>>
+     */
+    private function listRecordCandidates(array $payload): array
+    {
+        $candidates = [];
+
+        foreach ($payload as $records) {
+            if (!is_array($records) || !$this->isList($records)) {
+                continue;
+            }
+
+            foreach ($records as $record) {
+                if (!is_array($record)) {
+                    continue;
+                }
+
+                $value = $this->candidateSearchValue($record, null);
+                if ($value === null) {
+                    continue;
+                }
+
+                $candidates[] = [
+                    'value' => $value,
+                    'entity' => null,
+                    'record' => $record,
+                    'missing_field' => null,
+                ];
+            }
+        }
+
+        return $candidates;
     }
 
     /**
@@ -234,5 +273,13 @@ class AiNativeSuggestedToolArgumentResolver
         }
 
         return $value;
+    }
+
+    /**
+     * @param array<int|string, mixed> $value
+     */
+    private function isList(array $value): bool
+    {
+        return array_is_list($value);
     }
 }

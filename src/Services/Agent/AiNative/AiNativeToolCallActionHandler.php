@@ -62,6 +62,17 @@ class AiNativeToolCallActionHandler
         if ($tool->requiresConfirmation()) {
             $this->taskState->rememberCurrentPayload($state, $arguments, 'tool_call');
 
+            if (!$isConfirmedSuggestedWrite && $this->skillPolicy->relationCreateNeedsLookupMiss($toolName, $arguments, $state, $options)) {
+                $state['runtime_feedback'][] = [
+                    'reason' => 'relation_write_without_lookup_miss',
+                    'message' => 'This write tool creates a related record for the active skill. Call the relation lookup tool for the same record first, and only use the create tool after that lookup returns not found.',
+                    'write_tool' => $toolName,
+                ];
+                $this->stateStore->put($context, $state);
+
+                return AiNativeActionOutcome::continueLoop();
+            }
+
             if (!$isConfirmedSuggestedWrite && $this->skillPolicy->needsLookupBeforeWrite($toolName, $arguments, $state, $options)) {
                 $state['runtime_feedback'][] = [
                     'reason' => 'write_without_lookup',

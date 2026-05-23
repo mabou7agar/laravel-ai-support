@@ -213,6 +213,14 @@ return [
             'max_depth' => (int) env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY_MAX_DEPTH', 3),
             'max_items' => (int) env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY_MAX_ITEMS', 20),
             'max_value_length' => (int) env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY_MAX_VALUE_LENGTH', 160),
+            'computed_totals' => [
+                'enabled' => env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY_COMPUTED_TOTALS', true),
+                'quantity_fields' => ['quantity', 'qty'],
+                'unit_amount_fields' => ['unit_price', 'price', 'rate', 'amount'],
+                'line_total_field' => 'line_total',
+                'subtotal_field' => 'subtotal',
+                'total_field' => 'total',
+            ],
             'hidden_fields' => [
                 'id',
                 '*_id',

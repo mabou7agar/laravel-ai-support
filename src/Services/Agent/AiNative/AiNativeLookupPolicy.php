@@ -103,6 +103,77 @@ class AiNativeLookupPolicy
     }
 
     /**
+     * @param array<string, mixed> $arguments
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    public function relationCreateNeedsLookupMiss(string $toolName, array $arguments, array $state, array $options): bool
+    {
+        $relation = $this->relationForCreateTool($toolName, $state, $options);
+        if ($relation === null) {
+            return false;
+        }
+
+        $lookupTool = trim((string) ($relation['lookup_tool'] ?? ''));
+        if ($lookupTool === '') {
+            return false;
+        }
+
+        $label = $this->labels->label($arguments);
+        if ($label === '') {
+            return true;
+        }
+
+        foreach ((array) ($state['tool_results'] ?? []) as $entry) {
+            if (!is_array($entry) || (string) ($entry['tool'] ?? '') !== $lookupTool) {
+                continue;
+            }
+
+            $result = is_array($entry['result'] ?? null) ? $entry['result'] : [];
+            $data = is_array($result['data'] ?? null) ? $result['data'] : [];
+            if (($data['found'] ?? null) !== false) {
+                continue;
+            }
+
+            $params = is_array($entry['params'] ?? null) ? $entry['params'] : [];
+            foreach ([$this->labels->label($params), $this->labels->label($data)] as $candidate) {
+                if ($candidate !== '' && $candidate === $label) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>|null
+     */
+    private function relationForCreateTool(string $toolName, array $state, array $options): ?array
+    {
+        $selectedSkill = (string) ($options['skill_id'] ?? data_get($state, 'task_frame.active_objective', ''));
+        if ($selectedSkill === '') {
+            return null;
+        }
+
+        foreach ($this->skills->skills() as $skill) {
+            if ($skill->id !== $selectedSkill) {
+                continue;
+            }
+
+            foreach ((array) data_get($skill->metadata, 'relations', []) as $relation) {
+                if (is_array($relation) && (string) ($relation['create_tool'] ?? '') === $toolName) {
+                    return $relation;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @param array<string, mixed> $state
      * @param array<string, mixed> $options
      * @return array<int, string>

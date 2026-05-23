@@ -266,6 +266,16 @@ class AiNativeSkillPolicy
     }
 
     /**
+     * @param array<string, mixed> $arguments
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    public function relationCreateNeedsLookupMiss(string $toolName, array $arguments, array $state, array $options): bool
+    {
+        return $this->lookupPolicy->relationCreateNeedsLookupMiss($toolName, $arguments, $state, $options);
+    }
+
+    /**
      * @param array<string, mixed> $state
      * @param array<string, mixed> $options
      * @return array<int, string>

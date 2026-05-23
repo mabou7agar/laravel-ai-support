@@ -68,7 +68,11 @@ class AgentTaskStateService
         $frame['recent_outcomes'][] = $outcome;
 
         if ($writeTool && $result->success && !$result->requiresUserInput()) {
-            $frame['status'] = 'completed';
+            $toolObjective = $this->objectiveFromTool($toolName);
+            $activeObjective = trim((string) ($frame['active_objective'] ?? ''));
+            $frame['status'] = $activeObjective === '' || $activeObjective === $toolObjective
+                ? 'completed'
+                : 'working';
             $frame['pending_tool'] = null;
             $frame['completed_writes'][] = [
                 'tool' => $toolName,
