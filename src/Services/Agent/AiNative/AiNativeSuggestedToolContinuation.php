@@ -40,6 +40,7 @@ class AiNativeSuggestedToolContinuation
     {
         $confirmedWriteTool = $this->confirmedWriteTool($state, $confirmedWriteTool);
         $confirmedWriteArguments ??= $this->confirmedWriteArguments($state);
+        $toolResult = $this->resultWithLatestPayload($state, $result, $confirmedWriteArguments);
 
         if ($confirmedWriteTool !== null && $confirmedWriteTool !== '') {
             $state['confirmed_write_tools'][$confirmedWriteTool] = [
@@ -50,14 +51,14 @@ class AiNativeSuggestedToolContinuation
         $state['runtime_feedback'][] = [
             'reason' => 'suggested_tool_continuation',
             'message' => 'The previous tool requested additional tool work. Use suggested tools and retry the confirmed write with resolved values.',
-            'tool_result' => $result->toArray(),
+            'tool_result' => $toolResult,
         ];
 
         $state['suggested_tool_continuation'] = [
             'confirmed_write_tool' => $confirmedWriteTool,
             'confirmed_write_arguments' => $confirmedWriteArguments,
             'suggested_tools' => $this->suggestedToolsFromResult($result),
-            'tool_result' => $result->toArray(),
+            'tool_result' => $toolResult,
         ];
     }
 
@@ -326,6 +327,34 @@ class AiNativeSuggestedToolContinuation
         $existing = data_get($state, 'suggested_tool_continuation.confirmed_write_arguments');
 
         return is_array($existing) ? $existing : null;
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     * @param array<string, mixed>|null $confirmedWriteArguments
+     * @return array<string, mixed>
+     */
+    private function resultWithLatestPayload(array $state, ActionResult $result, ?array $confirmedWriteArguments): array
+    {
+        $toolResult = $result->toArray();
+        $payload = is_array(data_get($toolResult, 'data.current_payload'))
+            ? data_get($toolResult, 'data.current_payload')
+            : [];
+
+        foreach ([
+            $confirmedWriteArguments,
+            data_get($state, 'task_frame.current_payload'),
+        ] as $candidate) {
+            if (is_array($candidate)) {
+                $payload = $this->mergeNonEmptyPayload($payload, $candidate);
+            }
+        }
+
+        if ($payload !== []) {
+            data_set($toolResult, 'data.current_payload', $payload);
+        }
+
+        return $toolResult;
     }
 
     /**

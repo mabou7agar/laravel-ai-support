@@ -230,6 +230,36 @@ return [
             'AI_AGENT_AI_NATIVE_AUTO_CONFIRM_SUGGESTED_WRITES',
             true
         ),
+        'write_confirmation_question_terms' => [
+            'approval' => [
+                'would you like',
+                'would you like to',
+                'should i',
+                'do you want',
+                'shall i',
+                'can i',
+                'may i',
+            ],
+            'actions' => [
+                'create',
+                'update',
+                'delete',
+                'send',
+                'generate',
+                'run',
+                'execute',
+                'submit',
+                'approve',
+            ],
+            'missing_input' => [
+                'what',
+                'which',
+                'please provide',
+                'enter',
+                'instead',
+                ' or ',
+            ],
+        ],
         'lookup_before_ask_terms' => [
             'id',
             'uuid',

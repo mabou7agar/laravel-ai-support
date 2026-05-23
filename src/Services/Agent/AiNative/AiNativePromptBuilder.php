@@ -41,6 +41,7 @@ class AiNativePromptBuilder
             'When a skill relation has lookup_fields and the current payload contains one of those values, call that relation lookup_tool with the value.',
             'If a value can be resolved by an available lookup/search/find tool, call that tool before asking the user for the value.',
             'If the context snapshot says an equivalent write was already completed, answer from that state instead of creating it again.',
+            'Do not ask the user in free text whether you should create, update, delete, send, generate, run, or execute something when a confirming tool is available. Call the confirming tool with the collected payload; Laravel will show the structured confirmation prompt.',
             'When a skill has a confirming final tool and the payload is ready, call that final tool. Laravel will pause for confirmation before executing it.',
             'Never invent database IDs, prices, file IDs, or foreign keys. Use IDs only when a previous tool result returned them.',
             'If the user asks to create, update, delete, send, generate, search, or inspect application data, do not return final until a relevant tool result supports the answer or you ask for missing input.',

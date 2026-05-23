@@ -77,6 +77,12 @@ class AiNativeToolCallActionHandler
 
         $validation = $tool->validate($this->toolExecutor->withConfirmationForValidation($tool, $arguments));
         if ($validation !== []) {
+            if ($this->shouldRetryAfterValidationFailure($state, $toolName, $arguments, $validation)) {
+                $this->stateStore->put($context, $state);
+
+                return AiNativeActionOutcome::continueLoop();
+            }
+
             $this->stateStore->put($context, $state);
 
             return AiNativeActionOutcome::response($this->responses->needsUserInput($context, $state, implode("\n", $validation), $this->responses->requiredInputsFromValidation($validation), [
@@ -248,5 +254,35 @@ class AiNativeToolCallActionHandler
         $message = trim((string) ($plan['message'] ?? ''));
 
         return $message !== '' ? $message : 'Done.';
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $arguments
+     * @param array<int, string> $validation
+     */
+    private function shouldRetryAfterValidationFailure(array &$state, string $toolName, array $arguments, array $validation): bool
+    {
+        $state['last_tool_validation_failure'] = [
+            'tool' => $toolName,
+            'validation_errors' => $validation,
+            'arguments' => $arguments,
+        ];
+
+        $signature = hash('sha256', $toolName.'|'.json_encode($arguments).'|'.json_encode($validation));
+        if (isset($state['tool_validation_attempts'][$signature])) {
+            return false;
+        }
+
+        $state['tool_validation_attempts'][$signature] = true;
+        $state['runtime_feedback'][] = [
+            'reason' => 'tool_validation_failed',
+            'message' => 'The planned tool call was missing required data. Repair the plan using the current payload, ask the user for missing fields, or call a lookup tool before retrying.',
+            'tool' => $toolName,
+            'validation_errors' => $validation,
+            'arguments' => $arguments,
+        ];
+
+        return true;
     }
 }
