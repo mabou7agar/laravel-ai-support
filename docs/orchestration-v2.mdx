@@ -4,6 +4,33 @@ Orchestration v2 makes agent execution explicit: a runtime receives the message,
 
 Laravel remains the default runtime. LangGraph is optional and should be enabled only for workflows that need checkpointing, graph debugging, human interrupts, or long-running multi-agent branches.
 
+## AI-Native Default
+
+New chat and skill flows should use the AI-native runtime. The model decides intent, planning, tool use, RAG use, follow-up questions, and continuation from the registered skills, tools, conversation, memory, and retrieved context.
+
+Laravel remains responsible for the parts that should not be left to model text:
+
+- request validation and form/schema requirements
+- tenant, workspace, user, and credit scope checks
+- write confirmations and approval records
+- trusted tool-result authority for relation IDs and foreign keys
+- audit metadata, traces, artifacts, and persisted run state
+
+If a confirmed tool returns missing fields plus `suggested_tools`, Laravel keeps the original write approval in runtime state and can execute safe suggested lookup/search tools before asking the model to retry the write. This lets tools stay generic while avoiding dead-end chat turns such as "please route this manually" when the package already knows a lookup tool can resolve the missing relation.
+
+AI-native context intelligence gives the model a compact continuation snapshot on every turn. The runtime normalizes tool results into generic outcomes such as `found`, `created`, `updated`, `deleted`, `not_found`, `needs_input`, and `failed`; tracks an active task frame with pending confirmation and completed writes; and includes that snapshot in the prompt beside the raw runtime state. This lets follow-up messages such as "confirm", "change it", "did you create it?", or "add another one" reason from structured state instead of only transcript text.
+
+When a model asks the user for a value that is commonly resolvable by lookup tools, such as price, cost, rate, amount, or total, the runtime checks the matched skill for unused lookup/search/find tools and asks the model to try those tools first. Configure these terms with `ai-agent.ai_native.lookup_before_ask_terms`.
+
+Confirmed write tools also get duplicate protection. When the same confirming tool is called again with the same normalized payload, the runtime returns an already-completed response instead of executing the write a second time. Host tools should still keep their own database-level idempotency for production workflows, but the runtime now protects the common chat-loop retry path.
+
+```env
+AI_AGENT_AI_NATIVE_ENABLED=true
+AI_AGENT_AI_NATIVE_SKILLS=true
+```
+
+Expose concrete application tools, such as `find_customer`, `create_customer`, `find_product`, and `create_invoice`. The old action-draft workflow tools are no longer registered by the package.
+
 ## Runtime Contract
 
 Custom runtimes implement `LaravelAIEngine\Contracts\AgentRuntimeContract`.
@@ -150,6 +177,25 @@ The native runtime emits stable event names:
 
 If a client cannot consume live events, use the run trace API to read persisted fallback events.
 
+## Durable Chat Entry Point
+
+`POST /api/v1/agent/chat` stays synchronous by default. Use `execution_mode=auto` when the client wants the package to queue only work that needs durability. Use `execution_mode=async` or `async=true` when a chat request should always become a durable agent run:
+
+```bash
+curl -X POST "$APP_URL/api/v1/agent/chat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Create invoice and generate preview",
+    "session_id": "thread-123",
+    "user_id": "user-uuid",
+    "execution_mode": "auto",
+    "actions": true,
+    "use_rag": false
+  }'
+```
+
+When auto resolves to async, the controller creates an `ai_agent_runs` row, dispatches `RunAgentJob`, and returns `status_url`, `trace_url`, `stream_url`, and broadcast metadata. Execution continues through the same runtime, approval, continuation, artifact, and trace services used by manually created runs.
+
 ## RAG Pipeline
 
 RAG belongs behind the `search_rag` decision and should stay in RAG services:
@@ -170,6 +216,8 @@ Agent runs use these statuses: `pending`, `running`, `waiting_approval`, `waitin
 Use the agent run API for inspection and control:
 
 ```bash
+curl "$APP_URL/api/v1/ai/agent-runs/$RUN_ID"
+curl "$APP_URL/api/v1/ai/agent-runs/$RUN_ID/stream?timeout=30&poll=500"
 curl "$APP_URL/api/v1/ai/agent-runs/$RUN_ID/trace"
 curl -X POST "$APP_URL/api/v1/ai/agent-runs/$RUN_ID/resume" \
   -H "Content-Type: application/json" \

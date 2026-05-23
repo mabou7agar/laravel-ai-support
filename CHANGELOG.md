@@ -9,11 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **AI-native agent runtime** — added a package-wide tool loop where the model decides intent, tool use, follow-up questions, confirmations, and final responses while Laravel enforces validation, scope, approval, audit, and trusted tool-result authority.
+- **Learned design generation** — added `Engine::learn()->generateDesign()` and `ai:design` so the package can generate HTML/Markdown design artifacts from scoped learned context.
+- **Learned design fidelity** — `ai:design` now includes bounded raw source context, optional neutral `media_url` support for full-bleed learned media bands, and sanitizes source brand/font leakage from generated artifacts.
+- **Learn layer** — added `Engine::learn()`, `ai:learn`, scoped SQL storage for learned sources/items, optional vector-store indexing, and a getdesign adapter for URL and curated `DESIGN.md` slug imports.
+- **Peer sub-agent conversations** — added `SubAgentConversationService` and `ai:test-sub-agent-chat` so two configured sub-agents can alternate turns over a long-lived session, persist shared context, and run deterministic or live provider-backed checks.
+
+### Changed
+
+- **AI-driven skills** — `run_skill` now delegates to the AI-native runtime, passing skills and tools as capability context. The old package-coded `SkillFlowRunner` path has been removed.
+- **Action tool cleanup** — removed the old action-draft workflow tools from the built-in registry. Use concrete tools or `ActionBackedTool` classes for write capabilities.
+- **Model tool config naming** — renamed `AutonomousModelConfig` to `ModelToolConfig` to match the current skill/tool architecture.
+- **AI-native suggested tool continuations** — when a confirmed tool returns `current_payload`, `missing_fields`, and `suggested_tools`, the runtime can run safe lookup/search continuations and retry the already confirmed write instead of asking the user to manually route the next tool.
+- **AI-native final-tool authority** — skills can declare `metadata.final_tool` or `metadata.final_tools`; the runtime will not accept a final answer for that skill until one declared final tool has executed successfully.
+- **AI-native parser tolerance** — direct tool-name JSON such as `{"action":"find_customer","query":"ACME"}` is normalized into a tool call with top-level fields as arguments.
+- **AI-native pending write approvals** — configured continuation terms such as `create it`, `do it`, and `go ahead` now resume the active pending write confirmation instead of discarding it and starting a fresh tool attempt.
+- **AI-native confirmation summaries** — write-tool confirmations now include a generic user-friendly summary of the pending tool payload before execution, with readable labels, hidden IDs, empty-value omission, and configurable redaction for sensitive fields.
+- **AI-native context intelligence** — tool results are normalized into generic outcomes, active task frames track pending confirmations and completed writes, prompts include compact context snapshots, lookup-resolvable values are pushed through available lookup tools before asking users, and repeated confirmed writes with the same payload are blocked from executing twice.
+
+### Removed
+
+- **Legacy collector runtime** — removed `DataCollector*`, `AutonomousCollector*`, collector DTOs, collector handlers, collector API/runtime wiring, and `autonomous_collectors` node metadata. Use structured collection for callback-based data capture or AI-native skills plus tools/actions for executable app workflows.
+- **Legacy action-intake runtime** — removed the old draft/intake helpers and built-in action-flow tools (`ActionIntakeCoordinator`, `ActionPayloadExtractor`, `ActionManager`, action draft tools, and related tests). Use concrete tools, `ActionBackedTool`, `ActionRegistry`, and `ActionOrchestrator`.
+
+### Upgrade Notes
+
+- Existing installs that already ran removed collector migrations may keep old database artifacts until the host app drops them. The package no longer reads `data_collector_configs`, `data_collector_states`, or `ai_nodes.autonomous_collectors`; remove those tables/columns in the host app if they are not used elsewhere.
+- Replace custom model config classes extending `AutonomousModelConfig` with `ModelToolConfig`.
+
 ## [2.2.35] — 2026-05-18
 
 ### Changed
 
-- **Conversation transcript naming** — extracted transcript/session history behavior into `ConversationTranscriptService` while keeping `ConversationService` as a compatibility alias.
+- **Conversation transcript naming** — extracted transcript/session history behavior into `ConversationTranscriptService` and removed the old `ConversationService` compatibility alias.
+- **Config-cache cleanup** — moved the env-backed default config tree into `config/ai-engine-defaults.php`; runtime source files no longer call `env()` directly.
 - **Chat transcript persistence** — `ChatService` now persists the user and assistant turn after the agent runtime returns when transcript history is enabled.
 - **Agent response presentation** — chat can now return bullet/numbered response points as arrays and include generic next-step suggestions from registered actions, skills, and tools.
 - **Modern provider passthrough** — normal `AIRequest` and `EngineProxy` flows now support `withProviderOptions()` for provider-specific request fields across OpenAI, Anthropic, Gemini, OpenRouter, and FAL-compatible media payloads.

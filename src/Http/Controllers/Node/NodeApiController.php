@@ -8,7 +8,9 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use LaravelAIEngine\Services\Actions\ActionManager;
+use Illuminate\Support\Str;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Actions\ActionOrchestrator;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Services\Node\NodeAuthService;
@@ -21,7 +23,7 @@ class NodeApiController extends Controller
 {
     public function __construct(
         protected NodeManifestService $manifestService,
-        protected ActionManager $actionManager,
+        protected ActionOrchestrator $actions,
         protected ChatService $chatService,
         protected InfrastructureHealthService $infrastructureHealth
     ) {
@@ -40,15 +42,6 @@ class NodeApiController extends Controller
     public function manifest()
     {
         return response()->json($this->manifestService->manifest());
-    }
-
-    public function autonomousCollectors()
-    {
-        return response()->json([
-            'collectors' => $this->manifestService->autonomousCollectors(),
-            'count' => count($this->manifestService->autonomousCollectors()),
-            'timestamp' => now()->toIso8601String(),
-        ]);
     }
 
     public function collections()
@@ -341,13 +334,12 @@ class NodeApiController extends Controller
         ]);
 
         try {
-            $result = $this->actionManager
-                ->executeById(
-                    actionId: $validated['action_type'],
-                    params: $validated['data'],
-                    userId: $request->user()?->id ?? ($validated['user_id'] ?? null),
-                    sessionId: $validated['session_id'] ?? null
-                )
+            $context = new UnifiedActionContext(
+                sessionId: $validated['session_id'] ?? 'node-action-' . (string) Str::uuid(),
+                userId: $request->user()?->id ?? ($validated['user_id'] ?? null)
+            );
+            $result = $this->actions
+                ->execute($validated['action_type'], $validated['data'], true, $context)
                 ->toArray();
 
             return response()->json([

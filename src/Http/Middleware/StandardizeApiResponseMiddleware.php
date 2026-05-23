@@ -7,10 +7,16 @@ namespace LaravelAIEngine\Http\Middleware;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use LaravelAIEngine\Support\JsonPayloadSanitizer;
 use Symfony\Component\HttpFoundation\Response;
 
 class StandardizeApiResponseMiddleware
 {
+    public function __construct(
+        protected ?JsonPayloadSanitizer $jsonPayloads = null
+    ) {
+    }
+
     public function handle(Request $request, Closure $next): Response
     {
         /** @var Response $response */
@@ -51,9 +57,14 @@ class StandardizeApiResponseMiddleware
             'meta' => $meta,
         ];
 
-        $response->setData($standard);
+        $response->setData($this->jsonPayloads()->sanitize($standard));
 
         return $response;
+    }
+
+    protected function jsonPayloads(): JsonPayloadSanitizer
+    {
+        return $this->jsonPayloads ??= new JsonPayloadSanitizer();
     }
 
     protected function alreadyStandardized(array $payload): bool

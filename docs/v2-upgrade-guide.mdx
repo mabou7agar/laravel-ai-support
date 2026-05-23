@@ -45,9 +45,21 @@ These names should not be used as new extension points:
 | `HasAIFeatures`, `HasAIActions`, `HasSimpleAIConfig`, `HasAIConfigBuilder`, `AutoResolvesRelationships`, `ResolvesAIRelationships`, `AIConfigurable`, `EntityFieldConfig` | removed | skills, tools, action definitions, and explicit relation resolvers |
 | `IntelligentEntityService`, `DocumentTypeAnalyzer`, `ai:test-intent` | removed | current agent/action/RAG tests and explicit app tools |
 | package demo chat/auth routes, `AIChatController`, `AuthController`, bundled chat Blade widgets, and demo JS assets | removed | versioned package APIs, application-owned UI, and app-defined auth |
-| stale intelligent/entity prompt resources | removed | current action intake, data collector, autonomous collector, agent skill, and RAG prompt resources |
+| stale intelligent/entity prompt resources | removed | current AI-native skill, action, tool, and RAG prompt resources |
+| `DataCollector*`, `AutonomousCollector*`, `ActionIntakeCoordinator`, `ActionPayloadExtractor`, action draft tools | removed | structured collection callbacks or AI-native skills with concrete tools/actions |
+| `AutonomousModelConfig` | renamed | `ModelToolConfig` |
 
 Move new behavior into the narrower runtime, routing, execution, RAG, provider-tool, credit, or audit services.
+
+## Removed Collector Storage
+
+The package no longer ships or reads the old collector storage surface:
+
+- `data_collector_configs`
+- `data_collector_states`
+- `ai_nodes.autonomous_collectors`
+
+If an existing host application already ran those migrations, add an app-owned cleanup migration when you are ready to drop the unused tables/column. New collection flows should use `StructuredCollectionDefinition` for callback/event collection or AI-native skills with concrete tools/actions when the chat should execute a write.
 
 ## Config Changes
 

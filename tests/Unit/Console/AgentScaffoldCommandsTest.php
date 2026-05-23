@@ -75,7 +75,7 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertSame('App\\AI\\Filters\\TenantScopeFilter', $manifest['filters']['tenant_scope'] ?? null);
 
         $agentFile = file_get_contents(app_path('AI/Configs/InvoiceConfig.php')) ?: '';
-        $this->assertStringContainsString('class InvoiceConfig extends AutonomousModelConfig', $agentFile);
+        $this->assertStringContainsString('class InvoiceConfig extends ModelToolConfig', $agentFile);
         $this->assertStringContainsString('return \\App\\Models\\Invoice::class;', $agentFile);
     }
 
@@ -153,7 +153,8 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $skillFile = file_get_contents(app_path('AI/Skills/CreateInvoiceSkill.php')) ?: '';
         $this->assertStringContainsString('extends AgentSkill', $skillFile);
         $this->assertStringContainsString("public string \$id = 'create_invoice';", $skillFile);
-        $this->assertStringContainsString('public function targetJson(): array', $skillFile);
+        $this->assertStringContainsString('use LaravelAIEngine\Services\Agent\Skills\SkillBuilder;', $skillFile);
+        $this->assertStringContainsString('public function configure(SkillBuilder $skill): void', $skillFile);
         $this->assertStringNotContainsString('implements AgentSkillProvider', $skillFile);
     }
 
@@ -263,7 +264,8 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertSame(0, $exitCode);
         $this->assertTrue($payload['matched']);
         $this->assertSame('create_invoice', $payload['skill']['id']);
-        $this->assertSame('update_action_draft', $payload['plan']['resource_name']);
+        $this->assertNull($payload['plan']['resource_name']);
+        $this->assertSame('search_rag', $payload['plan']['action']);
     }
 
     public function test_manifest_doctor_reports_missing_skill_references(): void

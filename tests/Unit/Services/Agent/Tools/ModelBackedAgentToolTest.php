@@ -7,7 +7,6 @@ namespace LaravelAIEngine\Tests\Unit\Services\Agent\Tools;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use LaravelAIEngine\DTOs\AutonomousCollectorConfig;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\Tools\ModelBackedLookupTool;
 use LaravelAIEngine\Services\Agent\Tools\ModelBackedUpsertTool;
@@ -19,8 +18,8 @@ class ModelBackedAgentToolTest extends TestCase
     {
         parent::setUp();
 
-        Schema::dropIfExists('collector_tool_customers');
-        Schema::create('collector_tool_customers', function (Blueprint $table): void {
+        Schema::dropIfExists('model_backed_tool_customers');
+        Schema::create('model_backed_tool_customers', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
             $table->string('email')->nullable();
@@ -31,18 +30,18 @@ class ModelBackedAgentToolTest extends TestCase
 
     public function test_lookup_tool_finds_record_by_configured_columns_and_scope(): void
     {
-        CollectorToolCustomer::query()->create([
+        ModelBackedToolCustomer::query()->create([
             'name' => 'Shared Customer',
             'email' => 'wrong@example.test',
             'user_id' => 1,
         ]);
-        CollectorToolCustomer::query()->create([
+        ModelBackedToolCustomer::query()->create([
             'name' => 'Shared Customer',
             'email' => 'right@example.test',
             'user_id' => 2,
         ]);
 
-        $result = (new CollectorCustomerLookupTool())->execute(
+        $result = (new CustomerLookupTool())->execute(
             ['query' => 'Shared Customer'],
             new UnifiedActionContext('lookup-test', 2)
         );
@@ -54,7 +53,7 @@ class ModelBackedAgentToolTest extends TestCase
 
     public function test_lookup_tool_returns_missing_fields_for_collection_flows(): void
     {
-        $result = (new CollectorCustomerLookupTool())->execute(
+        $result = (new CustomerLookupTool())->execute(
             ['query' => 'Missing Customer'],
             new UnifiedActionContext('lookup-missing-test', 2)
         );
@@ -66,7 +65,7 @@ class ModelBackedAgentToolTest extends TestCase
 
     public function test_upsert_tool_validates_required_fields_and_uses_defaults(): void
     {
-        $tool = new CollectorCustomerUpsertTool();
+        $tool = new CustomerUpsertTool();
 
         $this->assertTrue($tool->requiresConfirmation());
         $this->assertSame(['name', 'email'], array_keys($tool->getParameters()));
@@ -84,7 +83,7 @@ class ModelBackedAgentToolTest extends TestCase
         $this->assertTrue($created->data['success']);
         $this->assertTrue($created->data['created']);
         $this->assertSame(77, $created->data['user_id']);
-        $this->assertDatabaseHas('collector_tool_customers', [
+        $this->assertDatabaseHas('model_backed_tool_customers', [
             'name' => 'Sample Customer',
             'email' => 'mohamed@example.test',
             'user_id' => 77,
@@ -93,7 +92,7 @@ class ModelBackedAgentToolTest extends TestCase
 
     public function test_model_backed_tools_can_be_defined_with_properties_only(): void
     {
-        CollectorToolCustomer::query()->create([
+        ModelBackedToolCustomer::query()->create([
             'name' => 'Property Customer',
             'email' => 'property@example.test',
             'user_id' => 88,
@@ -114,51 +113,22 @@ class ModelBackedAgentToolTest extends TestCase
 
         $this->assertTrue($upsert->success);
         $this->assertTrue($upsert->data['created']);
-        $this->assertDatabaseHas('collector_tool_customers', [
+        $this->assertDatabaseHas('model_backed_tool_customers', [
             'name' => 'Property Created',
             'email' => 'created@example.test',
         ]);
     }
 
-    public function test_autonomous_collector_config_can_execute_agent_tool_classes(): void
-    {
-        CollectorToolCustomer::query()->create([
-            'name' => 'Sample Customer',
-            'email' => 'mohamed@example.test',
-            'user_id' => 77,
-        ]);
-
-        $config = new AutonomousCollectorConfig(
-            goal: 'Find customer',
-            tools: [
-                'find_customer' => CollectorCustomerLookupTool::class,
-                'create_customer' => CollectorCustomerUpsertTool::class,
-            ]
-        );
-
-        $this->assertFalse($config->toolRequiresConfirmation('find_customer'));
-        $this->assertTrue($config->toolRequiresConfirmation('create_customer'));
-        $this->assertStringContainsString('Requires explicit user confirmation', $config->buildSystemPrompt());
-
-        $result = $config->executeTool(
-            'find_customer',
-            ['query' => 'Sample Customer'],
-            new UnifiedActionContext('config-tool-test', 77)
-        );
-
-        $this->assertTrue($result['found']);
-        $this->assertSame('mohamed@example.test', $result['email']);
-    }
 }
 
-class CollectorToolCustomer extends Model
+class ModelBackedToolCustomer extends Model
 {
-    protected $table = 'collector_tool_customers';
+    protected $table = 'model_backed_tool_customers';
 
     protected $guarded = [];
 }
 
-class CollectorCustomerLookupTool extends ModelBackedLookupTool
+class CustomerLookupTool extends ModelBackedLookupTool
 {
     public function getName(): string
     {
@@ -172,7 +142,7 @@ class CollectorCustomerLookupTool extends ModelBackedLookupTool
 
     protected function modelClass(): string
     {
-        return CollectorToolCustomer::class;
+        return ModelBackedToolCustomer::class;
     }
 
     protected function searchColumns(): array
@@ -196,7 +166,7 @@ class CollectorCustomerLookupTool extends ModelBackedLookupTool
     }
 }
 
-class CollectorCustomerUpsertTool extends ModelBackedUpsertTool
+class CustomerUpsertTool extends ModelBackedUpsertTool
 {
     public function getName(): string
     {
@@ -210,7 +180,7 @@ class CollectorCustomerUpsertTool extends ModelBackedUpsertTool
 
     protected function modelClass(): string
     {
-        return CollectorToolCustomer::class;
+        return ModelBackedToolCustomer::class;
     }
 
     protected function identityFields(): array
@@ -245,7 +215,7 @@ class PropertyCustomerLookupTool extends ModelBackedLookupTool
 
     public string $description = 'Find customer.';
 
-    protected string $model = CollectorToolCustomer::class;
+    protected string $model = ModelBackedToolCustomer::class;
 
     protected array $search = ['name', 'email'];
 
@@ -258,7 +228,7 @@ class PropertyCustomerUpsertTool extends ModelBackedUpsertTool
 
     public string $description = 'Create or update customer.';
 
-    protected string $model = CollectorToolCustomer::class;
+    protected string $model = ModelBackedToolCustomer::class;
 
     protected array $identity = ['email'];
 

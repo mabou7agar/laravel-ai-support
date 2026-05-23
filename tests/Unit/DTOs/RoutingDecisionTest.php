@@ -36,16 +36,12 @@ class RoutingDecisionTest extends UnitTestCase
     public function test_routing_action_and_source_vocabularies_are_available(): void
     {
         $this->assertSame([
-            RoutingDecisionAction::CONTINUE_RUN,
-            RoutingDecisionAction::CONTINUE_COLLECTOR,
             RoutingDecisionAction::CONTINUE_NODE,
             RoutingDecisionAction::HANDLE_SELECTION,
             RoutingDecisionAction::SEARCH_RAG,
             RoutingDecisionAction::USE_TOOL,
             RoutingDecisionAction::RUN_SUB_AGENT,
-            RoutingDecisionAction::START_COLLECTOR,
             RoutingDecisionAction::ROUTE_TO_NODE,
-            RoutingDecisionAction::PAUSE_AND_HANDLE,
             RoutingDecisionAction::CONVERSATIONAL,
             RoutingDecisionAction::NEED_USER_INPUT,
             RoutingDecisionAction::FAIL,

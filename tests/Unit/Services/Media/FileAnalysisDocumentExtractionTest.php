@@ -6,7 +6,7 @@ namespace LaravelAIEngine\Tests\Unit\Services\Media;
 
 use Illuminate\Http\UploadedFile;
 use LaravelAIEngine\Services\ChatService;
-use LaravelAIEngine\Services\ConversationService;
+use LaravelAIEngine\Services\ConversationTranscriptService;
 use LaravelAIEngine\Services\FileAnalysisService;
 use LaravelAIEngine\Tests\TestCase;
 use Mockery;
@@ -29,7 +29,7 @@ class FileAnalysisDocumentExtractionTest extends TestCase
         try {
             $service = new FileAnalysisService(
                 Mockery::mock(ChatService::class),
-                Mockery::mock(ConversationService::class)
+                Mockery::mock(ConversationTranscriptService::class)
             );
 
             $content = $service->extractContent($file);

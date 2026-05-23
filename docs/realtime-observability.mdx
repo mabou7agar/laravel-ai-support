@@ -20,6 +20,42 @@ $session = Engine::realtime()->create(
 
 Realtime support returns provider-specific session descriptors so host applications can attach their own WebSocket/WebRTC clients. OpenAI descriptors use snake_case fields expected by Realtime APIs. Gemini Live descriptors use Gemini-style camelCase fields such as `responseModalities`, `systemInstruction`, and `generationConfig`.
 
+## Durable Agent Run Streams
+
+Agent chat can create durable queued runs by sending `async=true` to `POST /api/v1/agent/chat`. The response includes `status_url`, `trace_url`, `stream_url`, and Laravel broadcast metadata.
+
+Use SSE when a browser tab needs live progress without a WebSocket service:
+
+```js
+const events = new EventSource(`/api/v1/ai/agent-runs/${runId}/stream?timeout=30&poll=500`);
+
+events.addEventListener('run.completed', (event) => {
+  const payload = JSON.parse(event.data);
+  console.log(payload.payload);
+  events.close();
+});
+
+events.addEventListener('run.failed', () => events.close());
+```
+
+Enable Laravel Broadcasting when the app already uses Reverb, Pusher, Soketi, Ably, or another broadcast driver:
+
+```env
+AI_AGENT_EVENT_STREAM_BROADCAST_ENABLED=true
+AI_AGENT_EVENT_STREAM_BROADCAST_PRIVATE=true
+AI_AGENT_EVENT_STREAM_BROADCAST_CHANNEL_PREFIX=agent-run
+```
+
+```js
+Echo.private(`agent-run.${runId}`)
+  .listen('.tool.started', (event) => console.log(event))
+  .listen('.approval.required', (event) => console.log(event))
+  .listen('.artifact.created', (event) => console.log(event))
+  .listen('.run.completed', (event) => console.log(event));
+```
+
+Polling remains available through `GET /api/v1/ai/agent-runs/{run}` and `GET /api/v1/ai/agent-runs/{run}/trace`; both return persisted fallback events.
+
 ## Realtime Tool Broker
 
 `LaravelAIEngine\Services\SDK\RealtimeToolBrokerService` dispatches provider realtime tool calls through the package `ToolRegistry` and returns a structured result payload for the host client to send back to the provider.

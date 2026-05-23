@@ -4,16 +4,21 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent\Execution;
 
+use Illuminate\Support\Facades\Event;
+use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\RoutingDecision;
 use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\RoutingDecisionSource;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Events\AgentRunStreamed;
 use LaravelAIEngine\Contracts\RoutingStageContract;
 use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
+use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
+use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
@@ -126,6 +131,61 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         $this->assertSame($expected, $response);
     }
 
+    public function test_tool_needing_user_input_emits_progress_instead_of_failed(): void
+    {
+        Event::fake([AgentRunStreamed::class]);
+
+        $context = $this->context();
+        $expected = AgentResponse::fromActionResult(
+            ActionResult::needsUserInput('Need customer email.', metadata: [
+                'required_inputs' => ['customer_email'],
+            ]),
+            $context
+        );
+        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $audit = Mockery::mock(ProviderToolAuditService::class);
+
+        $execution->shouldReceive('executeUseTool')
+            ->once()
+            ->andReturn($expected);
+
+        $audit->shouldReceive('record')
+            ->once()
+            ->withArgs(static fn (string $event, mixed $_run, mixed $_approval, array $payload): bool => $event === 'agent_tool.started'
+                && ($payload['tool_name'] ?? null) === 'create_customer');
+
+        $audit->shouldReceive('record')
+            ->once()
+            ->withArgs(static fn (string $event, mixed $_run, mixed $_approval, array $payload): bool => $event === 'agent_tool.progress'
+                && ($payload['tool_name'] ?? null) === 'create_customer'
+                && ($payload['success'] ?? null) === false
+                && ($payload['needs_user_input'] ?? null) === true);
+
+        $response = (new AgentExecutionDispatcher(
+            $execution,
+            Mockery::mock(GoalAgentService::class),
+            $audit
+        ))->dispatch(
+            $this->decision(RoutingDecisionAction::USE_TOOL, [
+                'resource_name' => 'create_customer',
+            ]),
+            'create customer',
+            $context
+        );
+
+        $this->assertSame($expected, $response);
+        Event::assertDispatched(
+            AgentRunStreamed::class,
+            static fn (AgentRunStreamed $event): bool => ($event->event['name'] ?? null) === AgentRunEventStreamService::TOOL_PROGRESS
+                && ($event->event['payload']['tool_name'] ?? null) === 'create_customer'
+                && ($event->event['payload']['needs_user_input'] ?? null) === true
+        );
+        Event::assertNotDispatched(
+            AgentRunStreamed::class,
+            static fn (AgentRunStreamed $event): bool => ($event->event['name'] ?? null) === AgentRunEventStreamService::TOOL_FAILED
+        );
+    }
+
     public function test_blocked_tool_returns_policy_failure_without_execution(): void
     {
         config()->set('ai-agent.execution_policy.tool_deny', ['dangerous_tool']);
@@ -191,61 +251,6 @@ class AgentExecutionDispatcherTest extends UnitTestCase
 
         $this->assertFalse($response->success);
         $this->assertStringContainsString('blocked by execution policy', $response->message);
-    }
-
-    public function test_dispatches_start_collector_decision_and_exposes_node_route_callback(): void
-    {
-        $context = $this->context();
-        $expected = AgentResponse::success('Collector started.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-
-        $execution->shouldReceive('routeToNode')
-            ->once()
-            ->with('invoice', 'route invoice', $context, ['source' => 'collector'])
-            ->andReturn($expected);
-
-        $execution->shouldReceive('executeStartCollector')
-            ->once()
-            ->withArgs(function (string $collectorName, string $message, UnifiedActionContext $ctx, array $options, $routeToNode) use ($context, $expected): bool {
-                $this->assertSame('invoice_collector', $collectorName);
-                $this->assertSame('create invoice', $message);
-                $this->assertSame($context, $ctx);
-                $this->assertTrue($this->hasDecisionMetadata($options, RoutingDecisionAction::START_COLLECTOR));
-                $this->assertSame($expected, $routeToNode('invoice', 'route invoice', $context, ['source' => 'collector']));
-
-                return true;
-            })
-            ->andReturn($expected);
-
-        $response = $this->dispatcher($execution)->dispatch(
-            $this->decision(RoutingDecisionAction::START_COLLECTOR, [
-                'resource_name' => 'invoice_collector',
-            ]),
-            'create invoice',
-            $context
-        );
-
-        $this->assertSame($expected, $response);
-    }
-
-    public function test_dispatches_continue_collector_decision(): void
-    {
-        $context = $this->context();
-        $expected = AgentResponse::needsUserInput('Next field.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-
-        $execution->shouldReceive('continueCollectorSession')
-            ->once()
-            ->with('yes', $context, Mockery::on(fn (array $options): bool => $this->hasDecisionMetadata($options, RoutingDecisionAction::CONTINUE_COLLECTOR)))
-            ->andReturn($expected);
-
-        $response = $this->dispatcher($execution)->dispatch(
-            $this->decision(RoutingDecisionAction::CONTINUE_COLLECTOR),
-            'yes',
-            $context
-        );
-
-        $this->assertSame($expected, $response);
     }
 
     public function test_dispatches_continue_node_decision(): void
@@ -324,63 +329,6 @@ class AgentExecutionDispatcherTest extends UnitTestCase
 
         $this->assertFalse($response->success);
         $this->assertStringContainsString('blocked by execution policy', $response->message);
-    }
-
-    public function test_dispatches_continue_run_decision(): void
-    {
-        $context = $this->context();
-        $expected = AgentResponse::success('Run resumed.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-
-        $execution->shouldReceive('executeResumeSession')
-            ->once()
-            ->with($context)
-            ->andReturn($expected);
-
-        $response = $this->dispatcher($execution)->dispatch(
-            $this->decision(RoutingDecisionAction::CONTINUE_RUN),
-            'continue',
-            $context
-        );
-
-        $this->assertSame($expected, $response);
-    }
-
-    public function test_dispatches_pause_and_handle_decision_and_exposes_rag_callback(): void
-    {
-        $context = $this->context();
-        $expected = AgentResponse::success('Paused and searched.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-
-        $execution->shouldReceive('executeSearchRag')
-            ->once()
-            ->with(
-                'search after pause',
-                $context,
-                ['paused' => true],
-                Mockery::on(static fn ($callback): bool => is_callable($callback))
-            )
-            ->andReturn($expected);
-
-        $execution->shouldReceive('executePauseAndHandle')
-            ->once()
-            ->withArgs(function (string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context, $expected): bool {
-                $this->assertSame('new question', $message);
-                $this->assertSame($context, $ctx);
-                $this->assertTrue($this->hasDecisionMetadata($options, RoutingDecisionAction::PAUSE_AND_HANDLE));
-                $this->assertSame($expected, $searchRag('search after pause', $context, ['paused' => true]));
-
-                return true;
-            })
-            ->andReturn($expected);
-
-        $response = $this->dispatcher($execution)->dispatch(
-            $this->decision(RoutingDecisionAction::PAUSE_AND_HANDLE),
-            'new question',
-            $context
-        );
-
-        $this->assertSame($expected, $response);
     }
 
     public function test_dispatches_need_user_input_decision(): void

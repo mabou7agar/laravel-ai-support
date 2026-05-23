@@ -57,13 +57,44 @@ class AgentExecutionPolicyService
 
         $redacted = [];
         foreach ($payload as $key => $value) {
-            $keyString = strtolower((string) $key);
-            $redacted[$key] = in_array($keyString, $keys, true)
+            $redacted[$key] = $this->isSensitiveKey((string) $key, $keys)
                 ? '[redacted]'
                 : (is_array($value) ? $this->redactSensitive($value) : $value);
         }
 
         return $redacted;
+    }
+
+    /**
+     * @param array<int, string> $keys
+     */
+    private function isSensitiveKey(string $key, array $keys): bool
+    {
+        $normalizedKey = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $key));
+        $key = strtolower($key);
+
+        foreach ($keys as $sensitive) {
+            if ($sensitive === '') {
+                continue;
+            }
+
+            if ($key === $sensitive || $normalizedKey === $sensitive || fnmatch($sensitive, $key) || fnmatch($sensitive, $normalizedKey)) {
+                return true;
+            }
+
+            if (
+                str_ends_with($key, "_{$sensitive}")
+                || str_ends_with($key, "-{$sensitive}")
+                || str_ends_with($key, ".{$sensitive}")
+                || str_ends_with($normalizedKey, "_{$sensitive}")
+                || str_ends_with($normalizedKey, "-{$sensitive}")
+                || str_ends_with($normalizedKey, ".{$sensitive}")
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function isAllowed(string $type, string $name): bool

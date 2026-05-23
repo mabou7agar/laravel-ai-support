@@ -41,7 +41,7 @@ class AgentSkillMatcherTest extends UnitTestCase
         $this->assertGreaterThan(0, $match['score']);
     }
 
-    public function test_planner_compiles_action_skill_to_update_action_draft(): void
+    public function test_planner_does_not_use_removed_action_draft_tools_for_action_only_skill(): void
     {
         $skill = new AgentSkillDefinition(
             id: 'create_invoice',
@@ -57,14 +57,13 @@ class AgentSkillMatcherTest extends UnitTestCase
             ['score' => 100, 'trigger' => 'create invoice']
         );
 
-        $this->assertSame('use_tool', $plan['action']);
-        $this->assertSame('update_action_draft', $plan['resource_name']);
-        $this->assertSame('invoices.create', $plan['params']['action_id']);
-        $this->assertTrue($plan['params']['reset']);
+        $this->assertSame('search_rag', $plan['action']);
+        $this->assertNull($plan['resource_name']);
+        $this->assertSame('create invoice', $plan['params']['query']);
         $this->assertSame('skill_match', $plan['decision_source']);
     }
 
-    public function test_planner_compiles_skill_tool_auto_to_run_skill(): void
+    public function test_planner_compiles_ai_native_skill_to_run_skill(): void
     {
         $skill = new AgentSkillDefinition(
             id: 'create_invoice',
@@ -72,7 +71,7 @@ class AgentSkillMatcherTest extends UnitTestCase
             description: 'Create invoices.',
             tools: ['find_customer', 'create_invoice'],
             metadata: [
-                'planner' => 'skill_tool_auto',
+                'planner' => 'ai_native',
                 'target_json' => ['customer_name' => null, 'items' => []],
                 'final_tool' => 'create_invoice',
             ]
@@ -93,25 +92,25 @@ class AgentSkillMatcherTest extends UnitTestCase
         $this->assertSame('skill_match', $plan['decision_source']);
     }
 
-    public function test_planner_prefers_skill_collector_over_supporting_tools(): void
+    public function test_planner_uses_declared_skill_tool_when_no_ai_native_schema_exists(): void
     {
         $skill = new AgentSkillDefinition(
             id: 'create_invoice',
             name: 'Create Invoice',
             description: 'Create invoices.',
             tools: ['find_customer', 'create_customer'],
-            metadata: ['collector' => 'test_invoice_creator']
+            metadata: ['prompt' => 'Find or create a customer before invoice creation.']
         );
 
         $plan = (new AgentSkillExecutionPlanner())->plan(
             $skill,
             'create invoice',
-            new UnifiedActionContext('skill-collector-plan-test'),
+            new UnifiedActionContext('skill-tool-choice-plan-test'),
             ['score' => 100, 'trigger' => 'create invoice']
         );
 
-        $this->assertSame('start_collector', $plan['action']);
-        $this->assertSame('test_invoice_creator', $plan['resource_name']);
+        $this->assertSame('use_tool', $plan['action']);
+        $this->assertSame('find_customer', $plan['resource_name']);
         $this->assertSame('skill_match', $plan['decision_source']);
     }
 

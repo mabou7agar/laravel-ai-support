@@ -224,7 +224,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
             'tools' => $split['tools'],
             'temperature' => $request->getTemperature(),
             'max_output_tokens' => $request->getMaxTokens(),
-            'metadata' => array_diff_key($request->getMetadata(), ['provider_options' => true]),
+            'metadata' => $this->openAIResponsesMetadata($request),
         ], static fn ($value): bool => $value !== null && $value !== []);
 
         $responseOptions = $this->openAIResponsesOptions($request);
@@ -312,6 +312,38 @@ class OpenAIEngineDriver extends BaseEngineDriver
         unset($options['remember_response'], $options['use_previous_response']);
 
         return $options;
+    }
+
+    protected function openAIResponsesMetadata(AIRequest $request): array
+    {
+        $metadata = array_diff_key($request->getMetadata(), [
+            'provider_options' => true,
+            'openai_responses_api' => true,
+        ]);
+
+        $normalized = [];
+        foreach ($metadata as $key => $value) {
+            if (!is_string($key) || $key === '' || $value === null) {
+                continue;
+            }
+
+            if (is_bool($value)) {
+                $normalized[$key] = $value ? 'true' : 'false';
+                continue;
+            }
+
+            if (is_scalar($value)) {
+                $normalized[$key] = (string) $value;
+                continue;
+            }
+
+            $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (is_string($encoded)) {
+                $normalized[$key] = $encoded;
+            }
+        }
+
+        return $normalized;
     }
 
     protected function shouldRememberOpenAIResponse(AIRequest $request, array $options): bool

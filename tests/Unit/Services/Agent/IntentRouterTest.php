@@ -48,7 +48,7 @@ class IntentRouterTest extends TestCase
             ));
 
         $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->twice()->andReturn(new Collection());
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
 
         $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
         $context = new UnifiedActionContext(
@@ -77,7 +77,7 @@ class IntentRouterTest extends TestCase
         $this->assertStringContainsString('Respond with JSON ONLY', $capturedPrompt);
     }
 
-    public function test_route_includes_remote_collectors_and_nodes_in_prompt(): void
+    public function test_route_includes_remote_nodes_in_prompt(): void
     {
         $capturedPrompt = null;
         $ai = Mockery::mock(AIEngineService::class);
@@ -88,25 +88,18 @@ class IntentRouterTest extends TestCase
                 return true;
             }))
             ->andReturn(AIResponse::success(
-                '{"action":"start_collector","resource_name":"create_invoice","reasoning":"this is a create flow"}',
+                '{"action":"route_to_node","resource_name":"billing","reasoning":"billing node owns invoices"}',
                 EngineEnum::from('openai'),
                 EntityEnum::from('gpt-4o-mini')
             ));
 
         $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->twice()->andReturn(collect([
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(collect([
             [
                 'slug' => 'billing',
                 'name' => 'Billing',
                 'description' => 'Handles invoices',
                 'domains' => ['invoices', 'payments'],
-                'autonomous_collectors' => [
-                    [
-                        'name' => 'create_invoice',
-                        'goal' => 'Create invoice',
-                        'description' => 'Collect invoice data',
-                    ],
-                ],
             ],
         ]));
 
@@ -115,9 +108,8 @@ class IntentRouterTest extends TestCase
 
         $decision = $router->route('create a new invoice', $context);
 
-        $this->assertSame('start_collector', $decision['action']);
-        $this->assertSame('create_invoice', $decision['resource_name']);
-        $this->assertStringContainsString('create_invoice', $capturedPrompt);
+        $this->assertSame('route_to_node', $decision['action']);
+        $this->assertSame('billing', $decision['resource_name']);
         $this->assertStringContainsString('billing: Handles invoices [Domains: invoices, payments]', $capturedPrompt);
     }
 
@@ -133,7 +125,7 @@ class IntentRouterTest extends TestCase
             ));
 
         $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->twice()->andReturn(new Collection());
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
 
         $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
         $decision = $router->route('hello', new UnifiedActionContext('session-3', null));
@@ -155,7 +147,7 @@ class IntentRouterTest extends TestCase
             ));
 
         $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->twice()->andReturn(new Collection());
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
 
         $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
         $decision = $router->route('show me recent updates', new UnifiedActionContext('session-use-tool-null', null));
@@ -178,7 +170,7 @@ class IntentRouterTest extends TestCase
             ));
 
         $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+        $nodes->shouldReceive('getActiveNodes')->never();
 
         $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
         $decision = $router->route('show customer profile', new UnifiedActionContext('session-4', null), [
@@ -254,9 +246,9 @@ class IntentRouterTest extends TestCase
             'local_only' => true,
         ]);
 
-        $this->assertSame('use_tool', $decision['action']);
-        $this->assertSame('update_action_draft', $decision['resource_name']);
-        $this->assertSame('invoices.create', $decision['params']['action_id']);
+        $this->assertSame('search_rag', $decision['action']);
+        $this->assertNull($decision['resource_name']);
+        $this->assertSame('create invoice for ACME', $decision['params']['query']);
         $this->assertSame('skill_match', $decision['decision_source']);
     }
 
@@ -278,7 +270,7 @@ class IntentRouterTest extends TestCase
             ));
 
         $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->twice()->andReturn(new Collection());
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
 
         $policy = new AIPromptPolicyVersion([
             'policy_key' => 'agent-router',

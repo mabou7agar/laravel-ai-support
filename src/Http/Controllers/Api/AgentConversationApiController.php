@@ -7,12 +7,12 @@ namespace LaravelAIEngine\Http\Controllers\Api;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use LaravelAIEngine\Http\Requests\ListConversationsRequest;
-use LaravelAIEngine\Services\ConversationService;
+use LaravelAIEngine\Services\ConversationTranscriptService;
 
 class AgentConversationApiController extends Controller
 {
     public function __construct(
-        protected ConversationService $conversationService,
+        protected ConversationTranscriptService $conversationService,
     ) {}
 
     public function index(ListConversationsRequest $request): JsonResponse

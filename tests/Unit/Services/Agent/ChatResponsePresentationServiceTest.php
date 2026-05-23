@@ -33,4 +33,36 @@ class ChatResponsePresentationServiceTest extends UnitTestCase
         $this->assertSame('Create invoice', $presented->getMetadata()['response_points'][0]['text']);
         $this->assertSame('create_invoice', $presented->getMetadata()['suggestions'][0]['id']);
     }
+
+    public function test_existing_required_choice_suggestions_are_preserved_before_generated_suggestions(): void
+    {
+        $suggestions = Mockery::mock(AgentResponseSuggestionService::class);
+        $suggestions->shouldReceive('suggest')->once()->andReturn([
+            ['type' => 'skill', 'id' => 'create_invoice', 'label' => 'Create Invoice'],
+        ]);
+
+        $response = AIResponse::success('Please confirm before I create this customer.')
+            ->withMetadata([
+                'suggestions' => [
+                    [
+                        'type' => 'required_choice',
+                        'id' => 'confirm_create_customer',
+                        'label' => 'Confirm',
+                        'message' => 'confirm',
+                        'required' => true,
+                    ],
+                ],
+            ]);
+
+        $presented = (new ChatResponsePresentationService(new ResponsePointExtractor(), $suggestions))->apply(
+            $response,
+            'Use ahmed@gmail.com',
+            ['response_suggestions' => true]
+        );
+
+        $this->assertSame('confirm_create_customer', $presented->getMetadata()['suggestions'][0]['id']);
+        $this->assertSame('confirm', $presented->getMetadata()['suggestions'][0]['message']);
+        $this->assertTrue($presented->getMetadata()['suggestions'][0]['required']);
+        $this->assertSame('create_invoice', $presented->getMetadata()['suggestions'][1]['id']);
+    }
 }

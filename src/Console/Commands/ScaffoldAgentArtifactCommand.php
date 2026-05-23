@@ -266,9 +266,9 @@ class ScaffoldAgentArtifactCommand extends Command
 
 namespace {$namespace};
 
-use LaravelAIEngine\Contracts\AutonomousModelConfig;
+use LaravelAIEngine\Contracts\ModelToolConfig;
 
-class {$className} extends AutonomousModelConfig
+class {$className} extends ModelToolConfig
 {
     public static function getModelClass(): string
     {
@@ -466,6 +466,7 @@ PHP;
 namespace {$namespace};
 
 use LaravelAIEngine\Services\Agent\Skills\AgentSkill;
+use LaravelAIEngine\Services\Agent\Skills\SkillBuilder;
 
 class {$className} extends AgentSkill
 {
@@ -480,16 +481,9 @@ class {$className} extends AgentSkill
     ];
 
     public array \$requiredData = [
-        // 'customer_id',
-        // 'items',
+        // 'record_id',
+        // 'details',
     ];
-
-    public array \$tools = [
-        // \\App\\AI\\Tools\\FindCustomerTool::class,
-        // \\App\\AI\\Tools\\CreateInvoiceTool::class,
-    ];
-
-    public string \$finalTool = '';
 
     public array \$actions = [
         // '{$id}.create',
@@ -498,6 +492,8 @@ class {$className} extends AgentSkill
     public array \$capabilities = [
         '{$id}',
     ];
+
+    public string \$prompt = 'Describe the expected user-facing track for this skill. Keep business rules in tools and services.';
 
     public bool \$requiresConfirmation = true;
 
@@ -508,12 +504,30 @@ class {$className} extends AgentSkill
         'review_required' => true,
     ];
 
-    public function targetJson(): array
+    public function configure(SkillBuilder \$skill): void
     {
-        return [
-            // 'customer_id' => null,
-            // 'items' => [],
-        ];
+        // Use this prompt when the skill needs extra AI guidance:
+        // \$skill->prompt('Resolve related records first, collect missing values, then summarize before the final write.');
+
+        \$skill->target()
+            // ->id('record_id')
+            // ->list('details', fn (\$item) => \$item
+            //     ->id('related_record_id')
+            //     ->text('label')
+            //     ->number('quantity'))
+        ;
+
+        // Declare relations explicitly when a target field depends on another tool:
+        // \$skill->relation('record')
+        //     ->field('record_id')
+        //     ->lookup(\\App\\AI\\Tools\\FindRecordTool::class)
+        //     ->create(\\App\\AI\\Tools\\CreateRecordTool::class)
+        //     ->lookupFields(['record_name'])
+        //     ->createRequired(['name'])
+        //     ->safeCreate();
+
+        // \$skill->use(\\App\\AI\\Tools\\FindRecordTool::class);
+        // \$skill->final(\\App\\AI\\Tools\\CreateRecordTool::class)->confirmTerms(['{$id}']);
     }
 }
 PHP;

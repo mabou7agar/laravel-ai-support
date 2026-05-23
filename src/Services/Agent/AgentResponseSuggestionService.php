@@ -33,7 +33,7 @@ class AgentResponseSuggestionService
             return [];
         }
 
-        $haystack = $this->normalize($message . ' ' . $response . ' ' . json_encode($metadata));
+        $haystack = $this->normalize($message . ' ' . $response . ' ' . $this->metadataSuggestionText($metadata));
         $suggestions = [];
 
         foreach ($this->actionSuggestions($haystack, $context) as $suggestion) {
@@ -144,8 +144,14 @@ class AgentResponseSuggestionService
     protected function toolSuggestions(string $haystack): array
     {
         $suggestions = [];
+        $excluded = $this->excludedTools();
+
         foreach ($this->tools->all() as $name => $tool) {
             if (!$tool instanceof AgentTool) {
+                continue;
+            }
+
+            if (isset($excluded[$name]) || isset($excluded[$tool->getName()])) {
                 continue;
             }
 
@@ -230,6 +236,76 @@ class AgentResponseSuggestionService
         }
 
         return round(min(0.95, 0.45 + ($matches / max(1, min(6, count($tokens))))), 2);
+    }
+
+    protected function metadataSuggestionText(array $metadata): string
+    {
+        $parts = [];
+
+        foreach ([
+            'agent_strategy',
+            'entity_type',
+            'next_step',
+            'current_flow',
+            'current_step',
+        ] as $key) {
+            if (isset($metadata[$key]) && is_scalar($metadata[$key])) {
+                $parts[] = (string) $metadata[$key];
+            }
+        }
+
+        foreach ((array) ($metadata['required_inputs'] ?? []) as $input) {
+            if (is_array($input)) {
+                $parts[] = (string) ($input['name'] ?? $input['field'] ?? $input['label'] ?? '');
+            } elseif (is_scalar($input)) {
+                $parts[] = (string) $input;
+            }
+        }
+
+        $aiNative = is_array($metadata['ai_native'] ?? null) ? $metadata['ai_native'] : [];
+        foreach ([
+            data_get($aiNative, 'task_frame.active_objective'),
+            data_get($aiNative, 'pending_tool.name'),
+        ] as $value) {
+            if (is_scalar($value)) {
+                $parts[] = (string) $value;
+            }
+        }
+
+        foreach ((array) ($aiNative['recent_outcomes'] ?? []) as $outcome) {
+            if (!is_array($outcome)) {
+                continue;
+            }
+
+            foreach (['tool', 'outcome', 'entity_type', 'label'] as $key) {
+                if (isset($outcome[$key]) && is_scalar($outcome[$key])) {
+                    $parts[] = (string) $outcome[$key];
+                }
+            }
+        }
+
+        return implode(' ', array_filter($parts));
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    protected function excludedTools(): array
+    {
+        $defaults = [
+            'run_skill',
+            'run_sub_agent',
+        ];
+
+        $configured = (array) config(
+            'ai-agent.response_presentation.suggestions.excluded_tools',
+            config('ai-agent.ai_native.excluded_tools', $defaults)
+        );
+
+        return array_fill_keys(array_values(array_filter(array_map(
+            static fn (mixed $tool): string => trim((string) $tool),
+            array_merge($defaults, $configured)
+        ))), true);
     }
 
     protected function normalize(string $value): string

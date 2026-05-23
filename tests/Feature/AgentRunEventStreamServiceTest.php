@@ -84,6 +84,28 @@ class AgentRunEventStreamServiceTest extends TestCase
         $this->assertSame('routing.decided', $fallback[0]['name']);
     }
 
+    public function test_event_stream_replaces_malformed_utf8_before_persisting_metadata(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'stream-utf8-session',
+            'status' => AIAgentRun::STATUS_RUNNING,
+            'metadata' => ['trace_id' => 'trace-utf8'],
+        ]);
+
+        app(AgentRunEventStreamService::class)->emit(
+            AgentRunEventStreamService::RUN_COMPLETED,
+            $run,
+            null,
+            ['message' => "hello \xB1 world"],
+            ['runtime' => "bad \xB1 runtime"]
+        );
+
+        $fallback = app(AgentRunEventStreamService::class)->fallbackEvents($run->id);
+
+        $this->assertSame('hello � world', $fallback[0]['payload']['message']);
+        $this->assertSame('bad � runtime', $fallback[0]['metadata']['runtime']);
+    }
+
     public function test_event_stream_rejects_unknown_event_names(): void
     {
         $this->expectException(\InvalidArgumentException::class);

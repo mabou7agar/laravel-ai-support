@@ -48,6 +48,42 @@ Response:
 }
 ```
 
+Async durable response:
+
+```json
+{
+  "message": "Create an invoice and generate the preview",
+  "session_id": "thread-123",
+  "execution_mode": "auto",
+  "memory": true,
+  "actions": true,
+  "use_rag": false
+}
+```
+
+`execution_mode` accepts `sync`, `async`, or `auto`. Auto keeps simple chat synchronous and queues durable work such as goal/sub-agent runs, streaming requests, structured collection callbacks, and matched skills. The legacy `async=true` flag is still supported and is equivalent to `execution_mode=async`.
+
+When the resolved mode is async, the endpoint returns `202 Accepted`, creates an `ai_agent_runs` record, dispatches `RunAgentJob`, and returns run inspection URLs:
+
+```json
+{
+  "success": true,
+  "data": {
+    "queued": true,
+    "agent_run_id": "run-uuid",
+    "status_url": "/api/v1/ai/agent-runs/run-uuid",
+    "trace_url": "/api/v1/ai/agent-runs/run-uuid/trace",
+    "stream_url": "/api/v1/ai/agent-runs/run-uuid/stream",
+    "execution_mode": "async",
+    "execution_mode_reason": "matched_skill",
+    "broadcast": {
+      "enabled": false,
+      "channel": "private-agent-run.run-uuid"
+    }
+  }
+}
+```
+
 ## Structured Output
 
 ```php
@@ -140,6 +176,19 @@ GET /api/v1/ai/mcp/tools
 POST /api/v1/ai/mcp/tools/{tool}/call
 POST /api/v1/ai/realtime/tools/dispatch
 ```
+
+## Agent Runs
+
+```http
+GET /api/v1/ai/agent-runs
+GET /api/v1/ai/agent-runs/{run}
+GET /api/v1/ai/agent-runs/{run}/trace
+GET /api/v1/ai/agent-runs/{run}/stream?timeout=30&poll=500
+POST /api/v1/ai/agent-runs/{run}/resume
+POST /api/v1/ai/agent-runs/{run}/cancel
+```
+
+The stream endpoint returns Server-Sent Events from persisted run events. Use it for browser progress UIs without requiring Reverb or Pusher.
 
 ## Pricing Preview
 

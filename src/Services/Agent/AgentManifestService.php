@@ -166,49 +166,6 @@ class AgentManifestService
     }
 
     /**
-     * @return array<string, array{class:string,description:string,priority:int}>
-     */
-    public function collectors(): array
-    {
-        $manifest = $this->manifest();
-        $collectors = $manifest['collectors'] ?? [];
-        if (!is_array($collectors)) {
-            return [];
-        }
-
-        $resolved = [];
-        foreach ($collectors as $name => $definition) {
-            if (!is_string($name) || trim($name) === '') {
-                continue;
-            }
-
-            if (is_string($definition)) {
-                $className = $definition;
-                $description = '';
-                $priority = 0;
-            } elseif (is_array($definition)) {
-                $className = (string) ($definition['class'] ?? '');
-                $description = (string) ($definition['description'] ?? '');
-                $priority = (int) ($definition['priority'] ?? 0);
-            } else {
-                continue;
-            }
-
-            if ($className === '' || !class_exists($className)) {
-                continue;
-            }
-
-            $resolved[$name] = [
-                'class' => $className,
-                'description' => $description,
-                'priority' => $priority,
-            ];
-        }
-
-        return $resolved;
-    }
-
-    /**
      * @return array<string, string>
      */
     public function filters(): array

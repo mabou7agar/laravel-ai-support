@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent;
 
+use LaravelAIEngine\Support\JsonPayloadSanitizer;
+
 class AgentRunPayloadSchemaVersioner
 {
     public const CURRENT_VERSION = 1;
+
+    public function __construct(
+        protected ?JsonPayloadSanitizer $sanitizer = null
+    ) {
+    }
 
     public function normalizeRunAttributes(array $attributes): array
     {
@@ -41,9 +48,14 @@ class AgentRunPayloadSchemaVersioner
         if (is_string($payload)) {
             $decoded = json_decode($payload, true);
 
-            return json_last_error() === JSON_ERROR_NONE ? $decoded : $payload;
+            $payload = json_last_error() === JSON_ERROR_NONE ? $decoded : $payload;
         }
 
-        return $payload;
+        return $this->sanitizer()->sanitize($payload);
+    }
+
+    protected function sanitizer(): JsonPayloadSanitizer
+    {
+        return $this->sanitizer ??= new JsonPayloadSanitizer();
     }
 }

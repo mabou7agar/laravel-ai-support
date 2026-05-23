@@ -131,3 +131,50 @@ php artisan ai:test-orchestration --max-complexity=120 --fail-on-warning
 ```
 
 The command reports missing tool links, missing sub-agent links, and graph complexity before optionally running the focused agent orchestration PHPUnit stage.
+
+## Run a peer sub-agent conversation
+
+For long-running tasks where two configured sub-agents should review each other over several turns, use the peer conversation service or the test command.
+
+```bash
+php artisan ai:test-sub-agent-chat \
+  --target="Plan and review a long-running invoice chat flow" \
+  --rounds=3 \
+  --session=invoice-agent-session \
+  --json
+```
+
+By default, the command uses deterministic demo handlers so it can run in CI without provider credits. To exercise real model-backed sub-agents, add `--live`:
+
+```bash
+php artisan ai:test-sub-agent-chat \
+  --target="Two sub-agents discuss how to preserve invoice chat context" \
+  --rounds=1 \
+  --live \
+  --engine=openai \
+  --model=gpt-4o-mini \
+  --json
+```
+
+The command creates two participants, alternates turns, writes each sub-agent message into the shared `UnifiedActionContext`, saves the context through `ContextManager`, and verifies the context can be loaded again under the same session.
+
+Apps can call `LaravelAIEngine\Services\Agent\SubAgents\SubAgentConversationService` directly when they want a custom UI or queue job:
+
+```php
+$result = app(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentConversationService::class)
+    ->run(
+        target: 'Plan and review a long-running task',
+        context: $context,
+        participants: ['planner', 'reviewer'],
+        options: ['rounds' => 3]
+    );
+```
+
+Configure the default and maximum rounds in `config/ai-agent.php`:
+
+```php
+'sub_agent_conversations' => [
+    'default_rounds' => 3,
+    'max_rounds' => 8,
+],
+```

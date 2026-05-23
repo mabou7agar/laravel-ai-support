@@ -3,15 +3,14 @@
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
-use LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
+use LaravelAIEngine\Services\Agent\Tools\AgentTool;
 use LaravelAIEngine\Services\Agent\Tools\RunSubAgentTool;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
@@ -81,6 +80,62 @@ class AgentToolRuntimeTest extends UnitTestCase
         $this->assertSame('run_sub_agent', $response->metadata['tool_name']);
     }
 
+    public function test_action_execution_service_preserves_registered_tool_required_choices(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->register('confirmable_tool', new class extends AgentTool {
+            public function getName(): string
+            {
+                return 'confirmable_tool';
+            }
+
+            public function getDescription(): string
+            {
+                return 'Requires confirmation.';
+            }
+
+            public function getParameters(): array
+            {
+                return [];
+            }
+
+            public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+            {
+                return ActionResult::needsUserInput('Confirm this action.', null, [
+                    'required_inputs' => [[
+                        'name' => 'confirmation',
+                        'type' => 'select',
+                        'required' => true,
+                        'options' => [[
+                            'value' => 'confirm',
+                            'label' => 'Confirm',
+                        ]],
+                    ]],
+                    'suggestions' => [[
+                        'id' => 'confirm_action',
+                        'label' => 'Confirm',
+                        'message' => 'confirm',
+                    ]],
+                ]);
+            }
+        });
+
+        $response = $this->toolExecutionService($registry)->executeUseTool(
+            'confirmable_tool',
+            'run it',
+            new UnifiedActionContext('tool-runtime-confirmable', 7),
+            ['model_configs' => []],
+            function () {
+                $this->fail('Fallback RAG should not be called for registered confirmable_tool.');
+            }
+        );
+
+        $this->assertTrue($response->needsUserInput);
+        $this->assertFalse($response->isComplete);
+        $this->assertSame('confirmation', $response->requiredInputs[0]['name']);
+        $this->assertSame('confirm_action', $response->metadata['suggestions'][0]['id']);
+    }
+
     public function test_unknown_tool_falls_back_to_rag_callback(): void
     {
         $context = new UnifiedActionContext('tool-runtime-fallback', 9);
@@ -107,16 +162,13 @@ class AgentToolRuntimeTest extends UnitTestCase
         $this->assertSame('RAG fallback used.', $response->message);
     }
 
-    private function toolExecutionService(): AgentActionExecutionService
+    private function toolExecutionService(?ToolRegistry $toolRegistry = null): AgentActionExecutionService
     {
         return new AgentActionExecutionService(
-            $this->createMock(AutonomousCollectorRegistry::class),
-            $this->createMock(AutonomousCollectorDiscoveryService::class),
-            $this->createMock(AutonomousCollectorHandler::class),
             new SelectedEntityContextService(),
             null,
             null,
-            app(ToolRegistry::class)
+            $toolRegistry ?? app(ToolRegistry::class)
         );
     }
 }

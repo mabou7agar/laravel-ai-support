@@ -67,7 +67,7 @@ class AgentIntentUnderstandingService
         if ($locale->containsLexicon($message, 'relation.use_existing')) {
             return AgentIntentDecision::fromArray([
                 'route' => 'ask_ai',
-                'mode' => 'action_flow',
+                'mode' => 'action_request',
                 'intent' => 'choose_existing',
                 'confidence' => 0.72,
                 'reason' => 'Matched configured relation-use-existing lexicon.',
@@ -77,7 +77,7 @@ class AgentIntentUnderstandingService
         if ($locale->containsLexicon($message, 'relation.create_new')) {
             return AgentIntentDecision::fromArray([
                 'route' => 'ask_ai',
-                'mode' => 'action_flow',
+                'mode' => 'action_request',
                 'intent' => 'create_new',
                 'confidence' => 0.72,
                 'reason' => 'Matched configured relation-create-new lexicon.',
@@ -89,7 +89,7 @@ class AgentIntentUnderstandingService
             || $locale->containsLexicon($message, 'intent.cancel')) {
             return AgentIntentDecision::fromArray([
                 'route' => 'ask_ai',
-                'mode' => 'action_flow',
+                'mode' => 'action_request',
                 'intent' => 'reject',
                 'confidence' => 0.7,
                 'reason' => 'Matched configured negative intent lexicon.',
@@ -100,7 +100,7 @@ class AgentIntentUnderstandingService
             || $locale->containsLexicon($message, 'response.affirmative')) {
             return AgentIntentDecision::fromArray([
                 'route' => 'ask_ai',
-                'mode' => 'action_flow',
+                'mode' => 'action_request',
                 'intent' => 'confirm',
                 'confidence' => 0.7,
                 'reason' => 'Matched configured affirmative intent lexicon.',

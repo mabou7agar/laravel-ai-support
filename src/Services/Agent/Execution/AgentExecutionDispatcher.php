@@ -42,12 +42,8 @@ class AgentExecutionDispatcher
             RoutingDecisionAction::SEARCH_RAG => $this->executeSearchRag($message, $context, $options, $reroute),
             RoutingDecisionAction::USE_TOOL => $this->executeTool($decision, $message, $context, $options),
             RoutingDecisionAction::RUN_SUB_AGENT => $this->executeSubAgent($decision, $message, $context, $options),
-            RoutingDecisionAction::START_COLLECTOR => $this->executeStartCollector($decision, $message, $context, $options),
-            RoutingDecisionAction::CONTINUE_COLLECTOR => $this->execution->continueCollectorSession($message, $context, $options),
             RoutingDecisionAction::CONTINUE_NODE => $this->executeContinueNode($message, $context, $options),
             RoutingDecisionAction::ROUTE_TO_NODE => $this->executeRouteToNode($decision, $message, $context, $options, $reroute),
-            RoutingDecisionAction::PAUSE_AND_HANDLE => $this->executePauseAndHandle($message, $context, $options, $reroute),
-            RoutingDecisionAction::CONTINUE_RUN => $this->execution->executeResumeSession($context),
             RoutingDecisionAction::NEED_USER_INPUT => AgentResponse::needsUserInput(
                 message: $decision->reason,
                 data: $decision->payload,
@@ -182,8 +178,9 @@ class AgentExecutionDispatcher
                 )
             );
 
-            $this->recordExecutionAudit($response->success ? 'agent_tool.completed' : 'agent_tool.failed', $toolName, $context, $options, [
+            $this->recordExecutionAudit($this->toolFinishedEvent($response), $toolName, $context, $options, [
                 'success' => $response->success,
+                'needs_user_input' => $response->needsUserInput,
                 'message' => $response->message,
             ]);
 
@@ -240,26 +237,6 @@ class AgentExecutionDispatcher
 
             throw $e;
         }
-    }
-
-    protected function executeStartCollector(
-        RoutingDecision $decision,
-        string $message,
-        UnifiedActionContext $context,
-        array $options
-    ): AgentResponse {
-        return $this->execution->executeStartCollector(
-            (string) ($decision->payload['resource_name'] ?? $decision->payload['collector_name'] ?? ''),
-            $message,
-            $context,
-            $options,
-            fn (string $resourceName, string $routeMessage, UnifiedActionContext $routeContext, array $routeOptions): AgentResponse => $this->execution->routeToNode(
-                $resourceName,
-                $routeMessage,
-                $routeContext,
-                $routeOptions
-            )
-        );
     }
 
     protected function executeContinueNode(string $message, UnifiedActionContext $context, array $options): AgentResponse
@@ -331,25 +308,6 @@ class AgentExecutionDispatcher
         return $response;
     }
 
-    protected function executePauseAndHandle(
-        string $message,
-        UnifiedActionContext $context,
-        array $options,
-        ?callable $reroute
-    ): AgentResponse {
-        return $this->execution->executePauseAndHandle(
-            $message,
-            $context,
-            $options,
-            fn (string $searchMessage, UnifiedActionContext $searchContext, array $searchOptions): AgentResponse => $this->executeSearchRag(
-                $searchMessage,
-                $searchContext,
-                $searchOptions,
-                $reroute
-            )
-        );
-    }
-
     protected function withDecisionMetadata(array $options, RoutingDecision $decision): array
     {
         return array_merge([
@@ -358,6 +316,15 @@ class AgentExecutionDispatcher
             'decision_confidence' => $decision->confidence,
             'decision_reason' => $decision->reason,
         ], $options);
+    }
+
+    protected function toolFinishedEvent(AgentResponse $response): string
+    {
+        if ($response->needsUserInput) {
+            return 'agent_tool.progress';
+        }
+
+        return $response->success ? 'agent_tool.completed' : 'agent_tool.failed';
     }
 
     protected function shouldFallbackToLocalRag(AgentResponse $response, array $options): bool
@@ -411,6 +378,7 @@ class AgentExecutionDispatcher
 
         $streamEvent = match ($event) {
             'agent_tool.started' => AgentRunEventStreamService::TOOL_STARTED,
+            'agent_tool.progress' => AgentRunEventStreamService::TOOL_PROGRESS,
             'agent_tool.completed' => AgentRunEventStreamService::TOOL_COMPLETED,
             'agent_tool.failed' => AgentRunEventStreamService::TOOL_FAILED,
             'agent_sub_agent.started' => AgentRunEventStreamService::SUB_AGENT_STARTED,

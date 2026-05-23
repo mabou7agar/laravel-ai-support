@@ -11,7 +11,6 @@ use LaravelAIEngine\Services\CacheManager;
 use LaravelAIEngine\Services\RateLimitManager;
 use LaravelAIEngine\Services\AnalyticsManager;
 use LaravelAIEngine\Services\ConversationManager;
-use LaravelAIEngine\Services\Actions\ActionManager;
 use LaravelAIEngine\Services\Failover\FailoverManager;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
 use LaravelAIEngine\Services\Analytics\AnalyticsManager as NewAnalyticsManager;
@@ -126,12 +125,6 @@ class TestPackageCommand extends Command
                 return $service instanceof $class;
             });
         }
-
-        // Test enterprise services
-        $this->test("ActionManager can be resolved", function () {
-            $service = app(ActionManager::class);
-            return $service instanceof ActionManager;
-        });
 
         $this->test("NewAnalyticsManager can be resolved", function () {
             $service = app(NewAnalyticsManager::class);

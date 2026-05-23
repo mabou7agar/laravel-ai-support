@@ -170,6 +170,56 @@ class LegacyActionCleanupTest extends UnitTestCase
         $this->assertStringNotContainsString('DiscoverableAutonomousCollector', $scaffold);
     }
 
+    public function test_collector_runtime_surfaces_are_removed(): void
+    {
+        foreach ([
+            'LaravelAIEngine\\Contracts\\DiscoverableAutonomousCollector',
+            'LaravelAIEngine\\Contracts\\AutonomousModelConfig',
+            'LaravelAIEngine\\DTOs\\AutonomousCollectorConfig',
+            'LaravelAIEngine\\DTOs\\AutonomousCollectorSessionState',
+            'LaravelAIEngine\\DTOs\\DataCollectorConfig',
+            'LaravelAIEngine\\DTOs\\DataCollectorState',
+            'LaravelAIEngine\\DTOs\\CollectorToolCall',
+            'LaravelAIEngine\\DTOs\\CollectorToolResult',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\AutonomousCollectorTurnProcessor',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\CollectorConfigResolver',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\CollectorConfirmationService',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\CollectorInputSchemaBuilder',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\CollectorPromptBuilder',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\CollectorReroutePolicy',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\CollectorSummaryRenderer',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\CollectorToolCallParser',
+            'LaravelAIEngine\\Services\\Agent\\Collectors\\CollectorToolExecutionService',
+            'LaravelAIEngine\\Services\\Agent\\Handlers\\AutonomousCollectorHandler',
+            'LaravelAIEngine\\Services\\DataCollector\\AutonomousCollectorDiscoveryService',
+            'LaravelAIEngine\\Services\\DataCollector\\AutonomousCollectorRegistry',
+            'LaravelAIEngine\\Services\\DataCollector\\AutonomousCollectorResponse',
+            'LaravelAIEngine\\Services\\DataCollector\\AutonomousCollectorSessionService',
+            'LaravelAIEngine\\Services\\DataCollector\\DataCollectorChatService',
+            'LaravelAIEngine\\Services\\DataCollector\\DataCollectorResponse',
+            'LaravelAIEngine\\Services\\DataCollector\\DataCollectorService',
+        ] as $class) {
+            $this->assertFalse(class_exists($class) || interface_exists($class), "{$class} should not remain after AI-native skill intake replaced collectors.");
+        }
+    }
+
+    public function test_old_node_action_helper_services_are_removed(): void
+    {
+        foreach ([
+            'LaravelAIEngine\\Services\\Actions\\ActionExecutionPipeline',
+            'LaravelAIEngine\\Services\\Actions\\ActionIntakeCoordinator',
+            'LaravelAIEngine\\Services\\Actions\\ActionIntakeFlowService',
+            'LaravelAIEngine\\Services\\Actions\\ActionManager',
+            'LaravelAIEngine\\Services\\Actions\\ActionParameterExtractor',
+            'LaravelAIEngine\\Services\\Actions\\ActionPayloadExtractor',
+            'LaravelAIEngine\\Services\\Actions\\ActionRelationReviewService',
+            'LaravelAIEngine\\Services\\Actions\\ActionReplyGeneratorService',
+            'LaravelAIEngine\\Services\\Actions\\ActionReplyMcpEnhancer',
+        ] as $class) {
+            $this->assertFalse(class_exists($class), "{$class} should not remain outside the supported ActionBackedTool path.");
+        }
+    }
+
     public function test_provider_and_config_do_not_reference_removed_demo_surfaces(): void
     {
         $provider = file_get_contents(__DIR__ . '/../../../src/AIEngineServiceProvider.php');

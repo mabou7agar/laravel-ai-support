@@ -66,6 +66,33 @@ abstract class ActionBackedTool extends AgentTool
         return $this->orchestrator()->requiresConfirmation($this->actionId);
     }
 
+    public function previewConfirmation(array $parameters, UnifiedActionContext $context): ?ActionResult
+    {
+        if ($this->actionId === '') {
+            return ActionResult::failure('Action-backed tool is missing an action id.');
+        }
+
+        $payload = is_array($parameters['payload'] ?? null)
+            ? (array) $parameters['payload']
+            : Arr::except($parameters, ['confirmed', 'dry_run']);
+
+        $prepared = $this->orchestrator()->prepare($this->actionId, $payload, $context);
+
+        if (!($prepared['success'] ?? false)) {
+            return ActionResult::needsUserInput(
+                (string) ($prepared['message'] ?? $prepared['error'] ?? 'More information is required before this action can run.'),
+                $prepared,
+                ['action_id' => $this->actionId]
+            );
+        }
+
+        return ActionResult::success(
+            (string) ($prepared['message'] ?? 'Action is ready for confirmation.'),
+            $prepared,
+            ['action_id' => $this->actionId, 'confirmation_preview' => true]
+        );
+    }
+
     public function execute(array $parameters, UnifiedActionContext $context): ActionResult
     {
         if ($this->actionId === '') {

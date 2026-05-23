@@ -5,18 +5,19 @@ namespace LaravelAIEngine\Tests\Feature\Node;
 use Illuminate\Http\Request;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\ActionResult;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Http\Middleware\NodeAuthMiddleware;
 use LaravelAIEngine\Http\Middleware\NodeRateLimitMiddleware;
 use LaravelAIEngine\Http\Controllers\Node\NodeApiController;
 use LaravelAIEngine\Services\ChatService;
-use LaravelAIEngine\Services\Actions\ActionManager;
+use LaravelAIEngine\Services\Actions\ActionOrchestrator;
 use LaravelAIEngine\Services\Node\NodeManifestService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
 class NodeApiRoutesTest extends UnitTestCase
 {
-    protected ActionManager $actions;
+    protected ActionOrchestrator $actions;
     protected ChatService $chat;
 
     protected function getEnvironmentSetUp($app): void
@@ -38,12 +39,10 @@ class NodeApiRoutesTest extends UnitTestCase
         $manifest->shouldReceive('manifest')->andReturn([
             'node' => ['slug' => 'billing'],
             'collections' => [],
-            'autonomous_collectors' => [],
         ]);
         $manifest->shouldReceive('collections')->andReturn([]);
-        $manifest->shouldReceive('autonomousCollectors')->andReturn([]);
 
-        $actions = Mockery::mock(ActionManager::class);
+        $actions = Mockery::mock(ActionOrchestrator::class);
 
         $chat = Mockery::mock(ChatService::class);
 
@@ -51,7 +50,7 @@ class NodeApiRoutesTest extends UnitTestCase
         $this->actions = $actions;
         $this->chat = $chat;
 
-        $this->app->instance(ActionManager::class, $actions);
+        $this->app->instance(ActionOrchestrator::class, $actions);
         $this->app->instance(ChatService::class, $chat);
     }
 
@@ -75,9 +74,14 @@ class NodeApiRoutesTest extends UnitTestCase
         $this->assertSame(NodeApiController::class . '@executeTool', $route->getActionName());
 
         $this->actions
-            ->shouldReceive('executeById')
+            ->shouldReceive('execute')
             ->once()
-            ->with('view_source', ['model_id' => 10], null, 'session-1')
+            ->withArgs(function (string $actionId, array $payload, bool $confirmed, UnifiedActionContext $context): bool {
+                return $actionId === 'view_source'
+                    && $payload === ['model_id' => 10]
+                    && $confirmed === true
+                    && $context->sessionId === 'session-1';
+            })
             ->andReturn(ActionResult::success('Opened.', ['opened' => true]));
 
         $request = new class extends Request {

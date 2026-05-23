@@ -26,7 +26,9 @@ class SendMessageDTO
         public readonly ?string $responsePointsFormat = null,
         public readonly ?bool $responseSuggestions = null,
         public readonly ?int $responseSuggestionLimit = null,
-        public readonly ?array $collection = null
+        public readonly ?array $collection = null,
+        public readonly ?string $executionMode = null,
+        public readonly bool $async = false
     ) {}
 
     public function toArray(): array
@@ -39,6 +41,7 @@ class SendMessageDTO
             'memory' => $this->memory,
             'actions' => $this->actions,
             'streaming' => $this->streaming,
+            'async' => $this->async,
             'user_id' => auth()->user()->id ?? $this->userId,
             'rag' => $this->intelligentRag,
             'force_rag' => $this->forceRag,
@@ -52,6 +55,7 @@ class SendMessageDTO
             'response_suggestions' => $this->responseSuggestions,
             'response_suggestion_limit' => $this->responseSuggestionLimit,
             'collection' => $this->collection,
+            'execution_mode' => $this->executionMode,
         ];
     }
 
@@ -62,9 +66,11 @@ class SendMessageDTO
             'target' => $this->target,
             'sub_agents' => $this->subAgents,
             'goal_agent' => $this->goalAgent,
+            'force_rag' => $this->forceRag,
             'response_points_format' => $this->responsePointsFormat,
             'response_suggestion_limit' => $this->responseSuggestionLimit,
             'collection' => $this->collection,
+            'execution_mode' => $this->executionMode,
         ], static fn ($value) => $value !== null && $value !== false && $value !== []);
 
         if ($this->responseSuggestions !== null) {

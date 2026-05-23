@@ -14,7 +14,14 @@ class RAGResponseGenerator
 
     public function generate(string $prompt, array $context, array $options = []): AgentResponse
     {
-        $message = $options['response'] ?? $this->generateAnswer($prompt, $options);
+        $message = array_key_exists('response', $options)
+            ? (string) $options['response']
+            : $this->generateAnswer($prompt, $options);
+
+        $usedFallback = $message === null || trim($message) === '' || $message === $prompt;
+        if ($usedFallback) {
+            $message = $this->fallbackAnswer($context, $options);
+        }
 
         $response = AgentResponse::success(
             message: $message,
@@ -24,16 +31,17 @@ class RAGResponseGenerator
             'sources' => $context['sources'] ?? [],
             'citations' => $context['citations'] ?? [],
             'rag_pipeline' => true,
-            'rag_answer_generated' => $message !== $prompt,
+            'rag_answer_generated' => !$usedFallback,
+            'rag_answer_fallback' => $usedFallback,
         ];
 
         return $response;
     }
 
-    private function generateAnswer(string $prompt, array $options): string
+    private function generateAnswer(string $prompt, array $options): ?string
     {
         if (!$this->shouldGenerateAnswer($options) || $this->ai === null) {
-            return $prompt;
+            return null;
         }
 
         try {
@@ -54,10 +62,30 @@ class RAGResponseGenerator
 
             return $response->isSuccessful() && trim($response->getContent()) !== ''
                 ? $response->getContent()
-                : $prompt;
+                : null;
         } catch (\Throwable) {
-            return $prompt;
+            return null;
         }
+    }
+
+    private function fallbackAnswer(array $context, array $options): string
+    {
+        $sources = is_array($context['sources'] ?? null) ? $context['sources'] : [];
+        $contextText = trim((string) ($context['context'] ?? ''));
+
+        if ($sources === [] && $contextText === '') {
+            return (string) (
+                $options['empty_context_message']
+                ?? config('ai-engine.rag.empty_context_message', "I couldn't find relevant context for that request.")
+            );
+        }
+
+        $prefix = (string) (
+            $options['context_fallback_message']
+            ?? config('ai-engine.rag.context_fallback_message', 'I found relevant context, but answer generation is disabled. Retrieved context:')
+        );
+
+        return trim($prefix."\n\n".$contextText);
     }
 
     private function shouldGenerateAnswer(array $options): bool

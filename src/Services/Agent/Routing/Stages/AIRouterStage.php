@@ -48,10 +48,7 @@ class AIRouterStage implements RoutingStageContract
     protected function mapAction(string $action): string
     {
         return match ($action) {
-            'start_collector' => RoutingDecisionAction::START_COLLECTOR,
             'use_tool' => RoutingDecisionAction::USE_TOOL,
-            'resume_session' => RoutingDecisionAction::CONTINUE_RUN,
-            'pause_and_handle' => RoutingDecisionAction::PAUSE_AND_HANDLE,
             'route_to_node' => RoutingDecisionAction::ROUTE_TO_NODE,
             'search_rag' => RoutingDecisionAction::SEARCH_RAG,
             'run_sub_agent' => RoutingDecisionAction::RUN_SUB_AGENT,

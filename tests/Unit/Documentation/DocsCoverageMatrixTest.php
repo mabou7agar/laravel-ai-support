@@ -36,7 +36,6 @@ class DocsCoverageMatrixTest extends TestCase
         'guides/concepts' => [
             'tests/Unit/Services/Agent/IntentRouterTest.php',
             'tests/Unit/Services/Agent/AgentPlannerTest.php',
-            'tests/Unit/Services/DataCollector/AutonomousCollectorSessionServiceTest.php',
             'tests/Unit/Services/RAG/RAGPlannerServiceTest.php',
         ],
         'guides/configuration' => [

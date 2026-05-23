@@ -802,10 +802,8 @@ Expected:
 - Modify: `src/Services/Agent/AgentSkillMatcher.php`
 - Modify: `src/Services/Agent/IntentRouter.php`
 - Modify: `src/Services/Agent/Tools/RunSkillTool.php`
-- Modify: `src/Services/Agent/Collectors/CollectorConfirmationService.php`
-- Modify: `src/Services/Actions/ActionDraftService.php`
-- Modify: `src/Services/Actions/ActionPayloadExtractor.php`
-- Modify: `src/Services/Actions/ActionIntakeFlowService.php`
+- Modify: AI-native skill confirmation helpers in `src/Services/Agent/Tools/RunSkillTool.php`
+- Modify: action preparation and execution services under `src/Services/Actions`
 - Modify: `src/Services/Agent/NodeSessionManager.php`
 - Test: existing tests for each touched service plus new multilingual intent tests
 
@@ -816,8 +814,8 @@ The package currently has hardcoded user-intent phrase logic in these areas:
 - `MessageRoutingClassifier`: greetings, thanks, action verbs, list/count words, contextual follow-up words, semantic retrieval phrases.
 - `AgentSkillMatcher`: deterministic trigger matching is fine when triggers come from host skills, but package prompt text and fallback behavior should not assume English continuation phrases.
 - `config/ai-agent.php`: `skills.continuation_terms` ships package-owned English/Arabic defaults.
-- `IntentRouter`, `RunSkillTool`, `ActionDraftService`, `ActionPayloadExtractor`, `CollectorConfirmationService`: yes/no/confirm/cancel phrase regex.
-- `ActionIntakeFlowService`: relation choice phrases like use existing/create new.
+- `IntentRouter`, `RunSkillTool`, and action preparation helpers: yes/no/confirm/cancel phrase checks.
+- `IntentSignalService`: relation choice phrases like use existing/create new.
 - `NodeSessionManager`: remote-session continuation/new-topic phrase checks.
 
 Keep structural regex. These are not the problem:
@@ -858,7 +856,7 @@ The service returns structured decisions:
 ```php
 new AgentIntentDecision(
     route: 'ask_ai',
-    mode: 'action_flow',
+    mode: 'action_request',
     confidence: 0.88,
     intent: 'confirm',
     target: 'current_action',
@@ -893,7 +891,7 @@ Rules:
 
 - `MessageRoutingClassifier` should call `AgentIntentUnderstandingService` when mode is `ai_first` or `hybrid`.
 - Confirmation/cancel helpers should accept an injected/precomputed `AgentIntentDecision` before falling back.
-- `ActionIntakeFlowService` should use `choose_existing` / `create_new` decisions.
+- `IntentSignalService` should use `choose_existing` / `create_new` decisions.
 - `NodeSessionManager` should use `continue_remote_session` / `new_topic`.
 - `AgentSkillMatcher` should keep host-provided triggers but prefer AI intent when configured.
 
@@ -923,7 +921,7 @@ public function test_ai_intent_understands_arabic_confirmation_without_regex_ter
     $ai = Mockery::mock(AIEngineService::class);
     $ai->shouldReceive('generate')->andReturn(AIResponse::success(json_encode([
         'route' => 'ask_ai',
-        'mode' => 'action_flow',
+        'mode' => 'action_request',
         'intent' => 'confirm',
         'confidence' => 0.94,
         'reason' => 'Arabic approval.',
@@ -951,9 +949,8 @@ Run:
 php vendor/bin/phpunit -c phpunit.xml.dist \
   tests/Unit/Services/Agent/MessageRoutingClassifierTest.php \
   tests/Unit/Services/Agent/AgentSkillMatcherTest.php \
-  tests/Unit/Services/Agent/Tools/RunSkillToolTest.php \
-  tests/Unit/Services/Actions/ActionDraftServiceTest.php \
-  tests/Unit/Services/Actions/ActionPayloadExtractorTest.php
+  tests/Unit/Services/Agent/Tools/RunSkillToolAiNativeTest.php \
+  tests/Unit/Services/Actions/ActionOrchestratorTest.php
 ```
 
 Expected: PASS.

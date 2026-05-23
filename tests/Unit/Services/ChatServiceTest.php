@@ -11,7 +11,6 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
 use LaravelAIEngine\Services\Agent\StructuredCollectionSessionService;
-use LaravelAIEngine\Services\ConversationService;
 use LaravelAIEngine\Services\ConversationTranscriptService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -26,7 +25,7 @@ class ChatServiceTest extends UnitTestCase
             ->once()
             ->andReturn(AgentResponse::failure('Runtime is blocked by policy.'));
 
-        $service = new ChatService(Mockery::mock(ConversationService::class), $runtime);
+        $service = new ChatService(Mockery::mock(ConversationTranscriptService::class), $runtime);
 
         $response = $service->processMessage(
             message: 'hello',
@@ -56,7 +55,7 @@ class ChatServiceTest extends UnitTestCase
                 requiredInputs: [['name' => 'approved', 'type' => 'boolean']]
             ));
 
-        $service = new ChatService(Mockery::mock(ConversationService::class), $runtime);
+        $service = new ChatService(Mockery::mock(ConversationTranscriptService::class), $runtime);
 
         $response = $service->processMessage(
             message: 'continue',
@@ -111,15 +110,6 @@ class ChatServiceTest extends UnitTestCase
 
         $this->assertTrue($response->success);
         $this->assertSame('conversation-123', $response->conversationId);
-    }
-
-    public function test_conversation_service_remains_compatible_transcript_service(): void
-    {
-        $service = $this->app->make(ConversationService::class);
-        $transcripts = $this->app->make(ConversationTranscriptService::class);
-
-        $this->assertInstanceOf(ConversationTranscriptService::class, $service);
-        $this->assertSame($service, $transcripts);
     }
 
     public function test_process_message_can_return_response_points_as_array_with_suggestions(): void
@@ -195,7 +185,7 @@ class ChatServiceTest extends UnitTestCase
             ));
 
         $service = new ChatService(
-            Mockery::mock(ConversationService::class),
+            Mockery::mock(ConversationTranscriptService::class),
             $runtime,
             collectionSessions: $collection
         );

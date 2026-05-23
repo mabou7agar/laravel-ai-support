@@ -2,19 +2,22 @@
 
 namespace LaravelAIEngine\Tests\Feature\Actions;
 
-use LaravelAIEngine\Tests\Support\ActionTestCase;
+use LaravelAIEngine\Services\Actions\ActionRegistry;
 use LaravelAIEngine\Tests\Support\ActionFactory;
+use LaravelAIEngine\Tests\TestCase;
 
 /**
  * Example: Action Registry Tests
  */
-class ActionRegistryTest extends ActionTestCase
+class ActionRegistryTest extends TestCase
 {
+    protected ActionRegistry $actionRegistry;
+
     protected function setUp(): void
     {
         parent::setUp();
-        
-        // Clear registry for clean tests
+
+        $this->actionRegistry = new ActionRegistry();
         $this->actionRegistry->clearCache();
     }
     
@@ -181,5 +184,35 @@ class ActionRegistryTest extends ActionTestCase
         
         // Assert
         $this->assertActionHasRequiredParams('test_action', ['name', 'price']);
+    }
+
+    protected function registerTestAction(string $id, array $overrides = []): void
+    {
+        $this->actionRegistry->register(ActionFactory::actionDefinition(array_merge(['id' => $id], $overrides)));
+    }
+
+    protected function registerModelAction(string $modelClass): void
+    {
+        $this->actionRegistry->register(ActionFactory::modelActionDefinition($modelClass));
+    }
+
+    protected function assertActionRegistered(string $id): void
+    {
+        $this->assertTrue($this->actionRegistry->has($id), "Action [{$id}] should be registered.");
+    }
+
+    protected function assertActionNotRegistered(string $id): void
+    {
+        $this->assertFalse($this->actionRegistry->has($id), "Action [{$id}] should not be registered.");
+    }
+
+    protected function assertActionHasRequiredParams(string $id, array $params): void
+    {
+        $action = $this->actionRegistry->get($id);
+
+        $this->assertNotNull($action, "Action [{$id}] should exist.");
+        foreach ($params as $param) {
+            $this->assertContains($param, $action['required_params'] ?? []);
+        }
     }
 }

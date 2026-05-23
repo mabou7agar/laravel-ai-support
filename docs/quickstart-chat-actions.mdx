@@ -10,6 +10,7 @@ Use this path when you want a chat UI that can answer, collect data, suggest act
 | Browser/mobile chat | `POST /api/v1/agent/chat` |
 | App-defined business actions | actions, tools, and skills |
 | Gather a target JSON object | `StructuredCollectionDefinition` |
+| Long-running agent work | `async=true` plus agent run APIs |
 | Long-running provider tools | provider tool lifecycle APIs |
 
 ## Basic Chat API
@@ -35,6 +36,24 @@ The response can include:
 - `collection` when structured collection is active
 - conversation context fields when transcript/memory is enabled
 
+For work that may call tools, wait for approval, create files, or run longer than a normal HTTP request, use `execution_mode=auto`. Auto keeps simple chat synchronous and queues durable work. Use `execution_mode=async` or `async=true` when you always want a queued run:
+
+```json
+{
+  "message": "Create the invoice, preview it, and wait for my confirmation",
+  "session_id": "thread-123",
+  "execution_mode": "auto",
+  "memory": true,
+  "actions": true
+}
+```
+
+The API returns `202 Accepted` with `agent_run_id`, `status_url`, `trace_url`, `stream_url`, and broadcast channel metadata. Run a queue worker for execution:
+
+```bash
+php artisan queue:work --queue=ai-agent,default
+```
+
 ## Skills And Tools
 
 Use tools for concrete callable operations. Use skills when you want a higher-level capability that can coordinate one or more tools.
@@ -43,8 +62,10 @@ Typical invoice flow:
 
 1. Register `find_customer`, `create_customer`, `find_product`, `create_product`, and `create_invoice` tools.
 2. Register an invoice skill that describes the target JSON and the related tools.
-3. Let the agent decide when to call the skill or tools.
+3. Let the AI-native runtime decide when to call tools, ask for missing data, and request confirmation.
 4. Use structured collection when the UI must close the chat and call a callback with collected data.
+
+The skill should describe the business capability, target data shape, and allowed tools. It should not encode a fixed step-by-step workflow. The runtime sends the registered tools and skill metadata to the model, then Laravel validates every tool call before execution.
 
 ## Scaffolding
 

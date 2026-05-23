@@ -10,6 +10,7 @@ use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Models\AIAgentRunStep;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
+use LaravelAIEngine\Support\JsonPayloadSanitizer;
 
 class AgentRunEventStreamService
 {
@@ -31,6 +32,8 @@ class AgentRunEventStreamService
     public const ARTIFACT_CREATED = 'artifact.created';
     public const FINAL_RESPONSE_TOKEN_STREAMED = 'final_response.token_streamed';
     public const FINAL_RESPONSE_STREAM_COMPLETED = 'final_response.stream_completed';
+    public const RUN_WAITING_INPUT = 'run.waiting_input';
+    public const RUN_WAITING_APPROVAL = 'run.waiting_approval';
     public const RUN_COMPLETED = 'run.completed';
     public const RUN_FAILED = 'run.failed';
     public const RUN_CANCELLED = 'run.cancelled';
@@ -55,6 +58,8 @@ class AgentRunEventStreamService
         self::ARTIFACT_CREATED,
         self::FINAL_RESPONSE_TOKEN_STREAMED,
         self::FINAL_RESPONSE_STREAM_COMPLETED,
+        self::RUN_WAITING_INPUT,
+        self::RUN_WAITING_APPROVAL,
         self::RUN_COMPLETED,
         self::RUN_FAILED,
         self::RUN_CANCELLED,
@@ -63,7 +68,8 @@ class AgentRunEventStreamService
 
     public function __construct(
         protected AgentRunRepository $runs,
-        protected AgentRunStepRepository $steps
+        protected AgentRunStepRepository $steps,
+        protected ?JsonPayloadSanitizer $jsonPayloads = null
     ) {}
 
     public function names(): array
@@ -136,7 +142,7 @@ class AgentRunEventStreamService
     ): array {
         $traceId = $metadata['trace_id'] ?? $step?->metadata['trace_id'] ?? $run?->metadata['trace_id'] ?? null;
 
-        return array_filter([
+        $event = array_filter([
             'id' => (string) Str::uuid(),
             'name' => $name,
             'run_id' => $run?->uuid,
@@ -148,6 +154,10 @@ class AgentRunEventStreamService
             'metadata' => $metadata,
             'emitted_at' => now()->toISOString(),
         ], static fn (mixed $value): bool => $value !== null);
+
+        $safe = $this->jsonPayloads()->sanitize($event);
+
+        return is_array($safe) ? $safe : $event;
     }
 
     protected function appendEvent(AIAgentRun|AIAgentRunStep $model, array $event): void
@@ -159,8 +169,13 @@ class AgentRunEventStreamService
         $limit = max(1, (int) config('ai-agent.event_stream.persisted_events_limit', 200));
         $metadata['events'] = array_slice($events, -$limit);
 
-        $model->update(['metadata' => $metadata]);
+        $model->update(['metadata' => $this->jsonPayloads()->sanitize($metadata)]);
         $model->refresh();
+    }
+
+    protected function jsonPayloads(): JsonPayloadSanitizer
+    {
+        return $this->jsonPayloads ??= new JsonPayloadSanitizer();
     }
 
     protected function resolveRun(AIAgentRun|int|string|null $run): ?AIAgentRun

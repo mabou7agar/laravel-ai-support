@@ -44,7 +44,7 @@ class OpenAIResponsesContinuationLiveTest extends TestCase
             ->withProviderOptions([
                 'store' => true,
                 'remember_response' => true,
-                'max_output_tokens' => 12,
+                'max_output_tokens' => 16,
             ], 'openai');
 
         $second = (new AIRequest(
@@ -57,7 +57,7 @@ class OpenAIResponsesContinuationLiveTest extends TestCase
             ->withProviderOptions([
                 'store' => true,
                 'use_previous_response' => true,
-                'max_output_tokens' => 12,
+                'max_output_tokens' => 16,
             ], 'openai');
 
         $firstResponse = $driver->generateText($first);

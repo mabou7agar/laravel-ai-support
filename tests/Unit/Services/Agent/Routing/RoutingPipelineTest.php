@@ -98,6 +98,32 @@ class RoutingPipelineTest extends UnitTestCase
             fn (RoutingDecision $decision): bool => ($decision->metadata['stage'] ?? null) === 'message_classification'
         ));
     }
+
+    public function test_message_classification_abstains_for_action_request_so_ai_router_can_select_tool(): void
+    {
+        $stage = $this->app->make(MessageClassificationStage::class);
+
+        $decision = $stage->decide(
+            'Create an invoice for Ahmed and show a summary before confirmation.',
+            new UnifiedActionContext('action-request-session'),
+            ['use_rag' => false]
+        );
+
+        $this->assertNull($decision);
+    }
+
+    public function test_message_classification_abstains_from_rag_when_rag_is_disabled(): void
+    {
+        $stage = $this->app->make(MessageClassificationStage::class);
+
+        $decision = $stage->decide(
+            'What changed on Friday for Apollo?',
+            new UnifiedActionContext('rag-disabled-session'),
+            ['use_rag' => false]
+        );
+
+        $this->assertNull($decision);
+    }
 }
 
 class TestRoutingStage implements RoutingStageContract

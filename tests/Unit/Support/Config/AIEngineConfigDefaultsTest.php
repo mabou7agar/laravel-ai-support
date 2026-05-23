@@ -59,4 +59,28 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
             $defaults['engines']['nvidia_nim']['default_model'] ?? null
         );
     }
+
+    public function test_runtime_source_files_do_not_read_env_directly(): void
+    {
+        $sourceRoot = realpath(__DIR__ . '/../../../../src');
+        $this->assertIsString($sourceRoot);
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($sourceRoot, \FilesystemIterator::SKIP_DOTS)
+        );
+
+        foreach ($iterator as $file) {
+            if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $contents = file_get_contents($file->getPathname());
+            $this->assertIsString($contents);
+            $this->assertStringNotContainsString(
+                'env(',
+                $contents,
+                sprintf('Runtime source file reads env() directly: %s', $file->getPathname())
+            );
+        }
+    }
 }

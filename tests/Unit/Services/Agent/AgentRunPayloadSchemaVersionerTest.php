@@ -35,4 +35,22 @@ class AgentRunPayloadSchemaVersionerTest extends UnitTestCase
         $this->assertSame(AgentRunPayloadSchemaVersioner::CURRENT_VERSION, $attributes['metadata']['schema_version']);
         $this->assertSame('trace-1', $attributes['metadata']['trace_id']);
     }
+
+    public function test_step_payloads_replace_malformed_utf8_before_json_casting(): void
+    {
+        $attributes = (new AgentRunPayloadSchemaVersioner())->normalizeStepAttributes([
+            'output' => [
+                'message' => "hello \xB1 world",
+                'nested' => [
+                    'value' => "bad \xB1 bytes",
+                ],
+            ],
+            'metadata' => [],
+        ]);
+
+        $this->assertSame(JSON_ERROR_NONE, json_last_error());
+        $this->assertNotFalse(json_encode($attributes['output']));
+        $this->assertSame('hello � world', $attributes['output']['message']);
+        $this->assertSame('bad � bytes', $attributes['output']['nested']['value']);
+    }
 }

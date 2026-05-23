@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Testing;
 
-use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\InteractiveAction;
@@ -445,18 +444,6 @@ class AIEngineFake extends UnifiedEngineManager
     public function trackStreaming(array $data): void
     {
         $this->calls[] = ['method' => 'trackStreaming', 'data' => $data];
-    }
-
-    public function executeAction(InteractiveAction $action, mixed $userId = null, ?string $sessionId = null): ActionResult
-    {
-        $this->calls[] = [
-            'method'    => 'executeAction',
-            'action'    => $action,
-            'userId'    => $userId,
-            'sessionId' => $sessionId,
-        ];
-
-        return ActionResult::success('Fake action executed.');
     }
 
     public function createAction(array $data): InteractiveAction

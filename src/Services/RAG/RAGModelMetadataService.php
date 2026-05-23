@@ -6,20 +6,15 @@ namespace LaravelAIEngine\Services\RAG;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 
 class RAGModelMetadataService
 {
     public function __construct(
         protected ?RAGCollectionDiscovery $discovery = null,
-        protected ?RAGDecisionStateService $stateService = null,
-        protected ?AutonomousCollectorDiscoveryService $collectorDiscovery = null
+        protected ?RAGDecisionStateService $stateService = null
     ) {
         $this->discovery = $discovery ?? (app()->bound(RAGCollectionDiscovery::class) ? app(RAGCollectionDiscovery::class) : null);
         $this->stateService = $stateService ?? new RAGDecisionStateService(new RAGDecisionPolicy());
-        $this->collectorDiscovery = $collectorDiscovery ?? (app()->bound(AutonomousCollectorDiscoveryService::class)
-            ? app(AutonomousCollectorDiscoveryService::class)
-            : null);
     }
 
     public function getAvailableModels(array $options): array
@@ -148,11 +143,6 @@ class RAGModelMetadataService
             }
         }
 
-        $collectorModelClass = $this->findModelClassFromCollectors($modelName);
-        if ($collectorModelClass) {
-            return $collectorModelClass;
-        }
-
         $inferred = $this->inferLocalModelClass($modelName);
         if ($inferred) {
             return $inferred;
@@ -171,7 +161,7 @@ class RAGModelMetadataService
 
         foreach (glob($path . '/*ModelConfig.php') as $file) {
             $fullClass = 'App\\AI\\Configs\\' . basename($file, '.php');
-            if (!class_exists($fullClass) || !is_subclass_of($fullClass, \LaravelAIEngine\Contracts\AutonomousModelConfig::class)) {
+            if (!class_exists($fullClass) || !is_subclass_of($fullClass, \LaravelAIEngine\Contracts\ModelToolConfig::class)) {
                 continue;
             }
 
@@ -227,7 +217,7 @@ class RAGModelMetadataService
             "App\\AI\\Configs\\{$modelName}ModelConfig",
             "App\\AI\\Configs\\{$modelName}Config",
         ] as $configClass) {
-            if (class_exists($configClass) && is_subclass_of($configClass, \LaravelAIEngine\Contracts\AutonomousModelConfig::class)) {
+            if (class_exists($configClass) && is_subclass_of($configClass, \LaravelAIEngine\Contracts\ModelToolConfig::class)) {
                 return $configClass;
             }
         }
@@ -242,16 +232,6 @@ class RAGModelMetadataService
             try {
                 return $configClass::getFilterConfig();
             } catch (\Throwable) {
-            }
-        }
-
-        if (!$this->collectorDiscovery) {
-            return [];
-        }
-
-        foreach ($this->collectorDiscovery->discoverCollectors() as $collector) {
-            if (($collector['model_class'] ?? null) === $modelClass) {
-                return $collector['filter_config'] ?? [];
             }
         }
 
@@ -401,34 +381,6 @@ class RAGModelMetadataService
         }
 
         return array_values(array_unique($variants));
-    }
-
-    protected function findModelClassFromCollectors(string $modelName): ?string
-    {
-        if (!$this->collectorDiscovery) {
-            return null;
-        }
-
-        foreach ($this->collectorDiscovery->discoverCollectors(useCache: true, includeRemote: false) as $collectorName => $collector) {
-            $class = $collector['model_class'] ?? null;
-            if (!is_string($class) || trim($class) === '') {
-                continue;
-            }
-
-            if (!class_exists($class)) {
-                continue;
-            }
-
-            $collectorModelName = strtolower(class_basename($class));
-            if (
-                $this->matchesModelName((string) $collectorName, $modelName) ||
-                $this->matchesModelName($collectorModelName, $modelName)
-            ) {
-                return $class;
-            }
-        }
-
-        return null;
     }
 
     protected function inferLocalModelClass(string $modelName): ?string

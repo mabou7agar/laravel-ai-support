@@ -33,7 +33,7 @@ class MessageRoutingClassifier
         }
 
         if ($this->isActionFlow($normalized)) {
-            return $this->decision('ask_ai', 'action_flow', 'explicit mutation or action flow intent');
+            return $this->decision('ask_ai', 'action_request', 'explicit mutation or action intent');
         }
 
         if ($this->isExactLookup($normalized)) {
@@ -98,7 +98,7 @@ class MessageRoutingClassifier
             'semantic_retrieval' => $this->decision('search_rag', 'semantic_retrieval', $decision->reason ?: 'AI intent classified semantic retrieval', 'ai_intent'),
             'contextual_follow_up' => $this->decision('search_rag', 'contextual_follow_up', $decision->reason ?: 'AI intent classified contextual follow-up', 'ai_intent'),
             'structured_query' => $this->decision('ask_ai', 'structured_query', $decision->reason ?: 'AI intent classified structured query', 'ai_intent'),
-            'action_request', 'confirm', 'reject', 'choose_existing', 'create_new', 'skill_request' => $this->decision('ask_ai', 'action_flow', $decision->reason ?: 'AI intent classified action flow', 'ai_intent'),
+            'action_request', 'confirm', 'reject', 'choose_existing', 'create_new', 'skill_request' => $this->decision('ask_ai', 'action_request', $decision->reason ?: 'AI intent classified action request', 'ai_intent'),
             default => null,
         };
     }

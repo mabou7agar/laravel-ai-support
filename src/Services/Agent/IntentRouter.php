@@ -48,8 +48,6 @@ class IntentRouter
         $resources = $this->discoverResources($options);
 
         Log::channel('ai-engine')->info('IntentRouter resources discovered', [
-            'collectors_count' => count($resources['collectors']),
-            'collectors' => array_map(fn ($collector) => $collector['name'], $resources['collectors']),
             'skills_count' => count($resources['skills']),
             'tools_count' => count($resources['tools']),
             'nodes_count' => count($resources['nodes']),
@@ -87,7 +85,7 @@ class IntentRouter
 
         return $this->withPromptPolicyMetadata($this->enforceForwardedRequestPolicy(
             $this->enforceStructuredQueryToolPolicy(
-                $this->enforceActiveActionFlowPolicy($this->parseDecision($rawResponse, $message, $context, $options), $message, $context),
+                $this->parseDecision($rawResponse, $message, $context, $options),
                 $message,
                 $context,
                 $options,
@@ -102,8 +100,6 @@ class IntentRouter
         return [
             'tools' => $this->discoverTools($options),
             'skills' => $this->discoverSkills(),
-            'action_flows' => $this->discoverActionFlows(),
-            'collectors' => $this->discoverCollectors($options),
             'nodes' => $this->discoverNodes($options),
         ];
     }
@@ -135,15 +131,6 @@ class IntentRouter
             return null;
         }
 
-        $activeSkill = $this->activeSkillFlowDecision($message, $context);
-        if ($activeSkill !== null) {
-            return $activeSkill;
-        }
-
-        if (is_array($context->metadata['last_action_flow'] ?? null)) {
-            return null;
-        }
-
         $match = $this->skillMatcher->matchIntent($message, $context);
         if ($match === null) {
             return null;
@@ -160,36 +147,6 @@ class IntentRouter
         ]);
 
         return $decision;
-    }
-
-    protected function activeSkillFlowDecision(string $message, UnifiedActionContext $context): ?array
-    {
-        $flow = $context->metadata['last_skill_flow'] ?? null;
-        if (!is_array($flow) || empty($flow['skill_id'])) {
-            return null;
-        }
-
-        if (($flow['status'] ?? null) === 'completed') {
-            unset($context->metadata['last_skill_flow']);
-
-            return null;
-        }
-
-        return [
-            'action' => 'use_tool',
-            'resource_name' => 'run_skill',
-            'params' => [
-                'skill_id' => (string) $flow['skill_id'],
-                'message' => $message,
-                'reset' => false,
-            ],
-            'reasoning' => 'Continue the active skill tool flow.',
-            'decision_source' => 'active_skill_flow',
-            'metadata' => [
-                'skill_id' => (string) $flow['skill_id'],
-                'skill_name' => $flow['skill_name'] ?? null,
-            ],
-        ];
     }
 
     protected function discoverTools(array $options): array
@@ -245,115 +202,6 @@ class IntentRouter
         }
 
         return $tools;
-    }
-
-    protected function discoverActionFlows(): array
-    {
-        if (!app()->bound(\LaravelAIEngine\Services\Actions\ActionRegistry::class)) {
-            return [];
-        }
-
-        try {
-            $registry = app(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
-
-            return collect($registry->all(true))
-                ->map(fn (array $action): array => [
-                    'id' => (string) ($action['id'] ?? ''),
-                    'label' => (string) ($action['label'] ?? $action['id'] ?? ''),
-                    'module' => (string) ($action['module'] ?? 'default'),
-                    'operation' => (string) ($action['operation'] ?? 'custom'),
-                    'description' => (string) ($action['description'] ?? ''),
-                    'required' => array_values((array) ($action['required'] ?? [])),
-                    'parameters' => array_keys((array) ($action['parameters'] ?? [])),
-                    'initial_payload' => (array) ($action['initial_payload'] ?? []),
-                ])
-                ->filter(fn (array $action): bool => $action['id'] !== '')
-                ->values()
-                ->all();
-        } catch (\Throwable $e) {
-            Log::channel('ai-engine')->warning('Failed to discover action flows', [
-                'error' => $e->getMessage(),
-            ]);
-
-            return [];
-        }
-    }
-
-    protected function discoverCollectors(array $options = []): array
-    {
-        $collectors = [];
-
-        try {
-            $localCollectors = \LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry::getConfigs();
-
-            foreach ($localCollectors as $name => $configData) {
-                $goal = (string) ($configData['goal'] ?? '');
-                $description = (string) ($configData['description'] ?? '');
-                $config = $configData['config'] ?? null;
-
-                if (($goal === '' || $description === '') && $config instanceof \Closure) {
-                    try {
-                        $config = $config();
-                    } catch (\Throwable) {
-                        $config = null;
-                    }
-                }
-
-                if ($goal === '' && is_object($config) && isset($config->goal)) {
-                    $goal = (string) $config->goal;
-                }
-
-                if ($description === '' && is_object($config) && isset($config->description)) {
-                    $description = (string) $config->description;
-                }
-
-                $collectors[] = [
-                    'name' => $name,
-                    'goal' => $goal,
-                    'description' => $description,
-                ];
-            }
-        } catch (\Exception $e) {
-            Log::channel('ai-engine')->warning('Failed to discover local collectors', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        $localOnly = !empty($options['local_only']) || !config('ai-engine.nodes.enabled', true);
-        if ($localOnly) {
-            return $collectors;
-        }
-
-        try {
-            $activeNodes = $this->nodeRegistry->getActiveNodes();
-
-            foreach ($activeNodes as $node) {
-                $autonomousCollectors = $node['autonomous_collectors'] ?? [];
-
-                if (!is_array($autonomousCollectors)) {
-                    continue;
-                }
-
-                foreach ($autonomousCollectors as $collector) {
-                    if (!isset($collector['name'])) {
-                        continue;
-                    }
-
-                    $collectors[] = [
-                        'name' => $collector['name'],
-                        'goal' => $collector['goal'] ?? '',
-                        'description' => $collector['description'] ?? '',
-                        'node' => $node['slug'] ?? 'unknown',
-                    ];
-                }
-            }
-        } catch (\Exception $e) {
-            Log::channel('ai-engine')->warning('Failed to discover remote collectors', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        return $collectors;
     }
 
     protected function discoverNodes(array $options = []): array
@@ -427,14 +275,12 @@ class IntentRouter
     protected function buildPrompt(string $message, array $resources, UnifiedActionContext $context, array $promptPolicy = []): string
     {
         $history = $this->formatHistory($context);
-        $pausedSessions = $context->get('session_stack', []);
         $discovery = new NodeMetadataDiscovery();
         $localNodeMeta = $discovery->discover();
         $localNodeMeta['slug'] = 'local';
         $selectedEntityContext = $this->formatSelectedEntityContext($context);
         $userProfile = $this->getUserProfile($context->userId);
         $entityContext = $this->formatEntityMetadata($context);
-        $actionFlowContext = $this->formatActionFlowContext($context);
         $policyContext = $this->formatPromptPolicy($promptPolicy);
 
         return <<<PROMPT
@@ -451,30 +297,19 @@ RECENT CONVERSATION:
 
 {$entityContext}
 
-ACTIVE ACTION FLOW:
-{$actionFlowContext}
-
 SELECTED ENTITY CONTEXT:
 {$selectedEntityContext}
-
-PAUSED SESSIONS: {$this->formatPausedSessions($pausedSessions)}
 
 AVAILABLE RESOURCES:
 
 Agent Skills:
 {$this->formatSkills($resources['skills'] ?? [])}
 
-Autonomous Collectors:
-{$this->formatCollectors($resources['collectors'])}
-
 Local Collections:
-{$this->formatCollectors($localNodeMeta['collections'] ?? [])}
+{$this->formatCollections($localNodeMeta['collections'] ?? [])}
 
 Model Tools:
 {$this->formatTools($resources['tools'])}
-
-Action Flows:
-{$this->formatActionFlows($resources['action_flows'] ?? [])}
 
 Remote Nodes:
 {$this->formatNodes($resources['nodes'])}
@@ -490,26 +325,17 @@ Routing rules:
 3) Never route_to_node for "local".
 4) Use data_query through use_tool for local list/show/count/filter questions when a target entity/table/model is named. Pass the original query if exact model/table parameters are uncertain.
 5) Use data_query through use_tool for exact local IDs, codes, reference numbers, SKUs, or other structured filters.
-6) For Action Flows, use use_tool with update_action_draft to start or continue draft collection. Params must include action_id, payload_patch, and reset=true only when starting a new flow. Use initial_payload when provided by the flow.
-7) If ACTIVE ACTION FLOW has relation_next_steps or next_options with relation_create_confirmation and the user confirms/proceeds/approves that relation, continue the active draft using update_action_draft with params {"action_id":"the active action_id","payload_patch":{"approved_missing_relations":["the approval_key"]}}. Do not start a standalone action for that related record.
-8) If ACTIVE ACTION FLOW exists and the user provides more details, corrections, dates, item details, relation details, or relation approval, continue the active action_id with update_action_draft unless the user explicitly says to cancel, restart, or switch to a different action instead.
-9) If ACTIVE ACTION FLOW awaits_final_confirmation=true and the user confirms/proceeds/approves creating it, use use_tool with execute_action and params {"action_id":"the active action_id","confirmed":true}. If the user corrects or adds details instead, use update_action_draft.
-10) Prefer Agent Skills when a skill trigger matches the request. A skill describes the complete user-facing ability; use its first action with update_action_draft, first tool with use_tool, or its collector if listed.
-11) Use start_collector only when a named Autonomous Collector exists and no Action Flow, Agent Skill, or Model Tool fits. If no collectors are listed, do not choose start_collector.
-12) Use conversational for greetings/general chat.
-13) Use resume_session only for "resume/back".
+6) Prefer Agent Skills when a skill trigger matches the request. A skill describes the complete user-facing ability; use its declared tool when listed.
+7) Use conversational for greetings/general chat.
 
 Allowed actions:
-- start_collector
 - use_tool
 - route_to_node
-- resume_session
-- pause_and_handle
 - search_rag
 - conversational
 
 Respond with JSON ONLY using this schema:
-{"action":"start_collector|use_tool|route_to_node|resume_session|pause_and_handle|search_rag|conversational","resource_name":"name or null","params":{"optional":"tool parameters"},"reasoning":"one short sentence"}
+{"action":"use_tool|route_to_node|search_rag|conversational","resource_name":"name or null","params":{"optional":"tool parameters"},"reasoning":"one short sentence"}
 PROMPT;
     }
 
@@ -698,64 +524,6 @@ PROMPT;
         return '';
     }
 
-    protected function formatActionFlowContext(UnifiedActionContext $context): string
-    {
-        $flow = $context->metadata['last_action_flow'] ?? null;
-        if (!is_array($flow) || empty($flow['action_id'])) {
-            return '(none)';
-        }
-
-        return json_encode($flow, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    }
-
-    protected function enforceActiveActionFlowPolicy(array $decision, string $message, UnifiedActionContext $context): array
-    {
-        $flow = $context->metadata['last_action_flow'] ?? null;
-        if (!is_array($flow) || empty($flow['action_id'])) {
-            return $decision;
-        }
-
-        $relationOption = collect($flow['next_options'] ?? $flow['relation_next_steps'] ?? [])
-            ->first(fn (mixed $option): bool => is_array($option) && ($option['type'] ?? null) === 'relation_create_confirmation');
-        if (!is_array($relationOption) || !$this->looksLikeApproval($message)) {
-            if (
-                ($flow['awaits_final_confirmation'] ?? false) !== true
-                && $this->looksLikeApproval($message)
-                && collect($flow['next_options'] ?? [])->contains(
-                    fn (mixed $option): bool => is_array($option) && ($option['type'] ?? null) === 'draft_review'
-                )
-            ) {
-                return [
-                    'action' => 'use_tool',
-                    'resource_name' => 'update_action_draft',
-                    'params' => [
-                        'action_id' => (string) ($flow['action_id'] ?? ''),
-                        'payload_patch' => [
-                            'ready_for_confirmation' => true,
-                        ],
-                    ],
-                    'reasoning' => 'The user requested final review for the active action draft.',
-                ];
-            }
-
-            return $decision;
-        }
-
-        return [
-            'action' => 'use_tool',
-            'resource_name' => 'update_action_draft',
-            'params' => [
-                'action_id' => (string) $flow['action_id'],
-                'payload_patch' => [
-                    'approved_missing_relations' => [
-                        (string) ($relationOption['approval_key'] ?? $relationOption['field'] ?? true),
-                    ],
-                ],
-            ],
-            'reasoning' => 'The user approved a pending relation in the active action draft.',
-        ];
-    }
-
     /**
      * @param array<string, mixed> $decision
      * @param array<string, mixed> $options
@@ -821,27 +589,18 @@ PROMPT;
         return $this->intentSignals ??= app(IntentSignalService::class);
     }
 
-    protected function formatPausedSessions(array $sessions): string
+    protected function formatCollections(array $collections): string
     {
-        if (empty($sessions)) {
-            return 'None';
-        }
-
-        return implode(', ', array_map(fn ($session) => $session['config_name'] ?? 'unknown', $sessions));
-    }
-
-    protected function formatCollectors(array $collectors): string
-    {
-        if (empty($collectors)) {
-            return '   (No collectors available)';
+        if (empty($collections)) {
+            return '   (No resources available)';
         }
 
         $lines = [];
-        foreach ($collectors as $collector) {
-            $nodeName = $collector['node'] ?? 'local';
-            $goal = $collector['goal'] ?? '';
-            $description = $collector['description'] ?? '';
-            $lines[] = "   - Name :{$collector['name']} Goal: {$goal} Description : {$description} Node: {$nodeName} ";
+        foreach ($collections as $collection) {
+            $nodeName = $collection['node'] ?? 'local';
+            $name = $collection['name'] ?? ($collection['table'] ?? 'unknown');
+            $description = $collection['description'] ?? '';
+            $lines[] = "   - Name: {$name}. Description: {$description}. Node: {$nodeName}.";
         }
 
         return implode("\n", $lines);
@@ -863,7 +622,13 @@ PROMPT;
             $required = implode(', ', (array) ($skill['required_data'] ?? []));
             $actions = implode(', ', (array) ($skill['actions'] ?? []));
             $tools = implode(', ', (array) ($skill['tools'] ?? []));
-            $lines[] = "   - {$skill['id']}: {$skill['name']}. {$skill['description']} Triggers: {$triggers}. Required: {$required}. Actions: {$actions}. Tools: {$tools}.";
+            $prompt = trim((string) ($skill['prompt'] ?? data_get($skill, 'metadata.prompt', '')));
+            $promptText = $prompt !== '' ? " Prompt: {$prompt}." : '';
+            $relations = data_get($skill, 'metadata.relations', []);
+            $relationText = is_array($relations) && $relations !== []
+                ? ' Relations: ' . json_encode($relations, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '.'
+                : '';
+            $lines[] = "   - {$skill['id']}: {$skill['name']}. {$skill['description']}{$promptText} Triggers: {$triggers}. Required: {$required}. Actions: {$actions}. Tools: {$tools}.{$relationText}";
         }
 
         return $lines !== [] ? implode("\n", $lines) : '   (No skills available)';
@@ -881,25 +646,6 @@ PROMPT;
                 ? ' Params: ' . implode(', ', array_keys($tool['parameters']))
                 : '';
             $lines[] = "   - {$tool['name']} ({$tool['model']}): {$tool['description']}{$parameters}";
-        }
-
-        return implode("\n", $lines);
-    }
-
-    protected function formatActionFlows(array $actions): string
-    {
-        if (empty($actions)) {
-            return '   (No action flows available)';
-        }
-
-        $lines = [];
-        foreach ($actions as $action) {
-            $required = implode(', ', (array) ($action['required'] ?? []));
-            $parameters = implode(', ', (array) ($action['parameters'] ?? []));
-            $initialPayload = !empty($action['initial_payload'])
-                ? ' Initial payload: ' . json_encode($action['initial_payload'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-                : '';
-            $lines[] = "   - {$action['id']} ({$action['operation']} {$action['module']}): {$action['label']}. {$action['description']} Required: {$required}. Parameters: {$parameters}.{$initialPayload}";
         }
 
         return implode("\n", $lines);
@@ -925,11 +671,8 @@ PROMPT;
     protected function parseDecision(string $response, string $message, UnifiedActionContext $context, array $options = []): array
     {
         $allowedActions = [
-            'start_collector',
             'use_tool',
             'route_to_node',
-            'resume_session',
-            'pause_and_handle',
             'search_rag',
             'conversational',
         ];

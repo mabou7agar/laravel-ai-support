@@ -27,7 +27,8 @@ class AgentSkillDefinition implements JsonSerializable
         public readonly array $capabilities = [],
         public readonly bool $requiresConfirmation = true,
         public readonly bool $enabled = true,
-        public readonly array $metadata = []
+        public readonly array $metadata = [],
+        public readonly string $prompt = ''
     ) {
     }
 
@@ -47,7 +48,8 @@ class AgentSkillDefinition implements JsonSerializable
             capabilities: self::stringList($data['capabilities'] ?? []),
             requiresConfirmation: (bool) ($data['requires_confirmation'] ?? $data['requiresConfirmation'] ?? true),
             enabled: (bool) ($data['enabled'] ?? true),
-            metadata: (array) ($data['metadata'] ?? [])
+            metadata: (array) ($data['metadata'] ?? []),
+            prompt: (string) ($data['prompt'] ?? data_get($data, 'metadata.prompt', ''))
         );
     }
 
@@ -64,6 +66,7 @@ class AgentSkillDefinition implements JsonSerializable
                 'tools' => $this->tools,
                 'actions' => $this->actions,
                 'requires_confirmation' => $this->requiresConfirmation,
+                'prompt' => $this->prompt,
             ],
             metadata: array_merge($this->metadata, [
                 'enabled' => $this->enabled,
@@ -84,6 +87,7 @@ class AgentSkillDefinition implements JsonSerializable
      *     capabilities:array<int,string>,
      *     requires_confirmation:bool,
      *     enabled:bool,
+     *     prompt:string,
      *     metadata:array<string,mixed>
      * }
      */
@@ -100,6 +104,7 @@ class AgentSkillDefinition implements JsonSerializable
             'capabilities' => $this->capabilities,
             'requires_confirmation' => $this->requiresConfirmation,
             'enabled' => $this->enabled,
+            'prompt' => $this->prompt,
             'metadata' => $this->metadata,
         ];
     }

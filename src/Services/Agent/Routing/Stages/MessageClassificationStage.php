@@ -32,6 +32,14 @@ class MessageClassificationStage implements RoutingStageContract
             $this->routingContextResolver->signalsFromContext($context, $options)
         );
 
+        if ($classification['route'] === 'ask_ai') {
+            return null;
+        }
+
+        if ($classification['route'] === 'search_rag' && !$this->ragEnabled($options)) {
+            return null;
+        }
+
         $action = match ($classification['route']) {
             'conversational' => RoutingDecisionAction::CONVERSATIONAL,
             'search_rag' => RoutingDecisionAction::SEARCH_RAG,
@@ -39,14 +47,7 @@ class MessageClassificationStage implements RoutingStageContract
         };
 
         if ($action === null) {
-            return new RoutingDecision(
-                action: RoutingDecisionAction::USE_TOOL,
-                source: RoutingDecisionSource::CLASSIFIER,
-                confidence: 'medium',
-                reason: $classification['reason'],
-                payload: ['route' => $classification['route'], 'mode' => $classification['mode']],
-                metadata: ['stage' => $this->name(), 'classification' => $classification]
-            );
+            return null;
         }
 
         return new RoutingDecision(
@@ -57,5 +58,14 @@ class MessageClassificationStage implements RoutingStageContract
             payload: ['route' => $classification['route'], 'mode' => $classification['mode']],
             metadata: ['stage' => $this->name(), 'classification' => $classification]
         );
+    }
+
+    protected function ragEnabled(array $options): bool
+    {
+        if (!empty($options['force_rag'])) {
+            return true;
+        }
+
+        return !array_key_exists('use_rag', $options) || (bool) $options['use_rag'];
     }
 }

@@ -12,8 +12,17 @@ use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ContextManager;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\MessageRoutingClassifier;
+use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
+
+class ThrowingRoutingPipeline extends RoutingPipeline
+{
+    public function decide(string $message, UnifiedActionContext $context, array $options = []): \LaravelAIEngine\DTOs\RoutingTrace
+    {
+        throw new \RuntimeException('Routing pipeline unavailable.');
+    }
+}
 
 class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
 {
@@ -193,4 +202,83 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
         $this->assertSame('use_tool', $response->metadata['route_explanation']['action']);
         $this->assertSame('router_ai_use_tool', $response->metadata['route_explanation']['decision_path']);
     }
+
+    public function test_routing_pipeline_failure_falls_back_to_heuristic_action_routing_not_rag(): void
+    {
+        $context = new UnifiedActionContext('session-pipeline-failure', 'lab-user');
+
+        $contextManager = Mockery::mock(ContextManager::class);
+        $contextManager->shouldReceive('getOrCreate')
+            ->once()
+            ->with('session-pipeline-failure', 'lab-user')
+            ->andReturn($context);
+
+        $intentRouter = Mockery::mock(IntentRouter::class);
+        $intentRouter->shouldReceive('route')
+            ->once()
+            ->with('Create an invoice for Ahmed.', $context, Mockery::type('array'))
+            ->andReturn([
+                'action' => 'use_tool',
+                'resource_name' => 'run_skill',
+                'params' => [
+                    'skill_id' => 'create_invoice',
+                    'message' => 'Create an invoice for Ahmed.',
+                    'reset' => true,
+                ],
+                'reasoning' => 'invoice creation skill',
+                'decision_source' => 'router_ai',
+            ]);
+
+        $selection = Mockery::mock(AgentSelectionService::class);
+        $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
+        $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
+
+        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $execution->shouldNotReceive('executeSearchRag');
+        $execution->shouldReceive('executeUseTool')
+            ->once()
+            ->withArgs(function (string $toolName, string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context): bool {
+                return $toolName === 'run_skill'
+                    && $message === 'Create an invoice for Ahmed.'
+                    && $ctx === $context
+                    && ($options['tool_params']['skill_id'] ?? null) === 'create_invoice'
+                    && ($options['decision_path'] ?? null) === 'router_ai_use_tool'
+                    && is_callable($searchRag);
+            })
+            ->andReturn(AgentResponse::needsUserInput(
+                message: 'What email should I use for Ahmed?',
+                data: ['skill_id' => 'create_invoice'],
+                context: $context
+            ));
+
+        $finalizer = Mockery::mock(AgentResponseFinalizer::class);
+        $finalizer->shouldReceive('finalize')
+            ->once()
+            ->with($context, Mockery::type(AgentResponse::class))
+            ->andReturnUsing(fn (UnifiedActionContext $ctx, AgentResponse $response) => $response);
+
+        $processor = new LaravelAgentProcessor(
+            $contextManager,
+            $intentRouter,
+            new AgentPlanner(),
+            $finalizer,
+            $selection,
+            $execution,
+            new MessageRoutingClassifier(),
+            null,
+            null,
+            null,
+            new ThrowingRoutingPipeline()
+        );
+
+        $response = $processor->process('Create an invoice for Ahmed.', 'session-pipeline-failure', 'lab-user', [
+            'use_actions' => true,
+            'use_rag' => false,
+        ]);
+
+        $this->assertTrue($response->needsUserInput);
+        $this->assertSame('What email should I use for Ahmed?', $response->message);
+        $this->assertSame('use_tool', $response->metadata['route_explanation']['action']);
+    }
+
 }

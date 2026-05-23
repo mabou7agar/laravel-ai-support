@@ -19,16 +19,6 @@ class ActiveRunContinuationStage implements RoutingStageContract
 
     public function decide(string $message, UnifiedActionContext $context, array $options = []): ?RoutingDecision
     {
-        if ($context->has('autonomous_collector')) {
-            return new RoutingDecision(
-                action: RoutingDecisionAction::CONTINUE_COLLECTOR,
-                source: RoutingDecisionSource::SESSION,
-                confidence: 'high',
-                reason: 'Active autonomous collector session exists.',
-                metadata: ['stage' => $this->name()]
-            );
-        }
-
         if ($context->has('routed_to_node')) {
             return new RoutingDecision(
                 action: RoutingDecisionAction::CONTINUE_NODE,

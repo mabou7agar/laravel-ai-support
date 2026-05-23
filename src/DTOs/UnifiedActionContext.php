@@ -16,7 +16,6 @@ class UnifiedActionContext
         public $userId = null,
         public array $conversationHistory = [],
         public ?array $pendingAction = null,
-        public ?array $dataCollectorState = null,
         public array $extractedData = [],
         public array $validationErrors = [],
         public string $currentStrategy = 'conversational',
@@ -80,18 +79,11 @@ class UnifiedActionContext
         }
 
         if ($from === 'guided_flow' && $to === 'quick_action') {
-            if ($this->dataCollectorState) {
-                $this->extractedData = array_merge(
-                    $this->extractedData,
-                    $this->dataCollectorState['data'] ?? []
-                );
-            }
+            $this->extractedData = array_merge(
+                $this->extractedData,
+                $this->runtimeState['draft_payload'] ?? []
+            );
         }
-    }
-
-    public function clearDataCollectorState(): void
-    {
-        $this->dataCollectorState = null;
     }
 
     public function set(string $key, $value): void
@@ -252,8 +244,7 @@ class UnifiedActionContext
      */
     public function saveToCache(): void
     {
-        $cacheKey = "agent_context:{$this->sessionId}";
-        Cache::put($cacheKey, $this->toArray(), now()->addHours(24));
+        $this->persist();
     }
 
     /**
@@ -283,7 +274,6 @@ class UnifiedActionContext
             'user_id' => $this->userId,
             'conversation_history' => $this->conversationHistory,
             'pending_action' => $this->pendingAction,
-            'data_collector_state' => $this->dataCollectorState,
             'extracted_data' => $this->extractedData,
             'validation_errors' => $this->validationErrors,
             'current_strategy' => $this->currentStrategy,
@@ -333,7 +323,6 @@ class UnifiedActionContext
             userId: $data['user_id'],
             conversationHistory: $data['conversation_history'] ?? [],
             pendingAction: $data['pending_action'] ?? null,
-            dataCollectorState: $data['data_collector_state'] ?? null,
             extractedData: $data['extracted_data'] ?? [],
             validationErrors: $data['validation_errors'] ?? [],
             currentStrategy: $data['current_strategy'] ?? 'conversational',
@@ -352,7 +341,7 @@ class UnifiedActionContext
     public function persist(): void
     {
         Cache::put(
-            "agent_context:{$this->sessionId}",
+            self::cacheKey($this->sessionId, $this->userId),
             $this->toArray(),
             now()->addHours(24)
         );
@@ -360,13 +349,43 @@ class UnifiedActionContext
 
     public static function load(string $sessionId, $userId): ?self
     {
-        $data = Cache::get("agent_context:{$sessionId}");
+        $data = Cache::get(self::cacheKey($sessionId, $userId));
+
+        if (!$data) {
+            $legacy = Cache::get(self::legacyCacheKey($sessionId));
+            $data = is_array($legacy) && self::sameUser($legacy['user_id'] ?? null, $userId)
+                ? $legacy
+                : null;
+        }
 
         if (!$data) {
             return null;
         }
 
         return self::fromArray($data);
+    }
+
+    public static function cacheKey(string $sessionId, mixed $userId): string
+    {
+        return 'agent_context:' . sha1(json_encode([
+            'session_id' => $sessionId,
+            'user_id' => self::userKey($userId),
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    public static function legacyCacheKey(string $sessionId): string
+    {
+        return "agent_context:{$sessionId}";
+    }
+
+    protected static function userKey(mixed $userId): string
+    {
+        return $userId === null || $userId === '' ? 'guest' : (string) $userId;
+    }
+
+    protected static function sameUser(mixed $storedUserId, mixed $requestedUserId): bool
+    {
+        return self::userKey($storedUserId) === self::userKey($requestedUserId);
     }
 
     /**

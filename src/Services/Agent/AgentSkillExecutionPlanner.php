@@ -21,7 +21,7 @@ class AgentSkillExecutionPlanner
             'skill_match_trigger' => $match['trigger'] ?? null,
         ];
 
-        if ($this->shouldRunWithSkillToolPlanner($skill)) {
+        if ($this->shouldRunWithAiNativeSkill($skill)) {
             return [
                 'action' => 'use_tool',
                 'resource_name' => 'run_skill',
@@ -29,35 +29,9 @@ class AgentSkillExecutionPlanner
                     'skill_id' => $skill->id,
                     'message' => $message,
                     'reset' => true,
+                    'fresh_start' => $this->isFreshSkillRequest($skill, $message, $context),
                 ],
-                'reasoning' => "Matched skill [{$skill->name}] and selected AI skill tool planner.",
-                'decision_source' => 'skill_match',
-                'metadata' => $metadata,
-            ];
-        }
-
-        if ($skill->actions !== []) {
-            return [
-                'action' => 'use_tool',
-                'resource_name' => 'update_action_draft',
-                'params' => [
-                    'action_id' => $skill->actions[0],
-                    'payload_patch' => [],
-                    'reset' => true,
-                ],
-                'reasoning' => "Matched skill [{$skill->name}] and selected action flow [{$skill->actions[0]}].",
-                'decision_source' => 'skill_match',
-                'metadata' => $metadata,
-            ];
-        }
-
-        $collector = $skill->metadata['collector'] ?? null;
-        if (is_string($collector) && trim($collector) !== '') {
-            return [
-                'action' => 'start_collector',
-                'resource_name' => $collector,
-                'params' => [],
-                'reasoning' => "Matched skill [{$skill->name}] and selected collector [{$collector}].",
+                'reasoning' => "Matched skill [{$skill->name}] and selected AI-native skill runtime.",
                 'decision_source' => 'skill_match',
                 'metadata' => $metadata,
             ];
@@ -80,25 +54,30 @@ class AgentSkillExecutionPlanner
             'params' => [
                 'query' => $message,
             ],
-            'reasoning' => "Matched skill [{$skill->name}] but no executable action, tool, or collector is configured.",
+            'reasoning' => "Matched skill [{$skill->name}] but no executable tool is configured.",
             'decision_source' => 'skill_match',
             'metadata' => $metadata,
         ];
     }
 
-    protected function shouldRunWithSkillToolPlanner(AgentSkillDefinition $skill): bool
+    protected function shouldRunWithAiNativeSkill(AgentSkillDefinition $skill): bool
     {
-        if (!(bool) config('ai-agent.skill_tool_planner.enabled', true)) {
-            return false;
-        }
-
         $planner = $skill->metadata['planner'] ?? null;
-        if (is_string($planner) && in_array($planner, ['skill_tool_auto', 'tool_planner', 'ai_tool_planner'], true)) {
+        if (is_string($planner) && $planner === 'ai_native') {
             return true;
         }
 
         return $skill->actions === []
             && $skill->tools !== []
             && ($skill->metadata['target_json'] ?? null) !== null;
+    }
+
+    protected function isFreshSkillRequest(AgentSkillDefinition $skill, string $message, UnifiedActionContext $context): bool
+    {
+        $request = $context->metadata['_fresh_skill_request'] ?? null;
+
+        return is_array($request)
+            && (string) ($request['skill_id'] ?? '') === $skill->id
+            && trim((string) ($request['message'] ?? '')) === trim($message);
     }
 }

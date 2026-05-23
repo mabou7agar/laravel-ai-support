@@ -7,10 +7,8 @@ namespace LaravelAIEngine\Services\Agent;
 class AgentPlanner
 {
     protected const SUPPORTED_ACTIONS = [
-        'start_collector',
         'use_tool',
-        'resume_session',
-        'pause_and_handle',
+        'run_sub_agent',
         'route_to_node',
         'search_rag',
         'conversational',

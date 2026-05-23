@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Tests\Feature;
 
 use LaravelAIEngine\Contracts\AgentRuntimeContract;
+use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
 use LaravelAIEngine\Services\Agent\AgentRunSafetyService;
+use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
+use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
 use LaravelAIEngine\Jobs\ContinueAgentRunJob;
 use LaravelAIEngine\Jobs\RunAgentJob;
 use LaravelAIEngine\Tests\TestCase;
@@ -70,6 +73,66 @@ class AgentRunAsyncJobsTest extends TestCase
         $this->assertSame('conversational', $step->routing_decision['action']);
         $this->assertSame('agent.agent_run.process', $step->metadata['otel']['name']);
         $this->assertSame('laravel', $step->metadata['otel']['attributes']['ai.agent.runtime']);
+
+        $completedEvent = collect($run->metadata['events'] ?? [])
+            ->firstWhere('name', 'run.completed');
+
+        $this->assertIsArray($completedEvent);
+        $this->assertSame('Async response.', $completedEvent['payload']['message']);
+        $this->assertSame('Async response.', $completedEvent['payload']['response']['message']);
+        $this->assertFalse($completedEvent['payload']['needs_user_input']);
+        $this->assertTrue($completedEvent['payload']['success']);
+    }
+
+    public function test_run_agent_job_applies_chat_response_presentation_before_persisting_response(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'queued-presentation',
+            'user_id' => '9',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->once()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::success('I can help create an invoice.'));
+
+        $presentation = Mockery::mock(ChatResponsePresentationService::class);
+        $presentation->shouldReceive('apply')
+            ->once()
+            ->with(
+                Mockery::type(AIResponse::class),
+                'Ahmed needs an invoice',
+                Mockery::on(fn (array $options): bool => ($options['response_suggestions'] ?? null) === true),
+                Mockery::any()
+            )
+            ->andReturn(AIResponse::success(
+                content: 'I can help create an invoice.',
+                engine: 'openai',
+                model: 'gpt-4o-mini',
+                metadata: [
+                    'suggestions' => [
+                        ['type' => 'skill', 'id' => 'create_invoice', 'label' => 'Create Invoice'],
+                    ],
+                    'suggestions_count' => 1,
+                ]
+            ));
+
+        $this->app->instance(ChatResponsePresentationService::class, $presentation);
+
+        $job = new RunAgentJob($run->id, 'Ahmed needs an invoice', 'queued-presentation', '9', [
+            'engine' => 'openai',
+            'model' => 'gpt-4o-mini',
+            'response_suggestions' => true,
+        ]);
+        $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class));
+
+        $run->refresh();
+
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->status);
+        $this->assertSame('create_invoice', $run->final_response['metadata']['suggestions'][0]['id']);
+        $this->assertSame(1, $run->final_response['metadata']['suggestions_count']);
     }
 
     public function test_continue_agent_run_job_uses_persisted_session_and_waiting_input_status(): void
@@ -100,6 +163,10 @@ class AgentRunAsyncJobsTest extends TestCase
             'action' => 'continue',
             'status' => AIAgentRun::STATUS_WAITING_INPUT,
         ]);
+
+        $events = collect($run->refresh()->metadata['events'] ?? [])->pluck('name')->all();
+        $this->assertContains('run.waiting_input', $events);
+        $this->assertNotContains('run.completed', $events);
     }
 
     public function test_duplicate_continuation_jobs_with_same_idempotency_key_process_once(): void
@@ -123,6 +190,70 @@ class AgentRunAsyncJobsTest extends TestCase
 
         $this->assertSame(1, $run->steps()->count());
         $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->refresh()->status);
+    }
+
+    public function test_failed_idempotent_job_releases_claim_for_queue_retry(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'retry-idempotent',
+            'user_id' => '12',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->twice()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andThrow(new \RuntimeException('Transient runtime failure.'));
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::success('Processed after retry.'));
+
+        $job = new RunAgentJob($run->id, 'hello', 'retry-idempotent', '12', ['idempotency_key' => 'retry-1']);
+
+        try {
+            $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class));
+            $this->fail('Expected transient runtime failure.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Transient runtime failure.', $e->getMessage());
+        }
+
+        $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class));
+
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->refresh()->status);
+        $this->assertSame('Processed after retry.', $run->final_response['message']);
+    }
+
+    public function test_terminal_event_failure_does_not_release_idempotency_or_rerun_runtime(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'terminal-event-failure',
+            'user_id' => '12',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->once()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::success('Completed despite stream failure.'));
+
+        $events = Mockery::mock(AgentRunEventStreamService::class);
+        $events->shouldReceive('emit')
+            ->once()
+            ->with(AgentRunEventStreamService::RUN_STARTED, Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
+            ->andReturn([]);
+        $events->shouldReceive('emit')
+            ->once()
+            ->with(AgentRunEventStreamService::RUN_COMPLETED, Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
+            ->andThrow(new \RuntimeException('Stream write failed.'));
+
+        $job = new RunAgentJob($run->id, 'hello', 'terminal-event-failure', '12', ['idempotency_key' => 'terminal-event-1']);
+        $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class), $events);
+        $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class), $events);
+
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->refresh()->status);
+        $this->assertSame(1, $run->steps()->count());
     }
 
     public function test_run_agent_job_enforces_max_step_limit_before_processing(): void

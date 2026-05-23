@@ -7,7 +7,7 @@ Laravel AI Engine is a Laravel package for AI chat orchestration, deterministic 
 Current codebase includes:
 
 - modular orchestrator (`IntentRouter`, `AgentPlanner`, action execution, response finalizer)
-- autonomous RAG split into focused services (decision, execution, context/state, policy, feedback, structured data)
+- RAG decision runtime split into focused services (decision, execution, context/state, policy, feedback, structured data)
 - deterministic node routing via ownership and manifest metadata (no AI-only node guessing)
 - standardized response envelope (`success`, `message`, `data`, `error`, `meta`)
 - localization stack (locale middleware, lexicons, prompt templates)
@@ -172,6 +172,18 @@ curl -X POST http://127.0.0.1:8000/api/v1/ai/realtime/tools/dispatch \
 
 Register observability exporters in `ai-engine.observability.exporters` to send traces and evaluations to HTTP collectors, OpenTelemetry OTLP, LangSmith, or logs.
 
+For agent chat tasks, `/api/v1/agent/chat` is synchronous by default. Send `execution_mode=auto` to let the package keep simple chat synchronous and queue durable work such as goal/sub-agent runs, streaming work, structured collection callbacks, and matched skills. Send `execution_mode=async` or `async=true` to force a queued run.
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Create invoice and generate preview","session_id":"thread-1","execution_mode":"auto","actions":true}'
+
+curl http://127.0.0.1:8000/api/v1/ai/agent-runs/{run_uuid}/stream?timeout=30
+```
+
+SSE works without a WebSocket service. Enable Laravel Broadcasting when the app uses Reverb, Pusher, Soketi, Ably, or another broadcast driver.
+
 ### Structured Chat Collection
 
 ```php
@@ -292,26 +304,26 @@ Register providers in the host app:
 
 Then the host app can sync `AgentCapabilityRegistry::documents()` to Qdrant, Neo4j, Redis, or any other memory layer using its own command/service. Keep domain knowledge in the app provider; keep reusable contracts and registry behavior in this package.
 
-## Business Action Framework
+## Action Framework
 
-For app-wide CRUD and action flows, the package owns the reusable action framework and the host app owns domain services, permissions, DTOs, and database writes.
+For app-wide CRUD and action flows, the package owns the reusable action framework and the host app owns domain services, permissions, DTOs, repositories, and database writes.
 
 Package contracts:
 
-- `LaravelAIEngine\Contracts\BusinessActionDefinitionProvider`
-- `LaravelAIEngine\Contracts\BusinessActionRelationResolver`
-- `LaravelAIEngine\Contracts\BusinessActionAuditLogger`
+- `LaravelAIEngine\Contracts\ActionDefinitionProvider`
+- `LaravelAIEngine\Contracts\ActionRelationResolver`
+- `LaravelAIEngine\Contracts\ActionAuditLogger`
+- `LaravelAIEngine\Contracts\ActionExecutor`
 - `LaravelAIEngine\Contracts\ConversationMemory`
 - `LaravelAIEngine\Contracts\AgentCapabilityProvider`
 
 Package services:
 
-- `LaravelAIEngine\Services\BusinessActions\BusinessActionRegistry`
-- `LaravelAIEngine\Services\BusinessActions\BusinessActionOrchestrator`
-- `LaravelAIEngine\Services\BusinessActions\GenericModuleActionService`
-- `LaravelAIEngine\Services\BusinessActions\GenericModuleActionDefinitionProvider`
-- `LaravelAIEngine\Services\BusinessActions\NullBusinessActionAuditLogger`
-- `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`
+- `LaravelAIEngine\Services\Actions\ActionRegistry`
+- `LaravelAIEngine\Services\Actions\ActionOrchestrator`
+- `LaravelAIEngine\Services\Actions\GenericModuleActionDefinitionProvider`
+- `LaravelAIEngine\Services\Actions\DefaultActionFlowHandler`
+- `LaravelAIEngine\Services\Actions\NullActionAuditLogger`
 - `LaravelAIEngine\Services\Memory\CacheConversationMemory`
 
 Register static definitions, provider classes, and relation resolvers in the host app:
@@ -336,7 +348,7 @@ Register static definitions, provider classes, and relation resolvers in the hos
 ],
 ```
 
-`BusinessActionDefinitionProvider` publishes action definitions. `prepare` and `handler` callbacks prepare and execute one action through app services. `BusinessActionRelationResolver` resolves or creates related records around prepare/execute. `ConversationMemory` lets package flows store pending payloads without hardcoding a storage backend.
+`ActionDefinitionProvider` publishes action definitions. `prepare` and `handler` callbacks prepare and execute one action through app services. `ActionRelationResolver` resolves or creates related records around prepare/execute. `ConversationMemory` lets package flows store pending payloads without hardcoding a storage backend.
 
 Action definitions use a generic schema:
 
@@ -345,7 +357,7 @@ Action definitions use a generic schema:
 - `confirmation_required`: optional; defaults from `risk`
 - `required`, `parameters`, `summary_fields`, `prepare`, `handler`, `suggest`, and `relation_resolvers`
 
-Confirmed writes can include `_idempotency_key` or `idempotency_key` in the payload, or `metadata.idempotency_key` in the `UnifiedActionContext`. Successful results are replayed for the same user/action/key instead of executing again. Bind `BusinessActionAuditLogger` in the host app to persist prepare/execute audit records; the package uses `NullBusinessActionAuditLogger` by default.
+Confirmed writes can include `_idempotency_key` or `idempotency_key` in the payload, or `metadata.idempotency_key` in the `UnifiedActionContext`. Successful results are replayed for the same user/action/key instead of executing again. Bind `ActionAuditLogger` in the host app to persist prepare/execute audit records; the package uses `NullActionAuditLogger` by default.
 
 ### Generic Module Actions
 
@@ -391,27 +403,11 @@ Ownership is intentionally host-configurable. By default the package checks comm
 ],
 ```
 
-## Action Payload Extraction
+## AI-Native Skill Intake
 
-The package provides `LaravelAIEngine\Services\Actions\ActionPayloadExtractor` for the reusable AI part of action intake. It converts the latest user turn, the current draft payload, and recent conversation history into a structured payload patch using the action's `parameters` schema.
+Multi-turn action intake now runs through AI-native skills and declared tools. A skill describes the target JSON, relations, expected track, and final tool. The runtime gives that schema and tool catalog to the model, then Laravel validates, confirms, audits, scopes, and executes through `ActionOrchestrator`.
 
 Host apps still own the domain-specific parts: action definitions, permissions, validation, relation resolution, confirmation, and database writes.
-
-For multi-turn action intake, use `LaravelAIEngine\Services\Actions\ActionIntakeCoordinator`. It combines payload extraction, conversation-memory-backed intake payloads, draft payloads, prepare callbacks, execute-after-confirm callbacks, and relation-review hooks. Host apps pass callbacks for domain-specific merge, prepare, execute, and relation lookup behavior.
-
-```php
-use LaravelAIEngine\Services\Actions\ActionPayloadExtractor;
-
-$patch = app(ActionPayloadExtractor::class)->extract(
-    action: $actionDefinition,
-    message: '5 Alpha Laptop and 4 Beta Phone',
-    currentPayload: $draftPayload,
-    recentHistory: $history,
-    options: [
-        'instructions' => 'Split natural item phrases into structured line items.',
-    ],
-);
-```
 
 Model-config tool handlers receive both the selected parameters and the current `UnifiedActionContext`, so host apps can keep drafts scoped to the active user/session and avoid global auth assumptions:
 
@@ -440,7 +436,7 @@ AI_AGENT_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE=0.1
 
 ## Agent Conversation Context Compaction
 
-Agent chat history is compacted before persistence and prompt construction so long sessions keep useful context without sending every old turn back to the model. The package keeps recent messages verbatim, folds older messages into `metadata.conversation_summary`, and reuses that summary in conversational prompts, intent routing, and autonomous RAG context.
+Agent chat history is compacted before persistence and prompt construction so long sessions keep useful context without sending every old turn back to the model. The package keeps recent messages verbatim, folds older messages into `metadata.conversation_summary`, and reuses that summary in conversational prompts, intent routing, and RAG decision context.
 
 Default settings are conservative:
 
@@ -456,7 +452,38 @@ AI_AGENT_CONTEXT_SUMMARY_MESSAGE_CHARS=240
 
 This memory is for conversation state only. Business records and capability documents should still be indexed through the host app's RAG, graph, or capability-memory sync pipeline.
 
-Durable conversation memory is also available through `ai_conversation_memories`. Normal chat transcripts stay in `ai_conversations` through `ConversationTranscriptService` (`ConversationService` remains a compatibility alias), while durable memory extracts small scoped facts from compacted turns, retrieves only relevant memories under `AI_AGENT_MEMORY_MAX_PROMPT_CHARS`, and can optionally use a configured vector index while SQL remains the authorization source of truth. See `docs/agent-memory.mdx`.
+Durable conversation memory is also available through `ai_conversation_memories`. Normal chat transcripts stay in `ai_conversations` through `ConversationTranscriptService`, while durable memory extracts small scoped facts from compacted turns, retrieves only relevant memories under `AI_AGENT_MEMORY_MAX_PROMPT_CHARS`, and can optionally use a configured vector index while SQL remains the authorization source of truth. See `docs/agent-memory.mdx`.
+
+The Learn layer stores reusable examples and rules that can be searched later by scope. It is generic enough for design packs, business workflows, support tone, API examples, or UI component guidance:
+
+```php
+Engine::learn()
+    ->fromDesignSlug('bmw-m')
+    ->scope(workspaceId: $workspaceId)
+    ->index()
+    ->save();
+
+$matches = Engine::learn()->search('design a premium automotive landing page', [
+    'workspace_id' => $workspaceId,
+], type: 'design');
+
+$preview = Engine::learn()->generateDesign('Create a billing dashboard with invoice review and AI chat actions.', [
+    'scope' => ['workspace_id' => $workspaceId],
+    'format' => 'html',
+    'engine' => 'openai',
+    'model' => 'gpt-4o-mini',
+    'source_context_chars' => 12000,
+    'media_url' => 'https://example.com/neutral-workspace-photo.jpg',
+]);
+```
+
+getdesign is supported as an optional adapter for `DESIGN.md` sources; see `docs/learning.mdx`.
+
+The same flow is available from Artisan when the package should create the artifact:
+
+```bash
+php artisan ai:design "Create a billing dashboard from learned design context" --workspace=acme --source-context-chars=12000 --media-url=https://example.com/neutral-workspace-photo.jpg --output=storage/app/previews/billing.html
+```
 
 Agent chat responses can also return bullet/numbered response points as structured arrays and include next-step suggestions from registered actions, skills, and tools:
 

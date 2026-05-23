@@ -125,6 +125,7 @@ class Conversation extends Model
             return [
                 'role' => $message->role,
                 'content' => $message->content,
+                'metadata' => is_array($message->metadata) ? $message->metadata : [],
             ];
         })->toArray();
     }

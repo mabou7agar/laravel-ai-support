@@ -48,6 +48,19 @@ class TestRAGRetriever implements RAGRetrieverContract
     }
 }
 
+class EmptyRAGRetriever implements RAGRetrieverContract
+{
+    public function name(): string
+    {
+        return 'empty';
+    }
+
+    public function retrieve(array $queries, array $collections, array $options = [], int|string|null $userId = null): array
+    {
+        return [];
+    }
+}
+
 class RAGPipelineTest extends UnitTestCase
 {
     public function test_resolves_collections_retrieves_sources_and_returns_citations(): void
@@ -180,5 +193,31 @@ class RAGPipelineTest extends UnitTestCase
 
         $this->assertSame('INV-LIVE-2003 is the blocker.', $response->message);
         $this->assertTrue($response->metadata['rag_answer_generated']);
+    }
+
+    public function test_empty_rag_pipeline_does_not_expose_internal_prompt_as_chat_response(): void
+    {
+        Event::fake([AgentRunStreamed::class]);
+
+        $pipeline = new RAGPipeline(
+            new RAGQueryAnalyzer(),
+            new RAGCollectionResolver(),
+            new RAGRetriever([new EmptyRAGRetriever()]),
+            new RAGContextBuilder(),
+            new RAGPromptBuilder(),
+            new RAGResponseGenerator()
+        );
+
+        $response = $pipeline->answer('Create an invoice for Ahmed.', [
+            'rag_collections' => [['class' => 'App\\Models\\Invoice']],
+        ], 'user-1');
+
+        $this->assertTrue($response->success);
+        $this->assertSame(0, $response->metadata['rag_result_count']);
+        $this->assertFalse($response->metadata['rag_answer_generated']);
+        $this->assertStringNotContainsString('Answer using the retrieved context', $response->message);
+        $this->assertStringNotContainsString('No retrieved context', $response->message);
+        $this->assertStringNotContainsString('Question:', $response->message);
+        $this->assertStringContainsString("couldn't find relevant context", $response->message);
     }
 }

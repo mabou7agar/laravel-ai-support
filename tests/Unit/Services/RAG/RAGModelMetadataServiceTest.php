@@ -3,7 +3,6 @@
 namespace LaravelAIEngine\Tests\Unit\Services\RAG;
 
 use Illuminate\Support\Facades\Schema;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 use LaravelAIEngine\Services\RAG\RAGModelMetadataService;
 use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
 use LaravelAIEngine\Services\RAG\RAGDecisionStateService;
@@ -31,37 +30,6 @@ PHP);
         );
 
         $this->assertSame('App\\Models\\Shipment', $service->findModelClass('shipments', []));
-    }
-
-    public function test_find_model_class_can_resolve_from_collector_model_class(): void
-    {
-        if (!class_exists('App\\Models\\BillingRecord')) {
-            eval(<<<'PHP'
-namespace App\Models;
-
-class BillingRecord extends \Illuminate\Database\Eloquent\Model
-{
-}
-PHP);
-        }
-
-        $collectorDiscovery = $this->createMock(AutonomousCollectorDiscoveryService::class);
-        $collectorDiscovery
-            ->method('discoverCollectors')
-            ->willReturn([
-                'invoice' => [
-                    'model_class' => 'App\\Models\\BillingRecord',
-                    'source' => 'local',
-                ],
-            ]);
-
-        $service = new RAGModelMetadataService(
-            null,
-            new RAGDecisionStateService(new RAGDecisionPolicy()),
-            $collectorDiscovery
-        );
-
-        $this->assertSame('App\\Models\\BillingRecord', $service->findModelClass('invoice', []));
     }
 
     public function test_apply_filters_supports_relation_foreign_key_field(): void

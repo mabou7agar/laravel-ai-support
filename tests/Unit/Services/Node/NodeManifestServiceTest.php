@@ -2,7 +2,6 @@
 
 namespace LaravelAIEngine\Tests\Unit\Services\Node;
 
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 use LaravelAIEngine\Services\Node\NodeManifestService;
 use LaravelAIEngine\Services\Node\NodeMetadataDiscovery;
 use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
@@ -39,16 +38,7 @@ class NodeManifestServiceTest extends TestCase
             ],
         ]);
 
-        $collectors = Mockery::mock(AutonomousCollectorDiscoveryService::class);
-        $collectors->shouldReceive('discoverCollectors')->once()->with(false, false)->andReturn([
-            'create_invoice' => [
-                'name' => 'create_invoice',
-                'goal' => 'Create invoice',
-                'description' => 'Collect invoice data',
-            ],
-        ]);
-
-        $service = new NodeManifestService($metadata, $collectors);
+        $service = new NodeManifestService($metadata);
         $manifest = $service->manifest();
 
         $this->assertSame('billing', $manifest['node']['slug']);
@@ -57,14 +47,13 @@ class NodeManifestServiceTest extends TestCase
         $this->assertSame('App\\Models\\Invoice', $manifest['collections'][0]['class']);
         $this->assertSame('Invoice', $manifest['collections'][0]['display_name']);
         $this->assertSame(['invoice'], $manifest['ownership']['collections']);
-        $this->assertSame(['create_invoice'], $manifest['ownership']['tools']);
+        $this->assertSame([], $manifest['ownership']['tools']);
         $this->assertSame('jwt', $manifest['auth']['scheme']);
     }
 
     public function test_health_reflects_infrastructure_report(): void
     {
         $metadata = Mockery::mock(NodeMetadataDiscovery::class);
-        $collectors = Mockery::mock(AutonomousCollectorDiscoveryService::class);
         $infra = Mockery::mock(InfrastructureHealthService::class);
 
         $infra->shouldReceive('evaluate')->once()->andReturn([
@@ -78,7 +67,7 @@ class NodeManifestServiceTest extends TestCase
             ],
         ]);
 
-        $service = new NodeManifestService($metadata, $collectors, $infra);
+        $service = new NodeManifestService($metadata, $infra);
         $health = $service->health();
 
         $this->assertSame('degraded', $health['status']);

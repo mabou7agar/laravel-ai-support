@@ -224,6 +224,8 @@ Route::prefix('api/v1/ai/agent-runs')
             ->name('runs.index');
         Route::get('/capabilities', [AgentRunController::class, 'capabilities'])
             ->name('capabilities');
+        Route::get('/{run}/stream', [AgentRunController::class, 'stream'])
+            ->name('runs.stream');
         Route::get('/{run}', [AgentRunController::class, 'show'])
             ->name('runs.show');
         Route::get('/{run}/trace', [AgentRunController::class, 'trace'])

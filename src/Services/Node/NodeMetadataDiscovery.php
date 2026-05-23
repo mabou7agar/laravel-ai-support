@@ -250,7 +250,7 @@ class NodeMetadataDiscovery
     }
     
     /**
-     * Check if model has CRUD tools via AutonomousModelConfig
+     * Check if model has package-visible tools via ModelToolConfig.
      */
     protected function hasModelTools(string $modelClass): bool
     {
@@ -265,7 +265,7 @@ class NodeMetadataDiscovery
         
         foreach ($possibleConfigs as $configClass) {
             if (class_exists($configClass) && 
-                is_subclass_of($configClass, \LaravelAIEngine\Contracts\AutonomousModelConfig::class)) {
+                is_subclass_of($configClass, \LaravelAIEngine\Contracts\ModelToolConfig::class)) {
                 try {
                     $tools = $configClass::getTools();
                     return !empty($tools);

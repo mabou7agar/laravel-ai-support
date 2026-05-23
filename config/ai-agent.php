@@ -82,6 +82,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Agent Chat API
+    |--------------------------------------------------------------------------
+    |
+    | Async chat turns normal chat requests into durable agent runs backed by
+    | Laravel queues. Keep async_default disabled unless the host app wants all
+    | agent chat requests to run through the durable queue path by default.
+    |
+    */
+    'chat' => [
+        'async_enabled' => env('AI_AGENT_CHAT_ASYNC_ENABLED', true),
+        'async_default' => env('AI_AGENT_CHAT_ASYNC_DEFAULT', false),
+        'auto_async' => [
+            'force_rag' => env('AI_AGENT_CHAT_AUTO_ASYNC_FORCE_RAG', false),
+            'rag_collections' => env('AI_AGENT_CHAT_AUTO_ASYNC_RAG_COLLECTIONS', false),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Agent Run Event Stream
     |--------------------------------------------------------------------------
     |
@@ -92,7 +111,23 @@ return [
     */
     'event_stream' => [
         'enabled' => env('AI_AGENT_EVENT_STREAM_ENABLED', true),
-        'persisted_events_limit' => env('AI_AGENT_EVENT_STREAM_PERSISTED_LIMIT', 200),
+        'persisted_events_limit' => (int) env('AI_AGENT_EVENT_STREAM_PERSISTED_LIMIT', 200),
+        'sse' => [
+            'enabled' => env('AI_AGENT_EVENT_STREAM_SSE_ENABLED', true),
+            'max_seconds' => (int) env('AI_AGENT_EVENT_STREAM_SSE_MAX_SECONDS', 30),
+            'poll_milliseconds' => (int) env('AI_AGENT_EVENT_STREAM_SSE_POLL_MS', 500),
+            'heartbeat_seconds' => (int) env('AI_AGENT_EVENT_STREAM_SSE_HEARTBEAT_SECONDS', 10),
+            'authorize_owned_runs' => env('AI_AGENT_EVENT_STREAM_SSE_AUTHORIZE_OWNED_RUNS', true),
+            'allow_anonymous_runs' => env('AI_AGENT_EVENT_STREAM_SSE_ALLOW_ANONYMOUS_RUNS', false),
+            'authorizer' => null,
+        ],
+        'broadcast' => [
+            'enabled' => env('AI_AGENT_EVENT_STREAM_BROADCAST_ENABLED', false),
+            'connection' => env('AI_AGENT_EVENT_STREAM_BROADCAST_CONNECTION'),
+            'queue' => env('AI_AGENT_EVENT_STREAM_BROADCAST_QUEUE', 'ai-agent-events'),
+            'private' => env('AI_AGENT_EVENT_STREAM_BROADCAST_PRIVATE', true),
+            'channel_prefix' => env('AI_AGENT_EVENT_STREAM_BROADCAST_CHANNEL_PREFIX', 'agent-run'),
+        ],
     ],
 
     /*
@@ -112,6 +147,123 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | AI Native Runtime
+    |--------------------------------------------------------------------------
+    |
+    | The AI-native runtime is the package-wide default direction: the model
+    | decides intent, tool use, follow-up questions, RAG/tool continuation, and
+    | final responses. Laravel keeps the safety kernel: validation, approvals,
+    | scope, audit metadata, persistence, credits, and provider/tool limits.
+    |
+    */
+    'ai_native' => [
+        'enabled' => env('AI_AGENT_AI_NATIVE_ENABLED', true),
+        'skills' => env('AI_AGENT_AI_NATIVE_SKILLS', true),
+        'max_steps' => (int) env('AI_AGENT_AI_NATIVE_MAX_STEPS', 8),
+        'max_tokens' => (int) env('AI_AGENT_AI_NATIVE_MAX_TOKENS', 1200),
+        'temperature' => (float) env('AI_AGENT_AI_NATIVE_TEMPERATURE', 0.1),
+        'action_intent_terms' => [
+            'prepare',
+            'draft',
+            'create',
+            'add',
+            'new',
+            'make',
+            'generate',
+            'update',
+            'edit',
+            'change',
+            'modify',
+            'delete',
+            'remove',
+            'cancel',
+            'approve',
+            'reject',
+            'submit',
+            'send',
+            'run',
+            'execute',
+            'trigger',
+            'search',
+            'find',
+            'lookup',
+            'show',
+            'list',
+            'get',
+            'inspect',
+            'اعمل',
+            'انشئ',
+            'أنشئ',
+            'اصنع',
+            'عدل',
+            'احذف',
+            'ارسل',
+            'ابحث',
+            'اعرض',
+        ],
+        'excluded_tools' => [
+            'run_skill',
+        ],
+        'confirmation_summary' => [
+            'enabled' => env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY', true),
+            'prompt' => 'Please review before I run {tool}.',
+            'heading' => 'Summary:',
+            'instruction' => 'Choose Confirm to continue, or Change to edit before execution.',
+            'hide_empty_values' => true,
+            'max_depth' => (int) env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY_MAX_DEPTH', 3),
+            'max_items' => (int) env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY_MAX_ITEMS', 20),
+            'max_value_length' => (int) env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY_MAX_VALUE_LENGTH', 160),
+            'hidden_fields' => [
+                'id',
+                '*_id',
+            ],
+            'redacted_fields' => [
+                'password',
+                'token',
+                'secret',
+                'api_key',
+                'authorization',
+                'credential',
+            ],
+        ],
+        'auto_confirm_suggested_writes_after_final_confirmation' => env(
+            'AI_AGENT_AI_NATIVE_AUTO_CONFIRM_SUGGESTED_WRITES',
+            true
+        ),
+        'lookup_before_ask_terms' => [
+            'id',
+            'uuid',
+            'name',
+            'title',
+            'label',
+            'email',
+            'number',
+            'code',
+            'slug',
+            'owner',
+            'assignee',
+            'user',
+            'tenant',
+            'workspace',
+            'organization',
+            'team',
+            'department',
+            'role',
+            'location',
+            'status',
+            'amount',
+            'cost',
+            'price',
+            'rate',
+            'unit_price',
+            'sale_price',
+            'total',
+        ],
+        'trigger_stopwords' => ['a', 'an', 'the', 'to', 'for', 'with', 'me', 'please'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Goal Agent / Sub-Agents
     |--------------------------------------------------------------------------
     |
@@ -126,17 +278,6 @@ return [
         'max_sub_agents' => env('AI_AGENT_GOAL_MAX_SUB_AGENTS', 5),
         'stop_on_failure' => env('AI_AGENT_GOAL_STOP_ON_FAILURE', true),
         'register_sub_agent_tool' => env('AI_AGENT_REGISTER_SUB_AGENT_TOOL', true),
-    ],
-
-    'skill_tool_planner' => [
-        'enabled' => env('AI_AGENT_SKILL_TOOL_PLANNER_ENABLED', true),
-        'engine' => env('AI_AGENT_SKILL_TOOL_PLANNER_ENGINE', env('AI_ENGINE_DEFAULT')),
-        'model' => env('AI_AGENT_SKILL_TOOL_PLANNER_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o-mini'))),
-        'max_tokens' => env('AI_AGENT_SKILL_TOOL_PLANNER_MAX_TOKENS', 1200),
-        'temperature' => env('AI_AGENT_SKILL_TOOL_PLANNER_TEMPERATURE', 0.1),
-        'max_steps' => env('AI_AGENT_SKILL_TOOL_PLANNER_MAX_STEPS', 4),
-        'extract_before_plan' => env('AI_AGENT_SKILL_TOOL_EXTRACT_BEFORE_PLAN', true),
-        'strict_schema' => env('AI_AGENT_SKILL_TOOL_STRICT_SCHEMA', true),
     ],
 
     'orchestration' => [
@@ -233,9 +374,14 @@ return [
             'description' => 'Handles general reasoning, synthesis, and follow-up work for a target.',
             'capabilities' => ['general', 'summarize', 'synthesize', 'plan'],
             'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class,
-            // 'tools' => ['search_options', 'generate_action_reply'],
+            // 'tools' => ['search_options'],
             // 'sub_agents' => ['writer'],
         ],
+    ],
+
+    'sub_agent_conversations' => [
+        'default_rounds' => (int) env('AI_AGENT_SUB_AGENT_CONVERSATION_ROUNDS', 3),
+        'max_rounds' => (int) env('AI_AGENT_SUB_AGENT_CONVERSATION_MAX_ROUNDS', 8),
     ],
 
     /*
@@ -253,15 +399,6 @@ return [
         // 'search_options' => \LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class,
         // 'suggest_value' => \LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class,
         // 'explain_field' => \LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class,
-        // 'action_catalog' => \LaravelAIEngine\Services\Agent\Tools\ActionCatalogTool::class,
-        // 'action_flow_guide' => \LaravelAIEngine\Services\Agent\Tools\ActionFlowGuideTool::class,
-        // 'update_action_draft' => \LaravelAIEngine\Services\Agent\Tools\UpdateActionDraftTool::class,
-        // 'get_action_draft' => \LaravelAIEngine\Services\Agent\Tools\GetActionDraftTool::class,
-        // 'clear_action_draft' => \LaravelAIEngine\Services\Agent\Tools\ClearActionDraftTool::class,
-        // 'prepare_action' => \LaravelAIEngine\Services\Agent\Tools\PrepareActionTool::class,
-        // 'execute_action' => \LaravelAIEngine\Services\Agent\Tools\ExecuteActionTool::class,
-        // 'generate_action_reply' => \LaravelAIEngine\Services\Agent\Tools\GenerateActionReplyTool::class,
-        // 'suggest_action' => \LaravelAIEngine\Services\Agent\Tools\SuggestActionTool::class,
     ],
 
     'action_reply' => [
@@ -346,6 +483,10 @@ return [
         'suggestions' => [
             'enabled' => env('AI_AGENT_RESPONSE_SUGGESTIONS_ENABLED', true),
             'limit' => (int) env('AI_AGENT_RESPONSE_SUGGESTIONS_LIMIT', 5),
+            'excluded_tools' => [
+                'run_skill',
+                'run_sub_agent',
+            ],
             'stop_words' => [
                 'the',
                 'a',
@@ -549,7 +690,7 @@ return [
     | Explicit Agent Manifest
     |--------------------------------------------------------------------------
     |
-    | Deterministic registration for model configs, tools, collectors, and
+    | Deterministic registration for model configs, skills, tools, and
     | filters. This avoids runtime directory scanning in production and gives
     | one source of truth.
     |

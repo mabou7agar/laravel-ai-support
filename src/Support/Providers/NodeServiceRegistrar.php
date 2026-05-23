@@ -22,7 +22,6 @@ class NodeServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Node\NodeOwnershipResolver::class, fn ($app) => new \LaravelAIEngine\Services\Node\NodeOwnershipResolver($app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)));
         $app->singleton(\LaravelAIEngine\Services\Node\NodeManifestService::class, fn ($app) => new \LaravelAIEngine\Services\Node\NodeManifestService(
             $app->make(\LaravelAIEngine\Services\Node\NodeMetadataDiscovery::class),
-            $app->make(\LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService::class),
             $app->make(\LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService(
@@ -39,9 +38,6 @@ class NodeServiceRegistrar
         if (!$app->bound(\LaravelAIEngine\Services\Actions\ActionRegistry::class)) {
             $app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
         }
-        $app->singleton(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class, fn () => new \LaravelAIEngine\Services\Actions\ActionParameterExtractor());
-        $app->singleton(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class, fn ($app) => new \LaravelAIEngine\Services\Actions\ActionExecutionPipeline($app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class), $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class)));
-        $app->singleton(\LaravelAIEngine\Services\Actions\ActionManager::class, fn ($app) => new \LaravelAIEngine\Services\Actions\ActionManager($app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class), $app->make(\LaravelAIEngine\Services\Actions\ActionParameterExtractor::class), $app->make(\LaravelAIEngine\Services\Actions\ActionExecutionPipeline::class)));
     }
 
     protected static function validateConfiguration(): void

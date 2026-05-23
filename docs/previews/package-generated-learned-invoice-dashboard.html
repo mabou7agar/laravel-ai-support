@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Invoice Command</title>
+    <style>
+        :root {
+            --canvas: #000000;
+            --surface: #1a1a1a;
+            --surface-soft: #0d0d0d;
+            --hairline: #3c3c3c;
+            --ink: #ffffff;
+            --body: #bbbbbb;
+            --muted: #7e7e7e;
+            --accent-a: #0066b1;
+            --accent-b: #1c69d4;
+            --accent-c: #e22718;
+            --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font); }
+        button, input { font: inherit; }
+        .topbar { height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 40px; background: var(--canvas); border-bottom: 1px solid var(--hairline); }
+        .brand { display: flex; align-items: center; gap: 14px; font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0; }
+        .brand-mark, .stripe { display: grid; grid-template-columns: repeat(3, 1fr); }
+        .brand-mark { width: 32px; height: 24px; }
+        .brand-mark span:nth-child(1), .stripe span:nth-child(1) { background: var(--accent-a); }
+        .brand-mark span:nth-child(2), .stripe span:nth-child(2) { background: var(--accent-b); }
+        .brand-mark span:nth-child(3), .stripe span:nth-child(3) { background: var(--accent-c); }
+        .nav { display: flex; gap: 24px; color: var(--body); font-size: 13px; text-transform: uppercase; }
+        .button, .icon { border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink); min-height: 44px; text-transform: uppercase; font-size: 13px; font-weight: 800; letter-spacing: 1.5px; }
+        .button { padding: 0 22px; }
+        .icon { width: 44px; border-radius: 999px; border-color: var(--hairline); background: var(--surface); }
+        .hero { min-height: 520px; display: grid; align-items: end; padding: 96px 40px 56px; border-bottom: 1px solid var(--hairline); background-image: linear-gradient(90deg, rgba(0,0,0,.96), rgba(0,0,0,.68), rgba(0,0,0,.20)), url("https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=2200&q=80"); background-size: cover; background-position: center; }
+        .hero-inner, .content { width: min(100%, 1200px); margin: 0 auto; }
+        .stripe { width: 168px; height: 4px; margin-bottom: 28px; }
+        h1 { max-width: 820px; margin: 0; font-size: 80px; line-height: 1; font-weight: 850; text-transform: uppercase; }
+        .hero p { max-width: 590px; margin: 24px 0 0; color: var(--body); font-size: 16px; line-height: 1.55; font-weight: 300; }
+        .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 820px; margin-top: 48px; border: 1px solid var(--hairline); background: rgba(0,0,0,.6); }
+        .metric { padding: 24px; border-right: 1px solid var(--hairline); }
+        .metric:last-child { border-right: 0; }
+        .metric strong { display: block; font-size: 32px; line-height: 1.1; }
+        .metric span { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+        .content { padding: 64px 40px 96px; }
+        .section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+        .kicker { margin: 0 0 10px; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+        h2 { margin: 0; font-size: 40px; line-height: 1.1; font-weight: 850; text-transform: uppercase; }
+        .grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(360px, .65fr); gap: 24px; align-items: start; }
+        .board, .panel, .signal { background: var(--surface-soft); border: 1px solid var(--hairline); }
+        .toolbar { display: flex; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--hairline); }
+        .tabs { display: flex; gap: 24px; color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+        .tabs span:first-child { color: var(--ink); padding-bottom: 8px; border-bottom: 2px solid var(--ink); }
+        .row { display: grid; grid-template-columns: 1.35fr 1fr .75fr .75fr 44px; gap: 16px; align-items: center; padding: 18px 24px; border-bottom: 1px solid var(--hairline); }
+        .row:last-child { border-bottom: 0; }
+        .row strong { font-size: 18px; }
+        .meta, .label { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+        .status { justify-self: start; padding: 7px 10px; border: 1px solid var(--hairline); color: var(--body); font-size: 12px; text-transform: uppercase; }
+        .panel-head { padding: 24px; border-bottom: 1px solid var(--hairline); }
+        .panel-head h3, .signal h3 { margin: 0; font-size: 24px; line-height: 1.25; text-transform: uppercase; }
+        .panel-head p, .signal p { margin: 10px 0 0; color: var(--body); font-size: 14px; line-height: 1.5; }
+        .thread, .suggestions, .composer { padding: 24px; }
+        .thread { display: grid; gap: 12px; }
+        .message, .suggestion, input { border: 1px solid var(--hairline); background: var(--surface); color: var(--body); }
+        .message { padding: 14px 16px; font-size: 14px; line-height: 1.45; }
+        .message:first-child { border-color: var(--ink); color: var(--ink); background: transparent; }
+        .suggestions { display: grid; gap: 10px; padding-top: 0; }
+        .suggestion { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px; font-size: 13px; text-transform: uppercase; }
+        .composer { display: grid; grid-template-columns: 1fr auto; gap: 10px; border-top: 1px solid var(--hairline); }
+        input { min-height: 44px; padding: 0 14px; color: var(--ink); border-radius: 0; }
+        .signals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 24px; }
+        .signal { padding: 24px; }
+        .signal strong { display: block; margin-top: 22px; font-size: 32px; }
+        @media (max-width: 980px) { .nav { display: none; } .hero { padding: 80px 24px 48px; } h1 { font-size: 56px; } .content { padding: 48px 24px 72px; } .grid, .signals { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr .8fr .7fr 44px; } .row .label { display: none; } }
+        @media (max-width: 640px) { .topbar { padding: 0 24px; } .button.hide-sm { display: none; } h1 { font-size: 40px; } .metrics { grid-template-columns: 1fr; } .metric { border-right: 0; border-bottom: 1px solid var(--hairline); } .metric:last-child { border-bottom: 0; } .section-head, .toolbar { align-items: start; flex-direction: column; } h2 { font-size: 32px; } .row, .composer { grid-template-columns: 1fr; } .row .icon { width: 100%; border-radius: 0; } }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand"><span class="brand-mark"><span></span><span></span><span></span></span>Invoice Command</div>
+        <nav class="nav"><span>Records</span><span>Customers</span><span>Signals</span><span>AI Console</span></nav>
+        <button class="button hide-sm">Audit Trail</button>
+    </header>
+    <section class="hero">
+        <div class="hero-inner">
+            <div class="stripe"><span></span><span></span><span></span></div>
+            <h1>Invoices Under Command</h1>
+            <p>A learned design translation for an AI billing workspace: sharp surfaces, restrained controls, full-context invoice review, and chat that can turn conversation into confirmed business actions.</p>
+            <div class="metrics"><div class="metric"><strong>$128.4K</strong><span>Open value</span></div><div class="metric"><strong>17</strong><span>Items need review</span></div><div class="metric"><strong>4.8h</strong><span>AI time saved</span></div></div>
+        </div>
+    </section>
+    <main class="content">
+        <div class="section-head"><div><p class="kicker">Workspace / learned design preview</p><h2>Review, Ask, Create</h2></div><button class="button hide-sm">Create</button></div>
+        <div class="grid">
+            <section class="board"><div class="toolbar"><div class="tabs"><span>Priority</span><span>Drafts</span><span>Overdue</span></div><button class="button">Export</button></div>
+                <article class="row"><div><strong>Northstar Labs</strong><div class="meta">INV-2048 · due today</div></div><span class="label">Matched PO and tax code</span><strong>$18,450</strong><span class="status">Review</span><button class="icon" aria-label="Open">→</button></article><article class="row"><div><strong>Atlas Studio</strong><div class="meta">INV-2047 · paid 2h ago</div></div><span class="label">Receipt synced</span><strong>$6,980</strong><span class="status">Paid</span><button class="icon" aria-label="Open">→</button></article><article class="row"><div><strong>Vertex Retail</strong><div class="meta">INV-2046 · 8 days late</div></div><span class="label">Reminder suggested</span><strong>$11,200</strong><span class="status">Overdue</span><button class="icon" aria-label="Open">→</button></article><article class="row"><div><strong>Clearpath Systems</strong><div class="meta">Draft · missing contact</div></div><span class="label">Needs customer email</span><strong>$3,420</strong><span class="status">Input</span><button class="icon" aria-label="Open">→</button></article>
+            </section>
+            <aside class="panel"><div class="panel-head"><h3>AI Command</h3><p>Scoped suggestions are surfaced from learned rules, tools, skills, and current workspace state.</p></div><div class="thread"><div class="message">Create an invoice for Northstar with two products and support hours.</div><div class="message">I found the customer and matched catalog items. Confirm quantity, rate, and due date before I prepare the invoice.</div></div><div class="suggestions"><button class="suggestion"><span>Prepare draft</span><span>→</span></button><button class="suggestion"><span>Send follow-up</span><span>→</span></button><button class="suggestion"><span>Explain risk</span><span>→</span></button></div><form class="composer"><input value="Add support plan" aria-label="Ask AI"><button class="button" type="button">Send</button></form></aside>
+        </div>
+        <section class="signals"><article class="signal"><h3>Cash Exposure</h3><p>Grouped records reveal one account that needs a personal follow-up.</p><strong>$22.6K</strong></article><article class="signal"><h3>Auto Actions</h3><p>Drafts can be completed from conversation, catalog matches, and stored profiles.</p><strong>12</strong></article><article class="signal"><h3>Missing Inputs</h3><p>Fields the agent still needs before it can execute confirmed work.</p><strong>5</strong></article></section>
+    </main>
+</body>
+</html>

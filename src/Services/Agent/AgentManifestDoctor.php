@@ -37,8 +37,8 @@ class AgentManifestDoctor
                 $issues[] = $this->issue('warning', 'disabled_skill', "Skill [{$skill->id}] is disabled.", ['skill_id' => $skill->id]);
             }
 
-            if ($skill->actions === [] && $skill->tools === [] && empty($skill->metadata['collector'])) {
-                $issues[] = $this->issue('warning', 'non_executable_skill', "Skill [{$skill->id}] has no executable action, tool, or collector.", ['skill_id' => $skill->id]);
+            if ($skill->actions === [] && $skill->tools === []) {
+                $issues[] = $this->issue('warning', 'non_executable_skill', "Skill [{$skill->id}] has no executable action or tool.", ['skill_id' => $skill->id]);
             }
 
             foreach ($skill->actions as $actionId) {

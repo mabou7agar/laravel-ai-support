@@ -10,11 +10,13 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use LaravelAIEngine\Contracts\AgentRuntimeContract;
+use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Models\AIAgentRunStep;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
+use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
 use LaravelAIEngine\Services\Agent\AgentRunRetentionService;
 use LaravelAIEngine\Services\Agent\AgentRunSafetyService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
@@ -30,6 +32,7 @@ class RunAgentJob implements ShouldQueue
     public int $tries;
     public int $timeout;
     public array $backoff;
+    protected ?array $claimedIdempotency = null;
 
     public function __construct(
         public int|string $runId,
@@ -62,7 +65,8 @@ class RunAgentJob implements ShouldQueue
             return;
         }
 
-        $safety->withRunLock($this->runId, function () use ($runtime, $runs, $steps, $safety, $events): void {
+        try {
+            $safety->withRunLock($this->runId, function () use ($runtime, $runs, $steps, $safety, $events): void {
             $run = $runs->findOrFail($this->runId);
             $this->assertPolicyAllowsRun($run);
             $scopedOptions = $safety->applyScopeToMetadata($this->options);
@@ -120,11 +124,9 @@ class RunAgentJob implements ShouldQueue
             try {
                 $response = $runtime->process($this->message, $this->sessionId, $this->userId, $runtimeOptions);
                 $response = $traceMetadata->enrichResponse($response, $runtimeOptions, $run, $step);
-                $this->complete($runs, $steps, $run, $step, $response);
-                $events->emit(AgentRunEventStreamService::RUN_COMPLETED, $run, $step, [
-                    'needs_user_input' => $response->needsUserInput,
-                    'success' => $response->success,
-                ], $runtimeOptions);
+                $response = $this->applyResponsePresentation($response, $runtimeOptions);
+                $status = $this->complete($runs, $steps, $run, $step, $response);
+                $this->emitTerminalEvent($events, $status, $run, $step, $response, $runtimeOptions);
             } catch (\Throwable $e) {
                 $this->failRun($runs, $steps, $run, $step, $e);
                 $events->emit(AgentRunEventStreamService::RUN_FAILED, $run, $step, [
@@ -133,7 +135,12 @@ class RunAgentJob implements ShouldQueue
 
                 throw $e;
             }
-        });
+            });
+        } catch (\Throwable $e) {
+            $this->releaseClaimedIdempotency($safety);
+
+            throw $e;
+        }
     }
 
     public function failed(\Throwable $exception): void
@@ -153,7 +160,7 @@ class RunAgentJob implements ShouldQueue
         AIAgentRun $run,
         AIAgentRunStep $step,
         AgentResponse $response
-    ): void {
+    ): string {
         $requestedStatus = $response->metadata['agent_run_status'] ?? null;
         $status = is_string($requestedStatus) && in_array($requestedStatus, AIAgentRun::STATUSES, true)
             ? $requestedStatus
@@ -190,6 +197,80 @@ class RunAgentJob implements ShouldQueue
             'waiting_at' => $isWaiting ? now() : null,
             'completed_at' => $isWaiting ? null : now(),
         ]);
+
+        return $status;
+    }
+
+    protected function applyResponsePresentation(AgentResponse $response, array $options): AgentResponse
+    {
+        $context = $response->context;
+        $contextData = $context?->toArray() ?? [];
+        $contextMetadata = $context?->metadata ?? [];
+        $entityTracking = [];
+
+        if (isset($contextMetadata['last_entity_list']) && is_array($contextMetadata['last_entity_list'])) {
+            $lastList = $contextMetadata['last_entity_list'];
+            $entityTracking = [
+                'entity_ids' => $lastList['entity_ids'] ?? null,
+                'entity_type' => $lastList['entity_type'] ?? null,
+            ];
+        }
+
+        $aiResponse = new AIResponse(
+            content: $response->message,
+            engine: $options['engine'] ?? config('ai-engine.default', 'openai'),
+            model: $options['model'] ?? config('ai-engine.default_model', 'gpt-4o-mini'),
+            metadata: array_merge($contextData, $response->metadata ?? [], $entityTracking, [
+                'runtime_active' => !$response->isComplete,
+                'runtime_data' => $response->data ?? [],
+                'runtime_completed' => $response->isComplete,
+                'agent_strategy' => $response->strategy,
+                'needs_user_input' => $response->needsUserInput,
+                'is_complete' => $response->isComplete,
+                'next_step' => $response->nextStep,
+                'required_inputs' => $response->requiredInputs,
+            ]),
+            success: $response->success,
+            actions: $response->actions ?? []
+        );
+
+        $presented = app(ChatResponsePresentationService::class)->apply(
+            $aiResponse,
+            $this->message,
+            $options,
+            $context
+        );
+
+        return new AgentResponse(
+            success: $response->success,
+            message: $presented->getContent(),
+            data: $response->data,
+            strategy: $response->strategy,
+            context: $response->context,
+            needsUserInput: $response->needsUserInput,
+            actions: $presented->getActions(),
+            metadata: $presented->getMetadata(),
+            isComplete: $response->isComplete,
+            nextStep: $response->nextStep,
+            requiredInputs: $response->requiredInputs
+        );
+    }
+
+    protected function completionPayload(AgentResponse $response): array
+    {
+        $protectedResponse = app(AgentRunRetentionService::class)->protectResponse($response->toArray());
+
+        return array_filter([
+            'message' => $protectedResponse['message'] ?? $response->message,
+            'response' => $protectedResponse,
+            'success' => $response->success,
+            'needs_user_input' => $response->needsUserInput,
+            'is_complete' => $response->isComplete,
+            'strategy' => $response->strategy,
+            'next_step' => $response->nextStep,
+            'required_inputs' => $response->requiredInputs,
+            'actions' => $response->actions,
+        ], static fn (mixed $value): bool => $value !== null);
     }
 
     protected function failRun(
@@ -249,10 +330,65 @@ class RunAgentJob implements ShouldQueue
             return true;
         }
 
-        return $safety->rememberIdempotencyKey((string) $key, [
+        $scope = [
             'run_id' => $this->runId,
             'job' => static::class,
-        ]);
+        ];
+
+        $claimed = $safety->rememberIdempotencyKey((string) $key, $scope);
+        if ($claimed) {
+            $this->claimedIdempotency = ['key' => (string) $key, 'scope' => $scope];
+        }
+
+        return $claimed;
+    }
+
+    protected function releaseClaimedIdempotency(AgentRunSafetyService $safety): void
+    {
+        if ($this->claimedIdempotency === null) {
+            return;
+        }
+
+        $safety->forgetIdempotencyKey(
+            $this->claimedIdempotency['key'],
+            $this->claimedIdempotency['scope']
+        );
+        $this->claimedIdempotency = null;
+    }
+
+    protected function eventNameForStatus(string $status): string
+    {
+        return match ($status) {
+            AIAgentRun::STATUS_WAITING_INPUT => AgentRunEventStreamService::RUN_WAITING_INPUT,
+            AIAgentRun::STATUS_WAITING_APPROVAL => AgentRunEventStreamService::RUN_WAITING_APPROVAL,
+            default => AgentRunEventStreamService::RUN_COMPLETED,
+        };
+    }
+
+    protected function emitTerminalEvent(
+        AgentRunEventStreamService $events,
+        string $status,
+        AIAgentRun $run,
+        AIAgentRunStep $step,
+        AgentResponse $response,
+        array $runtimeOptions
+    ): void {
+        try {
+            $events->emit(
+                $this->eventNameForStatus($status),
+                $run,
+                $step,
+                $this->completionPayload($response),
+                $runtimeOptions
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Agent terminal event emission failed after run completion', [
+                'run_id' => $run->id,
+                'run_uuid' => $run->uuid,
+                'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     protected function stepKey(): string

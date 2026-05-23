@@ -113,6 +113,34 @@ return array_replace_recursive($defaults, [
         'driver' => env('AI_ENGINE_VECTOR_DRIVER', data_get($defaults, 'vector.driver', 'qdrant')),
         'embedding_model' => env('AI_ENGINE_VECTOR_EMBEDDING_MODEL', data_get($defaults, 'vector.embedding_model', 'text-embedding-3-large')),
     ],
+    'learning' => [
+        'enabled' => env('AI_ENGINE_LEARNING_ENABLED', data_get($defaults, 'learning.enabled', true)),
+        'default_type' => env('AI_ENGINE_LEARNING_DEFAULT_TYPE', data_get($defaults, 'learning.default_type', 'general')),
+        'vector_store_name' => env('AI_ENGINE_LEARNING_VECTOR_STORE_NAME', data_get($defaults, 'learning.vector_store_name', 'Learned Knowledge')),
+        'include_global_in_scoped_search' => env('AI_ENGINE_LEARNING_INCLUDE_GLOBAL_IN_SCOPED_SEARCH', data_get($defaults, 'learning.include_global_in_scoped_search', false)),
+        'min_search_score' => env('AI_ENGINE_LEARNING_MIN_SEARCH_SCORE', data_get($defaults, 'learning.min_search_score', 0.0)),
+        'max_content_bytes' => env('AI_ENGINE_LEARNING_MAX_CONTENT_BYTES', data_get($defaults, 'learning.max_content_bytes', 1048576)),
+        'allowed_content_types' => data_get($defaults, 'learning.allowed_content_types', []),
+        'adapter_classes' => data_get($defaults, 'learning.adapter_classes', []),
+        'tools' => [
+            'agent_ingest_enabled' => env('AI_ENGINE_LEARNING_AGENT_INGEST_ENABLED', data_get($defaults, 'learning.tools.agent_ingest_enabled', false)),
+        ],
+        'adapters' => [
+            'file' => [
+                'enabled' => env('AI_ENGINE_LEARNING_FILE_ENABLED', data_get($defaults, 'learning.adapters.file.enabled', true)),
+                'disk' => env('AI_ENGINE_LEARNING_FILE_DISK', data_get($defaults, 'learning.adapters.file.disk')),
+                'allow_local_paths' => env('AI_ENGINE_LEARNING_FILE_ALLOW_LOCAL_PATHS', data_get($defaults, 'learning.adapters.file.allow_local_paths', false)),
+                'allowed_paths' => data_get($defaults, 'learning.adapters.file.allowed_paths', []),
+            ],
+            'getdesign' => [
+                'api_url' => env('GETDESIGN_API_URL', data_get($defaults, 'learning.adapters.getdesign.api_url', 'https://api.getdesign.app/')),
+                'timeout' => env('GETDESIGN_TIMEOUT', data_get($defaults, 'learning.adapters.getdesign.timeout', 45)),
+                'allow_cli' => env('GETDESIGN_ALLOW_CLI', data_get($defaults, 'learning.adapters.getdesign.allow_cli', false)),
+                'command' => data_get($defaults, 'learning.adapters.getdesign.command', []),
+                'output_file' => env('GETDESIGN_OUTPUT_FILE', data_get($defaults, 'learning.adapters.getdesign.output_file', 'DESIGN.md')),
+            ],
+        ],
+    ],
     'testing' => [
         'root_app_path' => env('AI_ENGINE_TEST_ROOT_APP_PATH', data_get($defaults, 'testing.root_app_path')),
         'live_provider_matrix' => [

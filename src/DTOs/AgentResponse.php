@@ -92,6 +92,8 @@ class AgentResponse
         \LaravelAIEngine\DTOs\ActionResult $result,
         ?UnifiedActionContext $context = null
     ): self {
+        $needsUserInput = $result->requiresUserInput();
+
         return new self(
             success: $result->success,
             message: $result->message ?? ($result->success ? 'Action completed' : 'Action failed'),
@@ -99,38 +101,12 @@ class AgentResponse
             strategy: 'quick_action',
             context: $context,
             metadata: $result->metadata,
-            isComplete: true
+            needsUserInput: $needsUserInput,
+            isComplete: !$needsUserInput,
+            requiredInputs: is_array($result->metadata['required_inputs'] ?? null)
+                ? $result->metadata['required_inputs']
+                : null
         );
-    }
-
-    public static function fromDataCollectorState(
-        $state,
-        ?UnifiedActionContext $context = null
-    ): self {
-        $isComplete = in_array($state->status ?? '', ['completed', 'cancelled']);
-
-        return new self(
-            success: true,
-            message: $state->message ?? 'Data collection in progress',
-            data: [
-                'state' => $state,
-                'progress' => $state->progress ?? 0,
-                'collected_fields' => $state->collectedFields ?? [],
-                'remaining_fields' => $state->remainingFields ?? [],
-            ],
-            strategy: 'guided_flow',
-            context: $context,
-            needsUserInput: !$isComplete,
-            actions: $state->actions ?? null,
-            isComplete: $isComplete
-        );
-    }
-
-    public static function fromDataCollectorResponse(
-        $response,
-        ?UnifiedActionContext $context = null
-    ): self {
-        return self::fromDataCollectorState($response->state, $context);
     }
 
     public function toAIResponse(): AIResponse

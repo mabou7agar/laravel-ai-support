@@ -20,11 +20,11 @@ class FileAnalysisService
 {
     public function __construct(
         protected ?ChatService $chatService = null,
-        protected ?\LaravelAIEngine\Services\ConversationService $conversationService = null,
+        protected ?ConversationTranscriptService $conversationService = null,
         protected ?DocumentService $documentService = null
     ) {
         $this->chatService = $chatService ?? app(ChatService::class);
-        $this->conversationService = $conversationService ?? app(\LaravelAIEngine\Services\ConversationService::class);
+        $this->conversationService = $conversationService ?? app(ConversationTranscriptService::class);
         $this->documentService = $documentService ?? app(DocumentService::class);
     }
 

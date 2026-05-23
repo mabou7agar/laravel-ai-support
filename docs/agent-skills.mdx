@@ -1,6 +1,6 @@
 ---
 title: Agent Skills
-description: Package user-facing agent abilities from tools, actions, collectors, and capability documents.
+description: Package user-facing agent abilities from tools, actions, and capability documents.
 ---
 
 # Agent Skills
@@ -15,7 +15,7 @@ For application workflows, prefer this public model:
 Chat -> skill detection -> declared tools/actions -> confirmation -> execution
 ```
 
-Use RAG, Qdrant, Neo4j, and capability search to find context and choose the right skill/tool. Do not put business workflow logic inside RAG prompts. Collectors remain available for schema-driven data collection, but new application actions should normally be modeled as skills backed by tools/actions.
+Use RAG, Qdrant, Neo4j, and capability search to find context and choose the right skill/tool. Do not put business workflow logic inside RAG prompts. Application actions should be modeled as skills backed by tools/actions.
 
 ## Structure
 
@@ -23,8 +23,10 @@ Use RAG, Qdrant, Neo4j, and capability search to find context and choose the rig
 namespace App\AI\Skills;
 
 use App\AI\Tools\CreateInvoiceTool;
+use App\AI\Tools\CreateCustomerTool;
 use App\AI\Tools\FindCustomerTool;
 use LaravelAIEngine\Services\Agent\Skills\AgentSkill;
+use LaravelAIEngine\Services\Agent\Skills\SkillBuilder;
 
 class CreateInvoiceSkill extends AgentSkill
 {
@@ -36,19 +38,30 @@ class CreateInvoiceSkill extends AgentSkill
 
     public array $triggers = ['create invoice', 'new invoice'];
 
-    public array $tools = [
-        FindCustomerTool::class,
-        CreateInvoiceTool::class,
-    ];
-
-    public string $finalTool = CreateInvoiceTool::class;
-
-    public function targetJson(): array
+    public function configure(SkillBuilder $skill): void
     {
-        return [
-            'customer_id' => null,
-            'items' => [],
-        ];
+        $skill->prompt('Resolve the customer and products with declared tools. Create missing records only after confirmation, then summarize the invoice before the final write.');
+
+        $skill->target()
+            ->id('customer_id')
+            ->text('customer_name')
+            ->email('customer_email')
+            ->list('items', fn ($item) => $item
+                ->id('product_id')
+                ->text('product_name')
+                ->number('quantity')
+                ->money('unit_price'));
+
+        $skill->relation('customer')
+            ->field('customer_id')
+            ->lookup(FindCustomerTool::class)
+            ->create(CreateCustomerTool::class)
+            ->lookupFields(['customer_name', 'customer_email'])
+            ->createRequired(['name', 'email'])
+            ->safeCreate();
+
+        $skill->use(FindCustomerTool::class);
+        $skill->final(CreateInvoiceTool::class)->confirmTerms(['invoice']);
     }
 }
 ```
@@ -56,6 +69,28 @@ class CreateInvoiceSkill extends AgentSkill
 Keep business writes in host application services and repositories. A skill should reference actions and tools that validate, authorize, confirm, and execute the write.
 
 Class-based skills are auto-discovered from `app/AI/Skills` when manifest fallback discovery is enabled. Class-string tools are normalized to their `getName()` values, so the skill stays refactor-friendly while the runtime still works with stable tool names.
+
+`SkillBuilder` is the preferred API for new skills. The skill declares the target JSON, optional AI guidance prompt, explicit relations, and related tools. The prompt is the skill-specific expected track: it tells the AI how to approach the capability while tools and services remain responsible for validation, authorization, and writes.
+
+Explicit relations are the source of truth when a field depends on another record. Use `$skill->relation('customer')` or tool-level `getRelations()` before relying on fallback field-name inference. For example, `customer_id` can declare `FindCustomerTool` as the lookup tool and `CreateCustomerTool` as the create tool. The runtime passes this relation metadata to the AI-native prompt and skill planner.
+
+When no relation is declared, `SkillBuilder` infers visible relation metadata from target JSON fields and declared tools. For example, `buyer_id` plus `find_buyer` and `create_buyer` becomes:
+
+```php
+[
+    'name' => 'buyer',
+    'field' => 'buyer_id',
+    'lookup_tool' => 'find_buyer',
+    'create_tool' => 'create_buyer',
+    'source' => 'inferred',
+]
+```
+
+Inference is intentionally reviewable. Explicit `$skill->relation(...)` metadata wins, tool-level `getRelations()` is next, and inferred skill relations come after that.
+
+The package still infers payload mappings from each tool's `getResultSchema()`. For example, a `find_customer` tool returning `id`, `name`, and `email` automatically fills `customer_id`, `customer_name`, and `customer_email`. List mappings work the same way for fields such as `items.*.product_id`, `items.*.product_name`, and price fields when the tool returns `sale_price` or `price`.
+
+Use `metadata()` only as an escape hatch for unusual mappings that cannot be inferred from field names and tool result schemas.
 
 ## Scaffold a skill
 
@@ -103,6 +138,36 @@ class LookupCustomerTool extends SimpleAgentTool
 }
 ```
 
+Tools that should feed skill target JSON can expose a result schema:
+
+```php
+public function getResultSchema(): array
+{
+    return [
+        'id' => 'integer',
+        'name' => 'string',
+        'email' => 'string',
+    ];
+}
+```
+
+Tools can also publish relation metadata directly:
+
+```php
+public function getRelations(): array
+{
+    return [
+        [
+            'name' => 'customer',
+            'field' => 'customer_id',
+            'role' => 'lookup',
+        ],
+    ];
+}
+```
+
+`ModelBackedLookupTool` and `ModelBackedUpsertTool` publish result schemas from their `$returns` columns automatically.
+
 For common Eloquent-backed tools, generate property-only templates:
 
 ```bash
@@ -129,7 +194,7 @@ php artisan ai:skills:discover --json
 php artisan ai:skills:discover --write
 ```
 
-The scanner proposes draft skills from registered actions, tools, autonomous collectors, and model discovery metadata.
+The scanner proposes draft skills from registered actions, tools, and model discovery metadata.
 
 Use `--write` to add draft definitions to `app/AI/agent-manifest.php`. Draft skills are disabled unless `--enable` is passed.
 
@@ -140,29 +205,42 @@ php artisan ai:skills:test "create invoice for ACME"
 php artisan ai:skills:test "create invoice for ACME" --include-disabled --json
 ```
 
-The command shows the matched skill, score, trigger, and compiled execution plan. Action-backed skills compile to the existing `update_action_draft` tool so validation, confirmation, and execution stay inside the action flow.
+The command shows the matched skill, score, trigger, and compiled execution plan. New write abilities should expose concrete tools, often by extending `ActionBackedTool`, so validation, confirmation, and execution stay in Laravel while the model decides when to call the tool.
 
 ## Runtime Guardrails
 
-`run_skill` uses the configured skill tool planner to extract target JSON and choose the next declared tool. Planner output is validated against a strict JSON shape before execution:
+By default, `run_skill` delegates to the AI-native runtime. Skills and tools are capability context: the model chooses whether to call a tool, ask for missing fields, use retrieved context, wait for confirmation, or return a final answer. The package does not own business-specific workflow steps.
+
+The safety kernel stays in Laravel:
+
+- tool parameter validation runs before execution
+- write tools pause for structured confirmation
+- tenant/workspace/user scope stays in the action or tool service layer
+- audit metadata, provider limits, credit checks, and persistence stay package-controlled
+- relation IDs and foreign keys are trusted only when produced by previous successful tool results
+
+Tools can return `needs_user_input` with `current_payload`, `missing_fields`, and `suggested_tools` when another tool can resolve missing data. The AI-native runtime treats that as a continuation: it may run non-confirming lookup/search tools from the suggested list, then retry the already confirmed write after the helper tool succeeds. If the user already confirmed the final write, suggested create/update helper tools derived from that confirmed payload can be auto-confirmed to avoid extra internal confirmation turns. Disable that UX policy with `ai-agent.ai_native.auto_confirm_suggested_writes_after_final_confirmation=false`.
+
+For skills that perform a concrete write, set `metadata.final_tool` or `metadata.final_tools`. The runtime will reject final answers for that skill until one declared final tool has executed successfully, so a lookup result cannot be presented as "created" or "sent".
+
+Write-tool confirmations include a generic, user-friendly summary of the pending parameters before execution. This is generated from the tool payload, not from invoice-specific logic. Raw payload keys are converted to readable labels, `*_id` fields are hidden by default, empty values are omitted by default, and sensitive fields are redacted. The fallback prompt, heading, user instruction, depth, item limit, value length, hidden fields, empty-value handling, and sensitive field redaction are configurable under `ai-agent.ai_native.confirmation_summary`.
+
+The AI-native runtime expects JSON decisions:
 
 ```json
 {
-  "action": "ask_user|run_tool|final_response",
+  "action": "tool_call|ask_user|final",
   "message": "user-facing message",
-  "payload_patch": {},
-  "tool_name": "declared tool name or null",
-  "tool_params": {}
+  "tool": "declared tool name",
+  "arguments": {},
+  "required_inputs": [],
+  "data": {}
 }
 ```
 
-Strict validation is enabled by default:
+Register concrete tools for application capabilities, such as `find_customer`, `create_customer`, `find_product`, and `create_invoice`. The removed action-draft workflow tools are no longer part of the built-in tool registry.
 
-```env
-AI_AGENT_SKILL_TOOL_STRICT_SCHEMA=true
-```
-
-Tool execution still passes through `AgentExecutionPolicyService`, so host applications can block tools through `ai-agent.execution_policy.tool_deny` or require an allow-list through `tool_allow`. Every `run_skill` result includes `metadata.skill_planner_trace` when the planner makes decisions, which lets apps audit why a tool was selected.
+Tool execution still passes through `AgentExecutionPolicyService`, so host applications can block tools through `ai-agent.execution_policy.tool_deny` or require an allow-list through `tool_allow`.
 
 ## Diagnose the manifest
 

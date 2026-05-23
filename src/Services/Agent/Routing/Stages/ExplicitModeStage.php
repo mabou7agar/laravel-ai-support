@@ -43,16 +43,6 @@ class ExplicitModeStage implements RoutingStageContract
             );
         }
 
-        if (!empty($options['start_collector'])) {
-            return new RoutingDecision(
-                action: RoutingDecisionAction::START_COLLECTOR,
-                source: RoutingDecisionSource::EXPLICIT,
-                confidence: 'high',
-                reason: 'Request explicitly asked to start a collector flow.',
-                metadata: ['stage' => $this->name()]
-            );
-        }
-
         return null;
     }
 }

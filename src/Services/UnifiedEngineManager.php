@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services;
 
-use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\InteractiveAction;
@@ -17,6 +16,8 @@ use LaravelAIEngine\Services\SDK\EvaluationService;
 use LaravelAIEngine\Services\SDK\RealtimeSessionService;
 use LaravelAIEngine\Services\SDK\TraceRecorderService;
 use LaravelAIEngine\Services\SDK\VectorStoreService;
+use LaravelAIEngine\Services\Learning\LearningBuilder;
+use LaravelAIEngine\Services\Learning\LearningService;
 use LaravelAIEngine\Services\Streaming\WebSocketManager;
 use LaravelAIEngine\Testing\AIEngineFake;
 
@@ -176,6 +177,11 @@ class UnifiedEngineManager
         }
 
         return $proxy;
+    }
+
+    public function learn(): LearningBuilder
+    {
+        return new LearningBuilder(app(LearningService::class));
     }
 
     public function fake(array $responses = []): AIEngineFake
@@ -426,11 +432,6 @@ class UnifiedEngineManager
         $this->analytics()->trackStreaming($data);
     }
 
-    public function executeAction(InteractiveAction $action, mixed $userId = null, ?string $sessionId = null): ActionResult
-    {
-        return $this->actionManager()->executeAction($action, $userId, $sessionId);
-    }
-
     public function createAction(array $data): InteractiveAction
     {
         return InteractiveAction::fromArray($data);
@@ -644,11 +645,6 @@ class UnifiedEngineManager
         }
 
         return null;
-    }
-
-    protected function actionManager(): \LaravelAIEngine\Services\Actions\ActionManager
-    {
-        return app(\LaravelAIEngine\Services\Actions\ActionManager::class);
     }
 
     protected function creditManager(): CreditManager

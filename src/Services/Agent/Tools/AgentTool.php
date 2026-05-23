@@ -17,6 +17,49 @@ abstract class AgentTool
     
     abstract public function execute(array $parameters, UnifiedActionContext $context): ActionResult;
 
+    public function previewConfirmation(array $parameters, UnifiedActionContext $context): ?ActionResult
+    {
+        return null;
+    }
+
+    /**
+     * Describe fields returned in successful action payloads.
+     *
+     * @return array<int|string, mixed>
+     */
+    public function getResultSchema(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getCapabilities(): array
+    {
+        return [];
+    }
+
+    public function getToolKind(): ?string
+    {
+        return null;
+    }
+
+    public function getEntityType(): ?string
+    {
+        return null;
+    }
+
+    /**
+     * Describe application relations this tool can resolve or create.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getRelations(): array
+    {
+        return [];
+    }
+
     public function requiresConfirmation(): bool
     {
         return false;
@@ -53,6 +96,11 @@ abstract class AgentTool
             'name' => $this->getName(),
             'description' => $this->getDescription(),
             'parameters' => $this->getParameters(),
+            'result_schema' => $this->getResultSchema(),
+            'capabilities' => $this->getCapabilities(),
+            'tool_kind' => $this->getToolKind(),
+            'entity_type' => $this->getEntityType(),
+            'relations' => $this->getRelations(),
             'requires_confirmation' => $this->requiresConfirmation(),
         ];
     }

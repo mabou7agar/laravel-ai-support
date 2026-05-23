@@ -14,6 +14,7 @@ use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime;
 use LaravelAIEngine\Services\Agent\ContextManager;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
@@ -39,7 +40,8 @@ class LaravelAgentProcessor
         protected ?RoutingContextResolver $routingContextResolver = null,
         protected ?GoalAgentService $goalAgent = null,
         protected ?AgentExecutionDispatcher $executionDispatcher = null,
-        protected ?RoutingPipeline $routingPipeline = null
+        protected ?RoutingPipeline $routingPipeline = null,
+        protected ?AiNativeRuntime $aiNativeRuntime = null
     ) {
         $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
             ? app(MessageRoutingClassifier::class)
@@ -48,6 +50,9 @@ class LaravelAgentProcessor
             ? app(RoutingContextResolver::class)
             : new RoutingContextResolver();
         $this->executionDispatcher ??= new AgentExecutionDispatcher($this->execution, $this->goalAgent());
+        $this->aiNativeRuntime ??= app()->bound(AiNativeRuntime::class)
+            ? app(AiNativeRuntime::class)
+            : null;
     }
 
     public function process(
@@ -63,6 +68,7 @@ class LaravelAgentProcessor
         ]);
 
         $context = $this->contextManager->getOrCreate($sessionId, $userId);
+        $this->hydrateConversationHistory($context, $options);
         $context->addUserMessage($message);
 
         if ($this->shouldUseGoalAgent($options)) {
@@ -81,10 +87,14 @@ class LaravelAgentProcessor
             );
         }
 
-        // RULE 1: Active session? Continue it (no AI needed)
-        if ($context->has('autonomous_collector')) {
-            Log::channel('ai-engine')->debug('Continuing active collector session');
-            return $this->continueCollector($message, $context, $options);
+        if (
+            $this->shouldUseAiNativeRuntime($options)
+            && !$context->has('routed_to_node')
+        ) {
+            return $this->finalizeDirect(
+                $context,
+                $this->aiNativeRuntime()->process($message, $context, $options)
+            );
         }
 
         if ($context->has('routed_to_node')) {
@@ -136,29 +146,23 @@ class LaravelAgentProcessor
         return $this->routeThroughPipeline($message, $context, $options);
     }
 
-    protected function continueCollector(
-        string $message,
-        UnifiedActionContext $context,
-        array $options
-    ): AgentResponse {
-        $response = $this->dispatchRoutingDecision(new RoutingDecision(
-            action: RoutingDecisionAction::CONTINUE_COLLECTOR,
-            source: RoutingDecisionSource::SESSION,
-            confidence: 'high',
-            reason: 'Continuing active collector session.'
-        ), $message, $context, $options);
-
-        // Check if collector wants to exit and reroute
-        if ($response->message === 'exit_and_reroute') {
-            Log::channel('ai-engine')->debug('Collector exited - rerouting message', [
-                'original_message' => $message,
-            ]);
-
-            // Re-process the message as a fresh query (collector already cleared state)
-            return $this->askAI($message, $context, $options);
+    protected function hydrateConversationHistory(UnifiedActionContext $context, array $options): void
+    {
+        if ($context->conversationHistory !== []) {
+            return;
         }
 
-        return $this->responseFinalizer->finalize($context, $response);
+        $history = $options['conversation_history'] ?? [];
+        if (!is_array($history) || $history === []) {
+            return;
+        }
+
+        $context->conversationHistory = array_values(array_filter(
+            $history,
+            static fn (mixed $message): bool => is_array($message)
+                && in_array($message['role'] ?? null, ['system', 'user', 'assistant', 'tool'], true)
+                && array_key_exists('content', $message)
+        ));
     }
 
     protected function askAI(
@@ -176,8 +180,8 @@ class LaravelAgentProcessor
 
             Log::channel('ai-engine')->debug('AI orchestration decision', [
                 'message' => substr($message, 0, 100),
-                'action' => $decision['action'],
-                'resource' => $decision['resource_name'],
+                'action' => $decision['action'] ?? null,
+                'resource' => $decision['resource_name'] ?? null,
                 'reason' => substr($decision['reason'] ?? '', 0, 100),
             ]);
 
@@ -193,7 +197,15 @@ class LaravelAgentProcessor
         } catch (\Exception $e) {
             Log::channel('ai-engine')->error('AI orchestration failed', [
                 'error' => $e->getMessage(),
+                'exception' => $e::class,
             ]);
+
+            if (!$this->ragEnabledForRequest($options)) {
+                return $this->responseFinalizer->finalize($context, AgentResponse::failure(
+                    message: 'I could not route this request to an available action.',
+                    context: $context
+                ));
+            }
 
             $response = $this->searchRag($message, $context, $options);
 
@@ -242,9 +254,7 @@ class LaravelAgentProcessor
                 'error' => $e->getMessage(),
             ]);
 
-            $response = $this->searchRag($message, $context, $options);
-
-            return $this->responseFinalizer->finalize($context, $response);
+            return $this->heuristicRoute($message, $context, $options);
         }
     }
 
@@ -303,6 +313,10 @@ class LaravelAgentProcessor
         }
 
         if ($classification['route'] === 'search_rag') {
+            if (!$this->ragEnabledForRequest($options)) {
+                return $this->askAI($message, $context, $options);
+            }
+
             return $this->finalizeDirect(
                 $context,
                 $this->dispatchRoutingDecision(new RoutingDecision(
@@ -327,12 +341,28 @@ class LaravelAgentProcessor
         UnifiedActionContext $context,
         array $options
     ): AgentResponse {
+        if (!$this->ragEnabledForRequest($options)) {
+            return AgentResponse::failure(
+                message: 'RAG is disabled for this request.',
+                context: $context
+            );
+        }
+
         return $this->dispatchRoutingDecision(new RoutingDecision(
             action: RoutingDecisionAction::SEARCH_RAG,
             source: RoutingDecisionSource::RUNTIME,
             confidence: 'high',
             reason: 'RAG execution requested by orchestrator callback.'
         ), $message, $context, $options);
+    }
+
+    protected function ragEnabledForRequest(array $options): bool
+    {
+        if (!empty($options['force_rag'])) {
+            return true;
+        }
+
+        return !array_key_exists('use_rag', $options) || (bool) $options['use_rag'];
     }
 
     protected function routeToNode(
@@ -444,10 +474,7 @@ class LaravelAgentProcessor
     protected function routingActionFromPlannerAction(string $action): string
     {
         return match ($action) {
-            'start_collector' => RoutingDecisionAction::START_COLLECTOR,
             'use_tool' => RoutingDecisionAction::USE_TOOL,
-            'resume_session' => RoutingDecisionAction::CONTINUE_RUN,
-            'pause_and_handle' => RoutingDecisionAction::PAUSE_AND_HANDLE,
             'route_to_node' => RoutingDecisionAction::ROUTE_TO_NODE,
             'conversational' => RoutingDecisionAction::CONVERSATIONAL,
             'search_rag' => RoutingDecisionAction::SEARCH_RAG,
@@ -506,6 +533,24 @@ class LaravelAgentProcessor
         return !empty($options['agent_goal'])
             || !empty($options['goal_agent'])
             || !empty($options['sub_agents']);
+    }
+
+    protected function shouldUseAiNativeRuntime(array $options): bool
+    {
+        if (empty($this->aiNativeRuntime)) {
+            return false;
+        }
+
+        if (!empty($options['force_rag']) || !empty($options['goal_agent']) || !empty($options['sub_agents'])) {
+            return false;
+        }
+
+        return (bool) config('ai-agent.ai_native.enabled', false);
+    }
+
+    protected function aiNativeRuntime(): AiNativeRuntime
+    {
+        return $this->aiNativeRuntime ??= app(AiNativeRuntime::class);
     }
 
     protected function goalAgent(): GoalAgentService

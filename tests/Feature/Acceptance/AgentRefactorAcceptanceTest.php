@@ -20,13 +20,11 @@ use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ContextManager;
-use LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
 use LaravelAIEngine\Services\AIEngineService;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
 use LaravelAIEngine\Services\Node\NodeOwnershipResolver;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\RAG\RAGDecisionEngine;
@@ -358,9 +356,7 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
         $execution = new AgentExecutionFacade(
             $this->app->make(AgentActionExecutionService::class),
             $this->app->make(AgentConversationService::class),
-            Mockery::mock(NodeSessionManager::class),
-            Mockery::mock(AutonomousCollectorRegistry::class),
-            Mockery::mock(AutonomousCollectorHandler::class)
+            Mockery::mock(NodeSessionManager::class)
         );
 
         $processor = new LaravelAgentProcessor(

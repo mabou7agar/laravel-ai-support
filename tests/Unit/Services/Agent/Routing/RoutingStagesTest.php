@@ -23,16 +23,9 @@ use Mockery;
 
 class RoutingStagesTest extends UnitTestCase
 {
-    public function test_active_run_stage_detects_collector_and_node_sessions(): void
+    public function test_active_run_stage_detects_node_sessions(): void
     {
         $stage = new ActiveRunContinuationStage();
-
-        $collectorContext = new UnifiedActionContext('collector-session');
-        $collectorContext->set('autonomous_collector', ['name' => 'invoice']);
-        $collectorDecision = $stage->decide('continue', $collectorContext);
-
-        $this->assertSame(RoutingDecisionAction::CONTINUE_COLLECTOR, $collectorDecision->action);
-        $this->assertSame(RoutingDecisionSource::SESSION, $collectorDecision->source);
 
         $nodeContext = new UnifiedActionContext('node-session');
         $nodeContext->set('routed_to_node', ['node_slug' => 'crm']);
@@ -42,7 +35,7 @@ class RoutingStagesTest extends UnitTestCase
         $this->assertSame(['node_slug' => 'crm'], $nodeDecision->payload['routed_to_node']);
     }
 
-    public function test_explicit_mode_stage_detects_goal_rag_and_skip_decision_modes(): void
+    public function test_explicit_mode_stage_detects_goal_and_rag_modes(): void
     {
         $stage = new ExplicitModeStage();
         $context = new UnifiedActionContext('explicit-session');
@@ -54,8 +47,8 @@ class RoutingStagesTest extends UnitTestCase
         $rag = $stage->decide('find docs', $context, ['force_rag' => true]);
         $this->assertSame(RoutingDecisionAction::SEARCH_RAG, $rag->action);
 
-        $collector = $stage->decide('create invoice', $context, ['start_collector' => true]);
-        $this->assertSame(RoutingDecisionAction::START_COLLECTOR, $collector->action);
+        $default = $stage->decide('create invoice', $context);
+        $this->assertNull($default);
     }
 
     public function test_message_classification_stage_routes_chat_rag_and_ambiguous_messages(): void
@@ -73,8 +66,7 @@ class RoutingStagesTest extends UnitTestCase
         $this->assertSame(RoutingDecisionAction::SEARCH_RAG, $rag->action);
 
         $ambiguous = $stage->decide('create invoice', $context);
-        $this->assertSame(RoutingDecisionAction::USE_TOOL, $ambiguous->action);
-        $this->assertSame('medium', $ambiguous->confidence);
+        $this->assertNull($ambiguous);
     }
 
     public function test_selection_reference_stage_detects_option_selection_and_positional_reference(): void
@@ -110,9 +102,9 @@ class RoutingStagesTest extends UnitTestCase
             ->once()
             ->with('create invoice', Mockery::type(UnifiedActionContext::class), [])
             ->andReturn([
-                'action' => 'start_collector',
+                'action' => 'use_tool',
                 'resource_name' => 'invoice',
-                'reason' => 'Collector is best fit.',
+                'reason' => 'Tool is best fit.',
                 'params' => ['customer' => 'Acme'],
                 'decision_source' => 'router_ai',
             ]);
@@ -120,7 +112,7 @@ class RoutingStagesTest extends UnitTestCase
         $decision = (new AIRouterStage($router))
             ->decide('create invoice', new UnifiedActionContext('ai-router-session'));
 
-        $this->assertSame(RoutingDecisionAction::START_COLLECTOR, $decision->action);
+        $this->assertSame(RoutingDecisionAction::USE_TOOL, $decision->action);
         $this->assertSame(RoutingDecisionSource::AI_ROUTER, $decision->source);
         $this->assertSame('invoice', $decision->payload['resource_name']);
         $this->assertSame(['customer' => 'Acme'], $decision->payload['params']);

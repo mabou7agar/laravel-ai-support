@@ -46,6 +46,8 @@ abstract class AgentSkill implements AgentSkillProvider
 
     public bool $enabled = true;
 
+    public string $prompt = '';
+
     /**
      * @var array<string, mixed>
      */
@@ -58,10 +60,19 @@ abstract class AgentSkill implements AgentSkillProvider
 
     public function definition(): AgentSkillDefinition
     {
-        $metadata = array_merge([
-            'planner' => 'skill_tool_auto',
-            'target_json' => $this->targetJson(),
-        ], $this->metadata());
+        $builder = new SkillBuilder();
+        $this->configure($builder);
+
+        $targetJson = $builder->targetJson() !== [] ? $builder->targetJson() : $this->targetJson();
+        $metadata = array_replace_recursive([
+            'planner' => 'ai_native',
+            'target_json' => $targetJson,
+        ], $builder->metadata(), $this->metadata());
+
+        $prompt = $this->skillPrompt($builder);
+        if ($prompt !== '') {
+            $metadata['prompt'] = $prompt;
+        }
 
         $finalTool = $this->normalizeToolName($this->propertyValue('finalTool', ''));
         if ($finalTool !== null) {
@@ -79,13 +90,18 @@ abstract class AgentSkill implements AgentSkillProvider
             description: $this->skillDescription(),
             triggers: $this->stringList($this->triggers),
             requiredData: $this->stringList($this->requiredData),
-            tools: $this->toolNames($this->tools),
+            tools: array_values(array_unique(array_merge($this->toolNames($this->tools), $builder->toolNames()))),
             actions: $this->stringList($this->actions),
             capabilities: $this->stringList($this->capabilities ?: [$this->skillId()]),
             requiresConfirmation: $this->requiresConfirmation,
             enabled: $this->enabled,
-            metadata: $metadata
+            metadata: $metadata,
+            prompt: $prompt
         );
+    }
+
+    public function configure(SkillBuilder $skill): void
+    {
     }
 
     /**
@@ -102,6 +118,11 @@ abstract class AgentSkill implements AgentSkillProvider
     public function examples(): array
     {
         return [];
+    }
+
+    public function prompt(): string
+    {
+        return trim($this->prompt);
     }
 
     /**
@@ -140,6 +161,21 @@ abstract class AgentSkill implements AgentSkillProvider
         }
 
         return "Handle {$this->skillName()} requests using declared tools.";
+    }
+
+    protected function skillPrompt(SkillBuilder $builder): string
+    {
+        $prompt = trim((string) ($builder->promptText() ?? ''));
+        if ($prompt !== '') {
+            return $prompt;
+        }
+
+        $metadataPrompt = $this->metadata()['prompt'] ?? null;
+        if (is_string($metadataPrompt) && trim($metadataPrompt) !== '') {
+            return trim($metadataPrompt);
+        }
+
+        return $this->prompt();
     }
 
     /**

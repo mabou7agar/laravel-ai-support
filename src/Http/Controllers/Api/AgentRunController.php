@@ -9,16 +9,20 @@ use Illuminate\Routing\Controller;
 use LaravelAIEngine\Http\Requests\CancelAgentRunRequest;
 use LaravelAIEngine\Http\Requests\ListAgentRunsRequest;
 use LaravelAIEngine\Http\Requests\ResumeAgentRunRequest;
+use LaravelAIEngine\Http\Requests\StreamAgentRunRequest;
 use LaravelAIEngine\Services\Agent\AgentRunInspectionService;
 use LaravelAIEngine\Services\Agent\AgentRunRuntimeControlService;
+use LaravelAIEngine\Services\Agent\AgentRunSseStreamService;
 use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeCapabilityService;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AgentRunController extends Controller
 {
     public function __construct(
         private readonly AgentRunInspectionService $runs,
         private readonly AgentRuntimeCapabilityService $capabilities,
-        private readonly AgentRunRuntimeControlService $controls
+        private readonly AgentRunRuntimeControlService $controls,
+        private readonly AgentRunSseStreamService $streams
     ) {}
 
     public function index(ListAgentRunsRequest $request): JsonResponse
@@ -36,6 +40,13 @@ class AgentRunController extends Controller
     public function trace(string $run): JsonResponse
     {
         return $this->ok('Agent run trace loaded.', $this->runs->trace($run));
+    }
+
+    public function stream(string $run, StreamAgentRunRequest $request): StreamedResponse
+    {
+        return $this->streams->response($run, array_merge($request->validated(), [
+            'auth_user_id' => $request->user()?->getAuthIdentifier(),
+        ]));
     }
 
     public function resume(string $run, ResumeAgentRunRequest $request): JsonResponse

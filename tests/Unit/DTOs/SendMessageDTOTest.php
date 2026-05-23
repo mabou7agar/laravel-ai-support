@@ -25,4 +25,28 @@ class SendMessageDTOTest extends UnitTestCase
             'response_suggestions' => false,
         ], $dto->agentOptions());
     }
+
+    public function test_agent_options_forward_force_rag_when_enabled(): void
+    {
+        $dto = new SendMessageDTO(
+            message: 'search docs',
+            sessionId: 'session',
+            forceRag: true
+        );
+
+        $this->assertTrue($dto->agentOptions()['force_rag']);
+    }
+
+    public function test_agent_options_forward_execution_mode_when_present(): void
+    {
+        $dto = new SendMessageDTO(
+            message: 'hello',
+            sessionId: 'session',
+            executionMode: 'auto'
+        );
+
+        $this->assertSame('auto', $dto->toArray()['execution_mode']);
+        $this->assertSame('auto', $dto->agentOptions()['execution_mode']);
+    }
+
 }

@@ -21,7 +21,6 @@ namespace LaravelAIEngine\Facades;
  * @method static array getModels(string $engine = null)
  * @method static array getAvailableEngines()
  * @method static array getAvailableModels(string $engine = null)
- * @method static \LaravelAIEngine\DTOs\ActionResult executeAction(\LaravelAIEngine\DTOs\InteractiveAction $action, mixed $userId = null, ?string $sessionId = null)
  * @method static \LaravelAIEngine\DTOs\InteractiveAction createAction(array $data)
  * @method static array createActions(array $actionsData)
  * @method static void streamResponse(string $sessionId, callable $generator, array $options = [])

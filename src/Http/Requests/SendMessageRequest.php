@@ -40,7 +40,18 @@ class SendMessageRequest extends FormRequest
             'rag_collections' => 'sometimes|array',
             'rag_collections.*' => 'string',
             'search_instructions' => 'sometimes|string|max:500',
-            'async' => 'sometimes|boolean',
+            'async' => ['sometimes', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (is_bool($value) || $value === 0 || $value === 1) {
+                    return;
+                }
+
+                if (is_string($value) && in_array(strtolower($value), ['0', '1', 'true', 'false', 'auto', 'sync', 'async'], true)) {
+                    return;
+                }
+
+                $fail('The async field must be a boolean or one of sync, async, auto.');
+            }],
+            'execution_mode' => 'sometimes|string|in:sync,async,auto',
             'auto_select_model' => 'sometimes|boolean',
             'task_type' => 'sometimes|string|in:vision,coding,reasoning,fast,cheap,quality,default',
             'agent_goal' => 'sometimes|boolean',
@@ -122,6 +133,12 @@ class SendMessageRequest extends FormRequest
     public function toDTO(): SendMessageDTO
     {
         $validated = $this->validated();
+        $async = $validated['async'] ?? false;
+        $executionMode = $validated['execution_mode'] ?? null;
+        if (is_string($async) && in_array(strtolower($async), ['sync', 'async', 'auto'], true)) {
+            $executionMode ??= strtolower($async);
+            $async = strtolower($async) === 'async';
+        }
         
         return new SendMessageDTO(
             message: $validated['message'],
@@ -131,6 +148,7 @@ class SendMessageRequest extends FormRequest
             memory: $validated['memory'] ?? true,
             actions: $validated['actions'] ?? true,
             streaming: $validated['streaming'] ?? false,
+            async: (bool) filter_var($async, FILTER_VALIDATE_BOOLEAN),
             userId: $validated['user_id'] ?? auth()->user()?->getAuthIdentifier(),
             intelligentRag: $validated['rag'] ?? false,
             forceRag: $validated['force_rag'] ?? false,
@@ -143,7 +161,8 @@ class SendMessageRequest extends FormRequest
             responsePointsFormat: $validated['response_points_format'] ?? null,
             responseSuggestions: $validated['response_suggestions'] ?? $validated['suggestions'] ?? null,
             responseSuggestionLimit: $validated['response_suggestion_limit'] ?? null,
-            collection: $validated['collection'] ?? null
+            collection: $validated['collection'] ?? null,
+            executionMode: $executionMode
         );
     }
 }

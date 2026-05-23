@@ -106,6 +106,13 @@ class AIEngineServiceProvider extends ServiceProvider
         $this->app->singleton(\LaravelAIEngine\Services\SDK\TraceRecorderService::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\EvaluationService::class);
         $this->app->singleton(\LaravelAIEngine\Services\SDK\VectorStoreService::class);
+        $this->app->singleton(\LaravelAIEngine\Repositories\LearningRepository::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Learning\LearningExtractorService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Learning\LearningVectorIndexer::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Learning\GetDesignCliRunner::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Learning\LearningService::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Learning\LearnedDesignHtmlComposer::class);
+        $this->app->singleton(\LaravelAIEngine\Services\Learning\LearnedDesignGeneratorService::class);
         $this->registerDriverRegistry();
         AgentServiceRegistrar::register($this->app);
     }
@@ -243,6 +250,8 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\BackendStatusCommand::class,
                 Console\Commands\ModelStatusCommand::class,
                 Console\Commands\DocsIndexCommand::class,
+                Console\Commands\LearnCommand::class,
+                Console\Commands\GenerateLearnedDesignCommand::class,
                 Console\Commands\VectorIndexCommand::class,
                 Console\Commands\VectorSearchCommand::class,
                 Console\Commands\VectorAnalyticsCommand::class,
@@ -264,6 +273,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\DecisionPolicyActivateCommand::class,
                 Console\Commands\DecisionPolicyEvaluateCommand::class,
                 Console\Commands\TestRealAgentFlowCommand::class,
+                Console\Commands\TestSubAgentConversationCommand::class,
                 Console\Commands\ClearDiscoveryCacheCommand::class,
                 Console\Commands\WarmDiscoveryCacheCommand::class,
                 Console\Commands\InitAgentWorkspaceCommand::class,

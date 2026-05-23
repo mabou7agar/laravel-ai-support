@@ -23,7 +23,7 @@ class AdminDashboardController extends Controller
             'manifest_exists' => is_file($manifestPath),
             'counts' => [
                 'model_configs' => count($manifestService->modelConfigs()),
-                'collectors' => count($manifestService->collectors()),
+                'skills' => count($manifestService->skills()),
                 'tools' => count($manifestService->tools()),
                 'filters' => count($manifestService->filters()),
             ],

@@ -59,6 +59,7 @@ abstract class UnitTestCase extends Orchestra
         Config::set('ai-engine.graph.neo4j.username', 'neo4j');
         Config::set('ai-engine.graph.neo4j.password', 'test-secret');
         Config::set('auth.providers.users.model', User::class);
+        Config::set('ai-agent.ai_native.enabled', false);
         
         // Set test API keys
         Config::set('ai-engine.engines.openai.api_key', 'test-openai-key');

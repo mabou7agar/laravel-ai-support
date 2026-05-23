@@ -1,0 +1,33 @@
+meta {
+  name: Auto Execution Chat
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/agent/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "message": "Create invoice and generate preview",
+    "session_id": "{{agentSessionId}}",
+    "user_id": "{{userId}}",
+    "memory": true,
+    "actions": true,
+    "use_rag": false,
+    "execution_mode": "auto",
+    "response_points_format": "array",
+    "response_suggestions": true
+  }
+}

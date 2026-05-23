@@ -2,7 +2,7 @@
 
 The package has two conversation-memory layers.
 
-`ConversationTranscriptService` manages normal chat transcripts in `ai_conversations` and conversation messages. `ConversationService` remains as a backward-compatible alias for this transcript/session history surface.
+`ConversationTranscriptService` manages normal chat transcripts in `ai_conversations` and conversation messages.
 
 `ConversationContextCompactor` is short-term prompt memory. It keeps recent turns, compacts older turns into `metadata.conversation_summary`, and keeps prompt size bounded.
 

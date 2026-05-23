@@ -23,6 +23,15 @@ abstract class SimpleAgentTool extends AgentTool
 
     public ?string $confirmationMessage = null;
 
+    /**
+     * @var array<int, string>
+     */
+    public array $capabilities = [];
+
+    public ?string $toolKind = null;
+
+    public ?string $entityType = null;
+
     public function getName(): string
     {
         if ($this->name !== '') {
@@ -52,6 +61,21 @@ abstract class SimpleAgentTool extends AgentTool
     public function getConfirmationMessage(): ?string
     {
         return $this->confirmationMessage;
+    }
+
+    public function getCapabilities(): array
+    {
+        return $this->capabilities;
+    }
+
+    public function getToolKind(): ?string
+    {
+        return $this->toolKind;
+    }
+
+    public function getEntityType(): ?string
+    {
+        return $this->entityType;
     }
 
     public function execute(array $parameters, UnifiedActionContext $context): ActionResult

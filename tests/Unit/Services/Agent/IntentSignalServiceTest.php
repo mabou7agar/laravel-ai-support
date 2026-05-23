@@ -6,7 +6,6 @@ namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Actions\ActionIntakeFlowService;
 use LaravelAIEngine\Services\Agent\AgentIntentUnderstandingService;
 use LaravelAIEngine\Services\Agent\IntentSignalService;
 use LaravelAIEngine\Services\AIEngineService;
@@ -26,21 +25,16 @@ class IntentSignalServiceTest extends UnitTestCase
         $this->assertFalse($signals->isAffirmative('yesterday was busy'));
     }
 
-    public function test_relation_decisions_are_locale_driven(): void
+    public function test_relation_signals_are_locale_driven(): void
     {
         app()->setLocale('ar');
 
-        $service = app(ActionIntakeFlowService::class);
+        $signals = app(IntentSignalService::class);
 
-        $this->assertSame([
-            'use_existing' => true,
-            'create_new' => false,
-        ], $service->relationDecision('استخدم الموجود'));
-
-        $this->assertSame([
-            'use_existing' => false,
-            'create_new' => true,
-        ], $service->relationDecision('انشئ جديد'));
+        $this->assertTrue($signals->isRelationUseExisting('استخدم الموجود'));
+        $this->assertFalse($signals->isRelationCreateNew('استخدم الموجود'));
+        $this->assertFalse($signals->isRelationUseExisting('انشئ جديد'));
+        $this->assertTrue($signals->isRelationCreateNew('انشئ جديد'));
     }
 
     public function test_ai_intent_understands_arabic_confirmation_without_regex_terms(): void
@@ -54,7 +48,7 @@ class IntentSignalServiceTest extends UnitTestCase
             ->with(Mockery::on(fn ($request): bool => str_contains($request->prompt, 'تمام نفذ الآن')))
             ->andReturn(AIResponse::success(json_encode([
                 'route' => 'ask_ai',
-                'mode' => 'action_flow',
+                'mode' => 'action_request',
                 'intent' => 'confirm',
                 'confidence' => 0.94,
                 'reason' => 'Arabic approval.',

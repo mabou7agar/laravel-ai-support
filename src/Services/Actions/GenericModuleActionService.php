@@ -343,7 +343,7 @@ class GenericModuleActionService
         foreach ((array) ($payload[$itemsKey] ?? []) as $itemData) {
             $attributes = array_merge(
                 Arr::only((array) $itemData, array_keys((array) ($lineItems['fields'] ?? []))),
-                [$lineItems['foreign_key'] ?? 'invoice_id' => $record->getKey()]
+                [$this->lineItemForeignKey($dto, $lineItems) => $record->getKey()]
             );
             $attributes = $this->filterExistingColumns($itemModel, $attributes);
             $attributes = $this->withOwnership($itemModel, $attributes, $actor);
@@ -362,6 +362,19 @@ class GenericModuleActionService
                 ]);
             }
         }
+    }
+
+    /**
+     * @param array<string, mixed> $lineItems
+     */
+    private function lineItemForeignKey(GenericModuleActionDTO $dto, array $lineItems): string
+    {
+        $configured = trim((string) ($lineItems['foreign_key'] ?? ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        return Str::snake(Str::singular($dto->resourceKey)) . '_id';
     }
 
     /**

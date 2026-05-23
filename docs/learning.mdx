@@ -1,0 +1,142 @@
+# Learn Layer
+
+The Learn layer stores reusable examples, rules, and source material that agents can retrieve later. It is generic: design files, curated design packs, business workflows, reply style, API examples, and product rules all use the same storage and retrieval path.
+
+SQL is the source of truth. Vector stores are optional indexes for semantic retrieval and should not be trusted for authorization by themselves.
+
+## Fluent API
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+$result = Engine::learn()
+    ->fromText('Invoices require customer email, due date, tax rules, and line item totals.')
+    ->type('workflow')
+    ->scope(tenantId: $tenantId, workspaceId: $workspaceId)
+    ->index()
+    ->save();
+```
+
+Search learned context by scope:
+
+```php
+$matches = Engine::learn()->search('how should invoice confirmation work?', [
+    'tenant_id' => $tenantId,
+    'workspace_id' => $workspaceId,
+], limit: 5, type: 'workflow');
+```
+
+## getdesign
+
+getdesign is supported as one learning adapter for design knowledge.
+
+Learn from an arbitrary website through the getdesign API:
+
+```php
+Engine::learn()
+    ->fromUrl('https://example.com')
+    ->using('getdesign')
+    ->type('design')
+    ->scope(workspaceId: $workspaceId)
+    ->index()
+    ->save();
+```
+
+Learn from a curated getdesign slug through the CLI runner:
+
+```php
+Engine::learn()
+    ->fromDesignSlug('bmw-m')
+    ->scope(workspaceId: $workspaceId)
+    ->index()
+    ->save();
+```
+
+The slug flow runs the configured command, defaulting to:
+
+```bash
+npx getdesign@latest add bmw-m
+```
+
+It runs in a temporary directory and imports the generated `DESIGN.md`; it should be used from trusted console/API flows with user approval, not silently inside normal chat requests.
+
+## Design Scenario
+
+A typical design-learning flow is:
+
+1. Import a curated getdesign slug or URL as `type=design`.
+2. Store the raw `DESIGN.md` plus extracted sections in SQL.
+3. Optionally index the source into the vector-store registry.
+4. Let agents call `search_learned_context` with the current tenant/workspace scope before generating UI guidance.
+5. Let the package generate design artifacts through `Engine::learn()->generateDesign()` or `php artisan ai:design`.
+
+```php
+Engine::learn()
+    ->fromDesignSlug('bmw-m')
+    ->scope(tenantId: $tenantId, workspaceId: $workspaceId)
+    ->index(storeName: 'Design Examples')
+    ->save();
+
+$matches = Engine::learn()->search(
+    'premium automotive hero with red accent CTAs and sharp performance cards',
+    ['tenant_id' => $tenantId, 'workspace_id' => $workspaceId],
+    limit: 3,
+    type: 'design'
+);
+```
+
+The same learned source will not be returned for another workspace unless it was saved without that scope. Keep shared design systems at tenant/global scope and project-specific examples at workspace scope.
+
+## Generate Designs From Learn
+
+Use the package-owned design generator when you want the package to retrieve learned context and produce the artifact:
+
+```php
+$result = Engine::learn()->generateDesign(
+    'Create a first screen for an AI invoicing app with invoice review, chat actions, and cash-risk cards.',
+    [
+        'scope' => ['workspace_id' => $workspaceId],
+        'format' => 'html',
+        'engine' => 'openai',
+        'model' => 'gpt-4o-mini',
+        'max_tokens' => 2500,
+        'source_context_chars' => 12000,
+        'media_url' => 'https://example.com/neutral-workspace-photo.jpg',
+    ]
+);
+
+file_put_contents(storage_path('app/previews/invoice-dashboard.html'), $result->content);
+```
+
+The generator searches `ai_learned_items`, includes a bounded slice of the matched raw source, builds an AI prompt from the scoped matches, asks the configured engine for `html` or `markdown`, normalizes the output, sanitizes copied source brand/font terms, and returns match metadata for audit/debugging. When learned context expects full-bleed media bands, pass `media_url` or `--media-url` with a neutral image that belongs to your app.
+
+The design generator is generic. It does not know about invoices, BMW, dashboards, or any application module. Those details come from the prompt and learned context.
+
+## Command
+
+```bash
+php artisan ai:learn "bmw-m" --source-type=getdesign_slug --type=design --workspace=acme --index
+php artisan ai:learn "https://example.com" --adapter=getdesign --type=design --workspace=acme --index
+php artisan ai:learn "./docs/workflow.md" --source-type=file --type=workflow --tenant=tenant-1
+php artisan ai:design "Create a billing dashboard from learned design context" --workspace=acme --source-context-chars=12000 --media-url=https://example.com/neutral-workspace-photo.jpg --output=storage/app/previews/billing.html
+```
+
+Use `--json` for automation.
+
+## Agent Tools
+
+The package registers two generic tools:
+
+- `learn_source`: imports explicit text, file, URL, or getdesign slug after confirmation.
+- `search_learned_context`: retrieves scoped learned examples and rules for the current agent context.
+
+These tools keep the package generic. Applications decide when the agent is allowed to call them and which tenant/workspace scope is present in the agent context.
+
+## Storage
+
+The package stores learned knowledge in:
+
+- `ai_learn_sources`: raw source, type, adapter, scope, metadata, vector link.
+- `ai_learned_items`: extracted sections, rules, tokens, components, or examples.
+
+Scope columns are strings so UUID, ULID, integer, and external identifiers all work.

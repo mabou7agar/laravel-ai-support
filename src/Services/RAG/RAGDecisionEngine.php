@@ -643,8 +643,8 @@ class RAGDecisionEngine
     }
 
     /**
-     * Tool: Exit to orchestrator for CRUD operations
-     * Returns control to the orchestrator which will start the appropriate autonomous collector
+     * Tool: Exit to orchestrator for CRUD operations.
+     * Returns control to the agent runtime so skills and tools can decide the next step.
      */
     protected function exitToOrchestrator(array $params, string $originalMessage): array
     {

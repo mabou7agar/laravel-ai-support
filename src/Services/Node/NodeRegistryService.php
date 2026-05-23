@@ -283,7 +283,6 @@ class NodeRegistryService
             'data_types' => $manifest['data_types'] ?? [],
             'keywords' => $manifest['keywords'] ?? [],
             'collections' => $manifest['collections'] ?? [],
-            'autonomous_collectors' => $manifest['autonomous_collectors'] ?? [],
             'version' => data_get($manifest, 'node.version') ?? ($manifest['version'] ?? null),
         ], static fn ($value) => $value !== null && $value !== []);
     }
@@ -292,7 +291,7 @@ class NodeRegistryService
     {
         $updateData = [];
 
-        foreach (['description', 'domains', 'data_types', 'keywords', 'collections', 'autonomous_collectors'] as $field) {
+        foreach (['description', 'domains', 'data_types', 'keywords', 'collections'] as $field) {
             if (!empty($data[$field])) {
                 $updateData[$field] = $data[$field];
             }

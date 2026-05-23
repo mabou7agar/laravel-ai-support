@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agent Long Task Demo</title>
+    <style>
+        :root {
+            --canvas: #050505;
+            --surface: #101010;
+            --surface-2: #191919;
+            --line: #343434;
+            --ink: #ffffff;
+            --body: #c8c8c8;
+            --muted: #858585;
+            --blue-a: #0066b1;
+            --blue-b: #1c69d4;
+            --red: #e22718;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--canvas); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        header { min-height: 360px; padding: 56px 40px; display: grid; align-items: end; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, rgba(0,0,0,.95), rgba(0,0,0,.68)), url("https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=2200&q=80") center / cover; }
+        .wrap { width: min(1160px, 100%); margin: 0 auto; }
+        .stripe { display: grid; grid-template-columns: repeat(3, 1fr); width: 168px; height: 4px; margin-bottom: 28px; }
+        .stripe span:nth-child(1) { background: var(--blue-a); }
+        .stripe span:nth-child(2) { background: var(--blue-b); }
+        .stripe span:nth-child(3) { background: var(--red); }
+        h1 { max-width: 880px; margin: 0; font-size: clamp(42px, 7vw, 86px); line-height: .98; text-transform: uppercase; letter-spacing: 0; }
+        .lead { max-width: 720px; margin: 24px 0 0; color: var(--body); font-size: 17px; line-height: 1.55; }
+        main { padding: 48px 40px 80px; }
+        .meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); margin-bottom: 28px; }
+        .meta div { padding: 20px; border-right: 1px solid var(--line); background: var(--surface); }
+        .meta div:last-child { border-right: 0; }
+        .meta span { display: block; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+        .meta strong { display: block; margin-top: 8px; font-size: 18px; word-break: break-word; }
+        .grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 24px; align-items: start; }
+        .panel { border: 1px solid var(--line); background: var(--surface); }
+        .panel h2 { margin: 0; padding: 22px 24px; border-bottom: 1px solid var(--line); font-size: 24px; text-transform: uppercase; }
+        .step { display: grid; grid-template-columns: 120px 1fr 92px; gap: 18px; padding: 20px 24px; border-bottom: 1px solid var(--line); align-items: start; }
+        .step:last-child { border-bottom: 0; }
+        .badge { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+        .step strong { display: block; font-size: 18px; }
+        .step p { margin: 8px 0 0; color: var(--body); line-height: 1.45; }
+        .status { justify-self: end; padding: 7px 10px; border: 1px solid var(--line); color: var(--body); font-size: 12px; text-transform: uppercase; }
+        pre { margin: 0; padding: 24px; white-space: pre-wrap; color: var(--body); line-height: 1.5; background: var(--surface-2); overflow-wrap: anywhere; }
+        .queue { display: grid; gap: 12px; padding: 24px; }
+        .queue div { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--line); color: var(--body); }
+        .queue div:last-child { border-bottom: 0; padding-bottom: 0; }
+        .queue span { color: var(--muted); text-transform: uppercase; font-size: 12px; }
+        @media (max-width: 860px) { .meta, .grid { grid-template-columns: 1fr; } .meta div { border-right: 0; border-bottom: 1px solid var(--line); } .step { grid-template-columns: 1fr; } .status { justify-self: start; } }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="wrap">
+            <div class="stripe"><span></span><span></span><span></span></div>
+            <h1>Agentic Task Until Finish</h1>
+            <p class="lead">This page shows the real Laravel agent run lifecycle from the package: an initial queued run, two continuations, persisted progress, and a completed callback payload.</p>
+        </div>
+    </header>
+    <main>
+        <div class="wrap">
+            <section class="meta">
+                <div><span>Run UUID</span><strong>654cc556-099f-4a48-a0bb-7a71e994505a</strong></div>
+                <div><span>Session</span><strong>long-agent-demo-074748</strong></div>
+                <div><span>Runtime</span><strong>laravel-demo-agent</strong></div>
+                <div><span>Final Status</span><strong>completed</strong></div>
+            </section>
+            <div class="grid">
+                <section class="panel">
+                    <h2>Timeline</h2>
+                    <article class="step">
+                        <div class="badge">Created</div>
+                        <div><strong>Run persisted</strong><p>Status starts as pending with tenant and workspace scope saved on the run.</p></div>
+                        <div class="status">pending</div>
+                    </article>
+                    <article class="step">
+                        <div class="badge">Job 1</div>
+                        <div><strong>Start agent task</strong><p>The agent collected invoice intent and products, then paused for missing customer email.</p></div>
+                        <div class="status">35%</div>
+                    </article>
+                    <article class="step">
+                        <div class="badge">Resume 1</div>
+                        <div><strong>Continue with email</strong><p>The continuation created a draft and paused for confirmation before execution.</p></div>
+                        <div class="status">72%</div>
+                    </article>
+                    <article class="step">
+                        <div class="badge">Resume 2</div>
+                        <div><strong>Finish task</strong><p>The final continuation completed the invoice flow and returned a callback payload.</p></div>
+                        <div class="status">100%</div>
+                    </article>
+                </section>
+                <aside class="panel">
+                    <h2>Queue Runtime</h2>
+                    <div class="queue">
+                        <div><span>Initial job</span><strong>RunAgentJob</strong></div>
+                        <div><span>Continuation</span><strong>ContinueAgentRunJob</strong></div>
+                        <div><span>Queue</span><strong>ai-agent</strong></div>
+                        <div><span>Tries</span><strong>3</strong></div>
+                        <div><span>Timeout</span><strong>300s</strong></div>
+                    </div>
+                </aside>
+            </div>
+            <section class="panel" style="margin-top: 24px;">
+                <h2>Final Response</h2>
+                <pre>{
+  "message": "Invoice created and preview artifact generated.",
+  "data": {
+    "progress": 100,
+    "invoice_id": "INV-DEMO-074750",
+    "artifact": "package-generated-learned-invoice-dashboard.html",
+    "callback_payload": {
+      "status": "completed",
+      "total": 12740
+    }
+  }
+}</pre>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

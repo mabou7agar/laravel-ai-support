@@ -94,4 +94,40 @@ class OpenAIResponsesApiToolTest extends UnitTestCase
         $this->assertSame('resp_second', $secondResponse->getMetadata()['openai_response_id']);
         $this->assertSame('resp_first', $secondResponse->getMetadata()['openai_previous_response_id']);
     }
+
+    public function test_openai_responses_api_does_not_forward_internal_or_non_string_metadata(): void
+    {
+        $client = Mockery::mock(Client::class);
+        $client->shouldReceive('post')
+            ->once()
+            ->with('https://api.openai.test/v1/responses', Mockery::on(function (array $options): bool {
+                $metadata = $options['json']['metadata'] ?? [];
+
+                return !array_key_exists('openai_responses_api', $metadata)
+                    && ($metadata['trace_id'] ?? null) === 'trace-1'
+                    && ($metadata['approved'] ?? null) === 'true'
+                    && ($metadata['attempt'] ?? null) === '2';
+            }))
+            ->andReturn(new Response(200, [], json_encode([
+                'id' => 'resp_1',
+                'output_text' => 'ok',
+            ])));
+
+        $driver = new OpenAIEngineDriver([
+            'api_key' => 'test',
+            'base_url' => 'https://api.openai.test/v1',
+        ], $client);
+
+        $response = $driver->generateText(
+            (new AIRequest('Use responses', EngineEnum::OPENAI, EntityEnum::GPT_4O))
+                ->withMetadata([
+                    'openai_responses_api' => true,
+                    'trace_id' => 'trace-1',
+                    'approved' => true,
+                    'attempt' => 2,
+                ])
+        );
+
+        $this->assertTrue($response->isSuccessful());
+    }
 }

@@ -8,7 +8,6 @@ use Illuminate\Support\Str;
 use LaravelAIEngine\DTOs\AgentSkillDefinition;
 use LaravelAIEngine\Services\Actions\ActionRegistry;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
 
 class ProjectAbilityScanner
 {
@@ -27,10 +26,6 @@ class ProjectAbilityScanner
         $skills = [];
 
         foreach ($this->discoverActionSkills() as $skill) {
-            $skills[$skill->id] = $skill;
-        }
-
-        foreach ($this->discoverCollectorSkills() as $skill) {
             $skills[$skill->id] = $skill;
         }
 
@@ -91,41 +86,6 @@ class ProjectAbilityScanner
                     'review_required' => true,
                     'action_id' => $actionId,
                     'module' => $module,
-                ]
-            );
-        }
-
-        return $skills;
-    }
-
-    /**
-     * @return array<int, AgentSkillDefinition>
-     */
-    protected function discoverCollectorSkills(): array
-    {
-        $skills = [];
-
-        foreach (AutonomousCollectorRegistry::getConfigs() as $name => $collector) {
-            $id = $this->skillId((string) $name);
-            $goal = (string) ($collector['goal'] ?? '');
-            $description = (string) ($collector['description'] ?? $goal);
-
-            if ($description === '') {
-                $description = "Collect data for {$name}.";
-            }
-
-            $skills[] = new AgentSkillDefinition(
-                id: $id,
-                name: $this->headline((string) $name),
-                description: $description,
-                triggers: [$this->headline((string) $name), (string) $name],
-                capabilities: ['collector'],
-                requiresConfirmation: true,
-                enabled: false,
-                metadata: [
-                    'source' => 'autonomous_collector_registry',
-                    'review_required' => true,
-                    'collector' => (string) $name,
                 ]
             );
         }

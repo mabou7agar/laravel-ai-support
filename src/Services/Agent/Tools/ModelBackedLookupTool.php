@@ -100,6 +100,19 @@ abstract class ModelBackedLookupTool extends AgentTool
         ];
     }
 
+    /**
+     * @return array<string, string>
+     */
+    public function getResultSchema(): array
+    {
+        $schema = ['found' => 'boolean'];
+        foreach ($this->returnColumns() as $column) {
+            $schema[$column] = $column === 'id' ? 'mixed' : 'string';
+        }
+
+        return $schema;
+    }
+
     public function execute(array $parameters, UnifiedActionContext $context): ActionResult
     {
         $modelClass = $this->modelClass();

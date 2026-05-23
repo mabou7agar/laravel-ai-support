@@ -11,11 +11,9 @@ use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ContextManager;
-use LaravelAIEngine\Services\Agent\Handlers\AutonomousCollectorHandler;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorRegistry;
 use LaravelAIEngine\Services\RAG\RAGDecisionEngine;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -73,9 +71,7 @@ class LaravelAgentProcessorFollowUpTest extends UnitTestCase
         $execution = new AgentExecutionFacade(
             $this->app->make(AgentActionExecutionService::class),
             $this->app->make(AgentConversationService::class),
-            Mockery::mock(NodeSessionManager::class),
-            Mockery::mock(AutonomousCollectorRegistry::class),
-            Mockery::mock(AutonomousCollectorHandler::class)
+            Mockery::mock(NodeSessionManager::class)
         );
 
         $processor = new LaravelAgentProcessor(

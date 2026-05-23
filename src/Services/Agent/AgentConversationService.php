@@ -63,8 +63,6 @@ class AgentConversationService
                 'new_message' => substr($newMessage, 0, 100),
             ]);
 
-            $options['start_collector'] = true;
-
             return $reroute($newMessage, $context->sessionId, $context->userId, $options);
         }
 

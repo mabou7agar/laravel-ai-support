@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Node;
 
 use Illuminate\Support\Str;
-use LaravelAIEngine\Services\DataCollector\AutonomousCollectorDiscoveryService;
 use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class NodeManifestService
 {
     public function __construct(
         protected NodeMetadataDiscovery $metadataDiscovery,
-        protected AutonomousCollectorDiscoveryService $collectorDiscovery,
         protected ?InfrastructureHealthService $infrastructureHealth = null
     ) {
     }
@@ -39,9 +37,6 @@ class NodeManifestService
     {
         $metadata = $this->metadataDiscovery->discover();
         $collections = $this->normalizeCollections($metadata['collections'] ?? []);
-        $collectors = $this->normalizeCollectors(
-            $this->collectorDiscovery->discoverCollectors(useCache: false, includeRemote: false)
-        );
         $node = $this->localNode();
 
         return [
@@ -54,16 +49,12 @@ class NodeManifestService
             'data_types' => array_values($metadata['data_types'] ?? []),
             'keywords' => array_values($metadata['keywords'] ?? []),
             'collections' => $collections,
-            'autonomous_collectors' => $collectors,
             'ownership' => [
                 'collections' => array_values(array_unique(array_map(
                     fn (array $collection) => $collection['name'] ?? '',
                     $collections
                 ))),
-                'tools' => array_values(array_unique(array_map(
-                    fn (array $collector) => $collector['name'] ?? '',
-                    $collectors
-                ))),
+                'tools' => [],
             ],
             'auth' => [
                 'scheme' => 'jwt',
@@ -75,11 +66,6 @@ class NodeManifestService
     public function collections(): array
     {
         return $this->manifest()['collections'];
-    }
-
-    public function autonomousCollectors(): array
-    {
-        return $this->manifest()['autonomous_collectors'];
     }
 
     protected function normalizeCollections(array $collections): array
@@ -104,25 +90,6 @@ class NodeManifestService
                 'capabilities' => is_array($collection) ? ($collection['capabilities'] ?? []) : [],
             ];
         }, $collections));
-    }
-
-    protected function normalizeCollectors(array $collectors): array
-    {
-        $normalized = [];
-
-        foreach ($collectors as $name => $collector) {
-            if (!is_array($collector)) {
-                continue;
-            }
-
-            $normalized[] = [
-                'name' => $collector['name'] ?? (string) $name,
-                'goal' => $collector['goal'] ?? '',
-                'description' => $collector['description'] ?? ($collector['goal'] ?? ''),
-            ];
-        }
-
-        return array_values($normalized);
     }
 
     protected function localNode(): array

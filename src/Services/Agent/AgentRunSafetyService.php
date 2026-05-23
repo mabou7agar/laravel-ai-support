@@ -70,6 +70,11 @@ class AgentRunSafetyService
         );
     }
 
+    public function forgetIdempotencyKey(string $key, array $scope = []): void
+    {
+        Cache::forget($this->idempotencyCacheKey($key, $scope));
+    }
+
     public function sessionLockKey(string $sessionId, ?string $tenantId = null, ?string $workspaceId = null): string
     {
         $scope = $this->scopeKey($tenantId, $workspaceId);

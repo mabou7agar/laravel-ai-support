@@ -414,7 +414,7 @@ class RAGStructuredDataServiceTest extends UnitTestCase
             eval(<<<'PHP'
 namespace App\AI\Configs;
 
-class InvoiceModelConfig extends \LaravelAIEngine\Contracts\AutonomousModelConfig
+class InvoiceModelConfig extends \LaravelAIEngine\Contracts\ModelToolConfig
 {
     public static function getName(): string { return 'invoice'; }
     public static function getDescription(): string { return 'Invoice'; }
@@ -434,8 +434,6 @@ class InvoiceModelConfig extends \LaravelAIEngine\Contracts\AutonomousModelConfi
         ];
     }
     public static function getExamples(): array { return []; }
-    public static function shouldUseDataCollector(): bool { return false; }
-    public static function getDataCollectorFields(): array { return []; }
     public static function getValidationRules(): array { return []; }
     public static function getFilterConfig(): array { return []; }
 }

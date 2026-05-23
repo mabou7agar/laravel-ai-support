@@ -127,7 +127,7 @@ class SystemHealthCommand extends Command
             'core' => [
                 'ai_engine' => true,
                 'memory_manager' => app()->bound(\LaravelAIEngine\Services\Memory\MemoryManager::class),
-                'action_manager' => app()->bound(\LaravelAIEngine\Services\Actions\ActionManager::class),
+                'action_orchestrator' => app()->bound(\LaravelAIEngine\Services\Actions\ActionOrchestrator::class),
                 'analytics_manager' => app()->bound(\LaravelAIEngine\Services\AnalyticsManager::class),
             ],
             'enterprise' => [
