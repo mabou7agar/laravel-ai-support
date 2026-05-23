@@ -108,6 +108,59 @@ class AiNativeContextIntelligenceTest extends UnitTestCase
         $this->assertSame(2, $state['task_frame']['current_payload']['items'][0]['quantity']);
     }
 
+    public function test_not_found_lookup_preserves_missing_entity_label_in_current_payload(): void
+    {
+        $state = [
+            'task_frame' => [
+                'active_objective' => 'create_invoice',
+                'status' => 'working',
+                'current_payload' => [
+                    'customer_email' => 'missing@example.com',
+                    'items' => [
+                        ['product_name' => 'Laptop', 'quantity' => 2, 'unit_price' => 1000],
+                    ],
+                ],
+            ],
+        ];
+        $service = new AgentTaskStateService(new ToolOutcomeNormalizer());
+
+        $service->recordToolResult($state, 'find_customer', ['query' => 'Missing Corp'], ActionResult::failure('Record was not found.', [
+            'found' => false,
+            'message' => 'Record was not found.',
+            'required_fields' => ['name', 'email'],
+        ]));
+
+        $this->assertSame('Missing Corp', $state['task_frame']['current_payload']['customer_name']);
+        $this->assertSame('missing@example.com', $state['task_frame']['current_payload']['customer_email']);
+        $this->assertSame('Laptop', $state['task_frame']['current_payload']['items'][0]['product_name']);
+    }
+
+    public function test_not_found_lookup_does_not_pollute_top_level_payload_for_list_items(): void
+    {
+        $state = [
+            'task_frame' => [
+                'active_objective' => 'create_invoice',
+                'status' => 'working',
+                'current_payload' => [
+                    'customer_name' => 'Missing Corp',
+                    'items' => [
+                        ['product_name' => 'Missing Widget', 'quantity' => 2, 'unit_price' => 100],
+                    ],
+                ],
+            ],
+        ];
+        $service = new AgentTaskStateService(new ToolOutcomeNormalizer());
+
+        $service->recordToolResult($state, 'find_product', ['query' => 'Missing Widget'], ActionResult::success('Record was not found.', [
+            'found' => false,
+            'message' => 'Record was not found.',
+            'required_fields' => ['name', 'price'],
+        ]));
+
+        $this->assertArrayNotHasKey('product_name', $state['task_frame']['current_payload']);
+        $this->assertSame('Missing Widget', $state['task_frame']['current_payload']['items'][0]['product_name']);
+    }
+
     public function test_completed_write_signature_tolerates_resolved_relation_ids_when_names_are_present(): void
     {
         $state = [];

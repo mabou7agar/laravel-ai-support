@@ -59,9 +59,11 @@ class AiNativeToolCallActionHandler
         $isConfirmedSuggestedWrite = $tool->requiresConfirmation()
             && $this->suggestedToolContinuation->writeContinuationIsConfirmed($toolName, $state, $arguments);
 
-        if ($tool->requiresConfirmation()) {
+        if ($tool->requiresConfirmation() && $this->shouldRememberConfirmingToolPayload($message, $state, $options, $toolName)) {
             $this->taskState->rememberCurrentPayload($state, $arguments, 'tool_call');
+        }
 
+        if ($tool->requiresConfirmation()) {
             if (!$isConfirmedSuggestedWrite && $this->skillPolicy->relationCreateNeedsLookupMiss($toolName, $arguments, $state, $options)) {
                 $state['runtime_feedback'][] = [
                     'reason' => 'relation_write_without_lookup_miss',
@@ -242,6 +244,17 @@ class AiNativeToolCallActionHandler
             $tool,
             $this->skillPolicy->payloadFromPlan($plan, $state, $options) !== []
         );
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    private function shouldRememberConfirmingToolPayload(string $message, array $state, array $options, string $toolName): bool
+    {
+        $requiredFinalTools = $this->skillPolicy->requiredFinalTools($message, $options, $state);
+
+        return $requiredFinalTools === [] || in_array($toolName, $requiredFinalTools, true);
     }
 
     private function isLookupMiss(string $toolName, AgentTool $tool, ActionResult $result): bool

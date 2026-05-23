@@ -215,6 +215,8 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringContainsString('Use generic field helper tools only when the user explicitly asks to validate, explain, or browse field options.', $prompt);
         $this->assertStringContainsString('Never ask the user whether you should run a non-confirming lookup/search/find tool.', $prompt);
         $this->assertStringContainsString('call that relation lookup_tool with the value', $prompt);
+        $this->assertStringContainsString('resolve root/scalar relations before child/list relations', $prompt);
+        $this->assertStringContainsString('Never reuse a value extracted for one relation as another relation create payload', $prompt);
     }
 
     private function tool(string $name): AgentTool

@@ -93,8 +93,12 @@ class AiNativeResponseFactory
     public function confirmation(UnifiedActionContext $context, array $state, string $toolName, array $params, string $message, ?array $summary = null): AgentResponse
     {
         $tool = $this->tools->get($toolName);
+        $message = $this->withPendingChangeNotice(
+            $state,
+            $this->confirmationPresenter->confirmationMessage($tool, $toolName, $params, $message, $summary)
+        );
 
-        return $this->needsUserInput($context, $state, $this->confirmationPresenter->confirmationMessage($tool, $toolName, $params, $message, $summary), [[
+        return $this->needsUserInput($context, $state, $message, [[
             'name' => 'confirmation',
             'type' => 'select',
             'label' => 'Confirmation',
@@ -109,6 +113,41 @@ class AiNativeResponseFactory
                 'params' => $params,
             ],
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     */
+    private function withPendingChangeNotice(array $state, string $message): string
+    {
+        if (!$this->hasRuntimeFeedback($state, 'pending_confirmation_changed_by_user')) {
+            return $message;
+        }
+
+        $notice = trim((string) config(
+            'ai-agent.ai_native.confirmation_summary.changed_draft_notice',
+            ''
+        ));
+
+        if ($notice === '' || str_starts_with($message, $notice)) {
+            return $message;
+        }
+
+        return $notice."\n\n".$message;
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     */
+    private function hasRuntimeFeedback(array $state, string $reason): bool
+    {
+        foreach ((array) ($state['runtime_feedback'] ?? []) as $feedback) {
+            if (is_array($feedback) && ($feedback['reason'] ?? null) === $reason) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

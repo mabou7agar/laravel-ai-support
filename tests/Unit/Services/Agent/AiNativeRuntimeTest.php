@@ -10,8 +10,15 @@ use LaravelAIEngine\DTOs\AgentSkillDefinition;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\Agent\AiNative\AgentTaskStateService;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeAskUserConfirmationHandler;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeConfirmationPresenter;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeConfirmationPreviewService;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeResponseFactory;
 use LaravelAIEngine\Services\Agent\AiNative\AiNativeSuggestedToolArgumentResolver;
 use LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeSkillPolicy;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeStateStore;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeToolExecutor;
 use LaravelAIEngine\Services\Agent\AiNative\ToolOutcomeNormalizer;
 use LaravelAIEngine\Services\Agent\IntentSignalService;
 use LaravelAIEngine\Services\Agent\Tools\AgentTool;
@@ -363,6 +370,9 @@ class AiNativeRuntimeTest extends UnitTestCase
 
         $updatedDraft = $runtime->process('Remove Mouse and use 5 Laptop.', $context);
         $this->assertTrue($updatedDraft->needsUserInput);
+        $this->assertStringNotContainsString('I updated the draft.', $updatedDraft->message);
+        $this->assertStringContainsString('Summary:', $updatedDraft->message);
+        $this->assertStringContainsString('Quantity: 5', $updatedDraft->message);
         $this->assertSame('pending_confirmation_changed_by_user', $context->metadata['ai_native']['runtime_feedback'][0]['reason']);
         $this->assertSame(5, $context->metadata['ai_native']['pending_tool']['params']['items'][0]['quantity']);
 
@@ -816,7 +826,7 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertTrue($first->needsUserInput);
         $this->assertSame('create_customer', $context->metadata['ai_native']['task_frame']['pending_tool']['name']);
 
-        $second = $runtime->process('Actually use existing Ahmed instead.', $context);
+        $second = $runtime->process('Change to use existing Ahmed instead.', $context);
 
         $this->assertTrue($second->needsUserInput);
         $this->assertArrayNotHasKey('pending_tool', $context->metadata['ai_native']);
@@ -824,6 +834,76 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertSame('working', $context->metadata['ai_native']['task_frame']['status']);
         $this->assertSame('pending_confirmation_changed_by_user', $context->metadata['ai_native']['runtime_feedback'][0]['reason']);
         $this->assertArrayNotHasKey('create_customer', $toolLog);
+    }
+
+    public function test_relation_write_confirmation_does_not_pollute_active_skill_payload(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 1);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'create_product',
+                'arguments' => ['name' => 'Missing Mouse', 'price' => 50],
+                'message' => 'Create product?',
+            ],
+        ], $toolLog);
+
+        $context = new UnifiedActionContext('ai-native-relation-payload-clean', 77, metadata: [
+            'ai_native' => [
+                'tool_results' => [
+                    [
+                        'tool' => 'lookup_product',
+                        'params' => ['query' => 'Missing Mouse'],
+                        'result' => [
+                            'success' => true,
+                            'data' => ['found' => false],
+                        ],
+                    ],
+                ],
+                'task_frame' => [
+                    'active_objective' => 'create_invoice',
+                    'status' => 'working',
+                    'recent_outcomes' => [
+                        [
+                            'tool' => 'lookup_product',
+                            'outcome' => 'not_found',
+                            'success' => true,
+                            'entity_type' => 'product',
+                            'label' => 'Missing Mouse',
+                        ],
+                    ],
+                    'current_payload' => [
+                        'customer_id' => 501,
+                        'customer_name' => 'Ahmed',
+                        'items' => [
+                            ['product_name' => 'Missing Mouse', 'quantity' => 2, 'unit_price' => 50],
+                        ],
+                    ],
+                ],
+                'recent_outcomes' => [
+                    [
+                        'tool' => 'lookup_product',
+                        'outcome' => 'not_found',
+                        'success' => true,
+                        'entity_type' => 'product',
+                        'label' => 'Missing Mouse',
+                    ],
+                ],
+            ],
+        ]);
+
+        $response = $runtime->process('Create the missing product.', $context);
+
+        $this->assertTrue($response->needsUserInput);
+        $this->assertSame('create_product', $context->metadata['ai_native']['pending_tool']['name']);
+        $payload = $context->metadata['ai_native']['task_frame']['current_payload'];
+        $this->assertSame(501, $payload['customer_id']);
+        $this->assertSame('Missing Mouse', $payload['items'][0]['product_name']);
+        $this->assertArrayNotHasKey('name', $payload);
+        $this->assertArrayNotHasKey('price', $payload);
+        $this->assertArrayNotHasKey('create_product', $toolLog);
     }
 
     public function test_skill_relation_write_must_lookup_same_record_before_confirmation(): void
@@ -1062,6 +1142,51 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertSame('Invoice created.', $response->message);
         $this->assertCount(1, $toolLog['create_invoice']);
         $this->assertNull($context->metadata['ai_native']['pending_tool'] ?? null);
+        $this->assertSame('completed', $context->metadata['ai_native']['task_frame']['status']);
+    }
+
+    public function test_repeated_confirm_after_completed_write_does_not_reopen_confirmation(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 1);
+
+        $toolLog = [];
+        $runtime = $this->runtime([], $toolLog);
+
+        $context = new UnifiedActionContext('ai-native-repeat-confirm-completed', 77, metadata: [
+            'ai_native' => [
+                'task_frame' => [
+                    'active_objective' => 'create_invoice',
+                    'status' => 'completed',
+                    'current_payload' => [
+                        'customer_id' => 501,
+                        'items' => [
+                            ['product_name' => 'Laptop', 'quantity' => 2, 'unit_price' => 1000],
+                        ],
+                    ],
+                    'completed_writes' => [
+                        [
+                            'tool' => 'create_invoice',
+                            'signature' => 'completed-signature',
+                            'params' => [
+                                'customer_id' => 501,
+                                'items' => [
+                                    ['product_name' => 'Laptop', 'quantity' => 2, 'unit_price' => 1000],
+                                ],
+                            ],
+                            'label' => 'Invoice',
+                            'outcome' => 'created',
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $response = $runtime->process('confirm', $context);
+
+        $this->assertTrue($response->success);
+        $this->assertFalse($response->needsUserInput);
+        $this->assertSame('That action has already been completed.', $response->message);
+        $this->assertSame([], $toolLog);
     }
 
     public function test_completed_confirmed_write_is_not_executed_twice_for_same_payload(): void
@@ -1500,31 +1625,17 @@ class AiNativeRuntimeTest extends UnitTestCase
                     ],
                 ],
             ],
-            [
-                'action' => 'final',
-                'message' => 'The invoice is ready. Do you want to proceed?',
-            ],
-            [
-                'action' => 'tool_call',
-                'tool' => 'create_invoice',
-                'arguments' => [
-                    'customer_id' => 501,
-                    'items' => [
-                        ['product_id' => 10, 'product_name' => 'Laptop', 'quantity' => 2, 'unit_price' => 1000],
-                    ],
-                ],
-                'message' => 'Create invoice?',
-            ],
         ], $toolLog);
 
         $context = new UnifiedActionContext('ai-native-ready-payload-confirmation', 77);
         $response = $runtime->process('Create invoice for Ahmed', $context);
 
         $this->assertTrue($response->needsUserInput);
-        $this->assertStringContainsString('Create invoice?', $response->message);
+        $this->assertStringContainsString('Do you want to proceed with creating this invoice?', $response->message);
+        $this->assertStringContainsString('Summary:', $response->message);
+        $this->assertStringContainsString('Product: Laptop', $response->message);
+        $this->assertStringContainsString('Total: 2000', $response->message);
         $this->assertSame('create_invoice', $context->metadata['ai_native']['pending_tool']['name']);
-        $this->assertSame('final_tool_required_before_confirmation_question', $context->metadata['ai_native']['runtime_feedback'][0]['reason']);
-        $this->assertSame('final_without_required_final_tool', $context->metadata['ai_native']['runtime_feedback'][1]['reason']);
         $this->assertSame('Ahmed', $toolLog['lookup_customer'][0]['query']);
         $this->assertArrayNotHasKey('create_invoice', $toolLog);
     }
@@ -1828,7 +1939,7 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertArrayNotHasKey('create_invoice', $toolLog);
     }
 
-    public function test_free_text_write_confirmation_question_is_replanned_as_confirming_tool_call(): void
+    public function test_free_text_write_confirmation_is_normalized_as_confirming_tool_call(): void
     {
         config()->set('ai-agent.ai_native.max_steps', 4);
 
@@ -1836,7 +1947,7 @@ class AiNativeRuntimeTest extends UnitTestCase
         $runtime = $this->runtime([
             [
                 'action' => 'ask_user',
-                'message' => 'Would you like to create a new customer with the name Missing Corp and email missing@example.com?',
+                'message' => 'Please confirm creating a new customer with the name Missing Corp and email missing@example.com.',
                 'required_inputs' => [
                     ['name' => 'confirmation', 'type' => 'select', 'required' => true],
                 ],
@@ -1878,6 +1989,214 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertSame('Missing Corp', $response->data['pending_tool']['params']['name']);
         $this->assertSame('missing@example.com', $response->data['pending_tool']['params']['email']);
         $this->assertArrayNotHasKey('create_customer', $toolLog);
+    }
+
+    public function test_ask_user_confirmation_handler_normalizes_write_confirmation_into_pending_tool(): void
+    {
+        $registry = new ToolRegistry();
+        $executed = false;
+        $registry->register('create_customer', new class($executed) extends AgentTool {
+            public function __construct(private bool &$executed) {}
+
+            public function getName(): string
+            {
+                return 'create_customer';
+            }
+
+            public function getDescription(): string
+            {
+                return 'Create a customer.';
+            }
+
+            public function getParameters(): array
+            {
+                return [
+                    'name' => ['type' => 'string', 'required' => true],
+                    'email' => ['type' => 'string', 'required' => true],
+                    'confirmed' => ['type' => 'boolean', 'required' => false],
+                ];
+            }
+
+            public function requiresConfirmation(): bool
+            {
+                return true;
+            }
+
+            public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+            {
+                $this->executed = true;
+
+                return ActionResult::success('Customer created.', $parameters);
+            }
+        });
+
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([
+            new AgentSkillDefinition(
+                id: 'create_invoice',
+                name: 'Create Invoice',
+                description: 'Create invoices.',
+                triggers: ['create invoice'],
+                tools: ['lookup_customer', 'create_customer'],
+                metadata: [
+                    'relations' => [[
+                        'name' => 'customer',
+                        'field' => 'customer_id',
+                        'lookup_tool' => 'lookup_customer',
+                        'create_tool' => 'create_customer',
+                        'lookup_fields' => ['customer_name', 'customer_email'],
+                        'create_required_fields' => ['name', 'email'],
+                        'safe_create' => true,
+                    ]],
+                ]
+            ),
+        ]);
+
+        $stateStore = new AiNativeStateStore();
+        $taskState = new AgentTaskStateService(new ToolOutcomeNormalizer());
+        $handler = new AiNativeAskUserConfirmationHandler(
+            $registry,
+            $skills,
+            new AiNativeSkillPolicy($skills, $registry, app(IntentSignalService::class)),
+            $taskState,
+            $stateStore,
+            new AiNativeConfirmationPreviewService(),
+            new AiNativeResponseFactory($stateStore, $registry, new AiNativeConfirmationPresenter()),
+            new AiNativeToolExecutor($taskState, $stateStore)
+        );
+
+        $state = [
+            'task_frame' => [
+                'active_objective' => 'create_invoice',
+                'current_payload' => [
+                    'customer_name' => 'Missing Corp',
+                ],
+            ],
+            'recent_outcomes' => [[
+                'tool' => 'lookup_customer',
+                'entity_type' => 'customer',
+                'label' => 'Missing Corp',
+                'result' => ['success' => false, 'data' => ['found' => false]],
+            ]],
+            'tool_results' => [[
+                'tool' => 'lookup_customer',
+                'params' => ['query' => 'Missing Corp'],
+                'result' => ['success' => false, 'data' => ['found' => false]],
+            ]],
+        ];
+        $context = new UnifiedActionContext('ask-user-confirmation-normalizer', 77);
+
+        $outcome = $handler->handle($context, $state, [], [
+            'action' => 'ask_user',
+            'message' => 'Please confirm creating a new customer with the name Missing Corp and email missing@example.com.',
+            'required_inputs' => [
+                ['name' => 'confirmation', 'type' => 'select', 'required' => true],
+            ],
+            'data' => [
+                'current_payload' => [
+                    'customer_name' => 'Missing Corp',
+                    'customer_email' => 'missing@example.com',
+                ],
+            ],
+        ]);
+
+        $this->assertNotNull($outcome);
+        $this->assertNotNull($outcome->response);
+        $this->assertTrue($outcome->response->needsUserInput);
+        $this->assertSame('create_customer', $outcome->response->data['pending_tool']['name']);
+        $this->assertSame('Missing Corp', $outcome->response->data['pending_tool']['params']['name']);
+        $this->assertSame('missing@example.com', $outcome->response->data['pending_tool']['params']['email']);
+        $this->assertFalse($executed);
+    }
+
+    public function test_ask_user_confirmation_handler_uses_configured_payload_aliases(): void
+    {
+        config()->set('ai-agent.ai_native.payload_aliases.label_fields', ['display']);
+        config()->set('ai-agent.ai_native.payload_aliases.email_fields', ['contact_email']);
+
+        $registry = new ToolRegistry();
+        $executed = false;
+        $registry->register('save_contact', new class($executed) extends AgentTool {
+            public function __construct(private bool &$executed) {}
+
+            public function getName(): string
+            {
+                return 'save_contact';
+            }
+
+            public function getDescription(): string
+            {
+                return 'Save a contact.';
+            }
+
+            public function getParameters(): array
+            {
+                return [
+                    'display' => ['type' => 'string', 'required' => true],
+                    'contact_email' => ['type' => 'string', 'required' => true],
+                    'confirmed' => ['type' => 'boolean', 'required' => false],
+                ];
+            }
+
+            public function requiresConfirmation(): bool
+            {
+                return true;
+            }
+
+            public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+            {
+                $this->executed = true;
+
+                return ActionResult::success('Contact saved.', $parameters);
+            }
+        });
+
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([
+            new AgentSkillDefinition(
+                id: 'save_contact',
+                name: 'Save Contact',
+                description: 'Save contacts.',
+                triggers: ['save contact'],
+                tools: ['save_contact'],
+            ),
+        ]);
+
+        $stateStore = new AiNativeStateStore();
+        $taskState = new AgentTaskStateService(new ToolOutcomeNormalizer());
+        $handler = new AiNativeAskUserConfirmationHandler(
+            $registry,
+            $skills,
+            new AiNativeSkillPolicy($skills, $registry, app(IntentSignalService::class)),
+            $taskState,
+            $stateStore,
+            new AiNativeConfirmationPreviewService(),
+            new AiNativeResponseFactory($stateStore, $registry, new AiNativeConfirmationPresenter()),
+            new AiNativeToolExecutor($taskState, $stateStore)
+        );
+
+        $state = [
+            'task_frame' => ['active_objective' => 'save_contact'],
+            'recent_outcomes' => [[
+                'tool' => 'find_contact',
+                'entity_type' => 'contact',
+                'label' => 'Nora Example',
+                'result' => ['success' => false, 'data' => ['found' => false]],
+            ]],
+        ];
+        $context = new UnifiedActionContext('ask-user-confirmation-configured-aliases', 77);
+
+        $outcome = $handler->handle($context, $state, [], [
+            'action' => 'ask_user',
+            'message' => 'Please confirm saving this contact with nora@example.com.',
+        ]);
+
+        $this->assertNotNull($outcome);
+        $this->assertNotNull($outcome->response);
+        $this->assertSame('save_contact', $outcome->response->data['pending_tool']['name']);
+        $this->assertSame('Nora Example', $outcome->response->data['pending_tool']['params']['display']);
+        $this->assertSame('nora@example.com', $outcome->response->data['pending_tool']['params']['contact_email']);
+        $this->assertFalse($executed);
     }
 
     public function test_repeated_free_text_write_confirmation_opens_matching_tool_confirmation_from_payload(): void
@@ -2316,6 +2635,7 @@ class AiNativeRuntimeTest extends UnitTestCase
                 'success' => false,
                 'data' => [
                     'current_payload' => [
+                        'name' => 'Nader Unique',
                         'customer_name' => 'Nader Unique',
                         'items' => [
                             ['product_name' => 'Test Widget', 'quantity' => 2, 'unit_price' => 50],
@@ -3197,7 +3517,29 @@ class AiNativeRuntimeTest extends UnitTestCase
                 metadata: [
                     'target_json' => [
                         'customer_id' => null,
+                        'customer_name' => null,
+                        'customer_email' => null,
                         'items' => [],
+                    ],
+                    'relations' => [
+                        [
+                            'name' => 'customer',
+                            'field' => 'customer_id',
+                            'lookup_tool' => 'lookup_customer',
+                            'create_tool' => 'create_customer',
+                            'lookup_fields' => ['customer_name', 'customer_email'],
+                            'create_required_fields' => ['name', 'email'],
+                            'safe_create' => true,
+                        ],
+                        [
+                            'name' => 'product',
+                            'field' => 'items.*.product_id',
+                            'lookup_tool' => 'lookup_product',
+                            'create_tool' => 'create_product',
+                            'lookup_fields' => ['items.*.product_name'],
+                            'create_required_fields' => ['name'],
+                            'safe_create' => true,
+                        ],
                     ],
                     'final_tool' => 'create_invoice',
                 ]

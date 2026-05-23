@@ -38,24 +38,31 @@ class AiNativePendingConfirmationHandler
     public function handlePendingTool(string $message, UnifiedActionContext $context, array &$state): ?AgentResponse
     {
         $normalized = mb_strtolower(trim($message));
-        if ($normalized === '' || $this->signals->isNegative($normalized)) {
+        if ($normalized === '') {
             $this->taskState->clearPendingConfirmation($state);
 
             return null;
         }
 
+        $changesPendingTool = $this->messageChangesPendingTool($normalized);
+        if ($this->signals->isNegative($normalized)) {
+            $this->taskState->clearPendingConfirmation($state);
+            if ($changesPendingTool) {
+                $this->recordPendingChangeFeedback($state);
+            }
+
+            return null;
+        }
+
         if (!$this->isPendingToolApproval($normalized)) {
-            if (!$this->messageChangesPendingTool($normalized)) {
+            if (!$changesPendingTool) {
                 $this->stateStore->put($context, $state);
 
                 return null;
             }
 
             $this->taskState->clearPendingConfirmation($state);
-            $state['runtime_feedback'][] = [
-                'reason' => 'pending_confirmation_changed_by_user',
-                'message' => 'The user did not approve the pending write and provided a new instruction. Treat the previous pending confirmation as cancelled and continue from the new instruction.',
-            ];
+            $this->recordPendingChangeFeedback($state);
 
             return null;
         }
@@ -197,6 +204,17 @@ class AiNativePendingConfirmationHandler
         }
 
         return false;
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     */
+    private function recordPendingChangeFeedback(array &$state): void
+    {
+        $state['runtime_feedback'][] = [
+            'reason' => 'pending_confirmation_changed_by_user',
+            'message' => 'The user did not approve the pending write and provided a new instruction. Treat the previous pending confirmation as cancelled and continue from the new instruction.',
+        ];
     }
 
     /**

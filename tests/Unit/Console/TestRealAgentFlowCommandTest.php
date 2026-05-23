@@ -223,4 +223,77 @@ class TestRealAgentFlowCommandTest extends UnitTestCase
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('Unknown built-in script', Artisan::output());
     }
+
+    public function test_confirmation_flow_assertion_passes_for_waiting_and_completed_turns(): void
+    {
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+
+        $runtime->shouldReceive('process')
+            ->twice()
+            ->andReturn(
+                AgentResponse::needsUserInput('Please confirm before I create this record.', context: new UnifiedActionContext('confirm-flow', 1)),
+                AgentResponse::success('Record created.', context: new UnifiedActionContext('confirm-flow', 1))
+            );
+
+        $this->app->instance(AgentRuntimeContract::class, $runtime);
+
+        $exitCode = Artisan::call('ai:test-real-agent', [
+            '--message' => ['create record', 'confirm'],
+            '--assert' => 'confirmation-flow',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertTrue($payload['summary']['assertions']['passed']);
+        $this->assertSame(1, $payload['summary']['assertions']['metrics']['waiting_turns']);
+        $this->assertSame(1, $payload['summary']['assertions']['metrics']['completed_turns']);
+    }
+
+    public function test_confirmation_flow_assertion_fails_without_confirmation_request(): void
+    {
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::success('Record created.', context: new UnifiedActionContext('confirm-flow-fail', 1)));
+
+        $this->app->instance(AgentRuntimeContract::class, $runtime);
+
+        $exitCode = Artisan::call('ai:test-real-agent', [
+            '--message' => ['create record now'],
+            '--assert' => 'confirmation-flow',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertFalse($payload['summary']['assertions']['passed']);
+        $this->assertContains('Expected at least one turn to request user input.', $payload['summary']['assertions']['failures']);
+    }
+
+    public function test_all_successful_assertion_reports_failed_turns(): void
+    {
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::failure('No route found.', context: new UnifiedActionContext('all-successful-fail', 1)));
+
+        $this->app->instance(AgentRuntimeContract::class, $runtime);
+
+        $exitCode = Artisan::call('ai:test-real-agent', [
+            '--message' => ['unknown action'],
+            '--assert' => 'all-successful',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertFalse($payload['summary']['assertions']['passed']);
+        $this->assertSame(['Turn 1 did not complete successfully.'], $payload['summary']['assertions']['failures']);
+    }
 }

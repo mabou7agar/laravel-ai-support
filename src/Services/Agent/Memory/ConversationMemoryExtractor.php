@@ -82,6 +82,10 @@ class ConversationMemoryExtractor
                 continue;
             }
 
+            if ($this->rejectsExtractedPayload($payload)) {
+                continue;
+            }
+
             $summary = $this->limit((string) ($payload['summary'] ?? ''), 220);
             if ($summary === '') {
                 continue;
@@ -131,7 +135,7 @@ class ConversationMemoryExtractor
             'Return JSON array only.',
             'Extract only stable user/session/workspace preferences, facts, constraints, unresolved goals, and decisions.',
             'Do not require English trigger phrases. Infer memory-worthiness from meaning in any language.',
-            'Do not include business database records, invoice line items, product catalogs, private credentials, secrets, payment data, or transient chit-chat.',
+            'Do not include application/database records, record identifiers, one-off customer/order/item details, product catalogs, private credentials, secrets, payment data, or transient chit-chat.',
             'Each item must contain: namespace, key, value, summary, confidence.',
             'Keep every summary under 220 characters.',
             'Return [] when there is nothing worth remembering.',
@@ -159,6 +163,52 @@ class ConversationMemoryExtractor
         }
 
         return [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    protected function rejectsExtractedPayload(array $payload): bool
+    {
+        $key = $this->normalizeKey((string) ($payload['key'] ?? ''), '');
+        if ($key !== '' && $this->rejectsMemoryKey($key)) {
+            return true;
+        }
+
+        $haystack = mb_strtolower(implode(' ', array_filter(array_map(
+            static fn (mixed $value): string => is_scalar($value) ? (string) $value : '',
+            [
+                $payload['namespace'] ?? '',
+                $payload['key'] ?? '',
+                $payload['value'] ?? '',
+                $payload['summary'] ?? '',
+            ]
+        ))));
+
+        if ($haystack === '') {
+            return true;
+        }
+
+        foreach ((array) config('ai-agent.conversation_memory.rejected_terms', []) as $term) {
+            $term = mb_strtolower(trim((string) $term));
+            if ($term !== '' && str_contains($haystack, $term)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function rejectsMemoryKey(string $key): bool
+    {
+        foreach ((array) config('ai-agent.conversation_memory.rejected_key_suffixes', []) as $suffix) {
+            $suffix = mb_strtolower(trim((string) $suffix));
+            if ($suffix !== '' && str_ends_with($key, $suffix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function normalizeKey(string $value, string $default): string

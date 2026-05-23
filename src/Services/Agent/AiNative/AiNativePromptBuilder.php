@@ -36,6 +36,8 @@ class AiNativePromptBuilder
             'When asking for more input or summarizing a draft, include the complete updated draft in data.current_payload so Laravel can carry it into the next turn.',
             'When the current payload is ready for a skill final tool, call that final tool with the complete current_payload instead of returning a final answer.',
             'For an active skill, prefer the tools listed in that skill. Use the skill relation lookup/create tools for related records before considering unrelated helper tools.',
+            'When a skill has multiple relations, resolve root/scalar relations before child/list relations unless the user clearly asks for the child/list relation first.',
+            'Never reuse a value extracted for one relation as another relation create payload. If relation ownership is ambiguous, ask or run the matching lookup instead of creating a different relation.',
             'Use generic field helper tools only when the user explicitly asks to validate, explain, or browse field options.',
             'Never ask the user whether you should run a non-confirming lookup/search/find tool. Run the lookup/search/find tool.',
             'When a skill relation has lookup_fields and the current payload contains one of those values, call that relation lookup_tool with the value.',

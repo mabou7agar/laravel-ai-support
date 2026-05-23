@@ -274,12 +274,99 @@ class TestRealAgentFlowCommand extends Command
     {
         return match ($scenario) {
             '', 'none' => null,
+            'all-successful' => $this->assertAllSuccessful($scenario, $results),
+            'confirmation-flow' => $this->assertConfirmationFlow($scenario, $results),
             default => [
                 'scenario' => $scenario,
                 'passed' => false,
-                'failures' => ["Unknown assertion scenario [{$scenario}]."],
+                'failures' => [
+                    "Unknown assertion scenario [{$scenario}].",
+                    'Supported scenarios: all-successful, confirmation-flow.',
+                ],
             ],
         };
+    }
+
+    protected function assertAllSuccessful(string $scenario, array $results): array
+    {
+        $failures = [];
+
+        foreach ($results as $row) {
+            if (($row['success'] ?? false) !== true && ($row['needs_user_input'] ?? false) !== true) {
+                $turn = (string) ($row['turn'] ?? '?');
+                $failures[] = "Turn {$turn} did not complete successfully.";
+            }
+        }
+
+        return [
+            'scenario' => $scenario,
+            'passed' => $failures === [],
+            'failures' => $failures,
+            'metrics' => [
+                'turns' => count($results),
+                'successful_or_waiting_turns' => count(array_filter(
+                    $results,
+                    static fn (array $row): bool => ($row['success'] ?? false) === true || ($row['needs_user_input'] ?? false) === true
+                )),
+            ],
+        ];
+    }
+
+    protected function assertConfirmationFlow(string $scenario, array $results): array
+    {
+        $failures = [];
+        $waitingTurns = count(array_filter(
+            $results,
+            static fn (array $row): bool => ($row['needs_user_input'] ?? false) === true
+        ));
+        $completedTurns = count(array_filter(
+            $results,
+            static fn (array $row): bool => ($row['is_complete'] ?? false) === true
+        ));
+        $failedTurns = count(array_filter(
+            $results,
+            static fn (array $row): bool => ($row['success'] ?? false) !== true && ($row['needs_user_input'] ?? false) !== true
+        ));
+        $confirmationMentions = count(array_filter(
+            $results,
+            fn (array $row): bool => $this->containsAny(
+                mb_strtolower((string) ($row['response_text'] ?? $row['response_excerpt'] ?? ''), 'UTF-8'),
+                ['confirm', 'confirmation', 'approve', 'approval', 'تأكيد', 'أكد', 'موافقة']
+            )
+        ));
+
+        if ($results === []) {
+            $failures[] = 'No turns were recorded.';
+        }
+
+        if ($failedTurns > 0) {
+            $failures[] = "{$failedTurns} turn(s) failed.";
+        }
+
+        if ($waitingTurns < 1) {
+            $failures[] = 'Expected at least one turn to request user input.';
+        }
+
+        if ($completedTurns < 1) {
+            $failures[] = 'Expected at least one turn to complete the action or task.';
+        }
+
+        if ($confirmationMentions < 1) {
+            $failures[] = 'Expected at least one response to ask for confirmation or approval.';
+        }
+
+        return [
+            'scenario' => $scenario,
+            'passed' => $failures === [],
+            'failures' => $failures,
+            'metrics' => [
+                'turns' => count($results),
+                'waiting_turns' => $waitingTurns,
+                'completed_turns' => $completedTurns,
+                'failed_turns' => $failedTurns,
+                'confirmation_mentions' => $confirmationMentions,
+            ],
+        ];
     }
 
     protected function containsAny(string $text, array $needles): bool

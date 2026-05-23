@@ -69,4 +69,39 @@ class ConversationMemoryExtractorTest extends UnitTestCase
             ['role' => 'user', 'content' => 'أي شيء مهم'],
         ], ['user_id' => '7']));
     }
+
+    public function test_ai_extractor_filters_transient_application_records(): void
+    {
+        config()->set('ai-agent.conversation_memory.extractor', 'ai');
+        config()->set('ai-agent.conversation_memory.rejected_terms', ['line item']);
+        config()->set('ai-agent.conversation_memory.rejected_key_suffixes', ['_name', '_email']);
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                [
+                    'namespace' => 'user_preferences',
+                    'key' => 'customer_name',
+                    'value' => 'Codex Complex Live',
+                    'summary' => 'User provided customer name Codex Complex Live for the current invoice.',
+                    'confidence' => 0.9,
+                ],
+                [
+                    'namespace' => 'preferences',
+                    'key' => 'reply_style',
+                    'value' => 'concise summaries',
+                    'summary' => 'User prefers concise summaries.',
+                    'confidence' => 0.9,
+                ],
+            ]), (string) config('ai-engine.default'), (string) config('ai-engine.default_model')));
+
+        $items = (new ConversationMemoryExtractor(app(ConversationMemoryPolicy::class), $ai))->extract([
+            ['role' => 'user', 'content' => 'Create an invoice for Codex Complex Live. Also keep replies concise.'],
+        ], ['user_id' => '7']);
+
+        $this->assertCount(1, $items);
+        $this->assertSame('reply_style', $items[0]->key);
+        $this->assertSame('User prefers concise summaries.', $items[0]->summary);
+    }
 }

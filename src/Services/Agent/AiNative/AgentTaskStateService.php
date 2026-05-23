@@ -70,7 +70,7 @@ class AgentTaskStateService
         if ($writeTool && $result->success && !$result->requiresUserInput()) {
             $toolObjective = $this->objectiveFromTool($toolName);
             $activeObjective = trim((string) ($frame['active_objective'] ?? ''));
-            $frame['status'] = $activeObjective === '' || $activeObjective === $toolObjective
+            $frame['status'] = $activeObjective === '' || $activeObjective === $toolName || $activeObjective === $toolObjective
                 ? 'completed'
                 : 'working';
             $frame['pending_tool'] = null;
@@ -90,6 +90,10 @@ class AgentTaskStateService
         $state['task_frame'] = $frame;
 
         $payload = $this->payloadFromResult($result);
+        if ($payload === []) {
+            $payload = $this->payloadFromNotFoundOutcome($outcome, $state);
+        }
+
         if ($payload !== []) {
             $this->rememberCurrentPayload($state, $payload, 'tool_result');
         }
@@ -205,6 +209,48 @@ class AgentTaskStateService
         }
 
         return [];
+    }
+
+    /**
+     * @param array<string, mixed> $outcome
+     * @return array<string, mixed>
+     */
+    private function payloadFromNotFoundOutcome(array $outcome, array $state): array
+    {
+        if (($outcome['outcome'] ?? null) !== 'not_found') {
+            return [];
+        }
+
+        $entity = Str::snake(Str::singular(trim((string) ($outcome['entity_type'] ?? ''))));
+        $label = trim((string) ($outcome['label'] ?? ''));
+        if ($entity === '' || $label === '') {
+            return [];
+        }
+
+        if (!$this->currentPayloadHasTopLevelEntityField($state, $entity)) {
+            return [];
+        }
+
+        return [$entity.'_name' => $label];
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     */
+    private function currentPayloadHasTopLevelEntityField(array $state, string $entity): bool
+    {
+        $payload = data_get($state, 'task_frame.current_payload');
+        if (!is_array($payload)) {
+            return false;
+        }
+
+        foreach (array_keys($payload) as $key) {
+            if (is_string($key) && str_starts_with($key, $entity.'_')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

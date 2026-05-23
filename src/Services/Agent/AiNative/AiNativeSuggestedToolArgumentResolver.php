@@ -118,14 +118,14 @@ class AiNativeSuggestedToolArgumentResolver
                 $value = $candidate['value'] ?? null;
             } elseif (array_key_exists($name, $record)) {
                 $value = $record[$name];
-            } elseif (array_key_exists($name, $payload)) {
-                $value = $payload[$name];
             } elseif (($candidate['entity'] ?? null) !== null && array_key_exists((string) $candidate['entity'].'_'.$name, $record)) {
                 $value = $record[(string) $candidate['entity'].'_'.$name];
+            } elseif ($name === 'name' && ($candidate['value'] ?? null) !== null) {
+                $value = $candidate['value'];
+            } elseif (array_key_exists($name, $payload)) {
+                $value = $payload[$name];
             } elseif (($candidate['entity'] ?? null) !== null && array_key_exists((string) $candidate['entity'].'_'.$name, $payload)) {
                 $value = $payload[(string) $candidate['entity'].'_'.$name];
-            } elseif ($name === 'name') {
-                $value = $candidate['value'] ?? null;
             } else {
                 $value = $this->suffixMatchedValue($name, $record)
                     ?? $this->suffixMatchedValue($name, $payload);
