@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Services\Agent\Runtime;
 use LaravelAIEngine\Contracts\AgentRuntimeContract;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\AgentRuntimeCapabilities;
+use LaravelAIEngine\Exceptions\LangGraphRuntimeException;
 use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentRunApprovalService;
 use LaravelAIEngine\Services\Agent\ContextManager;
@@ -93,24 +94,24 @@ class LangGraphAgentRuntime implements AgentRuntimeContract
 
             return $response;
         } catch (\Throwable $e) {
+            $failure = $this->failureDetails($e);
+
             if ($this->fallbackEnabled($options)) {
                 $response = $this->fallbackRuntime->process($message, $sessionId, $userId, $options);
                 $response->metadata = array_merge($response->metadata ?? [], [
                     'requested_agent_runtime' => $this->name(),
                     'agent_runtime_fallback' => 'laravel',
                     'agent_runtime_fallback_reason' => 'langgraph_request_failed',
-                    'agent_runtime_fallback_error' => $e->getMessage(),
-                ]);
+                ], $this->fallbackFailureMetadata($failure));
 
                 return $response;
             }
 
             return AgentResponse::failure(
                 message: 'LangGraph runtime request failed.',
-                data: [
+                data: array_merge([
                     'runtime' => $this->name(),
-                    'error' => $e->getMessage(),
-                ],
+                ], $failure),
                 context: $context
             );
         }
@@ -191,6 +192,28 @@ class LangGraphAgentRuntime implements AgentRuntimeContract
         return array_key_exists('fallback_to_laravel', $options)
             ? (bool) $options['fallback_to_laravel']
             : (bool) config('ai-agent.runtime.langgraph.fallback_to_laravel', true);
+    }
+
+    protected function failureDetails(\Throwable $e): array
+    {
+        if ($e instanceof LangGraphRuntimeException) {
+            return array_filter([
+                'error_code' => $e->reason(),
+                'status_code' => $e->statusCode(),
+            ], static fn (mixed $value): bool => $value !== null && $value !== '');
+        }
+
+        return [
+            'error_code' => 'langgraph_runtime_error',
+        ];
+    }
+
+    protected function fallbackFailureMetadata(array $failure): array
+    {
+        return array_filter([
+            'agent_runtime_fallback_error_code' => $failure['error_code'] ?? 'langgraph_runtime_error',
+            'agent_runtime_fallback_error_status' => $failure['status_code'] ?? null,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
     protected function policy(): AgentExecutionPolicyService

@@ -46,6 +46,9 @@ class AgentRuntimeManagerTest extends UnitTestCase
 
     public function test_runtime_manager_selects_langgraph_when_requested(): void
     {
+        config()->set('ai-agent.runtime.langgraph.enabled', true);
+        config()->set('ai-agent.runtime.langgraph.base_url', 'https://langgraph.test');
+
         $laravel = Mockery::mock(LaravelAgentRuntime::class);
         $langGraph = Mockery::mock(LangGraphAgentRuntime::class);
 
@@ -98,6 +101,88 @@ class AgentRuntimeManagerTest extends UnitTestCase
 
         $this->assertFalse($response->success);
         $this->assertSame(['streaming'], $response->data['missing_capabilities']);
+    }
+
+    public function test_runtime_manager_allows_unavailable_langgraph_to_use_laravel_fallback_for_supported_required_capabilities(): void
+    {
+        config()->set('ai-agent.runtime.langgraph.enabled', false);
+        config()->set('ai-agent.runtime.langgraph.base_url', null);
+        config()->set('ai-agent.runtime.langgraph.fallback_to_laravel', true);
+
+        $context = new UnifiedActionContext('fallback-capabilities-session', 3);
+        $processor = Mockery::mock(LaravelAgentProcessor::class);
+        $processor->shouldReceive('process')
+            ->once()
+            ->withArgs(function (string $message, string $sessionId, mixed $userId, array $options): bool {
+                return $message === 'use graph capabilities'
+                    && $sessionId === 'fallback-capabilities-session'
+                    && $userId === 3
+                    && ($options['agent_runtime'] ?? null) === 'langgraph'
+                    && ($options['requires_capabilities'] ?? []) === ['tools', 'sub_agents', 'human_approvals', 'artifacts'];
+            })
+            ->andReturn(AgentResponse::conversational('Fallback response', $context));
+
+        $laravel = new LaravelAgentRuntime($processor);
+        $langGraph = new LangGraphAgentRuntime($laravel, $this->app->make(ContextManager::class));
+        $manager = new AgentRuntimeManager($laravel, $langGraph);
+
+        $response = $manager->process('use graph capabilities', 'fallback-capabilities-session', 3, [
+            'agent_runtime' => 'langgraph',
+            'requires_capabilities' => ['tools', 'sub_agents', 'human_approvals', 'artifacts'],
+        ]);
+
+        $this->assertTrue($response->success);
+        $this->assertSame('laravel', $response->metadata['agent_runtime']);
+        $this->assertSame('langgraph', $response->metadata['requested_agent_runtime']);
+        $this->assertSame('laravel', $response->metadata['agent_runtime_fallback']);
+        $this->assertSame('langgraph_disabled', $response->metadata['agent_runtime_fallback_reason']);
+    }
+
+    public function test_runtime_manager_rejects_unavailable_langgraph_fallback_when_laravel_lacks_required_capabilities(): void
+    {
+        config()->set('ai-agent.runtime.langgraph.enabled', false);
+        config()->set('ai-agent.runtime.langgraph.base_url', null);
+        config()->set('ai-agent.runtime.langgraph.fallback_to_laravel', true);
+
+        $processor = Mockery::mock(LaravelAgentProcessor::class);
+        $processor->shouldNotReceive('process');
+
+        $laravel = new LaravelAgentRuntime($processor);
+        $langGraph = new LangGraphAgentRuntime($laravel, $this->app->make(ContextManager::class));
+        $manager = new AgentRuntimeManager($laravel, $langGraph);
+
+        $response = $manager->process('stream through graph', 'fallback-stream-session', 3, [
+            'agent_runtime' => 'langgraph',
+            'requires_capabilities' => ['streaming'],
+        ]);
+
+        $this->assertFalse($response->success);
+        $this->assertSame('laravel', $response->data['runtime']);
+        $this->assertSame('langgraph', $response->data['requested_runtime']);
+        $this->assertSame(['streaming'], $response->data['missing_capabilities']);
+    }
+
+    public function test_runtime_manager_blocks_denied_laravel_fallback_before_dispatching_unavailable_langgraph(): void
+    {
+        config()->set('ai-agent.runtime.langgraph.enabled', false);
+        config()->set('ai-agent.runtime.langgraph.base_url', null);
+        config()->set('ai-agent.runtime.langgraph.fallback_to_laravel', true);
+        config()->set('ai-agent.execution_policy.runtime_deny', ['laravel']);
+
+        $processor = Mockery::mock(LaravelAgentProcessor::class);
+        $processor->shouldNotReceive('process');
+
+        $laravel = new LaravelAgentRuntime($processor);
+        $langGraph = new LangGraphAgentRuntime($laravel, $this->app->make(ContextManager::class));
+        $manager = new AgentRuntimeManager($laravel, $langGraph);
+
+        $response = $manager->process('use graph capabilities', 'fallback-policy-session', 3, [
+            'agent_runtime' => 'langgraph',
+            'requires_capabilities' => ['tools'],
+        ]);
+
+        $this->assertFalse($response->success);
+        $this->assertStringContainsString('runtime [laravel] is blocked', $response->message);
     }
 
     public function test_runtime_manager_infers_tool_and_sub_agent_capabilities(): void
@@ -291,7 +376,7 @@ class AgentRuntimeManagerTest extends UnitTestCase
         config()->set('ai-agent.runtime.langgraph.fallback_to_laravel', true);
 
         Http::fake([
-            'https://langgraph.test/runs' => Http::response(['error' => 'down'], 503),
+            'https://langgraph.test/runs' => Http::response(['error' => 'down', 'api_key' => 'secret-token'], 503),
         ]);
 
         $processor = Mockery::mock(LaravelAgentProcessor::class);
@@ -305,6 +390,8 @@ class AgentRuntimeManagerTest extends UnitTestCase
         $this->assertTrue($response->success);
         $this->assertSame('laravel', $response->metadata['agent_runtime_fallback']);
         $this->assertSame('langgraph_request_failed', $response->metadata['agent_runtime_fallback_reason']);
+        $this->assertArrayNotHasKey('agent_runtime_fallback_error', $response->metadata);
+        $this->assertSame('langgraph_http_error', $response->metadata['agent_runtime_fallback_error_code']);
     }
 
     public function test_langgraph_client_health_events_resume_and_cancel_contracts(): void

@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Services\Agent\Runtime;
 
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use LaravelAIEngine\Exceptions\LangGraphRuntimeException;
 
 class LangGraphRuntimeClient
 {
@@ -48,7 +49,7 @@ class LangGraphRuntimeClient
             : $request->{$method}($url, $payload);
 
         if (!$response->successful()) {
-            throw new \RuntimeException('LangGraph runtime request failed: ' . $response->body());
+            throw LangGraphRuntimeException::http($response->status());
         }
 
         return $response->json() ?? [];

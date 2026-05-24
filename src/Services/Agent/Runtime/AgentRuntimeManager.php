@@ -49,18 +49,40 @@ class AgentRuntimeManager implements AgentRuntimeContract
     ): AgentResponse {
         $options = $this->scopeOptions?->merge($userId, $options) ?? $options;
         $runtime = $this->runtime($options);
-        if (!$this->policy()->canUseRuntime($runtime->name(), $options)) {
+        $runtimeName = $runtime->name();
+
+        if (!$this->policy()->canUseRuntime($runtimeName, $options)) {
             return AgentResponse::failure(
-                message: $this->policy()->blockedMessage('runtime', $runtime->name())
+                message: $this->policy()->blockedMessage('runtime', $runtimeName)
             );
         }
 
         $missing = $this->missingRequiredCapabilities($runtime->capabilities(), $options);
-        if ($missing !== []) {
+        if ($this->langGraphFallbackWillBeUsed($runtimeName, $options)) {
+            $fallbackRuntimeName = $this->laravelRuntime->name();
+            if (!$this->policy()->canUseRuntime($fallbackRuntimeName, $options)) {
+                return AgentResponse::failure(
+                    message: $this->policy()->blockedMessage('runtime', $fallbackRuntimeName)
+                );
+            }
+
+            $fallbackMissing = $this->missingRequiredCapabilities($this->laravelRuntime->capabilities(), $options);
+            if ($fallbackMissing !== []) {
+                return AgentResponse::failure(
+                    message: "Fallback runtime [{$fallbackRuntimeName}] for requested runtime [{$runtimeName}] is missing required capabilities: " . implode(', ', $fallbackMissing) . '.',
+                    data: [
+                        'runtime' => $fallbackRuntimeName,
+                        'requested_runtime' => $runtimeName,
+                        'missing_capabilities' => $fallbackMissing,
+                        'capabilities' => $this->laravelRuntime->capabilities()->toArray(),
+                    ]
+                );
+            }
+        } elseif ($missing !== []) {
             return AgentResponse::failure(
-                message: "Agent runtime [{$runtime->name()}] is missing required capabilities: " . implode(', ', $missing) . '.',
+                message: "Agent runtime [{$runtimeName}] is missing required capabilities: " . implode(', ', $missing) . '.',
                 data: [
-                    'runtime' => $runtime->name(),
+                    'runtime' => $runtimeName,
                     'missing_capabilities' => $missing,
                     'capabilities' => $runtime->capabilities()->toArray(),
                 ]
@@ -102,6 +124,26 @@ class AgentRuntimeManager implements AgentRuntimeContract
             'langgraph' => $this->langGraphRuntime,
             default => $this->laravelRuntime,
         };
+    }
+
+    protected function langGraphFallbackWillBeUsed(string $runtimeName, array $options): bool
+    {
+        return $runtimeName === 'langgraph'
+            && $this->langGraphFallbackEnabled($options)
+            && !$this->langGraphAvailable();
+    }
+
+    protected function langGraphFallbackEnabled(array $options): bool
+    {
+        return array_key_exists('fallback_to_laravel', $options)
+            ? (bool) $options['fallback_to_laravel']
+            : (bool) config('ai-agent.runtime.langgraph.fallback_to_laravel', true);
+    }
+
+    protected function langGraphAvailable(): bool
+    {
+        return (bool) config('ai-agent.runtime.langgraph.enabled', false)
+            && trim((string) config('ai-agent.runtime.langgraph.base_url', '')) !== '';
     }
 
     protected function policy(): AgentExecutionPolicyService
