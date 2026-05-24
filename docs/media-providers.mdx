@@ -11,6 +11,7 @@ Laravel AI Engine supports hosted and local media generation providers for image
 | Hugging Face Inference Providers | `huggingface` | provider marketplace for image/audio models | `HUGGINGFACE_API_KEY` or `HF_TOKEN` |
 | Replicate | `replicate` | public image/video/audio model catalog | `REPLICATE_API_TOKEN` |
 | ComfyUI | `comfyui` | local/self-hosted image and video workflows | `COMFYUI_BASE_URL` |
+| Local audio | `local_audio` | local Whisper/faster-whisper STT and Kokoro/LocalAI TTS through OpenAI-compatible HTTP or command adapters | `LOCAL_AUDIO_BASE_URL` or command config |
 | Gemini media | `gemini` | Imagen, Veo, audio understanding/STT, native TTS, STS pipeline, and Lyria models | `GEMINI_API_KEY` |
 | Google Text-to-Speech | `google_tts` | Google Cloud TTS voices | `GOOGLE_TTS_API_KEY` or `GOOGLE_TTS_ACCESS_TOKEN` |
 | ElevenLabs | `eleven_labs` | high-quality voices, STT, native speech-to-speech voice conversion, and narration | `ELEVENLABS_API_KEY` |
@@ -103,6 +104,25 @@ new \LaravelAIEngine\DTOs\AIRequest(
 
 `lyria-002` remains available for music generation style workflows. Media routing now defaults Gemini `audio_generation` to native TTS and keeps Lyria under `music_generation`.
 
+Local TTS is available through the `local_audio` engine. Use OpenAI-compatible servers such as Kokoro-FastAPI or LocalAI TTS. For a full LocalAI Docker setup on macOS and Linux, see [LocalAI local voice setup](localai-local-voice.mdx).
+
+```env
+LOCAL_AUDIO_BASE_URL=http://127.0.0.1:8880/v1
+LOCAL_AUDIO_TTS_MODE=openai_compatible
+LOCAL_AUDIO_TTS_PATH=/audio/speech
+LOCAL_AUDIO_TTS_MODEL=kokoro
+LOCAL_AUDIO_TTS_VOICE=af_heart
+```
+
+```php
+$response = Engine::engine('local_audio')
+    ->model('local-tts')
+    ->withParameters([
+        'response_format' => 'wav',
+    ])
+    ->generateAudio('Read this locally.');
+```
+
 ## Speech To Text
 
 Use `audioToText()` or `speechToText()` when the input is an audio file and the output should be text:
@@ -146,6 +166,34 @@ $response = Engine::engine('openrouter')
     ]);
 ```
 
+Local STT is available through the same `local_audio` engine. Use an OpenAI-compatible Whisper server, LocalAI, or a command adapter:
+
+```env
+LOCAL_AUDIO_BASE_URL=http://127.0.0.1:8080/v1
+LOCAL_AUDIO_STT_MODE=openai_compatible
+LOCAL_AUDIO_STT_PATH=/audio/transcriptions
+LOCAL_AUDIO_STT_MODEL=whisper-small
+LOCAL_AUDIO_STT_LANGUAGE=
+LOCAL_AUDIO_STT_PROMPT=
+AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED=false
+AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE=openai
+AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL=gpt-4o-mini
+```
+
+```php
+$response = Engine::engine('local_audio')
+    ->model('local-whisper')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'language' => 'ar',
+        'prompt' => 'فاتورة، عميل، أحمد، ماك بوك، آيفون',
+        'normalize' => true,
+    ]);
+```
+
+Use a larger multilingual model for Arabic. Tiny/base Whisper models can be fast but often confuse Arabic business words and mixed Arabic/English product names. For voice commands where exact wording matters, use `normalize=true` or enable `AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED`; the package then asks a configured text model to clean the transcript using the STT language and prompt hints.
+
+For command mode, publish the config and set `ai-engine.engines.local_audio.stt.command` or `tts.command` to an argv array. The adapter replaces `{input}`, `{output}`, `{text}`, `{model}`, `{voice}`, and `{language}` placeholders without shell interpolation.
+
 ## Speech To Speech
 
 Use `speechToSpeech()` when the input and output are both audio:
@@ -159,7 +207,7 @@ $response = Engine::engine('eleven_labs')
     ]);
 ```
 
-ElevenLabs uses its native speech-to-speech endpoint. OpenAI, Gemini, and OpenRouter use a stable package pipeline: speech-to-text first, then provider TTS. For true low-latency live voice conversations, use `Engine::realtime()` with OpenAI Realtime or Gemini Live descriptors and connect from the host application over WebRTC or WebSocket.
+ElevenLabs uses its native speech-to-speech endpoint. OpenAI, Gemini, OpenRouter, and local audio can use a stable package pipeline: speech-to-text first, then provider TTS. For true low-latency live voice conversations, use `Engine::realtime()` with OpenAI Realtime WebRTC, Gemini Live WebSocket, or LiveKit room descriptors. Providers without native realtime voice still return a generic fallback pipeline descriptor that points to the package STT, chat/agent, and TTS endpoints.
 
 OpenRouter STS uses `/audio/transcriptions` first, then `/audio/speech`:
 

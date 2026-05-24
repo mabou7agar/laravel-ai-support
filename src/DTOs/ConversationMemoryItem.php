@@ -26,6 +26,8 @@ class ConversationMemoryItem
         public readonly array $metadata = [],
         public readonly ?DateTimeInterface $lastSeenAt = null,
         public readonly ?DateTimeInterface $expiresAt = null,
+        public readonly string $scopeType = 'global',
+        public readonly ?string $scopeId = null,
     ) {
     }
 
@@ -34,6 +36,8 @@ class ConversationMemoryItem
      */
     public static function fromArray(array $data): self
     {
+        $scope = app(\LaravelAIEngine\Services\Agent\Memory\ConversationMemoryScopeResolver::class)->fromArray($data);
+
         return new self(
             id: isset($data['id']) ? (string) $data['id'] : null,
             memoryId: isset($data['memory_id']) ? (string) $data['memory_id'] : null,
@@ -41,10 +45,12 @@ class ConversationMemoryItem
             key: trim((string) ($data['key'] ?? '')) ?: 'memory',
             value: array_key_exists('value', $data) && $data['value'] !== null ? (string) $data['value'] : null,
             summary: trim((string) ($data['summary'] ?? '')),
+            scopeType: $scope['scope_type'],
+            scopeId: $scope['scope_id'],
             userId: self::nullableString($data['user_id'] ?? $data['userId'] ?? null),
             tenantId: self::nullableString($data['tenant_id'] ?? $data['tenantId'] ?? null),
             workspaceId: self::nullableString($data['workspace_id'] ?? $data['workspaceId'] ?? null),
-            sessionId: self::nullableString($data['session_id'] ?? $data['sessionId'] ?? null),
+            sessionId: $scope['session_id'],
             confidence: min(1.0, max(0.0, (float) ($data['confidence'] ?? 0.7))),
             metadata: (array) ($data['metadata'] ?? []),
             lastSeenAt: $data['last_seen_at'] ?? $data['lastSeenAt'] ?? null,
@@ -64,6 +70,8 @@ class ConversationMemoryItem
             'key' => $this->key,
             'value' => $this->value,
             'summary' => $this->summary,
+            'scope_type' => $this->scopeType,
+            'scope_id' => $this->scopeId,
             'user_id' => $this->userId,
             'tenant_id' => $this->tenantId,
             'workspace_id' => $this->workspaceId,

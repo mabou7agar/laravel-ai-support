@@ -94,6 +94,29 @@ return array_replace_recursive($defaults, [
             'base_url' => env('PEXELS_BASE_URL', 'https://api.pexels.com'),
             'timeout' => env('PEXELS_TIMEOUT', 30),
         ],
+        'local_audio' => [
+            'api_key' => env('LOCAL_AUDIO_API_KEY'),
+            'base_url' => env('LOCAL_AUDIO_BASE_URL', data_get($defaults, 'engines.local_audio.base_url', 'http://127.0.0.1:8880/v1')),
+            'timeout' => env('LOCAL_AUDIO_TIMEOUT', data_get($defaults, 'engines.local_audio.timeout', 120)),
+            'stt' => [
+                'mode' => env('LOCAL_AUDIO_STT_MODE', data_get($defaults, 'engines.local_audio.stt.mode', 'openai_compatible')),
+                'path' => env('LOCAL_AUDIO_STT_PATH', data_get($defaults, 'engines.local_audio.stt.path', '/audio/transcriptions')),
+                'model' => env('LOCAL_AUDIO_STT_MODEL', data_get($defaults, 'engines.local_audio.stt.model', 'local-whisper')),
+                'language' => env('LOCAL_AUDIO_STT_LANGUAGE', data_get($defaults, 'engines.local_audio.stt.language')),
+                'prompt' => env('LOCAL_AUDIO_STT_PROMPT', data_get($defaults, 'engines.local_audio.stt.prompt')),
+                'command' => data_get($defaults, 'engines.local_audio.stt.command', []),
+                'output_path' => env('LOCAL_AUDIO_STT_OUTPUT_PATH', data_get($defaults, 'engines.local_audio.stt.output_path')),
+            ],
+            'tts' => [
+                'mode' => env('LOCAL_AUDIO_TTS_MODE', data_get($defaults, 'engines.local_audio.tts.mode', 'openai_compatible')),
+                'path' => env('LOCAL_AUDIO_TTS_PATH', data_get($defaults, 'engines.local_audio.tts.path', '/audio/speech')),
+                'model' => env('LOCAL_AUDIO_TTS_MODEL', data_get($defaults, 'engines.local_audio.tts.model', 'local-tts')),
+                'voice' => env('LOCAL_AUDIO_TTS_VOICE', data_get($defaults, 'engines.local_audio.tts.voice', 'default')),
+                'response_format' => env('LOCAL_AUDIO_TTS_FORMAT', data_get($defaults, 'engines.local_audio.tts.response_format', 'mp3')),
+                'command' => data_get($defaults, 'engines.local_audio.tts.command', []),
+                'output_path' => env('LOCAL_AUDIO_TTS_OUTPUT_PATH', data_get($defaults, 'engines.local_audio.tts.output_path')),
+            ],
+        ],
     ],
 
     /*
@@ -140,6 +163,48 @@ return array_replace_recursive($defaults, [
                 'output_file' => env('GETDESIGN_OUTPUT_FILE', data_get($defaults, 'learning.adapters.getdesign.output_file', 'DESIGN.md')),
             ],
         ],
+    ],
+    'media' => [
+        'transcription_normalization' => [
+            'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', data_get($defaults, 'media.transcription_normalization.enabled', false)),
+            'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', data_get($defaults, 'media.transcription_normalization.engine', 'openai')),
+            'model' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL', data_get($defaults, 'media.transcription_normalization.model', 'gpt-4o-mini')),
+            'max_tokens' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MAX_TOKENS', data_get($defaults, 'media.transcription_normalization.max_tokens', 500)),
+            'temperature' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_TEMPERATURE', data_get($defaults, 'media.transcription_normalization.temperature', 0.0)),
+            'system_prompt' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_SYSTEM_PROMPT', data_get($defaults, 'media.transcription_normalization.system_prompt')),
+        ],
+    ],
+    'realtime' => [
+        'default_provider' => env('AI_ENGINE_REALTIME_PROVIDER', data_get($defaults, 'realtime.default_provider', 'openai')),
+        'default_model' => env('AI_ENGINE_REALTIME_MODEL', data_get($defaults, 'realtime.default_model', 'gpt-realtime')),
+        'default_transport' => env('AI_ENGINE_REALTIME_TRANSPORT', data_get($defaults, 'realtime.default_transport', 'webrtc')),
+        'default_voice' => env('AI_ENGINE_REALTIME_VOICE', data_get($defaults, 'realtime.default_voice', 'marin')),
+        'input_audio_format' => env('AI_ENGINE_REALTIME_INPUT_AUDIO_FORMAT', data_get($defaults, 'realtime.input_audio_format', 'pcm16')),
+        'output_audio_format' => env('AI_ENGINE_REALTIME_OUTPUT_AUDIO_FORMAT', data_get($defaults, 'realtime.output_audio_format', 'pcm16')),
+        'timeout' => env('AI_ENGINE_REALTIME_TIMEOUT', data_get($defaults, 'realtime.timeout', 30)),
+        'turn_detection' => [
+            'type' => env('AI_ENGINE_REALTIME_TURN_DETECTION', data_get($defaults, 'realtime.turn_detection.type', 'server_vad')),
+        ],
+        'openai' => [
+            'client_secrets_path' => env('AI_ENGINE_OPENAI_REALTIME_CLIENT_SECRETS_PATH', data_get($defaults, 'realtime.openai.client_secrets_path', '/realtime/client_secrets')),
+            'calls_path' => env('AI_ENGINE_OPENAI_REALTIME_CALLS_PATH', data_get($defaults, 'realtime.openai.calls_path', '/realtime/calls')),
+            'websocket_url' => env('AI_ENGINE_OPENAI_REALTIME_WEBSOCKET_URL', data_get($defaults, 'realtime.openai.websocket_url', 'wss://api.openai.com/v1/realtime')),
+            'transcription_model' => env('AI_ENGINE_OPENAI_REALTIME_TRANSCRIPTION_MODEL', data_get($defaults, 'realtime.openai.transcription_model', 'gpt-realtime-whisper')),
+        ],
+        'gemini' => [
+            'websocket_url' => env('AI_ENGINE_GEMINI_LIVE_WEBSOCKET_URL', data_get($defaults, 'realtime.gemini.websocket_url', 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent')),
+            'default_model' => env('AI_ENGINE_GEMINI_LIVE_MODEL', data_get($defaults, 'realtime.gemini.default_model', 'gemini-live-2.5-flash-preview')),
+        ],
+        'livekit' => [
+            'url' => env('LIVEKIT_URL', env('LIVEKIT_WS_URL', data_get($defaults, 'realtime.livekit.url'))),
+            'api_key' => env('LIVEKIT_API_KEY', data_get($defaults, 'realtime.livekit.api_key')),
+            'api_secret' => env('LIVEKIT_API_SECRET', data_get($defaults, 'realtime.livekit.api_secret')),
+            'default_room' => env('LIVEKIT_DEFAULT_ROOM', data_get($defaults, 'realtime.livekit.default_room', 'ai-engine-voice')),
+            'default_agent_name' => env('LIVEKIT_AGENT_NAME', data_get($defaults, 'realtime.livekit.default_agent_name', 'laravel-ai-engine')),
+            'token_ttl' => env('LIVEKIT_TOKEN_TTL', data_get($defaults, 'realtime.livekit.token_ttl', 3600)),
+            'token_endpoint' => env('LIVEKIT_TOKEN_ENDPOINT', data_get($defaults, 'realtime.livekit.token_endpoint', '/api/v1/ai/realtime/sessions')),
+        ],
+        'fallback_pipeline' => data_get($defaults, 'realtime.fallback_pipeline', []),
     ],
     'testing' => [
         'root_app_path' => env('AI_ENGINE_TEST_ROOT_APP_PATH', data_get($defaults, 'testing.root_app_path')),

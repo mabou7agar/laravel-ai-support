@@ -16,6 +16,7 @@ use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPromptBuilder;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryRetriever;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryScopeResolver;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 use LaravelAIEngine\Services\RAG\RAGExecutionRouter;
 
@@ -29,9 +30,11 @@ class AgentConversationService
         protected ?LocaleResourceService $localeResources = null,
         protected ?RoutingContextResolver $routingContextResolver = null,
         protected ?ConversationMemoryRetriever $memoryRetriever = null,
-        protected ?ConversationMemoryPromptBuilder $memoryPromptBuilder = null
+        protected ?ConversationMemoryPromptBuilder $memoryPromptBuilder = null,
+        protected ?ConversationMemoryScopeResolver $memoryScopeResolver = null
     ) {
         $this->routingContextResolver ??= new RoutingContextResolver($this->selectedEntityContext);
+        $this->memoryScopeResolver ??= app(ConversationMemoryScopeResolver::class);
     }
 
     public function executeSearchRAG(
@@ -217,11 +220,14 @@ PROMPT;
         }
 
         try {
+            $scope = $this->memoryScopeResolver()->fromContext($context, $options);
             $results = $this->memoryRetriever()->retrieve(new ConversationMemoryQuery(
                 message: $message,
+                scopeType: $scope['scope_type'],
+                scopeId: $scope['scope_id'],
                 userId: $context->userId !== null ? (string) $context->userId : null,
-                tenantId: $this->scopeValue($context, $options, (string) config('ai-agent.conversation_memory.scopes.tenant_key', 'tenant_id'), 'tenant_id'),
-                workspaceId: $this->scopeValue($context, $options, (string) config('ai-agent.conversation_memory.scopes.workspace_key', 'workspace_id'), 'workspace_id'),
+                tenantId: $this->scopeValue($context, $options, 'tenant_id', 'tenant_id'),
+                workspaceId: $this->scopeValue($context, $options, 'workspace_id', 'workspace_id'),
                 sessionId: $context->sessionId,
                 limit: (int) config('ai-agent.conversation_memory.max_memories_per_turn', 6),
                 metadata: $options,
@@ -265,6 +271,11 @@ PROMPT;
     protected function memoryPromptBuilder(): ConversationMemoryPromptBuilder
     {
         return $this->memoryPromptBuilder ??= app(ConversationMemoryPromptBuilder::class);
+    }
+
+    protected function memoryScopeResolver(): ConversationMemoryScopeResolver
+    {
+        return $this->memoryScopeResolver ??= app(ConversationMemoryScopeResolver::class);
     }
 
     protected function formatRagPipelineResponse(

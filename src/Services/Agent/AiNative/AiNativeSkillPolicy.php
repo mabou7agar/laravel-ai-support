@@ -29,7 +29,7 @@ class AiNativeSkillPolicy
         $this->matcher = $matcher ?? new AiNativeSkillMatcher($skills);
         $this->lookupPolicy = $lookupPolicy ?? new AiNativeLookupPolicy($skills, $tools, $this->matcher);
         $this->confirmationIntent = $confirmationIntent ?? new AiNativeConfirmationIntent($signals);
-        $this->finalToolPolicy = $finalToolPolicy ?? new AiNativeFinalToolPolicy($skills, $this->matcher, $this->confirmationIntent);
+        $this->finalToolPolicy = $finalToolPolicy ?? new AiNativeFinalToolPolicy($skills, $this->matcher, $this->confirmationIntent, $tools);
         $this->payloadResolver = $payloadResolver ?? new AiNativeSkillPayloadResolver($skills, $this->matcher);
     }
 

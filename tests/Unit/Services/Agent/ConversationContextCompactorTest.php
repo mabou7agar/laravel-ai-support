@@ -105,8 +105,6 @@ class ConversationContextCompactorTest extends UnitTestCase
         config()->set('ai-agent.context_compaction.keep_recent_messages', 2);
         config()->set('ai-agent.conversation_memory.enabled', true);
         config()->set('ai-agent.conversation_memory.extract_on_compaction', true);
-        config()->set('ai-agent.conversation_memory.scopes.tenant_key', 'tenant_id');
-        config()->set('ai-agent.conversation_memory.scopes.workspace_key', 'workspace_id');
 
         $policy = app(ConversationMemoryPolicy::class);
         $extractor = Mockery::mock(ConversationMemoryExtractor::class);
@@ -131,9 +129,8 @@ class ConversationContextCompactorTest extends UnitTestCase
             'namespace' => 'preferences',
             'key' => 'reply_language',
             'summary' => 'User prefers Arabic replies for this project.',
-            'user_id' => '77',
-            'tenant_id' => 'tenant-a',
-            'workspace_id' => 'workspace-a',
+            'scope_type' => 'workspace',
+            'scope_id' => 'workspace-a',
             'session_id' => 'compact-memory-session',
         ]);
 
@@ -141,9 +138,8 @@ class ConversationContextCompactorTest extends UnitTestCase
             ->once()
             ->withArgs(function (array $messages, array $scope): bool {
                 return count($messages) === 2
-                    && $scope['user_id'] === '77'
-                    && $scope['tenant_id'] === 'tenant-a'
-                    && $scope['workspace_id'] === 'workspace-a'
+                    && $scope['scope_type'] === 'workspace'
+                    && $scope['scope_id'] === 'workspace-a'
                     && $scope['session_id'] === 'compact-memory-session';
             })
             ->andReturn([$item]);

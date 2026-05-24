@@ -9,25 +9,38 @@ use LaravelAIEngine\DTOs\ConversationMemoryItem;
 use LaravelAIEngine\DTOs\ConversationMemoryQuery;
 use LaravelAIEngine\DTOs\ConversationMemoryResult;
 use LaravelAIEngine\Models\AIConversationMemory;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryScopeResolver;
 
 class ConversationMemoryRepository
 {
+    public function __construct(
+        protected ?ConversationMemoryScopeResolver $scopeResolver = null
+    ) {
+        $this->scopeResolver ??= app(ConversationMemoryScopeResolver::class);
+    }
+
     public function upsert(ConversationMemoryItem $item): ConversationMemoryItem
     {
+        $keyHash = $this->keyHash($item->key);
+        $scopeHash = $this->scopeHash($item->scopeType, $item->scopeId, $item->sessionId);
+
         $memory = AIConversationMemory::query()->firstOrNew([
             'namespace' => $item->namespace,
-            'key' => $item->key,
-            'user_id' => $item->userId,
-            'tenant_id' => $item->tenantId,
-            'workspace_id' => $item->workspaceId,
-            'session_id' => $item->sessionId,
+            'key_hash' => $keyHash,
+            'scope_hash' => $scopeHash,
         ]);
 
         $memory->fill([
             'memory_id' => $item->memoryId ?? $memory->memory_id,
+            'key' => $item->key,
+            'key_hash' => $keyHash,
+            'scope_hash' => $scopeHash,
             'value' => $item->value,
             'summary' => $item->summary,
             'metadata' => $item->metadata,
+            'scope_type' => $item->scopeType,
+            'scope_id' => $item->scopeId,
+            'session_id' => $item->sessionId,
             'confidence' => $item->confidence,
             'last_seen_at' => $item->lastSeenAt ?? now(),
             'expires_at' => $item->expiresAt,
@@ -105,11 +118,13 @@ class ConversationMemoryRepository
 
     protected function scopedQuery(ConversationMemoryQuery $query): Builder
     {
+        $scope = $query->resolvedScope();
+
         return AIConversationMemory::query()
             ->when($query->namespace !== null, fn (Builder $builder): Builder => $builder->where('namespace', $query->namespace))
-            ->where(fn (Builder $builder): Builder => $builder->whereNull('user_id')->orWhere('user_id', $query->userId))
-            ->where(fn (Builder $builder): Builder => $builder->whereNull('tenant_id')->orWhere('tenant_id', $query->tenantId))
-            ->where(fn (Builder $builder): Builder => $builder->whereNull('workspace_id')->orWhere('workspace_id', $query->workspaceId))
+            ->whereIn('scope_hash', $this->candidateScopeHashes($query))
+            ->where(fn (Builder $builder): Builder => $builder->where('scope_type', 'global')->orWhere('scope_type', $scope['scope_type']))
+            ->where(fn (Builder $builder): Builder => $builder->whereNull('scope_id')->orWhere('scope_id', $scope['scope_id']))
             ->where(fn (Builder $builder): Builder => $builder->whereNull('session_id')->orWhere('session_id', $query->sessionId))
             ->where(fn (Builder $builder): Builder => $builder->whereNull('expires_at')->orWhere('expires_at', '>', now()));
     }
@@ -123,9 +138,8 @@ class ConversationMemoryRepository
             'key' => $memory->key,
             'value' => $memory->value,
             'summary' => $memory->summary,
-            'user_id' => $memory->user_id,
-            'tenant_id' => $memory->tenant_id,
-            'workspace_id' => $memory->workspace_id,
+            'scope_type' => $memory->scope_type,
+            'scope_id' => $memory->scope_id,
             'session_id' => $memory->session_id,
             'confidence' => $memory->confidence,
             'metadata' => $memory->metadata ?? [],
@@ -183,5 +197,35 @@ class ConversationMemoryRepository
         }
 
         return $term;
+    }
+
+    protected function keyHash(string $key): string
+    {
+        return hash('sha256', $key);
+    }
+
+    protected function scopeHash(string $scopeType, ?string $scopeId, ?string $sessionId): string
+    {
+        return $this->scopeResolver()->hash($scopeType, $scopeId, $sessionId);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function candidateScopeHashes(ConversationMemoryQuery $query): array
+    {
+        $scope = $query->resolvedScope();
+
+        return array_values(array_unique([
+            $this->scopeHash('global', null, null),
+            $this->scopeHash('global', null, $query->sessionId),
+            $this->scopeHash($scope['scope_type'], $scope['scope_id'], null),
+            $this->scopeHash($scope['scope_type'], $scope['scope_id'], $query->sessionId),
+        ]));
+    }
+
+    protected function scopeResolver(): ConversationMemoryScopeResolver
+    {
+        return $this->scopeResolver ??= app(ConversationMemoryScopeResolver::class);
     }
 }

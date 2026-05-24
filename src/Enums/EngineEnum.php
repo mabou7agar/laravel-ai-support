@@ -26,6 +26,7 @@ use LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver;
 use LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver;
 use LaravelAIEngine\Drivers\Unsplash\UnsplashEngineDriver;
 use LaravelAIEngine\Drivers\Pexels\PexelsEngineDriver;
+use LaravelAIEngine\Drivers\LocalAudio\LocalAudioEngineDriver;
 
 /**
  * Engine enumeration for built-in providers.
@@ -54,6 +55,7 @@ enum EngineEnum: string
     case HuggingFace = 'huggingface';
     case Replicate = 'replicate';
     case ComfyUI = 'comfyui';
+    case LocalAudio = 'local_audio';
 
     public const OPENAI = 'openai';
     public const ANTHROPIC = 'anthropic';
@@ -77,6 +79,7 @@ enum EngineEnum: string
     public const HUGGINGFACE = 'huggingface';
     public const REPLICATE = 'replicate';
     public const COMFYUI = 'comfyui';
+    public const LOCAL_AUDIO = 'local_audio';
 
     /**
      * Get the driver class for this engine
@@ -106,6 +109,7 @@ enum EngineEnum: string
             self::HuggingFace        => HuggingFaceEngineDriver::class,
             self::Replicate          => ReplicateEngineDriver::class,
             self::ComfyUI            => ComfyUIEngineDriver::class,
+            self::LocalAudio         => LocalAudioEngineDriver::class,
         };
     }
 
@@ -137,6 +141,7 @@ enum EngineEnum: string
             self::HuggingFace        => 'Hugging Face',
             self::Replicate          => 'Replicate',
             self::ComfyUI            => 'ComfyUI',
+            self::LocalAudio         => 'Local Audio',
         };
     }
 
@@ -176,6 +181,7 @@ enum EngineEnum: string
             self::HuggingFace        => ['images', 'video', 'audio', 'speech_to_text', 'text_to_speech'],
             self::Replicate          => ['images', 'video', 'audio'],
             self::ComfyUI            => ['images', 'video', 'audio'],
+            self::LocalAudio         => ['audio', 'speech', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'],
         };
     }
 
@@ -272,6 +278,10 @@ enum EngineEnum: string
                 EntityEnum::OLLAMA_LLAMA3,
                 EntityEnum::OLLAMA_MISTRAL,
                 EntityEnum::OLLAMA_CODELLAMA,
+            ],
+            self::LocalAudio => [
+                EntityEnum::LOCAL_WHISPER,
+                EntityEnum::LOCAL_TTS,
             ],
             self::NvidiaNim => [
                 EntityEnum::NVIDIA_NIM_NEMOTRON_70B,

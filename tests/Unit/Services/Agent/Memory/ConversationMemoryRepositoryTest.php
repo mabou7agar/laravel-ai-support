@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent\Memory;
 
+use Illuminate\Support\Facades\DB;
 use LaravelAIEngine\DTOs\ConversationMemoryItem;
 use LaravelAIEngine\DTOs\ConversationMemoryQuery;
 use LaravelAIEngine\Repositories\ConversationMemoryRepository;
@@ -11,7 +12,7 @@ use LaravelAIEngine\Tests\TestCase;
 
 class ConversationMemoryRepositoryTest extends TestCase
 {
-    public function test_repository_stores_and_filters_memory_by_user_workspace_and_tenant(): void
+    public function test_repository_stores_and_filters_memory_by_generic_scope(): void
     {
         $repo = app(ConversationMemoryRepository::class);
 
@@ -20,17 +21,15 @@ class ConversationMemoryRepositoryTest extends TestCase
             'key' => 'preferred_language',
             'value' => 'Arabic',
             'summary' => 'User prefers Arabic replies.',
-            'user_id' => '7',
-            'tenant_id' => 'tenant-a',
-            'workspace_id' => 'workspace-a',
+            'scope_type' => 'workspace',
+            'scope_id' => 'workspace-a',
             'confidence' => 0.95,
         ]));
 
         $query = new ConversationMemoryQuery(
             message: 'reply in my preferred language',
-            userId: '7',
-            tenantId: 'tenant-a',
-            workspaceId: 'workspace-a',
+            scopeType: 'workspace',
+            scopeId: 'workspace-a',
             limit: 5,
         );
 
@@ -42,12 +41,39 @@ class ConversationMemoryRepositoryTest extends TestCase
 
         $otherWorkspace = new ConversationMemoryQuery(
             message: 'reply in my preferred language',
-            userId: '7',
-            tenantId: 'tenant-a',
-            workspaceId: 'workspace-b',
+            scopeType: 'workspace',
+            scopeId: 'workspace-b',
             limit: 5,
         );
 
         $this->assertSame([], $repo->search($otherWorkspace));
+    }
+
+    public function test_repository_upserts_with_nullable_scopes_without_duplicate_rows(): void
+    {
+        $repo = app(ConversationMemoryRepository::class);
+
+        $repo->upsert(ConversationMemoryItem::fromArray([
+            'namespace' => 'profile',
+            'key' => 'preferred_language',
+            'value' => 'Arabic',
+            'summary' => 'User prefers Arabic replies.',
+            'scope_type' => 'user',
+            'scope_id' => 'uuid-user-1',
+        ]));
+
+        $updated = $repo->upsert(ConversationMemoryItem::fromArray([
+            'namespace' => 'profile',
+            'key' => 'preferred_language',
+            'value' => 'English',
+            'summary' => 'User prefers English replies.',
+            'scope_type' => 'user',
+            'scope_id' => 'uuid-user-1',
+        ]));
+
+        $this->assertSame('English', $updated->value);
+        $this->assertSame(1, DB::table('ai_conversation_memories')->count());
+        $this->assertSame(64, strlen((string) DB::table('ai_conversation_memories')->value('scope_hash')));
+        $this->assertSame(64, strlen((string) DB::table('ai_conversation_memories')->value('key_hash')));
     }
 }

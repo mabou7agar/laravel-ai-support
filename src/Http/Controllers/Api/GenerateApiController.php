@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Http\Controllers\Api;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\AIRequest;
@@ -644,8 +645,16 @@ class GenerateApiController extends Controller
                 );
             }
 
-            $aiRequest = $this->generateRequestFactory->transcription($validated, $realPath, $this->resolveAuthenticatedUserId());
-            $response = $this->generateDirect($aiRequest);
+            $providerPath = $this->providerAudioUploadPath($file, $realPath);
+
+            try {
+                $aiRequest = $this->generateRequestFactory->transcription($validated, $providerPath, $this->resolveAuthenticatedUserId());
+                $response = $this->generateDirect($aiRequest);
+            } finally {
+                if ($providerPath !== $realPath && is_file($providerPath)) {
+                    @unlink($providerPath);
+                }
+            }
 
             if (!$response->isSuccessful()) {
                 return $this->envelope(
@@ -690,6 +699,30 @@ class GenerateApiController extends Controller
                 status: 500
             );
         }
+    }
+
+    private function providerAudioUploadPath(UploadedFile $file, string $realPath): string
+    {
+        $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->guessExtension()));
+        if ($extension === '' || str_ends_with(strtolower($realPath), '.' . $extension)) {
+            return $realPath;
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'ai-engine-audio-');
+        if ($path === false) {
+            return $realPath;
+        }
+
+        $target = $path . '.' . $extension;
+        if (!@copy($realPath, $target)) {
+            @unlink($path);
+
+            return $realPath;
+        }
+
+        @unlink($path);
+
+        return $target;
     }
 
     /**

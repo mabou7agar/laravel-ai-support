@@ -1352,6 +1352,56 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertArrayNotHasKey('create_invoice', $toolLog);
     }
 
+    public function test_item_continuation_cannot_finish_active_skill_while_final_tool_payload_is_incomplete(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 2);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'final',
+                'message' => 'The invoice has been created.',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'create_invoice',
+                'arguments' => [
+                    'customer_id' => 501,
+                    'customer_name' => 'Ahmed',
+                    'customer_email' => 'ahmed@example.com',
+                    'items' => [
+                        ['product_id' => 10, 'product_name' => 'MacBook Pro', 'quantity' => 2, 'unit_price' => 500],
+                    ],
+                ],
+                'message' => 'Create this invoice?',
+            ],
+        ], $toolLog);
+
+        $context = new UnifiedActionContext('ai-native-active-task-incomplete-final', 77, metadata: [
+            'ai_native' => [
+                'task_frame' => [
+                    'active_objective' => 'create_invoice',
+                    'status' => 'working',
+                    'current_payload' => [
+                        'customer_id' => 501,
+                        'customer_name' => 'Ahmed',
+                        'customer_email' => 'ahmed@example.com',
+                    ],
+                    'current_payload_source' => 'tool_result',
+                ],
+            ],
+        ]);
+
+        $response = $runtime->process('Two MacBook Pro for five hundred dollars each', $context);
+
+        $this->assertTrue($response->needsUserInput);
+        $this->assertStringContainsString('Create this invoice?', $response->message);
+        $this->assertStringContainsString('Summary:', $response->message);
+        $this->assertStringContainsString('Product: MacBook Pro', $response->message);
+        $this->assertSame('final_without_required_final_tool', $context->metadata['ai_native']['runtime_feedback'][0]['reason']);
+        $this->assertArrayNotHasKey('create_invoice', $toolLog);
+    }
+
     public function test_write_confirmation_replaces_progress_statement_with_confirmation_prompt(): void
     {
         config()->set('ai-agent.ai_native.max_steps', 1);

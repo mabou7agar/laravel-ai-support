@@ -1,0 +1,30 @@
+meta {
+  name: Exchange Realtime SDP
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/realtime/sdp
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "provider": "openai",
+    "model": "gpt-realtime",
+    "mode": "voice_chat",
+    "transport": "webrtc",
+    "voice": "marin",
+    "sdp": "paste-browser-offer-sdp-here"
+  }
+}

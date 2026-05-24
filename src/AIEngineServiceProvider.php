@@ -130,6 +130,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 \LaravelAIEngine\Enums\EngineEnum::OpenRouter,
                 \LaravelAIEngine\Enums\EngineEnum::NvidiaNim,
                 \LaravelAIEngine\Enums\EngineEnum::Ollama,
+                \LaravelAIEngine\Enums\EngineEnum::LocalAudio,
             ] as $engineEnum) {
                 $registry->register($engineEnum, function () use ($engineEnum) {
                     $driverClass = $engineEnum->driverClass();

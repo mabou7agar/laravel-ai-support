@@ -33,8 +33,6 @@ class AgentConversationMemoryEndToEndTest extends TestCase
         config()->set('ai-agent.conversation_memory.extract_on_compaction', true);
         config()->set('ai-agent.conversation_memory.extractor', 'ai');
         config()->set('ai-agent.conversation_memory.semantic.enabled', false);
-        config()->set('ai-agent.conversation_memory.scopes.tenant_key', 'tenant_id');
-        config()->set('ai-agent.conversation_memory.scopes.workspace_key', 'workspace_id');
 
         $ai = Mockery::mock(AIEngineService::class);
         $ai->shouldReceive('generate')
@@ -86,17 +84,15 @@ class AgentConversationMemoryEndToEndTest extends TestCase
 
         $matchingResults = $repository->search(new ConversationMemoryQuery(
             message: 'what language should you use in this workspace?',
-            userId: '550e8400-e29b-41d4-a716-446655440000',
-            tenantId: 'tenant-a',
-            workspaceId: 'workspace-a',
+            scopeType: 'workspace',
+            scopeId: 'workspace-a',
             sessionId: 'real-memory-conversation',
         ));
 
         $otherWorkspaceResults = $repository->search(new ConversationMemoryQuery(
             message: 'what language should you use in this workspace?',
-            userId: '550e8400-e29b-41d4-a716-446655440000',
-            tenantId: 'tenant-a',
-            workspaceId: 'workspace-b',
+            scopeType: 'workspace',
+            scopeId: 'workspace-b',
             sessionId: 'real-memory-conversation',
         ));
 

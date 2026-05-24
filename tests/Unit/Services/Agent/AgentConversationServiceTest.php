@@ -107,8 +107,6 @@ class AgentConversationServiceTest extends UnitTestCase
     public function test_execute_conversational_injects_retrieved_scoped_memory(): void
     {
         config()->set('ai-agent.conversation_memory.enabled', true);
-        config()->set('ai-agent.conversation_memory.scopes.tenant_key', 'tenant_id');
-        config()->set('ai-agent.conversation_memory.scopes.workspace_key', 'workspace_id');
 
         $ai = Mockery::mock(AIEngineService::class);
         $ragRouter = Mockery::mock(RAGExecutionRouter::class);
@@ -133,6 +131,8 @@ class AgentConversationServiceTest extends UnitTestCase
             ->once()
             ->with(Mockery::on(function (ConversationMemoryQuery $query): bool {
                 return $query->message === 'which language should you use?'
+                    && $query->scopeType === 'workspace'
+                    && $query->scopeId === 'workspace-a'
                     && $query->userId === '42'
                     && $query->tenantId === 'tenant-a'
                     && $query->workspaceId === 'workspace-a'

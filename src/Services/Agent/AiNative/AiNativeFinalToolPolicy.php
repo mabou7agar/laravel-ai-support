@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Agent\AiNative;
 
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
+use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 
 class AiNativeFinalToolPolicy
 {
     public function __construct(
         private readonly AgentSkillRegistry $skills,
         private readonly AiNativeSkillMatcher $matcher,
-        private readonly AiNativeConfirmationIntent $confirmationIntent
+        private readonly AiNativeConfirmationIntent $confirmationIntent,
+        private readonly ?ToolRegistry $tools = null
     ) {}
 
     /**
@@ -30,6 +32,11 @@ class AiNativeFinalToolPolicy
 
         if ($this->confirmationIntent->isApproval($message)) {
             return true;
+        }
+
+        if ($this->matcher->selectedSkillIdForActiveTask($state, $options) !== '') {
+            return $this->matcher->messageMatchesSkill($message, $options)
+                || $this->activePayloadMissesRequiredFinalToolParams($state, $options);
         }
 
         if (!$this->matcher->messageMatchesSkill($message, $options)) {
@@ -107,5 +114,50 @@ class AiNativeFinalToolPolicy
         }
 
         return false;
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    private function activePayloadMissesRequiredFinalToolParams(array $state, array $options): bool
+    {
+        $payload = (array) data_get($state, 'task_frame.current_payload', []);
+        if ($payload === []) {
+            return false;
+        }
+
+        foreach ($this->requiredTools('', $options, $state) as $toolName) {
+            $tool = $this->tools?->get($toolName);
+            if ($tool === null) {
+                continue;
+            }
+
+            foreach ($tool->getParameters() as $name => $definition) {
+                if (!is_array($definition) || ($definition['required'] ?? false) !== true) {
+                    continue;
+                }
+
+                if (!$this->payloadHasValue($payload, (string) $name)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function payloadHasValue(array $payload, string $key): bool
+    {
+        if (!array_key_exists($key, $payload)) {
+            return false;
+        }
+
+        $value = $payload[$key];
+
+        return !($value === null || $value === '' || $value === []);
     }
 }

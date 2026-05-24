@@ -126,11 +126,20 @@ class OllamaEngineDriver extends BaseEngineDriver
             ]);
 
             $body = json_decode($response->getBody()->getContents(), true);
+            $embeddings = $body['embedding'] ?? [];
             
-            return AIResponse::success([
-                'embeddings' => $body['embedding'] ?? [],
-                'model' => $payload['model'],
-            ]);
+            return AIResponse::success(
+                json_encode($embeddings, JSON_THROW_ON_ERROR),
+                $request->getEngine(),
+                $request->getModel(),
+                [
+                    'provider' => EngineEnum::Ollama->value,
+                    'service' => 'embeddings',
+                    'model' => $payload['model'],
+                    'embeddings' => $embeddings,
+                    'dimensions' => count($embeddings),
+                ]
+            );
         } catch (RequestException $e) {
             return $this->handleException($e);
         }
@@ -244,9 +253,9 @@ class OllamaEngineDriver extends BaseEngineDriver
             $payload['options']['num_predict'] = $request->getMaxTokens();
         }
 
-        // Add system message if present
-        if ($request->getSystemMessage()) {
-            $payload['system'] = $request->getSystemMessage();
+        // Add system prompt if present
+        if ($request->getSystemPrompt()) {
+            $payload['system'] = $request->getSystemPrompt();
         }
 
         // Add conversation context if present
@@ -281,17 +290,22 @@ class OllamaEngineDriver extends BaseEngineDriver
             return AIResponse::error($body['error']);
         }
 
-        return AIResponse::success([
-            'content' => $body['response'] ?? '',
-            'model' => $body['model'] ?? $this->getModelName($request),
-            'created_at' => $body['created_at'] ?? now()->toIso8601String(),
-            'done' => $body['done'] ?? true,
-            'context' => $body['context'] ?? null,
-            'total_duration' => $body['total_duration'] ?? null,
-            'load_duration' => $body['load_duration'] ?? null,
-            'prompt_eval_count' => $body['prompt_eval_count'] ?? null,
-            'eval_count' => $body['eval_count'] ?? null,
-        ]);
+        return AIResponse::success(
+            (string) ($body['response'] ?? ''),
+            $request->getEngine(),
+            $request->getModel(),
+            [
+                'provider' => EngineEnum::Ollama->value,
+                'model' => $body['model'] ?? $this->getModelName($request),
+                'created_at' => $body['created_at'] ?? now()->toIso8601String(),
+                'done' => $body['done'] ?? true,
+                'context' => $body['context'] ?? null,
+                'total_duration' => $body['total_duration'] ?? null,
+                'load_duration' => $body['load_duration'] ?? null,
+                'prompt_eval_count' => $body['prompt_eval_count'] ?? null,
+                'eval_count' => $body['eval_count'] ?? null,
+            ]
+        );
     }
 
     /**
@@ -299,8 +313,8 @@ class OllamaEngineDriver extends BaseEngineDriver
      */
     protected function getModelName(AIRequest $request): string
     {
-        // If a custom model is specified in config, use it
-        if (isset($this->config['default_model'])) {
+        // Use provider default only when the request did not explicitly choose a model.
+        if (!$request->wasModelExplicitlyProvided() && isset($this->config['default_model'])) {
             return $this->config['default_model'];
         }
 

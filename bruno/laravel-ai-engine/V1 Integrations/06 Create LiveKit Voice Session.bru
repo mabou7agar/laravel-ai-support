@@ -1,0 +1,38 @@
+meta {
+  name: Create LiveKit Voice Session
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/realtime/sessions
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "provider": "livekit",
+    "model": "voice-pipeline",
+    "mode": "voice_chat",
+    "transport": "livekit",
+    "metadata": {
+      "room": "support-room",
+      "participant_identity": "user-123",
+      "participant_name": "User 123"
+    },
+    "fallback_pipeline": {
+      "stt": {"provider": "local_audio", "model": "local-whisper"},
+      "chat": {"provider": "ollama", "model": "gemma3:4b"},
+      "tts": {"provider": "local_audio", "model": "local-tts"}
+    }
+  }
+}

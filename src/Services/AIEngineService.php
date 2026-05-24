@@ -123,6 +123,8 @@ class AIEngineService
             ? $this->generateWithFailover($request, $requestId, $debugMode)
             : $this->generateSingleEngine($request);
 
+        $response = $this->normalizeTranscriptionResponseIfRequested($response, $request);
+
         // Calculate credits for this request (always, for accumulation)
         $creditsUsed = $this->creditManager->calculateCredits($request);
 
@@ -618,6 +620,10 @@ class AIEngineService
         }
 
         $response = $driver->{$method}($request);
+        if ($method === 'audioToText') {
+            $response = $this->normalizeTranscriptionResponseIfRequested($response, $request);
+        }
+
         $creditsUsed = $this->creditManager->calculateCredits($request);
         CreditManager::accumulate($creditsUsed);
 
@@ -643,6 +649,181 @@ class AIEngineService
         ));
 
         return $response;
+    }
+
+    private function normalizeTranscriptionResponseIfRequested(AIResponse $response, AIRequest $sourceRequest): AIResponse
+    {
+        if (!$this->isTranscriptionResponse($response, $sourceRequest)) {
+            return $response;
+        }
+
+        $parameters = $sourceRequest->getParameters();
+        $settings = (array) config('ai-engine.media.transcription_normalization', []);
+
+        if (!$this->transcriptionNormalizationEnabled($parameters, $settings)) {
+            return $response;
+        }
+
+        $engine = $this->normalizationStringOption($parameters, $settings, 'normalization_engine', 'engine', 'openai');
+        $model = $this->normalizationStringOption($parameters, $settings, 'normalization_model', 'model', 'gpt-4o-mini');
+        $systemPrompt = $this->normalizationStringOption(
+            $parameters,
+            $settings,
+            'normalization_system_prompt',
+            'system_prompt',
+            'You clean speech-to-text transcripts. Correct obvious transcription mistakes, spacing, casing, and punctuation without changing the user intent, translating, adding facts, or removing details. Return only the corrected transcript.'
+        );
+
+        try {
+            $normalized = $this->generateDirect(new AIRequest(
+                prompt: $this->buildTranscriptionNormalizationPrompt(
+                    $response->getContent(),
+                    $this->normalizationStringParameter($parameters, 'language'),
+                    $this->normalizationStringParameter($parameters, 'normalization_prompt')
+                        ?: $this->normalizationStringParameter($parameters, 'prompt')
+                ),
+                engine: $engine,
+                model: $model,
+                parameters: (array) ($parameters['normalization_parameters'] ?? []),
+                userId: $sourceRequest->getUserId(),
+                conversationId: $sourceRequest->getConversationId(),
+                context: $sourceRequest->getContext(),
+                systemPrompt: $systemPrompt,
+                maxTokens: $this->normalizationIntOption($parameters, $settings, 'normalization_max_tokens', 'max_tokens', 500),
+                temperature: $this->normalizationFloatOption($parameters, $settings, 'normalization_temperature', 'temperature', 0.0),
+                metadata: [
+                    'source' => 'transcription_normalization',
+                    'source_engine' => $sourceRequest->getEngine()->value,
+                    'source_model' => $sourceRequest->getModel()->value,
+                ]
+            ));
+        } catch (\Throwable $e) {
+            return $response->withMetadata([
+                'transcription_normalization' => [
+                    'enabled' => true,
+                    'applied' => false,
+                    'error' => $e->getMessage(),
+                ],
+            ]);
+        }
+
+        $content = trim($normalized->getContent());
+        if (!$normalized->isSuccessful() || $content === '') {
+            return $response->withMetadata([
+                'transcription_normalization' => [
+                    'enabled' => true,
+                    'applied' => false,
+                    'error' => $normalized->getError() ?: 'Normalizer returned an empty transcript.',
+                ],
+            ]);
+        }
+
+        return $response
+            ->withContent($content)
+            ->withMetadata([
+                'transcription_normalization' => [
+                    'enabled' => true,
+                    'applied' => true,
+                    'engine' => $normalized->getEngine()->value,
+                    'model' => $normalized->getModel()->value,
+                    'raw_transcript' => $response->getContent(),
+                    'usage' => $normalized->getUsage(),
+                ],
+            ]);
+    }
+
+    private function isTranscriptionResponse(AIResponse $response, AIRequest $sourceRequest): bool
+    {
+        if (!$response->isSuccessful() || trim($response->getContent()) === '') {
+            return false;
+        }
+
+        if (($response->getMetadata()['service'] ?? null) === 'speech_to_text') {
+            return true;
+        }
+
+        $model = strtolower($sourceRequest->getModel()->value);
+
+        return $sourceRequest->getFiles() !== []
+            && (str_contains($model, 'whisper') || str_contains($model, 'transcribe') || str_contains($model, 'speech-to-text'));
+    }
+
+    private function transcriptionNormalizationEnabled(array $parameters, array $settings): bool
+    {
+        foreach (['normalize', 'normalize_transcript'] as $key) {
+            if (array_key_exists($key, $parameters)) {
+                return $this->normalizationBoolValue($parameters[$key]);
+            }
+        }
+
+        $normalization = $parameters['normalization'] ?? null;
+        if (is_array($normalization) && array_key_exists('enabled', $normalization)) {
+            return $this->normalizationBoolValue($normalization['enabled']);
+        }
+
+        return $this->normalizationBoolValue($settings['enabled'] ?? false);
+    }
+
+    private function buildTranscriptionNormalizationPrompt(string $transcript, ?string $language, ?string $hints): string
+    {
+        $parts = ['Normalize this speech-to-text transcript.'];
+
+        if ($language !== null && $language !== '') {
+            $parts[] = 'Language hint: '.$language;
+        }
+
+        if ($hints !== null && $hints !== '') {
+            $parts[] = 'Vocabulary and domain hints: '.$hints;
+        }
+
+        $parts[] = "Transcript:\n".$transcript;
+        $parts[] = 'Corrected transcript:';
+
+        return implode("\n\n", $parts);
+    }
+
+    private function normalizationStringOption(array $parameters, array $settings, string $parameterKey, string $configKey, string $default): string
+    {
+        return $this->normalizationStringParameter($parameters, $parameterKey)
+            ?: (is_string($settings[$configKey] ?? null) && trim($settings[$configKey]) !== '' ? trim($settings[$configKey]) : $default);
+    }
+
+    private function normalizationStringParameter(array $parameters, string $key): ?string
+    {
+        $value = $parameters[$key] ?? null;
+
+        return is_scalar($value) && trim((string) $value) !== '' ? trim((string) $value) : null;
+    }
+
+    private function normalizationIntOption(array $parameters, array $settings, string $parameterKey, string $configKey, int $default): int
+    {
+        $value = $parameters[$parameterKey] ?? $settings[$configKey] ?? $default;
+
+        return is_numeric($value) ? (int) $value : $default;
+    }
+
+    private function normalizationFloatOption(array $parameters, array $settings, string $parameterKey, string $configKey, float $default): float
+    {
+        $value = $parameters[$parameterKey] ?? $settings[$configKey] ?? $default;
+
+        return is_numeric($value) ? (float) $value : $default;
+    }
+
+    private function normalizationBoolValue(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value === 1;
+        }
+
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
+        }
+
+        return false;
     }
 
     /**

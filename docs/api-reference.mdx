@@ -174,8 +174,12 @@ POST /api/v1/ai/provider-tools/fal/catalog/webhook
 ```http
 GET /api/v1/ai/mcp/tools
 POST /api/v1/ai/mcp/tools/{tool}/call
+POST /api/v1/ai/realtime/sessions
+POST /api/v1/ai/realtime/sdp
 POST /api/v1/ai/realtime/tools/dispatch
 ```
+
+`POST /api/v1/ai/realtime/sessions` accepts native providers such as `openai` and `gemini`, fallback providers such as `openrouter`, and `livekit` for room-based realtime voice. Use `transport=livekit` with `metadata.room` and `metadata.participant_identity` to receive a LiveKit connection descriptor and optional room token.
 
 ## Agent Runs
 

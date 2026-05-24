@@ -22,9 +22,8 @@ class ConversationMemorySemanticIndexTest extends UnitTestCase
         config()->set('ai-agent.conversation_memory.semantic.driver', 'memory');
         config()->set('ai-agent.conversation_memory.semantic.collection', 'chat_memories');
         config()->set('ai-agent.conversation_memory.semantic.payload_scope_fields', [
-            'user_id',
-            'tenant_id',
-            'workspace_id',
+            'scope_type',
+            'scope_id',
             'session_id',
             'namespace',
         ]);
@@ -50,17 +49,17 @@ class ConversationMemorySemanticIndexTest extends UnitTestCase
             'namespace' => 'preferences',
             'key' => 'reply_language',
             'summary' => 'User prefers Arabic replies.',
+            'scope_type' => 'workspace',
+            'scope_id' => 'workspace-a',
             'user_id' => '7',
-            'tenant_id' => 'tenant-a',
-            'workspace_id' => 'workspace-a',
             'session_id' => 'session-a',
         ]));
 
         $scores = $index->search(new ConversationMemoryQuery(
             message: 'which language should you use?',
+            scopeType: 'workspace',
+            scopeId: 'workspace-a',
             userId: '7',
-            tenantId: 'tenant-a',
-            workspaceId: 'workspace-a',
             sessionId: 'session-a',
             namespace: 'preferences',
             limit: 3,
@@ -70,9 +69,8 @@ class ConversationMemorySemanticIndexTest extends UnitTestCase
         $this->assertSame(['mem_reply_language' => 0.92], $scores);
         $this->assertSame('chat_memories', $driver->lastSearchCollection);
         $this->assertSame([
-            'user_id' => '7',
-            'tenant_id' => 'tenant-a',
-            'workspace_id' => 'workspace-a',
+            'scope_type' => 'workspace',
+            'scope_id' => 'workspace-a',
             'session_id' => 'session-a',
             'namespace' => 'preferences',
         ], $driver->lastSearchFilters);

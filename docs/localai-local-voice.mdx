@@ -1,0 +1,242 @@
+# LocalAI Local Voice Setup
+
+LocalAI can run local OpenAI-compatible audio endpoints for the package `local_audio` engine:
+
+```text
+POST /v1/audio/transcriptions
+POST /v1/audio/speech
+GET  /v1/models
+```
+
+Use this when you want a single local server for Whisper-style speech-to-text and Kokoro/Piper-style text-to-speech. If you only need local chat, Ollama is usually simpler. If you already run separate Whisper and Kokoro servers, you can point `local_audio` at those instead.
+
+## macOS With Colima
+
+On macOS, prefer Colima storage on a large internal or external APFS volume. LocalAI models and Docker images are large, and a nearly full system volume can corrupt or break Docker's containerd store.
+
+Create a Colima home on the external disk:
+
+```bash
+mkdir -p /Volumes/M.2/colima
+
+PATH=/opt/homebrew/bin:$PATH \
+COLIMA_HOME=/Volumes/M.2/colima \
+~/.local/bin/colima start --cpu 4 --memory 8 --disk 100 --runtime docker
+```
+
+Point Docker at that Colima instance:
+
+```bash
+docker context create colima-m2 \
+  --docker "host=unix:///Volumes/M.2/colima/default/docker.sock"
+
+docker context use colima-m2
+```
+
+Persist it in your shell profile when this is your normal Docker runtime:
+
+```bash
+export COLIMA_HOME=/Volumes/M.2/colima
+export DOCKER_HOST=unix:///Volumes/M.2/colima/default/docker.sock
+```
+
+Start LocalAI with models on the external disk:
+
+```bash
+mkdir -p /Volumes/M.2/localai/models
+
+docker run -p 8080:8080 \
+  --name local-ai \
+  -v /Volumes/M.2/localai/models:/models \
+  localai/localai:latest-aio-cpu \
+  --models-path /models
+```
+
+For Apple Silicon, start with `latest-aio-cpu`. The Mac has Apple GPU/Neural Engine hardware, but Docker AI workloads do not automatically get CUDA-style acceleration. Metal-backed setups require backend-specific support and a more advanced Colima VM mode. CPU AIO is the most reliable first test for STT/TTS.
+
+## Linux With Docker
+
+On Linux, mount models to a durable path with enough free space:
+
+```bash
+sudo mkdir -p /srv/localai/models
+sudo chown "$USER":"$USER" /srv/localai/models
+
+docker run -p 8080:8080 \
+  --name local-ai \
+  -v /srv/localai/models:/models \
+  localai/localai:latest-aio-cpu \
+  --models-path /models
+```
+
+For NVIDIA GPU hosts, use a LocalAI GPU image that matches the installed CUDA stack and run Docker with GPU access:
+
+```bash
+docker run -p 8080:8080 \
+  --gpus all \
+  --name local-ai \
+  -v /srv/localai/models:/models \
+  localai/localai:latest-gpu-nvidia-cuda-12 \
+  --models-path /models
+```
+
+Use the CPU image first when validating package behavior. Switch to GPU only after the HTTP endpoints work.
+
+## Install LocalAI Models
+
+Confirm LocalAI is up:
+
+```bash
+curl http://127.0.0.1:8080/version
+curl http://127.0.0.1:8080/v1/models
+```
+
+Open the LocalAI UI or API and install models from the gallery. Small first-test choices:
+
+```text
+STT: whisper-tiny
+TTS: tts-1
+```
+
+You can inspect available models:
+
+```bash
+curl http://127.0.0.1:8080/models/available
+```
+
+Install from the gallery by posting the full model object. This keeps the file definitions LocalAI needs to download weights:
+
+```bash
+curl -sS http://127.0.0.1:8080/models/available \
+  | jq '.[] | select(.name == "whisper-tiny")' \
+  > /tmp/localai-whisper-tiny.json
+
+curl http://127.0.0.1:8080/models/apply \
+  -H "Content-Type: application/json" \
+  --data @/tmp/localai-whisper-tiny.json
+```
+
+The AIO image usually imports `tts-1` during startup. If your `/v1/models` output does not include it, install a TTS model from the gallery such as `kokoros`:
+
+```bash
+curl -sS http://127.0.0.1:8080/models/available \
+  | jq '.[] | select(.name == "kokoros")' \
+  > /tmp/localai-kokoros.json
+
+curl http://127.0.0.1:8080/models/apply \
+  -H "Content-Type: application/json" \
+  --data @/tmp/localai-kokoros.json
+```
+
+After installing, verify the model list:
+
+```bash
+curl http://127.0.0.1:8080/v1/models
+```
+
+Some LocalAI gallery entries can create a minimal Whisper config that lists the model but fails at runtime with `failed to load Whisper transcription model`. If that happens, make the model file explicit and restart LocalAI:
+
+```bash
+docker exec local-ai sh -lc 'cat > /models/whisper-tiny.yaml <<EOF
+backend: whisper
+name: whisper-tiny
+parameters:
+  model: ggml-tiny.bin
+EOF'
+
+docker restart local-ai
+```
+
+## Test LocalAI Directly
+
+Speech-to-text:
+
+```bash
+curl http://127.0.0.1:8080/v1/audio/transcriptions \
+  -F file="@/absolute/path/to/audio.wav" \
+  -F model="whisper-tiny"
+```
+
+Text-to-speech:
+
+```bash
+curl http://127.0.0.1:8080/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "tts-1",
+    "input": "Hello from LocalAI.",
+    "voice": "alloy"
+  }' \
+  --output localai-tts.wav
+```
+
+Do not configure Laravel until these direct curl calls work.
+
+## Configure Laravel AI Engine
+
+Use the `local_audio` engine with LocalAI's OpenAI-compatible base URL:
+
+```env
+LOCAL_AUDIO_BASE_URL=http://127.0.0.1:8080/v1
+
+LOCAL_AUDIO_STT_MODE=openai_compatible
+LOCAL_AUDIO_STT_PATH=/audio/transcriptions
+LOCAL_AUDIO_STT_MODEL=whisper-small
+LOCAL_AUDIO_STT_LANGUAGE=
+LOCAL_AUDIO_STT_PROMPT=
+AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED=false
+AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE=openai
+AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL=gpt-4o-mini
+
+LOCAL_AUDIO_TTS_MODE=openai_compatible
+LOCAL_AUDIO_TTS_PATH=/audio/speech
+LOCAL_AUDIO_TTS_MODEL=tts-1
+LOCAL_AUDIO_TTS_VOICE=alloy
+LOCAL_AUDIO_TTS_FORMAT=wav
+```
+
+Then call the package:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+$transcript = Engine::engine('local_audio')
+    ->model('local-whisper')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'language' => 'ar',
+        'prompt' => 'فاتورة، عميل، أحمد، ماك بوك، آيفون',
+        'normalize' => true,
+    ]);
+
+$speech = Engine::engine('local_audio')
+    ->model('local-tts')
+    ->withParameters([
+        'response_format' => 'wav',
+        'voice' => 'alloy',
+    ])
+    ->generateAudio('Read this locally.');
+```
+
+## Troubleshooting
+
+For Arabic or mixed Arabic/English business terms, avoid `whisper-tiny` unless latency is more important than accuracy. Use a larger multilingual Whisper model such as `whisper-small` or better, pass `language=ar`, and add a short domain prompt with common names/products. LocalAI forwards the same OpenAI-compatible `language` and `prompt` multipart fields to Whisper.
+
+If the local model still splits or confuses words, enable transcript normalization. This runs a normal text model after STT to clean the transcript without changing the user intent. It is provider-neutral and can be enabled globally with `AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED=true` or per request with `normalize=true`.
+
+If Docker reports `input/output error`, `containerd metadata`, or blob read failures, fix Docker storage before debugging Laravel:
+
+```bash
+df -h
+docker context show
+docker inspect local-ai --format '{{json .State}}'
+```
+
+Common causes:
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `/v1/models` returns an empty list | No LocalAI models installed | Install `whisper-tiny` and a TTS model such as `tts-1` or `kokoros` |
+| Model appears but weight files are missing | Model was installed from a partial payload | Post the full gallery object from `/models/available` to `/models/apply` |
+| `failed to load Whisper transcription model` | Missing `parameters.model`, missing backend, incompatible backend, or broken Docker storage | Add `parameters.model` to the Whisper YAML, restart LocalAI, then check logs and model files |
+| Docker `input/output error` | Full host disk or corrupted Colima/Docker content store | Free disk, restart/recreate Colima, and keep Docker storage on a large volume |
+| Mac uses CPU even with Apple Silicon | Docker does not expose Apple GPU like CUDA by default | Use CPU AIO first; experiment with Metal/krunkit only after basic endpoints pass |

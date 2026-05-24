@@ -8,6 +8,7 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Repositories\ConversationMemoryRepository;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryExtractor;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPolicy;
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryScopeResolver;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemorySemanticIndex;
 
 class ConversationContextCompactor
@@ -17,6 +18,7 @@ class ConversationContextCompactor
         protected ?ConversationMemoryExtractor $memoryExtractor = null,
         protected ?ConversationMemoryRepository $memoryRepository = null,
         protected ?ConversationMemorySemanticIndex $memorySemanticIndex = null,
+        protected ?ConversationMemoryScopeResolver $memoryScopeResolver = null,
     ) {
     }
 
@@ -239,15 +241,14 @@ class ConversationContextCompactor
      */
     private function memoryScope(UnifiedActionContext $context): array
     {
-        $tenantKey = (string) $this->config('ai-agent.conversation_memory.scopes.tenant_key', 'tenant_id');
-        $workspaceKey = (string) $this->config('ai-agent.conversation_memory.scopes.workspace_key', 'workspace_id');
-
-        return [
+        $legacyScope = [
             'user_id' => $context->userId !== null ? (string) $context->userId : null,
-            'tenant_id' => $this->metadataString($context, $tenantKey) ?? $this->metadataString($context, 'tenant_id'),
-            'workspace_id' => $this->metadataString($context, $workspaceKey) ?? $this->metadataString($context, 'workspace_id'),
+            'tenant_id' => $this->metadataString($context, 'tenant_id'),
+            'workspace_id' => $this->metadataString($context, 'workspace_id'),
             'session_id' => $context->sessionId,
         ];
+
+        return array_merge($legacyScope, $this->memoryScopeResolver()->fromContext($context));
     }
 
     private function metadataString(UnifiedActionContext $context, string $key): ?string
@@ -279,6 +280,11 @@ class ConversationContextCompactor
     private function memorySemanticIndex(): ConversationMemorySemanticIndex
     {
         return $this->memorySemanticIndex ??= app(ConversationMemorySemanticIndex::class);
+    }
+
+    private function memoryScopeResolver(): ConversationMemoryScopeResolver
+    {
+        return $this->memoryScopeResolver ??= app(ConversationMemoryScopeResolver::class);
     }
 
     private function config(string $key, mixed $default): mixed

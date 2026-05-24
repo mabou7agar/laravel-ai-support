@@ -537,9 +537,12 @@ return [
             '_number',
             '_code',
         ],
-        'scopes' => [
-            'tenant_key' => env('AI_AGENT_MEMORY_TENANT_KEY', 'tenant_id'),
-            'workspace_key' => env('AI_AGENT_MEMORY_WORKSPACE_KEY', 'workspace_id'),
+        'scope' => [
+            'fallback_fields' => [
+                'workspace' => env('AI_AGENT_MEMORY_WORKSPACE_KEY', 'workspace_id'),
+                'tenant' => env('AI_AGENT_MEMORY_TENANT_KEY', 'tenant_id'),
+                'user' => 'user_id',
+            ],
         ],
         'semantic' => [
             'enabled' => env('AI_AGENT_MEMORY_SEMANTIC_ENABLED', false),
@@ -550,7 +553,7 @@ return [
             'index_on_write' => env('AI_AGENT_MEMORY_SEMANTIC_INDEX_ON_WRITE', false),
             'payload_scope_fields' => array_values(array_filter(array_map('trim', explode(',', (string) env(
                 'AI_AGENT_MEMORY_VECTOR_SCOPE_FIELDS',
-                'user_id,tenant_id,workspace_id,session_id,namespace'
+                'scope_type,scope_id,session_id,namespace'
             ))))),
         ],
     ],

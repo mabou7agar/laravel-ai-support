@@ -24,13 +24,16 @@ class McpAppToolAdapter
         $tools = [];
 
         foreach ($this->tools->all() as $name => $tool) {
+            $toolName = (string) $name;
             $parameters = $tool->getParameters();
             $tools[] = [
-                'name' => (string) $name,
+                'name' => $toolName,
                 'description' => $tool->getDescription(),
                 'inputSchema' => $this->inputSchema($parameters),
                 'metadata' => [
                     'source' => 'tool',
+                    'dispatch_name' => $toolName,
+                    'provider_name' => RealtimeToolName::forProvider($toolName),
                     'requires_confirmation' => $tool->requiresConfirmation(),
                 ],
             ];
@@ -38,8 +41,9 @@ class McpAppToolAdapter
 
         if ($includeSkills && $this->skills !== null) {
             foreach ($this->skills->skills(includeDisabled: false) as $skill) {
+                $dispatchName = RealtimeToolName::skillDispatchName($skill->id);
                 $tools[] = [
-                    'name' => 'skill.' . $skill->id,
+                    'name' => $dispatchName,
                     'description' => trim($skill->name . '. ' . $skill->description),
                     'inputSchema' => [
                         'type' => 'object',
@@ -51,6 +55,8 @@ class McpAppToolAdapter
                     'metadata' => [
                         'source' => 'skill',
                         'skill_id' => $skill->id,
+                        'dispatch_name' => $dispatchName,
+                        'provider_name' => RealtimeToolName::skillProviderName($skill->id),
                         'requires_confirmation' => $skill->requiresConfirmation,
                     ],
                 ];

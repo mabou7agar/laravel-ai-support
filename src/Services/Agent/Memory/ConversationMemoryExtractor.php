@@ -103,6 +103,8 @@ class ConversationMemoryExtractor
                 'key' => $key,
                 'value' => $this->limit((string) ($payload['value'] ?? ''), 500) ?: null,
                 'summary' => $summary,
+                'scope_type' => $scope['scope_type'] ?? $scope['scopeType'] ?? null,
+                'scope_id' => $scope['scope_id'] ?? $scope['scopeId'] ?? null,
                 'user_id' => $scope['user_id'] ?? $scope['userId'] ?? null,
                 'tenant_id' => $scope['tenant_id'] ?? $scope['tenantId'] ?? null,
                 'workspace_id' => $scope['workspace_id'] ?? $scope['workspaceId'] ?? null,

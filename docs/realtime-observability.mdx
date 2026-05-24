@@ -9,16 +9,175 @@ use LaravelAIEngine\DTOs\RealtimeSessionConfig;
 use LaravelAIEngine\Facades\Engine;
 
 $session = Engine::realtime()->create(
-    RealtimeSessionConfig::make('openai', 'gpt-4o-realtime-preview')
-        ->withVoice('alloy')
-        ->withAudioFormats('pcm16', 'pcm16')
+    RealtimeSessionConfig::make('openai', 'gpt-realtime')
+        ->voiceChat()
+        ->withVoice('marin')
+        ->withInputAudioTranscription(['model' => 'gpt-realtime-whisper'])
         ->withTurnDetection(['type' => 'server_vad'])
-        ->withTemperature(0.2)
         ->withMaxResponseOutputTokens(512)
 );
 ```
 
-Realtime support returns provider-specific session descriptors so host applications can attach their own WebSocket/WebRTC clients. OpenAI descriptors use snake_case fields expected by Realtime APIs. Gemini Live descriptors use Gemini-style camelCase fields such as `responseModalities`, `systemInstruction`, and `generationConfig`.
+Realtime support returns provider-specific session descriptors so host applications can attach their own WebSocket/WebRTC clients without exposing provider keys. OpenAI descriptors include the modern `session` payload, a `/realtime/client_secrets` payload for ephemeral browser credentials, and a `/realtime/calls` WebRTC SDP endpoint. Gemini Live descriptors use Gemini-style camelCase fields such as `responseModalities`, `systemInstruction`, and `generationConfig`. LiveKit descriptors are available when you want browser WebRTC rooms, SIP, and a Python or Node LiveKit Agent sidecar to handle realtime media while Laravel keeps policy, tools, memory, and audit.
+
+For WebRTC, let the browser and provider negotiate the media track and do not force PCM formats. Use `withAudioFormats()` for raw audio buffer, transcription, or WebSocket-style clients that explicitly send and receive encoded audio frames.
+
+For browser voice chat, use OpenAI WebRTC when available:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/realtime/sessions \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "openai",
+    "model": "gpt-realtime",
+    "mode": "voice_chat",
+    "transport": "webrtc",
+    "voice": "marin",
+    "modalities": ["audio"],
+    "input_audio_transcription": {"model": "gpt-realtime-whisper"},
+    "mint_client_secret": true
+  }'
+```
+
+For server-side WebRTC proxying, POST the browser offer SDP to Laravel:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/realtime/sdp \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "openai",
+    "model": "gpt-realtime",
+    "voice": "marin",
+    "sdp": "browser-offer-sdp"
+  }'
+```
+
+In a browser, the ChatGPT-like flow is: capture the microphone, create a WebRTC offer, exchange the SDP through Laravel, then play the remote audio track. Laravel keeps the provider key server-side and can still broker tool calls:
+
+For application actions, prefer a managed voice-agent tool such as `agent_chat` and force realtime turns through it with `tool_choice`. OpenAI Realtime then handles speech latency, while Laravel AgentChat remains the source of truth for memory, skills, confirmations, tools, invoices, emails, and any other application state. This avoids realtime models pretending that records were created without a Laravel tool result.
+After `agent_chat` returns, create a spoken follow-up with `tool_choice: "none"`, an empty `tools` array, and an out-of-band `response.create` input that contains only the Laravel result text. The demo appends the Laravel result to the chat immediately, then asks the realtime provider to speak that exact result. This keeps WebRTC audio responsive while avoiding the model reading function-call JSON aloud or inventing extra application state.
+
+```js
+const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+const peer = new RTCPeerConnection();
+const events = peer.createDataChannel('oai-events');
+const remoteAudio = new Audio();
+remoteAudio.autoplay = true;
+
+stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+peer.ontrack = (event) => {
+  remoteAudio.srcObject = event.streams[0];
+  remoteAudio.play();
+};
+
+events.onmessage = async (message) => {
+  const event = JSON.parse(message.data);
+
+  if (event.type === 'response.function_call_arguments.done') {
+    const result = await fetch('/api/v1/ai/realtime/tools/dispatch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+      body: JSON.stringify({
+        event: {
+          call_id: event.call_id,
+          name: event.name,
+          arguments: JSON.parse(event.arguments || '{}'),
+        },
+      }),
+    }).then((response) => response.json());
+
+    events.send(JSON.stringify({
+      type: 'conversation.item.create',
+      item: {
+        type: 'function_call_output',
+        call_id: event.call_id,
+        output: JSON.stringify(result.data?.result ?? result),
+      },
+    }));
+    events.send(JSON.stringify({type: 'response.create'}));
+  }
+};
+
+const offer = await peer.createOffer();
+await peer.setLocalDescription(offer);
+
+const response = await fetch('/api/v1/ai/realtime/sdp', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+  body: JSON.stringify({
+    provider: 'openai',
+    model: 'gpt-realtime-mini',
+    mode: 'voice_chat',
+    transport: 'webrtc',
+    voice: 'alloy',
+    modalities: ['audio'],
+    tools: [{
+      type: 'function',
+      name: 'agent_chat',
+      description: 'Send every user turn to Laravel AgentChat.',
+      parameters: {
+        type: 'object',
+        properties: {message: {type: 'string'}},
+        required: ['message'],
+      },
+    }],
+    provider_options: {
+      tool_choice: {type: 'function', name: 'agent_chat'},
+    },
+    input_audio_transcription: {model: 'gpt-realtime-whisper'},
+    turn_detection: {type: 'server_vad'},
+    sdp: peer.localDescription.sdp,
+  }),
+}).then((response) => response.json());
+
+await peer.setRemoteDescription({
+  type: 'answer',
+  sdp: response.data.session.sdp.answer,
+});
+```
+
+For live captions or STT-only flows, request a transcription session:
+
+```php
+$session = Engine::realtime()->create(
+    RealtimeSessionConfig::make('openai', 'gpt-realtime')
+        ->transcription()
+        ->withAudioFormats('pcm16')
+        ->withInputAudioTranscription([
+            'model' => 'gpt-realtime-whisper',
+            'language' => 'en',
+            'delay' => 'low',
+        ])
+);
+```
+
+Providers without a native realtime voice transport return a fallback pipeline descriptor. Host apps can use the existing transcribe endpoint, `/api/v1/agent/chat`, and TTS endpoint for a push-to-talk or near-realtime experience while keeping the same package tool and memory layer.
+
+For local realtime voice, combine LiveKit transport with local STT/TTS and Ollama chat:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/realtime/sessions \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "livekit",
+    "model": "voice-pipeline",
+    "transport": "livekit",
+    "metadata": {
+      "room": "support-room",
+      "participant_identity": "user-123"
+    },
+    "fallback_pipeline": {
+      "stt": {"provider": "local_audio", "model": "local-whisper"},
+      "chat": {"provider": "ollama", "model": "gemma3:4b"},
+      "tts": {"provider": "local_audio", "model": "local-tts"}
+    }
+  }'
+```
+
+Configure LiveKit with `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and optionally `LIVEKIT_AGENT_NAME`. If credentials are present, the descriptor includes a short-lived room token. The package does not run the LiveKit worker; run a LiveKit Agents Python or Node service that joins the returned room and uses the returned pipeline metadata.
 
 ## Durable Agent Run Streams
 
@@ -61,6 +220,7 @@ Polling remains available through `GET /api/v1/ai/agent-runs/{run}` and `GET /ap
 `LaravelAIEngine\Services\SDK\RealtimeToolBrokerService` dispatches provider realtime tool calls through the package `ToolRegistry` and returns a structured result payload for the host client to send back to the provider.
 
 Tools that require confirmation return `approval_required` instead of executing.
+Tools that are collecting missing data return `needs_user_input`, so voice clients can continue the conversation without treating normal field collection as a failed tool call.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/realtime/tools/dispatch \
@@ -77,6 +237,7 @@ curl -X POST http://localhost:8000/api/v1/ai/realtime/tools/dispatch \
 ## MCP/App Bridge
 
 `LaravelAIEngine\Services\SDK\McpAppToolAdapter` exports registered tools and enabled skills in an MCP/App-compatible schema and can call local tools through the same registry.
+Each exported item keeps its package `name`, and also includes `metadata.dispatch_name` and `metadata.provider_name`. Realtime browser clients should send `provider_name` to providers that require safe function names, then map the provider call back to `dispatch_name` before posting to `/api/v1/ai/realtime/tools/dispatch`.
 
 ```bash
 curl -H "Accept: application/json" \

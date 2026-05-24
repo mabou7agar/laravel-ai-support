@@ -172,6 +172,13 @@ return [
                     'video' => ['model' => 'comfyui/default-video', 'estimated_unit_cost' => 0.0, 'quality_score' => 2.0, 'latency_score' => 8.0, 'local' => true],
                 ],
             ],
+            'local_audio' => [
+                'enabled' => env('AI_ENGINE_MEDIA_ROUTE_LOCAL_AUDIO', false),
+                'models' => [
+                    'audio_transcription' => ['model' => 'local-whisper', 'estimated_unit_cost' => 0.0, 'quality_score' => 1.5, 'latency_score' => 1.0, 'local' => true],
+                    'audio_generation' => ['model' => 'local-tts', 'estimated_unit_cost' => 0.0, 'quality_score' => 1.5, 'latency_score' => 1.0, 'local' => true],
+                ],
+            ],
             'cloudflare_workers_ai' => [
                 'enabled' => env('AI_ENGINE_MEDIA_ROUTE_CLOUDFLARE', true),
                 'api_key_config' => ['ai-engine.engines.cloudflare_workers_ai.api_key', 'ai-engine.engines.cloudflare_workers_ai.account_id'],
@@ -935,10 +942,41 @@ return [
             'timeout' => env('OLLAMA_TIMEOUT', 120),
             'default_model' => env('OLLAMA_DEFAULT_MODEL', 'llama3.2'),
             'models' => [
+                'gemma3:4b' => ['enabled' => true, 'credit_index' => 0.0],
+                'gemma3' => ['enabled' => true, 'credit_index' => 0.0],
                 'llama3.2' => ['enabled' => true, 'credit_index' => 0.0],
                 'mistral' => ['enabled' => true, 'credit_index' => 0.0],
                 'deepseek-coder' => ['enabled' => true, 'credit_index' => 0.0],
                 'qwen' => ['enabled' => true, 'credit_index' => 0.0],
+            ],
+        ],
+
+        'local_audio' => [
+            'driver' => 'local_audio',
+            'api_key' => env('LOCAL_AUDIO_API_KEY'),
+            'base_url' => env('LOCAL_AUDIO_BASE_URL', 'http://127.0.0.1:8880/v1'),
+            'timeout' => env('LOCAL_AUDIO_TIMEOUT', 120),
+            'stt' => [
+                'mode' => env('LOCAL_AUDIO_STT_MODE', 'openai_compatible'),
+                'path' => env('LOCAL_AUDIO_STT_PATH', '/audio/transcriptions'),
+                'model' => env('LOCAL_AUDIO_STT_MODEL', 'local-whisper'),
+                'language' => env('LOCAL_AUDIO_STT_LANGUAGE'),
+                'prompt' => env('LOCAL_AUDIO_STT_PROMPT'),
+                'command' => [],
+                'output_path' => env('LOCAL_AUDIO_STT_OUTPUT_PATH'),
+            ],
+            'tts' => [
+                'mode' => env('LOCAL_AUDIO_TTS_MODE', 'openai_compatible'),
+                'path' => env('LOCAL_AUDIO_TTS_PATH', '/audio/speech'),
+                'model' => env('LOCAL_AUDIO_TTS_MODEL', 'local-tts'),
+                'voice' => env('LOCAL_AUDIO_TTS_VOICE', 'default'),
+                'response_format' => env('LOCAL_AUDIO_TTS_FORMAT', 'mp3'),
+                'command' => [],
+                'output_path' => env('LOCAL_AUDIO_TTS_OUTPUT_PATH'),
+            ],
+            'models' => [
+                'local-whisper' => ['enabled' => true, 'credit_index' => 0.01, 'content_type' => 'audio'],
+                'local-tts' => ['enabled' => true, 'credit_index' => 0.01, 'content_type' => 'audio'],
             ],
         ],
 
@@ -1347,6 +1385,79 @@ return [
             'response_complete' => 'ai.response.complete',
             'action_triggered' => 'ai.action.triggered',
             'error' => 'ai.error',
+        ],
+    ],
+
+    'media' => [
+        'transcription_normalization' => [
+            'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', false),
+            'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', 'openai'),
+            'model' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL', 'gpt-4o-mini'),
+            'max_tokens' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MAX_TOKENS', 500),
+            'temperature' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_TEMPERATURE', 0.0),
+            'system_prompt' => env(
+                'AI_ENGINE_TRANSCRIPTION_NORMALIZATION_SYSTEM_PROMPT',
+                'You clean speech-to-text transcripts. Correct obvious transcription mistakes, spacing, casing, and punctuation without changing the user intent, translating, adding facts, or removing details. Return only the corrected transcript.'
+            ),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Realtime Voice Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Native realtime providers use provider transports such as WebRTC or
+    | WebSocket. Other engines can still participate through the generic
+    | STT -> chat/agent -> TTS fallback pipeline.
+    |
+    */
+    'realtime' => [
+        'default_provider' => env('AI_ENGINE_REALTIME_PROVIDER', 'openai'),
+        'default_model' => env('AI_ENGINE_REALTIME_MODEL', 'gpt-realtime'),
+        'default_transport' => env('AI_ENGINE_REALTIME_TRANSPORT', 'webrtc'),
+        'default_voice' => env('AI_ENGINE_REALTIME_VOICE', 'marin'),
+        'input_audio_format' => env('AI_ENGINE_REALTIME_INPUT_AUDIO_FORMAT', 'pcm16'),
+        'output_audio_format' => env('AI_ENGINE_REALTIME_OUTPUT_AUDIO_FORMAT', 'pcm16'),
+        'timeout' => env('AI_ENGINE_REALTIME_TIMEOUT', 30),
+        'turn_detection' => [
+            'type' => env('AI_ENGINE_REALTIME_TURN_DETECTION', 'server_vad'),
+        ],
+        'openai' => [
+            'client_secrets_path' => env('AI_ENGINE_OPENAI_REALTIME_CLIENT_SECRETS_PATH', '/realtime/client_secrets'),
+            'calls_path' => env('AI_ENGINE_OPENAI_REALTIME_CALLS_PATH', '/realtime/calls'),
+            'websocket_url' => env('AI_ENGINE_OPENAI_REALTIME_WEBSOCKET_URL', 'wss://api.openai.com/v1/realtime'),
+            'transcription_model' => env('AI_ENGINE_OPENAI_REALTIME_TRANSCRIPTION_MODEL', 'gpt-realtime-whisper'),
+        ],
+        'gemini' => [
+            'websocket_url' => env('AI_ENGINE_GEMINI_LIVE_WEBSOCKET_URL', 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'),
+            'default_model' => env('AI_ENGINE_GEMINI_LIVE_MODEL', 'gemini-live-2.5-flash-preview'),
+        ],
+        'livekit' => [
+            'url' => env('LIVEKIT_URL', env('LIVEKIT_WS_URL')),
+            'api_key' => env('LIVEKIT_API_KEY'),
+            'api_secret' => env('LIVEKIT_API_SECRET'),
+            'default_room' => env('LIVEKIT_DEFAULT_ROOM', 'ai-engine-voice'),
+            'default_agent_name' => env('LIVEKIT_AGENT_NAME', 'laravel-ai-engine'),
+            'token_ttl' => (int) env('LIVEKIT_TOKEN_TTL', 3600),
+            'token_endpoint' => env('LIVEKIT_TOKEN_ENDPOINT', '/api/v1/ai/realtime/sessions'),
+        ],
+        'fallback_pipeline' => [
+            'stt' => [
+                'endpoint' => '/api/v1/ai/generate/transcribe',
+                'provider' => env('AI_ENGINE_REALTIME_FALLBACK_STT_PROVIDER', 'openai'),
+                'model' => env('AI_ENGINE_REALTIME_FALLBACK_STT_MODEL', 'gpt-4o-transcribe'),
+            ],
+            'chat' => [
+                'endpoint' => '/api/v1/agent/chat',
+                'provider' => env('AI_ENGINE_REALTIME_FALLBACK_CHAT_PROVIDER', env('AI_ENGINE_DEFAULT', 'openai')),
+                'model' => env('AI_ENGINE_REALTIME_FALLBACK_CHAT_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o-mini')),
+            ],
+            'tts' => [
+                'endpoint' => '/api/v1/ai/generate/tts',
+                'provider' => env('AI_ENGINE_REALTIME_FALLBACK_TTS_PROVIDER', 'openai'),
+                'model' => env('AI_ENGINE_REALTIME_FALLBACK_TTS_MODEL', 'gpt-4o-mini-tts'),
+            ],
         ],
     ],
 

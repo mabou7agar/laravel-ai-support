@@ -1,0 +1,37 @@
+meta {
+  name: Create Realtime Voice Session
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/ai/realtime/sessions
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearerToken}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:json {
+  {
+    "provider": "openai",
+    "model": "gpt-realtime",
+    "mode": "voice_chat",
+    "transport": "webrtc",
+    "voice": "marin",
+    "modalities": ["audio"],
+    "input_audio_format": "pcm16",
+    "output_audio_format": "pcm16",
+    "input_audio_transcription": {
+      "model": "gpt-realtime-whisper"
+    },
+    "instructions": "Speak in the user's language and use tools only when needed.",
+    "mint_client_secret": false
+  }
+}

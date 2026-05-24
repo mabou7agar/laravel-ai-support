@@ -104,6 +104,8 @@ class ConversationMemorySemanticIndex
         $values = [
             'memory_id' => $item->memoryId,
             'namespace' => $item->namespace,
+            'scope_type' => $item->scopeType,
+            'scope_id' => $item->scopeId,
             'user_id' => $item->userId,
             'tenant_id' => $item->tenantId,
             'workspace_id' => $item->workspaceId,
@@ -127,6 +129,8 @@ class ConversationMemorySemanticIndex
     {
         $values = [
             'namespace' => $query->namespace,
+            'scope_type' => $query->resolvedScope()['scope_type'],
+            'scope_id' => $query->resolvedScope()['scope_id'],
             'user_id' => $query->userId,
             'tenant_id' => $query->tenantId,
             'workspace_id' => $query->workspaceId,

@@ -12,14 +12,14 @@ Use this page as the compatibility index. The implementation guides now live in 
 | Provider options and response state | `AIRequest::withProviderOptions()` | [Provider tools](provider-tools.mdx) |
 | Structured output | `Engine::withStructuredOutput()` | [API reference](api-reference.mdx) |
 | Documents and vector stores | `Engine::fileStores()`, `Engine::vectorStores()` | [Vector stores](vector-stores.mdx) |
-| Realtime sessions | `Engine::realtime()` | [Realtime and observability](realtime-observability.mdx) |
+| Realtime voice and transcription | `Engine::realtime()`, `/api/v1/ai/realtime/sessions` | OpenAI WebRTC, Gemini Live, LiveKit room descriptors, and fallback STT/chat/TTS pipelines. See [Realtime and observability](realtime-observability.mdx) |
 | Traces and evaluations | `Engine::traces()`, `Engine::evaluations()` | [Realtime and observability](realtime-observability.mdx) |
 | Chat actions and skills | `/api/v1/agent/chat`, `ChatService` | [Quickstart chat actions](quickstart-chat-actions.mdx) |
 | Structured collection | `StructuredCollectionDefinition` | [Structured collection](structured-collection.mdx) |
 | Safe chat previews | `withPreview('html'|'component'|'schema')` | [Frontend previews](frontend-preview.mdx) |
 | Learn from examples and generate designs | `Engine::learn()`, `ai:design` | [Learn layer](learning.mdx) |
 | Hosted artifacts | provider tool artifacts, `ai_media` links | [Provider lifecycle](provider-tool-lifecycle.mdx) |
-| Media providers | `generateImage`, `generateAudio`, `speechToText`, FAL catalog | [Media providers](media-providers.mdx) |
+| Media providers | `generateImage`, `generateAudio`, `speechToText`, FAL catalog | Hosted providers plus `local_audio` OpenAI-compatible/command STT and TTS. See [Media providers](media-providers.mdx) and [LocalAI local voice setup](localai-local-voice.mdx) |
 | Provider credentials | provider env keys and practical defaults | [Provider credentials](provider-credentials.mdx) |
 | Security and scope | approvals, callbacks, tenant/workspace filters | [Security](security.mdx) |
 

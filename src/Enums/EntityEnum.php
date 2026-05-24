@@ -22,6 +22,7 @@ use LaravelAIEngine\Drivers\FalAI\FluxProDriver;
 use LaravelAIEngine\Drivers\DeepSeek\DeepSeekEngineDriver;
 use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
+use LaravelAIEngine\Drivers\LocalAudio\LocalAudioEngineDriver;
 use LaravelAIEngine\Services\Models\DynamicModelResolver;
 
 class EntityEnum
@@ -261,6 +262,8 @@ class EntityEnum
     public const REPLICATE_WAN_IMAGE_TO_VIDEO = 'wavespeedai/wan-2.1-i2v-480p';
     public const COMFYUI_DEFAULT_IMAGE = 'comfyui/default-image';
     public const COMFYUI_DEFAULT_VIDEO = 'comfyui/default-video';
+    public const LOCAL_WHISPER = 'local-whisper';
+    public const LOCAL_TTS = 'local-tts';
 
     public string $value;
 
@@ -500,6 +503,9 @@ class EntityEnum
             case self::COMFYUI_DEFAULT_IMAGE:
             case self::COMFYUI_DEFAULT_VIDEO:
                 return EngineEnum::ComfyUI;
+            case self::LOCAL_WHISPER:
+            case self::LOCAL_TTS:
+                return EngineEnum::LocalAudio;
             default:
                 // Try to detect engine from model name pattern
                 return $this->detectEngineFromModelName();
@@ -684,6 +690,9 @@ class EntityEnum
             case self::COMFYUI_DEFAULT_IMAGE:
             case self::COMFYUI_DEFAULT_VIDEO:
                 return \LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver::class;
+            case self::LOCAL_WHISPER:
+            case self::LOCAL_TTS:
+                return LocalAudioEngineDriver::class;
             default:
                 // For unknown models, use engine-based driver detection
                 return $this->detectDriverFromEngine();
@@ -706,6 +715,7 @@ class EntityEnum
             EngineEnum::DeepSeek     => DeepSeekEngineDriver::class,
             EngineEnum::Ollama       => OllamaEngineDriver::class,
             EngineEnum::NvidiaNim    => \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class,
+            EngineEnum::LocalAudio   => LocalAudioEngineDriver::class,
             default                  => GPT4ODriver::class,
         };
     }
@@ -937,6 +947,10 @@ class EntityEnum
                 return 'ComfyUI Default Image';
             case self::COMFYUI_DEFAULT_VIDEO:
                 return 'ComfyUI Default Video';
+            case self::LOCAL_WHISPER:
+                return 'Local Whisper';
+            case self::LOCAL_TTS:
+                return 'Local TTS';
             default:
                 // Return model name as label for unknown models
                 return ucwords(str_replace(['-', '_', '/'], ' ', $this->value));
@@ -1348,6 +1362,8 @@ class EntityEnum
             case self::GEMINI_2_5_PRO_TTS:
             case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
             case self::GEMINI_LYRIA_002:
+            case self::LOCAL_WHISPER:
+            case self::LOCAL_TTS:
                 return 'audio';
             case self::UNSPLASH_SEARCH:
             case self::PEXELS_SEARCH:
@@ -1791,6 +1807,8 @@ class EntityEnum
             self::REPLICATE_WAN_IMAGE_TO_VIDEO,
             self::COMFYUI_DEFAULT_IMAGE,
             self::COMFYUI_DEFAULT_VIDEO,
+            self::LOCAL_WHISPER,
+            self::LOCAL_TTS,
         ];
     }
 

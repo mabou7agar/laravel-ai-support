@@ -13,6 +13,7 @@ use LaravelAIEngine\Http\Controllers\Api\AgentRunController;
 use LaravelAIEngine\Http\Controllers\Api\VectorStoreApiController;
 use LaravelAIEngine\Http\Controllers\Api\ProviderToolController;
 use LaravelAIEngine\Http\Controllers\Api\PricingController;
+use LaravelAIEngine\Http\Controllers\Api\RealtimeController;
 use LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware;
 use LaravelAIEngine\Http\Middleware\StandardizeApiResponseMiddleware;
 
@@ -212,6 +213,10 @@ Route::prefix('api/v1/ai/realtime')
     ->middleware($resolveApiMiddleware('generate'))
     ->name('ai-engine.realtime.api.')
     ->group(function () {
+        Route::post('/sessions', [RealtimeController::class, 'session'])
+            ->name('sessions.create');
+        Route::post('/sdp', [RealtimeController::class, 'sdp'])
+            ->name('sdp.exchange');
         Route::post('/tools/dispatch', [AgentIntegrationController::class, 'dispatchRealtimeTool'])
             ->name('tools.dispatch');
     });
