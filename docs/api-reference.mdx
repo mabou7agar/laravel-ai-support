@@ -48,6 +48,20 @@ Response:
 }
 ```
 
+Sync chat responses also include full route metadata under `data.metadata`:
+
+| Field | Meaning |
+| --- | --- |
+| `metadata.agent_runtime` | Runtime that handled the turn, such as `laravel`. |
+| `metadata.routing_decision` | Selected routing decision passed to the dispatcher. |
+| `metadata.routing_trace` | Ordered decisions and abstentions from the routing pipeline. |
+| `metadata.route_explanation` | Compact route summary with `decision_path`, source, reason, and skipped stages. |
+| `metadata.rag_enabled` | Whether the response used RAG. Also exposed as `data.rag_enabled`. |
+| `metadata.context_count` | Number of retrieved context items. Also exposed as `data.context_count`. |
+| `metadata.sources` | Normalized RAG sources. Also exposed as `data.sources`. |
+
+Use the trace fields for debugging and observability. Use top-level `data.response`, `data.rag_enabled`, `data.sources`, `data.response_points`, `data.suggestions`, `data.collection`, and `data.actions` for normal UI rendering. See [ChatFlow Trace](chat-flow.mdx) for the full flow.
+
 Async durable response:
 
 ```json

@@ -139,6 +139,7 @@ class SendMessageRequest extends FormRequest
             $executionMode ??= strtolower($async);
             $async = strtolower($async) === 'async';
         }
+        $userId = $validated['user_id'] ?? auth()->user()?->getAuthIdentifier();
         
         return new SendMessageDTO(
             message: $validated['message'],
@@ -149,7 +150,7 @@ class SendMessageRequest extends FormRequest
             actions: $validated['actions'] ?? true,
             streaming: $validated['streaming'] ?? false,
             async: (bool) filter_var($async, FILTER_VALIDATE_BOOLEAN),
-            userId: $validated['user_id'] ?? auth()->user()?->getAuthIdentifier(),
+            userId: $userId !== null ? (string) $userId : null,
             intelligentRag: $validated['rag'] ?? false,
             forceRag: $validated['force_rag'] ?? false,
             ragCollections: $validated['rag_collections'] ?? null,

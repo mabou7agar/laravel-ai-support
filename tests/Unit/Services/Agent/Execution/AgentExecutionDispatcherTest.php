@@ -13,10 +13,12 @@ use LaravelAIEngine\DTOs\RoutingDecisionSource;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Events\AgentRunStreamed;
 use LaravelAIEngine\Contracts\RoutingStageContract;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
+use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
+use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
+use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
 use LaravelAIEngine\Tests\UnitTestCase;
@@ -28,14 +30,14 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         $context = $this->context();
         $expected = AgentResponse::conversational('Hello.', $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $conversation = Mockery::mock(AgentConversationService::class);
 
-        $execution->shouldReceive('executeConversational')
+        $conversation->shouldReceive('executeConversational')
             ->once()
             ->with('hello', $context, Mockery::on(fn (array $options): bool => $this->hasDecisionMetadata($options, RoutingDecisionAction::CONVERSATIONAL)))
             ->andReturn($expected);
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(conversationService: $conversation)->dispatch(
             $this->decision(RoutingDecisionAction::CONVERSATIONAL),
             'hello',
             $context
@@ -48,10 +50,10 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         $context = $this->context();
         $expected = AgentResponse::success('Found.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $conversation = Mockery::mock(AgentConversationService::class);
         $reroute = static fn (): AgentResponse => AgentResponse::failure('rerouted', context: $context);
 
-        $execution->shouldReceive('executeSearchRag')
+        $conversation->shouldReceive('executeSearchRAG')
             ->once()
             ->with(
                 'search docs',
@@ -61,7 +63,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
             )
             ->andReturn($expected);
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(conversationService: $conversation)->dispatch(
             $this->decision(RoutingDecisionAction::SEARCH_RAG),
             'search docs',
             $context,
@@ -75,10 +77,10 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         config()->set('ai-agent.execution_policy.rag_collection_deny', ['private_docs']);
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldNotReceive('executeSearchRag');
+        $conversation = Mockery::mock(AgentConversationService::class);
+        $conversation->shouldNotReceive('executeSearchRAG');
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(conversationService: $conversation)->dispatch(
             $this->decision(RoutingDecisionAction::SEARCH_RAG),
             'search docs',
             $this->context(),
@@ -93,9 +95,10 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         $context = $this->context();
         $expected = AgentResponse::success('Tool used.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $action = Mockery::mock(AgentActionExecutionService::class);
+        $conversation = Mockery::mock(AgentConversationService::class);
 
-        $execution->shouldReceive('executeSearchRag')
+        $conversation->shouldReceive('executeSearchRAG')
             ->once()
             ->with(
                 'lookup after tool',
@@ -105,7 +108,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
             )
             ->andReturn($expected);
 
-        $execution->shouldReceive('executeUseTool')
+        $action->shouldReceive('executeUseTool')
             ->once()
             ->withArgs(function (string $toolName, string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context, $expected): bool {
                 $this->assertSame('data_query', $toolName);
@@ -119,7 +122,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
             })
             ->andReturn($expected);
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(actionExecutionService: $action, conversationService: $conversation)->dispatch(
             $this->decision(RoutingDecisionAction::USE_TOOL, [
                 'resource_name' => 'data_query',
                 'params' => ['status' => 'open'],
@@ -142,10 +145,10 @@ class AgentExecutionDispatcherTest extends UnitTestCase
             ]),
             $context
         );
-        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $action = Mockery::mock(AgentActionExecutionService::class);
         $audit = Mockery::mock(ProviderToolAuditService::class);
 
-        $execution->shouldReceive('executeUseTool')
+        $action->shouldReceive('executeUseTool')
             ->once()
             ->andReturn($expected);
 
@@ -162,7 +165,9 @@ class AgentExecutionDispatcherTest extends UnitTestCase
                 && ($payload['needs_user_input'] ?? null) === true);
 
         $response = (new AgentExecutionDispatcher(
-            $execution,
+            $action,
+            Mockery::mock(AgentConversationService::class),
+            Mockery::mock(NodeSessionManager::class),
             Mockery::mock(GoalAgentService::class),
             $audit
         ))->dispatch(
@@ -190,10 +195,10 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         config()->set('ai-agent.execution_policy.tool_deny', ['dangerous_tool']);
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldNotReceive('executeUseTool');
+        $action = Mockery::mock(AgentActionExecutionService::class);
+        $action->shouldNotReceive('executeUseTool');
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(actionExecutionService: $action)->dispatch(
             $this->decision(RoutingDecisionAction::USE_TOOL, ['tool_name' => 'dangerous_tool']),
             'run dangerous tool',
             $this->context()
@@ -257,14 +262,14 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         $context = $this->context();
         $expected = AgentResponse::success('Node continued.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $node = Mockery::mock(NodeSessionManager::class);
 
-        $execution->shouldReceive('continueRoutedSession')
+        $node->shouldReceive('continueSession')
             ->once()
             ->with('next', $context, Mockery::on(fn (array $options): bool => $this->hasDecisionMetadata($options, RoutingDecisionAction::CONTINUE_NODE)))
             ->andReturn($expected);
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(nodeSessionManager: $node)->dispatch(
             $this->decision(RoutingDecisionAction::CONTINUE_NODE),
             'next',
             $context
@@ -276,13 +281,13 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     public function test_continue_node_decision_fails_when_no_session_exists(): void
     {
         $context = $this->context();
-        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $node = Mockery::mock(NodeSessionManager::class);
 
-        $execution->shouldReceive('continueRoutedSession')
+        $node->shouldReceive('continueSession')
             ->once()
             ->andReturnNull();
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(nodeSessionManager: $node)->dispatch(
             $this->decision(RoutingDecisionAction::CONTINUE_NODE),
             'next',
             $context
@@ -296,14 +301,14 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         $context = $this->context();
         $expected = AgentResponse::success('Node routed.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $node = Mockery::mock(NodeSessionManager::class);
 
-        $execution->shouldReceive('routeToNode')
+        $node->shouldReceive('routeToNode')
             ->once()
             ->with('invoice', 'show invoice 5', $context, Mockery::on(fn (array $options): bool => $this->hasDecisionMetadata($options, RoutingDecisionAction::ROUTE_TO_NODE)))
             ->andReturn($expected);
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(nodeSessionManager: $node)->dispatch(
             $this->decision(RoutingDecisionAction::ROUTE_TO_NODE, [
                 'node_slug' => 'invoice',
             ]),
@@ -318,10 +323,10 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         config()->set('ai-agent.execution_policy.node_deny', ['invoice']);
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldNotReceive('routeToNode');
+        $node = Mockery::mock(NodeSessionManager::class);
+        $node->shouldNotReceive('routeToNode');
 
-        $response = $this->dispatcher($execution)->dispatch(
+        $response = $this->dispatcher(nodeSessionManager: $node)->dispatch(
             $this->decision(RoutingDecisionAction::ROUTE_TO_NODE, ['node_slug' => 'invoice']),
             'show invoice 5',
             $this->context()
@@ -382,7 +387,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
     {
         $context = $this->context();
         $expected = AgentResponse::success('Pipeline search executed.', context: $context);
-        $execution = Mockery::mock(AgentExecutionFacade::class);
+        $conversation = Mockery::mock(AgentConversationService::class);
         $pipeline = new RoutingPipeline([
             new class implements RoutingStageContract {
                 public function name(): string
@@ -402,7 +407,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
             },
         ]);
 
-        $execution->shouldReceive('executeSearchRag')
+        $conversation->shouldReceive('executeSearchRAG')
             ->once()
             ->with(
                 'find invoice context',
@@ -415,17 +420,21 @@ class AgentExecutionDispatcherTest extends UnitTestCase
             ->andReturn($expected);
 
         $trace = $pipeline->decide('find invoice context', $context);
-        $response = $this->dispatcher($execution)->dispatch($trace->selected, 'find invoice context', $context);
+        $response = $this->dispatcher(conversationService: $conversation)->dispatch($trace->selected, 'find invoice context', $context);
 
         $this->assertSame($expected, $response);
     }
 
     private function dispatcher(
-        ?AgentExecutionFacade $execution = null,
+        ?AgentActionExecutionService $actionExecutionService = null,
+        ?AgentConversationService $conversationService = null,
+        ?NodeSessionManager $nodeSessionManager = null,
         ?GoalAgentService $goalAgent = null
     ): AgentExecutionDispatcher {
         return new AgentExecutionDispatcher(
-            $execution ?? Mockery::mock(AgentExecutionFacade::class),
+            $actionExecutionService ?? Mockery::mock(AgentActionExecutionService::class),
+            $conversationService ?? Mockery::mock(AgentConversationService::class),
+            $nodeSessionManager ?? Mockery::mock(NodeSessionManager::class),
             $goalAgent ?? Mockery::mock(GoalAgentService::class)
         );
     }

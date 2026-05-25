@@ -4,6 +4,8 @@ Orchestration v2 makes agent execution explicit: a runtime receives the message,
 
 Laravel remains the default runtime. LangGraph is optional and should be enabled only for workflows that need checkpointing, graph debugging, human interrupts, or long-running multi-agent branches.
 
+For the concrete `POST /api/v1/agent/chat` request-to-response path, including DTO conversion, sync/async selection, routing trace metadata, dispatcher execution, and response shaping, see [ChatFlow Trace](chat-flow.mdx).
+
 ## AI-Native Default
 
 New chat and skill flows should use the AI-native runtime. The model decides intent, planning, tool use, RAG use, follow-up questions, and continuation from the registered skills, tools, conversation, memory, and retrieved context.

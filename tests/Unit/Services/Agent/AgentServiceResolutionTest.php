@@ -6,7 +6,6 @@ use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
@@ -84,11 +83,6 @@ class AgentServiceResolutionTest extends UnitTestCase
     public function test_agent_conversation_service_resolves_from_container(): void
     {
         $this->assertInstanceOf(AgentConversationService::class, $this->app->make(AgentConversationService::class));
-    }
-
-    public function test_agent_execution_facade_resolves_from_container(): void
-    {
-        $this->assertInstanceOf(AgentExecutionFacade::class, $this->app->make(AgentExecutionFacade::class));
     }
 
     public function test_agent_execution_dispatcher_resolves_from_container(): void

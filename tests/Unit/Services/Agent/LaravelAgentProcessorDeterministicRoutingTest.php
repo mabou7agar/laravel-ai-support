@@ -3,8 +3,9 @@
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\RoutingDecision;
+use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
@@ -12,6 +13,8 @@ use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ContextManager;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\MessageRoutingClassifier;
+use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
+use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -43,12 +46,13 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
         $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
         $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldReceive('executeSearchRag')
+        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
             ->once()
-            ->withArgs(function (string $message, UnifiedActionContext $ctx, array $options, $reroute) use ($context) {
+            ->withArgs(function (RoutingDecision $decision, string $message, UnifiedActionContext $ctx, array $options, $reroute) use ($context) {
                 return $message === 'What changed on Friday for Apollo?'
                     && $ctx === $context
+                    && $decision->action === RoutingDecisionAction::SEARCH_RAG
                     && ($options['preclassified_route_mode'] ?? null) === 'semantic_retrieval'
                     && is_callable($reroute);
             })
@@ -69,8 +73,11 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
             new AgentPlanner(),
             $finalizer,
             $selection,
-            $execution,
-            new MessageRoutingClassifier()
+            Mockery::mock(NodeSessionManager::class),
+            new MessageRoutingClassifier(),
+            null,
+            null,
+            $dispatcher
         );
 
         $response = $processor->process('What changed on Friday for Apollo?', 'session-semantic', 5, [
@@ -100,10 +107,14 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
         $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
         $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldReceive('executeConversational')
+        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
             ->once()
-            ->with('hello', $context, Mockery::type('array'))
+            ->withArgs(function (RoutingDecision $decision, string $message, UnifiedActionContext $ctx): bool {
+                return $message === 'hello'
+                    && $ctx->sessionId === 'session-chat'
+                    && $decision->action === RoutingDecisionAction::CONVERSATIONAL;
+            })
             ->andReturn(AgentResponse::conversational(
                 message: 'Hello there.',
                 context: $context
@@ -121,8 +132,11 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
             new AgentPlanner(),
             $finalizer,
             $selection,
-            $execution,
-            new MessageRoutingClassifier()
+            Mockery::mock(NodeSessionManager::class),
+            new MessageRoutingClassifier(),
+            null,
+            null,
+            $dispatcher
         );
 
         $response = $processor->process('hello', 'session-chat', 7);
@@ -161,14 +175,15 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
         $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
         $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldReceive('executeUseTool')
+        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
             ->once()
-            ->withArgs(function (string $toolName, string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context) {
+            ->withArgs(function (RoutingDecision $decision, string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context) {
                 return $message === 'list all open tasks'
                     && $ctx === $context
-                    && $toolName === 'data_query'
-                    && ($options['tool_params']['query'] ?? null) === 'list all open tasks'
+                    && $decision->action === RoutingDecisionAction::USE_TOOL
+                    && ($decision->payload['resource_name'] ?? null) === 'data_query'
+                    && ($decision->payload['params']['query'] ?? null) === 'list all open tasks'
                     && ($options['decision_path'] ?? null) === 'router_ai_use_tool'
                     && is_callable($searchRag);
             })
@@ -189,8 +204,11 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
             new AgentPlanner(),
             $finalizer,
             $selection,
-            $execution,
-            new MessageRoutingClassifier()
+            Mockery::mock(NodeSessionManager::class),
+            new MessageRoutingClassifier(),
+            null,
+            null,
+            $dispatcher
         );
 
         $response = $processor->process('list all open tasks', 'session-structured', 8, [
@@ -233,15 +251,15 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
         $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
         $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldNotReceive('executeSearchRag');
-        $execution->shouldReceive('executeUseTool')
+        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
             ->once()
-            ->withArgs(function (string $toolName, string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context): bool {
-                return $toolName === 'run_skill'
-                    && $message === 'Create an invoice for Ahmed.'
+            ->withArgs(function (RoutingDecision $decision, string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context): bool {
+                return $message === 'Create an invoice for Ahmed.'
                     && $ctx === $context
-                    && ($options['tool_params']['skill_id'] ?? null) === 'create_invoice'
+                    && $decision->action === RoutingDecisionAction::USE_TOOL
+                    && ($decision->payload['resource_name'] ?? null) === 'run_skill'
+                    && ($decision->payload['params']['skill_id'] ?? null) === 'create_invoice'
                     && ($options['decision_path'] ?? null) === 'router_ai_use_tool'
                     && is_callable($searchRag);
             })
@@ -263,11 +281,11 @@ class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
             new AgentPlanner(),
             $finalizer,
             $selection,
-            $execution,
+            Mockery::mock(NodeSessionManager::class),
             new MessageRoutingClassifier(),
             null,
             null,
-            null,
+            $dispatcher,
             new ThrowingRoutingPipeline()
         );
 

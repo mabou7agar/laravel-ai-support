@@ -9,17 +9,21 @@ use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\RoutingDecision;
 use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
+use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
+use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
+use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
 
 class AgentExecutionDispatcher
 {
     public function __construct(
-        protected AgentExecutionFacade $execution,
+        protected AgentActionExecutionService $actionExecutionService,
+        protected AgentConversationService $conversationService,
+        protected NodeSessionManager $nodeSessionManager,
         protected GoalAgentService $goalAgent,
         protected ?ProviderToolAuditService $audit = null,
         protected ?AgentExecutionPolicyService $policy = null,
@@ -37,7 +41,7 @@ class AgentExecutionDispatcher
         $options = $this->withDecisionMetadata($options, $decision);
 
         return match ($decision->action) {
-            RoutingDecisionAction::CONVERSATIONAL => $this->execution->executeConversational($message, $context, $options),
+            RoutingDecisionAction::CONVERSATIONAL => $this->conversationService->executeConversational($message, $context, $options),
             RoutingDecisionAction::HANDLE_SELECTION => $this->executeSelection($decision, $message, $context, $options),
             RoutingDecisionAction::SEARCH_RAG => $this->executeSearchRag($message, $context, $options, $reroute),
             RoutingDecisionAction::USE_TOOL => $this->executeTool($decision, $message, $context, $options),
@@ -135,7 +139,7 @@ class AgentExecutionDispatcher
             }
         }
 
-        return $this->execution->executeSearchRag(
+        return $this->conversationService->executeSearchRAG(
             $message,
             $context,
             $options,
@@ -163,7 +167,7 @@ class AgentExecutionDispatcher
         $this->recordExecutionAudit('agent_tool.started', $toolName, $context, $options, $decision->payload);
 
         try {
-            $response = $this->execution->executeUseTool(
+            $response = $this->actionExecutionService->executeUseTool(
                 $toolName,
                 $message,
                 $context,
@@ -241,7 +245,7 @@ class AgentExecutionDispatcher
 
     protected function executeContinueNode(string $message, UnifiedActionContext $context, array $options): AgentResponse
     {
-        $response = $this->execution->continueRoutedSession($message, $context, $options);
+        $response = $this->nodeSessionManager->continueSession($message, $context, $options);
 
         return $response ?? AgentResponse::failure(
             message: 'No routed node session is available to continue.',
@@ -287,7 +291,7 @@ class AgentExecutionDispatcher
             'session_id' => $context->sessionId,
         ]);
 
-        $response = $this->execution->routeToNode($requestedResource, $message, $context, $options);
+        $response = $this->nodeSessionManager->routeToNode($requestedResource, $message, $context, $options);
         if ($this->shouldFallbackToLocalRag($response, $options)) {
             Log::channel('ai-engine')->warning('Remote node routing failed; attempting degraded local fallback', [
                 'requested_resource' => $requestedResource,

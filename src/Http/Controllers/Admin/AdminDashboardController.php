@@ -16,6 +16,7 @@ class AdminDashboardController extends Controller
     {
         $manifestPath = $this->normalizePath($manifestService->manifestPath());
         $localNode = $this->localNodeProfile();
+        $skills = $manifestService->skills();
 
         return view('ai-engine::admin.dashboard', [
             'app_name' => config('app.name', 'Laravel'),
@@ -23,7 +24,8 @@ class AdminDashboardController extends Controller
             'manifest_exists' => is_file($manifestPath),
             'counts' => [
                 'model_configs' => count($manifestService->modelConfigs()),
-                'skills' => count($manifestService->skills()),
+                'collectors' => count($skills),
+                'skills' => count($skills),
                 'tools' => count($manifestService->tools()),
                 'filters' => count($manifestService->filters()),
             ],

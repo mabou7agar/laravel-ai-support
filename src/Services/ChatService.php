@@ -227,7 +227,7 @@ class ChatService
             content: $agentResponse->message,
             engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
             model: \LaravelAIEngine\Enums\EntityEnum::from($model),
-            metadata: array_merge($contextData, $agentResponse->metadata ?? [], $entityTracking, [
+            metadata: array_merge($contextData, $contextMetadata, $agentResponse->metadata ?? [], $entityTracking, [
                 'runtime_active' => !$agentResponse->isComplete,
                 'runtime_data' => $agentResponse->data ?? [],
                 'runtime_completed' => $agentResponse->isComplete,

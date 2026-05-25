@@ -184,6 +184,8 @@ curl http://127.0.0.1:8000/api/v1/ai/agent-runs/{run_uuid}/stream?timeout=30
 
 SSE works without a WebSocket service. Enable Laravel Broadcasting when the app uses Reverb, Pusher, Soketi, Ably, or another broadcast driver.
 
+See `docs/chat-flow.mdx` for the full ChatFlow trace from request validation through runtime routing, dispatcher execution, response metadata, and the focused test suite.
+
 ### Structured Chat Collection
 
 ```php

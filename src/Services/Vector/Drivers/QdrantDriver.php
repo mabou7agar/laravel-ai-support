@@ -17,12 +17,8 @@ class QdrantDriver implements VectorDriverInterface
     protected string $host;
     protected ?string $apiKey;
     protected int $timeout;
-    
-    /**
-     * Cache of collections where indexes have been ensured
-     * Prevents repeated API calls to check/create indexes
-     */
-    protected static array $indexEnsuredCollections = [];
+    protected ?QdrantFilterBuilder $filterBuilder = null;
+    protected ?QdrantPayloadIndexManager $payloadIndexManager = null;
 
     public function __construct(array $config = [])
     {
@@ -96,42 +92,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function createPayloadIndexes(string $collection, ?string $modelClass = null): void
     {
-        // Get base fields from config
-        $configFields = config('ai-engine.vector.payload_index_fields', [
-            'user_id',
-            'tenant_id', 
-            'workspace_id',
-            'model_id',
-            'status',
-            'visibility',
-            'type',
-            'created_at_ts',
-            'updated_at_ts',
-        ]);
-        
-        // Detect additional fields from model's belongsTo relationships
-        $relationFields = $this->detectBelongsToFields($modelClass);
-        
-        // Get custom indexes from model if defined
-        $customIndexes = $this->getModelCustomIndexes($modelClass);
-        
-        // Merge all fields (unique)
-        $indexableFields = array_unique(array_merge($configFields, $relationFields, $customIndexes));
-        
-        Log::debug('Payload index fields detected', [
-            'collection' => $collection,
-            'config_fields' => $configFields,
-            'relation_fields' => $relationFields,
-            'custom_indexes' => $customIndexes,
-            'total_fields' => $indexableFields,
-        ]);
-        
-        // Detect field types from model schema if available
-        $fieldTypes = $this->detectFieldTypes($modelClass, $indexableFields);
-        
-        foreach ($fieldTypes as $fieldName => $fieldType) {
-            $this->createPayloadIndex($collection, $fieldName, $fieldType);
-        }
+        $this->payloadIndexManager()->createPayloadIndexes($collection, $modelClass);
     }
     
     /**
@@ -139,43 +100,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     protected function getModelCustomIndexes(?string $modelClass): array
     {
-        if (!$modelClass || !class_exists($modelClass)) {
-            return [];
-        }
-        
-        try {
-            if (!method_exists($modelClass, 'getQdrantIndexes')) {
-                return [];
-            }
-
-            $reflection = new \ReflectionMethod($modelClass, 'getQdrantIndexes');
-            $vectorizableMethodFile = (new \ReflectionMethod(\LaravelAIEngine\Traits\Vectorizable::class, 'getQdrantIndexes'))->getFileName();
-
-            // Skip the trait default implementation; it can trigger expensive metadata
-            // resolution on some models during collection creation.
-            if ($reflection->getFileName() === $vectorizableMethodFile) {
-                return [];
-            }
-
-            $instance = new $modelClass();
-            $indexes = $reflection->isStatic()
-                ? $modelClass::getQdrantIndexes()
-                : $instance->getQdrantIndexes();
-            
-            Log::debug('Model custom indexes detected', [
-                'model' => $modelClass,
-                'indexes' => $indexes,
-            ]);
-            
-            return is_array($indexes) ? $indexes : [];
-        } catch (Throwable $e) {
-            Log::warning('Failed to get model custom indexes', [
-                'model' => $modelClass,
-                'error' => $e->getMessage(),
-            ]);
-        }
-        
-        return [];
+        return $this->payloadIndexManager()->getModelCustomIndexes($modelClass);
     }
     
     /**
@@ -183,33 +108,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     protected function detectBelongsToFields(?string $modelClass): array
     {
-        $fields = [];
-        
-        if (!$modelClass || !class_exists($modelClass)) {
-            return $fields;
-        }
-        
-        try {
-            $reflection = new \ReflectionClass($modelClass);
-            $defaults = $reflection->getDefaultProperties();
-            $fillable = $defaults['fillable'] ?? [];
-
-            // Cheap and safe heuristic: index *_id fields from fillable attributes.
-            // This avoids invoking model relation methods, which can be very expensive
-            // or trigger container side effects in large applications.
-            foreach ((array) $fillable as $fillableField) {
-                if (is_string($fillableField) && str_ends_with($fillableField, '_id')) {
-                    $fields[] = $fillableField;
-                }
-            }
-        } catch (Throwable $e) {
-            Log::warning('Failed to detect belongsTo fields', [
-                'model' => $modelClass,
-                'error' => $e->getMessage(),
-            ]);
-        }
-        
-        return array_unique($fields);
+        return $this->payloadIndexManager()->detectBelongsToFields($modelClass);
     }
     
     /**
@@ -217,48 +116,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function createPayloadIndex(string $collection, string $fieldName, string $fieldType): bool
     {
-        try {
-            $response = $this->client->put("/collections/{$collection}/index", [
-                'json' => [
-                    'field_name' => $fieldName,
-                    'field_schema' => $fieldType,
-                ],
-            ]);
-            
-            $statusCode = $response->getStatusCode();
-            $body = $response->getBody()->getContents();
-            
-            Log::info('Created payload index', [
-                'collection' => $collection,
-                'field' => $fieldName,
-                'type' => $fieldType,
-                'status' => $statusCode,
-            ]);
-            
-            return $statusCode === 200;
-        } catch (Throwable $e) {
-            // Check if it's "already exists" error (which is OK)
-            $errorMessage = $e->getMessage();
-            $isAlreadyExists = str_contains($errorMessage, 'already exists') || 
-                               str_contains($errorMessage, 'already indexed');
-            
-            if ($isAlreadyExists) {
-                Log::debug('Payload index already exists', [
-                    'collection' => $collection,
-                    'field' => $fieldName,
-                ]);
-                return true;
-            }
-            
-            // Log actual failures
-            Log::error('Failed to create payload index', [
-                'collection' => $collection,
-                'field' => $fieldName,
-                'type' => $fieldType,
-                'error' => $errorMessage,
-            ]);
-            return false;
-        }
+        return $this->payloadIndexManager()->createPayloadIndex($collection, $fieldName, $fieldType);
     }
     
     /**
@@ -266,15 +124,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     protected function detectFieldTypes(?string $modelClass, array $fields): array
     {
-        $fieldTypes = [];
-
-        // Use lightweight field-name heuristics during collection creation.
-        // This avoids booting models and recursively resolving services.
-        foreach ($fields as $field) {
-            $fieldTypes[$field] = $this->guessFieldType($field);
-        }
-
-        return $fieldTypes;
+        return $this->payloadIndexManager()->detectFieldTypes($modelClass, $fields);
     }
     
     /**
@@ -282,40 +132,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     protected function mapDatabaseTypeToQdrant(string $dbType, string $fieldName = ''): string
     {
-        $dbType = strtolower($dbType);
-        
-        // ID fields: check if DB type is integer-based, use integer for proper numeric filtering
-        // Only use keyword for UUID/GUID types
-        if (str_ends_with($fieldName, '_id') || $fieldName === 'id') {
-            if (in_array($dbType, ['int', 'integer', 'bigint', 'smallint', 'tinyint', 'mediumint', 'int4', 'int8', 'int2'])) {
-                return 'integer';
-            }
-            // UUID/GUID or string IDs use keyword
-            return 'keyword';
-        }
-        
-        // Integer types
-        if (in_array($dbType, ['int', 'integer', 'bigint', 'smallint', 'tinyint', 'mediumint', 'int4', 'int8', 'int2'])) {
-            return 'integer';
-        }
-        
-        // Float types
-        if (in_array($dbType, ['float', 'double', 'decimal', 'numeric', 'real', 'float4', 'float8'])) {
-            return 'float';
-        }
-        
-        // Boolean
-        if (in_array($dbType, ['bool', 'boolean'])) {
-            return 'bool';
-        }
-        
-        // UUID - treat as keyword (string) in Qdrant
-        if (in_array($dbType, ['uuid', 'guid'])) {
-            return 'keyword';
-        }
-        
-        // Default to keyword for strings, varchar, text, etc.
-        return 'keyword';
+        return $this->payloadIndexManager()->mapDatabaseTypeToQdrant($dbType, $fieldName);
     }
     
     /**
@@ -325,29 +142,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function guessFieldType(string $fieldName): string
     {
-        // Fields ending with _id are typically integers (but could be UUIDs)
-        // Default to integer, but detectFieldTypeFromData() will correct if UUID
-        if (str_ends_with($fieldName, '_id') || $fieldName === 'id') {
-            return 'integer';
-        }
-        
-        // Common string/enum fields
-        if (in_array($fieldName, ['status', 'type', 'visibility', 'role', 'category', 'slug'])) {
-            return 'keyword';
-        }
-        
-        // Common boolean fields
-        if (str_starts_with($fieldName, 'is_') || str_starts_with($fieldName, 'has_')) {
-            return 'bool';
-        }
-        
-        // Timestamp fields for date range filtering
-        if (str_ends_with($fieldName, '_ts') || str_ends_with($fieldName, '_timestamp')) {
-            return 'integer';
-        }
-        
-        // Default to keyword
-        return 'keyword';
+        return $this->payloadIndexManager()->guessFieldType($fieldName);
     }
     
     /**
@@ -360,57 +155,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function detectFieldTypeFromData(string $collection, string $fieldName): ?string
     {
-        try {
-            // Sample a few points to detect the actual data type
-            $scroll = $this->scroll($collection, 5);
-            
-            foreach ($scroll['points'] ?? [] as $point) {
-                $value = $point['metadata'][$fieldName] ?? null;
-                
-                if ($value === null) {
-                    continue;
-                }
-                
-                // Check if it's a UUID (string with dashes, 36 chars)
-                if (is_string($value) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $value)) {
-                    return 'keyword'; // UUIDs should be keyword
-                }
-                
-                // Check if it's a ULID (26 chars alphanumeric)
-                if (is_string($value) && preg_match('/^[0-9A-HJKMNP-TV-Z]{26}$/i', $value)) {
-                    return 'keyword'; // ULIDs should be keyword
-                }
-                
-                // Check if it's an integer
-                if (is_int($value) || (is_string($value) && ctype_digit($value))) {
-                    return 'integer';
-                }
-                
-                // Check if it's a float
-                if (is_float($value) || (is_string($value) && is_numeric($value) && str_contains($value, '.'))) {
-                    return 'float';
-                }
-                
-                // Check if it's a boolean
-                if (is_bool($value)) {
-                    return 'bool';
-                }
-                
-                // Default to keyword for strings
-                if (is_string($value)) {
-                    return 'keyword';
-                }
-            }
-            
-            return null; // Couldn't determine
-        } catch (\Exception $e) {
-            Log::debug('Failed to detect field type from data', [
-                'collection' => $collection,
-                'field' => $fieldName,
-                'error' => $e->getMessage(),
-            ]);
-            return null;
-        }
+        return $this->payloadIndexManager()->detectFieldTypeFromData($collection, $fieldName);
     }
     
     /**
@@ -422,15 +167,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function getFieldType(string $collection, string $fieldName): string
     {
-        // Try to detect from actual data first
-        $detectedType = $this->detectFieldTypeFromData($collection, $fieldName);
-        
-        if ($detectedType !== null) {
-            return $detectedType;
-        }
-        
-        // Fall back to guessing based on field name
-        return $this->guessFieldType($fieldName);
+        return $this->payloadIndexManager()->getFieldType($collection, $fieldName);
     }
 
     public function deleteCollection(string $name): bool
@@ -774,27 +511,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     protected function ensureRequiredIndexes(string $collection, array $fields, ?string $modelClass = null): int
     {
-        $existingIndexes = $this->getExistingIndexes($collection);
-        $missingFields = array_diff($fields, $existingIndexes);
-        
-        if (empty($missingFields)) {
-            return 0;
-        }
-        
-        Log::info('Creating missing indexes', [
-            'collection' => $collection,
-            'missing' => $missingFields,
-        ]);
-        
-        $created = 0;
-        foreach ($missingFields as $field) {
-            $fieldType = $this->guessFieldType($field);
-            if ($this->createPayloadIndex($collection, $field, $fieldType)) {
-                $created++;
-            }
-        }
-        
-        return $created;
+        return $this->payloadIndexManager()->ensureRequiredIndexes($collection, $fields, $modelClass);
     }
     
     /**
@@ -1010,11 +727,6 @@ class QdrantDriver implements VectorDriverInterface
     }
 
     /**
-     * Cache for collection index types to avoid repeated API calls
-     */
-    protected static array $collectionIndexTypes = [];
-    
-    /**
      * Build Qdrant filter from array
      * Handles type conversion to match indexed field types
      * Supports range filters and auto-converts date strings to timestamps
@@ -1030,221 +742,12 @@ class QdrantDriver implements VectorDriverInterface
      */
     protected function buildFilter(array $filters, ?string $collection = null): array
     {
-        $must = [];
-        
-        // Get index types for the collection to ensure proper type conversion
-        $indexTypes = [];
-        if ($collection) {
-            $indexTypes = $this->getCachedIndexTypes($collection);
-        }
-
-        foreach ($filters as $key => $value) {
-            // Skip internal keys that shouldn't be filtered
-            if ($key === 'model_class') {
-                continue;
-            }
-            
-            // Check if this is a date field that needs timestamp conversion
-            $processedFilter = $this->processDateFilter($key, $value, $collection);
-            if ($processedFilter !== null) {
-                $must[] = $processedFilter;
-                continue;
-            }
-            
-            // Check if this is a range filter
-            if (is_array($value) && $this->isRangeFilter($value)) {
-                $rangeFilter = $this->buildRangeFilter($key, $value, $indexTypes[$key] ?? null);
-                if ($rangeFilter) {
-                    $must[] = $rangeFilter;
-                }
-                continue;
-            }
-            
-            // Get the actual index type for this field
-            $indexType = $indexTypes[$key] ?? null;
-            
-            if (is_array($value)) {
-                // Convert array values to appropriate types (match any)
-                $convertedValues = array_map(fn($v) => $this->convertFilterValue($key, $v, $indexType), $value);
-                $must[] = [
-                    'key' => $key,
-                    'match' => ['any' => $convertedValues],
-                ];
-            } else {
-                $must[] = [
-                    'key' => $key,
-                    'match' => ['value' => $this->convertFilterValue($key, $value, $indexType)],
-                ];
-            }
-        }
-
-        return ['must' => $must];
-    }
-    
-    /**
-     * Check if filter value is a range filter (has gte, lte, gt, lt keys)
-     */
-    protected function isRangeFilter(array $value): bool
-    {
-        $rangeKeys = ['gte', 'lte', 'gt', 'lt'];
-        foreach ($rangeKeys as $key) {
-            if (array_key_exists($key, $value)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    /**
-     * Build a range filter for Qdrant
-     */
-    protected function buildRangeFilter(string $key, array $range, ?string $indexType = null): ?array
-    {
-        $rangeCondition = [];
-        
-        if (isset($range['gte'])) {
-            $rangeCondition['gte'] = $this->convertRangeValue($range['gte'], $indexType);
-        }
-        if (isset($range['lte'])) {
-            $rangeCondition['lte'] = $this->convertRangeValue($range['lte'], $indexType);
-        }
-        if (isset($range['gt'])) {
-            $rangeCondition['gt'] = $this->convertRangeValue($range['gt'], $indexType);
-        }
-        if (isset($range['lt'])) {
-            $rangeCondition['lt'] = $this->convertRangeValue($range['lt'], $indexType);
-        }
-        
-        if (empty($rangeCondition)) {
-            return null;
-        }
-        
-        return [
-            'key' => $key,
-            'range' => $rangeCondition,
-        ];
-    }
-    
-    /**
-     * Convert range value to appropriate type
-     */
-    protected function convertRangeValue($value, ?string $indexType = null)
-    {
-        if ($indexType === 'integer' || $indexType === 'int') {
-            return is_numeric($value) ? (int) $value : $value;
-        }
-        if ($indexType === 'float') {
-            return is_numeric($value) ? (float) $value : $value;
-        }
-        
-        // If numeric, convert to int/float
-        if (is_numeric($value)) {
-            return str_contains((string)$value, '.') ? (float) $value : (int) $value;
-        }
-        
-        return $value;
-    }
-    
-    /**
-     * Process date filter - auto-converts date strings to timestamp filters
-     * 
-     * Examples:
-     * - ['created_at' => ['gte' => '2026-01-01']] → ['created_at_ts' => ['gte' => 1704067200]]
-     * - ['issue_date' => ['gte' => '2026-01-01', 'lte' => '2026-01-31']]
-     */
-    protected function processDateFilter(string $key, $value, ?string $collection = null): ?array
-    {
-        // Common date field names (without _ts suffix)
-        $dateFields = ['created_at', 'updated_at', 'issue_date', 'due_date', 'paid_date', 'sent_date', 'date', 'published_at', 'deleted_at'];
-        
-        // Check if this is a date field
-        if (!in_array($key, $dateFields)) {
-            return null;
-        }
-        
-        // If it's a range filter with date strings, convert to timestamp
-        if (is_array($value) && $this->isRangeFilter($value)) {
-            $tsKey = $key . '_ts';
-            $tsRange = [];
-            
-            foreach (['gte', 'lte', 'gt', 'lt'] as $op) {
-                if (isset($value[$op])) {
-                    $ts = $this->parseToTimestamp($value[$op]);
-                    if ($ts !== null) {
-                        // For 'lte' on dates without time, set to end of day
-                        if ($op === 'lte' && $this->isDateOnly($value[$op])) {
-                            $ts = strtotime($value[$op] . ' 23:59:59');
-                        }
-                        $tsRange[$op] = $ts;
-                    }
-                }
-            }
-            
-            if (!empty($tsRange)) {
-                // Ensure the timestamp index exists
-                if ($collection) {
-                    $this->ensureFilterIndexes($collection, [$tsKey]);
-                }
-                
-                return [
-                    'key' => $tsKey,
-                    'range' => $tsRange,
-                ];
-            }
-        }
-        
-        // If it's a single date value for exact match, convert to timestamp range for that day
-        if (is_string($value) && $this->isDateOnly($value)) {
-            $tsKey = $key . '_ts';
-            $startTs = strtotime($value . ' 00:00:00');
-            $endTs = strtotime($value . ' 23:59:59');
-            
-            if ($startTs && $endTs && $collection) {
-                $this->ensureFilterIndexes($collection, [$tsKey]);
-                
-                return [
-                    'key' => $tsKey,
-                    'range' => [
-                        'gte' => $startTs,
-                        'lte' => $endTs,
-                    ],
-                ];
-            }
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Parse various date formats to Unix timestamp
-     */
-    protected function parseToTimestamp($value): ?int
-    {
-        if (is_int($value)) {
-            return $value;
-        }
-        
-        if ($value instanceof \DateTimeInterface) {
-            return $value->getTimestamp();
-        }
-        
-        if (is_string($value)) {
-            $ts = strtotime($value);
-            return $ts !== false ? $ts : null;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Check if value is a date-only string (no time component)
-     */
-    protected function isDateOnly(string $value): bool
-    {
-        // Matches: 2026-01-01, 01/01/2026, Jan 1 2026, etc.
-        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) ||
-               preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $value) ||
-               (strtotime($value) !== false && !preg_match('/\d{2}:\d{2}/', $value));
+        return $this->filterBuilder()->build(
+            $filters,
+            $collection,
+            $collection ? $this->getCachedIndexTypes($collection) : [],
+            fn (string $name, array $fields): null => $this->ensureFilterIndexes($name, $fields)
+        );
     }
     
     /**
@@ -1252,10 +755,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     protected function getCachedIndexTypes(string $collection): array
     {
-        if (!isset(static::$collectionIndexTypes[$collection])) {
-            static::$collectionIndexTypes[$collection] = $this->getExistingIndexesWithTypes($collection);
-        }
-        return static::$collectionIndexTypes[$collection];
+        return $this->payloadIndexManager()->getCachedIndexTypes($collection);
     }
     
     /**
@@ -1263,82 +763,17 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function clearIndexTypeCache(?string $collection = null): void
     {
-        if ($collection) {
-            unset(static::$collectionIndexTypes[$collection]);
-        } else {
-            static::$collectionIndexTypes = [];
-        }
+        $this->payloadIndexManager()->clearIndexTypeCache($collection);
     }
     
-    /**
-     * Convert filter value to match the actual index type in Qdrant
-     * This ensures "10" becomes 10 for integer indexes, etc.
-     * 
-     * @param string $key Field name
-     * @param mixed $value Value to convert
-     * @param string|null $indexType Actual index type from Qdrant (integer, keyword, bool, float)
-     */
-    protected function convertFilterValue(string $key, $value, ?string $indexType = null)
+    protected function filterBuilder(): QdrantFilterBuilder
     {
-        // If we know the actual index type, convert to match it
-        if ($indexType !== null) {
-            $normalizedType = $this->normalizeIndexType($indexType);
-            
-            switch ($normalizedType) {
-                case 'integer':
-                    if (is_numeric($value)) {
-                        return (int) $value;
-                    }
-                    // If value is not numeric but index is integer, log warning
-                    Log::debug('Filter value is not numeric for integer index', [
-                        'field' => $key,
-                        'value' => $value,
-                        'index_type' => $indexType,
-                    ]);
-                    return $value;
-                    
-                case 'float':
-                    if (is_numeric($value)) {
-                        return (float) $value;
-                    }
-                    return $value;
-                    
-                case 'bool':
-                    if (is_bool($value)) {
-                        return $value;
-                    }
-                    // Convert common boolean representations
-                    if (is_string($value)) {
-                        $lower = strtolower($value);
-                        if (in_array($lower, ['true', '1', 'yes', 'on'])) {
-                            return true;
-                        }
-                        if (in_array($lower, ['false', '0', 'no', 'off'])) {
-                            return false;
-                        }
-                    }
-                    return (bool) $value;
-                    
-                case 'keyword':
-                    // Keywords should be strings
-                    return (string) $value;
-            }
-        }
-        
-        // Fallback: guess based on field name conventions
-        // For ID fields, convert to integer if numeric
-        if (str_ends_with($key, '_id') || $key === 'id') {
-            if (is_numeric($value)) {
-                return (int) $value;
-            }
-        }
-        
-        // For boolean fields
-        if (str_starts_with($key, 'is_') || str_starts_with($key, 'has_')) {
-            return (bool) $value;
-        }
-        
-        return $value;
+        return $this->filterBuilder ??= new QdrantFilterBuilder();
+    }
+
+    protected function payloadIndexManager(): QdrantPayloadIndexManager
+    {
+        return $this->payloadIndexManager ??= new QdrantPayloadIndexManager($this->client);
     }
     
     /**
@@ -1350,42 +785,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function ensureFilterIndexes(string $collection, array $filterFields): void
     {
-        // Check if we've already ensured indexes for this collection
-        $cacheKey = $collection . ':' . implode(',', $filterFields);
-        if (isset(static::$indexEnsuredCollections[$cacheKey])) {
-            return;
-        }
-        
-        try {
-            // Get existing indexes for this collection
-            $existingIndexes = $this->getExistingIndexes($collection);
-            
-            // Find missing indexes
-            $missingFields = array_diff($filterFields, $existingIndexes);
-            
-            if (!empty($missingFields)) {
-                Log::info('Auto-creating missing payload indexes', [
-                    'collection' => $collection,
-                    'missing_fields' => $missingFields,
-                    'existing_indexes' => $existingIndexes,
-                ]);
-                
-                foreach ($missingFields as $field) {
-                    $fieldType = $this->guessFieldType($field);
-                    $this->createPayloadIndex($collection, $field, $fieldType);
-                }
-            }
-            
-            // Mark as ensured
-            static::$indexEnsuredCollections[$cacheKey] = true;
-            
-        } catch (\Exception $e) {
-            Log::warning('Failed to ensure filter indexes', [
-                'collection' => $collection,
-                'fields' => $filterFields,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        $this->payloadIndexManager()->ensureFilterIndexes($collection, $filterFields);
     }
     
     /**
@@ -1396,29 +796,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function getExistingIndexes(string $collection): array
     {
-        try {
-            $response = $this->client->get("/collections/{$collection}");
-            $data = json_decode($response->getBody()->getContents(), true);
-            
-            $payloadSchema = $data['result']['payload_schema'] ?? [];
-            
-            // Extract field names that have indexes
-            $indexedFields = [];
-            foreach ($payloadSchema as $fieldName => $schema) {
-                // Check if field has an index (data_type indicates indexed field)
-                if (isset($schema['data_type']) || isset($schema['params'])) {
-                    $indexedFields[] = $fieldName;
-                }
-            }
-            
-            return $indexedFields;
-        } catch (GuzzleException $e) {
-            Log::warning('Failed to get existing indexes', [
-                'collection' => $collection,
-                'error' => $e->getMessage(),
-            ]);
-            return [];
-        }
+        return $this->payloadIndexManager()->getExistingIndexes($collection);
     }
     
     /**
@@ -1429,27 +807,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function getExistingIndexesWithTypes(string $collection): array
     {
-        try {
-            $response = $this->client->get("/collections/{$collection}");
-            $data = json_decode($response->getBody()->getContents(), true);
-            
-            $payloadSchema = $data['result']['payload_schema'] ?? [];
-            
-            $indexedFields = [];
-            foreach ($payloadSchema as $fieldName => $schema) {
-                if (isset($schema['data_type'])) {
-                    $indexedFields[$fieldName] = strtolower($schema['data_type']);
-                }
-            }
-            
-            return $indexedFields;
-        } catch (GuzzleException $e) {
-            Log::warning('Failed to get existing indexes with types', [
-                'collection' => $collection,
-                'error' => $e->getMessage(),
-            ]);
-            return [];
-        }
+        return $this->payloadIndexManager()->getExistingIndexesWithTypes($collection);
     }
     
     /**
@@ -1461,23 +819,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function deletePayloadIndex(string $collection, string $fieldName): bool
     {
-        try {
-            $response = $this->client->delete("/collections/{$collection}/index/{$fieldName}");
-            
-            Log::info('Deleted payload index', [
-                'collection' => $collection,
-                'field' => $fieldName,
-            ]);
-            
-            return $response->getStatusCode() === 200;
-        } catch (GuzzleException $e) {
-            Log::warning('Failed to delete payload index', [
-                'collection' => $collection,
-                'field' => $fieldName,
-                'error' => $e->getMessage(),
-            ]);
-            return false;
-        }
+        return $this->payloadIndexManager()->deletePayloadIndex($collection, $fieldName);
     }
     
     /**
@@ -1490,85 +832,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function autoFixIndexTypes(string $collection, array $expectedTypes = []): array
     {
-        $fixed = [];
-        
-        try {
-            // Get current index types
-            $currentTypes = $this->getExistingIndexesWithTypes($collection);
-            
-            if (empty($currentTypes)) {
-                return $fixed;
-            }
-            
-            // If no expected types provided, detect from actual data or guess
-            if (empty($expectedTypes)) {
-                foreach ($currentTypes as $field => $type) {
-                    // Use getFieldType which tries data detection first, then falls back to guessing
-                    $expectedTypes[$field] = $this->getFieldType($collection, $field);
-                }
-            }
-            
-            // Find mismatches
-            foreach ($expectedTypes as $field => $expectedType) {
-                $currentType = $currentTypes[$field] ?? null;
-                
-                if ($currentType === null) {
-                    // Index doesn't exist, create it
-                    Log::info('Creating missing index', [
-                        'collection' => $collection,
-                        'field' => $field,
-                        'type' => $expectedType,
-                    ]);
-                    $this->createPayloadIndex($collection, $field, $expectedType);
-                    $fixed[] = $field;
-                    continue;
-                }
-                
-                // Normalize types for comparison
-                $normalizedCurrent = $this->normalizeIndexType($currentType);
-                $normalizedExpected = $this->normalizeIndexType($expectedType);
-                
-                if ($normalizedCurrent !== $normalizedExpected) {
-                    Log::info('Index type mismatch detected, recreating', [
-                        'collection' => $collection,
-                        'field' => $field,
-                        'current_type' => $currentType,
-                        'expected_type' => $expectedType,
-                    ]);
-                    
-                    // Delete old index and create new one with correct type
-                    $this->deletePayloadIndex($collection, $field);
-                    usleep(100000); // 100ms delay to ensure deletion completes
-                    $this->createPayloadIndex($collection, $field, $expectedType);
-                    $fixed[] = $field;
-                }
-            }
-            
-            if (!empty($fixed)) {
-                Log::info('Auto-fixed index types', [
-                    'collection' => $collection,
-                    'fixed_fields' => $fixed,
-                ]);
-                
-                // Clear the index ensured cache for this collection
-                foreach (static::$indexEnsuredCollections as $key => $value) {
-                    if (str_starts_with($key, $collection . ':') || str_starts_with($key, 'all:' . $collection)) {
-                        unset(static::$indexEnsuredCollections[$key]);
-                    }
-                }
-                
-                // Clear the index type cache so buildFilter gets fresh types
-                $this->clearIndexTypeCache($collection);
-            }
-            
-            return $fixed;
-        } catch (\Exception $e) {
-            Log::error('Failed to auto-fix index types', [
-                'collection' => $collection,
-                'error' => $e->getMessage(),
-            ]);
-            return $fixed;
-        }
+        return $this->payloadIndexManager()->autoFixIndexTypes($collection, $expectedTypes);
     }
     
     /**
@@ -1576,22 +840,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     protected function normalizeIndexType(string $type): string
     {
-        $type = strtolower(trim($type));
-        
-        // Map variations to canonical types
-        $typeMap = [
-            'int' => 'integer',
-            'int64' => 'integer',
-            'int32' => 'integer',
-            'float64' => 'float',
-            'float32' => 'float',
-            'str' => 'keyword',
-            'string' => 'keyword',
-            'text' => 'keyword',
-            'boolean' => 'bool',
-        ];
-        
-        return $typeMap[$type] ?? $type;
+        return $this->payloadIndexManager()->normalizeIndexType($type);
     }
     
     /**
@@ -1601,27 +850,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function autoFixAllCollections(): array
     {
-        $results = [];
-        
-        try {
-            $response = $this->client->get('/collections');
-            $data = json_decode($response->getBody()->getContents(), true);
-            
-            foreach ($data['result']['collections'] ?? [] as $col) {
-                $name = $col['name'];
-                $fixed = $this->autoFixIndexTypes($name);
-                if (!empty($fixed)) {
-                    $results[$name] = $fixed;
-                }
-            }
-            
-            return $results;
-        } catch (\Exception $e) {
-            Log::error('Failed to auto-fix all collections', [
-                'error' => $e->getMessage(),
-            ]);
-            return $results;
-        }
+        return $this->payloadIndexManager()->autoFixAllCollections();
     }
     
     /**
@@ -1633,61 +862,7 @@ class QdrantDriver implements VectorDriverInterface
      */
     public function ensureAllPayloadIndexes(string $collection, ?string $modelClass = null): void
     {
-        // Check cache first - avoid repeated expensive operations
-        $cacheKey = 'all:' . $collection;
-        if (isset(static::$indexEnsuredCollections[$cacheKey])) {
-            return;
-        }
-        
-        // Get existing indexes
-        $existingIndexes = $this->getExistingIndexes($collection);
-        
-        // Get configured fields
-        $configFields = config('ai-engine.vector.payload_index_fields', [
-            'user_id',
-            'tenant_id', 
-            'workspace_id',
-            'model_id',
-            'status',
-            'visibility',
-            'type',
-        ]);
-        
-        // Detect additional fields from model (only if not too expensive)
-        $relationFields = [];
-        if ($modelClass) {
-            $relationFields = $this->detectBelongsToFields($modelClass);
-        }
-        
-        // Merge all fields
-        $allFields = array_unique(array_merge($configFields, $relationFields));
-        
-        // Find missing indexes
-        $missingFields = array_diff($allFields, $existingIndexes);
-        
-        // Mark as ensured (even if no missing fields, to prevent repeated checks)
-        static::$indexEnsuredCollections[$cacheKey] = true;
-        
-        if (empty($missingFields)) {
-            Log::debug('All payload indexes already exist', [
-                'collection' => $collection,
-                'existing_indexes' => $existingIndexes,
-            ]);
-            return;
-        }
-        
-        Log::info('Creating missing payload indexes for existing collection', [
-            'collection' => $collection,
-            'missing_fields' => $missingFields,
-            'existing_indexes' => $existingIndexes,
-        ]);
-        
-        // Detect field types
-        $fieldTypes = $this->detectFieldTypes($modelClass, $missingFields);
-        
-        foreach ($fieldTypes as $fieldName => $fieldType) {
-            $this->createPayloadIndex($collection, $fieldName, $fieldType);
-        }
+        $this->payloadIndexManager()->ensureAllPayloadIndexes($collection, $modelClass);
     }
     
     /**
@@ -1696,6 +871,6 @@ class QdrantDriver implements VectorDriverInterface
      */
     public static function clearIndexCache(): void
     {
-        static::$indexEnsuredCollections = [];
+        QdrantPayloadIndexManager::clearIndexCache();
     }
 }

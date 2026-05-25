@@ -4,13 +4,17 @@ namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
+use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
+use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ContextManager;
+use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
+use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\IntentRouter;
+use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
@@ -44,18 +48,23 @@ class LaravelAgentProcessorRoutingFallbackTest extends UnitTestCase
         $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
         $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldReceive('routeToNode')
+        $node = Mockery::mock(NodeSessionManager::class);
+        $node->shouldReceive('routeToNode')
             ->once()
-            ->with('billing', 'show invoice domain status', $context, Mockery::on(function (array $options): bool {
-                return ($options['decision_path'] ?? null) === 'router_ai_route_to_node'
+            ->withArgs(function (string $resource, string $message, UnifiedActionContext $ctx, array $options): bool {
+                return $resource === 'billing'
+                    && $message === 'show invoice domain status'
+                    && $ctx->sessionId === 'session-route-fallback'
+                    && ($options['decision_path'] ?? null) === 'router_ai_route_to_node'
                     && ($options['decision_source'] ?? null) === 'router_ai';
-            }))
+            })
             ->andReturn(AgentResponse::failure(
                 message: "I couldn't reach remote node 'billing' (HTTP 500).",
                 context: $context
             ));
-        $execution->shouldReceive('executeSearchRag')
+
+        $conversation = Mockery::mock(AgentConversationService::class);
+        $conversation->shouldReceive('executeSearchRAG')
             ->once()
             ->withArgs(function (string $message, UnifiedActionContext $ctx, array $options, $reroute) use ($context) {
                 return $message === 'show invoice domain status'
@@ -69,6 +78,13 @@ class LaravelAgentProcessorRoutingFallbackTest extends UnitTestCase
                 context: $context
             ));
 
+        $dispatcher = new AgentExecutionDispatcher(
+            Mockery::mock(AgentActionExecutionService::class),
+            $conversation,
+            $node,
+            Mockery::mock(GoalAgentService::class)
+        );
+
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);
         $finalizer->shouldReceive('finalize')
             ->once()
@@ -81,7 +97,8 @@ class LaravelAgentProcessorRoutingFallbackTest extends UnitTestCase
             new AgentPlanner(),
             $finalizer,
             $selection,
-            $execution
+            $node,
+            executionDispatcher: $dispatcher
         );
 
         $response = $processor->process('show invoice domain status', 'session-route-fallback', 5);

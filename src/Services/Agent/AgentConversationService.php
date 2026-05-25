@@ -9,24 +9,25 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\ConversationMemoryQuery;
-use LaravelAIEngine\DTOs\RAGExecutionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Contracts\RAGPipelineContract;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPromptBuilder;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryRetriever;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryScopeResolver;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
-use LaravelAIEngine\Services\RAG\RAGExecutionRouter;
+use LaravelAIEngine\Services\RAG\RAGDecisionEngine;
 
 class AgentConversationService
 {
     public function __construct(
         protected AIEngineService $ai,
-        protected RAGExecutionRouter $ragExecutionRouter,
+        protected RAGDecisionEngine $ragDecisionEngine,
         protected SelectedEntityContextService $selectedEntityContext,
         protected AgentSelectionService $selectionService,
+        protected ?RAGPipelineContract $ragPipeline = null,
         protected ?LocaleResourceService $localeResources = null,
         protected ?RoutingContextResolver $routingContextResolver = null,
         protected ?ConversationMemoryRetriever $memoryRetriever = null,
@@ -51,12 +52,21 @@ class AgentConversationService
         $options = $this->routingContextResolver->mergeConversationContext($context, $options);
         $this->recordRoutingMetadata($context, $options);
 
-        $ragExecution = $this->ragExecutionRouter->execute($message, $context, $options);
-        if ($ragExecution->usesPipeline()) {
-            return $this->formatRagPipelineResponse($ragExecution, $context, $options);
+        if ($this->shouldUseRagPipeline($options)) {
+            return $this->formatRagPipelineResponse(
+                $this->executeRagPipeline($message, $context, $options),
+                $context,
+                $options
+            );
         }
 
-        $result = $ragExecution->decisionResult ?? [];
+        $result = $this->ragDecisionEngine->process(
+            $message,
+            $context->sessionId,
+            $context->userId,
+            $context->conversationHistory ?? [],
+            $options
+        );
 
         if (!empty($result['exit_to_orchestrator'])) {
             $newMessage = $result['message'] ?? $message;
@@ -278,16 +288,37 @@ PROMPT;
         return $this->memoryScopeResolver ??= app(ConversationMemoryScopeResolver::class);
     }
 
-    protected function formatRagPipelineResponse(
-        RAGExecutionResult $ragExecution,
+    protected function shouldUseRagPipeline(array $options): bool
+    {
+        return empty($options['allow_rag_exit_to_orchestrator'])
+            && empty($options['selected_entity'])
+            && empty($options['selected_entity_context'])
+            && ($options['preclassified_route_mode'] ?? null) !== 'structured_query';
+    }
+
+    protected function executeRagPipeline(
+        string $message,
         UnifiedActionContext $context,
         array $options
     ): AgentResponse {
-        $response = $ragExecution->response;
-        if (!$response instanceof AgentResponse) {
-            return AgentResponse::failure('RAG pipeline returned no response.', context: $context);
+        if (!$this->ragPipeline instanceof RAGPipelineContract) {
+            return AgentResponse::failure(
+                message: 'RAG pipeline is not available.',
+                context: $context
+            );
         }
 
+        return $this->ragPipeline->answer($message, array_merge($options, [
+            'session_id' => $context->sessionId,
+            'conversation_history' => $context->conversationHistory ?? [],
+        ]), is_int($context->userId) || is_string($context->userId) ? $context->userId : null);
+    }
+
+    protected function formatRagPipelineResponse(
+        AgentResponse $response,
+        UnifiedActionContext $context,
+        array $options
+    ): AgentResponse {
         $context->metadata['tool_used'] = 'rag_pipeline';
         $context->metadata['fast_path'] = false;
         $context->metadata['decision_source'] = $options['decision_source'] ?? $context->metadata['decision_source'] ?? 'rag_pipeline';

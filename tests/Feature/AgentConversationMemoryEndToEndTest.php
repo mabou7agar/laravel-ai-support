@@ -18,7 +18,7 @@ use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPromptBuilder;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryRetriever;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
 use LaravelAIEngine\Services\AIEngineService;
-use LaravelAIEngine\Services\RAG\RAGExecutionRouter;
+use LaravelAIEngine\Services\RAG\RAGDecisionEngine;
 use LaravelAIEngine\Tests\TestCase;
 use Mockery;
 
@@ -101,12 +101,12 @@ class AgentConversationMemoryEndToEndTest extends TestCase
         $this->assertSame('reply_language', $matchingResults[0]->item->key);
         $this->assertSame([], $otherWorkspaceResults);
 
-        $ragRouter = Mockery::mock(RAGExecutionRouter::class);
-        $ragRouter->shouldNotReceive('execute');
+        $rag = Mockery::mock(RAGDecisionEngine::class);
+        $rag->shouldNotReceive('process');
 
         $service = new AgentConversationService(
             ai: $ai,
-            ragExecutionRouter: $ragRouter,
+            ragDecisionEngine: $rag,
             selectedEntityContext: Mockery::mock(SelectedEntityContextService::class),
             selectionService: Mockery::mock(AgentSelectionService::class),
             localeResources: null,

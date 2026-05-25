@@ -30,11 +30,14 @@ Use this path when you want a chat UI that can answer, collect data, suggest act
 The response can include:
 
 - `response` for rendered text
+- `metadata.routing_decision`, `metadata.routing_trace`, and `metadata.route_explanation` for debugging the selected route
 - `response_points` for bullet/numbered points as data
 - `suggestions` from registered actions, skills, and tools
 - `actions` when the agent runtime returns interactive actions
 - `collection` when structured collection is active
 - conversation context fields when transcript/memory is enabled
+
+For the full request-to-response path, routing trace fields, and where to change each layer, see [ChatFlow Trace](chat-flow.mdx).
 
 For work that may call tools, wait for approval, create files, or run longer than a normal HTTP request, use `execution_mode=auto`. Auto keeps simple chat synchronous and queues durable work. Use `execution_mode=async` or `async=true` when you always want a queued run:
 

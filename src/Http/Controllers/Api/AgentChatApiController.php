@@ -83,6 +83,7 @@ class AgentChatApiController extends Controller
                 'success' => true,
                 'data' => [
                     'response' => $response->getContent(),
+                    'metadata' => $metadata,
                     'rag_enabled' => $metadata['rag_enabled'] ?? false,
                     'context_count' => $metadata['context_count'] ?? 0,
                     'sources' => $metadata['sources'] ?? [],

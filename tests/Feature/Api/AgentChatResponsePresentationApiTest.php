@@ -72,6 +72,7 @@ class AgentChatResponsePresentationApiTest extends TestCase
             ->assertJsonPath('data.response', 'Summary ready.')
             ->assertJsonPath('data.response_points_format', 'array')
             ->assertJsonPath('data.response_points.0.text', 'Create invoice from the provided data')
+            ->assertJsonPath('data.metadata.response_points_count', 1)
             ->assertJsonPath('data.response_text_without_points', 'Summary ready.')
             ->assertJsonPath('data.suggestions.0.id', 'create_invoice')
             ->assertJsonPath('data.suggestions.0.type', 'action')

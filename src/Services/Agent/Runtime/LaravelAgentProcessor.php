@@ -10,7 +10,6 @@ use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\RoutingDecisionSource;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use Illuminate\Support\Facades\Log;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
@@ -20,6 +19,7 @@ use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\MessageRoutingClassifier;
+use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
 use LaravelAIEngine\Services\Agent\RoutingContextResolver;
 use LaravelAIEngine\DTOs\RoutingTrace;
@@ -35,7 +35,7 @@ class LaravelAgentProcessor
         protected AgentPlanner $planner,
         protected AgentResponseFinalizer $responseFinalizer,
         protected AgentSelectionService $selectionService,
-        protected AgentExecutionFacade $execution,
+        protected NodeSessionManager $nodeSessionManager,
         protected ?MessageRoutingClassifier $messageClassifier = null,
         protected ?RoutingContextResolver $routingContextResolver = null,
         protected ?GoalAgentService $goalAgent = null,
@@ -49,7 +49,7 @@ class LaravelAgentProcessor
         $this->routingContextResolver ??= app()->bound(RoutingContextResolver::class)
             ? app(RoutingContextResolver::class)
             : new RoutingContextResolver();
-        $this->executionDispatcher ??= new AgentExecutionDispatcher($this->execution, $this->goalAgent());
+        $this->executionDispatcher ??= app(AgentExecutionDispatcher::class);
         $this->aiNativeRuntime ??= app()->bound(AiNativeRuntime::class)
             ? app(AiNativeRuntime::class)
             : null;
@@ -98,7 +98,7 @@ class LaravelAgentProcessor
         }
 
         if ($context->has('routed_to_node')) {
-            if ($this->execution->shouldContinueRoutedSession($message, $context)) {
+            if ($this->nodeSessionManager->shouldContinueSession($message, $context)) {
                 Log::channel('ai-engine')->debug('Continuing routed node session');
                 $response = $this->dispatchRoutingDecision(new RoutingDecision(
                     action: RoutingDecisionAction::CONTINUE_NODE,

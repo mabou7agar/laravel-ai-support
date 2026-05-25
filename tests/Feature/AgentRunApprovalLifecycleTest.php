@@ -18,11 +18,13 @@ use LaravelAIEngine\Models\AIProviderToolAuditEvent;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
 use LaravelAIEngine\Repositories\ProviderToolRunRepository;
+use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
+use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentRunApprovalService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
+use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\ProviderTools\HostedArtifactService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolContinuationService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
@@ -197,8 +199,8 @@ class AgentRunApprovalLifecycleTest extends TestCase
             'action' => 'echo',
         ]);
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldReceive('executeUseTool')
+        $action = Mockery::mock(AgentActionExecutionService::class);
+        $action->shouldReceive('executeUseTool')
             ->once()
             ->andReturn(AgentResponse::success('Tool done'));
 
@@ -208,7 +210,9 @@ class AgentRunApprovalLifecycleTest extends TestCase
             ->andReturn(AgentResponse::success('Sub-agent done'));
 
         $dispatcher = new AgentExecutionDispatcher(
-            $execution,
+            $action,
+            Mockery::mock(AgentConversationService::class),
+            Mockery::mock(NodeSessionManager::class),
             $goalAgent,
             app(ProviderToolAuditService::class)
         );

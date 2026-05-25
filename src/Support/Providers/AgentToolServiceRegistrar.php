@@ -1,0 +1,74 @@
+<?php
+
+declare(strict_types=1);
+
+namespace LaravelAIEngine\Support\Providers;
+
+class AgentToolServiceRegistrar
+{
+    public static function register($app): void
+    {
+        $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry($app));
+        $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner(
+            $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService(
+            $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentConversationService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\SubAgentConversationService(
+            $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler(
+            $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class, fn ($app) => new \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler(
+            $app->make(\LaravelAIEngine\Services\Agent\AgentConversationService::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\GoalAgentService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\GoalAgentService(
+            $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentPlanner::class),
+            $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentExecutionService::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class, function ($app) {
+            $registry = new \LaravelAIEngine\Services\Agent\Tools\ToolRegistry();
+            $registry->discoverFromConfig();
+            foreach ([
+                'search_learned_context' => \LaravelAIEngine\Services\Agent\Tools\SearchLearnedContextTool::class,
+                'run_skill' => \LaravelAIEngine\Services\Agent\Tools\RunSkillTool::class,
+            ] as $name => $class) {
+                if (!$registry->has($name)) {
+                    $registry->register($name, $app->make($class));
+                }
+            }
+            if ((bool) config('ai-engine.learning.tools.agent_ingest_enabled', false) && !$registry->has('learn_source')) {
+                $registry->register('learn_source', $app->make(\LaravelAIEngine\Services\Agent\Tools\LearnSourceTool::class));
+            }
+            if ((bool) config('ai-agent.goal_agent.register_sub_agent_tool', true) && !$registry->has('run_sub_agent')) {
+                $registry->register('run_sub_agent', new \LaravelAIEngine\Services\Agent\Tools\RunSubAgentTool());
+            }
+
+            return $registry;
+        });
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentOrchestrationInspector::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentOrchestrationInspector(
+            $app->make(\LaravelAIEngine\Services\Agent\SubAgents\SubAgentRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class)
+        ));
+
+        $app->singleton(\LaravelAIEngine\Services\Agent\Tools\ValidateFieldTool::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\ProjectAbilityScanner::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ProjectAbilityScanner(
+            $app->make(\LaravelAIEngine\Services\Agent\AgentCollectionAdapter::class),
+            $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\AgentManifestDoctor::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentManifestDoctor(
+            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Actions\ActionRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class)
+        ));
+    }
+}

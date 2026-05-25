@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AgentResponse;
+use LaravelAIEngine\DTOs\RoutingDecision;
+use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime;
 use LaravelAIEngine\Services\Agent\ContextManager;
+use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\IntentRouter;
+use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -34,10 +37,8 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
         $intentRouter = Mockery::mock(IntentRouter::class);
         $intentRouter->shouldNotReceive('route');
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldNotReceive('executeUseTool');
-        $execution->shouldNotReceive('executeConversational');
-        $execution->shouldNotReceive('executeSearchRag');
+        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
+        $dispatcher->shouldNotReceive('dispatch');
 
         $native = Mockery::mock(AiNativeRuntime::class);
         $native->shouldReceive('process')
@@ -57,7 +58,8 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
             new AgentPlanner(),
             $finalizer,
             Mockery::mock(AgentSelectionService::class),
-            $execution,
+            Mockery::mock(NodeSessionManager::class),
+            executionDispatcher: $dispatcher,
             aiNativeRuntime: $native
         );
 
@@ -82,10 +84,8 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
         $intentRouter = Mockery::mock(IntentRouter::class);
         $intentRouter->shouldNotReceive('route');
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldNotReceive('executeUseTool');
-        $execution->shouldNotReceive('executeConversational');
-        $execution->shouldNotReceive('executeSearchRag');
+        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
+        $dispatcher->shouldNotReceive('dispatch');
 
         $native = Mockery::mock(AiNativeRuntime::class);
         $native->shouldReceive('process')
@@ -110,7 +110,8 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
             new AgentPlanner(),
             $finalizer,
             Mockery::mock(AgentSelectionService::class),
-            $execution,
+            Mockery::mock(NodeSessionManager::class),
+            executionDispatcher: $dispatcher,
             aiNativeRuntime: $native
         );
 
@@ -140,9 +141,10 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
         $intentRouter = Mockery::mock(IntentRouter::class);
         $intentRouter->shouldNotReceive('route');
 
-        $execution = Mockery::mock(AgentExecutionFacade::class);
-        $execution->shouldReceive('executeSearchRag')
+        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
             ->once()
+            ->withArgs(static fn (RoutingDecision $decision): bool => $decision->action === RoutingDecisionAction::SEARCH_RAG)
             ->andReturn(AgentResponse::success('RAG handled it.', context: $context));
 
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);
@@ -156,7 +158,8 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
             new AgentPlanner(),
             $finalizer,
             Mockery::mock(AgentSelectionService::class),
-            $execution,
+            Mockery::mock(NodeSessionManager::class),
+            executionDispatcher: $dispatcher,
             aiNativeRuntime: $native
         );
 

@@ -150,6 +150,38 @@ class AgentChatAsyncRunApiTest extends TestCase
             ->assertJsonPath('data.execution_mode_reason', 'simple_chat');
     }
 
+    public function test_agent_chat_api_casts_authenticated_numeric_user_id_to_string(): void
+    {
+        $user = $this->createTestUser();
+
+        $service = Mockery::mock(AgentChatRunService::class);
+        $service->shouldNotReceive('start');
+
+        $chat = Mockery::mock(ChatService::class);
+        $chat->shouldReceive('processMessage')
+            ->once()
+            ->withAnyArgs()
+            ->andReturnUsing(function (...$args) use ($user): AIResponse {
+                $this->assertSame((string) $user->getAuthIdentifier(), $args[8]);
+
+                return AIResponse::success('Authenticated response.', 'openai', 'gpt-4o-mini');
+            });
+
+        $this->app->instance(AgentChatRunService::class, $service);
+        $this->app->instance(ChatService::class, $chat);
+
+        $this->actingAs($user)
+            ->postJson('/api/v1/agent/chat', [
+                'message' => 'Hi',
+                'session_id' => 'authenticated-chat-api',
+                'engine' => 'openai',
+                'model' => 'gpt-4o-mini',
+                'use_rag' => false,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.response', 'Authenticated response.');
+    }
+
     public function test_agent_chat_api_explicit_sync_overrides_async_default(): void
     {
         config()->set('ai-agent.chat.async_default', true);

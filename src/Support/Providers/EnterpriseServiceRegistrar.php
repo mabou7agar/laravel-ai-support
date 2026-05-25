@@ -41,6 +41,7 @@ class EnterpriseServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Graph\GraphNaturalLanguagePlanService::class, fn ($app) => new \LaravelAIEngine\Services\Graph\GraphNaturalLanguagePlanService(
             $app->make(\LaravelAIEngine\Services\Graph\GraphOntologyService::class),
         ));
+        $app->singleton(\LaravelAIEngine\Services\Graph\Neo4jRetrievalScoringService::class);
         $app->singleton(\LaravelAIEngine\Services\Graph\GraphRankingFeedbackService::class, fn () => new \LaravelAIEngine\Services\Graph\GraphRankingFeedbackService());
         $app->singleton(\LaravelAIEngine\Services\Graph\GraphKnowledgeBaseService::class, fn () => new \LaravelAIEngine\Services\Graph\GraphKnowledgeBaseService());
         $app->singleton(\LaravelAIEngine\Services\Graph\GraphBenchmarkHistoryService::class, fn () => new \LaravelAIEngine\Services\Graph\GraphBenchmarkHistoryService());
@@ -79,6 +80,7 @@ class EnterpriseServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Graph\GraphVectorNamingService::class),
             $app->make(\LaravelAIEngine\Services\Graph\GraphRankingFeedbackService::class),
             $app->make(\LaravelAIEngine\Services\Graph\GraphBackendResolver::class),
+            $app->make(\LaravelAIEngine\Services\Graph\Neo4jRetrievalScoringService::class),
         ));
         $app->singleton(\LaravelAIEngine\Services\Vector\VectorSearchService::class, fn ($app) => new \LaravelAIEngine\Services\Vector\VectorSearchService(
             $app->make(\LaravelAIEngine\Services\Vector\VectorDriverManager::class),

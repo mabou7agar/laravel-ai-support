@@ -30,6 +30,7 @@ class RAGResponseGenerator
         $response->metadata = [
             'sources' => $context['sources'] ?? [],
             'citations' => $context['citations'] ?? [],
+            'rag_enabled' => true,
             'rag_pipeline' => true,
             'rag_answer_generated' => !$usedFallback,
             'rag_answer_fallback' => $usedFallback,

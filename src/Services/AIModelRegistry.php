@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\Log;
  */
 class AIModelRegistry
 {
+    private ?AIModelRecommendationService $recommendations = null;
+    private ?AIModelCapabilityDetector $capabilityDetector = null;
+
     /**
      * Get all available models
      */
@@ -61,7 +64,7 @@ class AIModelRegistry
      */
     public function getRecommendedModel(string $task, ?string $provider = null, bool $offlineMode = false): ?AIModel
     {
-        $task = $this->normalizeTask($task);
+        $task = $this->recommendations()->normalizeTask($task);
 
         // If offline mode or no internet, prefer Ollama
         if ($offlineMode || !$this->hasInternetConnection()) {
@@ -79,18 +82,7 @@ class AIModelRegistry
 
         $models = $query->get();
 
-        $model = match ($task) {
-            'vision' => $this->sortByLowestInputPrice($models->filter(fn (AIModel $model): bool => $model->isVisionModel()))->first(),
-            'coding' => $models->first(fn (AIModel $model): bool => in_array('coding', $model->capabilities ?? [], true)),
-            'reasoning' => $models->first(fn (AIModel $model): bool => in_array('reasoning', $model->capabilities ?? [], true)),
-            'fast' => $this->sortByLowestInputPrice($models)->first(),
-            'cheap' => $this->sortByLowestInputPrice($models)->first(),
-            'performance' => $this->getBestPerformanceModel($models),
-            'quality' => $this->sortByLargestContext($models)->first(),
-            default => $this->sortByLowestInputPrice(
-                $models->filter(fn (AIModel $model): bool => in_array('chat', $model->capabilities ?? [], true))
-            )->first(),
-        };
+        $model = $this->recommendations()->recommend($task, $models);
 
         // Fallback to Ollama if no online model available
         if (!$model) {
@@ -119,72 +111,14 @@ class AIModelRegistry
         };
     }
 
-    protected function normalizeTask(string $task): string
+    protected function recommendations(): AIModelRecommendationService
     {
-        return match (strtolower(trim($task))) {
-            'cost' => 'cheap',
-            'speed' => 'fast',
-            default => strtolower(trim($task)),
-        };
+        return $this->recommendations ??= new AIModelRecommendationService();
     }
 
-    protected function getBestPerformanceModel(Collection $models): ?AIModel
+    protected function capabilityDetector(): AIModelCapabilityDetector
     {
-        if ($models->isEmpty()) {
-            return null;
-        }
-
-        /** @var AIModel|null $best */
-        $best = $models
-            ->sortByDesc(fn (AIModel $model): float => $this->performanceScore($model))
-            ->first();
-
-        return $best;
-    }
-
-    protected function performanceScore(AIModel $model): float
-    {
-        $context = (float) ($model->context_window['input'] ?? 0);
-        $price = $model->pricing['input'] ?? null;
-        $price = is_numeric($price) ? (float) $price : null;
-
-        $score = 0.0;
-        $score += min($context / 100000, 4.0);
-        $score += $model->supports_streaming ? 1.0 : 0.0;
-        $score += $model->supports_function_calling ? 1.0 : 0.0;
-        $score += $model->supports_vision ? 0.5 : 0.0;
-
-        if ($price === null) {
-            $score += 0.5;
-        } elseif ($price <= 0.0002) {
-            $score += 3.0;
-        } elseif ($price <= 0.001) {
-            $score += 2.2;
-        } elseif ($price <= 0.005) {
-            $score += 1.5;
-        } elseif ($price <= 0.02) {
-            $score += 0.8;
-        } else {
-            $score += 0.3;
-        }
-
-        return $score;
-    }
-
-    protected function sortByLowestInputPrice(Collection $models): Collection
-    {
-        return $models->sortBy(function (AIModel $model): float {
-            $price = $model->pricing['input'] ?? null;
-
-            return is_numeric($price) ? (float) $price : INF;
-        })->values();
-    }
-
-    protected function sortByLargestContext(Collection $models): Collection
-    {
-        return $models->sortByDesc(function (AIModel $model): int {
-            return (int) ($model->context_window['input'] ?? 0);
-        })->values();
+        return $this->capabilityDetector ??= new AIModelCapabilityDetector();
     }
 
     /**
@@ -921,42 +855,12 @@ class AIModelRegistry
 
     protected function inferMediaContentType(string $modelId): string
     {
-        $model = strtolower($modelId);
-
-        if (str_contains($model, 'video') || str_contains($model, 'veo') || str_contains($model, 'wan')) {
-            return 'video';
-        }
-
-        if (str_contains($model, 'whisper')
-            || str_contains($model, 'tts')
-            || str_contains($model, 'audio')
-            || str_contains($model, 'lyria')
-            || str_contains($model, 'melotts')) {
-            return 'audio';
-        }
-
-        return 'image';
+        return $this->capabilityDetector()->inferMediaContentType($modelId);
     }
 
     protected function capabilitiesForMediaType(string $contentType, string $modelId): array
     {
-        $model = strtolower($modelId);
-
-        return match ($contentType) {
-            'video' => array_values(array_unique(array_filter([
-                'inference',
-                'video_generation',
-                str_contains($model, 'image-to-video') || str_contains($model, 'i2v') ? 'image_to_video' : 'text_to_video',
-                str_contains($model, 'image') || str_contains($model, 'i2v') ? 'vision' : null,
-            ]))),
-            'audio' => array_values(array_unique(array_filter([
-                'inference',
-                str_contains($model, 'whisper') ? 'transcription' : 'audio_generation',
-                str_contains($model, 'whisper') ? 'speech_to_text' : 'text_to_speech',
-                str_contains($model, 'tts') || str_contains($model, 'melotts') ? 'tts' : null,
-            ]))),
-            default => ['inference', 'image_generation', 'text_to_image'],
-        };
+        return $this->capabilityDetector()->capabilitiesForMediaType($contentType, $modelId);
     }
 
     protected function estimatedPricingForMediaModel(string $provider, string $modelId, string $contentType): array
@@ -979,10 +883,7 @@ class AIModelRegistry
 
     protected function formatMediaModelName(string $modelId): string
     {
-        $name = preg_replace('#^@cf/#', 'Cloudflare ', $modelId);
-        $name = str_replace(['/', '-', '_', '.'], ' ', (string) $name);
-
-        return trim(ucwords($name)) ?: $modelId;
+        return $this->capabilityDetector()->formatMediaModelName($modelId);
     }
 
     /**
@@ -991,114 +892,17 @@ class AIModelRegistry
      */
     protected function detectFalCapabilities(string $modelId, array $metadata): array
     {
-        $category = strtolower((string) ($metadata['category'] ?? ''));
-        $haystack = strtolower(implode(' ', array_filter([
-            $modelId,
-            $metadata['display_name'] ?? '',
-            $metadata['description'] ?? '',
-            $category,
-            implode(' ', array_map('strval', (array) ($metadata['tags'] ?? []))),
-        ])));
-
-        $capabilities = ['inference'];
-
-        if (str_contains($category, 'text-to-image') || str_contains($haystack, 'text-to-image')) {
-            $capabilities[] = 'image_generation';
-            $capabilities[] = 'text_to_image';
-        }
-
-        if (str_contains($category, 'image-to-image')
-            || str_contains($category, 'image-edit')
-            || str_contains($haystack, 'edit image')
-            || str_contains($haystack, 'image edit')) {
-            $capabilities[] = 'image_generation';
-            $capabilities[] = 'image_editing';
-            $capabilities[] = 'vision';
-        }
-
-        if (str_contains($category, 'text-to-video') || str_contains($haystack, 'text-to-video')) {
-            $capabilities[] = 'video_generation';
-            $capabilities[] = 'text_to_video';
-        }
-
-        if (str_contains($category, 'image-to-video') || str_contains($haystack, 'image-to-video')) {
-            $capabilities[] = 'video_generation';
-            $capabilities[] = 'image_to_video';
-            $capabilities[] = 'vision';
-        }
-
-        if (str_contains($category, 'reference-to-video') || str_contains($haystack, 'reference-to-video')) {
-            $capabilities[] = 'video_generation';
-            $capabilities[] = 'reference_to_video';
-            $capabilities[] = 'vision';
-        }
-
-        if (str_contains($category, 'video') || str_contains($haystack, 'video generation')) {
-            $capabilities[] = 'video_generation';
-        }
-
-        if (str_contains($category, 'vision')
-            || str_contains($haystack, 'visual question')
-            || str_contains($haystack, 'captioning')
-            || str_contains($haystack, 'object detection')) {
-            $capabilities[] = 'vision';
-            $capabilities[] = 'image_analysis';
-        }
-
-        if (str_contains($category, 'text-to-speech') || str_contains($haystack, 'text-to-speech')) {
-            $capabilities[] = 'tts';
-            $capabilities[] = 'audio_generation';
-        }
-
-        if (str_contains($category, 'speech-to-text') || str_contains($haystack, 'speech-to-text')) {
-            $capabilities[] = 'transcription';
-            $capabilities[] = 'audio';
-        }
-
-        if (str_contains($category, 'audio') || str_contains($haystack, 'music generation')) {
-            $capabilities[] = 'audio';
-        }
-
-        if (str_contains($category, '3d') || str_contains($haystack, '3d')) {
-            $capabilities[] = '3d_generation';
-        }
-
-        if (str_contains($category, 'training') || str_contains($haystack, 'fine-tun')) {
-            $capabilities[] = 'training';
-        }
-
-        if (str_contains($haystack, 'upscale')) {
-            $capabilities[] = 'image_upscaling';
-            $capabilities[] = 'vision';
-        }
-
-        if (str_contains($haystack, 'background removal') || str_contains($haystack, 'remove background') || str_contains($modelId, 'rembg')) {
-            $capabilities[] = 'background_removal';
-            $capabilities[] = 'vision';
-        }
-
-        if (str_contains($haystack, 'streaming') || str_contains($haystack, 'websocket') || str_contains($haystack, 'real-time')) {
-            $capabilities[] = 'streaming';
-            $capabilities[] = 'realtime';
-        }
-
-        return array_values(array_unique($capabilities));
+        return $this->capabilityDetector()->detectFalCapabilities($modelId, $metadata);
     }
 
     protected function formatFalModelName(string $modelId): string
     {
-        $name = str_replace(['fal-ai/', '/', '-'], ['', ' ', ' '], $modelId);
-
-        return trim(ucwords($name)) ?: $modelId;
+        return $this->capabilityDetector()->formatFalModelName($modelId);
     }
 
     protected function inferFalVersion(string $modelId): ?string
     {
-        if (preg_match('/(?:^|[-\/])v?(\d+(?:\.\d+)*[a-z0-9-]*)/i', $modelId, $matches)) {
-            return $matches[1];
-        }
-
-        return null;
+        return $this->capabilityDetector()->inferFalVersion($modelId);
     }
 
     /**
@@ -1106,48 +910,7 @@ class AIModelRegistry
      */
     protected function detectOpenRouterCapabilities(array $modelData): array
     {
-        $capabilities = ['chat'];
-
-        $name = strtolower($modelData['name'] ?? '');
-        $id = strtolower($modelData['id'] ?? '');
-        $modality = strtolower((string) ($modelData['architecture']['modality'] ?? ''));
-        $supportedParameters = array_values((array) ($modelData['supported_parameters'] ?? []));
-        $haystack = trim($name.' '.$id.' '.$modality.' '.strtolower(implode(' ', $supportedParameters)));
-
-        if (str_contains($haystack, 'vision') || str_contains($modality, 'image->text') || str_contains($modality, 'image')) {
-            $capabilities[] = 'vision';
-        }
-
-        if (str_contains($modality, '->image') || str_contains($haystack, 'image-generation')) {
-            $capabilities[] = 'image_generation';
-        }
-
-        if (str_contains($haystack, 'audio')) {
-            $capabilities[] = 'audio';
-        }
-
-        if (str_contains($haystack, 'whisper') || str_contains($haystack, 'transcribe') || str_contains($haystack, 'speech-to-text') || str_contains($haystack, 'stt')) {
-            $capabilities[] = 'speech_to_text';
-        }
-
-        if (str_contains($haystack, 'tts') || str_contains($haystack, 'text-to-speech')) {
-            $capabilities[] = 'text_to_speech';
-            $capabilities[] = 'tts';
-        }
-
-        if (str_contains($haystack, 'embedding')) {
-            $capabilities[] = 'embeddings';
-        }
-
-        if (str_contains($name, 'code') || str_contains($id, 'code')) {
-            $capabilities[] = 'coding';
-        }
-
-        if (str_contains($modality, 'text') || in_array('tools', $supportedParameters, true) || in_array('tool_choice', $supportedParameters, true)) {
-            $capabilities[] = 'function_calling';
-        }
-
-        return array_values(array_unique($capabilities));
+        return $this->capabilityDetector()->detectOpenRouterCapabilities($modelData);
     }
 
     /**
@@ -1155,40 +918,7 @@ class AIModelRegistry
      */
     protected function detectCapabilities(string $modelId): array
     {
-        if (str_starts_with($modelId, 'gpt-image')) {
-            return ['image_generation', 'image_editing', 'vision'];
-        }
-
-        $capabilities = ['chat'];
-
-        // Vision support
-        if (str_contains($modelId, 'vision')
-            || str_contains($modelId, 'gpt-4')
-            || str_contains($modelId, 'gpt-5')) {
-            $capabilities[] = 'vision';
-        }
-
-        // Reasoning models (O1, O3, GPT-5)
-        if (str_contains($modelId, 'o1')
-            || str_contains($modelId, 'o3')
-            || str_contains($modelId, 'gpt-5')) {
-            $capabilities[] = 'reasoning';
-        }
-
-        // Function calling (not supported by O-series)
-        if ((str_contains($modelId, 'gpt-4') || str_contains($modelId, 'gpt-3.5') || str_contains($modelId, 'gpt-5'))
-            && !str_starts_with($modelId, 'o1')
-            && !str_starts_with($modelId, 'o3')) {
-            $capabilities[] = 'function_calling';
-            $capabilities[] = 'json_mode';
-        }
-
-        // Coding capabilities
-        if (str_contains($modelId, 'gpt-5') || str_contains($modelId, 'gpt-4o')) {
-            $capabilities[] = 'coding';
-        }
-
-        return $capabilities;
+        return $this->capabilityDetector()->detectCapabilities($modelId);
     }
 
     /**
@@ -1196,14 +926,7 @@ class AIModelRegistry
      */
     protected function formatModelName(string $modelId): string
     {
-        // gpt-4o -> GPT-4o
-        // gpt-5-turbo -> GPT-5 Turbo
-        $name = str_replace('-', ' ', $modelId);
-        $name = ucwords($name);
-        $name = str_replace('Gpt', 'GPT', $name);
-        $name = str_replace('O1', 'O1', $name);
-
-        return $name;
+        return $this->capabilityDetector()->formatModelName($modelId);
     }
 
     /**

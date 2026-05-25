@@ -16,7 +16,6 @@ use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryRetriever;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\RAG\RAGDecisionEngine;
-use LaravelAIEngine\Services\RAG\RAGExecutionRouter;
 use LaravelAIEngine\Tests\Models\User;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -26,10 +25,10 @@ class AgentConversationServiceTest extends UnitTestCase
     public function test_execute_conversational_injects_authenticated_user_profile_context(): void
     {
         $ai = Mockery::mock(AIEngineService::class);
-        $ragRouter = Mockery::mock(RAGExecutionRouter::class);
+        $rag = Mockery::mock(RAGDecisionEngine::class);
         $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
         $selection = Mockery::mock(AgentSelectionService::class);
-        $ragRouter->shouldNotReceive('execute');
+        $rag->shouldNotReceive('process');
 
         $user = new User();
         $user->forceFill([
@@ -54,7 +53,7 @@ class AgentConversationServiceTest extends UnitTestCase
             }))
             ->andReturn(AIResponse::success('Your name is John Doe.', 'openai', 'gpt-4o-mini'));
 
-        $service = new AgentConversationService($ai, $ragRouter, $selectedEntity, $selection);
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection);
         $context = new UnifiedActionContext('session-user', '42');
 
         $response = $service->executeConversational('what is my name', $context, [
@@ -70,10 +69,10 @@ class AgentConversationServiceTest extends UnitTestCase
         config()->set('ai-engine.conversation_history.recent_messages', 10);
 
         $ai = Mockery::mock(AIEngineService::class);
-        $ragRouter = Mockery::mock(RAGExecutionRouter::class);
+        $rag = Mockery::mock(RAGDecisionEngine::class);
         $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
         $selection = Mockery::mock(AgentSelectionService::class);
-        $ragRouter->shouldNotReceive('execute');
+        $rag->shouldNotReceive('process');
 
         $ai->shouldReceive('generate')
             ->once()
@@ -84,7 +83,7 @@ class AgentConversationServiceTest extends UnitTestCase
             }))
             ->andReturn(AIResponse::success('You asked me to remember that you are validating a Laravel AI package.', 'openai', 'gpt-4o-mini'));
 
-        $service = new AgentConversationService($ai, $ragRouter, $selectedEntity, $selection);
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection);
         $context = new UnifiedActionContext('session-long-chat', null, conversationHistory: [
             ['role' => 'user', 'content' => 'hello, remember that I am validating a Laravel AI package'],
             ['role' => 'assistant', 'content' => 'I will keep that in mind for this conversation.'],
@@ -109,12 +108,12 @@ class AgentConversationServiceTest extends UnitTestCase
         config()->set('ai-agent.conversation_memory.enabled', true);
 
         $ai = Mockery::mock(AIEngineService::class);
-        $ragRouter = Mockery::mock(RAGExecutionRouter::class);
+        $rag = Mockery::mock(RAGDecisionEngine::class);
         $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
         $selection = Mockery::mock(AgentSelectionService::class);
         $retriever = Mockery::mock(ConversationMemoryRetriever::class);
         $promptBuilder = Mockery::mock(ConversationMemoryPromptBuilder::class);
-        $ragRouter->shouldNotReceive('execute');
+        $rag->shouldNotReceive('process');
 
         $results = [
             new ConversationMemoryResult(
@@ -155,9 +154,10 @@ class AgentConversationServiceTest extends UnitTestCase
 
         $service = new AgentConversationService(
             $ai,
-            $ragRouter,
+            $rag,
             $selectedEntity,
             $selection,
+            null,
             null,
             null,
             $retriever,
@@ -180,16 +180,16 @@ class AgentConversationServiceTest extends UnitTestCase
     public function test_execute_conversational_returns_failure_when_ai_engine_fails(): void
     {
         $ai = Mockery::mock(AIEngineService::class);
-        $ragRouter = Mockery::mock(RAGExecutionRouter::class);
+        $rag = Mockery::mock(RAGDecisionEngine::class);
         $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
         $selection = Mockery::mock(AgentSelectionService::class);
-        $ragRouter->shouldNotReceive('execute');
+        $rag->shouldNotReceive('process');
 
         $ai->shouldReceive('generate')
             ->once()
             ->andReturn(AIResponse::error('Provider authentication failed.', 'openai', 'gpt-4o-mini'));
 
-        $service = new AgentConversationService($ai, $ragRouter, $selectedEntity, $selection);
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection);
         $context = new UnifiedActionContext('session-ai-error', '42');
 
         $response = $service->executeConversational('hi', $context, [
@@ -204,16 +204,16 @@ class AgentConversationServiceTest extends UnitTestCase
     public function test_execute_conversational_returns_failure_when_ai_engine_returns_empty_content(): void
     {
         $ai = Mockery::mock(AIEngineService::class);
-        $ragRouter = Mockery::mock(RAGExecutionRouter::class);
+        $rag = Mockery::mock(RAGDecisionEngine::class);
         $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
         $selection = Mockery::mock(AgentSelectionService::class);
-        $ragRouter->shouldNotReceive('execute');
+        $rag->shouldNotReceive('process');
 
         $ai->shouldReceive('generate')
             ->once()
             ->andReturn(AIResponse::success('', 'openai', 'gpt-4o-mini'));
 
-        $service = new AgentConversationService($ai, $ragRouter, $selectedEntity, $selection);
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection);
         $context = new UnifiedActionContext('session-empty-ai', '42');
 
         $response = $service->executeConversational('hi', $context, [
@@ -229,7 +229,6 @@ class AgentConversationServiceTest extends UnitTestCase
     {
         $ai = Mockery::mock(AIEngineService::class);
         $rag = Mockery::mock(RAGDecisionEngine::class);
-        $ragRouter = new RAGExecutionRouter($rag);
         $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
         $selection = Mockery::mock(AgentSelectionService::class);
 
@@ -241,7 +240,7 @@ class AgentConversationServiceTest extends UnitTestCase
                 'error' => "I couldn't reach remote node 'billing' (HTTP 500).",
             ]);
 
-        $service = new AgentConversationService($ai, $ragRouter, $selectedEntity, $selection);
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection);
         $context = new UnifiedActionContext('session-err', 1);
 
         $response = $service->executeSearchRAG('list invoices', $context, [
@@ -261,7 +260,6 @@ class AgentConversationServiceTest extends UnitTestCase
         $rag = Mockery::mock(RAGDecisionEngine::class);
         $rag->shouldNotReceive('process');
         $pipeline = Mockery::mock(RAGPipelineContract::class);
-        $ragRouter = new RAGExecutionRouter($rag, $pipeline);
         $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
         $selection = Mockery::mock(AgentSelectionService::class);
 
@@ -279,7 +277,7 @@ class AgentConversationServiceTest extends UnitTestCase
                 data: ['rag_context' => ['sources' => []]]
             ));
 
-        $service = new AgentConversationService($ai, $ragRouter, $selectedEntity, $selection);
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection, $pipeline);
         $context = new UnifiedActionContext('session-rag-v2', 9);
 
         $response = $service->executeSearchRAG('find project launch notes', $context, [

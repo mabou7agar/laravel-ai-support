@@ -13,9 +13,6 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Models\AINode;
-use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
-use LaravelAIEngine\Services\Agent\AgentConversationService;
-use LaravelAIEngine\Services\Agent\AgentExecutionFacade;
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
@@ -353,19 +350,13 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
             ]);
         $this->app->instance(RAGDecisionEngine::class, $ragAgent);
 
-        $execution = new AgentExecutionFacade(
-            $this->app->make(AgentActionExecutionService::class),
-            $this->app->make(AgentConversationService::class),
-            Mockery::mock(NodeSessionManager::class)
-        );
-
         $processor = new LaravelAgentProcessor(
             new ContextManager(),
             $intentRouter,
             new AgentPlanner(),
             new AgentResponseFinalizer(new ContextManager()),
             new AgentSelectionService(new AgentResponseFinalizer(new ContextManager())),
-            $execution
+            Mockery::mock(NodeSessionManager::class)
         );
 
         $response = $processor->process('which one is overdue?', 'acceptance-follow-up', null);

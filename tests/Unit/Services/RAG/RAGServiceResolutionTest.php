@@ -7,7 +7,6 @@ use LaravelAIEngine\Services\RAG\RAGContextService;
 use LaravelAIEngine\Services\RAG\RAGPlannerService;
 use LaravelAIEngine\Services\RAG\RAGDecisionPromptService;
 use LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService;
-use LaravelAIEngine\Services\RAG\RAGExecutionRouter;
 use LaravelAIEngine\Services\RAG\RAGToolExecutionService;
 use LaravelAIEngine\Services\RAG\RAGAggregateService;
 use LaravelAIEngine\Services\RAG\RAGModelMetadataService;
@@ -28,14 +27,17 @@ class RAGServiceResolutionTest extends UnitTestCase
         $this->assertInstanceOf(RAGDecisionEngine::class, $this->app->make(RAGDecisionEngine::class));
     }
 
-    public function test_rag_execution_router_resolves_from_container(): void
-    {
-        $this->assertInstanceOf(RAGExecutionRouter::class, $this->app->make(RAGExecutionRouter::class));
-    }
-
     public function test_rag_planner_service_resolves_from_container(): void
     {
         $this->assertInstanceOf(RAGPlannerService::class, $this->app->make(RAGPlannerService::class));
+    }
+
+    public function test_rag_aggregate_intent_resolver_resolves_from_container(): void
+    {
+        $this->assertInstanceOf(
+            \LaravelAIEngine\Services\RAG\RAGAggregateIntentResolver::class,
+            $this->app->make(\LaravelAIEngine\Services\RAG\RAGAggregateIntentResolver::class)
+        );
     }
 
     public function test_rag_tool_execution_service_resolves_from_container(): void
