@@ -129,7 +129,21 @@ class ConversationContextCompactor
                 continue;
             }
 
-            $content = trim((string) ($message['content'] ?? ''));
+            $raw = $message['content'] ?? '';
+
+            // Handle multipart / vision content (array of parts) gracefully by
+            // extracting text parts rather than casting the array to the literal
+            // string "Array" which would be noisy and meaningless.
+            if (is_array($raw)) {
+                $raw = implode(' ', array_filter(array_map(
+                    static fn (mixed $part): string => is_array($part) && ($part['type'] ?? '') === 'text'
+                        ? trim((string) ($part['text'] ?? ''))
+                        : (is_string($part) ? trim($part) : ''),
+                    $raw
+                )));
+            }
+
+            $content = trim((string) $raw);
 
             if (mb_strlen($content) > $limit) {
                 $content = mb_substr($content, 0, $limit) . '...';
@@ -152,7 +166,15 @@ class ConversationContextCompactor
     private function historyChars(array $messages): int
     {
         return array_sum(array_map(
-            static fn (array $message): int => strlen((string) ($message['content'] ?? '')),
+            static function (array $message): int {
+                $content = $message['content'] ?? '';
+                // Multipart / vision content is an array; use a rough character estimate.
+                if (is_array($content)) {
+                    return strlen(json_encode($content) ?: '');
+                }
+
+                return strlen((string) $content);
+            },
             $messages
         ));
     }

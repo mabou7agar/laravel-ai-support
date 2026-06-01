@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.39] — 2026-06-01
+
+### Changed
+
+- **Stateless multi-turn dedup guard** — `hydrateConversationHistory` now skips `addUserMessage` when the current user message already appears as the last entry in the replayed `conversation_history`, preventing duplicate user turns in stateless multi-turn flows.
+- **Conversation history hard-cap** — `hydrateConversationHistory` slices the replayed history to the last `ai-agent.context_compaction.max_messages` entries (default 12) before assigning it to the context, preventing oversized client-replayed threads from bypassing the compactor and ballooning prompt cost.
+- **Null content normalisation** — `null` content on assistant messages (OpenAI-style `tool_calls` entries) is normalised to `''` during hydration so downstream code never receives a `null` content value.
+- **Multipart/vision content flattening** — array-typed `content` (multipart / vision turns) is now flattened by extracting `text`-typed parts during both `hydrateConversationHistory` and `ConversationContextCompactor::sanitizeMessages`, eliminating the PHP `Array to string conversion` warning and the literal string `'Array'` appearing in prompts. `historyChars` now uses `json_encode` to estimate array content length safely.
+- **Throwable catch widening** — both `askAI()` and `routeThroughPipeline()` now catch `\Throwable` instead of `\Exception`, so PHP `TypeError` and `ValueError` from `IntentRouter` or the routing pipeline propagate into the graceful fallback path rather than escaping to the HTTP layer.
+- **Clean RAG-to-orchestrator reroute** — `AgentConversationService::executeSearchRAG` now unsets `conversation_history` from `rerouteOptions` before the exit reroute call, removing stale key noise and making the reroute path clean.
+- **Configurable conversational max tokens** — `AgentConversationService::executeConversational` now reads `maxTokens` from `$options['max_tokens'] ?? config('ai-agent.conversational.max_tokens', 200)` instead of a hard-coded `200`, letting operators and callers tune response length without overriding the class.
+- **Caller contract documented** — `hydrateConversationHistory` now has a docblock explicitly stating that `role` values must be lowercase (`user`, `assistant`, `system`, `tool`) and that entries with unrecognised casing are silently dropped.
+
+### Added
+
+- **ConversationHistoryHardeningTest** — 12 new PHPUnit/Pest unit tests covering dedup guard, history cap, null normalisation, multipart content flattening (hydration and compactor), `Throwable` fallback, invalid-role dropping, and edge cases (missing/empty/non-array history, missing content key).
+
 ## [Unreleased]
 
 ### Added

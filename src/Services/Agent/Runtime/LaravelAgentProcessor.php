@@ -69,7 +69,18 @@ class LaravelAgentProcessor
 
         $context = $this->contextManager->getOrCreate($sessionId, $userId);
         $this->hydrateConversationHistory($context, $options);
-        $context->addUserMessage($message);
+
+        // Dedup guard: if the client already included the current turn as the last entry
+        // in conversation_history, skip addUserMessage to avoid a double-user-turn in the
+        // context that would confuse the model (stateless multi-turn pattern).
+        $lastHydrated = end($context->conversationHistory);
+        $alreadyPresent = is_array($lastHydrated)
+            && ($lastHydrated['role'] ?? null) === 'user'
+            && trim((string) ($lastHydrated['content'] ?? '')) === trim($message);
+
+        if (!$alreadyPresent) {
+            $context->addUserMessage($message);
+        }
 
         if ($this->shouldUseGoalAgent($options)) {
             return $this->finalizeDirect(
@@ -146,6 +157,19 @@ class LaravelAgentProcessor
         return $this->routeThroughPipeline($message, $context, $options);
     }
 
+    /**
+     * Hydrate the context conversation history from a client-supplied replay array.
+     *
+     * Caller contract:
+     *   - Each entry MUST be an array with a 'role' key (lowercase: 'system', 'user',
+     *     'assistant', or 'tool') and a 'content' key.  Entries whose role is not
+     *     lowercase will be silently dropped; normalise before passing.
+     *   - The current user turn MUST NOT be included as the last entry; if it is, the
+     *     dedup guard below will skip addUserMessage to avoid duplicating the turn.
+     *
+     * This method is idempotent: if the context already carries history it returns
+     * immediately so re-entrant calls (e.g. goal-agent reroutes) are safe.
+     */
     protected function hydrateConversationHistory(UnifiedActionContext $context, array $options): void
     {
         if ($context->conversationHistory !== []) {
@@ -157,12 +181,41 @@ class LaravelAgentProcessor
             return;
         }
 
-        $context->conversationHistory = array_values(array_filter(
+        // Validate roles, normalise null content to '' and cap at the compactor limit.
+        $maxMessages = max(2, (int) config('ai-agent.context_compaction.max_messages', 12));
+
+        $filtered = array_values(array_filter(
             $history,
             static fn (mixed $message): bool => is_array($message)
                 && in_array($message['role'] ?? null, ['system', 'user', 'assistant', 'tool'], true)
                 && array_key_exists('content', $message)
         ));
+
+        // Normalise null/array content to string so downstream code never sees a null.
+        $filtered = array_map(static function (array $message): array {
+            if ($message['content'] === null) {
+                $message['content'] = '';
+            } elseif (is_array($message['content'])) {
+                // Multipart / vision content: extract text parts, preserve the rest.
+                $text = implode(' ', array_filter(array_map(
+                    static fn (mixed $part): string => is_array($part) && ($part['type'] ?? '') === 'text'
+                        ? trim((string) ($part['text'] ?? ''))
+                        : (is_string($part) ? trim($part) : ''),
+                    $message['content']
+                )));
+                $message['content'] = $text;
+            }
+
+            return $message;
+        }, $filtered);
+
+        // Hard-cap the replayed history to avoid unbounded context growth.
+        // Preserve the most-recent messages (tail of the array) so context is current.
+        if (count($filtered) > $maxMessages) {
+            $filtered = array_slice($filtered, -$maxMessages);
+        }
+
+        $context->conversationHistory = $filtered;
     }
 
     protected function askAI(
@@ -194,7 +247,7 @@ class LaravelAgentProcessor
 
             return $this->responseFinalizer->finalize($context, $response);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::channel('ai-engine')->error('AI orchestration failed', [
                 'error' => $e->getMessage(),
                 'exception' => $e::class,
@@ -249,9 +302,10 @@ class LaravelAgentProcessor
                     $trace
                 )
             );
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::channel('ai-engine')->error('Routing pipeline failed', [
                 'error' => $e->getMessage(),
+                'exception' => $e::class,
             ]);
 
             return $this->heuristicRoute($message, $context, $options);

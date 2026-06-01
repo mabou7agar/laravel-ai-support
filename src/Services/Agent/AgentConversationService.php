@@ -76,7 +76,13 @@ class AgentConversationService
                 'new_message' => substr($newMessage, 0, 100),
             ]);
 
-            return $reroute($newMessage, $context->sessionId, $context->userId, $options);
+            // Strip the client-supplied conversation_history from reroute options so the
+            // processor's hydrateConversationHistory early-return guard does not silently
+            // skip re-hydration on the rerouted turn (context already carries the history).
+            $rerouteOptions = $options;
+            unset($rerouteOptions['conversation_history']);
+
+            return $reroute($newMessage, $context->sessionId, $context->userId, $rerouteOptions);
         }
 
         if ($result['success'] ?? false) {
@@ -183,7 +189,7 @@ PROMPT;
             prompt: $prompt,
             engine: EngineEnum::from($options['engine'] ?? 'openai'),
             model: EntityEnum::from($options['model'] ?? 'gpt-4o-mini'),
-            maxTokens: 200,
+            maxTokens: (int) ($options['max_tokens'] ?? config('ai-agent.conversational.max_tokens', 200)),
             temperature: 0.7,
         ));
 
