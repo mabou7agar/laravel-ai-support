@@ -73,6 +73,8 @@ class ModelBackedAgentToolTest extends TestCase
         $missing = $tool->execute(['name' => 'Sample Customer'], new UnifiedActionContext('upsert-test', 77));
         $this->assertFalse($missing->success);
         $this->assertSame(['email'], $missing->data['missing_fields']);
+        // Missing required input now asks the user (guided UX) rather than hard-failing.
+        $this->assertTrue($missing->metadata['needs_user_input'] ?? false);
 
         $created = $tool->execute([
             'name' => 'Sample Customer',
