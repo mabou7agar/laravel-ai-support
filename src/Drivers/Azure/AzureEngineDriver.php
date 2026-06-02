@@ -24,7 +24,7 @@ class AzureEngineDriver implements EngineDriverInterface
 
     public function __construct()
     {
-        $this->apiKey = config('ai-engine.engines.azure.api_key');
+        $this->apiKey = (string) config('ai-engine.engines.azure.api_key');
         $this->region = config('ai-engine.engines.azure.region', 'eastus');
         $this->baseUrl = config('ai-engine.engines.azure.base_url', "https://{$this->region}.api.cognitive.microsoft.com");
 
@@ -93,6 +93,8 @@ class AzureEngineDriver implements EngineDriverInterface
         ];
 
         return new AIResponse(
+            engine: $request->getEngine(),
+            model: $request->getModel(),
             content: json_encode($audioData),
             usage: [
                 'characters_processed' => strlen($request->getPrompt()),
@@ -134,6 +136,8 @@ class AzureEngineDriver implements EngineDriverInterface
         ];
 
         return new AIResponse(
+            engine: $request->getEngine(),
+            model: $request->getModel(),
             content: $transcriptionData['text'],
             usage: [
                 'audio_duration' => $transcriptionData['duration'],
@@ -180,6 +184,8 @@ class AzureEngineDriver implements EngineDriverInterface
         ];
 
         return new AIResponse(
+            engine: $request->getEngine(),
+            model: $request->getModel(),
             content: $translationData['translated_text'],
             usage: [
                 'characters_translated' => strlen($request->getPrompt()),
@@ -230,6 +236,8 @@ class AzureEngineDriver implements EngineDriverInterface
         ];
 
         return new AIResponse(
+            engine: $request->getEngine(),
+            model: $request->getModel(),
             content: json_encode($analysisData),
             usage: [
                 'characters_analyzed' => strlen($request->getPrompt()),
@@ -283,6 +291,8 @@ class AzureEngineDriver implements EngineDriverInterface
         ];
 
         return new AIResponse(
+            engine: $request->getEngine(),
+            model: $request->getModel(),
             content: json_encode($visionData),
             usage: [
                 'images_analyzed' => 1,

@@ -144,7 +144,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
 
             // Add Perplexity-specific metadata
             if (!empty($citations)) {
-                $detailedUsage = $aiResponse->getDetailedUsage() ?? [];
+                $detailedUsage = $aiResponse->getUsage() ?? [];
                 $detailedUsage['citations'] = $citations;
                 $detailedUsage['sources_count'] = count($citations);
                 $detailedUsage['search_performed'] = true;
