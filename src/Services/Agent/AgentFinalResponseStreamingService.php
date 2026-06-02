@@ -10,6 +10,22 @@ use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Models\AIAgentRunStep;
 use LaravelAIEngine\Services\AIEngineService;
 
+/**
+ * Streams provider chunks for an agent's final response, mirroring each token
+ * into the agent event stream (FINAL_RESPONSE_TOKEN_STREAMED /
+ * FINAL_RESPONSE_STREAM_COMPLETED).
+ *
+ * NOTE: This is a registered, public singleton service that is intentionally
+ * available but NOT yet wired into the default runtime flow. Conversational
+ * replies currently go through the synchronous AgentRuntimeContract::process()
+ * path in RunAgentJob, which yields a single fully-formed AgentResponse with no
+ * token-streaming seam. Threading a generator through process() ->
+ * RunAgentJob::complete() would be invasive and is deferred. Until that seam
+ * exists, callers may use this service directly to obtain streamed final
+ * responses (it should be invoked behind a streaming flag once wired). It is
+ * deliberately retained because removing a registered public service would be a
+ * breaking change.
+ */
 class AgentFinalResponseStreamingService
 {
     public function __construct(

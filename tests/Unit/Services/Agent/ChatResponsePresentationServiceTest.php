@@ -34,6 +34,24 @@ class ChatResponsePresentationServiceTest extends UnitTestCase
         $this->assertSame('create_invoice', $presented->getMetadata()['suggestions'][0]['id']);
     }
 
+    public function test_array_format_retains_original_formatted_content_in_metadata(): void
+    {
+        $suggestions = Mockery::mock(AgentResponseSuggestionService::class);
+        $suggestions->shouldReceive('suggest')->once()->andReturn([]);
+
+        $original = "Summary:\n- Create invoice\n- Send email";
+        $response = AIResponse::success($original);
+
+        $presented = (new ChatResponsePresentationService(new ResponsePointExtractor(), $suggestions))->apply(
+            $response,
+            'create invoice from this email',
+            ['response_points_format' => 'array']
+        );
+
+        $this->assertSame('Summary:', $presented->getContent());
+        $this->assertSame($original, $presented->getMetadata()['response_content_original']);
+    }
+
     public function test_existing_required_choice_suggestions_are_preserved_before_generated_suggestions(): void
     {
         $suggestions = Mockery::mock(AgentResponseSuggestionService::class);

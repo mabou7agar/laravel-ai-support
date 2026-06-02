@@ -170,6 +170,57 @@ class AgentRunAsyncJobsTest extends TestCase
         $this->assertNotContains('run.completed', $events);
     }
 
+    public function test_run_agent_job_leaves_step_completed_at_null_for_waiting_input_status(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'waiting-step',
+            'user_id' => '9',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->once()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::needsUserInput('Need one more field.'));
+
+        $job = new RunAgentJob($run->id, 'start', 'waiting-step', '9');
+        $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class));
+
+        $run->refresh();
+        $step = $run->steps()->first();
+
+        $this->assertSame(AIAgentRun::STATUS_WAITING_INPUT, $run->status);
+        $this->assertSame(AIAgentRun::STATUS_WAITING_INPUT, $step->status);
+        // Non-terminal pause: neither the run nor the step is completed yet.
+        $this->assertNull($run->completed_at);
+        $this->assertNull($step->completed_at);
+    }
+
+    public function test_run_agent_job_sets_step_completed_at_for_completed_status(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'completed-step',
+            'user_id' => '9',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->once()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::success('All done.'));
+
+        $job = new RunAgentJob($run->id, 'finish', 'completed-step', '9');
+        $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class));
+
+        $run->refresh();
+        $step = $run->steps()->first();
+
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $step->status);
+        $this->assertNotNull($step->completed_at);
+    }
+
     public function test_duplicate_continuation_jobs_with_same_idempotency_key_process_once(): void
     {
         $run = app(AgentRunRepository::class)->create([

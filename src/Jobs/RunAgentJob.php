@@ -190,7 +190,10 @@ class RunAgentJob implements ShouldQueue
             ), [
                 'duration_ms' => $this->durationMs($step),
             ]),
-            'completed_at' => now(),
+            // Only stamp completion for terminal statuses. WAITING_INPUT /
+            // WAITING_APPROVAL are non-terminal pauses, so the step stays open
+            // (mirroring the run, which keeps completed_at = null while waiting).
+            'completed_at' => $isWaiting ? null : now(),
         ]);
 
         $runs->transition($run, $status, [

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent;
 
+use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -26,20 +27,28 @@ class AgentRunSseStreamService
         $timeout = max(1, min(120, (int) ($options['timeout'] ?? config('ai-agent.event_stream.sse.max_seconds', 30))));
         $pollMilliseconds = max(100, min(5000, (int) ($options['poll'] ?? config('ai-agent.event_stream.sse.poll_milliseconds', 500))));
         $heartbeatSeconds = max(1, (int) config('ai-agent.event_stream.sse.heartbeat_seconds', 10));
+        $maxIdlePolls = max(0, (int) config('ai-agent.event_stream.sse.max_idle_polls', 0));
         $lastEventId = (string) ($options['last_event_id'] ?? '');
 
-        return response()->stream(function () use ($run, $timeout, $pollMilliseconds, $heartbeatSeconds, $lastEventId): void {
+        return response()->stream(function () use ($run, $timeout, $pollMilliseconds, $heartbeatSeconds, $maxIdlePolls, $lastEventId): void {
             $deadline = microtime(true) + $timeout;
             $lastHeartbeat = microtime(true);
             $sent = [];
+            $idlePolls = 0;
 
             while (microtime(true) <= $deadline) {
+                // Stop holding the connection if the client has already gone away
+                // (browser tab closed, navigation, etc.).
+                if (connection_aborted() === 1) {
+                    break;
+                }
+
                 $currentRun = $this->runs->find($run->id);
                 if (!$currentRun instanceof AIAgentRun) {
                     break;
                 }
 
-                $this->emitNewEvents($currentRun, $lastEventId, $sent);
+                $emitted = $this->emitNewEvents($currentRun, $lastEventId, $sent);
 
                 if ($currentRun->isTerminal()) {
                     // Re-fetch once: a terminal event (e.g. run.completed) may have
@@ -48,6 +57,19 @@ class AgentRunSseStreamService
                     if ($finalRun instanceof AIAgentRun) {
                         $this->emitNewEvents($finalRun, $lastEventId, $sent);
                     }
+                    break;
+                }
+
+                // Inactivity guard: a never-terminal run would otherwise hold the
+                // connection for the full timeout. Break after N consecutive polls
+                // that produced no new events (0 disables the guard).
+                $idlePolls = $emitted ? 0 : $idlePolls + 1;
+                if ($maxIdlePolls > 0 && $idlePolls >= $maxIdlePolls) {
+                    Log::channel('ai-engine')->info('Agent run SSE closed after idle timeout', [
+                        'run_id' => $run->uuid,
+                        'run_db_id' => $run->id,
+                        'idle_polls' => $idlePolls,
+                    ]);
                     break;
                 }
 
@@ -104,10 +126,12 @@ class AgentRunSseStreamService
 
     /**
      * @param  array<string, bool>  $sent
+     * @return bool Whether at least one new event was emitted.
      */
-    private function emitNewEvents(AIAgentRun $run, string $lastEventId, array &$sent): void
+    private function emitNewEvents(AIAgentRun $run, string $lastEventId, array &$sent): bool
     {
-        $events = $this->eventsAfter($this->events->fallbackEvents($run), $lastEventId);
+        $events = $this->eventsAfter($this->events->fallbackEvents($run), $lastEventId, $run);
+        $emitted = false;
         foreach ($events as $event) {
             $eventId = (string) ($event['id'] ?? '');
             if ($eventId !== '' && isset($sent[$eventId])) {
@@ -119,10 +143,13 @@ class AgentRunSseStreamService
                 $sent[$eventId] = true;
             }
             $this->flush();
+            $emitted = true;
         }
+
+        return $emitted;
     }
 
-    private function eventsAfter(array $events, string $lastEventId): array
+    private function eventsAfter(array $events, string $lastEventId, ?AIAgentRun $run = null): array
     {
         if ($lastEventId === '') {
             return $events;
@@ -130,7 +157,7 @@ class AgentRunSseStreamService
 
         $found = false;
 
-        return array_values(array_filter($events, static function (array $event) use (&$found, $lastEventId): bool {
+        $after = array_values(array_filter($events, static function (array $event) use (&$found, $lastEventId): bool {
             if ($found) {
                 return true;
             }
@@ -141,6 +168,20 @@ class AgentRunSseStreamService
 
             return false;
         }));
+
+        if (!$found && $events !== []) {
+            // The client asked to resume after an event we no longer have (it was
+            // truncated from the persisted window or never persisted). Surface the
+            // gap so SSE resume holes are observable instead of silently empty.
+            Log::channel('ai-engine')->warning('Agent run SSE resume could not locate last_event_id', [
+                'run_id' => $run?->uuid,
+                'run_db_id' => $run?->id,
+                'last_event_id' => $lastEventId,
+                'available_events' => count($events),
+            ]);
+        }
+
+        return $after;
     }
 
     private function frame(array $event): string

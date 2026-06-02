@@ -29,6 +29,10 @@ class ChatResponsePresentationService
             $metadata['response_text_without_points'] = $extracted['text_without_points'];
 
             if ($format === 'array' && $extracted['points'] !== []) {
+                // The formatted content is about to be replaced with the
+                // point-stripped text; retain the original so consumers can
+                // still access the full formatted reply.
+                $metadata['response_content_original'] = $content;
                 $content = $extracted['text_without_points'];
             }
         }
