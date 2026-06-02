@@ -26,6 +26,7 @@ use LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver;
 use LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver;
 use LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver;
 use LaravelAIEngine\Drivers\Bedrock\BedrockEngineDriver;
+use LaravelAIEngine\Drivers\Clipdrop\ClipdropEngineDriver;
 use LaravelAIEngine\Drivers\Unsplash\UnsplashEngineDriver;
 use LaravelAIEngine\Drivers\Pexels\PexelsEngineDriver;
 use LaravelAIEngine\Drivers\LocalAudio\LocalAudioEngineDriver;
@@ -60,6 +61,7 @@ enum EngineEnum: string
     case ComfyUI = 'comfyui';
     case LocalAudio = 'local_audio';
     case Bedrock = 'bedrock';
+    case Clipdrop = 'clipdrop';
 
     public const OPENAI = 'openai';
     public const ANTHROPIC = 'anthropic';
@@ -86,6 +88,7 @@ enum EngineEnum: string
     public const COMFYUI = 'comfyui';
     public const LOCAL_AUDIO = 'local_audio';
     public const BEDROCK = 'bedrock';
+    public const CLIPDROP = 'clipdrop';
 
     /**
      * Get the driver class for this engine
@@ -118,6 +121,7 @@ enum EngineEnum: string
             self::ComfyUI            => ComfyUIEngineDriver::class,
             self::LocalAudio         => LocalAudioEngineDriver::class,
             self::Bedrock            => BedrockEngineDriver::class,
+            self::Clipdrop           => ClipdropEngineDriver::class,
         };
     }
 
@@ -152,6 +156,7 @@ enum EngineEnum: string
             self::ComfyUI            => 'ComfyUI',
             self::LocalAudio         => 'Local Audio',
             self::Bedrock            => 'AWS Bedrock',
+            self::Clipdrop           => 'Clipdrop',
         };
     }
 
@@ -194,6 +199,7 @@ enum EngineEnum: string
             self::ComfyUI            => ['images', 'video', 'audio'],
             self::LocalAudio         => ['audio', 'speech', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'],
             self::Bedrock            => ['text', 'chat'],
+            self::Clipdrop           => ['image', 'image_edit'],
         };
     }
 
@@ -308,6 +314,9 @@ enum EngineEnum: string
             self::Bedrock => [
                 EntityEnum::BEDROCK_CLAUDE_SONNET,
                 EntityEnum::BEDROCK_CLAUDE_HAIKU,
+            ],
+            self::Clipdrop => [
+                EntityEnum::CLIPDROP_IMAGE_EDIT,
             ],
             default => [],
         };

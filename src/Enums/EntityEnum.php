@@ -259,6 +259,7 @@ class EntityEnum
     // AWS Bedrock Models (Anthropic Claude on Bedrock)
     public const BEDROCK_CLAUDE_SONNET = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
     public const BEDROCK_CLAUDE_HAIKU = 'anthropic.claude-3-haiku-20240307-v1:0';
+    public const CLIPDROP_IMAGE_EDIT = 'clipdrop-image-edit';
 
     // Low-cost and local media provider models
     public const CLOUDFLARE_FLUX_SCHNELL = '@cf/black-forest-labs/flux-1-schnell';
@@ -506,6 +507,8 @@ class EntityEnum
             case self::BEDROCK_CLAUDE_SONNET:
             case self::BEDROCK_CLAUDE_HAIKU:
                 return EngineEnum::Bedrock;
+            case self::CLIPDROP_IMAGE_EDIT:
+                return EngineEnum::Clipdrop;
             case self::CLOUDFLARE_FLUX_SCHNELL:
             case self::CLOUDFLARE_DREAMSHAPER:
             case self::CLOUDFLARE_WHISPER:
@@ -701,6 +704,8 @@ class EntityEnum
             case self::BEDROCK_CLAUDE_SONNET:
             case self::BEDROCK_CLAUDE_HAIKU:
                 return \LaravelAIEngine\Drivers\Bedrock\BedrockEngineDriver::class;
+            case self::CLIPDROP_IMAGE_EDIT:
+                return \LaravelAIEngine\Drivers\Clipdrop\ClipdropEngineDriver::class;
             case self::CLOUDFLARE_FLUX_SCHNELL:
             case self::CLOUDFLARE_DREAMSHAPER:
             case self::CLOUDFLARE_WHISPER:
@@ -964,6 +969,8 @@ class EntityEnum
                 return 'Claude 3.5 Sonnet (AWS Bedrock)';
             case self::BEDROCK_CLAUDE_HAIKU:
                 return 'Claude 3 Haiku (AWS Bedrock)';
+            case self::CLIPDROP_IMAGE_EDIT:
+                return 'Clipdrop Image Edit';
             case self::CLOUDFLARE_FLUX_SCHNELL:
                 return 'Cloudflare FLUX Schnell';
             case self::CLOUDFLARE_DREAMSHAPER:
@@ -1259,6 +1266,8 @@ class EntityEnum
                 return 2.0;
             case self::BEDROCK_CLAUDE_HAIKU:
                 return 0.5;
+            case self::CLIPDROP_IMAGE_EDIT:
+                return 1.0;
             case self::CLOUDFLARE_FLUX_SCHNELL:
                 return 0.4;
             case self::CLOUDFLARE_DREAMSHAPER:
@@ -1369,6 +1378,7 @@ class EntityEnum
             case self::REPLICATE_FLUX_SCHNELL:
             case self::COMFYUI_DEFAULT_IMAGE:
                 return 'image';
+            case self::CLIPDROP_IMAGE_EDIT:
             case self::GPT_IMAGE_1_5:
             case self::GPT_IMAGE_1:
             case self::GPT_IMAGE_1_MINI:
@@ -1862,6 +1872,7 @@ class EntityEnum
             self::NVIDIA_NIM_LLAMA_3_1_8B,
             self::BEDROCK_CLAUDE_SONNET,
             self::BEDROCK_CLAUDE_HAIKU,
+            self::CLIPDROP_IMAGE_EDIT,
             self::CLOUDFLARE_FLUX_SCHNELL,
             self::CLOUDFLARE_DREAMSHAPER,
             self::CLOUDFLARE_WHISPER,

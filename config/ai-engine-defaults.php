@@ -965,6 +965,17 @@ return [
             ],
         ],
 
+        'clipdrop' => [
+            'driver' => 'clipdrop',
+            'api_key' => env('CLIPDROP_API_KEY'),
+            'base_url' => env('CLIPDROP_BASE_URL', 'https://clipdrop-api.co'),
+            'timeout' => env('CLIPDROP_TIMEOUT', 60),
+            'default_model' => 'clipdrop-image-edit',
+            'models' => [
+                'clipdrop-image-edit' => ['enabled' => true, 'credit_index' => 1.0, 'content_type' => 'image'],
+            ],
+        ],
+
         'ollama' => [
             'driver' => 'ollama',
             'base_url' => env('OLLAMA_BASE_URL', 'http://localhost:11434'),

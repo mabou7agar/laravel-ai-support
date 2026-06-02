@@ -8,6 +8,7 @@ use LaravelAIEngine\Http\Controllers\Api\FileAnalysisApiController;
 use LaravelAIEngine\Http\Controllers\Api\GenerateApiController;
 use LaravelAIEngine\Http\Controllers\Api\EngineCatalogController;
 use LaravelAIEngine\Http\Controllers\Api\HealthApiController;
+use LaravelAIEngine\Http\Controllers\Api\ImageOperationApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModelCouncilApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\AgentRunController;
@@ -138,6 +139,9 @@ if (config('ai-engine.api.generate.enabled', true)) {
 
             Route::post('/image', [GenerateApiController::class, 'image'])
                 ->name('image');
+
+            Route::post('/image/operation', [ImageOperationApiController::class, 'apply'])
+                ->name('image.operation');
 
             Route::post('/preview', [GenerateApiController::class, 'preview'])
                 ->name('preview');

@@ -64,6 +64,11 @@ return array_replace_recursive($defaults, [
             'profile' => env('AWS_PROFILE'),
             'default_model' => env('AWS_BEDROCK_DEFAULT_MODEL', data_get($defaults, 'engines.bedrock.default_model', 'anthropic.claude-3-5-sonnet-20241022-v2:0')),
         ],
+        'clipdrop' => [
+            'api_key' => env('CLIPDROP_API_KEY'),
+            'base_url' => env('CLIPDROP_BASE_URL', 'https://clipdrop-api.co'),
+            'timeout' => (int) env('CLIPDROP_TIMEOUT', 60),
+        ],
         'gemini' => [
             'api_key' => env('GEMINI_API_KEY'),
         ],
