@@ -106,6 +106,37 @@ class AgentRunEventStreamServiceTest extends TestCase
         $this->assertSame('bad � runtime', $fallback[0]['metadata']['runtime']);
     }
 
+    public function test_event_stream_swallows_sink_exceptions_after_persisting(): void
+    {
+        Event::fake([AgentRunStreamed::class]);
+
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'stream-sink-failure',
+            'status' => AIAgentRun::STATUS_RUNNING,
+            'metadata' => ['trace_id' => 'trace-sink'],
+        ]);
+
+        $event = app(AgentRunEventStreamService::class)->emit(
+            AgentRunEventStreamService::RUN_COMPLETED,
+            $run,
+            null,
+            ['message' => 'Done'],
+            [],
+            function (array $event): void {
+                throw new \RuntimeException('client disconnected');
+            }
+        );
+
+        // Sink threw but emit() returned normally and still broadcast the event.
+        $this->assertSame('run.completed', $event['name']);
+        Event::assertDispatched(AgentRunStreamed::class, fn (AgentRunStreamed $dispatched): bool => $dispatched->event['id'] === $event['id']);
+
+        // The event is still persisted in fallback metadata.
+        $fallback = app(AgentRunEventStreamService::class)->fallbackEvents($run->id);
+        $this->assertCount(1, $fallback);
+        $this->assertSame('run.completed', $fallback[0]['name']);
+    }
+
     public function test_event_stream_rejects_unknown_event_names(): void
     {
         $this->expectException(\InvalidArgumentException::class);

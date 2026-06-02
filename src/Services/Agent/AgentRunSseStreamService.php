@@ -39,21 +39,15 @@ class AgentRunSseStreamService
                     break;
                 }
 
-                $events = $this->eventsAfter($this->events->fallbackEvents($currentRun), $lastEventId);
-                foreach ($events as $event) {
-                    $eventId = (string) ($event['id'] ?? '');
-                    if ($eventId !== '' && isset($sent[$eventId])) {
-                        continue;
-                    }
-
-                    echo $this->frame($event);
-                    if ($eventId !== '') {
-                        $sent[$eventId] = true;
-                    }
-                    $this->flush();
-                }
+                $this->emitNewEvents($currentRun, $lastEventId, $sent);
 
                 if ($currentRun->isTerminal()) {
+                    // Re-fetch once: a terminal event (e.g. run.completed) may have
+                    // been persisted in the transition window after the fetch above.
+                    $finalRun = $this->runs->find($run->id);
+                    if ($finalRun instanceof AIAgentRun) {
+                        $this->emitNewEvents($finalRun, $lastEventId, $sent);
+                    }
                     break;
                 }
 
@@ -105,6 +99,26 @@ class AgentRunSseStreamService
         $authUserId = $options['auth_user_id'] ?? null;
         if ($authUserId === null || $authUserId === '' || (string) $authUserId !== (string) $runUserId) {
             abort(403);
+        }
+    }
+
+    /**
+     * @param  array<string, bool>  $sent
+     */
+    private function emitNewEvents(AIAgentRun $run, string $lastEventId, array &$sent): void
+    {
+        $events = $this->eventsAfter($this->events->fallbackEvents($run), $lastEventId);
+        foreach ($events as $event) {
+            $eventId = (string) ($event['id'] ?? '');
+            if ($eventId !== '' && isset($sent[$eventId])) {
+                continue;
+            }
+
+            echo $this->frame($event);
+            if ($eventId !== '') {
+                $sent[$eventId] = true;
+            }
+            $this->flush();
         }
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent;
 
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use LaravelAIEngine\Events\AgentRunStreamed;
 use LaravelAIEngine\Models\AIAgentRun;
@@ -102,7 +103,17 @@ class AgentRunEventStreamService
         event(new AgentRunStreamed($event));
 
         if ($sink !== null) {
-            $sink($event);
+            try {
+                $sink($event);
+            } catch (\Throwable $e) {
+                // The event is already persisted and broadcast; a failing sink
+                // must not abort the streaming generator mid-response.
+                Log::channel('ai-engine')->warning('Agent run event sink failed', [
+                    'event_id' => $event['id'] ?? null,
+                    'event_name' => $name,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         return $event;
