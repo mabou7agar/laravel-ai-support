@@ -162,6 +162,11 @@ return array_replace_recursive($defaults, [
                 'command' => data_get($defaults, 'learning.adapters.getdesign.command', []),
                 'output_file' => env('GETDESIGN_OUTPUT_FILE', data_get($defaults, 'learning.adapters.getdesign.output_file', 'DESIGN.md')),
             ],
+            'crawl' => [
+                'enabled' => env('AI_ENGINE_LEARNING_CRAWL_ENABLED', data_get($defaults, 'learning.adapters.crawl.enabled', false)),
+                'max_pages' => env('AI_ENGINE_LEARNING_CRAWL_MAX_PAGES', data_get($defaults, 'learning.adapters.crawl.max_pages', 30)),
+                'timeout' => env('AI_ENGINE_LEARNING_CRAWL_TIMEOUT', data_get($defaults, 'learning.adapters.crawl.timeout', 30)),
+            ],
         ],
     ],
     'media' => [

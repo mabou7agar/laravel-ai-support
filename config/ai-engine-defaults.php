@@ -1593,6 +1593,7 @@ return [
         ],
         'adapter_classes' => [
             \LaravelAIEngine\Services\Learning\Adapters\GetDesignLearningAdapter::class,
+            \LaravelAIEngine\Services\Learning\Adapters\CrawlLearningAdapter::class,
             \LaravelAIEngine\Services\Learning\Adapters\FileLearningAdapter::class,
             \LaravelAIEngine\Services\Learning\Adapters\TextLearningAdapter::class,
         ],
@@ -1614,6 +1615,11 @@ return [
                 'allow_cli' => env('GETDESIGN_ALLOW_CLI', false),
                 'command' => [],
                 'output_file' => env('GETDESIGN_OUTPUT_FILE', 'DESIGN.md'),
+            ],
+            'crawl' => [
+                'enabled' => env('AI_ENGINE_LEARNING_CRAWL_ENABLED', false),
+                'max_pages' => (int) env('AI_ENGINE_LEARNING_CRAWL_MAX_PAGES', 30),
+                'timeout' => (int) env('AI_ENGINE_LEARNING_CRAWL_TIMEOUT', 30),
             ],
         ],
     ],
