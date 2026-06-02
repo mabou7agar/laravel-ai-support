@@ -5,16 +5,24 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Media;
 
 use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Services\BrandVoiceManager;
 
 class GenerateApiRequestFactory
 {
+    public function __construct(
+        private readonly ?BrandVoiceManager $brandVoice = null
+    ) {}
+
     public function text(array $validated, ?string $userId = null): AIRequest
     {
+        $parameters = $this->arrayValue($validated, 'parameters');
+        $prompt = $this->applyBrandVoice((string) $validated['prompt'], $parameters, $userId);
+
         return new AIRequest(
-            prompt: (string) $validated['prompt'],
+            prompt: $prompt,
             engine: array_key_exists('engine', $validated) ? (string) $validated['engine'] : null,
             model: array_key_exists('model', $validated) ? (string) $validated['model'] : null,
-            parameters: $this->arrayValue($validated, 'parameters'),
+            parameters: $parameters,
             userId: $userId,
             systemPrompt: $validated['system_prompt'] ?? null,
             maxTokens: isset($validated['max_tokens']) ? (int) $validated['max_tokens'] : null,
@@ -105,5 +113,22 @@ class GenerateApiRequestFactory
     private function arrayValue(array $data, string $key): array
     {
         return is_array($data[$key] ?? null) ? $data[$key] : [];
+    }
+
+    /**
+     * Opt-in: augment the prompt with a user's stored brand voice when a
+     * `brand_voice_id` selector is present in the request parameters and a
+     * user id is known. When either is missing the prompt is returned
+     * byte-for-byte unchanged.
+     */
+    private function applyBrandVoice(string $prompt, array $parameters, ?string $userId): string
+    {
+        $brandVoiceId = $parameters['brand_voice_id'] ?? null;
+
+        if (empty($brandVoiceId) || $userId === null || $userId === '' || !$this->brandVoice instanceof BrandVoiceManager) {
+            return $prompt;
+        }
+
+        return $this->brandVoice->applyBrandVoiceToPrompt($userId, (string) $brandVoiceId, $prompt);
     }
 }
