@@ -182,6 +182,21 @@ class ConversationManager
         );
     }
 
+    /**
+     * Assign a conversation to a folder (or clear it with null).
+     * The folder taxonomy is owned by the host app; the engine only stores the key.
+     */
+    public function setConversationFolder(string $conversationId, ?string $folderId): bool
+    {
+        $conversation = $this->getConversation($conversationId);
+
+        if (!$conversation) {
+            return false;
+        }
+
+        return $conversation->update(['folder_id' => $folderId !== null && $folderId !== '' ? $folderId : null]);
+    }
+
     public function deleteConversation(string $conversationId): bool
     {
         $conversation = $this->getConversation($conversationId);

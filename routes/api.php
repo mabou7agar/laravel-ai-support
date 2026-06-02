@@ -63,6 +63,12 @@ Route::prefix('api/v1/agent')
 
         Route::get('/conversations', [AgentConversationApiController::class, 'index'])
             ->name('conversations.list');
+
+        Route::get('/conversations/search', [AgentConversationApiController::class, 'search'])
+            ->name('conversations.search');
+
+        Route::post('/conversations/folder', [AgentConversationApiController::class, 'moveToFolder'])
+            ->name('conversations.folder');
     });
 
 // File analysis API Routes (v1)
