@@ -41,6 +41,7 @@ class SendMessageRequest extends FormRequest
             'rag_collections' => 'sometimes|array',
             'rag_collections.*' => 'string',
             'search_instructions' => 'sometimes|string|max:500',
+            'highlight_context' => 'sometimes|nullable|string|max:4000',
             'async' => ['sometimes', function (string $attribute, mixed $value, \Closure $fail): void {
                 if (is_bool($value) || $value === 0 || $value === 1) {
                     return;
@@ -186,7 +187,8 @@ class SendMessageRequest extends FormRequest
             responseSuggestions: $validated['response_suggestions'] ?? $validated['suggestions'] ?? null,
             responseSuggestionLimit: $validated['response_suggestion_limit'] ?? null,
             collection: $validated['collection'] ?? null,
-            executionMode: $executionMode
+            executionMode: $executionMode,
+            highlightContext: $validated['highlight_context'] ?? null
         );
     }
 }

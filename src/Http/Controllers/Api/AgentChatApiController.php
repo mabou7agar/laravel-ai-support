@@ -43,7 +43,7 @@ class AgentChatApiController extends Controller
                 return response()->json($this->jsonSafe([
                     'success' => true,
                     'data' => array_merge($this->agentChatRuns->start([
-                        'message' => $dto->message,
+                        'message' => $dto->composedMessage(),
                         'session_id' => $dto->sessionId,
                         'user_id' => $dto->userId,
                         'options' => array_merge([
@@ -63,7 +63,7 @@ class AgentChatApiController extends Controller
             }
 
             $response = $this->chatService->processMessage(
-                message: $dto->message,
+                message: $dto->composedMessage(),
                 sessionId: $dto->sessionId,
                 engine: $dto->engine,
                 model: $dto->model,
