@@ -49,6 +49,46 @@ class ConversationMemoryRepositoryTest extends TestCase
         $this->assertSame([], $repo->search($otherWorkspace));
     }
 
+    public function test_fresh_memory_outranks_stale_memory_at_equal_lexical_and_confidence(): void
+    {
+        config()->set('ai-agent.conversation_memory.ttl_days', 30);
+
+        $repo = app(ConversationMemoryRepository::class);
+
+        $repo->upsert(ConversationMemoryItem::fromArray([
+            'namespace' => 'preferences',
+            'key' => 'reply_language_stale',
+            'value' => 'Arabic',
+            'summary' => 'User prefers Arabic replies.',
+            'scope_type' => 'workspace',
+            'scope_id' => 'workspace-recency',
+            'confidence' => 0.9,
+            'last_seen_at' => now()->subDays(60),
+        ]));
+
+        $repo->upsert(ConversationMemoryItem::fromArray([
+            'namespace' => 'preferences',
+            'key' => 'reply_language_fresh',
+            'value' => 'Arabic',
+            'summary' => 'User prefers Arabic replies.',
+            'scope_type' => 'workspace',
+            'scope_id' => 'workspace-recency',
+            'confidence' => 0.9,
+            'last_seen_at' => now(),
+        ]));
+
+        $results = $repo->search(new ConversationMemoryQuery(
+            message: 'what language should you use for replies?',
+            scopeType: 'workspace',
+            scopeId: 'workspace-recency',
+            limit: 5,
+        ));
+
+        $this->assertCount(2, $results);
+        $this->assertSame('reply_language_fresh', $results[0]->item->key);
+        $this->assertGreaterThan($results[1]->score, $results[0]->score);
+    }
+
     public function test_repository_upserts_with_nullable_scopes_without_duplicate_rows(): void
     {
         $repo = app(ConversationMemoryRepository::class);

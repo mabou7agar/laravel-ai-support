@@ -29,19 +29,47 @@ class UnifiedActionContext
 
     public function addUserMessage(string $message): void
     {
-        $this->conversationHistory[] = [
+        $original = mb_strlen($message);
+        $entry = [
             'role' => 'user',
             'content' => $this->truncateMessage($message),
             'timestamp' => now()->toIso8601String(),
         ];
+
+        if (mb_strlen($message) > $this->conversationMessageLimit()) {
+            $entry['is_truncated'] = true;
+            $entry['original_length'] = $original;
+            $this->recordTruncationWarning('user', $original);
+        }
+
+        $this->conversationHistory[] = $entry;
     }
 
     public function addAssistantMessage(string $message, array $metadata = []): void
     {
-        $this->conversationHistory[] = [
+        $original = mb_strlen($message);
+        $entry = [
             'role' => 'assistant',
             'content' => $this->truncateMessage($message),
             'metadata' => $metadata,
+            'timestamp' => now()->toIso8601String(),
+        ];
+
+        if (mb_strlen($message) > $this->conversationMessageLimit()) {
+            $entry['is_truncated'] = true;
+            $entry['original_length'] = $original;
+            $this->recordTruncationWarning('assistant', $original);
+        }
+
+        $this->conversationHistory[] = $entry;
+    }
+
+    protected function recordTruncationWarning(string $role, int $originalLength): void
+    {
+        $this->metadata['truncation_warnings'][] = [
+            'role' => $role,
+            'original_length' => $originalLength,
+            'limit' => $this->conversationMessageLimit(),
             'timestamp' => now()->toIso8601String(),
         ];
     }

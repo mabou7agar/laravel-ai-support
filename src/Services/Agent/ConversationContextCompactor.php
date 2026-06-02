@@ -282,6 +282,7 @@ class ConversationContextCompactor
             'tenant_id' => $this->scopeValue($context, $options, 'tenant_id'),
             'workspace_id' => $this->scopeValue($context, $options, 'workspace_id'),
             'session_id' => $context->sessionId,
+            'locale' => $this->resolveLocale($context, $options),
         ];
 
         return array_merge($legacyScope, $this->memoryScopeResolver()->fromContext($context, $options));
@@ -302,6 +303,28 @@ class ConversationContextCompactor
         }
 
         return is_scalar($value) ? (string) $value : null;
+    }
+
+    /**
+     * Resolve the conversation locale for the CURRENT request, preferring the
+     * explicit option/metadata, then the active application locale.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function resolveLocale(UnifiedActionContext $context, array $options): string
+    {
+        $value = $this->scopeValue($context, $options, 'locale');
+        if ($value !== null) {
+            return $value;
+        }
+
+        try {
+            $appLocale = app()->getLocale();
+        } catch (\Throwable) {
+            $appLocale = '';
+        }
+
+        return is_string($appLocale) && trim($appLocale) !== '' ? trim($appLocale) : 'en';
     }
 
     private function memoryPolicy(): ConversationMemoryPolicy

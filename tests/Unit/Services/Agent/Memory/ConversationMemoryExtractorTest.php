@@ -56,6 +56,69 @@ class ConversationMemoryExtractorTest extends UnitTestCase
         $this->assertSame('preferences', $items[0]->namespace);
     }
 
+    public function test_extractor_passes_scope_locale_hint_into_prompt_and_stamps_locale(): void
+    {
+        config()->set('ai-agent.conversation_memory.extractor', 'ai');
+        config()->set('ai-agent.conversation_memory.max_extraction_input_chars', 2000);
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->with(Mockery::on(function ($request): bool {
+                return str_contains($request->getPrompt(), 'conversation locale is "ar"');
+            }))
+            ->andReturn(AIResponse::success(json_encode([
+                [
+                    'namespace' => 'preferences',
+                    'key' => 'reply_style',
+                    'value' => 'short Arabic replies',
+                    'summary' => 'User prefers short Arabic replies.',
+                    'confidence' => 0.9,
+                ],
+            ]), (string) config('ai-engine.default'), (string) config('ai-engine.default_model')));
+
+        $extractor = new ConversationMemoryExtractor(app(ConversationMemoryPolicy::class), $ai);
+
+        $items = $extractor->extract([
+            ['role' => 'user', 'content' => 'أحب الردود المختصرة باللغة العربية في هذا المشروع.'],
+        ], [
+            'user_id' => '7',
+            'locale' => 'ar',
+        ]);
+
+        $this->assertNotEmpty($items);
+        $this->assertSame('ar', $items[0]->metadata['locale']);
+    }
+
+    public function test_extractor_falls_back_to_app_locale_when_scope_has_none(): void
+    {
+        config()->set('ai-agent.conversation_memory.extractor', 'ai');
+        app()->setLocale('fr');
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->with(Mockery::on(function ($request): bool {
+                return str_contains($request->getPrompt(), 'conversation locale is "fr"');
+            }))
+            ->andReturn(AIResponse::success(json_encode([
+                [
+                    'namespace' => 'preferences',
+                    'key' => 'reply_style',
+                    'value' => 'concise',
+                    'summary' => 'User prefers concise summaries.',
+                    'confidence' => 0.9,
+                ],
+            ]), (string) config('ai-engine.default'), (string) config('ai-engine.default_model')));
+
+        $items = (new ConversationMemoryExtractor(app(ConversationMemoryPolicy::class), $ai))->extract([
+            ['role' => 'user', 'content' => 'Garde des reponses concises.'],
+        ], ['user_id' => '7']);
+
+        $this->assertNotEmpty($items);
+        $this->assertSame('fr', $items[0]->metadata['locale']);
+    }
+
     public function test_extractor_can_be_disabled_without_calling_ai(): void
     {
         config()->set('ai-agent.conversation_memory.extractor', 'none');

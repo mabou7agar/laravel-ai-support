@@ -150,17 +150,39 @@ class ConversationMemoryRepository
 
     protected function score(string $message, ConversationMemoryItem $item): float
     {
+        $recency = $this->recencyScore($item);
+
         $messageTerms = $this->terms($message);
         $memoryTerms = $this->terms($item->summary . ' ' . (string) $item->value . ' ' . $item->key . ' ' . $item->namespace);
 
         if ($messageTerms === [] || $memoryTerms === []) {
-            return $item->confidence * 0.25;
+            return min(1.0, ($item->confidence * 0.25) + ($recency * 0.10));
         }
 
         $overlap = count(array_intersect($messageTerms, $memoryTerms));
         $lexical = $overlap / max(1, count(array_unique($messageTerms)));
 
-        return min(1.0, ($lexical * 0.65) + ($item->confidence * 0.25) + 0.15);
+        return min(1.0, ($lexical * 0.55) + ($item->confidence * 0.25) + ($recency * 0.10) + 0.10);
+    }
+
+    /**
+     * Recency-decay term: exp(-age/ttl). A freshly seen memory scores ~1.0 and
+     * decays toward 0 as it ages, so fresh memories outrank stale ones at equal
+     * lexical/confidence weight.
+     */
+    protected function recencyScore(ConversationMemoryItem $item): float
+    {
+        $lastSeen = $item->lastSeenAt;
+        if ($lastSeen === null) {
+            return 0.0;
+        }
+
+        $ageSeconds = max(0, now()->getTimestamp() - $lastSeen->getTimestamp());
+
+        $ttlDays = (int) config('ai-agent.conversation_memory.ttl_days', 30);
+        $ttlSeconds = max(1, $ttlDays * 86400);
+
+        return exp(-$ageSeconds / $ttlSeconds);
     }
 
     /**
