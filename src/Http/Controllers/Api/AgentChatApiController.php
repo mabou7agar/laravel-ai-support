@@ -135,6 +135,10 @@ class AgentChatApiController extends Controller
             && config('ai-engine.nodes.is_master', true)
             && config('ai-engine.nodes.search_mode', 'routing') === 'routing'
         ) {
+            Log::channel('ai-engine')->debug('Node routing mode active; skipping centralized RAG collection discovery', [
+                'search_mode' => 'routing',
+            ]);
+
             return [];
         }
 

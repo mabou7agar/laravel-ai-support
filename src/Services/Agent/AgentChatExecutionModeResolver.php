@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent;
 
+use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\AgentChatExecutionDecision;
 use LaravelAIEngine\DTOs\SendMessageDTO;
 
@@ -81,7 +82,11 @@ class AgentChatExecutionModeResolver
     {
         try {
             return $this->matcher()->match($message) !== null;
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            Log::channel('ai-engine')->debug('Agent skill match check failed during execution mode resolution', [
+                'error' => $exception->getMessage(),
+            ]);
+
             return false;
         }
     }

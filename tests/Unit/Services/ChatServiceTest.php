@@ -373,4 +373,66 @@ class ChatServiceTest extends UnitTestCase
 
         $this->assertTrue($response->success);
     }
+
+    public function test_process_message_metadata_flags_memory_disabled_with_no_history(): void
+    {
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::conversational(
+                message: 'ok',
+                context: new UnifiedActionContext('chat-mem-off', 9)
+            ));
+
+        $service = new ChatService(Mockery::mock(ConversationTranscriptService::class), $runtime);
+
+        $response = $service->processMessage(
+            message: 'hi',
+            sessionId: 'chat-mem-off',
+            useMemory: false,
+            userId: 9
+        );
+
+        $this->assertFalse($response->metadata['memory_enabled']);
+        $this->assertSame(0, $response->metadata['conversation_history_count']);
+        $this->assertNull($response->metadata['conversation_id']);
+    }
+
+    public function test_process_message_metadata_exposes_memory_and_conversation_id_when_enabled(): void
+    {
+        $transcripts = Mockery::mock(ConversationTranscriptService::class);
+        $transcripts->shouldReceive('getOrCreateConversation')
+            ->once()
+            ->andReturn('conversation-meta');
+        $transcripts->shouldReceive('getConversationHistory')
+            ->once()
+            ->andReturn([
+                ['role' => 'user', 'content' => 'first'],
+                ['role' => 'assistant', 'content' => 'second'],
+            ]);
+        $transcripts->shouldReceive('saveMessages')->once();
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::conversational(
+                message: 'ok',
+                context: new UnifiedActionContext('chat-mem-on', 9)
+            ));
+
+        $service = new ChatService($transcripts, $runtime);
+
+        $response = $service->processMessage(
+            message: 'hi',
+            sessionId: 'chat-mem-on',
+            useMemory: true,
+            userId: 9
+        );
+
+        $this->assertTrue($response->metadata['memory_enabled']);
+        $this->assertSame(2, $response->metadata['conversation_history_count']);
+        $this->assertSame('conversation-meta', $response->metadata['conversation_id']);
+    }
 }

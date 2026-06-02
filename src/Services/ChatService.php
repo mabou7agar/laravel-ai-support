@@ -116,7 +116,7 @@ class ChatService
 
         $this->updateSessionNode($sessionId, $agentResponse);
 
-        $response = $this->toAIResponse($agentResponse, $engine, $model, $conversationId);
+        $response = $this->toAIResponse($agentResponse, $engine, $model, $conversationId, $useMemory, $conversationHistory);
         // Apply presentation before persisting so the stored transcript matches the returned response.
         $response = $this->presentation()->apply($response, $message, $options, $agentResponse->context);
         $persisted = $this->persistTranscriptTurn($conversationId, $message, $response);
@@ -248,7 +248,9 @@ class ChatService
         AgentResponse $agentResponse,
         string $engine,
         string $model,
-        ?string $conversationId
+        ?string $conversationId,
+        bool $memoryEnabled = true,
+        array $conversationHistory = []
     ): AIResponse {
         $context = $agentResponse->context;
         $contextData = $context?->toArray() ?? [];
@@ -276,6 +278,9 @@ class ChatService
                 'is_complete' => $agentResponse->isComplete,
                 'next_step' => $agentResponse->nextStep,
                 'required_inputs' => $agentResponse->requiredInputs,
+                'memory_enabled' => $memoryEnabled,
+                'conversation_history_count' => count($conversationHistory),
+                'conversation_id' => $conversationId,
             ]),
             success: $agentResponse->success,
             conversationId: $conversationId,
