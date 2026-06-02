@@ -16,6 +16,7 @@ use LaravelAIEngine\Models\AIModel;
 use LaravelAIEngine\Services\Models\DynamicModelResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class CreditlessOwner extends Model
@@ -95,6 +96,59 @@ class BudgetLifecycleHandler implements CreditLifecycleInterface
     public function hasLowCredits(Model $owner): bool
     {
         return (float) $owner->credits_balance < 10.0;
+    }
+}
+
+class StaleSnapshotResolver
+{
+    /** @var array<int, Model> */
+    public static array $snapshots = [];
+    public static int $index = 0;
+
+    public static function reset(array $snapshots): void
+    {
+        self::$snapshots = $snapshots;
+        self::$index = 0;
+    }
+
+    public function resolve(string $ownerId): Model
+    {
+        $snapshot = self::$snapshots[self::$index] ?? end(self::$snapshots);
+        self::$index++;
+
+        return $snapshot;
+    }
+}
+
+class TransactionSpyLifecycleHandler implements CreditLifecycleInterface
+{
+    public static ?int $deductTransactionLevel = null;
+
+    public function hasCredits(Model $owner, AIRequest $request): bool
+    {
+        return true;
+    }
+
+    public function deductCredits(Model $owner, AIRequest $request, float $creditsToDeduct): bool
+    {
+        self::$deductTransactionLevel = DB::transactionLevel();
+
+        return true;
+    }
+
+    public function addCredits(Model $owner, float $credits, array $metadata = []): bool
+    {
+        return true;
+    }
+
+    public function getAvailableCredits(Model $owner): float
+    {
+        return 0.0;
+    }
+
+    public function hasLowCredits(Model $owner): bool
+    {
+        return false;
     }
 }
 
@@ -686,6 +740,73 @@ class CreditManagerTest extends TestCase
 
         $this->assertEquals(100.0, $credits['balance']); // Default balance
         $this->assertFalse($credits['is_unlimited']);
+    }
+
+    public function test_deduct_credits_runs_inside_a_database_transaction(): void
+    {
+        $this->createScalarCreditOwnerTable();
+        $owner = ScalarCreditOwner::query()->create([
+            'name' => 'Tx Owner',
+            'my_credits' => 100.0,
+            'has_unlimited_credits' => false,
+        ]);
+        config()->set('ai-engine.credits.owner_model', ScalarCreditOwner::class);
+        config()->set('ai-engine.credits.query_resolver', ScalarCreditOwnerResolver::class);
+        config()->set('ai-engine.credits.lifecycle_handler', TransactionSpyLifecycleHandler::class);
+        TransactionSpyLifecycleHandler::$deductTransactionLevel = null;
+
+        $request = new AIRequest(
+            prompt: 'Five word test prompt here',
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O,
+            userId: (string) $owner->id
+        );
+
+        // Baseline transaction nesting (RefreshDatabase wraps tests in a transaction).
+        $baseline = DB::transactionLevel();
+
+        $this->assertTrue($this->creditManager->deductCredits((string) $owner->id, $request));
+
+        // The credit-mutating write executed inside an additional (deeper) transaction
+        // than the surrounding context, i.e. deductCredits opened its own transaction.
+        $this->assertNotNull(TransactionSpyLifecycleHandler::$deductTransactionLevel);
+        $this->assertGreaterThan($baseline, TransactionSpyLifecycleHandler::$deductTransactionLevel);
+    }
+
+    public function test_concurrent_deductions_do_not_lose_updates(): void
+    {
+        $this->createScalarCreditOwnerTable();
+        $owner = ScalarCreditOwner::query()->create([
+            'name' => 'Race Owner',
+            'my_credits' => 100.0,
+            'has_unlimited_credits' => false,
+        ]);
+        config()->set('ai-engine.credits.owner_model', ScalarCreditOwner::class);
+
+        // Simulate two concurrent requests that each resolved the owner BEFORE either
+        // deduction ran: both see a stale in-memory snapshot with balance 100. A naive
+        // read-modify-write on the stale instance would lose one deduction. Because
+        // deductCredits re-fetches the row under lockForUpdate() inside a transaction,
+        // both deductions land and the final balance reflects BOTH.
+        $staleSnapshotA = ScalarCreditOwner::query()->find($owner->id);
+        $staleSnapshotB = ScalarCreditOwner::query()->find($owner->id);
+
+        StaleSnapshotResolver::reset([$staleSnapshotA, $staleSnapshotB]);
+        config()->set('ai-engine.credits.query_resolver', StaleSnapshotResolver::class);
+
+        $request = new AIRequest(
+            prompt: 'Five word test prompt here',
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O,
+            userId: (string) $owner->id
+        );
+
+        $deduct = 30.0;
+        $this->assertTrue($this->creditManager->deductCredits((string) $owner->id, $request, $deduct));
+        $this->assertTrue($this->creditManager->deductCredits((string) $owner->id, $request, $deduct));
+
+        // 100 - 30 - 30 = 40. A lost update would have left 70.
+        $this->assertSame(40.0, (float) $owner->fresh()->my_credits);
     }
 
     private function createScalarCreditOwnerTable(): void
