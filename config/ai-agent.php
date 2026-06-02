@@ -337,7 +337,8 @@ return [
     ],
 
     'run_safety' => [
-        'lock_ttl_seconds' => (int) env('AI_AGENT_RUN_LOCK_TTL', 60),
+        'lock_ttl_seconds' => (int) env('AI_AGENT_RUN_LOCK_TTL', 360),
+        'lock_ttl_buffer_seconds' => (int) env('AI_AGENT_RUN_LOCK_TTL_BUFFER', 60),
         'lock_wait_seconds' => (int) env('AI_AGENT_RUN_LOCK_WAIT', 5),
         'duplicate_message_ttl_seconds' => (int) env('AI_AGENT_DUPLICATE_MESSAGE_TTL', 120),
         'stuck_after_minutes' => (int) env('AI_AGENT_RUN_STUCK_AFTER_MINUTES', 30),
