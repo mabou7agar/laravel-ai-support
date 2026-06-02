@@ -28,6 +28,16 @@ class UnsplashEngineDriver extends BaseEngineDriver
     }
 
     /**
+     * Override the underlying HTTP client (primarily for testing).
+     */
+    public function setHttpClient(Client $client): self
+    {
+        $this->httpClient = $client;
+
+        return $this;
+    }
+
+    /**
      * Generate content using the AI engine
      */
     public function generate(AIRequest $request): AIResponse

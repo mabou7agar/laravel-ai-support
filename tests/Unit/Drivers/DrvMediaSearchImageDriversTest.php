@@ -21,8 +21,8 @@ use LaravelAIEngine\Tests\TestCase;
  * Midjourney (image gen + poll), Serper (web search), Unsplash (photo search).
  *
  * All three drivers build their own Guzzle client internally, so the mock
- * client + history middleware is injected through reflection over the private
- * client property after construction. No real network is performed.
+ * client + history middleware is injected via each driver's setHttpClient()
+ * seam after construction. No real network is performed.
  */
 class DrvMediaSearchImageDriversTest extends TestCase
 {
@@ -61,13 +61,11 @@ class DrvMediaSearchImageDriversTest extends TestCase
     }
 
     /**
-     * Overwrite a private/protected client property on a driver with the mock.
+     * Inject the mock client into a driver via its setHttpClient() seam.
      */
-    private function drvMediaInjectClient(object $driver, string $property, Client $client): void
+    private function drvMediaInjectClient(object $driver, Client $client): void
     {
-        $ref = new \ReflectionProperty($driver, $property);
-        $ref->setAccessible(true);
-        $ref->setValue($driver, $client);
+        $driver->setHttpClient($client);
     }
 
     // ===================================================================
@@ -81,7 +79,7 @@ class DrvMediaSearchImageDriversTest extends TestCase
             'base_url' => 'https://google.serper.dev',
         ]);
 
-        $this->drvMediaInjectClient($driver, 'httpClient', $this->drvMediaMockClient([
+        $this->drvMediaInjectClient($driver, $this->drvMediaMockClient([
             new Response(200, ['content-type' => 'application/json'], json_encode([
                 'searchParameters' => ['q' => 'laravel testing'],
                 'searchInformation' => ['totalResults' => '42', 'searchTime' => 0.31],
@@ -139,7 +137,7 @@ class DrvMediaSearchImageDriversTest extends TestCase
             'base_url' => 'https://google.serper.dev',
         ]);
 
-        $this->drvMediaInjectClient($driver, 'httpClient', $this->drvMediaMockClient([
+        $this->drvMediaInjectClient($driver, $this->drvMediaMockClient([
             new Response(200, [], json_encode([
                 'images' => [
                     [
@@ -181,7 +179,7 @@ class DrvMediaSearchImageDriversTest extends TestCase
             'base_url' => 'https://google.serper.dev',
         ]);
 
-        $this->drvMediaInjectClient($driver, 'httpClient', $this->drvMediaMockClient([
+        $this->drvMediaInjectClient($driver, $this->drvMediaMockClient([
             new Response(500, [], 'boom'),
         ]));
 
@@ -206,7 +204,7 @@ class DrvMediaSearchImageDriversTest extends TestCase
             'base_url' => 'https://api.unsplash.com',
         ]);
 
-        $this->drvMediaInjectClient($driver, 'httpClient', $this->drvMediaMockClient([
+        $this->drvMediaInjectClient($driver, $this->drvMediaMockClient([
             new Response(200, ['content-type' => 'application/json'], json_encode([
                 'total' => 1234,
                 'total_pages' => 62,
@@ -283,7 +281,7 @@ class DrvMediaSearchImageDriversTest extends TestCase
             'base_url' => 'https://api.unsplash.com',
         ]);
 
-        $this->drvMediaInjectClient($driver, 'httpClient', $this->drvMediaMockClient([
+        $this->drvMediaInjectClient($driver, $this->drvMediaMockClient([
             new Response(200, [], json_encode([
                 'id' => 'photo-77',
                 'urls' => ['regular' => 'https://images.test/77'],
@@ -347,7 +345,7 @@ class DrvMediaSearchImageDriversTest extends TestCase
         $driver = new MidjourneyEngineDriver();
 
         // 1) POST /v1/imagine -> job id, 2) GET /v1/jobs/{id} -> completed w/ images.
-        $this->drvMediaInjectClient($driver, 'client', $this->drvMediaMockClient([
+        $this->drvMediaInjectClient($driver, $this->drvMediaMockClient([
             new Response(200, [], json_encode(['job_id' => 'job-xyz'])),
             new Response(200, [], json_encode([
                 'status' => 'completed',
@@ -402,7 +400,7 @@ class DrvMediaSearchImageDriversTest extends TestCase
 
         $driver = new MidjourneyEngineDriver();
 
-        $this->drvMediaInjectClient($driver, 'client', $this->drvMediaMockClient([
+        $this->drvMediaInjectClient($driver, $this->drvMediaMockClient([
             new Response(200, [], json_encode(['job_id' => 'job-fail'])),
             new Response(200, [], json_encode(['status' => 'failed', 'error' => 'content policy'])),
         ]));

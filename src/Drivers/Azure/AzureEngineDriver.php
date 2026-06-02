@@ -42,6 +42,16 @@ class AzureEngineDriver implements EngineDriverInterface
         ]);
     }
 
+    /**
+     * Override the underlying HTTP client (primarily for testing).
+     */
+    public function setHttpClient(Client $client): self
+    {
+        $this->client = $client;
+
+        return $this;
+    }
+
     public function generate(AIRequest $request): AIResponse
     {
         try {

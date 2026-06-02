@@ -256,9 +256,7 @@ class DrvTextThinDriversTest extends UnitTestCase
 
     private function drvTextSwapClient(object $driver, Client $client): void
     {
-        $ref = new \ReflectionProperty($driver, 'client');
-        $ref->setAccessible(true);
-        $ref->setValue($driver, $client);
+        $driver->setHttpClient($client);
     }
 
     public function test_azure_translator_builds_correct_request(): void
