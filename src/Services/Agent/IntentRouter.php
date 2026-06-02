@@ -231,9 +231,25 @@ class IntentRouter
             return $decision;
         }
 
+        $originalAction = $decision['action'];
+        $originalResource = $decision['resource_name'] ?? null;
+
+        Log::channel('ai-engine')->warning('Forwarded request policy overrode route_to_node decision', [
+            'original_action' => $originalAction,
+            'original_resource_name' => $originalResource,
+            'enforced_action' => 'search_rag',
+            'decision_source' => $decision['decision_source'] ?? null,
+        ]);
+
         $decision['action'] = 'search_rag';
         $decision['resource_name'] = null;
         $decision['reasoning'] = trim(($decision['reasoning'] ?? 'AI decision') . ' [forwarded request cannot re-route nodes]');
+
+        $metadata = is_array($decision['metadata'] ?? null) ? $decision['metadata'] : [];
+        $metadata['policy_enforced'] = 'forwarded_request_no_reroute';
+        $metadata['original_action'] = $originalAction;
+        $metadata['original_resource_name'] = $originalResource;
+        $decision['metadata'] = $metadata;
 
         return $decision;
     }

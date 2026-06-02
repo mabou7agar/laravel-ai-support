@@ -208,6 +208,59 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         $this->assertStringContainsString('blocked by execution policy', $response->message);
     }
 
+    public function test_blocked_tool_marks_policy_metadata_and_records_audit(): void
+    {
+        config()->set('ai-agent.execution_policy.tool_deny', ['dangerous_tool']);
+
+        $action = Mockery::mock(AgentActionExecutionService::class);
+        $action->shouldNotReceive('executeUseTool');
+
+        $audit = Mockery::mock(ProviderToolAuditService::class);
+        $audit->shouldReceive('record')
+            ->once()
+            ->withArgs(static fn (string $event, mixed $_run, mixed $_approval, array $payload): bool => $event === 'agent_policy.blocked'
+                && ($payload['policy_blocked'] ?? null) === true
+                && ($payload['blocked_type'] ?? null) === 'tool'
+                && ($payload['blocked_resource'] ?? null) === 'dangerous_tool');
+
+        $response = (new AgentExecutionDispatcher(
+            $action,
+            Mockery::mock(AgentConversationService::class),
+            Mockery::mock(NodeSessionManager::class),
+            Mockery::mock(GoalAgentService::class),
+            $audit
+        ))->dispatch(
+            $this->decision(RoutingDecisionAction::USE_TOOL, ['tool_name' => 'dangerous_tool']),
+            'run dangerous tool',
+            $this->context()
+        );
+
+        $this->assertFalse($response->success);
+        $this->assertStringContainsString('blocked by execution policy', $response->message);
+        $this->assertTrue($response->metadata['policy_blocked'] ?? false);
+        $this->assertSame('tool', $response->metadata['blocked_type'] ?? null);
+        $this->assertSame('dangerous_tool', $response->metadata['blocked_resource'] ?? null);
+    }
+
+    public function test_blocked_node_marks_policy_metadata(): void
+    {
+        config()->set('ai-agent.execution_policy.node_deny', ['invoice']);
+
+        $node = Mockery::mock(NodeSessionManager::class);
+        $node->shouldNotReceive('routeToNode');
+
+        $response = $this->dispatcher(nodeSessionManager: $node)->dispatch(
+            $this->decision(RoutingDecisionAction::ROUTE_TO_NODE, ['node_slug' => 'invoice']),
+            'show invoice 5',
+            $this->context()
+        );
+
+        $this->assertFalse($response->success);
+        $this->assertTrue($response->metadata['policy_blocked'] ?? false);
+        $this->assertSame('node', $response->metadata['blocked_type'] ?? null);
+        $this->assertSame('invoice', $response->metadata['blocked_resource'] ?? null);
+    }
+
     public function test_dispatches_sub_agent_decision(): void
     {
         $context = $this->context();

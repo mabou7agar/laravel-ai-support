@@ -180,6 +180,9 @@ class IntentRouterTest extends TestCase
         $this->assertSame('search_rag', $decision['action']);
         $this->assertNull($decision['resource_name']);
         $this->assertStringContainsString('forwarded request cannot re-route nodes', $decision['reasoning']);
+        $this->assertSame('forwarded_request_no_reroute', $decision['metadata']['policy_enforced'] ?? null);
+        $this->assertSame('route_to_node', $decision['metadata']['original_action'] ?? null);
+        $this->assertSame('crm', $decision['metadata']['original_resource_name'] ?? null);
     }
 
     public function test_local_only_mode_hides_remote_nodes_from_prompt(): void
