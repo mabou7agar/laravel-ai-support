@@ -389,6 +389,70 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         $this->assertStringContainsString('blocked by execution policy', $response->message);
     }
 
+    public function test_node_fallback_sets_structured_fallback_metadata(): void
+    {
+        config()->set('ai-engine.nodes.routing.local_fallback_on_failure', true);
+
+        $context = $this->context();
+        $node = Mockery::mock(NodeSessionManager::class);
+        $node->shouldReceive('routeToNode')
+            ->once()
+            ->andReturn(AgentResponse::failure("Sorry, I couldn't reach remote node right now.", context: $context));
+
+        $conversation = Mockery::mock(AgentConversationService::class);
+        $conversation->shouldReceive('executeSearchRAG')
+            ->once()
+            ->andReturn(AgentResponse::success('Here are local results.', context: $context));
+
+        $response = $this->dispatcher(conversationService: $conversation, nodeSessionManager: $node)->dispatch(
+            $this->decision(RoutingDecisionAction::ROUTE_TO_NODE, ['node_slug' => 'invoice']),
+            'show invoice 5',
+            $context
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertTrue($response->metadata['fallback_mode'] ?? false);
+        $this->assertSame('remote_node_unreachable', $response->metadata['fallback_reason'] ?? null);
+        $this->assertSame('invoice', $response->metadata['original_resource'] ?? null);
+        $this->assertStringContainsString('Here are local results.', $response->message);
+    }
+
+    public function test_audit_stream_emit_failure_does_not_halt_tool_execution(): void
+    {
+        $context = $this->context();
+        $expected = AgentResponse::success('Tool used.', context: $context);
+
+        $action = Mockery::mock(AgentActionExecutionService::class);
+        $action->shouldReceive('executeUseTool')->once()->andReturn($expected);
+
+        $audit = Mockery::mock(ProviderToolAuditService::class);
+        $audit->shouldReceive('record');
+
+        $stream = Mockery::mock(AgentRunEventStreamService::class);
+        $stream->shouldReceive('emit')->andThrow(new \RuntimeException('stream down'));
+        $this->app->instance(AgentRunEventStreamService::class, $stream);
+
+        \Illuminate\Support\Facades\Log::shouldReceive('channel')->andReturnSelf();
+        \Illuminate\Support\Facades\Log::shouldReceive('warning')->atLeast()->once();
+        \Illuminate\Support\Facades\Log::shouldReceive('info');
+        \Illuminate\Support\Facades\Log::shouldReceive('debug');
+        \Illuminate\Support\Facades\Log::shouldReceive('error');
+
+        $response = (new AgentExecutionDispatcher(
+            $action,
+            Mockery::mock(AgentConversationService::class),
+            Mockery::mock(NodeSessionManager::class),
+            Mockery::mock(GoalAgentService::class),
+            $audit
+        ))->dispatch(
+            $this->decision(RoutingDecisionAction::USE_TOOL, ['resource_name' => 'data_query']),
+            'list tasks',
+            $context
+        );
+
+        $this->assertSame($expected, $response);
+    }
+
     public function test_dispatches_need_user_input_decision(): void
     {
         $context = $this->context();

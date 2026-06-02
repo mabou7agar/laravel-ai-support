@@ -292,6 +292,11 @@ class AgentExecutionDispatcher
 
             if ($fallback->success) {
                 $fallback->message = $this->fallbackNotice() . "\n\n" . $fallback->message;
+                $fallback->metadata = array_merge($fallback->metadata ?? [], [
+                    'fallback_mode' => true,
+                    'fallback_reason' => 'remote_node_unreachable',
+                    'original_resource' => $requestedResource,
+                ]);
 
                 return $fallback;
             }
@@ -405,13 +410,22 @@ class AgentExecutionDispatcher
         };
 
         if ($streamEvent !== null) {
-            app(AgentRunEventStreamService::class)->emit(
-                $streamEvent,
-                $options['agent_run_id'] ?? null,
-                $options['agent_run_step_id'] ?? null,
-                array_merge($payload, ['tool_name' => $toolName]),
-                ['trace_id' => $options['trace_id'] ?? null]
-            );
+            try {
+                app(AgentRunEventStreamService::class)->emit(
+                    $streamEvent,
+                    $options['agent_run_id'] ?? null,
+                    $options['agent_run_step_id'] ?? null,
+                    array_merge($payload, ['tool_name' => $toolName]),
+                    ['trace_id' => $options['trace_id'] ?? null]
+                );
+            } catch (\Throwable $e) {
+                Log::channel('ai-engine')->warning('Agent run event stream emit failed (best-effort)', [
+                    'event' => $event,
+                    'stream_event' => $streamEvent,
+                    'tool_name' => $toolName,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

@@ -200,6 +200,14 @@ class AgentActionExecutionService
             );
         }
 
+        $selectedEntity = $this->selectedEntityContext->getFromContext($context);
+        $params = $this->selectedEntityContext->bindToToolParams(
+            $toolName,
+            $params,
+            $selectedEntity,
+            $tool->getParameters()
+        );
+
         $context->metadata['latest_user_message'] = $message;
 
         $errors = $tool->validate($params);

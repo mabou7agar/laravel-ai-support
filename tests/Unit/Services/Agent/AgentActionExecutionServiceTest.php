@@ -89,6 +89,35 @@ class AgentActionExecutionRegistryToolStub extends AgentTool
     }
 }
 
+class AgentActionExecutionRegistryEntityToolStub extends AgentTool
+{
+    public function getName(): string
+    {
+        return 'registry_entity_action';
+    }
+
+    public function getDescription(): string
+    {
+        return 'Acts on the selected entity.';
+    }
+
+    public function getParameters(): array
+    {
+        return [
+            'invoice_id' => ['type' => 'integer', 'required' => true],
+        ];
+    }
+
+    public function execute(array $parameters, UnifiedActionContext $context): \LaravelAIEngine\DTOs\ActionResult
+    {
+        return \LaravelAIEngine\DTOs\ActionResult::success(
+            message: 'Registry entity tool executed.',
+            data: ['invoice_id' => $parameters['invoice_id'] ?? null],
+            metadata: ['agent_strategy' => 'registry_tool_strategy']
+        );
+    }
+}
+
 class AgentActionExecutionServiceTest extends UnitTestCase
 {
     public function test_execute_use_tool_preserves_needs_user_input_results(): void
@@ -252,6 +281,36 @@ class AgentActionExecutionServiceTest extends UnitTestCase
         $this->assertSame('registry-tool-session', $response->data['session_id']);
         $this->assertSame('registry_tool_strategy', $response->strategy);
         $this->assertSame('registry_echo', $response->metadata['tool_name']);
+    }
+
+    public function test_execute_registry_tool_binds_selected_entity_context(): void
+    {
+        $toolRegistry = new ToolRegistry();
+        $toolRegistry->register('registry_entity_action', new AgentActionExecutionRegistryEntityToolStub());
+
+        $service = new AgentActionExecutionService(
+            new SelectedEntityContextService(),
+            null,
+            null,
+            $toolRegistry
+        );
+
+        $context = new UnifiedActionContext('registry-entity-session', 99);
+        $context->metadata['selected_entity_context'] = ['entity_id' => 7];
+
+        // No tool_params provided, so binding must inject the selected entity id and pass validation.
+        $response = $service->executeUseTool(
+            'registry_entity_action',
+            'pay it',
+            $context,
+            ['model_configs' => []],
+            function () {
+                $this->fail('Fallback RAG should not be called when registry tool resolves');
+            }
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertSame(7, $response->data['invoice_id']);
     }
 
 }
