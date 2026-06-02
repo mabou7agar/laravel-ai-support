@@ -108,6 +108,7 @@ class EntityEnum
     public const ELEVEN_MULTILINGUAL_V2 = 'eleven_multilingual_v2';
     public const ELEVEN_MULTILINGUAL_STS_V2 = 'eleven_multilingual_sts_v2';
     public const ELEVEN_SCRIBE_V2 = 'scribe_v2';
+    public const ELEVEN_MUSIC = 'music_v1';
 
     // DeepSeek Models
     public const DEEPSEEK_CHAT = 'deepseek-chat';
@@ -428,6 +429,7 @@ class EntityEnum
             case self::ELEVEN_MULTILINGUAL_V2:
             case self::ELEVEN_MULTILINGUAL_STS_V2:
             case self::ELEVEN_SCRIBE_V2:
+            case self::ELEVEN_MUSIC:
                 return EngineEnum::ElevenLabs;
             case self::FAL_FLUX_PRO:
             case self::FAL_FLUX_DEV:
@@ -586,6 +588,7 @@ class EntityEnum
             case self::ELEVEN_MULTILINGUAL_V2:
             case self::ELEVEN_MULTILINGUAL_STS_V2:
             case self::ELEVEN_SCRIBE_V2:
+            case self::ELEVEN_MUSIC:
                 return MultilingualV2Driver::class;
             case self::FAL_FLUX_PRO:
             case self::FLUX_PRO:
@@ -827,6 +830,8 @@ class EntityEnum
                 return 'ElevenLabs Multilingual STS v2';
             case self::ELEVEN_SCRIBE_V2:
                 return 'ElevenLabs Scribe v2';
+            case self::ELEVEN_MUSIC:
+                return 'ElevenLabs Music';
             case self::FLUX_PRO:
                 return 'Flux Pro';
             case self::FAL_NANO_BANANA_2:
@@ -1064,6 +1069,8 @@ class EntityEnum
                 return 2.5;
             case self::ELEVEN_SCRIBE_V2:
                 return 1.0;
+            case self::ELEVEN_MUSIC:
+                return 3.0;
             case self::FAL_FLUX_PRO:
             case self::FLUX_PRO:
                 return 3.5;
@@ -1354,6 +1361,7 @@ class EntityEnum
             case self::ELEVEN_MULTILINGUAL_V2:
             case self::ELEVEN_MULTILINGUAL_STS_V2:
             case self::ELEVEN_SCRIBE_V2:
+            case self::ELEVEN_MUSIC:
             case self::CLOUDFLARE_WHISPER:
             case self::CLOUDFLARE_MELOTTS:
             case self::HUGGINGFACE_WHISPER_LARGE_V3:
@@ -1765,6 +1773,7 @@ class EntityEnum
             self::ELEVEN_MULTILINGUAL_V2,
             self::ELEVEN_MULTILINGUAL_STS_V2,
             self::ELEVEN_SCRIBE_V2,
+            self::ELEVEN_MUSIC,
             self::DEEPSEEK_CHAT,
             self::DEEPSEEK_REASONER,
             self::PERPLEXITY_SONAR_LARGE,
