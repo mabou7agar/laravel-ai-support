@@ -73,6 +73,8 @@ class MidjourneyEngineDriver implements EngineDriverInterface
 
         return new AIResponse(
             content: json_encode($images),
+            engine: EngineEnum::Midjourney,
+            model: $request->getModel(),
             usage: [
                 'images_generated' => count($images),
                 'total_cost' => $request->getModel()->creditIndex(),
@@ -249,6 +251,8 @@ class MidjourneyEngineDriver implements EngineDriverInterface
 
         return new AIResponse(
             content: json_encode($images),
+            engine: EngineEnum::Midjourney,
+            model: EntityEnum::from(EntityEnum::MIDJOURNEY_V6),
             usage: [
                 'images_upscaled' => count($images),
                 'total_cost' => 1.0, // Upscale cost
@@ -288,6 +292,8 @@ class MidjourneyEngineDriver implements EngineDriverInterface
 
         return new AIResponse(
             content: json_encode($images),
+            engine: EngineEnum::Midjourney,
+            model: EntityEnum::from(EntityEnum::MIDJOURNEY_V6),
             usage: [
                 'images_varied' => count($images),
                 'total_cost' => 1.0, // Variation cost
