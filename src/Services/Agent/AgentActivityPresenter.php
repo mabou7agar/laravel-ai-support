@@ -26,6 +26,8 @@ class AgentActivityPresenter
             AgentRunEventStreamService::ROUTING_STAGE_STARTED    => $this->a('Thinking', '✶', 'thinking'),
             AgentRunEventStreamService::ROUTING_STAGE_ABSTAINED  => $this->a('Thinking', '✶', 'thinking'),
             AgentRunEventStreamService::ROUTING_DECIDED          => $this->routing($payload),
+            AgentRunEventStreamService::AGENT_REASONING          => $this->a($this->reasoningLabel($payload), '✶', 'thinking'),
+            AgentRunEventStreamService::PLAN_UPDATED             => $this->plan($payload),
             AgentRunEventStreamService::RAG_STARTED              => $this->a('Searching your knowledge base', '🔎', 'searching'),
             AgentRunEventStreamService::RAG_SOURCES_FOUND        => $this->a($this->sources($payload), '📚', 'searching'),
             AgentRunEventStreamService::RAG_COMPLETED            => $this->a('Reading the results', '📖', 'searching'),
@@ -66,6 +68,39 @@ class AgentActivityPresenter
             'conversational'  => $this->a('Composing a reply', '✶', 'thinking'),
             default           => $this->a('Planning', '✶', 'thinking'),
         };
+    }
+
+    /**
+     * Live plan timeline label: "Planning (step X of Y)" from $payload['current']
+     * (1-based, clamped) and count($payload['steps']). Falls back to "Planning"
+     * when no steps are present so the arm is safe for empty payloads.
+     *
+     * @param array<string, mixed> $payload
+     * @return array{label: string, icon: string, phase: string, terminal: bool}
+     */
+    protected function plan(array $payload): array
+    {
+        $steps = is_array($payload['steps'] ?? null) ? $payload['steps'] : [];
+        $total = count($steps);
+
+        if ($total < 1) {
+            return $this->a('Planning', '✶', 'thinking');
+        }
+
+        $current = (int) ($payload['current'] ?? 1);
+        $current = max(1, min($current, $total));
+
+        return $this->a(sprintf('Planning (step %d of %d)', $current, $total), '✶', 'thinking');
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    protected function reasoningLabel(array $payload): string
+    {
+        $text = trim((string) ($payload['reasoning'] ?? $payload['text'] ?? ''));
+
+        return $text !== '' ? $text : 'Thinking';
     }
 
     protected function toolLabel(array $payload, string $fallback = 'Working'): string

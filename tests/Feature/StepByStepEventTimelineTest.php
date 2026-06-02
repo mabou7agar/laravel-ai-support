@@ -232,6 +232,8 @@ class StepByStepEventTimelineTest extends TestCase
             'routing.stage_started',
             'routing.stage_abstained',
             'routing.decided',
+            'agent.reasoning',
+            'plan.updated',
             'rag.started',
             'rag.sources_found',
             'rag.completed',

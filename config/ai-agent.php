@@ -177,8 +177,50 @@ return [
         'enabled' => env('AI_AGENT_AI_NATIVE_ENABLED', true),
         'skills' => env('AI_AGENT_AI_NATIVE_SKILLS', true),
         'max_steps' => (int) env('AI_AGENT_AI_NATIVE_MAX_STEPS', 8),
+        'budget' => [
+            'enabled' => env('AI_AGENT_AI_NATIVE_BUDGET_ENABLED', false),
+            'max_steps' => (int) env('AI_AGENT_AI_NATIVE_BUDGET_MAX_STEPS', 16),
+        ],
+        'compaction' => [
+            // In-loop context compaction: before each planner call, trim the
+            // oldest recorded tool results when the accumulated history grows
+            // past the threshold so a smaller state is sent to the planner.
+            // Default OFF preserves today's behavior byte-for-byte.
+            'enabled' => env('AI_AGENT_AI_NATIVE_COMPACTION_ENABLED', false),
+            'threshold' => (int) env('AI_AGENT_AI_NATIVE_COMPACTION_THRESHOLD', 12),
+            'keep_recent_results' => (int) env('AI_AGENT_AI_NATIVE_COMPACTION_KEEP_RECENT_RESULTS', 6),
+            // When enabled, also compact $context->conversationHistory via the
+            // ConversationContextCompactor (its own config tree still applies).
+            'compact_conversation' => env('AI_AGENT_AI_NATIVE_COMPACTION_COMPACT_CONVERSATION', false),
+        ],
         'max_tokens' => (int) env('AI_AGENT_AI_NATIVE_MAX_TOKENS', 1200),
         'temperature' => (float) env('AI_AGENT_AI_NATIVE_TEMPERATURE', 0.1),
+        // Surface planner reasoning: when ON, the planner prompt asks the model to
+        // include an optional "reasoning":"<one short sentence>" field in its JSON
+        // plan, which is accumulated per turn into AgentResponse
+        // metadata['reasoning_trace'][] and can be streamed as an agent.reasoning
+        // event. Default OFF preserves current behavior (no reasoning field
+        // requested, metadata unchanged).
+        'expose_reasoning' => (bool) env('AI_AGENT_AI_NATIVE_EXPOSE_REASONING', false),
+        // Live plan timeline (TodoWrite analog): when ON, the planner prompt asks
+        // the model to optionally include a "steps":["..."] array (the intended
+        // remaining steps) in its JSON plan. The latest steps + a current index are
+        // accumulated per turn into AgentResponse metadata['plan'] = {steps, current}
+        // and can be streamed as a plan.updated event. Default OFF preserves current
+        // behavior (no steps requested, metadata unchanged).
+        'plan_timeline' => (bool) env('AI_AGENT_AI_NATIVE_PLAN_TIMELINE', false),
+        // Parallel tool calls in one planning step: when enabled and the planner
+        // returns a non-empty tool_calls[] array, every independent lookup is
+        // executed (sequentially under the hood) and recorded into state before
+        // the next planning round-trip — one round-trip for N lookups. Default
+        // OFF preserves today's single-call-per-step behavior byte-for-byte.
+        'parallel_tools' => env('AI_AGENT_AI_NATIVE_PARALLEL_TOOLS', false),
+        'parallel_tools_max' => (int) env('AI_AGENT_AI_NATIVE_PARALLEL_TOOLS_MAX', 8),
+        'auto_retry' => [
+            // Max automated re-plan attempts per user turn after a recoverable tool failure.
+            // 0 (default) keeps the current behavior: escalate to the user immediately.
+            'max' => (int) env('AI_AGENT_AI_NATIVE_AUTO_RETRY_MAX', 0),
+        ],
         'action_intent_terms' => [
             'prepare',
             'draft',

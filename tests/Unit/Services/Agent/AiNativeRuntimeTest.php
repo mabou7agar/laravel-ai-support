@@ -2982,6 +2982,74 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertArrayNotHasKey('suggested_tool_continuation', $context->metadata['ai_native']);
     }
 
+    public function test_budget_mode_raises_loop_ceiling_when_enabled(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 2);
+        config()->set('ai-agent.ai_native.budget.enabled', true);
+        config()->set('ai-agent.ai_native.budget.max_steps', 5);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Ahmed'],
+                'message' => 'Checking the customer (1).',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Ahmed'],
+                'message' => 'Checking the customer (2).',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Ahmed'],
+                'message' => 'Checking the customer (3).',
+            ],
+            [
+                'action' => 'final',
+                'message' => 'Done after a long loop.',
+                'data' => ['customer_id' => 501],
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Check Ahmed', new UnifiedActionContext('ai-native-budget-on', 77));
+
+        // With the hard cap of 2 and budget OFF the loop would stop before
+        // consuming all 4 plans; budget ON (ceiling 5) lets the loop run on
+        // and reach the final plan after three tool calls.
+        $this->assertTrue($response->success);
+        $this->assertFalse($response->needsUserInput);
+        $this->assertSame('Done after a long loop.', $response->message);
+        $this->assertCount(3, $toolLog['lookup_customer']);
+    }
+
+    public function test_budget_mode_off_keeps_existing_step_cap(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 1);
+        config()->set('ai-agent.ai_native.budget.enabled', false);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Ahmed'],
+                'message' => 'Checking the customer.',
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Check Ahmed', new UnifiedActionContext('ai-native-budget-off', 77));
+
+        // Ceiling stays at the configured max_steps of 1: exactly one generate
+        // call / one tool execution. The runtime() helper pins generate
+        // ->times(1), so any extra step (a raised ceiling) would fail Mockery.
+        $this->assertCount(1, $toolLog['lookup_customer']);
+        $this->assertTrue($response->needsUserInput);
+    }
+
     /**
      * @param array<int, array<string, mixed>> $plans
      * @param array<string, array<int, array<string, mixed>>> $toolLog

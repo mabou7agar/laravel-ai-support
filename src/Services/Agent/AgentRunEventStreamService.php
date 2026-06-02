@@ -20,6 +20,8 @@ class AgentRunEventStreamService
     public const ROUTING_STAGE_STARTED = 'routing.stage_started';
     public const ROUTING_STAGE_ABSTAINED = 'routing.stage_abstained';
     public const ROUTING_DECIDED = 'routing.decided';
+    public const AGENT_REASONING = 'agent.reasoning';
+    public const PLAN_UPDATED = 'plan.updated';
     public const RAG_STARTED = 'rag.started';
     public const RAG_SOURCES_FOUND = 'rag.sources_found';
     public const RAG_COMPLETED = 'rag.completed';
@@ -46,6 +48,8 @@ class AgentRunEventStreamService
         self::ROUTING_STAGE_STARTED,
         self::ROUTING_STAGE_ABSTAINED,
         self::ROUTING_DECIDED,
+        self::AGENT_REASONING,
+        self::PLAN_UPDATED,
         self::RAG_STARTED,
         self::RAG_SOURCES_FOUND,
         self::RAG_COMPLETED,

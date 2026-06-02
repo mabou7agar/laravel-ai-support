@@ -390,6 +390,14 @@ class RunAgentJob implements ShouldQueue
         AgentResponse $response,
         array $runtimeOptions
     ): void {
+        // Surface planner reasoning before the terminal "Done" so a UI can render
+        // the thinking lines first. No-op when expose_reasoning is off (no entries).
+        $this->emitReasoningEvents($events, $run, $step, $response, $runtimeOptions);
+
+        // Surface the live plan timeline (steps + current index) before the terminal
+        // event. No-op when plan_timeline is off (metadata['plan'] absent).
+        $this->emitPlanEvent($events, $run, $step, $response, $runtimeOptions);
+
         try {
             $events->emit(
                 $this->eventNameForStatus($status),
@@ -403,6 +411,86 @@ class RunAgentJob implements ShouldQueue
                 'run_id' => $run->id,
                 'run_uuid' => $run->uuid,
                 'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Emit one AGENT_REASONING stream event per accumulated planner rationale, read
+     * from $response->metadata['reasoning_trace']. Best-effort: a failure here must
+     * never abort the run after it has already completed. When expose_reasoning is
+     * off the trace is absent, so this is a no-op.
+     *
+     * @param array<string, mixed> $runtimeOptions
+     */
+    protected function emitReasoningEvents(
+        AgentRunEventStreamService $events,
+        AIAgentRun $run,
+        AIAgentRunStep $step,
+        AgentResponse $response,
+        array $runtimeOptions
+    ): void {
+        $trace = $response->metadata['reasoning_trace'] ?? [];
+        if (!is_array($trace) || $trace === []) {
+            return;
+        }
+
+        foreach ($trace as $entry) {
+            if (!is_string($entry) || trim($entry) === '') {
+                continue;
+            }
+
+            try {
+                $events->emit(
+                    AgentRunEventStreamService::AGENT_REASONING,
+                    $run,
+                    $step,
+                    ['reasoning' => trim($entry)],
+                    $runtimeOptions
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Agent reasoning event emission failed', [
+                    'run_id' => $run->id,
+                    'run_uuid' => $run->uuid,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Emit a single PLAN_UPDATED stream event from $response->metadata['plan'] =
+     * {steps, current}. Best-effort: a failure here must never abort the run after
+     * it has already completed. When plan_timeline is off the key is absent, so this
+     * is a no-op.
+     *
+     * @param array<string, mixed> $runtimeOptions
+     */
+    protected function emitPlanEvent(
+        AgentRunEventStreamService $events,
+        AIAgentRun $run,
+        AIAgentRunStep $step,
+        AgentResponse $response,
+        array $runtimeOptions
+    ): void {
+        $plan = $response->metadata['plan'] ?? null;
+        if (!is_array($plan) || !is_array($plan['steps'] ?? null) || ($plan['steps'] === [])) {
+            return;
+        }
+
+        try {
+            $events->emit(
+                AgentRunEventStreamService::PLAN_UPDATED,
+                $run,
+                $step,
+                $plan,
+                $runtimeOptions
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Agent plan event emission failed', [
+                'run_id' => $run->id,
+                'run_uuid' => $run->uuid,
                 'error' => $e->getMessage(),
             ]);
         }

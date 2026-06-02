@@ -161,6 +161,12 @@ class AiNativeToolCallActionHandler
         }
 
         if (!$result->success) {
+            if ($this->shouldRetryRecoverableFailure($state, $toolName, $result)) {
+                $this->stateStore->put($context, $state);
+
+                return AiNativeActionOutcome::continueLoop();
+            }
+
             $this->stateStore->put($context, $state);
 
             return AiNativeActionOutcome::response($this->responses->needsUserInput($context, $state, $result->message ?? $result->error ?? 'Tool execution failed.', [], [
@@ -210,6 +216,12 @@ class AiNativeToolCallActionHandler
         }
 
         if (!$result->success) {
+            if ($this->shouldRetryRecoverableFailure($state, $toolName, $result)) {
+                $this->stateStore->put($context, $state);
+
+                return AiNativeActionOutcome::continueLoop();
+            }
+
             $this->stateStore->put($context, $state);
 
             return AiNativeActionOutcome::response($this->responses->needsUserInput($context, $state, $result->message ?? $result->error ?? 'Tool execution failed.', [], [
@@ -305,6 +317,42 @@ class AiNativeToolCallActionHandler
             'tool' => $toolName,
             'validation_errors' => $validation,
             'arguments' => $arguments,
+        ];
+
+        return true;
+    }
+
+    /**
+     * Bounded auto-retry for recoverable tool failures before escalating to the user.
+     *
+     * Gated behind config('ai-agent.ai_native.auto_retry.max', 0): 0 (default) keeps the
+     * current escalate-immediately behavior. When > 0, a recoverable failure feeds an
+     * error entry into runtime_feedback and continues the loop so nextPlan() can re-plan,
+     * up to max attempts per user turn. The counter lives in $state['auto_retry_attempts']
+     * which is intentionally NOT in AiNativeStateStore's cross-turn whitelist, so it resets
+     * every process() call and cannot loop forever.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function shouldRetryRecoverableFailure(array &$state, string $toolName, ActionResult $result): bool
+    {
+        $max = (int) config('ai-agent.ai_native.auto_retry.max', 0);
+        if ($max <= 0) {
+            return false;
+        }
+
+        $attempts = (int) ($state['auto_retry_attempts'] ?? 0);
+        if ($attempts >= $max) {
+            return false;
+        }
+
+        $state['auto_retry_attempts'] = $attempts + 1;
+        $state['runtime_feedback'][] = [
+            'reason' => 'tool_execution_recoverable_failure',
+            'message' => 'The tool call failed but is recoverable. Re-plan: fix the arguments, call a lookup/alternative tool, or ask the user only if no automated recovery is possible.',
+            'tool' => $toolName,
+            'error' => $result->error ?? $result->message,
+            'attempt' => $attempts + 1,
         ];
 
         return true;

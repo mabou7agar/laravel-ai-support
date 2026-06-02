@@ -83,6 +83,51 @@ class AgentActivityPresenterTest extends UnitTestCase
         $this->assertSame('error', $failed['phase']);
     }
 
+    public function test_reasoning_event_uses_reasoning_text_as_label(): void
+    {
+        $a = $this->presenter()->describe(E::AGENT_REASONING, ['reasoning' => 'Looking up the customer record']);
+
+        $this->assertSame('Looking up the customer record', $a['label']);
+        $this->assertSame('✶', $a['icon']);
+        $this->assertSame('thinking', $a['phase']);
+        $this->assertFalse($a['terminal']);
+    }
+
+    public function test_reasoning_event_falls_back_to_thinking_when_empty(): void
+    {
+        $this->assertSame('Thinking', $this->presenter()->describe(E::AGENT_REASONING)['label']);
+        $this->assertSame('Thinking', $this->presenter()->describe(E::AGENT_REASONING, ['reasoning' => '   '])['label']);
+    }
+
+    public function test_plan_updated_event_builds_step_x_of_y_label(): void
+    {
+        $a = $this->presenter()->describe(E::PLAN_UPDATED, ['steps' => ['a', 'b', 'c'], 'current' => 2]);
+
+        $this->assertSame('Planning (step 2 of 3)', $a['label']);
+        $this->assertSame('thinking', $a['phase']);
+        $this->assertSame('✶', $a['icon']);
+        $this->assertFalse($a['terminal']);
+    }
+
+    public function test_plan_updated_event_clamps_current_index(): void
+    {
+        $p = $this->presenter();
+
+        // current below 1 clamps up to 1, above the count clamps to the count.
+        $this->assertSame('Planning (step 1 of 2)', $p->describe(E::PLAN_UPDATED, ['steps' => ['a', 'b'], 'current' => 0])['label']);
+        $this->assertSame('Planning (step 2 of 2)', $p->describe(E::PLAN_UPDATED, ['steps' => ['a', 'b'], 'current' => 9])['label']);
+    }
+
+    public function test_plan_updated_event_falls_back_to_planning_when_empty(): void
+    {
+        $a = $this->presenter()->describe(E::PLAN_UPDATED);
+
+        $this->assertSame('Planning', $a['label']);
+        $this->assertSame('thinking', $a['phase']);
+        $this->assertSame('✶', $a['icon']);
+        $this->assertSame('Planning', $this->presenter()->describe(E::PLAN_UPDATED, ['steps' => []])['label']);
+    }
+
     public function test_unknown_event_has_a_safe_default(): void
     {
         $a = $this->presenter()->describe('something.unknown');
