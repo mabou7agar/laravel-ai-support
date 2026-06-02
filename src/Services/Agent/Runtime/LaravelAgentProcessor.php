@@ -93,9 +93,11 @@ class LaravelAgentProcessor
         // conversation_history, skip addUserMessage to avoid a double-user-turn in the
         // context that would confuse the model (stateless multi-turn pattern).
         $lastHydrated = end($context->conversationHistory);
+        $trimmedMessage = trim($message);
         $alreadyPresent = is_array($lastHydrated)
             && ($lastHydrated['role'] ?? null) === 'user'
-            && trim((string) ($lastHydrated['content'] ?? '')) === trim($message);
+            && $trimmedMessage !== ''
+            && trim((string) ($lastHydrated['content'] ?? '')) === $trimmedMessage;
 
         if (!$alreadyPresent) {
             $context->addUserMessage($message);
@@ -373,6 +375,11 @@ class LaravelAgentProcessor
                 'error' => $e->getMessage(),
                 'exception' => $e::class,
             ]);
+
+            // The failed pipeline attempt may have merged a selected entity into
+            // $options (mergeConversationContext only sets keys when unset). Drop
+            // it so the heuristic fallback is not biased by a partial failed run.
+            unset($options['selected_entity'], $options['selected_entity_context']);
 
             return $this->heuristicRoute($message, $context, $options);
         }

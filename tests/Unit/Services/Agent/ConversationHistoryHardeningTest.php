@@ -70,6 +70,29 @@ class ConversationHistoryHardeningTest extends UnitTestCase
         $this->assertSame('New question', $last['content'], 'The current turn must be appended when not already in history.');
     }
 
+    public function test_whitespace_only_turn_is_not_collapsed_into_prior_empty_turn(): void
+    {
+        // A prior user turn with empty content exists in history. The incoming
+        // message is whitespace-only (trims to ''). The dedup guard must NOT
+        // collapse it into the prior empty turn — the current turn must be added.
+        $history = [
+            ['role' => 'assistant', 'content' => 'How can I help?'],
+            ['role' => 'user', 'content' => ''], // prior empty user turn is the last entry
+        ];
+
+        $context = $this->hydrateAndProcess('   ', $history);
+
+        $userTurns = array_filter(
+            $context->conversationHistory,
+            static fn (array $m): bool => $m['role'] === 'user'
+        );
+        $this->assertCount(2, $userTurns, 'A whitespace-only turn must not be dropped by matching a prior empty turn.');
+
+        $last = end($context->conversationHistory);
+        $this->assertSame('user', $last['role']);
+        $this->assertSame('   ', $last['content'], 'The whitespace-only current turn must be appended verbatim.');
+    }
+
     // ------------------------------------------------------------------
     // Finding 2 — Hard-cap history at compactor max_messages
     // ------------------------------------------------------------------
