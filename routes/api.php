@@ -8,6 +8,7 @@ use LaravelAIEngine\Http\Controllers\Api\FileAnalysisApiController;
 use LaravelAIEngine\Http\Controllers\Api\GenerateApiController;
 use LaravelAIEngine\Http\Controllers\Api\EngineCatalogController;
 use LaravelAIEngine\Http\Controllers\Api\HealthApiController;
+use LaravelAIEngine\Http\Controllers\Api\ModelCouncilApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\AgentRunController;
 use LaravelAIEngine\Http\Controllers\Api\VectorStoreApiController;
@@ -60,6 +61,9 @@ Route::prefix('api/v1/agent')
     ->group(function () {
         Route::post('/chat', [AgentChatApiController::class, 'sendMessage'])
             ->name('chat.send');
+
+        Route::post('/council', [ModelCouncilApiController::class, 'run'])
+            ->name('council.run');
 
         Route::get('/conversations', [AgentConversationApiController::class, 'index'])
             ->name('conversations.list');
