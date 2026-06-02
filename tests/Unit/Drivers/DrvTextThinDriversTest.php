@@ -284,7 +284,20 @@ class DrvTextThinDriversTest extends UnitTestCase
             model: EntityEnum::from(EntityEnum::AZURE_TRANSLATOR),
             parameters: ['target_language' => 'es']
         ));
+
+        // Mapping resolves engine/model and surfaces the translated text as
+        // content, with the full translation echoed in metadata.
         $this->assertTrue($response->isSuccessful());
+        $this->assertSame(EngineEnum::Azure, $response->getEngine());
+        $this->assertSame(EntityEnum::AZURE_TRANSLATOR, $response->getModel()->value);
+        $this->assertSame('Hola mundo', $response->getContent());
+
+        $metadata = $response->getMetadata();
+        $this->assertSame('translator', $metadata['service']);
+        $this->assertSame(EngineEnum::Azure->value, $metadata['engine']);
+        $this->assertSame('Hola mundo', $metadata['translation']['translated_text']);
+        $this->assertSame('en', $metadata['translation']['source_language']);
+        $this->assertSame('es', $metadata['translation']['target_language']);
 
         $request = $this->drvTextLastRequest();
         $this->assertSame('POST', $request->getMethod());
@@ -316,7 +329,20 @@ class DrvTextThinDriversTest extends UnitTestCase
             model: EntityEnum::from(EntityEnum::AZURE_TEXT_ANALYTICS),
             parameters: ['analysis_type' => 'sentiment']
         ));
+
+        // Mapping resolves engine/model and JSON-encodes the analysis into
+        // content, echoing the structured result in metadata.
         $this->assertTrue($response->isSuccessful());
+        $this->assertSame(EngineEnum::Azure, $response->getEngine());
+        $this->assertSame(EntityEnum::AZURE_TEXT_ANALYTICS, $response->getModel()->value);
+
+        $content = json_decode($response->getContent(), true);
+        $this->assertSame('sentiment', $content['analysis_type']);
+        $this->assertSame('positive', $content['results']['sentiment']);
+
+        $metadata = $response->getMetadata();
+        $this->assertSame('text_analytics', $metadata['service']);
+        $this->assertSame('sentiment', $metadata['analysis']['analysis_type']);
 
         $request = $this->drvTextLastRequest();
         $this->assertStringContainsString('/text/analytics/v3.1/sentiment', (string) $request->getUri());
@@ -361,7 +387,23 @@ class DrvTextThinDriversTest extends UnitTestCase
             engine: EngineEnum::PlagiarismCheck,
             model: EntityEnum::from(EntityEnum::PLAGIARISM_BASIC)
         ));
+
+        // Mapping resolves engine/model and JSON-encodes the formatted results
+        // into content, with the structured results echoed in metadata.
         $this->assertTrue($response->isSuccessful());
+        $this->assertSame(EngineEnum::PlagiarismCheck, $response->getEngine());
+        $this->assertSame(EntityEnum::PLAGIARISM_BASIC, $response->getModel()->value);
+
+        $content = json_decode($response->getContent(), true);
+        $this->assertSame(30, $content['overall_similarity']);
+        $this->assertSame(70, $content['uniqueness_percentage']);
+        $this->assertSame(1, $content['total_sources_found']);
+        $this->assertSame('check-123', $content['check_id']);
+        $this->assertSame('Src A', $content['sources'][0]['title']);
+
+        $metadata = $response->getMetadata();
+        $this->assertSame(EngineEnum::PlagiarismCheck->value, $metadata['engine']);
+        $this->assertSame(30, $metadata['plagiarism_results']['overall_similarity']);
 
         $request = $this->drvTextLastRequest();
         $this->assertSame('POST', $request->getMethod());
@@ -390,7 +432,17 @@ class DrvTextThinDriversTest extends UnitTestCase
             engine: EngineEnum::PlagiarismCheck,
             model: EntityEnum::from(EntityEnum::PLAGIARISM_ADVANCED)
         ));
+
+        // Mapping resolves engine/model; low similarity maps to a high
+        // uniqueness score in the encoded content.
         $this->assertTrue($response->isSuccessful());
+        $this->assertSame(EngineEnum::PlagiarismCheck, $response->getEngine());
+        $this->assertSame(EntityEnum::PLAGIARISM_ADVANCED, $response->getModel()->value);
+
+        $content = json_decode($response->getContent(), true);
+        $this->assertSame(5, $content['overall_similarity']);
+        $this->assertSame(95, $content['uniqueness_percentage']);
+        $this->assertSame(0, $content['total_sources_found']);
 
         $request = $this->drvTextLastRequest();
         $this->assertStringContainsString('/v1/check/advanced', (string) $request->getUri());
