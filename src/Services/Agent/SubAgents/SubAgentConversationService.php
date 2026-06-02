@@ -99,7 +99,7 @@ class SubAgentConversationService
                     ]
                 );
                 $this->storeContextMetadata($context, $conversationId, $target, $participants, $transcript, $round);
-                $this->compactor->compact($context);
+                $this->compactor->compact($context, $options);
 
                 if ($result->needsUserInput) {
                     return new SubAgentConversationResult(

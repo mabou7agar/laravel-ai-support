@@ -284,8 +284,145 @@ class ConversationHistoryHardeningTest extends UnitTestCase
     }
 
     // ------------------------------------------------------------------
+    // Bug H1 — fresh client history must override stale cached context history
+    // ------------------------------------------------------------------
+
+    public function test_fresh_supplied_history_overrides_existing_cached_context_history(): void
+    {
+        // Simulate a re-entrant process() (RAG -> orchestrator reroute): the cached
+        // context already carries an older snapshot of the history, but the client
+        // supplies a FRESH conversation_history with updated turns.
+        $context = new UnifiedActionContext('session-h1-' . uniqid(), 99);
+        $context->conversationHistory = [
+            ['role' => 'user', 'content' => 'stale turn one'],
+            ['role' => 'assistant', 'content' => 'stale answer one'],
+        ];
+
+        $freshHistory = [
+            ['role' => 'user', 'content' => 'stale turn one'],
+            ['role' => 'assistant', 'content' => 'stale answer one'],
+            ['role' => 'user', 'content' => 'fresh follow up'],
+            ['role' => 'assistant', 'content' => 'fresh answer'],
+        ];
+
+        $result = $this->processWithContext($context, 'next question', [
+            'conversation_history' => $freshHistory,
+        ]);
+
+        $contents = array_column($result->conversationHistory, 'content');
+
+        // The fresh turns must now be present (previously silently ignored by the
+        // early-return guard).
+        $this->assertContains('fresh follow up', $contents, 'Fresh client history must be applied to the context.');
+        $this->assertContains('fresh answer', $contents);
+
+        // Current user turn appended exactly once (not duplicated by the dedup guard).
+        $currentTurns = array_filter(
+            $result->conversationHistory,
+            static fn (array $m): bool => $m['role'] === 'user' && $m['content'] === 'next question'
+        );
+        $this->assertCount(1, $currentTurns, 'The current user turn must appear exactly once.');
+    }
+
+    public function test_dedup_guard_holds_when_fresh_history_already_includes_current_turn(): void
+    {
+        $context = new UnifiedActionContext('session-h1b-' . uniqid(), 99);
+        $context->conversationHistory = [
+            ['role' => 'user', 'content' => 'old turn'],
+        ];
+
+        $message = 'the new turn';
+        $freshHistory = [
+            ['role' => 'user', 'content' => 'old turn'],
+            ['role' => 'assistant', 'content' => 'old answer'],
+            ['role' => 'user', 'content' => $message], // current turn already supplied
+        ];
+
+        $result = $this->processWithContext($context, $message, [
+            'conversation_history' => $freshHistory,
+        ]);
+
+        $currentTurns = array_filter(
+            $result->conversationHistory,
+            static fn (array $m): bool => $m['role'] === 'user' && $m['content'] === $message
+        );
+        $this->assertCount(1, $currentTurns, 'Dedup guard must prevent duplicating the current turn after re-hydration.');
+    }
+
+    public function test_reroute_without_supplied_history_preserves_existing_context_history(): void
+    {
+        // Mirrors the strip-history reroute path: no conversation_history supplied,
+        // so the existing context history must be left intact.
+        $context = new UnifiedActionContext('session-h1c-' . uniqid(), 99);
+        $context->conversationHistory = [
+            ['role' => 'user', 'content' => 'preserved turn'],
+            ['role' => 'assistant', 'content' => 'preserved answer'],
+        ];
+
+        $result = $this->processWithContext($context, 'reroute message', []);
+
+        $contents = array_column($result->conversationHistory, 'content');
+        $this->assertContains('preserved turn', $contents, 'Existing history must survive a reroute without supplied history.');
+        $this->assertContains('preserved answer', $contents);
+        $this->assertContains('reroute message', $contents, 'The current turn is still appended.');
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
+
+    /**
+     * Run process() against a caller-supplied (pre-seeded) context so tests can
+     * exercise the re-entrant / cached-history paths.
+     *
+     * @param array<string, mixed> $opts
+     */
+    private function processWithContext(
+        UnifiedActionContext $context,
+        string $message,
+        array $opts
+    ): UnifiedActionContext {
+        $contextManager = Mockery::mock(ContextManager::class);
+        $contextManager->shouldReceive('getOrCreate')->andReturn($context);
+
+        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
+            ->andReturnUsing(static fn (RoutingDecision $d, string $m, UnifiedActionContext $c): AgentResponse
+                => AgentResponse::conversational(message: 'ok', context: $c));
+
+        $finalizer = Mockery::mock(AgentResponseFinalizer::class);
+        $finalizer->shouldReceive('finalize')
+            ->andReturnUsing(fn (UnifiedActionContext $ctx, AgentResponse $r) => $r);
+
+        $selection = Mockery::mock(AgentSelectionService::class);
+        $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
+        $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
+
+        $intentRouter = Mockery::mock(IntentRouter::class);
+        $intentRouter->shouldReceive('route')
+            ->andReturn([
+                'action'          => 'conversational',
+                'reasoning'       => 'test fallback',
+                'decision_source' => 'fallback',
+            ]);
+
+        $processor = new LaravelAgentProcessor(
+            $contextManager,
+            $intentRouter,
+            new AgentPlanner(),
+            $finalizer,
+            $selection,
+            Mockery::mock(NodeSessionManager::class),
+            new MessageRoutingClassifier(),
+            null,
+            null,
+            $dispatcher
+        );
+
+        $processor->process($message, $context->sessionId, 99, $opts);
+
+        return $context;
+    }
 
     /**
      * Build a processor, run process(), and return the context populated by hydration.

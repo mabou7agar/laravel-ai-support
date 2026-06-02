@@ -22,7 +22,11 @@ class ConversationContextCompactor
     ) {
     }
 
-    public function compact(UnifiedActionContext $context): void
+    /**
+     * @param array<string, mixed> $options Current-request scope (e.g. tenant_id/workspace_id)
+     *                                       preferred over potentially stale cached context metadata.
+     */
+    public function compact(UnifiedActionContext $context, array $options = []): void
     {
         $beforeChars = $this->historyChars($context->conversationHistory);
 
@@ -56,7 +60,7 @@ class ConversationContextCompactor
         $context->metadata['conversation_compacted_messages'] = (int) ($context->metadata['conversation_compacted_messages'] ?? 0) + count($older);
         $context->metadata['conversation_last_compacted_at'] = now()->toIso8601String();
         $context->conversationHistory = $recent;
-        $this->extractConversationMemories($context, $older);
+        $this->extractConversationMemories($context, $older, $options);
         $this->storeMetrics($context, $beforeChars);
     }
 
@@ -230,8 +234,9 @@ class ConversationContextCompactor
 
     /**
      * @param array<int, array<string, mixed>> $older
+     * @param array<string, mixed> $options
      */
-    private function extractConversationMemories(UnifiedActionContext $context, array $older): void
+    private function extractConversationMemories(UnifiedActionContext $context, array $older, array $options = []): void
     {
         if ($older === []) {
             return;
@@ -243,7 +248,7 @@ class ConversationContextCompactor
                 return;
             }
 
-            $items = $this->memoryExtractor()->extract($older, $this->memoryScope($context));
+            $items = $this->memoryExtractor()->extract($older, $this->memoryScope($context, $options));
             foreach ($items as $item) {
                 $stored = $this->memoryRepository()->upsert($item);
                 if ($policy->semanticIndexOnWrite()) {
@@ -259,23 +264,38 @@ class ConversationContextCompactor
     }
 
     /**
+     * Resolve the memory scope for the CURRENT request.
+     *
+     * tenant_id/workspace_id must be sourced from the current request ($options)
+     * first, falling back to the cached context metadata only when not supplied.
+     * The cached context (loaded per session) can carry a previous request's
+     * tenant/workspace, which would otherwise write memories under the wrong
+     * scope_hash and silently break cross-read isolation.
+     *
+     * @param array<string, mixed> $options
      * @return array<string, string|null>
      */
-    private function memoryScope(UnifiedActionContext $context): array
+    private function memoryScope(UnifiedActionContext $context, array $options = []): array
     {
         $legacyScope = [
             'user_id' => $context->userId !== null ? (string) $context->userId : null,
-            'tenant_id' => $this->metadataString($context, 'tenant_id'),
-            'workspace_id' => $this->metadataString($context, 'workspace_id'),
+            'tenant_id' => $this->scopeValue($context, $options, 'tenant_id'),
+            'workspace_id' => $this->scopeValue($context, $options, 'workspace_id'),
             'session_id' => $context->sessionId,
         ];
 
-        return array_merge($legacyScope, $this->memoryScopeResolver()->fromContext($context));
+        return array_merge($legacyScope, $this->memoryScopeResolver()->fromContext($context, $options));
     }
 
-    private function metadataString(UnifiedActionContext $context, string $key): ?string
+    /**
+     * Prefer the explicit current-request value ($options) over the cached
+     * context metadata for the given scope key.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function scopeValue(UnifiedActionContext $context, array $options, string $key): ?string
     {
-        $value = $context->metadata[$key] ?? null;
+        $value = $options[$key] ?? $context->metadata[$key] ?? null;
 
         if ($value === null || $value === '') {
             return null;

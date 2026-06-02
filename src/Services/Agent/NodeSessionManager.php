@@ -173,7 +173,7 @@ PROMPT;
             $this->syncRemotePendingAction($context, $node, $response);
             $agentResponse = $this->buildAgentResponseFromRoutedSuccess($response, $context);
 
-            $this->responseFinalizer->persistMessage($context, $response['response']);
+            $this->responseFinalizer->persistMessage($context, $response['response'], [], $options);
 
             return $agentResponse;
         }
@@ -185,7 +185,7 @@ PROMPT;
         ]);
 
         $failureMessage = $this->formatRoutingFailureMessage($node->slug, $node->url, $response['error'] ?? null);
-        $this->responseFinalizer->persistMessage($context, $failureMessage);
+        $this->responseFinalizer->persistMessage($context, $failureMessage, [], $options);
 
         return AgentResponse::failure(
             message: $failureMessage,

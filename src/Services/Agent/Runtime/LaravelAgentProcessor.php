@@ -94,7 +94,8 @@ class LaravelAgentProcessor
                         'target' => (string) ($options['target'] ?? $message),
                         'sub_agents' => $options['sub_agents'] ?? null,
                     ]
-                ), $message, $context, $options)
+                ), $message, $context, $options),
+                $options
             );
         }
 
@@ -104,7 +105,8 @@ class LaravelAgentProcessor
         ) {
             return $this->finalizeDirect(
                 $context,
-                $this->aiNativeRuntime()->process($message, $context, $options)
+                $this->aiNativeRuntime()->process($message, $context, $options),
+                $options
             );
         }
 
@@ -135,7 +137,7 @@ class LaravelAgentProcessor
 
                         if ($fallback->success) {
                             $fallback->message = $this->fallbackNotice() . "\n\n" . $fallback->message;
-                            return $this->responseFinalizer->finalize($context, $fallback);
+                            return $this->responseFinalizer->finalize($context, $fallback, $options);
                         }
                     }
 
@@ -167,16 +169,18 @@ class LaravelAgentProcessor
      *   - The current user turn MUST NOT be included as the last entry; if it is, the
      *     dedup guard below will skip addUserMessage to avoid duplicating the turn.
      *
-     * This method is idempotent: if the context already carries history it returns
-     * immediately so re-entrant calls (e.g. goal-agent reroutes) are safe.
+     * Re-entrant calls (e.g. RAG -> orchestrator reroutes) are safe: when NO fresh
+     * conversation_history is supplied the existing context history is left untouched,
+     * but when the client DOES supply a fresh history it is applied so updated turns
+     * are not silently ignored. The dedup guard in process() prevents the current user
+     * turn being duplicated after re-hydration.
      */
     protected function hydrateConversationHistory(UnifiedActionContext $context, array $options): void
     {
-        if ($context->conversationHistory !== []) {
-            return;
-        }
-
         $history = $options['conversation_history'] ?? [];
+
+        // No fresh history supplied: keep whatever the context already carries (if any)
+        // so re-entrant reroutes that omit conversation_history are non-destructive.
         if (!is_array($history) || $history === []) {
             return;
         }
@@ -208,6 +212,12 @@ class LaravelAgentProcessor
 
             return $message;
         }, $filtered);
+
+        // If every supplied entry was invalid, do not clobber any existing context
+        // history with an empty array — leave the prior history intact.
+        if ($filtered === []) {
+            return;
+        }
 
         // Hard-cap the replayed history to avoid unbounded context growth.
         // Preserve the most-recent messages (tail of the array) so context is current.
@@ -245,7 +255,7 @@ class LaravelAgentProcessor
                 $decisionOptions
             );
 
-            return $this->responseFinalizer->finalize($context, $response);
+            return $this->responseFinalizer->finalize($context, $response, $decisionOptions);
 
         } catch (\Throwable $e) {
             Log::channel('ai-engine')->error('AI orchestration failed', [
@@ -257,12 +267,12 @@ class LaravelAgentProcessor
                 return $this->responseFinalizer->finalize($context, AgentResponse::failure(
                     message: 'I could not route this request to an available action.',
                     context: $context
-                ));
+                ), $options);
             }
 
             $response = $this->searchRag($message, $context, $options);
 
-            return $this->responseFinalizer->finalize($context, $response);
+            return $this->responseFinalizer->finalize($context, $response, $options);
         }
     }
 
@@ -300,7 +310,8 @@ class LaravelAgentProcessor
                     $context,
                     $this->optionsForRoutingDecision($decision, $options),
                     $trace
-                )
+                ),
+                $options
             );
         } catch (\Throwable $e) {
             Log::channel('ai-engine')->error('Routing pipeline failed', [
@@ -334,7 +345,8 @@ class LaravelAgentProcessor
                     'preclassified_route_mode' => 'semantic_retrieval',
                     'decision_path' => 'forced_rag',
                     'decision_source' => 'forced',
-                ]))
+                ])),
+                $options
             );
         }
 
@@ -362,7 +374,8 @@ class LaravelAgentProcessor
                 ), $message, $context, array_merge($options, [
                     'decision_path' => 'heuristic_conversational',
                     'decision_source' => $classification['source'],
-                ]))
+                ])),
+                $options
             );
         }
 
@@ -383,7 +396,8 @@ class LaravelAgentProcessor
                     'preclassified_route_mode' => $classification['mode'],
                     'decision_path' => 'heuristic_' . $classification['mode'],
                     'decision_source' => $classification['source'],
-                ]))
+                ])),
+                $options
             );
         }
 
@@ -573,9 +587,12 @@ class LaravelAgentProcessor
         return 'Remote node is unavailable. Showing local results only (degraded mode).';
     }
 
-    protected function finalizeDirect(UnifiedActionContext $context, AgentResponse $response): AgentResponse
+    /**
+     * @param array<string, mixed> $options Current-request scope threaded into finalization/compaction.
+     */
+    protected function finalizeDirect(UnifiedActionContext $context, AgentResponse $response, array $options = []): AgentResponse
     {
-        return $this->responseFinalizer->finalize($context, $response);
+        return $this->responseFinalizer->finalize($context, $response, $options);
     }
 
     protected function shouldUseGoalAgent(array $options): bool
