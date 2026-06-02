@@ -71,7 +71,7 @@ class AiNativePromptBuilder
             // line so it sits alongside the JSON-shape guidance. Fall back to an
             // append if that anchor line is ever renamed.
             $anchor = array_search('Return JSON only. No markdown.', $lines, true);
-            $instruction = 'Optionally include a "reasoning":"<one short sentence>" field in your JSON plan explaining your next step.';
+            $instruction = 'Always include a "reasoning":"<one short sentence>" field in your JSON plan explaining your next step, in plain user-facing language.';
             if ($anchor === false) {
                 $lines[] = $instruction;
             } else {
@@ -83,11 +83,33 @@ class AiNativePromptBuilder
             // Insert the plan-steps instruction right before the "Return JSON only."
             // line, falling back to an append if that anchor is ever renamed.
             $anchor = array_search('Return JSON only. No markdown.', $lines, true);
-            $instruction = 'Optionally include a "steps":["<short step>","<short step>"] array in your JSON plan listing the remaining steps you intend to take.';
+            $instruction = 'Always include a "steps":["<short step>","<short step>"] array in your JSON plan listing the remaining steps you intend to take (use a single entry if only one step remains).';
             if ($anchor === false) {
                 $lines[] = $instruction;
             } else {
                 array_splice($lines, $anchor, 0, [$instruction]);
+            }
+        }
+
+        // A concrete worked example carries far more weight than prose for a
+        // low-temperature planner: it mirrors the "Allowed JSON shapes" examples
+        // (which omit these fields) so the model actually emits them every turn.
+        $exampleFields = [];
+        if ($this->exposeReasoning($options)) {
+            $exampleFields[] = '"reasoning":"I need to look up the customer before creating the invoice"';
+        }
+        if ($this->planTimelineEnabled($options)) {
+            $exampleFields[] = '"steps":["Find the customer","Find the products","Create the invoice"]';
+        }
+        if ($exampleFields !== []) {
+            $example = 'Every JSON plan you return MUST also carry these fields. Example: '
+                . '{"action":"tool_call","tool":"find_customer","arguments":{"query":"Acme"},"message":"Looking up Acme",'
+                . implode(',', $exampleFields) . '}';
+            $anchor = array_search('{"action":"final","message":"answer to user","data":{}}', $lines, true);
+            if ($anchor === false) {
+                $lines[] = $example;
+            } else {
+                array_splice($lines, $anchor + 1, 0, [$example]);
             }
         }
 

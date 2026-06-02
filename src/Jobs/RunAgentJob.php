@@ -398,6 +398,13 @@ class RunAgentJob implements ShouldQueue
         // event. No-op when plan_timeline is off (metadata['plan'] absent).
         $this->emitPlanEvent($events, $run, $step, $response, $runtimeOptions);
 
+        // Reconstruct per-tool timeline events from the AiNative loop's recorded
+        // tool_results so the UI can render "Searching for customer… ✓" steps. The
+        // AiNative runtime executes tools internally without its own event sink, so
+        // these would otherwise be invisible. No-op for non-AiNative turns (which
+        // emit tool events natively via the dispatcher) — so there is no double-emit.
+        $this->emitAiNativeToolEvents($events, $run, $step, $response, $runtimeOptions);
+
         try {
             $events->emit(
                 $this->eventNameForStatus($status),
@@ -493,6 +500,68 @@ class RunAgentJob implements ShouldQueue
                 'run_uuid' => $run->uuid,
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * Reconstruct tool.started + tool.completed/tool.failed stream events from the
+     * AiNative loop's recorded tool_results ($response->metadata['ai_native']
+     * ['tool_results']), so a UI gets the per-tool "Searching for customer… ✓"
+     * timeline the AiNative runtime would otherwise never surface. Best-effort and
+     * a no-op for non-AiNative turns (no metadata['ai_native']) — the dispatcher
+     * path emits its own tool events, so this never double-emits.
+     *
+     * @param array<string, mixed> $runtimeOptions
+     */
+    protected function emitAiNativeToolEvents(
+        AgentRunEventStreamService $events,
+        AIAgentRun $run,
+        AIAgentRunStep $step,
+        AgentResponse $response,
+        array $runtimeOptions
+    ): void {
+        $results = $response->metadata['ai_native']['tool_results'] ?? null;
+        if (!is_array($results) || $results === []) {
+            return;
+        }
+
+        foreach ($results as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $toolName = trim((string) ($entry['tool'] ?? ''));
+            if ($toolName === '') {
+                continue;
+            }
+
+            $result = is_array($entry['result'] ?? null) ? $entry['result'] : [];
+            $succeeded = (bool) ($result['success'] ?? false);
+
+            try {
+                $events->emit(
+                    AgentRunEventStreamService::TOOL_STARTED,
+                    $run,
+                    $step,
+                    ['tool_name' => $toolName, 'arguments' => $entry['params'] ?? []],
+                    $runtimeOptions
+                );
+
+                $events->emit(
+                    $succeeded ? AgentRunEventStreamService::TOOL_COMPLETED : AgentRunEventStreamService::TOOL_FAILED,
+                    $run,
+                    $step,
+                    ['tool_name' => $toolName, 'success' => $succeeded],
+                    $runtimeOptions
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Agent AiNative tool event emission failed', [
+                    'run_id' => $run->id,
+                    'run_uuid' => $run->uuid,
+                    'tool' => $toolName,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 
