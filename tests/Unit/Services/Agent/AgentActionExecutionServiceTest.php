@@ -39,6 +39,12 @@ class AgentActionExecutionServiceToolConfigStub
                     'data' => $params,
                 ],
             ],
+            'throwing_stub_action' => [
+                'parameters' => [],
+                'handler' => static function (): array {
+                    throw new \RuntimeException('boom from handler');
+                },
+            ],
             'context_stub_action' => [
                 'parameters' => [],
                 'handler' => static fn (array $params, UnifiedActionContext $context): array => [
@@ -196,6 +202,36 @@ class AgentActionExecutionServiceTest extends UnitTestCase
         $this->assertSame('context_tool_strategy', $response->strategy);
         $this->assertSame('context_tool_strategy', $response->metadata['agent_strategy']);
         $this->assertSame('context_stub_action', $response->metadata['tool_name']);
+    }
+
+    public function test_execute_use_tool_returns_failure_when_handler_throws(): void
+    {
+        $service = new AgentActionExecutionService(
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('throwing-tool-session', 1);
+
+        $ragInvoked = false;
+        $response = $service->executeUseTool(
+            'throwing_stub_action',
+            'run throwing tool',
+            $context,
+            ['model_configs' => [AgentActionExecutionServiceToolConfigStub::class]],
+            function () use (&$ragInvoked): AgentResponse {
+                $ragInvoked = true;
+                $this->fail('RAG fallback should not be called when a matched tool handler throws');
+            }
+        );
+
+        // A tool that EXISTS but ERRORED must be reported as a failure, not as
+        // "tool not registered" (which would redirect to the RAG fallback).
+        $this->assertFalse($ragInvoked);
+        $this->assertFalse($response->success);
+        $this->assertTrue($response->isComplete);
+        $this->assertStringContainsString('boom from handler', $response->message);
+        $this->assertSame('throwing_stub_action', $response->metadata['tool_name'] ?? null);
+        $this->assertSame('boom from handler', $response->metadata['tool_error'] ?? null);
     }
 
     public function test_execute_use_tool_plain_fallback_tags_tool_fallback_decision_source(): void

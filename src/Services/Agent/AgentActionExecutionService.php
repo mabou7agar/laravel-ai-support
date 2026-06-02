@@ -48,6 +48,8 @@ class AgentActionExecutionService
                 continue;
             }
 
+            $matchedTool = false;
+
             try {
                 $tools = $configClass::getTools();
                 if (!isset($tools[$toolName])) {
@@ -61,6 +63,8 @@ class AgentActionExecutionService
                 if (!$handler || !is_callable($handler)) {
                     continue;
                 }
+
+                $matchedTool = true;
 
                 $params = is_array($options['tool_params'] ?? null) ? $options['tool_params'] : [];
                 $suggestedActions = $context->metadata['suggested_actions'] ?? [];
@@ -144,6 +148,23 @@ class AgentActionExecutionService
                     'tool_name' => $toolName,
                     'error' => $e->getMessage(),
                 ]);
+
+                // The tool exists and was invoked; it errored rather than being
+                // absent. Surface the failure instead of falling through to the
+                // registry/RAG path, which would misreport it as "tool not registered".
+                if ($matchedTool) {
+                    return AgentResponse::failure(
+                        message: $this->runtimeText(
+                            'ai-engine::runtime.agent_action_execution.tool_execution_failed',
+                            'Tool execution failed: '
+                        ) . $e->getMessage(),
+                        context: $context,
+                        metadata: [
+                            'tool_name' => $toolName,
+                            'tool_error' => $e->getMessage(),
+                        ]
+                    );
+                }
             }
         }
 
