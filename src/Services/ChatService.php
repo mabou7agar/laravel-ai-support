@@ -93,7 +93,8 @@ class ChatService
                 $collectionResponse = $collectionResponse->withConversationId($conversationId);
             }
 
-            $this->persistTranscriptTurn($conversationId, $message, $collectionResponse);
+            $persisted = $this->persistTranscriptTurn($conversationId, $message, $collectionResponse);
+            $collectionResponse = $collectionResponse->withMetadata(['transcript_persisted' => $persisted]);
 
             return $collectionResponse;
         }
@@ -110,7 +111,8 @@ class ChatService
         $this->updateSessionNode($sessionId, $agentResponse);
 
         $response = $this->toAIResponse($agentResponse, $engine, $model, $conversationId);
-        $this->persistTranscriptTurn($conversationId, $message, $response);
+        $persisted = $this->persistTranscriptTurn($conversationId, $message, $response);
+        $response = $response->withMetadata(['transcript_persisted' => $persisted]);
         $response = $this->presentation()->apply($response, $message, $options, $agentResponse->context);
 
         return $response;
@@ -181,16 +183,20 @@ class ChatService
         Cache::forget("session_node:{$sessionId}");
     }
 
-    protected function persistTranscriptTurn(?string $conversationId, string $message, AIResponse $response): void
+    protected function persistTranscriptTurn(?string $conversationId, string $message, AIResponse $response): bool
     {
         if ($conversationId === null) {
-            return;
+            return true;
         }
 
         try {
             $this->conversationTranscripts->saveMessages($conversationId, $message, $response);
+
+            return true;
         } catch (\Throwable $e) {
             Log::warning('Failed to persist conversation transcript turn: ' . $e->getMessage());
+
+            return false;
         }
     }
 

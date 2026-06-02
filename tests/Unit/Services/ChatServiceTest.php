@@ -110,6 +110,45 @@ class ChatServiceTest extends UnitTestCase
 
         $this->assertTrue($response->success);
         $this->assertSame('conversation-123', $response->conversationId);
+        $this->assertTrue($response->metadata['transcript_persisted']);
+    }
+
+    public function test_process_message_marks_transcript_not_persisted_when_save_fails(): void
+    {
+        $transcripts = Mockery::mock(ConversationTranscriptService::class);
+        $transcripts->shouldReceive('getOrCreateConversation')
+            ->once()
+            ->with('chat-persist-fail', 9, 'openai', 'gpt-4o-mini')
+            ->andReturn('conversation-456');
+        $transcripts->shouldReceive('getConversationHistory')
+            ->once()
+            ->with('chat-persist-fail', 50, 9)
+            ->andReturn([]);
+        $transcripts->shouldReceive('saveMessages')
+            ->once()
+            ->andThrow(new \RuntimeException('database is down'));
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::conversational(
+                message: 'Stored in the transcript.',
+                context: new UnifiedActionContext('chat-persist-fail', 9)
+            ));
+
+        $service = new ChatService($transcripts, $runtime);
+
+        $response = $service->processMessage(
+            message: 'remember this',
+            sessionId: 'chat-persist-fail',
+            useMemory: true,
+            userId: 9
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertSame('conversation-456', $response->conversationId);
+        $this->assertFalse($response->metadata['transcript_persisted']);
     }
 
     public function test_process_message_can_return_response_points_as_array_with_suggestions(): void
