@@ -16,6 +16,7 @@ use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Models\AIAgentRunStep;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
+use LaravelAIEngine\Services\Agent\AgentRunBudgetService;
 use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
 use LaravelAIEngine\Services\Agent\AgentRunRetentionService;
 use LaravelAIEngine\Services\Agent\AgentRunSafetyService;
@@ -57,16 +58,18 @@ class RunAgentJob implements ShouldQueue
         AgentRunRepository $runs,
         AgentRunStepRepository $steps,
         AgentRunSafetyService $safety,
-        ?AgentRunEventStreamService $events = null
+        ?AgentRunEventStreamService $events = null,
+        ?AgentRunBudgetService $budget = null
     ): void {
         $events ??= app(AgentRunEventStreamService::class);
+        $budget ??= app(AgentRunBudgetService::class);
 
         if (!$this->claimIdempotency($safety)) {
             return;
         }
 
         try {
-            $safety->withRunLock($this->runId, function () use ($runtime, $runs, $steps, $safety, $events): void {
+            $safety->withRunLock($this->runId, function () use ($runtime, $runs, $steps, $safety, $events, $budget): void {
             $run = $runs->findOrFail($this->runId);
             $this->assertPolicyAllowsRun($run);
             $scopedOptions = $safety->applyScopeToMetadata($this->options);
@@ -122,12 +125,17 @@ class RunAgentJob implements ShouldQueue
             ], $runtimeOptions);
 
             try {
+                $budget->startAccumulatingCredits();
                 $response = $runtime->process($this->message, $this->sessionId, $this->userId, $runtimeOptions);
+                $budget->assertRuntimeBudgetAllows($run->refresh(), $this->options);
                 $response = $traceMetadata->enrichResponse($response, $runtimeOptions, $run, $step);
                 $response = $this->applyResponsePresentation($response, $runtimeOptions);
                 $status = $this->complete($runs, $steps, $run, $step, $response);
+                $budget->recordRunUsage($run->refresh(), $response->metadata['usage'] ?? []);
+                $budget->finishAccumulatingCredits($run->refresh());
                 $this->emitTerminalEvent($events, $status, $run, $step, $response, $runtimeOptions);
             } catch (\Throwable $e) {
+                $budget->finishAccumulatingCredits($run->refresh());
                 $this->failRun($runs, $steps, $run, $step, $e);
                 $events->emit(AgentRunEventStreamService::RUN_FAILED, $run, $step, [
                     'error' => $e->getMessage(),

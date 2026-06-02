@@ -70,7 +70,8 @@ class AgentRunApprovalLifecycleTest extends TestCase
         $resumedStep = app(AgentRunApprovalService::class)->approveStep($approval->approval_key, 'admin-1');
 
         $this->assertSame($step->id, $resumedStep->id);
-        $this->assertSame(AIAgentRun::STATUS_PENDING, $resumedStep->status);
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $resumedStep->status);
+        $this->assertNotNull($resumedStep->completed_at);
         $this->assertSame(AIAgentRun::STATUS_RUNNING, $run->refresh()->status);
         $this->assertDatabaseHas('ai_provider_tool_audit_events', [
             'agent_run_step_id' => $step->id,
