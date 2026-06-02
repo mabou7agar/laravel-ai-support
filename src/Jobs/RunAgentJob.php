@@ -181,7 +181,10 @@ class RunAgentJob implements ShouldQueue
             'output' => app(AgentRunRetentionService::class)->protectResponse($response->toArray()),
             'routing_decision' => $response->metadata['routing_decision'] ?? $step->routing_decision,
             'routing_trace' => $response->metadata['routing_trace'] ?? $step->routing_trace,
-            'metadata' => array_merge($step->metadata ?? [], app(AgentTraceMetadataService::class)->spanMetadata(
+            // Read the freshest step metadata so the routing/tool events the event
+            // service appended to the locked DB row during processing are preserved
+            // (the in-memory $step is stale and would otherwise clobber them).
+            'metadata' => array_merge(($step->fresh()?->metadata ?? $step->metadata ?? []), app(AgentTraceMetadataService::class)->spanMetadata(
                 "agent.{$step->type}.{$step->action}",
                 ['ai.agent.status' => $status],
                 ['trace_id' => $response->metadata['trace_id'] ?? null],
@@ -293,7 +296,10 @@ class RunAgentJob implements ShouldQueue
     ): void {
         $steps->transition($step, AIAgentRun::STATUS_FAILED, [
             'error' => $e->getMessage(),
-            'metadata' => array_merge($step->metadata ?? [], app(AgentTraceMetadataService::class)->spanMetadata(
+            // Read the freshest step metadata so the routing/tool events the event
+            // service appended to the locked DB row during processing are preserved
+            // (the in-memory $step is stale and would otherwise clobber them).
+            'metadata' => array_merge(($step->fresh()?->metadata ?? $step->metadata ?? []), app(AgentTraceMetadataService::class)->spanMetadata(
                 "agent.{$step->type}.{$step->action}",
                 [
                     'ai.agent.status' => AIAgentRun::STATUS_FAILED,
