@@ -101,6 +101,30 @@ class IntentRouterTest extends TestCase
         $this->assertSame(0, $decision['capability_counts']['nodes_count']);
     }
 
+    public function test_unregistered_tool_choice_is_redirected_not_silently_executed(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')->once()->andReturn(AIResponse::success(
+            '{"action":"use_tool","resource_name":"list_invoices","reasoning":"wants invoices"}',
+            EngineEnum::from('openai'),
+            EntityEnum::from('gpt-4o-mini')
+        ));
+
+        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+
+        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $decision = $router->route('list invoices please', new UnifiedActionContext('bad-tool', null), [
+            'model_configs' => [FakeInvoiceModelConfig::class],
+        ]);
+
+        // 'list_invoices' is not a registered tool, so it must not be passed to the
+        // executor (which would silently fall back). It is redirected + flagged.
+        $this->assertNotSame('list_invoices', $decision['resource_name'] ?? null);
+        $this->assertContains($decision['action'], ['search_rag', 'use_tool']);
+        $this->assertContains($decision['decision_source'] ?? '', ['unregistered_tool_redirect', 'structured_query_policy']);
+    }
+
     public function test_route_includes_remote_nodes_in_prompt(): void
     {
         $capturedPrompt = null;

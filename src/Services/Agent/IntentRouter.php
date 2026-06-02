@@ -583,33 +583,62 @@ PROMPT;
      */
     protected function enforceStructuredQueryToolPolicy(array $decision, string $message, UnifiedActionContext $context, array $options, array $resources): array
     {
-        if (($decision['action'] ?? null) === 'use_tool') {
-            return $decision;
-        }
-
-        if (!$this->hasTool($resources, 'data_query')) {
-            return $decision;
-        }
-
-        $classification = $this->messageClassifier->classify(
+        $action = $decision['action'] ?? null;
+        $available = $this->availableToolNames($resources);
+        $hasDataQuery = in_array('data_query', $available, true);
+        $isStructured = ($this->messageClassifier->classify(
             $message,
             $this->routingContextResolver->signalsFromContext($context, $options)
-        );
+        )['mode'] ?? null) === 'structured_query';
 
-        if (($classification['mode'] ?? null) !== 'structured_query') {
+        // The router chose use_tool. If the tool is actually registered, keep it.
+        // If it picked a tool that does not exist (a hallucinated name), do NOT pass
+        // it to the executor — that would silently fall back to RAG. Redirect here so
+        // the decision is correct and observable.
+        if ($action === 'use_tool') {
+            $resource = $decision['resource_name'] ?? null;
+
+            if (!is_string($resource) || $resource === '' || in_array($resource, $available, true)) {
+                return $decision;
+            }
+
+            if ($hasDataQuery && $isStructured) {
+                return $this->dataQueryDecision($message, 'Requested tool is not registered; routing structured query to data_query.');
+            }
+
+            $route = $this->ragEnabled($options) ? 'search_rag' : 'conversational';
+
+            return array_merge($decision, [
+                'action' => $route,
+                'resource_name' => null,
+                'reasoning' => sprintf('Router selected unregistered tool "%s"; routed to %s instead.', $resource, $route),
+                'decision_source' => 'unregistered_tool_redirect',
+            ]);
+        }
+
+        if (!$isStructured) {
             return $decision;
         }
 
-        return [
-            'action' => 'use_tool',
-            'resource_name' => 'data_query',
-            'params' => [
-                'query' => $message,
-                'limit' => 10,
-            ],
-            'reasoning' => 'Structured local data request should use the query tool before semantic retrieval.',
-            'decision_source' => 'structured_query_policy',
-        ];
+        // Structured list/count/filter query. Prefer a registered data_query tool;
+        // otherwise fall back to structured retrieval so it works out of the box,
+        // but only upgrade a weak conversational default (never override an explicit
+        // route_to_node / search_rag decision).
+        if ($hasDataQuery) {
+            return $this->dataQueryDecision($message, 'Structured local data request should use the query tool before semantic retrieval.');
+        }
+
+        if ($action === 'conversational' && $this->ragEnabled($options)) {
+            return array_merge($decision, [
+                'action' => 'search_rag',
+                'resource_name' => null,
+                'reasoning' => 'Structured query routed to structured retrieval (no data_query tool registered).',
+                'decision_source' => 'structured_query_rag',
+                'preclassified_route_mode' => 'structured_query',
+            ]);
+        }
+
+        return $decision;
     }
 
     /**
@@ -617,8 +646,56 @@ PROMPT;
      */
     protected function hasTool(array $resources, string $toolName): bool
     {
-        return collect($resources['tools'] ?? [])
-            ->contains(fn (mixed $tool): bool => is_array($tool) && ($tool['name'] ?? null) === $toolName);
+        return in_array($toolName, $this->availableToolNames($resources), true);
+    }
+
+    /**
+     * Names of every tool actually available to route to.
+     *
+     * @param array<string, mixed> $resources
+     * @return array<int, string>
+     */
+    protected function availableToolNames(array $resources): array
+    {
+        $names = [];
+
+        foreach (($resources['tools'] ?? []) as $tool) {
+            $name = is_array($tool) ? ($tool['name'] ?? null) : null;
+            if (is_string($name) && $name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function dataQueryDecision(string $message, string $reasoning): array
+    {
+        return [
+            'action' => 'use_tool',
+            'resource_name' => 'data_query',
+            'params' => [
+                'query' => $message,
+                'limit' => 10,
+            ],
+            'reasoning' => $reasoning,
+            'decision_source' => 'structured_query_policy',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    protected function ragEnabled(array $options): bool
+    {
+        if (!empty($options['force_rag'])) {
+            return true;
+        }
+
+        return !array_key_exists('use_rag', $options) || (bool) $options['use_rag'];
     }
 
     protected function looksLikeApproval(string $message): bool
