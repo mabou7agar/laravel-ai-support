@@ -109,4 +109,38 @@ class DocumentServiceTest extends TestCase
 
         $this->assertSame('hello world', $result);
     }
+
+    public function test_pdftotext_non_zero_exit_does_not_leak_temp_file(): void
+    {
+        // Graceful degradation lets the failed extraction return cleanly so the
+        // assertion focuses purely on temp-file cleanup.
+        Config::set('ai-engine.media.document_extraction.graceful_degradation', true);
+
+        $pattern = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pdf_*';
+        $before = glob($pattern) ?: [];
+
+        // Force the pdftotext branch on, then feed it a non-PDF blob so it
+        // exits non-zero — exercising the "available but failed" path that
+        // previously leaked the tempnam() file.
+        $service = new class extends DocumentService {
+            protected function isPdfToTextAvailable(): bool
+            {
+                return true;
+            }
+        };
+
+        $path = $this->tempFile('not really a pdf', '.pdf');
+
+        try {
+            $result = $service->extractText($path, 'pdf');
+        } finally {
+            @unlink($path);
+        }
+
+        $after = glob($pattern) ?: [];
+        $leaked = array_diff($after, $before);
+
+        $this->assertSame('', $result);
+        $this->assertSame([], $leaked, 'pdftotext failure leaked a temp file: ' . implode(', ', $leaked));
+    }
 }

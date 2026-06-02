@@ -126,18 +126,23 @@ class DocumentService
         // Try pdftotext (poppler-utils) next.
         if ($this->isPdfToTextAvailable()) {
             $tempFile = tempnam(sys_get_temp_dir(), 'pdf_');
-            $command = sprintf(
-                'pdftotext %s %s 2>&1',
-                escapeshellarg($filePath),
-                escapeshellarg($tempFile)
-            );
 
-            exec($command, $output, $returnCode);
+            try {
+                $command = sprintf(
+                    'pdftotext %s %s 2>&1',
+                    escapeshellarg($filePath),
+                    escapeshellarg($tempFile)
+                );
 
-            if ($returnCode === 0 && file_exists($tempFile)) {
-                $text = file_get_contents($tempFile);
-                unlink($tempFile);
-                return trim($text);
+                exec($command, $output, $returnCode);
+
+                if ($returnCode === 0 && file_exists($tempFile)) {
+                    return trim(file_get_contents($tempFile));
+                }
+            } finally {
+                // Always clean up the temp file, even when pdftotext exits
+                // non-zero or throws, to avoid leaking files into the temp dir.
+                @unlink($tempFile);
             }
         }
 
