@@ -52,6 +52,9 @@ class AgentResponseFinalizer
         if (!empty($response->metadata['entity_ids'])) {
             $metadata['entity_ids'] = $response->metadata['entity_ids'];
             $metadata['entity_type'] = $response->metadata['entity_type'] ?? 'item';
+            // A new selection replaces any prior transient selection context;
+            // when there is no new selection it is preserved so follow-up turns
+            // can keep referring to the same entity.
             unset($context->metadata['selected_entity_context']);
         }
 

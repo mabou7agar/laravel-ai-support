@@ -38,6 +38,28 @@ class AgentResponseFinalizerTest extends TestCase
         $this->assertSame([1, 2], $context->conversationHistory[0]['metadata']['entity_ids']);
     }
 
+    public function test_finalize_preserves_selected_entity_context_when_no_new_selection(): void
+    {
+        $manager = Mockery::mock(ContextManager::class);
+        $manager->shouldReceive('save')->once();
+
+        $finalizer = new AgentResponseFinalizer($manager);
+        $context = new UnifiedActionContext('session-followup', null, metadata: [
+            'selected_entity_context' => ['entity_id' => 42],
+        ]);
+
+        // Follow-up turn: response carries no new entity_ids, so the prior
+        // selection context must persist for continued reference.
+        $response = AgentResponse::conversational(
+            'Invoice INV-42 is overdue by 3 days.',
+            $context
+        );
+
+        $finalizer->finalize($context, $response);
+
+        $this->assertSame(42, $context->metadata['selected_entity_context']['entity_id']);
+    }
+
     public function test_persist_message_avoids_duplicate_assistant_message(): void
     {
         $manager = Mockery::mock(ContextManager::class);
