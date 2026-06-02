@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent;
 
+use Illuminate\Support\Facades\DB;
 use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Models\AIAgentRunStep;
 use LaravelAIEngine\Repositories\AgentRunRepository;
@@ -44,14 +45,16 @@ class AgentRunRecoveryService
 
         $run = $failedStep->run;
         if ($run instanceof AIAgentRun) {
-            $this->runs->transition($run, AIAgentRun::STATUS_PENDING, [
-                'current_step' => $replay->step_key,
-                'failure_reason' => null,
-                'metadata' => $this->appendRecoveryEvent($run, 'failed_step_replayed', [
-                    'failed_step_id' => $failedStep->id,
-                    'replay_step_id' => $replay->id,
-                ]),
-            ]);
+            DB::transaction(function () use ($run, $replay, $failedStep): void {
+                $this->runs->transition($run, AIAgentRun::STATUS_PENDING, [
+                    'current_step' => $replay->step_key,
+                    'failure_reason' => null,
+                    'metadata' => $this->appendRecoveryEvent($run, 'failed_step_replayed', [
+                        'failed_step_id' => $failedStep->id,
+                        'replay_step_id' => $replay->id,
+                    ]),
+                ]);
+            });
         }
 
         return $replay;
@@ -65,20 +68,20 @@ class AgentRunRecoveryService
             throw new \InvalidArgumentException('Agent run step is not linked to a run.');
         }
 
-        return $this->runs->transition($run, AIAgentRun::STATUS_RUNNING, [
+        return DB::transaction(fn (): AIAgentRun => $this->runs->transition($run, AIAgentRun::STATUS_RUNNING, [
             'current_step' => $resumeStep->step_key,
             'failure_reason' => null,
             'metadata' => $this->appendRecoveryEvent($run, 'resumed_from_step', array_merge([
                 'step_id' => $resumeStep->id,
             ], $metadata)),
-        ]);
+        ]));
     }
 
     public function markManuallyResolved(AIAgentRun|int|string $run, ?string $actorId = null, ?string $reason = null, array $finalResponse = []): AIAgentRun
     {
         $record = $run instanceof AIAgentRun ? $run : $this->runs->findOrFail($run);
 
-        return $this->runs->transition($record, AIAgentRun::STATUS_COMPLETED, [
+        return DB::transaction(fn (): AIAgentRun => $this->runs->transition($record, AIAgentRun::STATUS_COMPLETED, [
             'final_response' => $finalResponse ?: ['message' => 'Agent run manually resolved.'],
             'failure_reason' => null,
             'completed_at' => now(),
@@ -86,12 +89,21 @@ class AgentRunRecoveryService
                 'actor_id' => $actorId,
                 'reason' => $reason,
             ]),
-        ]);
+        ]));
     }
 
     private function appendRecoveryEvent(AIAgentRun $run, string $event, array $payload = []): array
     {
-        $metadata = $run->metadata ?? [];
+        // Callers invoke this inside a DB::transaction so the read-modify-write of
+        // metadata['recovery_events'] is serialized: lock the run row and read the
+        // freshest metadata before appending so concurrent recovery operations do
+        // not clobber each other's recovery log.
+        $locked = $run->newQuery()
+            ->whereKey($run->getKey())
+            ->lockForUpdate()
+            ->first();
+
+        $metadata = ($locked ?? $run)->metadata ?? [];
         $events = is_array($metadata['recovery_events'] ?? null) ? $metadata['recovery_events'] : [];
         $events[] = [
             'event' => $event,

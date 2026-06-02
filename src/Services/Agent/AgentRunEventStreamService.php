@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use LaravelAIEngine\Events\AgentRunStreamed;
@@ -92,12 +93,19 @@ class AgentRunEventStreamService
         $stepModel = $this->resolveStep($step);
         $event = $this->makeEvent($name, $runModel, $stepModel, $payload, $metadata);
 
-        if ($runModel instanceof AIAgentRun) {
-            $this->appendEvent($runModel, $event);
-        }
+        if ($runModel instanceof AIAgentRun || $stepModel instanceof AIAgentRunStep) {
+            // Persist the run + step fallback metadata in a single transaction so
+            // a failure mid-write can never leave the run and step event logs in
+            // a divergent state.
+            DB::transaction(function () use ($runModel, $stepModel, $event): void {
+                if ($runModel instanceof AIAgentRun) {
+                    $this->appendEvent($runModel, $event);
+                }
 
-        if ($stepModel instanceof AIAgentRunStep) {
-            $this->appendEvent($stepModel, $event);
+                if ($stepModel instanceof AIAgentRunStep) {
+                    $this->appendEvent($stepModel, $event);
+                }
+            });
         }
 
         event(new AgentRunStreamed($event));
@@ -173,14 +181,37 @@ class AgentRunEventStreamService
 
     protected function appendEvent(AIAgentRun|AIAgentRunStep $model, array $event): void
     {
-        $metadata = $model->metadata ?? [];
-        $events = (array) ($metadata['events'] ?? []);
-        $events[] = $event;
+        // The read-modify-write of metadata['events'] must be serialized against
+        // concurrent emitters or appended events get silently lost. Lock the row
+        // for the duration of the read and re-read the freshest metadata from the
+        // locked row before appending so we never overwrite a concurrent writer.
+        DB::transaction(function () use ($model, $event): void {
+            $fresh = $model->newQuery()
+                ->whereKey($model->getKey())
+                ->lockForUpdate()
+                ->first();
 
-        $limit = max(1, (int) config('ai-agent.event_stream.persisted_events_limit', 200));
-        $metadata['events'] = array_slice($events, -$limit);
+            $metadata = ($fresh ?? $model)->metadata ?? [];
+            $events = (array) ($metadata['events'] ?? []);
+            $events[] = $event;
 
-        $model->update(['metadata' => $this->jsonPayloads()->sanitize($metadata)]);
+            $limit = max(1, (int) config('ai-agent.event_stream.persisted_events_limit', 200));
+            if (count($events) > $limit) {
+                Log::channel('ai-engine')->warning('Agent run event stream truncated persisted events', [
+                    'model' => $model::class,
+                    'model_id' => $model->getKey(),
+                    'event_id' => $event['id'] ?? null,
+                    'event_name' => $event['name'] ?? null,
+                    'total_events' => count($events),
+                    'persisted_limit' => $limit,
+                    'dropped' => count($events) - $limit,
+                ]);
+            }
+            $metadata['events'] = array_slice($events, -$limit);
+
+            $model->update(['metadata' => $this->jsonPayloads()->sanitize($metadata)]);
+        });
+
         $model->refresh();
     }
 

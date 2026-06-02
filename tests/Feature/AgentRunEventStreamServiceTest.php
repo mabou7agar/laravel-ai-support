@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Tests\Feature;
 
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Events\AgentRunStreamed;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -135,6 +136,40 @@ class AgentRunEventStreamServiceTest extends TestCase
         $fallback = app(AgentRunEventStreamService::class)->fallbackEvents($run->id);
         $this->assertCount(1, $fallback);
         $this->assertSame('run.completed', $fallback[0]['name']);
+    }
+
+    public function test_event_stream_logs_warning_when_persisted_events_are_truncated(): void
+    {
+        config(['ai-agent.event_stream.persisted_events_limit' => 2]);
+
+        $truncation = null;
+        $logChannel = Mockery::mock();
+        $logChannel->shouldReceive('warning')->andReturnUsing(function (string $message, array $context = []) use (&$truncation): void {
+            if ($message === 'Agent run event stream truncated persisted events') {
+                $truncation = $context;
+            }
+        });
+        Log::shouldReceive('channel')->with('ai-engine')->andReturn($logChannel);
+
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'stream-truncate-session',
+            'status' => AIAgentRun::STATUS_RUNNING,
+            'metadata' => ['trace_id' => 'trace-truncate'],
+        ]);
+
+        $service = app(AgentRunEventStreamService::class);
+        $service->emit(AgentRunEventStreamService::RUN_STARTED, $run);
+        $service->emit(AgentRunEventStreamService::ROUTING_DECIDED, $run);
+        // Third event exceeds the limit of 2 and triggers a truncation warning.
+        $service->emit(AgentRunEventStreamService::RUN_COMPLETED, $run);
+
+        $this->assertNotNull($truncation, 'Expected a truncation warning when persisted events exceed the limit.');
+        $this->assertSame(2, $truncation['persisted_limit']);
+        $this->assertSame(1, $truncation['dropped']);
+
+        $fallback = $service->fallbackEvents($run->id);
+        $this->assertCount(2, $fallback);
+        $this->assertSame(['routing.decided', 'run.completed'], array_column($fallback, 'name'));
     }
 
     public function test_event_stream_rejects_unknown_event_names(): void
