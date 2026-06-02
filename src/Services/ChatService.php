@@ -84,7 +84,8 @@ class ChatService
             $ragCollections,
             $searchInstructions,
             $conversationHistory,
-            $extraOptions
+            $extraOptions,
+            $conversationId
         );
 
         $collectionResponse = $this->structuredCollections()->handle($message, $sessionId, $userId, $options);
@@ -92,6 +93,11 @@ class ChatService
             if ($conversationId !== null) {
                 $collectionResponse = $collectionResponse->withConversationId($conversationId);
             }
+
+            // Attach a synthetic routing trace so a synchronous response is never missing routing_trace.
+            $collectionResponse = $collectionResponse->withMetadata(
+                $this->structuredCollectionRoutingTrace()
+            );
 
             $persisted = $this->persistTranscriptTurn($conversationId, $message, $collectionResponse);
             $collectionResponse = $collectionResponse->withMetadata(['transcript_persisted' => $persisted]);
@@ -111,9 +117,10 @@ class ChatService
         $this->updateSessionNode($sessionId, $agentResponse);
 
         $response = $this->toAIResponse($agentResponse, $engine, $model, $conversationId);
+        // Apply presentation before persisting so the stored transcript matches the returned response.
+        $response = $this->presentation()->apply($response, $message, $options, $agentResponse->context);
         $persisted = $this->persistTranscriptTurn($conversationId, $message, $response);
         $response = $response->withMetadata(['transcript_persisted' => $persisted]);
-        $response = $this->presentation()->apply($response, $message, $options, $agentResponse->context);
 
         return $response;
     }
@@ -127,7 +134,8 @@ class ChatService
         array $ragCollections,
         ?string $searchInstructions,
         array $conversationHistory,
-        array $extraOptions
+        array $extraOptions,
+        ?string $conversationId = null
     ): array {
         return array_merge([
             'engine' => $engine,
@@ -140,6 +148,7 @@ class ChatService
             'rag_collections' => $ragCollections,
             'search_instructions' => $searchInstructions,
             'conversation_history' => $conversationHistory,
+            'conversation_id' => $conversationId,
             'is_forwarded' => $this->isForwardedRequest(),
         ], $extraOptions);
     }
@@ -208,6 +217,31 @@ class ChatService
     protected function structuredCollections(): StructuredCollectionSessionService
     {
         return $this->collectionSessions ??= app(StructuredCollectionSessionService::class);
+    }
+
+    /**
+     * Build a synthetic routing trace for the structured-collection short-circuit so the
+     * returned response carries routing_decision/routing_trace/route_explanation like every
+     * other synchronous response (a missing routing_trace is treated as a regression).
+     *
+     * @return array<string, mixed>
+     */
+    protected function structuredCollectionRoutingTrace(): array
+    {
+        $decision = [
+            'action' => 'structured_collection',
+            'source' => 'structured_collection',
+            'confidence' => 1.0,
+            'reason' => 'Handled by structured collection session.',
+            'payload' => [],
+            'metadata' => [],
+        ];
+
+        return [
+            'routing_decision' => $decision,
+            'routing_trace' => [$decision],
+            'route_explanation' => 'Request handled by the structured collection session service.',
+        ];
     }
 
     protected function toAIResponse(
