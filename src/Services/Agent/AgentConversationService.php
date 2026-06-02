@@ -82,6 +82,19 @@ class AgentConversationService
             $rerouteOptions = $options;
             unset($rerouteOptions['conversation_history']);
 
+            // Carry the original routing decision into the rerouted turn so the re-entered
+            // process() does not re-classify from scratch and overwrite the RAG-origin
+            // decision source/path/route mode established on this turn.
+            foreach ([
+                'decision_source' => 'decision_source',
+                'decision_path' => 'decision_path',
+                'preclassified_route_mode' => 'route_mode',
+            ] as $optionKey => $metadataKey) {
+                if (!empty($context->metadata[$metadataKey])) {
+                    $rerouteOptions[$optionKey] = $context->metadata[$metadataKey];
+                }
+            }
+
             return $reroute($newMessage, $context->sessionId, $context->userId, $rerouteOptions);
         }
 

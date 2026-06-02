@@ -165,7 +165,10 @@ class AgentActionExecutionService
             ]));
         }
 
-        return $searchRag($message, $context, $options);
+        return $searchRag($message, $context, array_merge($options, [
+            'decision_path' => 'tool_fallback',
+            'decision_source' => 'tool_fallback',
+        ]));
     }
 
     protected function isStructuredDataFallback(string $message): bool

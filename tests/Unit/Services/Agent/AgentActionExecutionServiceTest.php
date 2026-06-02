@@ -2,6 +2,7 @@
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
+use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
@@ -166,6 +167,59 @@ class AgentActionExecutionServiceTest extends UnitTestCase
         $this->assertSame('context_tool_strategy', $response->strategy);
         $this->assertSame('context_tool_strategy', $response->metadata['agent_strategy']);
         $this->assertSame('context_stub_action', $response->metadata['tool_name']);
+    }
+
+    public function test_execute_use_tool_plain_fallback_tags_tool_fallback_decision_source(): void
+    {
+        $service = new AgentActionExecutionService(
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('plain-fallback-session', 1);
+
+        $captured = null;
+        $service->executeUseTool(
+            'unknown_tool',
+            'show me the latest record',
+            $context,
+            ['model_configs' => []],
+            function (string $message, UnifiedActionContext $ctx, array $options) use (&$captured): AgentResponse {
+                $captured = $options;
+
+                return AgentResponse::conversational(message: 'rag fallback', context: $ctx);
+            }
+        );
+
+        $this->assertNotNull($captured);
+        $this->assertSame('tool_fallback', $captured['decision_source']);
+        $this->assertSame('tool_fallback', $captured['decision_path']);
+    }
+
+    public function test_execute_use_tool_structured_fallback_tags_tool_fallback_decision_source(): void
+    {
+        $service = new AgentActionExecutionService(
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('structured-fallback-session', 1);
+
+        $captured = null;
+        $service->executeUseTool(
+            'unknown_tool',
+            'how many invoices do I have?',
+            $context,
+            ['model_configs' => []],
+            function (string $message, UnifiedActionContext $ctx, array $options) use (&$captured): AgentResponse {
+                $captured = $options;
+
+                return AgentResponse::conversational(message: 'rag fallback', context: $ctx);
+            }
+        );
+
+        $this->assertNotNull($captured);
+        $this->assertSame('tool_fallback', $captured['decision_source']);
+        $this->assertSame('tool_fallback_structured_query', $captured['decision_path']);
+        $this->assertSame('structured_query', $captured['preclassified_route_mode']);
     }
 
     public function test_execute_use_tool_runs_agent_tool_registry_when_model_config_does_not_match(): void

@@ -254,6 +254,49 @@ class AgentConversationServiceTest extends UnitTestCase
         );
     }
 
+    public function test_execute_search_rag_reroute_carries_original_routing_decision(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $rag = Mockery::mock(RAGDecisionEngine::class);
+        $selectedEntity = Mockery::mock(SelectedEntityContextService::class);
+        $selection = Mockery::mock(AgentSelectionService::class);
+
+        $selectedEntity->shouldReceive('getFromContext')->andReturn(null);
+        $rag->shouldReceive('process')
+            ->once()
+            ->andReturn([
+                'exit_to_orchestrator' => true,
+                'message' => 'create invoice for ACME',
+            ]);
+
+        $service = new AgentConversationService($ai, $rag, $selectedEntity, $selection);
+        $context = new UnifiedActionContext('session-reroute', 7, metadata: [
+            'decision_source' => 'rag_pipeline',
+            'decision_path' => 'structured_query',
+            'route_mode' => 'structured_query',
+        ]);
+
+        $captured = null;
+        $service->executeSearchRAG('create invoice for ACME', $context, [
+            'preclassified_route_mode' => 'structured_query',
+            'decision_path' => 'structured_query',
+            'decision_source' => 'rag_pipeline',
+            'conversation_history' => [['role' => 'user', 'content' => 'hi']],
+        ], function (string $message, $sessionId, $userId, array $options) use (&$captured): AgentResponse {
+            $captured = $options;
+
+            return AgentResponse::conversational(message: 'rerouted', context: new UnifiedActionContext('session-reroute', 7));
+        });
+
+        $this->assertNotNull($captured);
+        // conversation_history must be stripped so the rerouted turn re-hydrates from context.
+        $this->assertArrayNotHasKey('conversation_history', $captured);
+        // The original RAG-origin routing decision must be carried into the rerouted turn.
+        $this->assertSame('rag_pipeline', $captured['decision_source']);
+        $this->assertSame('structured_query', $captured['decision_path']);
+        $this->assertSame('structured_query', $captured['preclassified_route_mode']);
+    }
+
     public function test_execute_search_rag_uses_rag_pipeline_without_decision_engine(): void
     {
         $ai = Mockery::mock(AIEngineService::class);
