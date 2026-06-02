@@ -34,7 +34,7 @@ class ConversationContextCompactor
             $context->conversationHistory = $this->sanitizeMessages(
                 array_slice($context->conversationHistory, -$this->maxMessages())
             );
-            $this->storeMetrics($context, $beforeChars);
+            $this->storeMetrics($context, $beforeChars, compacted: false);
 
             return;
         }
@@ -45,7 +45,7 @@ class ConversationContextCompactor
 
         if (!$shouldCompact) {
             $context->conversationHistory = $history;
-            $this->storeMetrics($context, $beforeChars);
+            $this->storeMetrics($context, $beforeChars, compacted: false);
             return;
         }
 
@@ -61,7 +61,7 @@ class ConversationContextCompactor
         $context->metadata['conversation_last_compacted_at'] = now()->toIso8601String();
         $context->conversationHistory = $recent;
         $this->extractConversationMemories($context, $older, $options);
-        $this->storeMetrics($context, $beforeChars);
+        $this->storeMetrics($context, $beforeChars, compacted: true);
     }
 
     public function summaryForPrompt(UnifiedActionContext $context): string
@@ -225,10 +225,31 @@ class ConversationContextCompactor
         return mb_substr($summary, -$limit);
     }
 
-    private function storeMetrics(UnifiedActionContext $context, int $beforeChars): void
+    private function storeMetrics(UnifiedActionContext $context, int $beforeChars, bool $compacted): void
     {
         $metrics = $this->metrics($context);
-        $metrics['pre_compaction_history_size_chars'] = $beforeChars;
+        $preCompaction = $beforeChars;
+
+        // A turn can be compacted more than once (callers compact before
+        // ContextManager::save() compacts again). The redundant second pass sees
+        // the already-trimmed history as its "before" size and would otherwise
+        // overwrite pre_compaction_history_size_chars with the smaller
+        // post-compaction value. Detect that redundant pass — this pass did not
+        // trim anything and the previously recorded recent-history size matches
+        // the current (already-compacted) history — and preserve the original
+        // pre-compaction size recorded by the first pass.
+        if (!$compacted) {
+            $prior = $context->metadata['conversation_context_metrics'] ?? null;
+            if (is_array($prior)
+                && (int) ($prior['recent_memory_size_chars'] ?? -1) === $metrics['recent_memory_size_chars']
+                && isset($prior['pre_compaction_history_size_chars'])
+            ) {
+                $preCompaction = max($beforeChars, (int) $prior['pre_compaction_history_size_chars']);
+            }
+        }
+
+        $metrics['pre_compaction_history_size_chars'] = $preCompaction;
+
         $context->metadata['conversation_context_metrics'] = $metrics;
     }
 
