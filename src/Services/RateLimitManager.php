@@ -33,16 +33,25 @@ class RateLimitManager
         $requests = $limits['requests'];
         $perMinute = $limits['per_minute'];
 
-        $current = Cache::driver($this->getCacheDriver())->get($key, 0);
+        $store = Cache::driver($this->getCacheDriver());
 
-        if ($current >= $requests) {
+        // Seed the counter atomically and set the TTL only on the FIRST write so
+        // the window does not slide on every increment under steady traffic.
+        $store->add($key, 0, $perMinute * 60);
+
+        // Atomically increment so two concurrent requests cannot both read the
+        // same value and pass the limit check.
+        $current = (int) $store->increment($key);
+
+        if ($current > $requests) {
+            // Roll back our own increment so an over-limit request does not keep
+            // inflating the counter (and the window) past the configured cap.
+            $store->decrement($key);
+
             throw new RateLimitExceededException(
                 "Rate limit exceeded for engine {$engine->value}. Limit: {$requests} requests per {$perMinute} minute(s)"
             );
         }
-
-        // Increment counter
-        Cache::driver($this->getCacheDriver())->put($key, $current + 1, $perMinute * 60);
 
         return true;
     }
