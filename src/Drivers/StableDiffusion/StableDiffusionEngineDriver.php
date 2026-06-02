@@ -19,11 +19,11 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
 {
     private Client $httpClient;
 
-    public function __construct(array $config)
+    public function __construct(array $config, ?Client $httpClient = null)
     {
         parent::__construct($config);
-        
-        $this->httpClient = new Client([
+
+        $this->httpClient = $httpClient ?? new Client([
             'timeout' => $this->getTimeout(),
             'base_uri' => $this->getBaseUrl(),
             'headers' => $this->buildHeaders(),
@@ -284,7 +284,88 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
      */
     protected function getSupportedCapabilities(): array
     {
-        return ['images', 'video'];
+        return ['images', 'image_edit', 'video'];
+    }
+
+    /**
+     * Image-editing operations via Stability's image-to-image endpoints. Plugs
+     * into the unified ImageOperationService: inpaint/generative_fill/cleanup ->
+     * masking endpoint; everything else -> image-to-image (img2img).
+     */
+    public function editImage(AIRequest $request): AIResponse
+    {
+        $params = $request->getParameters();
+        $operation = (string) ($params['operation'] ?? 'image_to_image');
+        $engineId = (string) ($params['model'] ?? 'stable-diffusion-xl-1024-v1-0');
+        $prompt = (string) ($params['prompt'] ?? $request->getPrompt());
+
+        $isMaskOp = in_array($operation, ['inpaint', 'generative_fill', 'cleanup'], true)
+            && isset($params['mask']);
+
+        $multipart = [
+            ['name' => 'init_image', 'contents' => $this->imageContents($params['image'] ?? null, 'image'), 'filename' => 'init.png'],
+            ['name' => 'text_prompts[0][text]', 'contents' => $prompt],
+            ['name' => 'text_prompts[0][weight]', 'contents' => '1'],
+        ];
+
+        if ($isMaskOp) {
+            $endpoint = "/v1/generation/{$engineId}/image-to-image/masking";
+            $multipart[] = ['name' => 'mask_source', 'contents' => 'MASK_IMAGE_WHITE'];
+            $multipart[] = ['name' => 'mask_image', 'contents' => $this->imageContents($params['mask'], 'mask'), 'filename' => 'mask.png'];
+        } else {
+            $endpoint = "/v1/generation/{$engineId}/image-to-image";
+            $multipart[] = ['name' => 'init_image_mode', 'contents' => 'IMAGE_STRENGTH'];
+            $multipart[] = ['name' => 'image_strength', 'contents' => (string) ($params['strength'] ?? 0.35)];
+        }
+
+        $response = $this->httpClient->post($endpoint, [
+            'headers' => ['Accept' => 'application/json'],
+            'multipart' => $multipart,
+        ]);
+
+        $data = json_decode($response->getBody()->getContents(), true);
+
+        $imageUrls = [];
+        foreach ($data['artifacts'] ?? [] as $artifact) {
+            if (isset($artifact['base64'])) {
+                $imageUrls[] = $this->saveBase64Image($artifact['base64'], $request);
+            }
+        }
+
+        if ($imageUrls === []) {
+            return AIResponse::error('Stable Diffusion returned no edited image.', $request->getEngine(), $request->getModel());
+        }
+
+        return AIResponse::success($prompt, $request->getEngine(), $request->getModel())
+            ->withFiles($imageUrls)
+            ->withMetadata(['operation' => $operation])
+            ->withUsage(creditsUsed: $request->getModel()->creditIndex());
+    }
+
+    /**
+     * Accept a local path, data: URI, base64, or raw binary image payload.
+     */
+    private function imageContents(mixed $value, string $field): string
+    {
+        if (!is_string($value) || $value === '') {
+            throw new \InvalidArgumentException("Stable Diffusion image edit requires a '{$field}' image.");
+        }
+
+        if (str_starts_with($value, 'data:')) {
+            $comma = strpos($value, ',');
+            $value = $comma !== false ? substr($value, $comma + 1) : $value;
+        }
+
+        if (strlen($value) < 1024 && @is_file($value)) {
+            return (string) file_get_contents($value);
+        }
+
+        $decoded = base64_decode($value, true);
+        if ($decoded !== false && base64_encode($decoded) === $value) {
+            return $decoded;
+        }
+
+        return $value;
     }
 
     /**

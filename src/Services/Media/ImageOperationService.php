@@ -26,9 +26,11 @@ class ImageOperationService
         'background_removal' => EngineEnum::CLIPDROP,
         'cleanup'            => EngineEnum::CLIPDROP,
         'object_removal'     => EngineEnum::CLIPDROP,
+        'generative_fill'    => EngineEnum::CLIPDROP,
         'upscale'            => EngineEnum::CLIPDROP,
         'sketch_to_image'    => EngineEnum::CLIPDROP,
         'reimagine'          => EngineEnum::CLIPDROP,
+        'variation'          => EngineEnum::CLIPDROP,
         'remove_text'        => EngineEnum::CLIPDROP,
     ];
 
