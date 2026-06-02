@@ -165,6 +165,17 @@ return array_replace_recursive($defaults, [
         ],
     ],
     'media' => [
+        'document_extraction' => [
+            // When true, extraction failures are swallowed and an empty string is
+            // returned (legacy graceful-degradation contract). When false, a
+            // RuntimeException is thrown so callers can react to extraction errors.
+            // Failures are always logged regardless of this flag.
+            'graceful_degradation' => (bool) env('AI_ENGINE_DOC_EXTRACTION_GRACEFUL', data_get($defaults, 'media.document_extraction.graceful_degradation', true)),
+            // Maximum number of presentation slides scanned during PPTX extraction.
+            'max_slides' => (int) env('AI_ENGINE_DOC_EXTRACTION_MAX_SLIDES', data_get($defaults, 'media.document_extraction.max_slides', 100)),
+            // Maximum file size (in bytes) accepted for extraction. 0 disables the cap.
+            'max_file_size' => (int) env('AI_ENGINE_DOC_EXTRACTION_MAX_FILE_SIZE', data_get($defaults, 'media.document_extraction.max_file_size', 0)),
+        ],
         'transcription_normalization' => [
             'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', data_get($defaults, 'media.transcription_normalization.enabled', false)),
             'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', data_get($defaults, 'media.transcription_normalization.engine', 'openai')),

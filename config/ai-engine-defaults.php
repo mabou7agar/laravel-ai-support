@@ -1389,6 +1389,11 @@ return [
     ],
 
     'media' => [
+        'document_extraction' => [
+            'graceful_degradation' => (bool) env('AI_ENGINE_DOC_EXTRACTION_GRACEFUL', true),
+            'max_slides' => (int) env('AI_ENGINE_DOC_EXTRACTION_MAX_SLIDES', 100),
+            'max_file_size' => (int) env('AI_ENGINE_DOC_EXTRACTION_MAX_FILE_SIZE', 0),
+        ],
         'transcription_normalization' => [
             'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', false),
             'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', 'openai'),

@@ -55,6 +55,8 @@
         "test:feature": "vendor/bin/pest --testsuite=Feature"
     },
     "suggest": {
+        "smalot/pdfparser": "Improves PDF text extraction in DocumentService without a CLI dependency (^2.0)",
+        "phpoffice/phpspreadsheet": "Improves xls/xlsx/csv text extraction in DocumentService (^1.29|^2.0|^3.0)",
         "cboden/ratchet": "Required for WebSocket streaming support (^0.4)",
         "ext-mongodb": "Required for MongoDB memory driver support",
         "mongodb/mongodb": "Required for MongoDB memory driver support (^1.8)",
