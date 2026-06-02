@@ -150,6 +150,20 @@ return array_replace_recursive($defaults, [
     'credits' => [
         'enabled' => env('AI_ENGINE_CREDITS_ENABLED', data_get($defaults, 'credits.enabled', true)),
     ],
+    'data_query' => [
+        // Built-in structured count/list/filter tool ("data_query") the router
+        // auto-routes structured queries to.
+        'enabled' => env('AI_ENGINE_DATA_QUERY_ENABLED', data_get($defaults, 'data_query.enabled', true)),
+        // When 'models' is empty, queryable models are auto-discovered from the
+        // RAG-able model set. Provide an explicit map to control keywords/columns:
+        //   'invoice' => ['class' => App\Models\Invoice::class, 'aliases' => ['invoice','invoices'],
+        //                 'list' => ['id','invoice_number','total','status'],
+        //                 'status_column' => 'status', 'statuses' => ['paid','overdue']],
+        'models' => data_get($defaults, 'data_query.models', []),
+        'use_discovery' => env('AI_ENGINE_DATA_QUERY_DISCOVERY', data_get($defaults, 'data_query.use_discovery', true)),
+        'scope_columns' => data_get($defaults, 'data_query.scope_columns', ['user_id', 'workspace_id', 'tenant_id']),
+        'max_limit' => (int) env('AI_ENGINE_DATA_QUERY_MAX_LIMIT', data_get($defaults, 'data_query.max_limit', 50)),
+    ],
     'vector' => [
         'auto_index' => env('AI_ENGINE_VECTOR_AUTO_INDEX', data_get($defaults, 'vector.auto_index', false)),
         'driver' => env('AI_ENGINE_VECTOR_DRIVER', data_get($defaults, 'vector.driver', 'qdrant')),
