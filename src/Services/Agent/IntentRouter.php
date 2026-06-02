@@ -47,15 +47,35 @@ class IntentRouter
     {
         $resources = $this->discoverResources($options);
 
-        Log::channel('ai-engine')->info('IntentRouter resources discovered', [
+        $capabilityCounts = [
             'skills_count' => count($resources['skills']),
             'tools_count' => count($resources['tools']),
             'nodes_count' => count($resources['nodes']),
-        ]);
+        ];
+
+        Log::channel('ai-engine')->info('IntentRouter resources discovered', $capabilityCounts);
+
+        // If the orchestrator has nothing to route to, every request degrades to
+        // a plain conversational reply. Surface that loudly so it is diagnosable
+        // instead of silently behaving like a basic chatbot.
+        if ($capabilityCounts['skills_count'] === 0
+            && $capabilityCounts['tools_count'] === 0
+            && $capabilityCounts['nodes_count'] === 0
+        ) {
+            Log::channel('ai-engine')->warning(
+                'IntentRouter has no registered tools, skills, or nodes — the orchestrator will ' .
+                'default to conversational/RAG only. Register tools (app/AI/Tools or ModelToolConfig), ' .
+                'skills (app/AI/Skills), or enable nodes to make actions routable.',
+                $capabilityCounts
+            );
+        }
 
         $skillDecision = $this->matchSkillBeforeAi($message, $context);
         if ($skillDecision !== null) {
-            return $this->enforceForwardedRequestPolicy($skillDecision, $options);
+            return $this->withCapabilityCounts(
+                $this->enforceForwardedRequestPolicy($skillDecision, $options),
+                $capabilityCounts
+            );
         }
 
         $promptPolicy = $this->resolvePromptPolicy($context, $options);
@@ -83,16 +103,31 @@ class IntentRouter
             'session_id' => $context->sessionId,
         ]);
 
-        return $this->withPromptPolicyMetadata($this->enforceForwardedRequestPolicy(
-            $this->enforceStructuredQueryToolPolicy(
-                $this->parseDecision($rawResponse, $message, $context, $options),
-                $message,
-                $context,
-                $options,
-                $resources
-            ),
-            $options
-        ), $promptPolicy);
+        return $this->withCapabilityCounts(
+            $this->withPromptPolicyMetadata($this->enforceForwardedRequestPolicy(
+                $this->enforceStructuredQueryToolPolicy(
+                    $this->parseDecision($rawResponse, $message, $context, $options),
+                    $message,
+                    $context,
+                    $options,
+                    $resources
+                ),
+                $options
+            ), $promptPolicy),
+            $capabilityCounts
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $decision
+     * @param array<string, int> $counts
+     * @return array<string, mixed>
+     */
+    private function withCapabilityCounts(array $decision, array $counts): array
+    {
+        $decision['capability_counts'] = $counts;
+
+        return $decision;
     }
 
     protected function discoverResources(array $options): array

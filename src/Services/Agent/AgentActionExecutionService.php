@@ -152,12 +152,26 @@ class AgentActionExecutionService
             return $registryResponse;
         }
 
-        Log::channel('ai-engine')->warning('Tool not found in configs or registry, routing to RAG', [
-            'tool_name' => $toolName,
-        ]);
+        $availableTools = $this->availableToolNames($modelConfigs);
+
+        Log::channel('ai-engine')->warning(
+            'Routing chose a tool that is not registered; silently falling back to RAG. ' .
+            'This usually means the AI router picked a tool name that does not exist (no matching tool registered).',
+            [
+                'requested_tool' => $toolName,
+                'available_tools' => $availableTools,
+                'falling_back_to' => 'rag',
+            ]
+        );
+
+        $fallbackMeta = [
+            'tool_not_found' => true,
+            'requested_tool' => $toolName,
+            'available_tools' => $availableTools,
+        ];
 
         if ($this->isStructuredDataFallback($message)) {
-            return $searchRag($message, $context, array_merge($options, [
+            return $searchRag($message, $context, array_merge($options, $fallbackMeta, [
                 'preclassified_route_mode' => 'structured_query',
                 'target_model' => $toolName,
                 'decision_path' => 'tool_fallback_structured_query',
@@ -165,10 +179,47 @@ class AgentActionExecutionService
             ]));
         }
 
-        return $searchRag($message, $context, array_merge($options, [
+        return $searchRag($message, $context, array_merge($options, $fallbackMeta, [
             'decision_path' => 'tool_fallback',
             'decision_source' => 'tool_fallback',
         ]));
+    }
+
+    /**
+     * Collect the tool names actually registered (model configs + tool registry),
+     * used to make a tool-not-found fallback diagnosable.
+     *
+     * @param array<int, mixed> $modelConfigs
+     * @return array<int, string>
+     */
+    protected function availableToolNames(array $modelConfigs): array
+    {
+        $names = [];
+
+        foreach ($modelConfigs as $configClass) {
+            if (!is_string($configClass) || !method_exists($configClass, 'getTools')) {
+                continue;
+            }
+
+            try {
+                $names = array_merge($names, array_keys((array) $configClass::getTools()));
+            } catch (\Throwable) {
+                // ignore a misbehaving config when only listing names
+            }
+        }
+
+        try {
+            $names = array_merge(
+                $names,
+                array_keys(app(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class)->getToolDefinitions())
+            );
+        } catch (\Throwable) {
+            // registry optional
+        }
+
+        sort($names);
+
+        return array_values(array_unique($names));
     }
 
     protected function isStructuredDataFallback(string $message): bool

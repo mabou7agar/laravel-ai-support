@@ -55,6 +55,7 @@ class AIRouterStage implements RoutingStageContract
                 'stage' => $this->name(),
                 'decision_source' => $decision['decision_source'] ?? 'router_ai',
                 'matched_skill' => $decision['metadata'] ?? null,
+                'capability_counts' => $decision['capability_counts'] ?? null,
             ]
         );
     }

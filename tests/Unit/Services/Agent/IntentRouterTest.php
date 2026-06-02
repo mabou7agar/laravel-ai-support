@@ -77,6 +77,30 @@ class IntentRouterTest extends TestCase
         $this->assertStringContainsString('Respond with JSON ONLY', $capturedPrompt);
     }
 
+    public function test_route_surfaces_capability_counts_for_diagnostics(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')->once()->andReturn(AIResponse::success(
+            '{"action":"conversational","reasoning":"general chat"}',
+            EngineEnum::from('openai'),
+            EntityEnum::from('gpt-4o-mini')
+        ));
+
+        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+
+        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $decision = $router->route('hello there', new UnifiedActionContext('cap-counts', null), [
+            'model_configs' => [],
+        ]);
+
+        $this->assertArrayHasKey('capability_counts', $decision);
+        $this->assertArrayHasKey('tools_count', $decision['capability_counts']);
+        $this->assertArrayHasKey('skills_count', $decision['capability_counts']);
+        $this->assertArrayHasKey('nodes_count', $decision['capability_counts']);
+        $this->assertSame(0, $decision['capability_counts']['nodes_count']);
+    }
+
     public function test_route_includes_remote_nodes_in_prompt(): void
     {
         $capturedPrompt = null;

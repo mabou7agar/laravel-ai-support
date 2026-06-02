@@ -222,6 +222,11 @@ class AgentActionExecutionServiceTest extends UnitTestCase
         $this->assertNotNull($captured);
         $this->assertSame('tool_fallback', $captured['decision_source']);
         $this->assertSame('tool_fallback', $captured['decision_path']);
+
+        // Diagnostics: a tool-not-found fallback must be observable, not silent.
+        $this->assertTrue($captured['tool_not_found'] ?? false);
+        $this->assertSame('unknown_tool', $captured['requested_tool'] ?? null);
+        $this->assertIsArray($captured['available_tools'] ?? null);
     }
 
     public function test_execute_use_tool_structured_fallback_tags_tool_fallback_decision_source(): void
