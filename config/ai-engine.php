@@ -56,6 +56,14 @@ return array_replace_recursive($defaults, [
         'anthropic' => [
             'api_key' => env('ANTHROPIC_API_KEY'),
         ],
+        'bedrock' => [
+            'region' => env('AWS_BEDROCK_REGION', env('AWS_DEFAULT_REGION', 'us-east-1')),
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'token' => env('AWS_SESSION_TOKEN'),
+            'profile' => env('AWS_PROFILE'),
+            'default_model' => env('AWS_BEDROCK_DEFAULT_MODEL', data_get($defaults, 'engines.bedrock.default_model', 'anthropic.claude-3-5-sonnet-20241022-v2:0')),
+        ],
         'gemini' => [
             'api_key' => env('GEMINI_API_KEY'),
         ],
@@ -88,6 +96,12 @@ return array_replace_recursive($defaults, [
                     'completion' => env('OPENROUTER_MAX_COMPLETION_PRICE'),
                 ],
             ],
+        ],
+        'xai' => [
+            'api_key' => env('XAI_API_KEY'),
+            'base_url' => env('XAI_BASE_URL', 'https://api.x.ai/v1'),
+            'default_model' => env('XAI_DEFAULT_MODEL', data_get($defaults, 'engines.xai.default_model', 'grok-4.1')),
+            'timeout' => env('XAI_TIMEOUT', data_get($defaults, 'engines.xai.timeout', 60)),
         ],
         'pexels' => [
             'api_key' => env('PEXELS_API_KEY'),

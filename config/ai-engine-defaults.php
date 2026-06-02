@@ -923,6 +923,19 @@ return [
             ],
         ],
 
+        'xai' => [
+            'driver' => 'xai',
+            'api_key' => env('XAI_API_KEY'),
+            'base_url' => env('XAI_BASE_URL', 'https://api.x.ai/v1'),
+            'timeout' => env('XAI_TIMEOUT', 60),
+            'default_model' => env('XAI_DEFAULT_MODEL', 'grok-4.1'),
+            'models' => [
+                'grok-4.1' => ['enabled' => true, 'credit_index' => 2.5, 'content_type' => 'text'],
+                'grok-4' => ['enabled' => true, 'credit_index' => 2.0, 'content_type' => 'text'],
+                'grok-3.1' => ['enabled' => true, 'credit_index' => 1.0, 'content_type' => 'text'],
+            ],
+        ],
+
         'nvidia_nim' => [
             'driver' => 'nvidia_nim',
             'api_key' => env('NVIDIA_NIM_API_KEY', env('NVIDIA_API_KEY')),
@@ -933,6 +946,22 @@ return [
                 'nvidia/llama-3.1-nemotron-70b-instruct' => ['enabled' => true, 'credit_index' => 1.0],
                 'meta/llama-3.1-70b-instruct' => ['enabled' => true, 'credit_index' => 0.8],
                 'meta/llama-3.1-8b-instruct' => ['enabled' => true, 'credit_index' => 0.3],
+            ],
+        ],
+
+        'bedrock' => [
+            'driver' => 'bedrock',
+            'region' => env('AWS_BEDROCK_REGION', env('AWS_DEFAULT_REGION', 'us-east-1')),
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'token' => env('AWS_SESSION_TOKEN'),
+            'profile' => env('AWS_PROFILE'),
+            'version' => env('AWS_BEDROCK_VERSION', 'latest'),
+            'timeout' => env('AWS_BEDROCK_TIMEOUT', 60),
+            'default_model' => env('AWS_BEDROCK_DEFAULT_MODEL', 'anthropic.claude-3-5-sonnet-20241022-v2:0'),
+            'models' => [
+                'anthropic.claude-3-5-sonnet-20241022-v2:0' => ['enabled' => true, 'credit_index' => 2.0, 'content_type' => 'text'],
+                'anthropic.claude-3-haiku-20240307-v1:0' => ['enabled' => true, 'credit_index' => 0.5, 'content_type' => 'text'],
             ],
         ],
 
