@@ -66,4 +66,15 @@ interface VectorDriverInterface
      * Scroll through vectors (pagination)
      */
     public function scroll(string $collection, int $limit = 100, ?string $offset = null): array;
+
+    /**
+     * Get all matching underlying model IDs for a collection (optionally filtered)
+     *
+     * Used by VectorSearchService for hybrid aggregation (vector filter + SQL).
+     *
+     * @param string $collection Collection name
+     * @param array $filters Optional filters
+     * @return array Deduplicated array of model IDs
+     */
+    public function getMatchingIds(string $collection, array $filters = []): array;
 }
