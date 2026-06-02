@@ -67,6 +67,35 @@ That's the whole integration. A typical "create an invoice" turn renders:
 ✓ Done
 ```
 
+## 2b. Typing out the final reply (token streaming)
+
+Enable streaming and the final conversational reply arrives as `final_response.token_streamed`
+events (one per token) followed by `final_response.stream_completed` — so the answer types
+out live under the activity line (Claude-Code style). Turn it on per-run with
+`"streaming": true` on the chat request (or globally via `AI_AGENT_FINAL_RESPONSE_STREAMING_ENABLED=true`).
+
+```js
+let reply = '';
+es.onmessage = (e) => {
+  const event = JSON.parse(e.data);
+
+  if (event.name === 'final_response.token_streamed') {
+    reply += event.payload.token;          // append each token
+    answerEl.textContent = reply;          // re-render — the answer "types out"
+    return;
+  }
+  if (event.name === 'final_response.stream_completed') {
+    answerEl.textContent = event.payload.content; // canonical full text
+    return;
+  }
+
+  // …otherwise render event.activity as the live status line (section 2 above)
+};
+```
+
+Streaming is **off by default** and falls back to a single fully-formed reply when disabled
+or when a turn isn't a plain conversational answer.
+
 ## 3. Phases (for styling / grouping)
 
 `start · thinking · searching · acting · writing · waiting · done · error`

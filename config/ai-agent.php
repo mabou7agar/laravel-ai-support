@@ -132,6 +132,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Final Response Streaming
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, an agent run that produces a CONVERSATIONAL final reply
+    | streams that reply token-by-token into the run's event stream
+    | (final_response.token_streamed ... final_response.stream_completed) so an
+    | SSE/broadcast consumer can "type it out" live. Default OFF: the reply is
+    | generated synchronously and emitted as a single completed message. Can be
+    | overridden per-run via options['streaming'].
+    |
+    */
+    'final_response_streaming' => [
+        'enabled' => env('AI_AGENT_FINAL_RESPONSE_STREAMING_ENABLED', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Agent Runtime Settings
     |--------------------------------------------------------------------------
     |
