@@ -40,6 +40,9 @@ class AgentRunSseStreamApiTest extends TestCase
         $content = $response->streamedContent();
         $this->assertStringContainsString("event: run.completed\n", $content);
         $this->assertStringContainsString('"message":"Done"', $content);
+        // Each SSE frame carries a human-friendly activity label for the UI.
+        $this->assertStringContainsString('"activity":', $content);
+        $this->assertStringContainsString('"label":"Done"', $content);
     }
 
     public function test_agent_run_stream_emits_terminal_event_persisted_in_transition_window(): void
@@ -111,6 +114,9 @@ class AgentRunSseStreamApiTest extends TestCase
         $this->assertStringContainsString("event: routing.decided\n", $content);
         $this->assertStringContainsString("event: run.completed\n", $content);
         $this->assertStringContainsString('"message":"Done"', $content);
+        // Each SSE frame carries a human-friendly activity label for the UI.
+        $this->assertStringContainsString('"activity":', $content);
+        $this->assertStringContainsString('"label":"Done"', $content);
     }
 
     public function test_agent_run_stream_logs_warning_when_resume_event_id_is_unknown(): void

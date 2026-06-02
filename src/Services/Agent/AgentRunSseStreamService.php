@@ -13,8 +13,14 @@ class AgentRunSseStreamService
 {
     public function __construct(
         private readonly AgentRunRepository $runs,
-        private readonly AgentRunEventStreamService $events
+        private readonly AgentRunEventStreamService $events,
+        private readonly ?AgentActivityPresenter $activity = null
     ) {}
+
+    private function presenter(): AgentActivityPresenter
+    {
+        return $this->activity ?? app(AgentActivityPresenter::class);
+    }
 
     public function response(int|string $runId, array $options = []): StreamedResponse
     {
@@ -188,6 +194,10 @@ class AgentRunSseStreamService
     {
         $name = (string) ($event['name'] ?? 'message');
         $id = (string) ($event['id'] ?? '');
+        // Attach a human-friendly live activity label (icon + verb phrase + phase)
+        // so the client can render a Claude-Code-style "Searching for customer…" line
+        // without re-implementing event-to-label mapping.
+        $event['activity'] = $this->presenter()->describe($name, (array) ($event['payload'] ?? []));
         $data = json_encode($event, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         return "event: {$name}\n"
