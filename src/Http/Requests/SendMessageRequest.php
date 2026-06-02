@@ -35,7 +35,8 @@ class SendMessageRequest extends FormRequest
             'memory' => 'sometimes|boolean',
             'actions' => 'sometimes|boolean',
             'streaming' => 'sometimes|boolean',
-            'rag' => 'sometimes|boolean',
+            'use_rag' => 'sometimes|nullable|boolean',
+            'rag' => 'sometimes|nullable|boolean',
             'force_rag' => 'sometimes|boolean',
             'rag_collections' => 'sometimes|array',
             'rag_collections.*' => 'string',
@@ -128,6 +129,28 @@ class SendMessageRequest extends FormRequest
     }
 
     /**
+     * Resolve the canonical RAG toggle.
+     *
+     * Both `use_rag` (preferred) and the legacy `rag` alias are validated boolean
+     * fields. When neither is supplied RAG stays enabled (default true); it is only
+     * disabled when a caller explicitly passes a falsy value.
+     */
+    public function useRag(): bool
+    {
+        $validated = $this->validated();
+
+        if (array_key_exists('use_rag', $validated) && $validated['use_rag'] !== null) {
+            return (bool) $validated['use_rag'];
+        }
+
+        if (array_key_exists('rag', $validated) && $validated['rag'] !== null) {
+            return (bool) $validated['rag'];
+        }
+
+        return true;
+    }
+
+    /**
      * Convert validated data to DTO
      */
     public function toDTO(): SendMessageDTO
@@ -151,7 +174,7 @@ class SendMessageRequest extends FormRequest
             streaming: $validated['streaming'] ?? false,
             async: (bool) filter_var($async, FILTER_VALIDATE_BOOLEAN),
             userId: $userId !== null ? (string) $userId : null,
-            intelligentRag: $validated['rag'] ?? false,
+            intelligentRag: $this->useRag(),
             forceRag: $validated['force_rag'] ?? false,
             ragCollections: $validated['rag_collections'] ?? null,
             searchInstructions: $validated['search_instructions'] ?? null,

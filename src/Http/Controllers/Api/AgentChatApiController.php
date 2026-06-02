@@ -32,7 +32,7 @@ class AgentChatApiController extends Controller
         try {
             $dto = $request->toDTO();
             $ragCollections = $this->resolveRagCollections($request->input('rag_collections'));
-            $useRag = $request->boolean('use_rag', true);
+            $useRag = $request->useRag();
             $execution = $this->executionModes->resolve($dto, $useRag, $ragCollections);
             $executionOptions = array_merge($dto->agentOptions(), [
                 'execution_mode_resolved' => $execution->mode,
