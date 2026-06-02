@@ -10,6 +10,7 @@ use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\RoutingDecisionSource;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\IntentRouter;
+use Throwable;
 
 class AIRouterStage implements RoutingStageContract
 {
@@ -25,7 +26,20 @@ class AIRouterStage implements RoutingStageContract
 
     public function decide(string $message, UnifiedActionContext $context, array $options = []): ?RoutingDecision
     {
-        $decision = $this->intentRouter->route($message, $context, $options);
+        try {
+            $decision = $this->intentRouter->route($message, $context, $options);
+        } catch (Throwable $e) {
+            \Log::channel('ai-engine')->error('AI router stage failed; abstaining so later stages run.', [
+                'stage' => $this->name(),
+                'session_id' => $context->sessionId,
+                'agent_run_id' => $options['agent_run_id'] ?? null,
+                'trace_id' => $options['trace_id'] ?? null,
+                'exception' => $e->getMessage(),
+                'exception_class' => $e::class,
+            ]);
+
+            return null;
+        }
 
         return new RoutingDecision(
             action: $this->mapAction((string) ($decision['action'] ?? 'conversational')),
