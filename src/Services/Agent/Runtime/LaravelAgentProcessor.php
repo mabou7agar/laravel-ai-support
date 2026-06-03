@@ -20,7 +20,7 @@ use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\MessageRoutingClassifier;
-use LaravelAIEngine\Services\Agent\NodeSessionManager;
+use LaravelAIEngine\Contracts\Federation\NodeSessionContract;
 use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
 use LaravelAIEngine\Services\Agent\RoutingContextResolver;
 use LaravelAIEngine\DTOs\RoutingTrace;
@@ -36,7 +36,7 @@ class LaravelAgentProcessor
         protected AgentPlanner $planner,
         protected AgentResponseFinalizer $responseFinalizer,
         protected AgentSelectionService $selectionService,
-        protected NodeSessionManager $nodeSessionManager,
+        protected ?NodeSessionContract $nodeSession = null,
         protected ?MessageRoutingClassifier $messageClassifier = null,
         protected ?RoutingContextResolver $routingContextResolver = null,
         protected ?GoalAgentService $goalAgent = null,
@@ -151,8 +151,8 @@ class LaravelAgentProcessor
             );
         }
 
-        if ($context->has('routed_to_node')) {
-            if ($this->nodeSessionManager->shouldContinueSession($message, $context)) {
+        if ($this->nodeSession !== null && $context->has('routed_to_node')) {
+            if ($this->nodeSession->shouldContinueSession($message, $context)) {
                 Log::channel('ai-engine')->debug('Continuing routed node session');
                 $continueDecision = new RoutingDecision(
                     action: RoutingDecisionAction::CONTINUE_NODE,
@@ -502,21 +502,6 @@ class LaravelAgentProcessor
         }
 
         return !array_key_exists('use_rag', $options) || (bool) $options['use_rag'];
-    }
-
-    protected function routeToNode(
-        string $resourceName,
-        string $message,
-        UnifiedActionContext $context,
-        array $options
-    ): AgentResponse {
-        return $this->dispatchRoutingDecision(new RoutingDecision(
-            action: RoutingDecisionAction::ROUTE_TO_NODE,
-            source: RoutingDecisionSource::RUNTIME,
-            confidence: 'high',
-            reason: 'Node routing requested by orchestrator callback.',
-            payload: ['resource_name' => $resourceName]
-        ), $message, $context, $options);
     }
 
     protected function dispatchRoutingDecision(

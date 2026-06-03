@@ -51,7 +51,9 @@ class AiDoctorCommand extends Command
             app(AgentSkillRegistry::class)->skills()
         ), []);
         $collections = $this->safe(fn () => app(RAGCollectionDiscovery::class)->discover(), []);
-        $nodes = $this->safe(fn () => (array) app(NodeRegistryService::class)->getActiveNodes(), []);
+        $nodes = $this->safe(fn () => app()->bound(NodeRegistryService::class)
+            ? (array) app(NodeRegistryService::class)->getActiveNodes()
+            : [], []);
 
         $defaultEngine = (string) config('ai-engine.default', 'openai');
         $apiKey = (string) config("ai-engine.engines.{$defaultEngine}.api_key", '');

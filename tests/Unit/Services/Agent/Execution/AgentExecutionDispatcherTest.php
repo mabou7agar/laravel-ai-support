@@ -16,7 +16,10 @@ use LaravelAIEngine\Contracts\RoutingStageContract;
 use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
+use LaravelAIEngine\Services\Agent\Execution\ActionHandlers\ContinueNodeActionHandler;
+use LaravelAIEngine\Services\Agent\Execution\ActionHandlers\RouteToNodeActionHandler;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
+use LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
@@ -164,13 +167,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
                 && ($payload['success'] ?? null) === false
                 && ($payload['needs_user_input'] ?? null) === true);
 
-        $response = (new AgentExecutionDispatcher(
-            $action,
-            Mockery::mock(AgentConversationService::class),
-            Mockery::mock(NodeSessionManager::class),
-            Mockery::mock(GoalAgentService::class),
-            $audit
-        ))->dispatch(
+        $response = $this->dispatcher(actionExecutionService: $action, audit: $audit)->dispatch(
             $this->decision(RoutingDecisionAction::USE_TOOL, [
                 'resource_name' => 'create_customer',
             ]),
@@ -223,13 +220,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
                 && ($payload['blocked_type'] ?? null) === 'tool'
                 && ($payload['blocked_resource'] ?? null) === 'dangerous_tool');
 
-        $response = (new AgentExecutionDispatcher(
-            $action,
-            Mockery::mock(AgentConversationService::class),
-            Mockery::mock(NodeSessionManager::class),
-            Mockery::mock(GoalAgentService::class),
-            $audit
-        ))->dispatch(
+        $response = $this->dispatcher(actionExecutionService: $action, audit: $audit)->dispatch(
             $this->decision(RoutingDecisionAction::USE_TOOL, ['tool_name' => 'dangerous_tool']),
             'run dangerous tool',
             $this->context()
@@ -438,13 +429,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         \Illuminate\Support\Facades\Log::shouldReceive('debug');
         \Illuminate\Support\Facades\Log::shouldReceive('error');
 
-        $response = (new AgentExecutionDispatcher(
-            $action,
-            Mockery::mock(AgentConversationService::class),
-            Mockery::mock(NodeSessionManager::class),
-            Mockery::mock(GoalAgentService::class),
-            $audit
-        ))->dispatch(
+        $response = $this->dispatcher(actionExecutionService: $action, audit: $audit)->dispatch(
             $this->decision(RoutingDecisionAction::USE_TOOL, ['resource_name' => 'data_query']),
             'list tasks',
             $context
@@ -546,13 +531,23 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         ?AgentActionExecutionService $actionExecutionService = null,
         ?AgentConversationService $conversationService = null,
         ?NodeSessionManager $nodeSessionManager = null,
-        ?GoalAgentService $goalAgent = null
+        ?GoalAgentService $goalAgent = null,
+        ?ProviderToolAuditService $audit = null
     ): AgentExecutionDispatcher {
-        return new AgentExecutionDispatcher(
+        $node = $nodeSessionManager ?? Mockery::mock(NodeSessionManager::class);
+        $registry = new RoutingActionHandlerRegistry();
+        $dispatcher = null;
+        $registry->register(new ContinueNodeActionHandler($node));
+        $registry->register(new RouteToNodeActionHandler($node, function () use (&$dispatcher): AgentExecutionDispatcher {
+            return $dispatcher;
+        }));
+
+        return $dispatcher = new AgentExecutionDispatcher(
             $actionExecutionService ?? Mockery::mock(AgentActionExecutionService::class),
             $conversationService ?? Mockery::mock(AgentConversationService::class),
-            $nodeSessionManager ?? Mockery::mock(NodeSessionManager::class),
-            $goalAgent ?? Mockery::mock(GoalAgentService::class)
+            $registry,
+            $goalAgent ?? Mockery::mock(GoalAgentService::class),
+            $audit
         );
     }
 

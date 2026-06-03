@@ -289,10 +289,11 @@ class AgentRefactorAcceptanceTest extends UnitTestCase
                 EntityEnum::from('gpt-4o-mini')
             ));
 
-        $forwardedRegistry = Mockery::mock(NodeRegistryService::class);
+        $forwardedRegistry = Mockery::mock(\LaravelAIEngine\Contracts\Federation\NodeMetadataProvider::class);
         $forwardedRegistry->shouldReceive('getActiveNodes')->never();
+        $forwardedRegistry->shouldReceive('discover')->andReturn([]);
 
-        $decision = (new IntentRouter($ai, $forwardedRegistry, new SelectedEntityContextService()))->route(
+        $decision = (new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $forwardedRegistry))->route(
             'was it paid?',
             new UnifiedActionContext('acceptance-forwarded', null),
             ['is_forwarded' => true]

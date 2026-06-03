@@ -67,6 +67,12 @@ class UnifiedRAGSearchService
         array $collections = [],
         int $limit = 10
     ): array {
+        // Cross-project search requires the node-federation package (ai_nodes table /
+        // AINode model). Without it there are no project nodes — return nothing.
+        if (!class_exists(AINode::class)) {
+            return [];
+        }
+
         // Get project metadata from ai_nodes table (no HTTP!)
         $projectsQuery = AINode::where('type', 'project')
             ->where('status', 'active');
@@ -123,6 +129,11 @@ class UnifiedRAGSearchService
 
         if ($cached = Cache::get($cacheKey)) {
             return $cached;
+        }
+
+        // No node-federation package => no project nodes => current project only.
+        if (!class_exists(AINode::class)) {
+            return [$this->projectId];
         }
 
         // Get all active projects

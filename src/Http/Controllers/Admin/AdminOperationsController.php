@@ -9,14 +9,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\View\View;
 use LaravelAIEngine\Http\Requests\AdminAgentRunActionRequest;
-use LaravelAIEngine\Http\Requests\AdminNodeActionRequest;
-use LaravelAIEngine\Http\Requests\AdminNodeBulkSyncApplyRequest;
-use LaravelAIEngine\Http\Requests\AdminNodeBulkSyncAutoFixDownloadRequest;
-use LaravelAIEngine\Http\Requests\AdminNodeBulkSyncAutoFixRequest;
-use LaravelAIEngine\Http\Requests\AdminNodeBulkSyncPayloadRequest;
-use LaravelAIEngine\Http\Requests\AdminNodeRegisterRequest;
-use LaravelAIEngine\Http\Requests\AdminNodeStatusRequest;
-use LaravelAIEngine\Http\Requests\AdminNodeUpdateRequest;
 use LaravelAIEngine\Http\Requests\AdminPolicyActivateRequest;
 use LaravelAIEngine\Http\Requests\AdminPolicyCreateRequest;
 use LaravelAIEngine\Http\Requests\AdminProviderToolApprovalActionRequest;
@@ -27,15 +19,10 @@ use LaravelAIEngine\Repositories\ProviderToolApprovalRepository;
 use LaravelAIEngine\Repositories\ProviderToolArtifactRepository;
 use LaravelAIEngine\Repositories\ProviderToolRunRepository;
 use LaravelAIEngine\Services\Admin\AdminAgentRunOperationsService;
-use LaravelAIEngine\Services\Admin\AdminNodeBulkSyncOperationsService;
-use LaravelAIEngine\Services\Admin\AdminNodeOperationsService;
 use LaravelAIEngine\Services\Admin\AdminPolicyOperationsService;
 use LaravelAIEngine\Services\Admin\AdminProviderToolOperationsService;
-use LaravelAIEngine\Services\Admin\NodeAdminService;
 use LaravelAIEngine\Services\Agent\AgentRunRuntimeControlService;
 use LaravelAIEngine\Services\JobStatusTracker;
-use LaravelAIEngine\Services\Node\NodeBulkSyncService;
-use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolApprovalService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolContinuationService;
 use LaravelAIEngine\Services\RAG\RAGDecisionPolicy;
@@ -47,8 +34,6 @@ class AdminOperationsController extends Controller
     public function __construct(
         private readonly AdminProviderToolOperationsService $providerTools,
         private readonly AdminAgentRunOperationsService $agentRuns,
-        private readonly AdminNodeOperationsService $nodes,
-        private readonly AdminNodeBulkSyncOperationsService $bulkSync,
         private readonly AdminPolicyOperationsService $policies
     ) {}
 
@@ -120,74 +105,6 @@ class AdminOperationsController extends Controller
         JobStatusTracker $jobs
     ): RedirectResponse {
         return $this->providerTools->continueRun($request->validated(), $continuations, $jobs);
-    }
-
-    public function nodes(NodeRegistryService $registry, NodeAdminService $nodeAdmin): View
-    {
-        return $this->nodes->index($registry, $nodeAdmin);
-    }
-
-    public function registerNode(AdminNodeRegisterRequest $request, NodeRegistryService $registry): RedirectResponse
-    {
-        return $this->nodes->register($request->validated(), $registry);
-    }
-
-    public function updateNode(AdminNodeUpdateRequest $request, NodeAdminService $nodeAdmin): RedirectResponse
-    {
-        return $this->nodes->update($request->validated(), $nodeAdmin);
-    }
-
-    public function updateNodeStatus(AdminNodeStatusRequest $request, NodeAdminService $nodeAdmin): RedirectResponse
-    {
-        return $this->nodes->updateStatus($request->validated(), $nodeAdmin);
-    }
-
-    public function pingNode(AdminNodeActionRequest $request, NodeAdminService $nodeAdmin): RedirectResponse
-    {
-        return $this->nodes->ping($request->validated(), $nodeAdmin);
-    }
-
-    public function pingAllNodes(NodeRegistryService $registry): RedirectResponse
-    {
-        return $this->nodes->pingAll($registry);
-    }
-
-    public function deleteNode(AdminNodeActionRequest $request, NodeAdminService $nodeAdmin): RedirectResponse
-    {
-        return $this->nodes->delete($request->validated(), $nodeAdmin);
-    }
-
-    public function bulkSyncTemplate(NodeBulkSyncService $bulkSync): JsonResponse
-    {
-        return $this->bulkSync->template($bulkSync);
-    }
-
-    public function bulkSyncExport(NodeBulkSyncService $bulkSync): JsonResponse
-    {
-        return $this->bulkSync->export($bulkSync);
-    }
-
-    public function previewBulkSync(AdminNodeBulkSyncPayloadRequest $request, NodeBulkSyncService $bulkSync): RedirectResponse
-    {
-        return $this->bulkSync->preview($request, $request->validated(), $bulkSync);
-    }
-
-    public function autoFixBulkSync(AdminNodeBulkSyncAutoFixRequest $request, NodeBulkSyncService $bulkSync): RedirectResponse
-    {
-        return $this->bulkSync->autoFix($request, $request->validated(), $bulkSync);
-    }
-
-    public function autoFixBulkSyncDownload(AdminNodeBulkSyncAutoFixDownloadRequest $request, NodeBulkSyncService $bulkSync): JsonResponse
-    {
-        return $this->bulkSync->autoFixDownload($request, $request->validated(), $bulkSync);
-    }
-
-    public function applyBulkSync(
-        AdminNodeBulkSyncApplyRequest $request,
-        NodeBulkSyncService $bulkSync,
-        NodeRegistryService $registry
-    ): RedirectResponse {
-        return $this->bulkSync->apply($request, $request->validated(), $bulkSync, $registry);
     }
 
     public function health(InfrastructureHealthService $healthService): View

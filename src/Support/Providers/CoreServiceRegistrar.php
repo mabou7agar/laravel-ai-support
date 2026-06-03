@@ -47,6 +47,18 @@ class CoreServiceRegistrar
         $app->singleton(AnalyticsManager::class, fn ($app) => new AnalyticsManager($app));
         $app->singleton(DriverRegistry::class, fn ($app) => new DriverRegistry($app));
 
+        // Non-node services historically registered by NodeServiceRegistrar but
+        // actually core (core-only deps; consumed by core tool/action components).
+        // Kept in core so the federation package owns only node bindings.
+        if (!$app->bound(\LaravelAIEngine\Services\Actions\ActionRegistry::class)) {
+            $app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
+        }
+        $app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService(
+            $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+            $app->make(\LaravelAIEngine\Services\AIEngineService::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\TemplateEngine::class, fn ($app) => new \LaravelAIEngine\Services\TemplateEngine($app->bound(\LaravelAIEngine\Services\AIEngineService::class) ? $app->make(\LaravelAIEngine\Services\AIEngineService::class) : null));
+
         $app->singleton(ConversationManager::class, fn () => new ConversationManager());
         $app->singleton(\LaravelAIEngine\Services\ConversationTranscriptService::class, fn ($app) => new \LaravelAIEngine\Services\ConversationTranscriptService(
             $app->make(ConversationManager::class)
@@ -163,14 +175,21 @@ class CoreServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentTraceMetadataService::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentExecutionPolicyService::class);
         $app->singleton(\LaravelAIEngine\Services\Fal\FalCatalogExecutionService::class);
-        $app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, fn () => new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery());
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGCollectionDiscovery(
+            $app->bound(\LaravelAIEngine\Contracts\RAG\FederatedCollectionProvider::class)
+                ? $app->make(\LaravelAIEngine\Contracts\RAG\FederatedCollectionProvider::class)
+                : null
+        ));
+        // NodeMetadataProvider is bound by the laravel-ai-engine-federation package
+        // (NodeMetadataProviderImpl). When that package is absent the contract stays
+        // unbound and IntentRouter resolves it to null (no remote-node metadata).
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class, fn () => new \LaravelAIEngine\Services\RAG\RAGDecisionPolicy());
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionPromptService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionPromptService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionStateService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionStateService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGAggregateIntentResolver::class);
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGModelMetadataService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGModelMetadataService($app->make(\LaravelAIEngine\Services\RAG\RAGCollectionDiscovery::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionStateService::class)));
-        $app->singleton(\LaravelAIEngine\Services\RAG\RAGContextService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGContextService($app->make(\LaravelAIEngine\Services\RAG\RAGModelMetadataService::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)));
+        $app->singleton(\LaravelAIEngine\Services\RAG\RAGContextService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGContextService($app->make(\LaravelAIEngine\Services\RAG\RAGModelMetadataService::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->bound(\LaravelAIEngine\Contracts\RAG\NodeContextProvider::class) ? $app->make(\LaravelAIEngine\Contracts\RAG\NodeContextProvider::class) : null));
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGPlannerService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGPlannerService($app->make(\LaravelAIEngine\Services\AIEngineService::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPromptService::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class), null, null, $app->make(\LaravelAIEngine\Services\RAG\RAGAggregateIntentResolver::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGToolExecutionService::class, fn () => new \LaravelAIEngine\Services\RAG\RAGToolExecutionService());
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGModelScopeGuard::class, fn () => new \LaravelAIEngine\Services\RAG\RAGModelScopeGuard());

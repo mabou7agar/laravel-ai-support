@@ -22,19 +22,8 @@ Route::prefix(config('ai-engine.admin_ui.route_prefix', 'ai-engine/admin'))
     ->name('ai-engine.admin.')
     ->group(function () {
         Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');
-        Route::get('/nodes', [AdminOperationsController::class, 'nodes'])->name('nodes');
-        Route::post('/nodes/register', [AdminOperationsController::class, 'registerNode'])->name('nodes.register');
-        Route::post('/nodes/update', [AdminOperationsController::class, 'updateNode'])->name('nodes.update');
-        Route::post('/nodes/status', [AdminOperationsController::class, 'updateNodeStatus'])->name('nodes.status');
-        Route::post('/nodes/ping', [AdminOperationsController::class, 'pingNode'])->name('nodes.ping');
-        Route::post('/nodes/ping-all', [AdminOperationsController::class, 'pingAllNodes'])->name('nodes.ping-all');
-        Route::post('/nodes/delete', [AdminOperationsController::class, 'deleteNode'])->name('nodes.delete');
-        Route::get('/nodes/bulk-sync/template', [AdminOperationsController::class, 'bulkSyncTemplate'])->name('nodes.bulk-sync.template');
-        Route::get('/nodes/bulk-sync/export', [AdminOperationsController::class, 'bulkSyncExport'])->name('nodes.bulk-sync.export');
-        Route::post('/nodes/bulk-sync/autofix', [AdminOperationsController::class, 'autoFixBulkSync'])->name('nodes.bulk-sync.autofix');
-        Route::post('/nodes/bulk-sync/autofix-download', [AdminOperationsController::class, 'autoFixBulkSyncDownload'])->name('nodes.bulk-sync.autofix-download');
-        Route::post('/nodes/bulk-sync/preview', [AdminOperationsController::class, 'previewBulkSync'])->name('nodes.bulk-sync.preview');
-        Route::post('/nodes/bulk-sync/apply', [AdminOperationsController::class, 'applyBulkSync'])->name('nodes.bulk-sync.apply');
+        // Node-admin routes live in the laravel-ai-engine-federation package
+        // (routes/admin-nodes.php → Federation\Http\Controllers\NodeAdminController).
         Route::get('/health', [AdminOperationsController::class, 'health'])->name('health');
         Route::get('/policies', [AdminOperationsController::class, 'policies'])->name('policies');
         Route::get('/agent-runs', [AdminOperationsController::class, 'agentRuns'])->name('agent-runs');

@@ -7,7 +7,7 @@ namespace LaravelAIEngine\Services\RAG;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use LaravelAIEngine\Services\Node\NodeHttpClient;
+use LaravelAIEngine\Contracts\RAG\FederatedCollectionProvider;
 
 /**
  * RAG Collection Discovery Service
@@ -21,17 +21,13 @@ class RAGCollectionDiscovery
     protected string $cacheKey = 'ai_engine:rag_collections';
     protected int $cacheTtl;
     protected bool $autoDiscover;
-    protected $nodeRegistry = null;
+    protected ?FederatedCollectionProvider $federatedProvider;
 
-    public function __construct()
+    public function __construct(?FederatedCollectionProvider $federatedProvider = null)
     {
         $this->cacheTtl = config('ai-engine.rag.discovery_cache_ttl', 3600); // Default 1 hour
         $this->autoDiscover = config('ai-engine.rag.auto_discover', true);
-
-        // Lazy load node registry if available
-        if (class_exists(\LaravelAIEngine\Services\Node\NodeRegistryService::class)) {
-            $this->nodeRegistry = app(\LaravelAIEngine\Services\Node\NodeRegistryService::class);
-        }
+        $this->federatedProvider = $federatedProvider;
     }
 
     /**
@@ -67,8 +63,8 @@ class RAGCollectionDiscovery
         $collections = $this->discoverFromModels();
 
         // Discover from remote nodes if enabled
-        if ($includeFederated && $this->nodeRegistry && config('ai-engine.nodes.enabled', false)) {
-            $federatedCollections = $this->discoverFromNodes();
+        if ($includeFederated && $this->federatedProvider !== null && $this->federatedProvider->isEnabled()) {
+            $federatedCollections = $this->federatedProvider->discoverCollections();
             $collections = array_merge($collections, $federatedCollections);
             
             // Deduplicate based on class name (handle both string and array formats)
@@ -86,33 +82,6 @@ class RAGCollectionDiscovery
 
         // Cache results
         Cache::put($this->cacheKey, $collections, $this->cacheTtl);
-
-        return $collections;
-    }
-
-    /**
-     * Discover collections from remote nodes
-     *
-     * @return array
-     */
-    protected function discoverFromNodes(): array
-    {
-        $collections = [];
-
-        try {
-            $nodes = $this->nodeRegistry->getActiveNodes();
-
-            foreach ($nodes as $node) {
-
-                        foreach ($node->collections ?? [] as $collection) {
-                            $collections[] = $collection;
-                        }
-            }
-        } catch (\Exception $e) {
-            Log::warning('Failed to discover collections from nodes', [
-                'error' => $e->getMessage(),
-            ]);
-        }
 
         return $collections;
     }
@@ -145,63 +114,21 @@ class RAGCollectionDiscovery
         }
 
         // Get remote collections with descriptions
-        if ($this->nodeRegistry && config('ai-engine.nodes.enabled', false)) {
-            try {
-                $nodes = $this->nodeRegistry->getActiveNodes();
-
-                foreach ($nodes as $node) {
-                    try {
-                        $response = NodeHttpClient::makeAuthenticated($node)
-                            ->get($node->getApiUrl('manifest'));
-
-                        if ($response->successful()) {
-                            $data = $response->json();
-                            foreach (($data['collections'] ?? []) as $collection) {
-                                $className = $collection['class'];
-
-                                if (!isset($allCollections[$className])) {
-                                    $description = $collection['description'] ?? '';
-
-                                    // If no description provided, generate a default one with a warning
-                                    if (empty($description)) {
-                                        $name = $collection['name'];
-                                        $description = "Search through {$name} collection";
-
-                                        Log::warning('Remote RAG collection missing description - using auto-generated description', [
-                                            'class' => $className,
-                                            'node' => $node->name,
-                                            'auto_description' => $description,
-                                            'recommendation' => "Add getRAGDescription() method to {$className} on remote node for better AI selection",
-                                        ]);
-                                    }
-
-                                    $allCollections[$className] = [
-                                        'class' => $className,
-                                        'name' => $collection['name'],
-                                        'display_name' => $collection['display_name'] ?? $collection['name'],
-                                        'description' => $description,
-                                        'nodes' => [],
-                                    ];
-                                }
-
-                                $allCollections[$className]['nodes'][] = [
-                                    'node_id' => $node->id,
-                                    'node_slug' => $node->slug,
-                                    'node_name' => $node->name,
-                                ];
-                            }
-                        }
-                    } catch (\Exception $e) {
-                        Log::debug('Failed to get collections from node', [
-                            'node' => $node->slug,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
+        if ($this->federatedProvider !== null && $this->federatedProvider->isEnabled()) {
+            foreach ($this->federatedProvider->discoverCollectionsWithDescriptions() as $className => $remoteCollection) {
+                if (!isset($allCollections[$className])) {
+                    $allCollections[$className] = [
+                        'class' => $remoteCollection['class'],
+                        'name' => $remoteCollection['name'],
+                        'display_name' => $remoteCollection['display_name'],
+                        'description' => $remoteCollection['description'],
+                        'nodes' => [],
+                    ];
                 }
-            } catch (\Exception $e) {
-                Log::warning('Failed to discover collections from nodes', [
-                    'error' => $e->getMessage(),
-                ]);
+
+                foreach (($remoteCollection['nodes'] ?? []) as $nodeEntry) {
+                    $allCollections[$className]['nodes'][] = $nodeEntry;
+                }
             }
         }
 

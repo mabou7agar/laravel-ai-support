@@ -15,7 +15,7 @@ use LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner;
 use LaravelAIEngine\Services\Agent\AgentSkillMatcher;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\AIEngineService;
-use LaravelAIEngine\Services\Node\NodeRegistryService;
+use LaravelAIEngine\Contracts\Federation\NodeMetadataProvider;
 use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 use LaravelAIEngine\DTOs\AgentSkillDefinition;
 use Mockery;
@@ -47,10 +47,11 @@ class IntentRouterTest extends TestCase
                 EntityEnum::from('gpt-4o-mini')
             ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn([]);
 
-        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $router = new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $nodes);
         $context = new UnifiedActionContext(
             sessionId: 'session-1',
             userId: null,
@@ -86,10 +87,11 @@ class IntentRouterTest extends TestCase
             EntityEnum::from('gpt-4o-mini')
         ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn([]);
 
-        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $router = new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $nodes);
         $decision = $router->route('hello there', new UnifiedActionContext('cap-counts', null), [
             'model_configs' => [],
         ]);
@@ -110,10 +112,11 @@ class IntentRouterTest extends TestCase
             EntityEnum::from('gpt-4o-mini')
         ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn([]);
 
-        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $router = new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $nodes);
         $decision = $router->route('list invoices please', new UnifiedActionContext('bad-tool', null), [
             'model_configs' => [FakeInvoiceModelConfig::class],
         ]);
@@ -141,17 +144,18 @@ class IntentRouterTest extends TestCase
                 EntityEnum::from('gpt-4o-mini')
             ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(collect([
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn([
             [
                 'slug' => 'billing',
                 'name' => 'Billing',
                 'description' => 'Handles invoices',
                 'domains' => ['invoices', 'payments'],
             ],
-        ]));
+        ]);
 
-        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $router = new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $nodes);
         $context = new UnifiedActionContext('session-2', null);
 
         $decision = $router->route('create a new invoice', $context);
@@ -172,10 +176,11 @@ class IntentRouterTest extends TestCase
                 EntityEnum::from('gpt-4o-mini')
             ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn([]);
 
-        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $router = new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $nodes);
         $decision = $router->route('hello', new UnifiedActionContext('session-3', null));
 
         $this->assertSame('conversational', $decision['action']);
@@ -194,10 +199,11 @@ class IntentRouterTest extends TestCase
                 EntityEnum::from('gpt-4o-mini')
             ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn([]);
 
-        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $router = new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $nodes);
         $decision = $router->route('show me recent updates', new UnifiedActionContext('session-use-tool-null', null));
 
         $this->assertSame('conversational', $decision['action']);
@@ -217,10 +223,11 @@ class IntentRouterTest extends TestCase
                 EntityEnum::from('gpt-4o-mini')
             ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
         $nodes->shouldReceive('getActiveNodes')->never();
 
-        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $router = new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $nodes);
         $decision = $router->route('show customer profile', new UnifiedActionContext('session-4', null), [
             'is_forwarded' => true,
         ]);
@@ -249,10 +256,11 @@ class IntentRouterTest extends TestCase
                 EntityEnum::from('gpt-4o-mini')
             ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
         $nodes->shouldReceive('getActiveNodes')->never();
 
-        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $router = new IntentRouter($ai, new SelectedEntityContextService(), nodeMetadataProvider: $nodes);
         $decision = $router->route('list invoices', new UnifiedActionContext('session-5', null), [
             'local_only' => true,
         ]);
@@ -267,7 +275,8 @@ class IntentRouterTest extends TestCase
         $ai = Mockery::mock(AIEngineService::class);
         $ai->shouldReceive('generate')->never();
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
         $nodes->shouldReceive('getActiveNodes')->never();
 
         $skillRegistry = Mockery::mock(AgentSkillRegistry::class);
@@ -283,14 +292,14 @@ class IntentRouterTest extends TestCase
 
         $router = new IntentRouter(
             $ai,
-            $nodes,
             new SelectedEntityContextService(),
             null,
             null,
             null,
             $skillRegistry,
             new AgentSkillMatcher($skillRegistry),
-            new AgentSkillExecutionPlanner()
+            new AgentSkillExecutionPlanner(),
+            nodeMetadataProvider: $nodes
         );
 
         $decision = $router->route('create invoice for ACME', new UnifiedActionContext('session-skill', null), [
@@ -320,8 +329,9 @@ class IntentRouterTest extends TestCase
                 EntityEnum::from('gpt-4o-mini')
             ));
 
-        $nodes = Mockery::mock(NodeRegistryService::class);
-        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+        $nodes = Mockery::mock(NodeMetadataProvider::class);
+        $nodes->shouldReceive('discover')->andReturn([]);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn([]);
 
         $policy = new AIPromptPolicyVersion([
             'policy_key' => 'agent-router',
@@ -347,7 +357,6 @@ class IntentRouterTest extends TestCase
 
         $router = new IntentRouter(
             $ai,
-            $nodes,
             new SelectedEntityContextService(),
             null,
             null,
@@ -355,7 +364,8 @@ class IntentRouterTest extends TestCase
             null,
             null,
             null,
-            $promptPolicies
+            $promptPolicies,
+            nodeMetadataProvider: $nodes
         );
 
         $decision = $router->route('hello', new UnifiedActionContext('session-policy', null), [

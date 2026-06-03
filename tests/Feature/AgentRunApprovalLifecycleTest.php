@@ -22,7 +22,10 @@ use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentRunApprovalService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
+use LaravelAIEngine\Services\Agent\Execution\ActionHandlers\ContinueNodeActionHandler;
+use LaravelAIEngine\Services\Agent\Execution\ActionHandlers\RouteToNodeActionHandler;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
+use LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\ProviderTools\HostedArtifactService;
@@ -210,10 +213,18 @@ class AgentRunApprovalLifecycleTest extends TestCase
             ->once()
             ->andReturn(AgentResponse::success('Sub-agent done'));
 
+        $node = Mockery::mock(NodeSessionManager::class);
+        $registry = new RoutingActionHandlerRegistry();
+        $dispatcher = null;
+        $registry->register(new ContinueNodeActionHandler($node));
+        $registry->register(new RouteToNodeActionHandler($node, function () use (&$dispatcher): AgentExecutionDispatcher {
+            return $dispatcher;
+        }));
+
         $dispatcher = new AgentExecutionDispatcher(
             $action,
             Mockery::mock(AgentConversationService::class),
-            Mockery::mock(NodeSessionManager::class),
+            $registry,
             $goalAgent,
             app(ProviderToolAuditService::class)
         );
