@@ -47,6 +47,18 @@ class CoreServiceRegistrar
         $app->singleton(AnalyticsManager::class, fn ($app) => new AnalyticsManager($app));
         $app->singleton(DriverRegistry::class, fn ($app) => new DriverRegistry($app));
 
+        // Non-node services historically registered by NodeServiceRegistrar but
+        // actually core (core-only deps; consumed by core tool/action components).
+        // Kept in core so the federation package owns only node bindings.
+        if (!$app->bound(\LaravelAIEngine\Services\Actions\ActionRegistry::class)) {
+            $app->singleton(\LaravelAIEngine\Services\Actions\ActionRegistry::class);
+        }
+        $app->singleton(\LaravelAIEngine\Services\RAG\UnifiedRAGSearchService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\UnifiedRAGSearchService(
+            $app->make(\LaravelAIEngine\Services\Vector\VectorSearchService::class),
+            $app->make(\LaravelAIEngine\Services\AIEngineService::class)
+        ));
+        $app->singleton(\LaravelAIEngine\Services\TemplateEngine::class, fn ($app) => new \LaravelAIEngine\Services\TemplateEngine($app->bound(\LaravelAIEngine\Services\AIEngineService::class) ? $app->make(\LaravelAIEngine\Services\AIEngineService::class) : null));
+
         $app->singleton(ConversationManager::class, fn () => new ConversationManager());
         $app->singleton(\LaravelAIEngine\Services\ConversationTranscriptService::class, fn ($app) => new \LaravelAIEngine\Services\ConversationTranscriptService(
             $app->make(ConversationManager::class)
