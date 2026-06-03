@@ -162,6 +162,12 @@ return array_replace_recursive($defaults, [
         'models' => data_get($defaults, 'data_query.models', []),
         'use_discovery' => env('AI_ENGINE_DATA_QUERY_DISCOVERY', data_get($defaults, 'data_query.use_discovery', true)),
         'scope_columns' => data_get($defaults, 'data_query.scope_columns', ['user_id', 'workspace_id', 'tenant_id']),
+        // Fail-closed scoping (mirrors ai-engine.rag.require_structured_scope). When true,
+        // a query is REFUSED if no access scope (user/workspace/tenant) could be applied —
+        // e.g. the model has no scope column, or there is no user context — so a model
+        // without scoping can't leak every row to any caller. Mark a model 'public' => true
+        // in the 'models' map to allow intentionally-unscoped (catalog-style) access.
+        'require_scope' => env('AI_ENGINE_DATA_QUERY_REQUIRE_SCOPE', data_get($defaults, 'data_query.require_scope', true)),
         'max_limit' => (int) env('AI_ENGINE_DATA_QUERY_MAX_LIMIT', data_get($defaults, 'data_query.max_limit', 50)),
     ],
     'vector' => [

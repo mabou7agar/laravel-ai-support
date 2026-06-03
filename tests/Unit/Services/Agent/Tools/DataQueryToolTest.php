@@ -88,6 +88,45 @@ class DataQueryToolTest extends TestCase
         $this->assertFalse($r->success);
         $this->assertTrue($r->metadata['needs_user_input'] ?? false);
     }
+
+    // ------------------------------------------------------------------
+    // Fail-closed scoping: a query with no applicable access scope must be
+    // refused by default, so a model can't leak every row to any caller.
+    // ------------------------------------------------------------------
+    public function test_blocks_query_when_no_access_scope_applies(): void
+    {
+        DqWidget::create(['name' => 'a', 'status' => 'active', 'user_id' => 'u1']);
+
+        // No auth and no userId on the context -> no user/workspace/tenant scope applies.
+        $r = $this->tool()->execute(['query' => 'how many widgets'], new UnifiedActionContext('dq', null));
+
+        $this->assertFalse($r->success);
+        $this->assertStringContainsString('blocked', strtolower((string) ($r->error ?? $r->message)));
+    }
+
+    public function test_public_model_is_queryable_without_scope(): void
+    {
+        config()->set('ai-engine.data_query.models.widget.public', true);
+        DqWidget::create(['name' => 'a', 'status' => 'active', 'user_id' => 'u1']);
+        DqWidget::create(['name' => 'b', 'status' => 'active', 'user_id' => 'u2']);
+
+        $r = $this->tool()->execute(['query' => 'how many widgets'], new UnifiedActionContext('dq', null));
+
+        $this->assertTrue($r->success);
+        $this->assertSame(2, $r->data['count'], 'a public model returns all rows regardless of caller scope.');
+    }
+
+    public function test_require_scope_disabled_allows_unscoped_query(): void
+    {
+        config()->set('ai-engine.data_query.require_scope', false);
+        DqWidget::create(['name' => 'a', 'status' => 'active', 'user_id' => 'u1']);
+        DqWidget::create(['name' => 'b', 'status' => 'active', 'user_id' => 'u2']);
+
+        $r = $this->tool()->execute(['query' => 'how many widgets'], new UnifiedActionContext('dq', null));
+
+        $this->assertTrue($r->success);
+        $this->assertSame(2, $r->data['count']);
+    }
 }
 
 class DqWidget extends Model
