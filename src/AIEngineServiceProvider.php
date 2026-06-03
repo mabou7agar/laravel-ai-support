@@ -14,7 +14,6 @@ use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\Support\Providers\AgentServiceRegistrar;
 use LaravelAIEngine\Support\Providers\CoreServiceRegistrar;
 use LaravelAIEngine\Support\Providers\EnterpriseServiceRegistrar;
-use LaravelAIEngine\Support\Providers\NodeServiceRegistrar;
 use LaravelAIEngine\Support\Infrastructure\InfrastructureHealthService;
 
 class AIEngineServiceProvider extends ServiceProvider
@@ -148,15 +147,6 @@ class AIEngineServiceProvider extends ServiceProvider
     protected function registerEnterpriseServices(): void
     {
         EnterpriseServiceRegistrar::register($this->app);
-        $this->registerNodeServices();
-    }
-
-    /**
-     * Register node management services
-     */
-    protected function registerNodeServices(): void
-    {
-        NodeServiceRegistrar::register($this->app);
     }
 
     /**
@@ -213,10 +203,6 @@ class AIEngineServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../routes/api.php' => base_path('routes/ai-engine-api.php'),
             ], 'ai-engine-routes');
-
-            $this->publishes([
-                __DIR__.'/../routes/node-api.php' => base_path('routes/ai-engine-node-api.php'),
-            ], 'ai-engine-node-routes');
 
             $this->commands([
                 Console\Commands\GenerateFalReferencePackCommand::class,
@@ -303,24 +289,6 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\AgentManifestDoctorCommand::class,
             ]);
 
-            // Node Management Commands
-            if (config('ai-engine.nodes.enabled', true)) {
-                $this->commands([
-                    Console\Commands\Node\MonitorNodesCommand::class,
-                    Console\Commands\Node\RegisterNodeCommand::class,
-                    Console\Commands\Node\UpdateNodeCommand::class,
-                    Console\Commands\Node\ListNodesCommand::class,
-                    Console\Commands\Node\PingNodesCommand::class,
-                    Console\Commands\Node\NodeStatsCommand::class,
-                    Console\Commands\Node\TestNodeSystemCommand::class,
-                    Console\Commands\Node\DemoNodesCommand::class,
-                    Console\Commands\Node\NodeLogsCommand::class,
-                    Console\Commands\Node\DiscoverCollectionsCommand::class,
-                    Console\Commands\Node\BulkSyncNodesCommand::class,
-                    Console\Commands\Node\CleanupNodesCommand::class,
-                    Console\Commands\NodeDiscoverCommand::class,
-                ]);
-            }
         }
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
@@ -349,19 +317,6 @@ class AIEngineServiceProvider extends ServiceProvider
         $router->aliasMiddleware('ai-engine.locale', \LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware::class);
         $router->aliasMiddleware('ai-engine.admin.access', \LaravelAIEngine\Http\Middleware\AdminAccessMiddleware::class);
 
-        // Load node API routes (check for published version first)
-        if (config('ai-engine.nodes.enabled', true)) {
-            $publishedNodeApiRoutes = base_path('routes/ai-engine-node-api.php');
-            if (file_exists($publishedNodeApiRoutes)) {
-                $this->loadRoutesFrom($publishedNodeApiRoutes);
-            } else {
-                $this->loadRoutesFrom(__DIR__.'/../routes/node-api.php');
-            }
-
-            $router->aliasMiddleware('node.auth', \LaravelAIEngine\Http\Middleware\NodeAuthMiddleware::class);
-            $router->aliasMiddleware('node.rate_limit', \LaravelAIEngine\Http\Middleware\NodeRateLimitMiddleware::class);
-        }
-
         // Register views
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'ai-engine');
 
@@ -384,15 +339,6 @@ class AIEngineServiceProvider extends ServiceProvider
     protected function registerScheduledTasks(): void
     {
         $this->callAfterResolving(\Illuminate\Console\Scheduling\Schedule::class, function ($schedule) {
-            // Ping nodes every 5 minutes (if nodes are enabled)
-            if (config('ai-engine.nodes.enabled', false)) {
-                $schedule->command('ai:node-ping --all')
-                    ->everyFiveMinutes()
-                    ->withoutOverlapping()
-                    ->runInBackground()
-                    ->appendOutputTo(storage_path('logs/ai-engine-ping.log'));
-            }
-
             // Vector database health check every 10 minutes
             if (config('ai-engine.vector.health_check.enabled', true)) {
                 $schedule->call(function () {

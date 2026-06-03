@@ -22,9 +22,17 @@ abstract class UnitTestCase extends Orchestra
 
     protected function getPackageProviders($app): array
     {
-        return [
+        $providers = [
             AIEngineServiceProvider::class,
         ];
+
+        // Load the node-federation package (a dev dependency of core) so node
+        // routes/bindings are available in the test suite. Core runtime never depends on it.
+        if (class_exists(\LaravelAIEngine\Federation\FederationServiceProvider::class)) {
+            $providers[] = \LaravelAIEngine\Federation\FederationServiceProvider::class;
+        }
+
+        return $providers;
     }
 
     protected function getEnvironmentSetUp($app): void

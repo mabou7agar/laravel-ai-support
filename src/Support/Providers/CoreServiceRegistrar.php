@@ -180,16 +180,9 @@ class CoreServiceRegistrar
                 ? $app->make(\LaravelAIEngine\Contracts\RAG\FederatedCollectionProvider::class)
                 : null
         ));
-        // Local node-metadata discovery is independent of remote nodes (it scans
-        // local models), so it is always available — preserving the IntentRouter's
-        // previously unconditional NodeMetadataDiscovery behavior even when nodes
-        // are disabled.
-        $app->singleton(\LaravelAIEngine\Contracts\Federation\NodeMetadataProvider::class, fn ($app) => new \LaravelAIEngine\Services\Node\NodeMetadataProviderImpl(
-            $app->make(\LaravelAIEngine\Services\Node\NodeMetadataDiscovery::class),
-            $app->bound(\LaravelAIEngine\Services\Node\NodeRegistryService::class)
-                ? $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)
-                : null
-        ));
+        // NodeMetadataProvider is bound by the laravel-ai-engine-federation package
+        // (NodeMetadataProviderImpl). When that package is absent the contract stays
+        // unbound and IntentRouter resolves it to null (no remote-node metadata).
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class, fn () => new \LaravelAIEngine\Services\RAG\RAGDecisionPolicy());
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionPromptService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionPromptService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class)));

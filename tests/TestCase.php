@@ -31,9 +31,18 @@ abstract class TestCase extends Orchestra
 
     protected function getPackageProviders($app): array
     {
-        return [
+        $providers = [
             AIEngineServiceProvider::class,
         ];
+
+        // The node-federation package is a dev dependency of core: load it in the
+        // test suite so node-integration tests resolve the relocated node classes
+        // and bindings. Core's RUNTIME never depends on it.
+        if (class_exists(\LaravelAIEngine\Federation\FederationServiceProvider::class)) {
+            $providers[] = \LaravelAIEngine\Federation\FederationServiceProvider::class;
+        }
+
+        return $providers;
     }
 
     protected function getEnvironmentSetUp($app): void
