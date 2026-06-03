@@ -132,10 +132,7 @@ class AgentExecutionDispatcher
     ): AgentResponse {
         foreach ($this->requestedCollections($options) as $collection) {
             if (!$this->policy()->canUseRagCollection($collection, $options)) {
-                return AgentResponse::failure(
-                    message: $this->policy()->blockedMessage('rag_collection', $collection),
-                    context: $context
-                );
+                return $this->policyBlockedResponse('rag_collection', $collection, $context, $options);
             }
         }
 
@@ -158,10 +155,7 @@ class AgentExecutionDispatcher
     ): AgentResponse {
         $toolName = (string) ($decision->payload['resource_name'] ?? $decision->payload['tool_name'] ?? '');
         if (!$this->policy()->canUseTool($toolName, $options)) {
-            return AgentResponse::failure(
-                message: $this->policy()->blockedMessage('tool', $toolName),
-                context: $context
-            );
+            return $this->policyBlockedResponse('tool', $toolName, $context, $options);
         }
 
         $this->recordExecutionAudit('agent_tool.started', $toolName, $context, $options, $decision->payload);
@@ -209,10 +203,7 @@ class AgentExecutionDispatcher
         $subAgents = $decision->payload['sub_agents'] ?? $options['sub_agents'] ?? null;
         foreach ($this->requestedSubAgents($subAgents) as $subAgent) {
             if (!$this->policy()->canUseSubAgent($subAgent, $options)) {
-                return AgentResponse::failure(
-                    message: $this->policy()->blockedMessage('sub_agent', $subAgent),
-                    context: $context
-                );
+                return $this->policyBlockedResponse('sub_agent', $subAgent, $context, $options);
             }
         }
 
@@ -280,10 +271,7 @@ class AgentExecutionDispatcher
         }
 
         if (!$this->policy()->canRouteToNode($requestedResource, $options)) {
-            return AgentResponse::failure(
-                message: $this->policy()->blockedMessage('node', $requestedResource),
-                context: $context
-            );
+            return $this->policyBlockedResponse('node', $requestedResource, $context, $options);
         }
 
         Log::channel('ai-engine')->info('Routing message to remote node', [
@@ -304,6 +292,11 @@ class AgentExecutionDispatcher
 
             if ($fallback->success) {
                 $fallback->message = $this->fallbackNotice() . "\n\n" . $fallback->message;
+                $fallback->metadata = array_merge($fallback->metadata ?? [], [
+                    'fallback_mode' => true,
+                    'fallback_reason' => 'remote_node_unreachable',
+                    'original_resource' => $requestedResource,
+                ]);
 
                 return $fallback;
             }
@@ -358,6 +351,32 @@ class AgentExecutionDispatcher
         return 'Remote node is unavailable. Showing local results only (degraded mode).';
     }
 
+    protected function policyBlockedResponse(
+        string $type,
+        string $resource,
+        UnifiedActionContext $context,
+        array $options
+    ): AgentResponse {
+        $metadata = [
+            'policy_blocked' => true,
+            'blocked_type' => $type,
+            'blocked_resource' => $resource,
+        ];
+
+        Log::channel('ai-engine')->warning('Agent execution blocked by policy', array_merge($metadata, [
+            'session_id' => $context->sessionId,
+            'user_id' => $context->userId,
+        ]));
+
+        $this->recordExecutionAudit('agent_policy.blocked', $resource, $context, $options, $metadata);
+
+        return AgentResponse::failure(
+            message: $this->policy()->blockedMessage($type, $resource),
+            context: $context,
+            metadata: $metadata
+        );
+    }
+
     protected function recordExecutionAudit(
         string $event,
         string $toolName,
@@ -391,13 +410,22 @@ class AgentExecutionDispatcher
         };
 
         if ($streamEvent !== null) {
-            app(AgentRunEventStreamService::class)->emit(
-                $streamEvent,
-                $options['agent_run_id'] ?? null,
-                $options['agent_run_step_id'] ?? null,
-                array_merge($payload, ['tool_name' => $toolName]),
-                ['trace_id' => $options['trace_id'] ?? null]
-            );
+            try {
+                app(AgentRunEventStreamService::class)->emit(
+                    $streamEvent,
+                    $options['agent_run_id'] ?? null,
+                    $options['agent_run_step_id'] ?? null,
+                    array_merge($payload, ['tool_name' => $toolName]),
+                    ['trace_id' => $options['trace_id'] ?? null]
+                );
+            } catch (\Throwable $e) {
+                Log::channel('ai-engine')->warning('Agent run event stream emit failed (best-effort)', [
+                    'event' => $event,
+                    'stream_event' => $streamEvent,
+                    'tool_name' => $toolName,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

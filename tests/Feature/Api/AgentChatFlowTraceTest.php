@@ -130,7 +130,7 @@ class AgentChatFlowTraceTest extends TestCase
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);
         $finalizer->shouldReceive('finalize')
             ->once()
-            ->with($context, Mockery::type(AgentResponse::class))
+            ->with($context, Mockery::type(AgentResponse::class), Mockery::type('array'))
             ->andReturnUsing(fn (UnifiedActionContext $finalContext, AgentResponse $response): AgentResponse => $response);
 
         $presentation = Mockery::mock(ChatResponsePresentationService::class);

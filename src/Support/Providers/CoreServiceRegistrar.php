@@ -108,6 +108,10 @@ class CoreServiceRegistrar
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
             $app->make(\LaravelAIEngine\Services\Memory\MemoryManager::class)
         ));
+        $app->singleton(\LaravelAIEngine\Services\BrandVoiceManager::class, fn () => new \LaravelAIEngine\Services\BrandVoiceManager());
+        $app->singleton(\LaravelAIEngine\Services\Media\GenerateApiRequestFactory::class, fn ($app) => new \LaravelAIEngine\Services\Media\GenerateApiRequestFactory(
+            $app->make(\LaravelAIEngine\Services\BrandVoiceManager::class)
+        ));
         $app->singleton(\LaravelAIEngine\Services\WebhookManager::class, fn () => new \LaravelAIEngine\Services\WebhookManager());
         $app->singleton(\LaravelAIEngine\Services\TemplateManager::class, fn () => new \LaravelAIEngine\Services\TemplateManager());
         $app->singleton(\LaravelAIEngine\Services\JobStatusTracker::class, fn () => new \LaravelAIEngine\Services\JobStatusTracker());

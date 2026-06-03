@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent;
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use LaravelAIEngine\Events\AgentRunStreamed;
 use LaravelAIEngine\Models\AIAgentRun;
@@ -18,6 +20,8 @@ class AgentRunEventStreamService
     public const ROUTING_STAGE_STARTED = 'routing.stage_started';
     public const ROUTING_STAGE_ABSTAINED = 'routing.stage_abstained';
     public const ROUTING_DECIDED = 'routing.decided';
+    public const AGENT_REASONING = 'agent.reasoning';
+    public const PLAN_UPDATED = 'plan.updated';
     public const RAG_STARTED = 'rag.started';
     public const RAG_SOURCES_FOUND = 'rag.sources_found';
     public const RAG_COMPLETED = 'rag.completed';
@@ -44,6 +48,8 @@ class AgentRunEventStreamService
         self::ROUTING_STAGE_STARTED,
         self::ROUTING_STAGE_ABSTAINED,
         self::ROUTING_DECIDED,
+        self::AGENT_REASONING,
+        self::PLAN_UPDATED,
         self::RAG_STARTED,
         self::RAG_SOURCES_FOUND,
         self::RAG_COMPLETED,
@@ -91,18 +97,35 @@ class AgentRunEventStreamService
         $stepModel = $this->resolveStep($step);
         $event = $this->makeEvent($name, $runModel, $stepModel, $payload, $metadata);
 
-        if ($runModel instanceof AIAgentRun) {
-            $this->appendEvent($runModel, $event);
-        }
+        if ($runModel instanceof AIAgentRun || $stepModel instanceof AIAgentRunStep) {
+            // Persist the run + step fallback metadata in a single transaction so
+            // a failure mid-write can never leave the run and step event logs in
+            // a divergent state.
+            DB::transaction(function () use ($runModel, $stepModel, $event): void {
+                if ($runModel instanceof AIAgentRun) {
+                    $this->appendEvent($runModel, $event);
+                }
 
-        if ($stepModel instanceof AIAgentRunStep) {
-            $this->appendEvent($stepModel, $event);
+                if ($stepModel instanceof AIAgentRunStep) {
+                    $this->appendEvent($stepModel, $event);
+                }
+            });
         }
 
         event(new AgentRunStreamed($event));
 
         if ($sink !== null) {
-            $sink($event);
+            try {
+                $sink($event);
+            } catch (\Throwable $e) {
+                // The event is already persisted and broadcast; a failing sink
+                // must not abort the streaming generator mid-response.
+                Log::channel('ai-engine')->warning('Agent run event sink failed', [
+                    'event_id' => $event['id'] ?? null,
+                    'event_name' => $name,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         return $event;
@@ -162,14 +185,37 @@ class AgentRunEventStreamService
 
     protected function appendEvent(AIAgentRun|AIAgentRunStep $model, array $event): void
     {
-        $metadata = $model->metadata ?? [];
-        $events = (array) ($metadata['events'] ?? []);
-        $events[] = $event;
+        // The read-modify-write of metadata['events'] must be serialized against
+        // concurrent emitters or appended events get silently lost. Lock the row
+        // for the duration of the read and re-read the freshest metadata from the
+        // locked row before appending so we never overwrite a concurrent writer.
+        DB::transaction(function () use ($model, $event): void {
+            $fresh = $model->newQuery()
+                ->whereKey($model->getKey())
+                ->lockForUpdate()
+                ->first();
 
-        $limit = max(1, (int) config('ai-agent.event_stream.persisted_events_limit', 200));
-        $metadata['events'] = array_slice($events, -$limit);
+            $metadata = ($fresh ?? $model)->metadata ?? [];
+            $events = (array) ($metadata['events'] ?? []);
+            $events[] = $event;
 
-        $model->update(['metadata' => $this->jsonPayloads()->sanitize($metadata)]);
+            $limit = max(1, (int) config('ai-agent.event_stream.persisted_events_limit', 200));
+            if (count($events) > $limit) {
+                Log::channel('ai-engine')->warning('Agent run event stream truncated persisted events', [
+                    'model' => $model::class,
+                    'model_id' => $model->getKey(),
+                    'event_id' => $event['id'] ?? null,
+                    'event_name' => $event['name'] ?? null,
+                    'total_events' => count($events),
+                    'persisted_limit' => $limit,
+                    'dropped' => count($events) - $limit,
+                ]);
+            }
+            $metadata['events'] = array_slice($events, -$limit);
+
+            $model->update(['metadata' => $this->jsonPayloads()->sanitize($metadata)]);
+        });
+
         $model->refresh();
     }
 

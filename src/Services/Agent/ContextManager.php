@@ -57,9 +57,13 @@ class ContextManager
         return $context;
     }
 
-    public function save(UnifiedActionContext $context): void
+    /**
+     * @param array<string, mixed> $options Current-request scope (tenant_id/workspace_id) forwarded
+     *                                       to compaction so memory writes use the live request scope.
+     */
+    public function save(UnifiedActionContext $context, array $options = []): void
     {
-        $this->compactor->compact($context);
+        $this->compactor->compact($context, $options);
         $context->persist();
         
         Log::channel('ai-engine')->info('Agent context saved to cache', [
@@ -101,7 +105,6 @@ class ContextManager
                     fn ($query) => $query->where('user_id', (string) $userId),
                     fn ($query) => $query->whereNull('user_id')
                 )
-                ->whereNotNull('final_response')
                 ->latest('id')
                 ->limit(12)
                 ->get();
@@ -124,12 +127,13 @@ class ContextManager
                 ];
             }
 
-            $responseMessage = $run->final_response['message'] ?? null;
+            $finalResponse = is_array($run->final_response) ? $run->final_response : [];
+            $responseMessage = $finalResponse['message'] ?? null;
             if (is_string($responseMessage) && trim($responseMessage) !== '') {
                 $history[] = [
                     'role' => 'assistant',
                     'content' => $responseMessage,
-                    'metadata' => (array) ($run->final_response['metadata'] ?? []),
+                    'metadata' => (array) ($finalResponse['metadata'] ?? []),
                     'timestamp' => optional($run->completed_at ?? $run->waiting_at ?? $run->updated_at)->toIso8601String(),
                 ];
             }

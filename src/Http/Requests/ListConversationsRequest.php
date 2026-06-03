@@ -18,6 +18,8 @@ class ListConversationsRequest extends FormRequest
         return [
             'limit' => 'nullable|integer|min:1|max:100',
             'page' => 'nullable|integer|min:1',
+            'folder_id' => 'nullable|string|max:255',
+            'q' => 'nullable|string|max:255',
         ];
     }
 }

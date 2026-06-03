@@ -36,7 +36,12 @@ class AgentResponseFinalizer
         }
     }
 
-    public function finalize(UnifiedActionContext $context, AgentResponse $response): AgentResponse
+    /**
+     * @param array<string, mixed> $options Current-request scope (tenant_id/workspace_id) threaded
+     *                                       through to compaction so memories are written under the
+     *                                       current scope rather than stale cached context metadata.
+     */
+    public function finalize(UnifiedActionContext $context, AgentResponse $response, array $options = []): AgentResponse
     {
         $response = $this->traceMetadata->enrichResponse(
             $response,
@@ -47,21 +52,28 @@ class AgentResponseFinalizer
         if (!empty($response->metadata['entity_ids'])) {
             $metadata['entity_ids'] = $response->metadata['entity_ids'];
             $metadata['entity_type'] = $response->metadata['entity_type'] ?? 'item';
+            // A new selection replaces any prior transient selection context;
+            // when there is no new selection it is preserved so follow-up turns
+            // can keep referring to the same entity.
             unset($context->metadata['selected_entity_context']);
         }
 
         $this->appendAssistantMessageIfNew($context, $response->message, $metadata);
-        $this->compactor->compact($context);
-        $this->contextManager->save($context);
+        $this->compactor->compact($context, $options);
+        $this->contextManager->save($context, $options);
 
         return $response;
     }
 
-    public function persistMessage(UnifiedActionContext $context, string $message, array $metadata = []): void
+    /**
+     * @param array<string, mixed> $metadata
+     * @param array<string, mixed> $options Current-request scope threaded through to compaction.
+     */
+    public function persistMessage(UnifiedActionContext $context, string $message, array $metadata = [], array $options = []): void
     {
         $this->appendAssistantMessageIfNew($context, $message, $metadata);
-        $this->compactor->compact($context);
-        $this->contextManager->save($context);
+        $this->compactor->compact($context, $options);
+        $this->contextManager->save($context, $options);
     }
 
     public function appendAssistantMessageIfNew(UnifiedActionContext $context, string $message, array $metadata = []): void

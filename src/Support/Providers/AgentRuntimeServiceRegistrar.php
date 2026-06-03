@@ -52,7 +52,9 @@ class AgentRuntimeServiceRegistrar
             null,
             $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class),
             $app->make(\LaravelAIEngine\Services\Agent\Memory\ConversationMemoryRetriever::class),
-            $app->make(\LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPromptBuilder::class)
+            $app->make(\LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPromptBuilder::class),
+            null,
+            $app->make(\LaravelAIEngine\Services\Agent\AgentFinalResponseStreamingService::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher(
             $app->make(\LaravelAIEngine\Services\Agent\AgentActionExecutionService::class),

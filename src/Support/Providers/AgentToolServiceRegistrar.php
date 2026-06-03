@@ -47,6 +47,9 @@ class AgentToolServiceRegistrar
             if ((bool) config('ai-agent.goal_agent.register_sub_agent_tool', true) && !$registry->has('run_sub_agent')) {
                 $registry->register('run_sub_agent', new \LaravelAIEngine\Services\Agent\Tools\RunSubAgentTool());
             }
+            if ((bool) config('ai-engine.data_query.enabled', true) && !$registry->has('data_query')) {
+                $registry->register('data_query', $app->make(\LaravelAIEngine\Services\Agent\Tools\DataQueryTool::class));
+            }
 
             return $registry;
         });

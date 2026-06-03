@@ -32,7 +32,8 @@ class AgentConversationService
         protected ?RoutingContextResolver $routingContextResolver = null,
         protected ?ConversationMemoryRetriever $memoryRetriever = null,
         protected ?ConversationMemoryPromptBuilder $memoryPromptBuilder = null,
-        protected ?ConversationMemoryScopeResolver $memoryScopeResolver = null
+        protected ?ConversationMemoryScopeResolver $memoryScopeResolver = null,
+        protected ?AgentFinalResponseStreamingService $finalResponseStreaming = null
     ) {
         $this->routingContextResolver ??= new RoutingContextResolver($this->selectedEntityContext);
         $this->memoryScopeResolver ??= app(ConversationMemoryScopeResolver::class);
@@ -81,6 +82,19 @@ class AgentConversationService
             // skip re-hydration on the rerouted turn (context already carries the history).
             $rerouteOptions = $options;
             unset($rerouteOptions['conversation_history']);
+
+            // Carry the original routing decision into the rerouted turn so the re-entered
+            // process() does not re-classify from scratch and overwrite the RAG-origin
+            // decision source/path/route mode established on this turn.
+            foreach ([
+                'decision_source' => 'decision_source',
+                'decision_path' => 'decision_path',
+                'preclassified_route_mode' => 'route_mode',
+            ] as $optionKey => $metadataKey) {
+                if (!empty($context->metadata[$metadataKey])) {
+                    $rerouteOptions[$optionKey] = $context->metadata[$metadataKey];
+                }
+            }
 
             return $reroute($newMessage, $context->sessionId, $context->userId, $rerouteOptions);
         }
@@ -185,13 +199,19 @@ If the user asks about their own profile/account details, answer using the authe
 PROMPT;
         }
 
-        $aiResponse = $this->ai->generate(new AIRequest(
+        $request = new AIRequest(
             prompt: $prompt,
             engine: EngineEnum::from($options['engine'] ?? 'openai'),
             model: EntityEnum::from($options['model'] ?? 'gpt-4o-mini'),
             maxTokens: (int) ($options['max_tokens'] ?? config('ai-agent.conversational.max_tokens', 200)),
             temperature: 0.7,
-        ));
+        );
+
+        if ($this->shouldStreamFinalResponse($options)) {
+            return $this->streamConversational($request, $context, $options);
+        }
+
+        $aiResponse = $this->ai->generate($request);
 
         if (!$aiResponse->isSuccessful()) {
             return AgentResponse::failure(
@@ -212,6 +232,85 @@ PROMPT;
             message: $content,
             context: $context
         );
+    }
+
+    /**
+     * Whether the conversational final reply should be streamed token-by-token
+     * into the run's event stream. Gated default-off and only active when this
+     * turn runs inside an agent run (run/step context is present in $options).
+     */
+    protected function shouldStreamFinalResponse(array $options): bool
+    {
+        if (empty($options['agent_run_id'])) {
+            return false;
+        }
+
+        if (array_key_exists('streaming', $options)) {
+            return (bool) $options['streaming'];
+        }
+
+        return (bool) config('ai-agent.final_response_streaming.enabled', false);
+    }
+
+    /**
+     * Generate the conversational reply via the streaming seam, mirroring every
+     * token into the run event stream (FINAL_RESPONSE_TOKEN_STREAMED ...
+     * FINAL_RESPONSE_STREAM_COMPLETED) and reassembling the streamed tokens into
+     * the same fully-formed AgentResponse the synchronous path would return.
+     */
+    protected function streamConversational(
+        AIRequest $request,
+        UnifiedActionContext $context,
+        array $options
+    ): AgentResponse {
+        $metadata = array_filter([
+            'trace_id' => $options['trace_id'] ?? null,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+
+        try {
+            $content = '';
+            foreach ($this->finalResponseStreaming()->stream(
+                $request,
+                $options['agent_run_id'] ?? null,
+                $options['agent_run_step_id'] ?? null,
+                $metadata
+            ) as $token) {
+                $content .= $token;
+            }
+        } catch (\Throwable $e) {
+            Log::channel('ai-engine')->warning('Conversational final-response streaming failed; falling back to synchronous generate', [
+                'session_id' => $context->sessionId,
+                'error' => $e->getMessage(),
+            ]);
+
+            $aiResponse = $this->ai->generate($request);
+            if (!$aiResponse->isSuccessful()) {
+                return AgentResponse::failure(
+                    message: $aiResponse->getError() ?: 'AI engine failed to generate a response.',
+                    context: $context
+                );
+            }
+
+            $content = $aiResponse->getContent();
+        }
+
+        $content = trim($content);
+        if ($content === '') {
+            return AgentResponse::failure(
+                message: 'AI engine returned an empty response.',
+                context: $context
+            );
+        }
+
+        return AgentResponse::conversational(
+            message: $content,
+            context: $context
+        );
+    }
+
+    protected function finalResponseStreaming(): AgentFinalResponseStreamingService
+    {
+        return $this->finalResponseStreaming ??= app(AgentFinalResponseStreamingService::class);
     }
 
     protected function recordRoutingMetadata(UnifiedActionContext $context, array $options): void

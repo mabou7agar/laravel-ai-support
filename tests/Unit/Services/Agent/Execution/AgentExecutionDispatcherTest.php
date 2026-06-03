@@ -208,6 +208,59 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         $this->assertStringContainsString('blocked by execution policy', $response->message);
     }
 
+    public function test_blocked_tool_marks_policy_metadata_and_records_audit(): void
+    {
+        config()->set('ai-agent.execution_policy.tool_deny', ['dangerous_tool']);
+
+        $action = Mockery::mock(AgentActionExecutionService::class);
+        $action->shouldNotReceive('executeUseTool');
+
+        $audit = Mockery::mock(ProviderToolAuditService::class);
+        $audit->shouldReceive('record')
+            ->once()
+            ->withArgs(static fn (string $event, mixed $_run, mixed $_approval, array $payload): bool => $event === 'agent_policy.blocked'
+                && ($payload['policy_blocked'] ?? null) === true
+                && ($payload['blocked_type'] ?? null) === 'tool'
+                && ($payload['blocked_resource'] ?? null) === 'dangerous_tool');
+
+        $response = (new AgentExecutionDispatcher(
+            $action,
+            Mockery::mock(AgentConversationService::class),
+            Mockery::mock(NodeSessionManager::class),
+            Mockery::mock(GoalAgentService::class),
+            $audit
+        ))->dispatch(
+            $this->decision(RoutingDecisionAction::USE_TOOL, ['tool_name' => 'dangerous_tool']),
+            'run dangerous tool',
+            $this->context()
+        );
+
+        $this->assertFalse($response->success);
+        $this->assertStringContainsString('blocked by execution policy', $response->message);
+        $this->assertTrue($response->metadata['policy_blocked'] ?? false);
+        $this->assertSame('tool', $response->metadata['blocked_type'] ?? null);
+        $this->assertSame('dangerous_tool', $response->metadata['blocked_resource'] ?? null);
+    }
+
+    public function test_blocked_node_marks_policy_metadata(): void
+    {
+        config()->set('ai-agent.execution_policy.node_deny', ['invoice']);
+
+        $node = Mockery::mock(NodeSessionManager::class);
+        $node->shouldNotReceive('routeToNode');
+
+        $response = $this->dispatcher(nodeSessionManager: $node)->dispatch(
+            $this->decision(RoutingDecisionAction::ROUTE_TO_NODE, ['node_slug' => 'invoice']),
+            'show invoice 5',
+            $this->context()
+        );
+
+        $this->assertFalse($response->success);
+        $this->assertTrue($response->metadata['policy_blocked'] ?? false);
+        $this->assertSame('node', $response->metadata['blocked_type'] ?? null);
+        $this->assertSame('invoice', $response->metadata['blocked_resource'] ?? null);
+    }
+
     public function test_dispatches_sub_agent_decision(): void
     {
         $context = $this->context();
@@ -334,6 +387,70 @@ class AgentExecutionDispatcherTest extends UnitTestCase
 
         $this->assertFalse($response->success);
         $this->assertStringContainsString('blocked by execution policy', $response->message);
+    }
+
+    public function test_node_fallback_sets_structured_fallback_metadata(): void
+    {
+        config()->set('ai-engine.nodes.routing.local_fallback_on_failure', true);
+
+        $context = $this->context();
+        $node = Mockery::mock(NodeSessionManager::class);
+        $node->shouldReceive('routeToNode')
+            ->once()
+            ->andReturn(AgentResponse::failure("Sorry, I couldn't reach remote node right now.", context: $context));
+
+        $conversation = Mockery::mock(AgentConversationService::class);
+        $conversation->shouldReceive('executeSearchRAG')
+            ->once()
+            ->andReturn(AgentResponse::success('Here are local results.', context: $context));
+
+        $response = $this->dispatcher(conversationService: $conversation, nodeSessionManager: $node)->dispatch(
+            $this->decision(RoutingDecisionAction::ROUTE_TO_NODE, ['node_slug' => 'invoice']),
+            'show invoice 5',
+            $context
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertTrue($response->metadata['fallback_mode'] ?? false);
+        $this->assertSame('remote_node_unreachable', $response->metadata['fallback_reason'] ?? null);
+        $this->assertSame('invoice', $response->metadata['original_resource'] ?? null);
+        $this->assertStringContainsString('Here are local results.', $response->message);
+    }
+
+    public function test_audit_stream_emit_failure_does_not_halt_tool_execution(): void
+    {
+        $context = $this->context();
+        $expected = AgentResponse::success('Tool used.', context: $context);
+
+        $action = Mockery::mock(AgentActionExecutionService::class);
+        $action->shouldReceive('executeUseTool')->once()->andReturn($expected);
+
+        $audit = Mockery::mock(ProviderToolAuditService::class);
+        $audit->shouldReceive('record');
+
+        $stream = Mockery::mock(AgentRunEventStreamService::class);
+        $stream->shouldReceive('emit')->andThrow(new \RuntimeException('stream down'));
+        $this->app->instance(AgentRunEventStreamService::class, $stream);
+
+        \Illuminate\Support\Facades\Log::shouldReceive('channel')->andReturnSelf();
+        \Illuminate\Support\Facades\Log::shouldReceive('warning')->atLeast()->once();
+        \Illuminate\Support\Facades\Log::shouldReceive('info');
+        \Illuminate\Support\Facades\Log::shouldReceive('debug');
+        \Illuminate\Support\Facades\Log::shouldReceive('error');
+
+        $response = (new AgentExecutionDispatcher(
+            $action,
+            Mockery::mock(AgentConversationService::class),
+            Mockery::mock(NodeSessionManager::class),
+            Mockery::mock(GoalAgentService::class),
+            $audit
+        ))->dispatch(
+            $this->decision(RoutingDecisionAction::USE_TOOL, ['resource_name' => 'data_query']),
+            'list tasks',
+            $context
+        );
+
+        $this->assertSame($expected, $response);
     }
 
     public function test_dispatches_need_user_input_decision(): void

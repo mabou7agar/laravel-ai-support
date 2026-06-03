@@ -28,8 +28,25 @@ class SendMessageDTO
         public readonly ?int $responseSuggestionLimit = null,
         public readonly ?array $collection = null,
         public readonly ?string $executionMode = null,
-        public readonly bool $async = false
+        public readonly bool $async = false,
+        public readonly ?string $highlightContext = null
     ) {}
+
+    /**
+     * The message to send to the model, with any highlight-to-ask context
+     * (a span the user selected from a previous response) prepended as a quote.
+     * Falls back to the raw message when no highlight context is supplied.
+     */
+    public function composedMessage(): string
+    {
+        $highlight = is_string($this->highlightContext) ? trim($this->highlightContext) : '';
+
+        if ($highlight === '') {
+            return $this->message;
+        }
+
+        return "Regarding this selected text:\n\"{$highlight}\"\n\n{$this->message}";
+    }
 
     public function toArray(): array
     {

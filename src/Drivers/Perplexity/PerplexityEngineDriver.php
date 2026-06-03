@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Drivers\Perplexity;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use LaravelAIEngine\Drivers\BaseEngineDriver;
+use LaravelAIEngine\Drivers\Concerns\ParsesSseStream;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
@@ -14,6 +15,8 @@ use LaravelAIEngine\Enums\EntityEnum;
 
 class PerplexityEngineDriver extends BaseEngineDriver
 {
+    use ParsesSseStream;
+
     private Client $httpClient;
 
     public function __construct(array $config)
@@ -25,6 +28,16 @@ class PerplexityEngineDriver extends BaseEngineDriver
             'base_uri' => $this->getBaseUrl(),
             'headers' => $this->buildHeaders(),
         ]);
+    }
+
+    /**
+     * Override the underlying HTTP client (primarily for testing).
+     */
+    public function setHttpClient(Client $client): self
+    {
+        $this->httpClient = $client;
+
+        return $this;
     }
 
     /**
@@ -131,7 +144,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
 
             // Add Perplexity-specific metadata
             if (!empty($citations)) {
-                $detailedUsage = $aiResponse->getDetailedUsage() ?? [];
+                $detailedUsage = $aiResponse->getUsage() ?? [];
                 $detailedUsage['citations'] = $citations;
                 $detailedUsage['sources_count'] = count($citations);
                 $detailedUsage['search_performed'] = true;
@@ -167,21 +180,7 @@ class PerplexityEngineDriver extends BaseEngineDriver
                 'stream' => true,
             ]);
 
-            $stream = $response->getBody();
-            while (!$stream->eof()) {
-                $line = trim($stream->read(1024));
-                if (strpos($line, 'data: ') === 0) {
-                    $jsonData = substr($line, 6);
-                    if ($jsonData === '[DONE]') {
-                        break;
-                    }
-                    
-                    $data = json_decode($jsonData, true);
-                    if (isset($data['choices'][0]['delta']['content'])) {
-                        yield $data['choices'][0]['delta']['content'];
-                    }
-                }
-            }
+            yield from $this->parseSseContentStream($response->getBody());
 
         } catch (\Exception $e) {
             throw new \RuntimeException('Perplexity streaming error: ' . $e->getMessage());

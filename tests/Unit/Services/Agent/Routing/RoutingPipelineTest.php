@@ -69,6 +69,85 @@ class RoutingPipelineTest extends UnitTestCase
         Event::assertDispatched(AgentRunStreamed::class, fn (AgentRunStreamed $event): bool => $event->event['name'] === 'routing.decided');
     }
 
+    public function test_pipeline_synthesizes_fallback_with_skipped_trace_when_all_stages_abstain(): void
+    {
+        $pipeline = new RoutingPipeline([
+            new TestRoutingStage('first', null),
+            new TestRoutingStage('second', null),
+        ]);
+
+        $trace = $pipeline->decide('hello there', new UnifiedActionContext('all-abstain-session'));
+
+        $this->assertNotNull($trace->selected);
+        $this->assertSame(RoutingDecisionAction::CONVERSATIONAL, $trace->selected->action);
+        $this->assertSame(RoutingDecisionSource::FALLBACK, $trace->selected->source);
+
+        $skipped = $trace->selected->metadata['skipped_stages'] ?? null;
+        $this->assertIsArray($skipped);
+        $this->assertCount(2, $skipped);
+        $this->assertSame(['first', 'second'], array_column($skipped, 'stage'));
+        $this->assertSame(
+            [RoutingDecisionAction::ABSTAIN, RoutingDecisionAction::ABSTAIN],
+            array_column($skipped, 'action')
+        );
+    }
+
+    public function test_backward_pass_prefers_high_confidence_over_earlier_low_confidence(): void
+    {
+        $pipeline = new RoutingPipeline([
+            new TestRoutingStage('low', new RoutingDecision(
+                action: RoutingDecisionAction::SEARCH_RAG,
+                source: RoutingDecisionSource::CLASSIFIER,
+                confidence: 'low',
+                reason: 'weak guess'
+            )),
+            new TestRoutingStage('medium', new RoutingDecision(
+                action: RoutingDecisionAction::ROUTE_TO_NODE,
+                source: RoutingDecisionSource::CLASSIFIER,
+                confidence: 'medium',
+                reason: 'medium guess'
+            )),
+            new TestRoutingStage('high', new RoutingDecision(
+                action: RoutingDecisionAction::USE_TOOL,
+                source: RoutingDecisionSource::AI_ROUTER,
+                confidence: 'high',
+                reason: 'confident'
+            )),
+        ]);
+
+        $trace = $pipeline->decide('do the thing', new UnifiedActionContext('backward-high-session'));
+
+        // Forward loop returns the high-confidence decision before reaching the backward pass.
+        $this->assertSame(RoutingDecisionAction::USE_TOOL, $trace->selected->action);
+        $this->assertCount(3, $trace->decisions);
+    }
+
+    public function test_backward_pass_falls_back_to_any_non_abstention_when_no_high_confidence(): void
+    {
+        $pipeline = new RoutingPipeline([
+            new TestRoutingStage('low', new RoutingDecision(
+                action: RoutingDecisionAction::SEARCH_RAG,
+                source: RoutingDecisionSource::CLASSIFIER,
+                confidence: 'low',
+                reason: 'weak guess'
+            )),
+            new TestRoutingStage('medium', new RoutingDecision(
+                action: RoutingDecisionAction::ROUTE_TO_NODE,
+                source: RoutingDecisionSource::CLASSIFIER,
+                confidence: 'medium',
+                reason: 'medium guess'
+            )),
+            new TestRoutingStage('abstainer', null),
+        ]);
+
+        $trace = $pipeline->decide('do the thing', new UnifiedActionContext('backward-any-session'));
+
+        // No high-confidence decision exists, so the second backward pass selects the
+        // last non-abstention (the medium-confidence stage), not the first.
+        $this->assertSame(RoutingDecisionAction::ROUTE_TO_NODE, $trace->selected->action);
+        $this->assertSame('medium', $trace->selected->confidence);
+    }
+
     public function test_pipeline_resolves_stage_order_from_config(): void
     {
         $pipeline = $this->app->make(RoutingPipeline::class);

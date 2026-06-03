@@ -216,58 +216,60 @@ class CreditManager
      */
     public function deductCredits(string $userId, AIRequest $request, float $actualCreditsUsed = null): bool
     {
-        $user = $this->getUserModel($userId);
-        
         $creditsToDeduct = $actualCreditsUsed ?? $this->calculateCredits($request);
 
-        if ($this->usesEntityCreditLedger($user)) {
-            $entry = $this->getEntityCreditEntry($user, $request->engine, $request->model);
-            if (($entry['is_unlimited'] ?? false) === true) {
+        // Serialize the balance read-modify-write under a row lock so concurrent
+        // deductions for the same owner cannot lose updates / over-spend.
+        return $this->mutateOwnerCredits($userId, function (Model $user) use ($request, $creditsToDeduct): bool {
+            if ($this->usesEntityCreditLedger($user)) {
+                $entry = $this->getEntityCreditEntry($user, $request->engine, $request->model);
+                if (($entry['is_unlimited'] ?? false) === true) {
+                    return true;
+                }
+
+                $currentBalance = (float) ($entry['balance'] ?? 0.0);
+                if ($currentBalance < $creditsToDeduct) {
+                    throw new InsufficientCreditsException(
+                        "Insufficient credits. Required: {$creditsToDeduct}, Available: {$currentBalance}"
+                    );
+                }
+
+                $this->setEntityCreditEntry(
+                    $user,
+                    $request->engine,
+                    $request->model,
+                    $currentBalance - $creditsToDeduct,
+                    false
+                );
+
                 return true;
             }
 
-            $currentBalance = (float) ($entry['balance'] ?? 0.0);
+            // Use custom lifecycle handler if configured
+            $handler = $this->getLifecycleHandler();
+            if ($handler) {
+                return $handler->deductCredits($user, $request, $creditsToDeduct);
+            }
+
+            if (!$this->supportsScalarCreditFields($user)) {
+                return true;
+            }
+
+            // Default behavior
+            // Don't deduct if unlimited
+            if ($this->readUnlimitedCreditsFlag($user)) {
+                return true;
+            }
+
+            $currentBalance = $this->readScalarCreditBalance($user);
             if ($currentBalance < $creditsToDeduct) {
                 throw new InsufficientCreditsException(
-                    "Insufficient credits. Required: {$creditsToDeduct}, Available: {$currentBalance}"
+                    "Insufficient MyCredits. Required: {$creditsToDeduct}, Available: {$currentBalance}"
                 );
             }
 
-            $this->setEntityCreditEntry(
-                $user,
-                $request->engine,
-                $request->model,
-                $currentBalance - $creditsToDeduct,
-                false
-            );
-
-            return true;
-        }
-        
-        // Use custom lifecycle handler if configured
-        $handler = $this->getLifecycleHandler();
-        if ($handler) {
-            return $handler->deductCredits($user, $request, $creditsToDeduct);
-        }
-
-        if (!$this->supportsScalarCreditFields($user)) {
-            return true;
-        }
-        
-        // Default behavior
-        // Don't deduct if unlimited
-        if ($this->readUnlimitedCreditsFlag($user)) {
-            return true;
-        }
-        
-        $currentBalance = $this->readScalarCreditBalance($user);
-        if ($currentBalance < $creditsToDeduct) {
-            throw new InsufficientCreditsException(
-                "Insufficient MyCredits. Required: {$creditsToDeduct}, Available: {$currentBalance}"
-            );
-        }
-
-        return $this->writeScalarCreditState($user, $currentBalance - $creditsToDeduct, false);
+            return $this->writeScalarCreditState($user, $currentBalance - $creditsToDeduct, false);
+        });
     }
 
     /**
@@ -364,32 +366,35 @@ class CreditManager
         EntityEnum|string|null $model = null
     ): bool
     {
-        $user = $this->getUserModel($userId);
         $engine = $engine === null ? null : $this->resolveEngine($engine);
         $model = $model === null ? null : $this->resolveModel($model);
 
-        if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
-            $entry = $this->getEntityCreditEntry($user, $engine, $model);
-            $this->setEntityCreditEntry(
-                $user,
-                $engine,
-                $model,
-                (float) ($entry['balance'] ?? 0.0) + $credits,
-                (bool) ($entry['is_unlimited'] ?? false)
-            );
+        // Serialize the balance read-modify-write under a row lock so concurrent
+        // credit grants for the same owner cannot lose updates.
+        return $this->mutateOwnerCredits($userId, function (Model $user) use ($credits, $metadata, $engine, $model): bool {
+            if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
+                $entry = $this->getEntityCreditEntry($user, $engine, $model);
+                $this->setEntityCreditEntry(
+                    $user,
+                    $engine,
+                    $model,
+                    (float) ($entry['balance'] ?? 0.0) + $credits,
+                    (bool) ($entry['is_unlimited'] ?? false)
+                );
 
-            return true;
-        }
-        
-        // Use custom lifecycle handler if configured
-        $handler = $this->getLifecycleHandler();
-        if ($handler) {
-            return $handler->addCredits($user, $credits, $metadata);
-        }
-        
-        // Default behavior
-        $user->my_credits += $credits;
-        return $user->save();
+                return true;
+            }
+
+            // Use custom lifecycle handler if configured
+            $handler = $this->getLifecycleHandler();
+            if ($handler) {
+                return $handler->addCredits($user, $credits, $metadata);
+            }
+
+            // Default behavior
+            $user->my_credits += $credits;
+            return $user->save();
+        });
     }
 
     /**
@@ -402,17 +407,18 @@ class CreditManager
         EntityEnum|string|null $model = null
     ): bool
     {
-        $user = $this->getUserModel($userId);
         $engine = $engine === null ? null : $this->resolveEngine($engine);
         $model = $model === null ? null : $this->resolveModel($model);
 
-        if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
-            $this->setEntityCreditEntry($user, $engine, $model, $credits, false);
-            return true;
-        }
+        return $this->mutateOwnerCredits($userId, function (Model $user) use ($credits, $engine, $model): bool {
+            if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
+                $this->setEntityCreditEntry($user, $engine, $model, $credits, false);
+                return true;
+            }
 
-        $user->my_credits = $credits;
-        return $user->save();
+            $user->my_credits = $credits;
+            return $user->save();
+        });
     }
 
     /**
@@ -425,25 +431,26 @@ class CreditManager
         EntityEnum|string|null $model = null
     ): bool
     {
-        $user = $this->getUserModel($userId);
-
         $engine = $engine === null ? null : $this->resolveEngine($engine);
         $model = $model === null ? null : $this->resolveModel($model);
-        if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
-            $entry = $this->getEntityCreditEntry($user, $engine, $model);
-            $this->setEntityCreditEntry(
-                $user,
-                $engine,
-                $model,
-                (float) ($entry['balance'] ?? config('ai-engine.credits.default_balance', 100.0)),
-                $unlimited
-            );
 
-            return true;
-        }
+        return $this->mutateOwnerCredits($userId, function (Model $user) use ($unlimited, $engine, $model): bool {
+            if ($engine !== null && $model !== null && $this->usesEntityCreditLedger($user)) {
+                $entry = $this->getEntityCreditEntry($user, $engine, $model);
+                $this->setEntityCreditEntry(
+                    $user,
+                    $engine,
+                    $model,
+                    (float) ($entry['balance'] ?? config('ai-engine.credits.default_balance', 100.0)),
+                    $unlimited
+                );
 
-        $user->has_unlimited_credits = $unlimited;
-        return $user->save();
+                return true;
+            }
+
+            $user->has_unlimited_credits = $unlimited;
+            return $user->save();
+        });
     }
 
     /**
@@ -736,33 +743,33 @@ class CreditManager
      */
     public function resetCredits(string $userId): bool
     {
-        $user = $this->getUserModel($userId);
+        return $this->mutateOwnerCredits($userId, function (Model $user): bool {
+            if ($this->usesEntityCreditLedger($user)) {
+                $ledger = $this->getEntityCreditLedger($user);
+                $defaultBalance = (float) config('ai-engine.credits.default_balance', 100.0);
 
-        if ($this->usesEntityCreditLedger($user)) {
-            $ledger = $this->getEntityCreditLedger($user);
-            $defaultBalance = (float) config('ai-engine.credits.default_balance', 100.0);
-
-            foreach ($ledger as $engine => $engineCredits) {
-                if (!is_array($engineCredits)) {
-                    continue;
-                }
-
-                foreach ($engineCredits as $model => $modelCredits) {
-                    if (!is_array($modelCredits)) {
+                foreach ($ledger as $engine => $engineCredits) {
+                    if (!is_array($engineCredits)) {
                         continue;
                     }
-                    $ledger[$engine][$model]['balance'] = $defaultBalance;
-                    $ledger[$engine][$model]['is_unlimited'] = false;
+
+                    foreach ($engineCredits as $model => $modelCredits) {
+                        if (!is_array($modelCredits)) {
+                            continue;
+                        }
+                        $ledger[$engine][$model]['balance'] = $defaultBalance;
+                        $ledger[$engine][$model]['is_unlimited'] = false;
+                    }
                 }
+
+                $user->entity_credits = $ledger;
+                return $user->save();
             }
 
-            $user->entity_credits = $ledger;
+            $user->my_credits = config('ai-engine.credits.default_balance', 100.0);
+            $user->has_unlimited_credits = false;
             return $user->save();
-        }
-
-        $user->my_credits = config('ai-engine.credits.default_balance', 100.0);
-        $user->has_unlimited_credits = false;
-        return $user->save();
+        });
     }
 
     private function requestEstimator(): CreditRequestEstimator
@@ -1058,6 +1065,54 @@ class CreditManager
      * @param string $ownerId The ID of the credit owner (user_id, tenant_id, workspace_id, etc.)
      * @return Model
      */
+    /**
+     * Run a credit-mutating read-modify-write against the owner row inside a
+     * database transaction, holding a row-level lock for the duration so that
+     * concurrent deductions serialize instead of racing (lost updates / over-spend).
+     *
+     * The owner is re-fetched with lockForUpdate() inside the transaction so the
+     * mutator always sees the freshest committed balance. If a locked re-fetch is
+     * not possible (e.g. an in-memory model or a driver without row locks) the
+     * originally resolved model is used, preserving identical non-concurrent behavior.
+     *
+     * @template TReturn
+     * @param  callable(Model): TReturn  $mutator
+     * @return TReturn
+     */
+    private function mutateOwnerCredits(string $ownerId, callable $mutator): mixed
+    {
+        return DB::transaction(function () use ($ownerId, $mutator) {
+            $user = $this->getUserModel($ownerId);
+            $locked = $this->lockOwnerRow($user);
+
+            return $mutator($locked ?? $user);
+        });
+    }
+
+    /**
+     * Re-fetch the given owner model with a row-level lock (SELECT ... FOR UPDATE)
+     * within the current transaction. Returns null when locking cannot be applied,
+     * letting callers fall back to the already-resolved instance.
+     */
+    private function lockOwnerRow(Model $user): ?Model
+    {
+        $key = $user->getKey();
+        if ($key === null) {
+            return null;
+        }
+
+        try {
+            $locked = $user->newQuery()
+                ->whereKey($key)
+                ->lockForUpdate()
+                ->first();
+
+            return $locked instanceof Model ? $locked : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     private function getUserModel(string $ownerId): Model
     {
         // Check for custom query resolver first

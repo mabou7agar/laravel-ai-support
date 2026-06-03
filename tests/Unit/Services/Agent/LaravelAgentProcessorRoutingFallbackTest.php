@@ -88,7 +88,7 @@ class LaravelAgentProcessorRoutingFallbackTest extends UnitTestCase
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);
         $finalizer->shouldReceive('finalize')
             ->once()
-            ->with($context, Mockery::type(AgentResponse::class))
+            ->with($context, Mockery::type(AgentResponse::class), Mockery::type('array'))
             ->andReturnUsing(fn (UnifiedActionContext $ctx, AgentResponse $response) => $response);
 
         $processor = new LaravelAgentProcessor(

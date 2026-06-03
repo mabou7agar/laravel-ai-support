@@ -6,6 +6,8 @@ namespace LaravelAIEngine\Services\Agent\Routing;
 
 use LaravelAIEngine\Contracts\RoutingStageContract;
 use LaravelAIEngine\DTOs\RoutingDecision;
+use LaravelAIEngine\DTOs\RoutingDecisionAction;
+use LaravelAIEngine\DTOs\RoutingDecisionSource;
 use LaravelAIEngine\DTOs\RoutingTrace;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
@@ -57,13 +59,31 @@ class RoutingPipeline
             ];
         }
 
-        foreach (array_reverse($trace->decisions) as $decision) {
+        $reversed = array_reverse($trace->decisions);
+
+        foreach ($reversed as $decision) {
+            if (!$decision->isAbstention() && $decision->confidence === 'high') {
+                return $trace->select($this->withSkippedStages($decision, $skipped));
+            }
+        }
+
+        foreach ($reversed as $decision) {
             if (!$decision->isAbstention()) {
                 return $trace->select($this->withSkippedStages($decision, $skipped));
             }
         }
 
-        return $trace;
+        return $trace->select($this->withSkippedStages($this->fallbackDecision(), $skipped));
+    }
+
+    protected function fallbackDecision(): RoutingDecision
+    {
+        return new RoutingDecision(
+            action: RoutingDecisionAction::CONVERSATIONAL,
+            source: RoutingDecisionSource::FALLBACK,
+            confidence: 'high',
+            reason: 'All routing stages abstained; defaulting to conversational handling.'
+        );
     }
 
     /**

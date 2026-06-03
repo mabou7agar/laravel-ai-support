@@ -2,8 +2,11 @@
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
+use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\ConversationMemoryItem;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
+use LaravelAIEngine\Services\Agent\ContextManager;
 use LaravelAIEngine\Services\Agent\ConversationContextCompactor;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryExtractor;
 use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPolicy;
@@ -96,6 +99,73 @@ class ConversationContextCompactorTest extends UnitTestCase
         $this->assertGreaterThan(0, $metrics['compacted_messages']);
         $this->assertSame($metrics['prompt_size_chars'], $context->metadata['conversation_context_metrics']['prompt_size_chars']);
         $this->assertGreaterThan($metrics['recent_memory_size_chars'], $context->metadata['conversation_context_metrics']['pre_compaction_history_size_chars']);
+    }
+
+    public function test_pre_compaction_size_survives_double_compaction_within_a_single_compact_call(): void
+    {
+        config()->set('ai-agent.context_compaction.enabled', true);
+        config()->set('ai-agent.context_compaction.max_messages', 6);
+        config()->set('ai-agent.context_compaction.keep_recent_messages', 4);
+        config()->set('ai-agent.context_compaction.max_message_chars', 500);
+
+        $compactor = app(ConversationContextCompactor::class);
+        $context = new UnifiedActionContext('double-compact-session', 7);
+
+        for ($i = 1; $i <= 8; $i++) {
+            $context->conversationHistory[] = [
+                'role' => $i % 2 === 0 ? 'assistant' : 'user',
+                'content' => "message {$i} about customer invoice flow",
+            ];
+        }
+
+        // First pass: actually compacts older messages.
+        $compactor->compact($context);
+        $preAfterFirst = $context->metadata['conversation_context_metrics']['pre_compaction_history_size_chars'];
+        $recentSize = $context->metadata['conversation_context_metrics']['recent_memory_size_chars'];
+
+        $this->assertGreaterThan($recentSize, $preAfterFirst);
+
+        // Second redundant pass (mirrors ContextManager::save() re-compacting an
+        // already-compacted context). It must NOT overwrite the pre-compaction
+        // size with the smaller post-compaction history size.
+        $compactor->compact($context);
+
+        $this->assertSame(
+            $preAfterFirst,
+            $context->metadata['conversation_context_metrics']['pre_compaction_history_size_chars']
+        );
+    }
+
+    public function test_finalize_then_save_records_pre_compaction_history_size(): void
+    {
+        config()->set('ai-agent.context_compaction.enabled', true);
+        config()->set('ai-agent.context_compaction.max_messages', 6);
+        config()->set('ai-agent.context_compaction.keep_recent_messages', 4);
+        config()->set('ai-agent.context_compaction.max_message_chars', 500);
+
+        $finalizer = new AgentResponseFinalizer(new ContextManager());
+        $context = new UnifiedActionContext('finalize-double-compact', 7);
+
+        for ($i = 1; $i <= 8; $i++) {
+            $context->conversationHistory[] = [
+                'role' => $i % 2 === 0 ? 'assistant' : 'user',
+                'content' => "message {$i} about customer invoice flow",
+            ];
+        }
+
+        $response = AgentResponse::success('Final answer.', context: $context);
+
+        // finalize() compacts and then ContextManager::save() compacts again.
+        $finalizer->finalize($context, $response);
+
+        $metrics = $context->metadata['conversation_context_metrics'];
+
+        // pre_compaction_history_size_chars must reflect the PRE-compaction history
+        // (8 messages + the appended assistant message), not the trimmed recent set.
+        $this->assertGreaterThan(
+            $metrics['recent_memory_size_chars'],
+            $metrics['pre_compaction_history_size_chars']
+        );
     }
 
     public function test_it_extracts_durable_memories_only_when_context_is_compacted(): void

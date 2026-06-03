@@ -496,6 +496,112 @@ class OpenAIEngineDriver extends BaseEngineDriver
     }
 
     /**
+     * Image-editing operations via the OpenAI Images API. Plugs into the unified
+     * ImageOperationService: variation/reimagine -> images/variations,
+     * everything else (edit/inpaint/generative_fill/cleanup) -> images/edits.
+     */
+    public function editImage(AIRequest $request): AIResponse
+    {
+        $params = $request->getParameters();
+        $operation = (string) ($params['operation'] ?? 'edit');
+        $size = (string) ($params['size'] ?? '1024x1024');
+
+        try {
+            if (in_array($operation, ['variation', 'reimagine'], true)) {
+                $response = $this->openAIClient->images()->variation(array_filter([
+                    'image' => $this->imageEditResource($params['image'] ?? null, 'image'),
+                    'n' => 1,
+                    'size' => $size,
+                    'model' => $params['model'] ?? null,
+                ], static fn ($value) => $value !== null));
+            } else {
+                $response = $this->openAIClient->images()->edit(array_filter([
+                    'image' => $this->imageEditResource($params['image'] ?? null, 'image'),
+                    'mask' => isset($params['mask']) ? $this->imageEditResource($params['mask'], 'mask') : null,
+                    'prompt' => (string) ($params['prompt'] ?? $request->getPrompt()),
+                    'model' => $params['model'] ?? 'gpt-image-1',
+                    'n' => 1,
+                    'size' => $size,
+                ], static fn ($value) => $value !== null));
+            }
+
+            $storedImages = array_map(fn ($image) => $this->storeEditedImage($image, $request), $response->data);
+            $imageUrls = array_values(array_filter(array_map(
+                static fn (array $image): ?string => $image['url'] ?? $image['source_url'] ?? null,
+                $storedImages
+            )));
+
+            return AIResponse::success($request->getPrompt(), $request->getEngine(), $request->getModel())
+                ->withFiles($imageUrls)
+                ->withMetadata(['operation' => $operation, 'images' => $storedImages])
+                ->withUsage(creditsUsed: $request->getModel()->creditIndex());
+        } catch (\InvalidArgumentException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('OpenAI image edit error: ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * @return resource
+     */
+    private function imageEditResource(mixed $value, string $field)
+    {
+        if (!is_string($value) || $value === '') {
+            throw new \InvalidArgumentException("OpenAI image edit requires a '{$field}' image.");
+        }
+
+        if (str_starts_with($value, 'data:')) {
+            $comma = strpos($value, ',');
+            $value = $comma !== false ? substr($value, $comma + 1) : $value;
+        }
+
+        if (strlen($value) < 1024 && @is_file($value)) {
+            $contents = (string) file_get_contents($value);
+        } else {
+            $decoded = base64_decode($value, true);
+            $contents = ($decoded !== false && base64_encode($decoded) === $value) ? $decoded : $value;
+        }
+
+        $resource = fopen('php://temp', 'r+');
+        fwrite($resource, $contents);
+        rewind($resource);
+
+        return $resource;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function storeEditedImage(object $image, AIRequest $request): array
+    {
+        $attributes = [
+            'engine' => $request->getEngine()->value,
+            'ai_model' => $request->getModel()->value,
+            'content_type' => 'image',
+            'collection_name' => 'edited-images',
+            'name' => 'openai-image-edit',
+            'extension' => 'png',
+            'mime_type' => 'image/png',
+        ];
+
+        if (($image->url ?? '') !== '') {
+            return app(AIMediaManager::class)->storeRemoteFile($image->url, $attributes);
+        }
+
+        if (($image->b64_json ?? '') !== '') {
+            $contents = base64_decode($image->b64_json, true);
+            if ($contents === false) {
+                throw new \RuntimeException('OpenAI image edit response included an invalid base64 payload.');
+            }
+
+            return app(AIMediaManager::class)->storeBinary($contents, 'openai-edit-' . Str::uuid() . '.png', $attributes);
+        }
+
+        throw new \RuntimeException('OpenAI image edit response did not include a URL or base64 payload.');
+    }
+
+    /**
      * Implementation-specific text to speech generation.
      */
     protected function doGenerateAudio(AIRequest $request): AIResponse
@@ -716,7 +822,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
      */
     protected function getSupportedCapabilities(): array
     {
-        return ['text', 'chat', 'images', 'audio', 'embeddings', 'vision', 'streaming', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'];
+        return ['text', 'chat', 'images', 'image_edit', 'audio', 'embeddings', 'vision', 'streaming', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'];
     }
 
     /**

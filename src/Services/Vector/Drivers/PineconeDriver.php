@@ -288,11 +288,80 @@ class PineconeDriver implements VectorDriverInterface
         // Pinecone doesn't have native scroll/pagination
         // This is a simplified implementation using list operation
         Log::warning('Pinecone scroll operation is limited - consider using search with filters instead');
-        
+
         return [
             'points' => [],
             'next_offset' => null,
         ];
+    }
+
+    /**
+     * Get all matching model IDs from the index (optionally filtered)
+     *
+     * Pinecone has no native scroll, so we issue a metadata-only query with a
+     * zero vector and a large topK, then collect + dedupe the underlying model
+     * ids from metadata.model_id (falling back to the point id), mirroring the
+     * semantics of QdrantDriver::getMatchingIds().
+     *
+     * @param string $collection Collection name
+     * @param array $filters Optional metadata filters
+     * @return array Deduplicated array of model IDs
+     */
+    public function getMatchingIds(string $collection, array $filters = []): array
+    {
+        try {
+            $indexHost = $this->getIndexHost($collection);
+            if (!$indexHost) {
+                return [];
+            }
+
+            // Determine vector dimension so we can send a (zero) query vector.
+            $stats = json_decode(
+                $this->client->get("{$indexHost}/describe_index_stats")->getBody()->getContents(),
+                true
+            );
+            $dimension = (int) ($stats['dimension'] ?? 0);
+            $topK = max(1, (int) ($stats['totalVectorCount'] ?? 0));
+            // Pinecone caps topK at 10000 per query.
+            $topK = min($topK ?: 10000, 10000);
+
+            if ($dimension <= 0) {
+                return [];
+            }
+
+            $body = [
+                'vector' => array_fill(0, $dimension, 0.0),
+                'topK' => $topK,
+                'includeMetadata' => true,
+                'includeValues' => false,
+            ];
+
+            if (!empty($filters)) {
+                $body['filter'] = $filters;
+            }
+
+            $response = $this->client->post("{$indexHost}/query", [
+                'json' => $body,
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            $ids = [];
+            foreach ($data['matches'] ?? [] as $match) {
+                $modelId = $match['metadata']['model_id'] ?? $match['id'] ?? null;
+                if ($modelId !== null) {
+                    $ids[] = $modelId;
+                }
+            }
+
+            return array_values(array_unique($ids));
+        } catch (GuzzleException $e) {
+            Log::error('Pinecone getMatchingIds failed', [
+                'index' => $collection,
+                'error' => $e->getMessage(),
+            ]);
+            return [];
+        }
     }
 
     /**

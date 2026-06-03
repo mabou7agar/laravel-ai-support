@@ -77,6 +77,54 @@ class IntentRouterTest extends TestCase
         $this->assertStringContainsString('Respond with JSON ONLY', $capturedPrompt);
     }
 
+    public function test_route_surfaces_capability_counts_for_diagnostics(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')->once()->andReturn(AIResponse::success(
+            '{"action":"conversational","reasoning":"general chat"}',
+            EngineEnum::from('openai'),
+            EntityEnum::from('gpt-4o-mini')
+        ));
+
+        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+
+        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $decision = $router->route('hello there', new UnifiedActionContext('cap-counts', null), [
+            'model_configs' => [],
+        ]);
+
+        $this->assertArrayHasKey('capability_counts', $decision);
+        $this->assertArrayHasKey('tools_count', $decision['capability_counts']);
+        $this->assertArrayHasKey('skills_count', $decision['capability_counts']);
+        $this->assertArrayHasKey('nodes_count', $decision['capability_counts']);
+        $this->assertSame(0, $decision['capability_counts']['nodes_count']);
+    }
+
+    public function test_unregistered_tool_choice_is_redirected_not_silently_executed(): void
+    {
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')->once()->andReturn(AIResponse::success(
+            '{"action":"use_tool","resource_name":"list_invoices","reasoning":"wants invoices"}',
+            EngineEnum::from('openai'),
+            EntityEnum::from('gpt-4o-mini')
+        ));
+
+        $nodes = Mockery::mock(NodeRegistryService::class);
+        $nodes->shouldReceive('getActiveNodes')->once()->andReturn(new Collection());
+
+        $router = new IntentRouter($ai, $nodes, new SelectedEntityContextService());
+        $decision = $router->route('list invoices please', new UnifiedActionContext('bad-tool', null), [
+            'model_configs' => [FakeInvoiceModelConfig::class],
+        ]);
+
+        // 'list_invoices' is not a registered tool, so it must not be passed to the
+        // executor (which would silently fall back). It is redirected + flagged.
+        $this->assertNotSame('list_invoices', $decision['resource_name'] ?? null);
+        $this->assertContains($decision['action'], ['search_rag', 'use_tool']);
+        $this->assertContains($decision['decision_source'] ?? '', ['unregistered_tool_redirect', 'structured_query_policy']);
+    }
+
     public function test_route_includes_remote_nodes_in_prompt(): void
     {
         $capturedPrompt = null;
@@ -180,6 +228,9 @@ class IntentRouterTest extends TestCase
         $this->assertSame('search_rag', $decision['action']);
         $this->assertNull($decision['resource_name']);
         $this->assertStringContainsString('forwarded request cannot re-route nodes', $decision['reasoning']);
+        $this->assertSame('forwarded_request_no_reroute', $decision['metadata']['policy_enforced'] ?? null);
+        $this->assertSame('route_to_node', $decision['metadata']['original_action'] ?? null);
+        $this->assertSame('crm', $decision['metadata']['original_resource_name'] ?? null);
     }
 
     public function test_local_only_mode_hides_remote_nodes_from_prompt(): void

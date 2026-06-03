@@ -41,13 +41,15 @@ class AgentResponse
     public static function failure(
         string $message,
         ?array $data = null,
-        ?UnifiedActionContext $context = null
+        ?UnifiedActionContext $context = null,
+        ?array $metadata = null
     ): self {
         return new self(
             success: false,
             message: $message,
             data: $data,
             context: $context,
+            metadata: $metadata,
             isComplete: true
         );
     }

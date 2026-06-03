@@ -186,13 +186,28 @@ class AgentRunSafetyService
     }
 
     /**
+     * Resolve the effective lock TTL so a run lock always outlives the queue
+     * job timeout. A lock that expires before the job finishes would let a
+     * retry execute the same run concurrently (duplicate steps, corrupt state),
+     * so the TTL is floored at the queue timeout plus a small buffer.
+     */
+    public function effectiveLockTtl(?int $ttlSeconds = null): int
+    {
+        $configured = max(1, $ttlSeconds ?? (int) config('ai-agent.run_safety.lock_ttl_seconds', 360));
+        $queueTimeout = max(0, (int) config('ai-agent.run_safety.queue.timeout', 300));
+        $buffer = max(0, (int) config('ai-agent.run_safety.lock_ttl_buffer_seconds', 60));
+
+        return max($configured, $queueTimeout + $buffer);
+    }
+
+    /**
      * @template TReturn
      * @param callable(): TReturn $callback
      * @return TReturn
      */
     protected function lock(string $key, callable $callback, ?int $ttlSeconds = null, ?int $waitSeconds = null): mixed
     {
-        $ttl = max(1, $ttlSeconds ?? (int) config('ai-agent.run_safety.lock_ttl_seconds', 60));
+        $ttl = $this->effectiveLockTtl($ttlSeconds);
         $wait = max(0, $waitSeconds ?? (int) config('ai-agent.run_safety.lock_wait_seconds', 5));
 
         return Cache::lock($key, $ttl)->block($wait, $callback);

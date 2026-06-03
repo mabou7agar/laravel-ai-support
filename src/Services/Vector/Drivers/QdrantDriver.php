@@ -22,9 +22,12 @@ class QdrantDriver implements VectorDriverInterface
 
     public function __construct(array $config = [])
     {
-        $this->host = $config['host'] ?? config('ai-engine.vector.drivers.qdrant.host', 'http://localhost:6333');
+        $this->host = (string) ($config['host'] ?? config('ai-engine.vector.drivers.qdrant.host', 'http://localhost:6333'));
         $this->apiKey = $config['api_key'] ?? config('ai-engine.vector.drivers.qdrant.api_key');
-        $this->timeout = $config['timeout'] ?? config('ai-engine.vector.drivers.qdrant.timeout', 30);
+        // Cast defensively: env-sourced config values arrive as strings and the
+        // property is typed int, which would otherwise throw a TypeError and make
+        // the whole vector driver (and therefore RAG retrieval) fail to construct.
+        $this->timeout = (int) ($config['timeout'] ?? config('ai-engine.vector.drivers.qdrant.timeout', 30));
 
         $headers = ['Content-Type' => 'application/json'];
         if ($this->apiKey) {

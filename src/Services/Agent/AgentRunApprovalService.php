@@ -121,7 +121,8 @@ class AgentRunApprovalService
     {
         $step = $this->steps->findOrFail((int) $approval->agent_run_step_id);
 
-        $step = $this->steps->transition($step, AIAgentRun::STATUS_PENDING, [
+        $step = $this->steps->transition($step, AIAgentRun::STATUS_COMPLETED, [
+            'completed_at' => now(),
             'metadata' => array_merge($step->metadata ?? [], [
                 'approval_approved_by' => $actorId,
             ]),

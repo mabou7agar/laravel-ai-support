@@ -150,4 +150,9 @@ class InMemoryConversationMemoryVectorDriver implements VectorDriverInterface
     {
         return [];
     }
+
+    public function getMatchingIds(string $collection, array $filters = []): array
+    {
+        return [];
+    }
 }

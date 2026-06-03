@@ -16,6 +16,7 @@ use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
 use LaravelAIEngine\Drivers\Midjourney\MidjourneyEngineDriver;
 use LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
+use LaravelAIEngine\Drivers\Grok\GrokEngineDriver;
 use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
 use LaravelAIEngine\Drivers\Perplexity\PerplexityEngineDriver;
 use LaravelAIEngine\Drivers\PlagiarismCheck\PlagiarismCheckEngineDriver;
@@ -24,6 +25,8 @@ use LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver;
 use LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver;
 use LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver;
 use LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver;
+use LaravelAIEngine\Drivers\Bedrock\BedrockEngineDriver;
+use LaravelAIEngine\Drivers\Clipdrop\ClipdropEngineDriver;
 use LaravelAIEngine\Drivers\Unsplash\UnsplashEngineDriver;
 use LaravelAIEngine\Drivers\Pexels\PexelsEngineDriver;
 use LaravelAIEngine\Drivers\LocalAudio\LocalAudioEngineDriver;
@@ -49,6 +52,7 @@ enum EngineEnum: string
     case Unsplash = 'unsplash';
     case Pexels = 'pexels';
     case OpenRouter = 'openrouter';
+    case Xai = 'xai';
     case Ollama = 'ollama';
     case NvidiaNim = 'nvidia_nim';
     case CloudflareWorkersAI = 'cloudflare_workers_ai';
@@ -56,6 +60,8 @@ enum EngineEnum: string
     case Replicate = 'replicate';
     case ComfyUI = 'comfyui';
     case LocalAudio = 'local_audio';
+    case Bedrock = 'bedrock';
+    case Clipdrop = 'clipdrop';
 
     public const OPENAI = 'openai';
     public const ANTHROPIC = 'anthropic';
@@ -73,6 +79,7 @@ enum EngineEnum: string
     public const UNSPLASH = 'unsplash';
     public const PEXELS = 'pexels';
     public const OPENROUTER = 'openrouter';
+    public const XAI = 'xai';
     public const OLLAMA = 'ollama';
     public const NVIDIA_NIM = 'nvidia_nim';
     public const CLOUDFLARE_WORKERS_AI = 'cloudflare_workers_ai';
@@ -80,6 +87,8 @@ enum EngineEnum: string
     public const REPLICATE = 'replicate';
     public const COMFYUI = 'comfyui';
     public const LOCAL_AUDIO = 'local_audio';
+    public const BEDROCK = 'bedrock';
+    public const CLIPDROP = 'clipdrop';
 
     /**
      * Get the driver class for this engine
@@ -103,6 +112,7 @@ enum EngineEnum: string
             self::FalAI              => FalAIEngineDriver::class,
             self::Midjourney         => MidjourneyEngineDriver::class,
             self::OpenRouter         => OpenRouterEngineDriver::class,
+            self::Xai                => GrokEngineDriver::class,
             self::Ollama             => OllamaEngineDriver::class,
             self::NvidiaNim          => NvidiaNimEngineDriver::class,
             self::CloudflareWorkersAI => CloudflareWorkersAIEngineDriver::class,
@@ -110,6 +120,8 @@ enum EngineEnum: string
             self::Replicate          => ReplicateEngineDriver::class,
             self::ComfyUI            => ComfyUIEngineDriver::class,
             self::LocalAudio         => LocalAudioEngineDriver::class,
+            self::Bedrock            => BedrockEngineDriver::class,
+            self::Clipdrop           => ClipdropEngineDriver::class,
         };
     }
 
@@ -135,6 +147,7 @@ enum EngineEnum: string
             self::Unsplash           => 'Unsplash',
             self::Pexels             => 'Pexels',
             self::OpenRouter         => 'OpenRouter',
+            self::Xai                => 'xAI Grok',
             self::Ollama             => 'Ollama (Local)',
             self::NvidiaNim          => 'NVIDIA NIM',
             self::CloudflareWorkersAI => 'Cloudflare Workers AI',
@@ -142,6 +155,8 @@ enum EngineEnum: string
             self::Replicate          => 'Replicate',
             self::ComfyUI            => 'ComfyUI',
             self::LocalAudio         => 'Local Audio',
+            self::Bedrock            => 'AWS Bedrock',
+            self::Clipdrop           => 'Clipdrop',
         };
     }
 
@@ -175,6 +190,7 @@ enum EngineEnum: string
             self::Unsplash           => ['images', 'search'],
             self::Pexels             => ['images', 'search'],
             self::OpenRouter         => ['text', 'chat', 'streaming', 'images', 'image_generation', 'vision', 'audio', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts', 'embeddings'],
+            self::Xai                => ['text', 'chat', 'streaming', 'vision'],
             self::Ollama             => ['text', 'chat', 'embeddings'],
             self::NvidiaNim          => ['text', 'chat', 'streaming'],
             self::CloudflareWorkersAI => ['images', 'audio', 'speech_to_text', 'text_to_speech'],
@@ -182,6 +198,8 @@ enum EngineEnum: string
             self::Replicate          => ['images', 'video', 'audio'],
             self::ComfyUI            => ['images', 'video', 'audio'],
             self::LocalAudio         => ['audio', 'speech', 'speech_to_text', 'text_to_speech', 'speech_to_speech', 'tts', 'sts'],
+            self::Bedrock            => ['text', 'chat'],
+            self::Clipdrop           => ['image', 'image_edit'],
         };
     }
 
@@ -273,6 +291,11 @@ enum EngineEnum: string
                 EntityEnum::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL,
                 EntityEnum::OPENROUTER_LLAMA_3_3_70B,
             ],
+            self::Xai => [
+                EntityEnum::GROK_4_1,
+                EntityEnum::GROK_4,
+                EntityEnum::GROK_3_1,
+            ],
             self::Ollama => [
                 EntityEnum::OLLAMA_LLAMA2,
                 EntityEnum::OLLAMA_LLAMA3,
@@ -287,6 +310,13 @@ enum EngineEnum: string
                 EntityEnum::NVIDIA_NIM_NEMOTRON_70B,
                 EntityEnum::NVIDIA_NIM_LLAMA_3_1_70B,
                 EntityEnum::NVIDIA_NIM_LLAMA_3_1_8B,
+            ],
+            self::Bedrock => [
+                EntityEnum::BEDROCK_CLAUDE_SONNET,
+                EntityEnum::BEDROCK_CLAUDE_HAIKU,
+            ],
+            self::Clipdrop => [
+                EntityEnum::CLIPDROP_IMAGE_EDIT,
             ],
             default => [],
         };

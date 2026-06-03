@@ -2,6 +2,7 @@
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
+use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\SelectedEntityContextService;
@@ -37,6 +38,12 @@ class AgentActionExecutionServiceToolConfigStub
                     'message' => 'Tool parameters received.',
                     'data' => $params,
                 ],
+            ],
+            'throwing_stub_action' => [
+                'parameters' => [],
+                'handler' => static function (): array {
+                    throw new \RuntimeException('boom from handler');
+                },
             ],
             'context_stub_action' => [
                 'parameters' => [],
@@ -83,6 +90,35 @@ class AgentActionExecutionRegistryToolStub extends AgentTool
                 'value' => $parameters['value'],
                 'session_id' => $context->sessionId,
             ],
+            metadata: ['agent_strategy' => 'registry_tool_strategy']
+        );
+    }
+}
+
+class AgentActionExecutionRegistryEntityToolStub extends AgentTool
+{
+    public function getName(): string
+    {
+        return 'registry_entity_action';
+    }
+
+    public function getDescription(): string
+    {
+        return 'Acts on the selected entity.';
+    }
+
+    public function getParameters(): array
+    {
+        return [
+            'invoice_id' => ['type' => 'integer', 'required' => true],
+        ];
+    }
+
+    public function execute(array $parameters, UnifiedActionContext $context): \LaravelAIEngine\DTOs\ActionResult
+    {
+        return \LaravelAIEngine\DTOs\ActionResult::success(
+            message: 'Registry entity tool executed.',
+            data: ['invoice_id' => $parameters['invoice_id'] ?? null],
             metadata: ['agent_strategy' => 'registry_tool_strategy']
         );
     }
@@ -168,6 +204,94 @@ class AgentActionExecutionServiceTest extends UnitTestCase
         $this->assertSame('context_stub_action', $response->metadata['tool_name']);
     }
 
+    public function test_execute_use_tool_returns_failure_when_handler_throws(): void
+    {
+        $service = new AgentActionExecutionService(
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('throwing-tool-session', 1);
+
+        $ragInvoked = false;
+        $response = $service->executeUseTool(
+            'throwing_stub_action',
+            'run throwing tool',
+            $context,
+            ['model_configs' => [AgentActionExecutionServiceToolConfigStub::class]],
+            function () use (&$ragInvoked): AgentResponse {
+                $ragInvoked = true;
+                $this->fail('RAG fallback should not be called when a matched tool handler throws');
+            }
+        );
+
+        // A tool that EXISTS but ERRORED must be reported as a failure, not as
+        // "tool not registered" (which would redirect to the RAG fallback).
+        $this->assertFalse($ragInvoked);
+        $this->assertFalse($response->success);
+        $this->assertTrue($response->isComplete);
+        $this->assertStringContainsString('boom from handler', $response->message);
+        $this->assertSame('throwing_stub_action', $response->metadata['tool_name'] ?? null);
+        $this->assertSame('boom from handler', $response->metadata['tool_error'] ?? null);
+    }
+
+    public function test_execute_use_tool_plain_fallback_tags_tool_fallback_decision_source(): void
+    {
+        $service = new AgentActionExecutionService(
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('plain-fallback-session', 1);
+
+        $captured = null;
+        $service->executeUseTool(
+            'unknown_tool',
+            'show me the latest record',
+            $context,
+            ['model_configs' => []],
+            function (string $message, UnifiedActionContext $ctx, array $options) use (&$captured): AgentResponse {
+                $captured = $options;
+
+                return AgentResponse::conversational(message: 'rag fallback', context: $ctx);
+            }
+        );
+
+        $this->assertNotNull($captured);
+        $this->assertSame('tool_fallback', $captured['decision_source']);
+        $this->assertSame('tool_fallback', $captured['decision_path']);
+
+        // Diagnostics: a tool-not-found fallback must be observable, not silent.
+        $this->assertTrue($captured['tool_not_found'] ?? false);
+        $this->assertSame('unknown_tool', $captured['requested_tool'] ?? null);
+        $this->assertIsArray($captured['available_tools'] ?? null);
+    }
+
+    public function test_execute_use_tool_structured_fallback_tags_tool_fallback_decision_source(): void
+    {
+        $service = new AgentActionExecutionService(
+            new SelectedEntityContextService()
+        );
+
+        $context = new UnifiedActionContext('structured-fallback-session', 1);
+
+        $captured = null;
+        $service->executeUseTool(
+            'unknown_tool',
+            'how many invoices do I have?',
+            $context,
+            ['model_configs' => []],
+            function (string $message, UnifiedActionContext $ctx, array $options) use (&$captured): AgentResponse {
+                $captured = $options;
+
+                return AgentResponse::conversational(message: 'rag fallback', context: $ctx);
+            }
+        );
+
+        $this->assertNotNull($captured);
+        $this->assertSame('tool_fallback', $captured['decision_source']);
+        $this->assertSame('tool_fallback_structured_query', $captured['decision_path']);
+        $this->assertSame('structured_query', $captured['preclassified_route_mode']);
+    }
+
     public function test_execute_use_tool_runs_agent_tool_registry_when_model_config_does_not_match(): void
     {
         $toolRegistry = new ToolRegistry();
@@ -198,6 +322,36 @@ class AgentActionExecutionServiceTest extends UnitTestCase
         $this->assertSame('registry-tool-session', $response->data['session_id']);
         $this->assertSame('registry_tool_strategy', $response->strategy);
         $this->assertSame('registry_echo', $response->metadata['tool_name']);
+    }
+
+    public function test_execute_registry_tool_binds_selected_entity_context(): void
+    {
+        $toolRegistry = new ToolRegistry();
+        $toolRegistry->register('registry_entity_action', new AgentActionExecutionRegistryEntityToolStub());
+
+        $service = new AgentActionExecutionService(
+            new SelectedEntityContextService(),
+            null,
+            null,
+            $toolRegistry
+        );
+
+        $context = new UnifiedActionContext('registry-entity-session', 99);
+        $context->metadata['selected_entity_context'] = ['entity_id' => 7];
+
+        // No tool_params provided, so binding must inject the selected entity id and pass validation.
+        $response = $service->executeUseTool(
+            'registry_entity_action',
+            'pay it',
+            $context,
+            ['model_configs' => []],
+            function () {
+                $this->fail('Fallback RAG should not be called when registry tool resolves');
+            }
+        );
+
+        $this->assertTrue($response->success);
+        $this->assertSame(7, $response->data['invoice_id']);
     }
 
 }

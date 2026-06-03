@@ -95,6 +95,41 @@ class AgentRunSafetyServiceTest extends UnitTestCase
         $this->assertTrue($service->rememberIdempotencyKey('idem-1', ['run_id' => 2], 60));
     }
 
+    public function test_effective_lock_ttl_outlives_queue_timeout_plus_buffer(): void
+    {
+        config()->set('ai-agent.run_safety.lock_ttl_seconds', 60);
+        config()->set('ai-agent.run_safety.lock_ttl_buffer_seconds', 60);
+        config()->set('ai-agent.run_safety.queue.timeout', 300);
+
+        $service = new AgentRunSafetyService();
+        $queueTimeout = (int) config('ai-agent.run_safety.queue.timeout');
+
+        // Even with a too-short configured TTL, the effective TTL must outlive the job.
+        $this->assertGreaterThanOrEqual($queueTimeout, $service->effectiveLockTtl());
+        $this->assertSame(360, $service->effectiveLockTtl());
+    }
+
+    public function test_effective_lock_ttl_honours_a_larger_configured_value(): void
+    {
+        config()->set('ai-agent.run_safety.lock_ttl_seconds', 900);
+        config()->set('ai-agent.run_safety.lock_ttl_buffer_seconds', 60);
+        config()->set('ai-agent.run_safety.queue.timeout', 300);
+
+        $service = new AgentRunSafetyService();
+
+        $this->assertSame(900, $service->effectiveLockTtl());
+    }
+
+    public function test_config_defaults_keep_lock_ttl_coherent_with_queue_timeout(): void
+    {
+        $config = require __DIR__ . '/../../../../config/ai-agent.php';
+
+        $this->assertGreaterThanOrEqual(
+            $config['run_safety']['queue']['timeout'],
+            $config['run_safety']['lock_ttl_seconds']
+        );
+    }
+
     public function test_assert_run_scope_reuses_vector_access_control_scope_flags(): void
     {
         config()->set('vector-access-control.enable_tenant_scope', true);

@@ -128,13 +128,56 @@ class ConversationTranscriptService
         return false;
     }
 
-    public function listUserConversations(string|int $userId, int $limit = 20, int $page = 1): ConversationListResponseDTO
+    public function listUserConversations(
+        string|int $userId,
+        int $limit = 20,
+        int $page = 1,
+        ?string $folderId = null
+    ): ConversationListResponseDTO {
+        $query = Conversation::forUser((string) $userId)->active()->inFolder($folderId);
+
+        return $this->paginateConversationQuery($query, $limit, $page);
+    }
+
+    /**
+     * Search a user's conversations by title or message content.
+     */
+    public function searchUserConversations(
+        string|int $userId,
+        string $term,
+        int $limit = 20,
+        int $page = 1,
+        ?string $folderId = null
+    ): ConversationListResponseDTO {
+        $term = trim($term);
+
+        if ($term === '') {
+            return $this->listUserConversations($userId, $limit, $page, $folderId);
+        }
+
+        $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $term) . '%';
+
+        $query = Conversation::forUser((string) $userId)
+            ->active()
+            ->inFolder($folderId)
+            ->where(function ($q) use ($like) {
+                $q->where('title', 'like', $like)
+                    ->orWhereHas('messages', function ($mq) use ($like) {
+                        $mq->where('content', 'like', $like);
+                    });
+            });
+
+        return $this->paginateConversationQuery($query, $limit, $page);
+    }
+
+    /**
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     */
+    protected function paginateConversationQuery($query, int $limit, int $page): ConversationListResponseDTO
     {
         $limit = max(1, min(100, $limit));
         $page = max(1, $page);
         $offset = ($page - 1) * $limit;
-
-        $query = Conversation::forUser((string) $userId)->active();
 
         $total = (clone $query)->count();
 

@@ -23,7 +23,7 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
 
     public function __construct()
     {
-        $this->apiKey = config('ai-engine.engines.plagiarism_check.api_key');
+        $this->apiKey = (string) config('ai-engine.engines.plagiarism_check.api_key');
         $this->baseUrl = config('ai-engine.engines.plagiarism_check.base_url', 'https://api.plagiarismcheck.org');
 
         if (empty($this->apiKey)) {
@@ -38,6 +38,16 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
                 'Content-Type' => 'application/json',
             ],
         ]);
+    }
+
+    /**
+     * Override the underlying HTTP client (primarily for testing).
+     */
+    public function setHttpClient(Client $client): self
+    {
+        $this->client = $client;
+
+        return $this;
     }
 
     public function generate(AIRequest $request): AIResponse
@@ -137,6 +147,8 @@ class PlagiarismCheckEngineDriver implements EngineDriverInterface
         ];
 
         return new AIResponse(
+            engine: $request->getEngine(),
+            model: $request->getModel(),
             content: json_encode($results),
             usage: [
                 'words_checked' => $results['word_count'],

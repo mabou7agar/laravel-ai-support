@@ -10,6 +10,7 @@ use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
+use LaravelAIEngine\Services\Agent\AgentRunBudgetService;
 use LaravelAIEngine\Services\Agent\AgentRunSafetyService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
@@ -169,6 +170,57 @@ class AgentRunAsyncJobsTest extends TestCase
         $this->assertNotContains('run.completed', $events);
     }
 
+    public function test_run_agent_job_leaves_step_completed_at_null_for_waiting_input_status(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'waiting-step',
+            'user_id' => '9',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->once()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::needsUserInput('Need one more field.'));
+
+        $job = new RunAgentJob($run->id, 'start', 'waiting-step', '9');
+        $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class));
+
+        $run->refresh();
+        $step = $run->steps()->first();
+
+        $this->assertSame(AIAgentRun::STATUS_WAITING_INPUT, $run->status);
+        $this->assertSame(AIAgentRun::STATUS_WAITING_INPUT, $step->status);
+        // Non-terminal pause: neither the run nor the step is completed yet.
+        $this->assertNull($run->completed_at);
+        $this->assertNull($step->completed_at);
+    }
+
+    public function test_run_agent_job_sets_step_completed_at_for_completed_status(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'completed-step',
+            'user_id' => '9',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->once()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::success('All done.'));
+
+        $job = new RunAgentJob($run->id, 'finish', 'completed-step', '9');
+        $job->handle($runtime, app(AgentRunRepository::class), app(AgentRunStepRepository::class), app(AgentRunSafetyService::class));
+
+        $run->refresh();
+        $step = $run->steps()->first();
+
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $step->status);
+        $this->assertNotNull($step->completed_at);
+    }
+
     public function test_duplicate_continuation_jobs_with_same_idempotency_key_process_once(): void
     {
         $run = app(AgentRunRepository::class)->create([
@@ -254,6 +306,92 @@ class AgentRunAsyncJobsTest extends TestCase
 
         $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->refresh()->status);
         $this->assertSame(1, $run->steps()->count());
+    }
+
+    public function test_run_agent_job_accumulates_and_records_run_budget_usage(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'budget-wired-session',
+            'user_id' => '15',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->once()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturnUsing(function (): AgentResponse {
+                $response = AgentResponse::success('Budgeted response.');
+                $response->metadata = ['usage' => ['tokens_used' => 42, 'cost_used' => 0.1]];
+
+                return $response;
+            });
+
+        $budget = Mockery::mock(AgentRunBudgetService::class);
+        $budget->shouldReceive('startAccumulatingCredits')->once();
+        $budget->shouldReceive('assertRuntimeBudgetAllows')->once()
+            ->with(Mockery::type(AIAgentRun::class), Mockery::type('array'));
+        $budget->shouldReceive('recordRunUsage')->once()
+            ->with(Mockery::type(AIAgentRun::class), ['tokens_used' => 42, 'cost_used' => 0.1])
+            ->andReturnUsing(fn (AIAgentRun $r) => $r);
+        $budget->shouldReceive('finishAccumulatingCredits')->once()
+            ->with(Mockery::type(AIAgentRun::class))
+            ->andReturnUsing(fn (AIAgentRun $r) => $r);
+
+        $job = new RunAgentJob($run->id, 'use budget', 'budget-wired-session', '15');
+        $job->handle(
+            $runtime,
+            app(AgentRunRepository::class),
+            app(AgentRunStepRepository::class),
+            app(AgentRunSafetyService::class),
+            null,
+            $budget
+        );
+
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->refresh()->status);
+    }
+
+    public function test_run_agent_job_finishes_accumulator_and_fails_when_runtime_budget_exceeded(): void
+    {
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'budget-exceeded-session',
+            'user_id' => '16',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        $runtime = Mockery::mock(AgentRuntimeContract::class);
+        $runtime->shouldReceive('name')->once()->andReturn('laravel');
+        $runtime->shouldReceive('process')
+            ->once()
+            ->andReturn(AgentResponse::success('Over budget.'));
+
+        $budget = Mockery::mock(AgentRunBudgetService::class);
+        $budget->shouldReceive('startAccumulatingCredits')->once();
+        $budget->shouldReceive('assertRuntimeBudgetAllows')->once()
+            ->andThrow(new \RuntimeException('Agent run exceeded token budget [100].'));
+        // accumulator must be flushed even on failure to avoid leaks
+        $budget->shouldReceive('finishAccumulatingCredits')->once()
+            ->with(Mockery::type(AIAgentRun::class))
+            ->andReturnUsing(fn (AIAgentRun $r) => $r);
+        $budget->shouldNotReceive('recordRunUsage');
+
+        $job = new RunAgentJob($run->id, 'use budget', 'budget-exceeded-session', '16');
+
+        try {
+            $job->handle(
+                $runtime,
+                app(AgentRunRepository::class),
+                app(AgentRunStepRepository::class),
+                app(AgentRunSafetyService::class),
+                null,
+                $budget
+            );
+            $this->fail('Expected runtime budget exception.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Agent run exceeded token budget [100].', $e->getMessage());
+        }
+
+        $this->assertSame(AIAgentRun::STATUS_FAILED, $run->refresh()->status);
     }
 
     public function test_run_agent_job_enforces_max_step_limit_before_processing(): void

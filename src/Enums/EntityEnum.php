@@ -108,6 +108,7 @@ class EntityEnum
     public const ELEVEN_MULTILINGUAL_V2 = 'eleven_multilingual_v2';
     public const ELEVEN_MULTILINGUAL_STS_V2 = 'eleven_multilingual_sts_v2';
     public const ELEVEN_SCRIBE_V2 = 'scribe_v2';
+    public const ELEVEN_MUSIC = 'music_v1';
 
     // DeepSeek Models
     public const DEEPSEEK_CHAT = 'deepseek-chat';
@@ -245,10 +246,20 @@ class EntityEnum
     public const OPENROUTER_PHI_3_MINI_FREE = 'microsoft/phi-3-mini-128k-instruct:free';
     public const OPENROUTER_OPENCHAT_3_5_FREE = 'openchat/openchat-3.5-1210:free';
 
+    // xAI Grok Models (native xAI engine, OpenAI-compatible API)
+    public const GROK_4_1 = 'grok-4.1';
+    public const GROK_4 = 'grok-4';
+    public const GROK_3_1 = 'grok-3.1';
+
     // NVIDIA NIM Models (OpenAI-compatible hosted or self-hosted NIM)
     public const NVIDIA_NIM_NEMOTRON_70B = 'nvidia/llama-3.1-nemotron-70b-instruct';
     public const NVIDIA_NIM_LLAMA_3_1_70B = 'meta/llama-3.1-70b-instruct';
     public const NVIDIA_NIM_LLAMA_3_1_8B = 'meta/llama-3.1-8b-instruct';
+
+    // AWS Bedrock Models (Anthropic Claude on Bedrock)
+    public const BEDROCK_CLAUDE_SONNET = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+    public const BEDROCK_CLAUDE_HAIKU = 'anthropic.claude-3-haiku-20240307-v1:0';
+    public const CLIPDROP_IMAGE_EDIT = 'clipdrop-image-edit';
 
     // Low-cost and local media provider models
     public const CLOUDFLARE_FLUX_SCHNELL = '@cf/black-forest-labs/flux-1-schnell';
@@ -428,6 +439,7 @@ class EntityEnum
             case self::ELEVEN_MULTILINGUAL_V2:
             case self::ELEVEN_MULTILINGUAL_STS_V2:
             case self::ELEVEN_SCRIBE_V2:
+            case self::ELEVEN_MUSIC:
                 return EngineEnum::ElevenLabs;
             case self::FAL_FLUX_PRO:
             case self::FAL_FLUX_DEV:
@@ -484,10 +496,19 @@ class EntityEnum
             case self::OPENROUTER_PHI_3_MINI_FREE:
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return EngineEnum::OpenRouter;
+            case self::GROK_4_1:
+            case self::GROK_4:
+            case self::GROK_3_1:
+                return EngineEnum::Xai;
             case self::NVIDIA_NIM_NEMOTRON_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return EngineEnum::NvidiaNim;
+            case self::BEDROCK_CLAUDE_SONNET:
+            case self::BEDROCK_CLAUDE_HAIKU:
+                return EngineEnum::Bedrock;
+            case self::CLIPDROP_IMAGE_EDIT:
+                return EngineEnum::Clipdrop;
             case self::CLOUDFLARE_FLUX_SCHNELL:
             case self::CLOUDFLARE_DREAMSHAPER:
             case self::CLOUDFLARE_WHISPER:
@@ -586,6 +607,7 @@ class EntityEnum
             case self::ELEVEN_MULTILINGUAL_V2:
             case self::ELEVEN_MULTILINGUAL_STS_V2:
             case self::ELEVEN_SCRIBE_V2:
+            case self::ELEVEN_MUSIC:
                 return MultilingualV2Driver::class;
             case self::FAL_FLUX_PRO:
             case self::FLUX_PRO:
@@ -671,10 +693,19 @@ class EntityEnum
                 return GPT4ODriver::class;
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return GPT4ODriver::class;
+            case self::GROK_4_1:
+            case self::GROK_4:
+            case self::GROK_3_1:
+                return \LaravelAIEngine\Drivers\Grok\GrokEngineDriver::class;
             case self::NVIDIA_NIM_NEMOTRON_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class;
+            case self::BEDROCK_CLAUDE_SONNET:
+            case self::BEDROCK_CLAUDE_HAIKU:
+                return \LaravelAIEngine\Drivers\Bedrock\BedrockEngineDriver::class;
+            case self::CLIPDROP_IMAGE_EDIT:
+                return \LaravelAIEngine\Drivers\Clipdrop\ClipdropEngineDriver::class;
             case self::CLOUDFLARE_FLUX_SCHNELL:
             case self::CLOUDFLARE_DREAMSHAPER:
             case self::CLOUDFLARE_WHISPER:
@@ -715,6 +746,7 @@ class EntityEnum
             EngineEnum::DeepSeek     => DeepSeekEngineDriver::class,
             EngineEnum::Ollama       => OllamaEngineDriver::class,
             EngineEnum::NvidiaNim    => \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class,
+            EngineEnum::Bedrock      => \LaravelAIEngine\Drivers\Bedrock\BedrockEngineDriver::class,
             EngineEnum::LocalAudio   => LocalAudioEngineDriver::class,
             default                  => GPT4ODriver::class,
         };
@@ -827,6 +859,8 @@ class EntityEnum
                 return 'ElevenLabs Multilingual STS v2';
             case self::ELEVEN_SCRIBE_V2:
                 return 'ElevenLabs Scribe v2';
+            case self::ELEVEN_MUSIC:
+                return 'ElevenLabs Music';
             case self::FLUX_PRO:
                 return 'Flux Pro';
             case self::FAL_NANO_BANANA_2:
@@ -919,12 +953,24 @@ class EntityEnum
                 return 'Phi-3 Mini (Free)';
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return 'OpenChat 3.5 (Free)';
+            case self::GROK_4_1:
+                return 'Grok 4.1 (xAI)';
+            case self::GROK_4:
+                return 'Grok 4 (xAI)';
+            case self::GROK_3_1:
+                return 'Grok 3.1 (xAI)';
             case self::NVIDIA_NIM_NEMOTRON_70B:
                 return 'Llama 3.1 Nemotron 70B (NVIDIA NIM)';
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
                 return 'Llama 3.1 70B (NVIDIA NIM)';
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return 'Llama 3.1 8B (NVIDIA NIM)';
+            case self::BEDROCK_CLAUDE_SONNET:
+                return 'Claude 3.5 Sonnet (AWS Bedrock)';
+            case self::BEDROCK_CLAUDE_HAIKU:
+                return 'Claude 3 Haiku (AWS Bedrock)';
+            case self::CLIPDROP_IMAGE_EDIT:
+                return 'Clipdrop Image Edit';
             case self::CLOUDFLARE_FLUX_SCHNELL:
                 return 'Cloudflare FLUX Schnell';
             case self::CLOUDFLARE_DREAMSHAPER:
@@ -1064,6 +1110,8 @@ class EntityEnum
                 return 2.5;
             case self::ELEVEN_SCRIBE_V2:
                 return 1.0;
+            case self::ELEVEN_MUSIC:
+                return 3.0;
             case self::FAL_FLUX_PRO:
             case self::FLUX_PRO:
                 return 3.5;
@@ -1202,12 +1250,24 @@ class EntityEnum
                 return 0.0;
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
                 return 0.0;
+            case self::GROK_4_1:
+                return 2.5;
+            case self::GROK_4:
+                return 2.0;
+            case self::GROK_3_1:
+                return 1.0;
             case self::NVIDIA_NIM_NEMOTRON_70B:
                 return 1.0;
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
                 return 0.8;
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return 0.3;
+            case self::BEDROCK_CLAUDE_SONNET:
+                return 2.0;
+            case self::BEDROCK_CLAUDE_HAIKU:
+                return 0.5;
+            case self::CLIPDROP_IMAGE_EDIT:
+                return 1.0;
             case self::CLOUDFLARE_FLUX_SCHNELL:
                 return 0.4;
             case self::CLOUDFLARE_DREAMSHAPER:
@@ -1303,9 +1363,14 @@ class EntityEnum
             case self::OPENROUTER_QWEN_2_5_7B_FREE:
             case self::OPENROUTER_PHI_3_MINI_FREE:
             case self::OPENROUTER_OPENCHAT_3_5_FREE:
+            case self::GROK_4_1:
+            case self::GROK_4:
+            case self::GROK_3_1:
             case self::NVIDIA_NIM_NEMOTRON_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
+            case self::BEDROCK_CLAUDE_SONNET:
+            case self::BEDROCK_CLAUDE_HAIKU:
                 return 'text';
             case self::CLOUDFLARE_FLUX_SCHNELL:
             case self::CLOUDFLARE_DREAMSHAPER:
@@ -1313,6 +1378,7 @@ class EntityEnum
             case self::REPLICATE_FLUX_SCHNELL:
             case self::COMFYUI_DEFAULT_IMAGE:
                 return 'image';
+            case self::CLIPDROP_IMAGE_EDIT:
             case self::GPT_IMAGE_1_5:
             case self::GPT_IMAGE_1:
             case self::GPT_IMAGE_1_MINI:
@@ -1354,6 +1420,7 @@ class EntityEnum
             case self::ELEVEN_MULTILINGUAL_V2:
             case self::ELEVEN_MULTILINGUAL_STS_V2:
             case self::ELEVEN_SCRIBE_V2:
+            case self::ELEVEN_MUSIC:
             case self::CLOUDFLARE_WHISPER:
             case self::CLOUDFLARE_MELOTTS:
             case self::HUGGINGFACE_WHISPER_LARGE_V3:
@@ -1468,6 +1535,9 @@ class EntityEnum
             case self::NVIDIA_NIM_LLAMA_3_1_70B:
             case self::NVIDIA_NIM_LLAMA_3_1_8B:
                 return 32768;
+            case self::BEDROCK_CLAUDE_SONNET:
+            case self::BEDROCK_CLAUDE_HAIKU:
+                return 200000;
             default:
                 // Try to get max tokens from database
                 return $this->getMaxTokensFromDatabase();
@@ -1765,6 +1835,7 @@ class EntityEnum
             self::ELEVEN_MULTILINGUAL_V2,
             self::ELEVEN_MULTILINGUAL_STS_V2,
             self::ELEVEN_SCRIBE_V2,
+            self::ELEVEN_MUSIC,
             self::DEEPSEEK_CHAT,
             self::DEEPSEEK_REASONER,
             self::PERPLEXITY_SONAR_LARGE,
@@ -1793,9 +1864,15 @@ class EntityEnum
             self::OPENROUTER_GPT_5_MINI,
             self::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL,
             self::OPENROUTER_LLAMA_3_3_70B,
+            self::GROK_4_1,
+            self::GROK_4,
+            self::GROK_3_1,
             self::NVIDIA_NIM_NEMOTRON_70B,
             self::NVIDIA_NIM_LLAMA_3_1_70B,
             self::NVIDIA_NIM_LLAMA_3_1_8B,
+            self::BEDROCK_CLAUDE_SONNET,
+            self::BEDROCK_CLAUDE_HAIKU,
+            self::CLIPDROP_IMAGE_EDIT,
             self::CLOUDFLARE_FLUX_SCHNELL,
             self::CLOUDFLARE_DREAMSHAPER,
             self::CLOUDFLARE_WHISPER,

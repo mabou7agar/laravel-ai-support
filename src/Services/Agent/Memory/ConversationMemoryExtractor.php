@@ -59,7 +59,7 @@ class ConversationMemoryExtractor
         }
 
         $response = $this->ai->generate(new AIRequest(
-            prompt: $this->prompt($messages),
+            prompt: $this->prompt($messages, $scope),
             engine: $engine,
             model: $model,
             maxTokens: 700,
@@ -98,6 +98,7 @@ class ConversationMemoryExtractor
             }
 
             $ttlDays = $this->policy->ttlDays();
+            $locale = $this->resolveLocale($scope);
             $items[] = ConversationMemoryItem::fromArray([
                 'namespace' => $namespace,
                 'key' => $key,
@@ -112,6 +113,7 @@ class ConversationMemoryExtractor
                 'confidence' => min(1.0, max(0.0, (float) ($payload['confidence'] ?? 0.7))),
                 'metadata' => [
                     'source' => 'ai_extractor',
+                    'locale' => $locale,
                 ],
                 'expires_at' => $ttlDays > 0 ? now()->addDays($ttlDays) : null,
             ]);
@@ -122,8 +124,9 @@ class ConversationMemoryExtractor
 
     /**
      * @param array<int, array<string, mixed>> $messages
+     * @param array<string, mixed> $scope
      */
-    protected function prompt(array $messages): string
+    protected function prompt(array $messages, array $scope = []): string
     {
         $content = json_encode(array_map(static fn (array $message): array => [
             'role' => (string) ($message['role'] ?? 'user'),
@@ -132,11 +135,14 @@ class ConversationMemoryExtractor
 
         $content = $this->limit((string) $content, $this->policy->maxExtractionInputChars());
 
+        $locale = $this->resolveLocale($scope);
+
         return implode("\n", [
             'You extract durable conversation memories for a Laravel package.',
             'Return JSON array only.',
             'Extract only stable user/session/workspace preferences, facts, constraints, unresolved goals, and decisions.',
             'Do not require English trigger phrases. Infer memory-worthiness from meaning in any language.',
+            sprintf('The conversation locale is "%s". Write each summary and value in that locale, mirroring the user\'s language.', $locale),
             'Do not include application/database records, record identifiers, one-off customer/order/item details, product catalogs, private credentials, secrets, payment data, or transient chit-chat.',
             'Each item must contain: namespace, key, value, summary, confidence.',
             'Keep every summary under 220 characters.',
@@ -145,6 +151,25 @@ class ConversationMemoryExtractor
             'Compacted conversation JSON:',
             $content,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $scope
+     */
+    protected function resolveLocale(array $scope): string
+    {
+        $locale = $scope['locale'] ?? $scope['lang'] ?? null;
+        if (is_string($locale) && trim($locale) !== '') {
+            return trim($locale);
+        }
+
+        try {
+            $appLocale = app()->getLocale();
+        } catch (\Throwable) {
+            $appLocale = '';
+        }
+
+        return is_string($appLocale) && trim($appLocale) !== '' ? trim($appLocale) : 'en';
     }
 
     /**

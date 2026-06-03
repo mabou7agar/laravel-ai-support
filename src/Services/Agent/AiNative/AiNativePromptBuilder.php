@@ -22,7 +22,7 @@ class AiNativePromptBuilder
      */
     public function build(string $message, UnifiedActionContext $context, array $state, array $options = []): string
     {
-        return implode("\n\n", [
+        $lines = [
             'AI_NATIVE_AGENT_RUNTIME',
             'You are controlling a Laravel application through declared tools and skills.',
             'Decide the next step yourself. Do not rely on package-coded business workflows.',
@@ -64,7 +64,80 @@ class AiNativePromptBuilder
             json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Latest user message:',
             $message,
-        ]);
+        ];
+
+        if ($this->exposeReasoning($options)) {
+            // Insert the reasoning instruction right before the "Return JSON only."
+            // line so it sits alongside the JSON-shape guidance. Fall back to an
+            // append if that anchor line is ever renamed.
+            $anchor = array_search('Return JSON only. No markdown.', $lines, true);
+            $instruction = 'Always include a "reasoning":"<one short sentence>" field in your JSON plan explaining your next step, in plain user-facing language.';
+            if ($anchor === false) {
+                $lines[] = $instruction;
+            } else {
+                array_splice($lines, $anchor, 0, [$instruction]);
+            }
+        }
+
+        if ($this->planTimelineEnabled($options)) {
+            // Insert the plan-steps instruction right before the "Return JSON only."
+            // line, falling back to an append if that anchor is ever renamed.
+            $anchor = array_search('Return JSON only. No markdown.', $lines, true);
+            $instruction = 'Always include a "steps":["<short step>","<short step>"] array in your JSON plan listing the remaining steps you intend to take (use a single entry if only one step remains).';
+            if ($anchor === false) {
+                $lines[] = $instruction;
+            } else {
+                array_splice($lines, $anchor, 0, [$instruction]);
+            }
+        }
+
+        // A concrete worked example carries far more weight than prose for a
+        // low-temperature planner: it mirrors the "Allowed JSON shapes" examples
+        // (which omit these fields) so the model actually emits them every turn.
+        $exampleFields = [];
+        if ($this->exposeReasoning($options)) {
+            $exampleFields[] = '"reasoning":"I need to look up the customer before creating the invoice"';
+        }
+        if ($this->planTimelineEnabled($options)) {
+            $exampleFields[] = '"steps":["Find the customer","Find the products","Create the invoice"]';
+        }
+        if ($exampleFields !== []) {
+            $example = 'Every JSON plan you return MUST also carry these fields. Example: '
+                . '{"action":"tool_call","tool":"find_customer","arguments":{"query":"Acme"},"message":"Looking up Acme",'
+                . implode(',', $exampleFields) . '}';
+            $anchor = array_search('{"action":"final","message":"answer to user","data":{}}', $lines, true);
+            if ($anchor === false) {
+                $lines[] = $example;
+            } else {
+                array_splice($lines, $anchor + 1, 0, [$example]);
+            }
+        }
+
+        return implode("\n\n", $lines);
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function planTimelineEnabled(array $options = []): bool
+    {
+        if (array_key_exists('plan_timeline', $options) && $options['plan_timeline'] !== null) {
+            return (bool) $options['plan_timeline'];
+        }
+
+        return (bool) config('ai-agent.ai_native.plan_timeline', false);
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function exposeReasoning(array $options = []): bool
+    {
+        if (array_key_exists('expose_reasoning', $options) && $options['expose_reasoning'] !== null) {
+            return (bool) $options['expose_reasoning'];
+        }
+
+        return (bool) config('ai-agent.ai_native.expose_reasoning', false);
     }
 
     /**

@@ -115,6 +115,25 @@ class AgentRunContextRestoreTest extends TestCase
         $this->assertSame('run-completed-ai-native', $context->metadata['restored_from_agent_run_id']);
     }
 
+    public function test_context_manager_restores_history_from_in_flight_run_without_final_response(): void
+    {
+        AIAgentRun::query()->create([
+            'uuid' => 'run-in-flight-no-final',
+            'session_id' => 'in-flight-restore',
+            'user_id' => 'lab-user',
+            'runtime' => 'laravel',
+            'status' => AIAgentRun::STATUS_RUNNING,
+            'input' => ['message' => 'Draft a quote for Sara'],
+            'final_response' => null,
+        ]);
+
+        $context = app(ContextManager::class)->getOrCreate('in-flight-restore', 'lab-user');
+
+        $this->assertNotEmpty($context->conversationHistory);
+        $this->assertSame('user', $context->conversationHistory[0]['role']);
+        $this->assertSame('Draft a quote for Sara', $context->conversationHistory[0]['content']);
+    }
+
     public function test_guest_context_restore_does_not_load_authenticated_user_run_with_same_session(): void
     {
         AIAgentRun::query()->create([

@@ -16,6 +16,7 @@ use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Models\AIAgentRunStep;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
+use LaravelAIEngine\Services\Agent\AgentRunBudgetService;
 use LaravelAIEngine\Services\Agent\ChatResponsePresentationService;
 use LaravelAIEngine\Services\Agent\AgentRunRetentionService;
 use LaravelAIEngine\Services\Agent\AgentRunSafetyService;
@@ -57,16 +58,18 @@ class RunAgentJob implements ShouldQueue
         AgentRunRepository $runs,
         AgentRunStepRepository $steps,
         AgentRunSafetyService $safety,
-        ?AgentRunEventStreamService $events = null
+        ?AgentRunEventStreamService $events = null,
+        ?AgentRunBudgetService $budget = null
     ): void {
         $events ??= app(AgentRunEventStreamService::class);
+        $budget ??= app(AgentRunBudgetService::class);
 
         if (!$this->claimIdempotency($safety)) {
             return;
         }
 
         try {
-            $safety->withRunLock($this->runId, function () use ($runtime, $runs, $steps, $safety, $events): void {
+            $safety->withRunLock($this->runId, function () use ($runtime, $runs, $steps, $safety, $events, $budget): void {
             $run = $runs->findOrFail($this->runId);
             $this->assertPolicyAllowsRun($run);
             $scopedOptions = $safety->applyScopeToMetadata($this->options);
@@ -122,12 +125,17 @@ class RunAgentJob implements ShouldQueue
             ], $runtimeOptions);
 
             try {
+                $budget->startAccumulatingCredits();
                 $response = $runtime->process($this->message, $this->sessionId, $this->userId, $runtimeOptions);
+                $budget->assertRuntimeBudgetAllows($run->refresh(), $this->options);
                 $response = $traceMetadata->enrichResponse($response, $runtimeOptions, $run, $step);
                 $response = $this->applyResponsePresentation($response, $runtimeOptions);
                 $status = $this->complete($runs, $steps, $run, $step, $response);
+                $budget->recordRunUsage($run->refresh(), $response->metadata['usage'] ?? []);
+                $budget->finishAccumulatingCredits($run->refresh());
                 $this->emitTerminalEvent($events, $status, $run, $step, $response, $runtimeOptions);
             } catch (\Throwable $e) {
+                $budget->finishAccumulatingCredits($run->refresh());
                 $this->failRun($runs, $steps, $run, $step, $e);
                 $events->emit(AgentRunEventStreamService::RUN_FAILED, $run, $step, [
                     'error' => $e->getMessage(),
@@ -173,7 +181,10 @@ class RunAgentJob implements ShouldQueue
             'output' => app(AgentRunRetentionService::class)->protectResponse($response->toArray()),
             'routing_decision' => $response->metadata['routing_decision'] ?? $step->routing_decision,
             'routing_trace' => $response->metadata['routing_trace'] ?? $step->routing_trace,
-            'metadata' => array_merge($step->metadata ?? [], app(AgentTraceMetadataService::class)->spanMetadata(
+            // Read the freshest step metadata so the routing/tool events the event
+            // service appended to the locked DB row during processing are preserved
+            // (the in-memory $step is stale and would otherwise clobber them).
+            'metadata' => array_merge(($step->fresh()?->metadata ?? $step->metadata ?? []), app(AgentTraceMetadataService::class)->spanMetadata(
                 "agent.{$step->type}.{$step->action}",
                 ['ai.agent.status' => $status],
                 ['trace_id' => $response->metadata['trace_id'] ?? null],
@@ -182,7 +193,10 @@ class RunAgentJob implements ShouldQueue
             ), [
                 'duration_ms' => $this->durationMs($step),
             ]),
-            'completed_at' => now(),
+            // Only stamp completion for terminal statuses. WAITING_INPUT /
+            // WAITING_APPROVAL are non-terminal pauses, so the step stays open
+            // (mirroring the run, which keeps completed_at = null while waiting).
+            'completed_at' => $isWaiting ? null : now(),
         ]);
 
         $runs->transition($run, $status, [
@@ -282,7 +296,10 @@ class RunAgentJob implements ShouldQueue
     ): void {
         $steps->transition($step, AIAgentRun::STATUS_FAILED, [
             'error' => $e->getMessage(),
-            'metadata' => array_merge($step->metadata ?? [], app(AgentTraceMetadataService::class)->spanMetadata(
+            // Read the freshest step metadata so the routing/tool events the event
+            // service appended to the locked DB row during processing are preserved
+            // (the in-memory $step is stale and would otherwise clobber them).
+            'metadata' => array_merge(($step->fresh()?->metadata ?? $step->metadata ?? []), app(AgentTraceMetadataService::class)->spanMetadata(
                 "agent.{$step->type}.{$step->action}",
                 [
                     'ai.agent.status' => AIAgentRun::STATUS_FAILED,
@@ -373,6 +390,21 @@ class RunAgentJob implements ShouldQueue
         AgentResponse $response,
         array $runtimeOptions
     ): void {
+        // Surface planner reasoning before the terminal "Done" so a UI can render
+        // the thinking lines first. No-op when expose_reasoning is off (no entries).
+        $this->emitReasoningEvents($events, $run, $step, $response, $runtimeOptions);
+
+        // Surface the live plan timeline (steps + current index) before the terminal
+        // event. No-op when plan_timeline is off (metadata['plan'] absent).
+        $this->emitPlanEvent($events, $run, $step, $response, $runtimeOptions);
+
+        // Reconstruct per-tool timeline events from the AiNative loop's recorded
+        // tool_results so the UI can render "Searching for customer… ✓" steps. The
+        // AiNative runtime executes tools internally without its own event sink, so
+        // these would otherwise be invisible. No-op for non-AiNative turns (which
+        // emit tool events natively via the dispatcher) — so there is no double-emit.
+        $this->emitAiNativeToolEvents($events, $run, $step, $response, $runtimeOptions);
+
         try {
             $events->emit(
                 $this->eventNameForStatus($status),
@@ -388,6 +420,148 @@ class RunAgentJob implements ShouldQueue
                 'status' => $status,
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * Emit one AGENT_REASONING stream event per accumulated planner rationale, read
+     * from $response->metadata['reasoning_trace']. Best-effort: a failure here must
+     * never abort the run after it has already completed. When expose_reasoning is
+     * off the trace is absent, so this is a no-op.
+     *
+     * @param array<string, mixed> $runtimeOptions
+     */
+    protected function emitReasoningEvents(
+        AgentRunEventStreamService $events,
+        AIAgentRun $run,
+        AIAgentRunStep $step,
+        AgentResponse $response,
+        array $runtimeOptions
+    ): void {
+        $trace = $response->metadata['reasoning_trace'] ?? [];
+        if (!is_array($trace) || $trace === []) {
+            return;
+        }
+
+        foreach ($trace as $entry) {
+            if (!is_string($entry) || trim($entry) === '') {
+                continue;
+            }
+
+            try {
+                $events->emit(
+                    AgentRunEventStreamService::AGENT_REASONING,
+                    $run,
+                    $step,
+                    ['reasoning' => trim($entry)],
+                    $runtimeOptions
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Agent reasoning event emission failed', [
+                    'run_id' => $run->id,
+                    'run_uuid' => $run->uuid,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Emit a single PLAN_UPDATED stream event from $response->metadata['plan'] =
+     * {steps, current}. Best-effort: a failure here must never abort the run after
+     * it has already completed. When plan_timeline is off the key is absent, so this
+     * is a no-op.
+     *
+     * @param array<string, mixed> $runtimeOptions
+     */
+    protected function emitPlanEvent(
+        AgentRunEventStreamService $events,
+        AIAgentRun $run,
+        AIAgentRunStep $step,
+        AgentResponse $response,
+        array $runtimeOptions
+    ): void {
+        $plan = $response->metadata['plan'] ?? null;
+        if (!is_array($plan) || !is_array($plan['steps'] ?? null) || ($plan['steps'] === [])) {
+            return;
+        }
+
+        try {
+            $events->emit(
+                AgentRunEventStreamService::PLAN_UPDATED,
+                $run,
+                $step,
+                $plan,
+                $runtimeOptions
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Agent plan event emission failed', [
+                'run_id' => $run->id,
+                'run_uuid' => $run->uuid,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Reconstruct tool.started + tool.completed/tool.failed stream events from the
+     * AiNative loop's recorded tool_results ($response->metadata['ai_native']
+     * ['tool_results']), so a UI gets the per-tool "Searching for customer… ✓"
+     * timeline the AiNative runtime would otherwise never surface. Best-effort and
+     * a no-op for non-AiNative turns (no metadata['ai_native']) — the dispatcher
+     * path emits its own tool events, so this never double-emits.
+     *
+     * @param array<string, mixed> $runtimeOptions
+     */
+    protected function emitAiNativeToolEvents(
+        AgentRunEventStreamService $events,
+        AIAgentRun $run,
+        AIAgentRunStep $step,
+        AgentResponse $response,
+        array $runtimeOptions
+    ): void {
+        $results = $response->metadata['ai_native']['tool_results'] ?? null;
+        if (!is_array($results) || $results === []) {
+            return;
+        }
+
+        foreach ($results as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $toolName = trim((string) ($entry['tool'] ?? ''));
+            if ($toolName === '') {
+                continue;
+            }
+
+            $result = is_array($entry['result'] ?? null) ? $entry['result'] : [];
+            $succeeded = (bool) ($result['success'] ?? false);
+
+            try {
+                $events->emit(
+                    AgentRunEventStreamService::TOOL_STARTED,
+                    $run,
+                    $step,
+                    ['tool_name' => $toolName, 'arguments' => $entry['params'] ?? []],
+                    $runtimeOptions
+                );
+
+                $events->emit(
+                    $succeeded ? AgentRunEventStreamService::TOOL_COMPLETED : AgentRunEventStreamService::TOOL_FAILED,
+                    $run,
+                    $step,
+                    ['tool_name' => $toolName, 'success' => $succeeded],
+                    $runtimeOptions
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('Agent AiNative tool event emission failed', [
+                    'run_id' => $run->id,
+                    'run_uuid' => $run->uuid,
+                    'tool' => $toolName,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

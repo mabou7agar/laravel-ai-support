@@ -8,6 +8,8 @@ use LaravelAIEngine\Http\Controllers\Api\FileAnalysisApiController;
 use LaravelAIEngine\Http\Controllers\Api\GenerateApiController;
 use LaravelAIEngine\Http\Controllers\Api\EngineCatalogController;
 use LaravelAIEngine\Http\Controllers\Api\HealthApiController;
+use LaravelAIEngine\Http\Controllers\Api\ImageOperationApiController;
+use LaravelAIEngine\Http\Controllers\Api\ModelCouncilApiController;
 use LaravelAIEngine\Http\Controllers\Api\ModuleController;
 use LaravelAIEngine\Http\Controllers\Api\AgentRunController;
 use LaravelAIEngine\Http\Controllers\Api\VectorStoreApiController;
@@ -61,8 +63,17 @@ Route::prefix('api/v1/agent')
         Route::post('/chat', [AgentChatApiController::class, 'sendMessage'])
             ->name('chat.send');
 
+        Route::post('/council', [ModelCouncilApiController::class, 'run'])
+            ->name('council.run');
+
         Route::get('/conversations', [AgentConversationApiController::class, 'index'])
             ->name('conversations.list');
+
+        Route::get('/conversations/search', [AgentConversationApiController::class, 'search'])
+            ->name('conversations.search');
+
+        Route::post('/conversations/folder', [AgentConversationApiController::class, 'moveToFolder'])
+            ->name('conversations.folder');
     });
 
 // File analysis API Routes (v1)
@@ -128,6 +139,9 @@ if (config('ai-engine.api.generate.enabled', true)) {
 
             Route::post('/image', [GenerateApiController::class, 'image'])
                 ->name('image');
+
+            Route::post('/image/operation', [ImageOperationApiController::class, 'apply'])
+                ->name('image.operation');
 
             Route::post('/preview', [GenerateApiController::class, 'preview'])
                 ->name('preview');

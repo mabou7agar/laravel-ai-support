@@ -16,6 +16,7 @@ class Conversation extends Model
     protected $fillable = [
         'conversation_id',
         'user_id',
+        'folder_id',
         'title',
         'system_prompt',
         'metadata',
@@ -153,6 +154,15 @@ class Conversation extends Model
     public function scopeForUser($query, string $userId)
     {
         return $query->where('user_id', $userId);
+    }
+
+    public function scopeInFolder($query, ?string $folderId)
+    {
+        if ($folderId === null || $folderId === '') {
+            return $query;
+        }
+
+        return $query->where('folder_id', $folderId);
     }
 
     public function getContext(): array

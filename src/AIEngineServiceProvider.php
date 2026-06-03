@@ -235,6 +235,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\StreamingServerCommand::class,
                 Console\Commands\SystemHealthCommand::class,
                 Console\Commands\InfrastructureHealthCommand::class,
+                Console\Commands\AiDoctorCommand::class,
                 Console\Commands\TestPackageCommand::class,
                 Console\Commands\TestEverythingCommand::class,
                 Console\Commands\TestAgentOrchestrationCommand::class,

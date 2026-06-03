@@ -39,6 +39,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
             'audio' => match ($request->getModel()->value) {
                 EntityEnum::ELEVEN_SCRIBE_V2 => $this->audioToText($request),
                 EntityEnum::ELEVEN_MULTILINGUAL_STS_V2 => $this->speechToSpeech($request),
+                EntityEnum::ELEVEN_MUSIC => $this->generateMusic($request),
                 default => $this->generateAudio($request),
             },
             'speech' => $this->audioToText($request),
@@ -122,6 +123,10 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
      */
     public function generateAudio(AIRequest $request): AIResponse
     {
+        if ($request->getModel()->value === EntityEnum::ELEVEN_MUSIC) {
+            return $this->generateMusic($request);
+        }
+
         try {
             $voiceId = $request->getParameters()['voice_id'] ?? ($this->config['default_voice_id'] ?? 'pNInz6obpgDQGcFmaJgB');
             $stability = $request->getParameters()['stability'] ?? 0.5;
@@ -176,6 +181,71 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
         } catch (\Exception $e) {
             return AIResponse::error(
                 'Unexpected error: ' . $e->getMessage(),
+                $request->getEngine(),
+                $request->getModel()
+            );
+        }
+    }
+
+    /**
+     * Generate music from a text prompt via the ElevenLabs music endpoint.
+     *
+     * Mirrors generateAudio(): POSTs JSON to /v1/music, saves the returned
+     * audio bytes through the shared media manager and returns an AIResponse
+     * carrying the stored file plus usage metadata.
+     */
+    public function generateMusic(AIRequest $request): AIResponse
+    {
+        try {
+            $parameters = $request->getParameters();
+
+            $payload = array_filter([
+                'prompt' => $request->getPrompt(),
+                'music_length_ms' => isset($parameters['music_length_ms'])
+                    ? (int) $parameters['music_length_ms']
+                    : null,
+                'negative_prompt' => $parameters['negative_prompt'] ?? null,
+                'cfg_scale' => $parameters['cfg_scale'] ?? null,
+                'composition_plan' => $parameters['composition_plan'] ?? null,
+                'model_id' => $parameters['model_id'] ?? null,
+            ], static fn ($value): bool => $value !== null && $value !== '');
+
+            $response = $this->httpClient->post('/v1/music', [
+                'json' => $payload,
+            ]);
+
+            $audioData = $response->getBody()->getContents();
+            $filename = $this->saveMusicFile($audioData, $request);
+
+            return AIResponse::success(
+                $request->getPrompt(),
+                $request->getEngine(),
+                $request->getModel(),
+                [
+                    'provider' => EngineEnum::ElevenLabs->value,
+                    'service' => 'music_generation',
+                    'model' => $request->getModel()->value,
+                    'music_length_ms' => $payload['music_length_ms'] ?? null,
+                ]
+            )->withFiles([$filename])
+             ->withUsage(
+                 creditsUsed: $request->getModel()->creditIndex()
+             )->withDetailedUsage([
+                 'prompt' => $request->getPrompt(),
+                 'music_length_ms' => $payload['music_length_ms'] ?? null,
+                 'negative_prompt' => $payload['negative_prompt'] ?? null,
+                 'cfg_scale' => $payload['cfg_scale'] ?? null,
+             ]);
+
+        } catch (RequestException $e) {
+            return AIResponse::error(
+                'ElevenLabs music API error: ' . $e->getMessage(),
+                $request->getEngine(),
+                $request->getModel()
+            );
+        } catch (\Exception $e) {
+            return AIResponse::error(
+                'ElevenLabs music error: ' . $e->getMessage(),
                 $request->getEngine(),
                 $request->getModel()
             );
@@ -477,7 +547,7 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
      */
     protected function getSupportedCapabilities(): array
     {
-        return ['audio', 'speech', 'tts', 'text_to_speech', 'speech_to_text', 'speech_to_speech', 'sts', 'voice_cloning', 'streaming'];
+        return ['audio', 'speech', 'tts', 'text_to_speech', 'speech_to_text', 'speech_to_speech', 'sts', 'music', 'music_generation', 'voice_cloning', 'streaming'];
     }
 
     /**
@@ -544,6 +614,27 @@ class ElevenLabsEngineDriver extends BaseEngineDriver
                 'content_type' => 'audio',
                 'collection_name' => 'generated-audio',
                 'name' => 'elevenlabs-audio',
+                'mime_type' => 'audio/mpeg',
+            ]
+        );
+
+        return (string) ($stored['url'] ?? '');
+    }
+
+    /**
+     * Save generated music to storage
+     */
+    private function saveMusicFile(string $audioData, AIRequest $request): string
+    {
+        $stored = app(AIMediaManager::class)->storeBinary(
+            $audioData,
+            'ai_music_' . uniqid() . '.mp3',
+            [
+                'engine' => $request->getEngine()->value,
+                'ai_model' => $request->getModel()->value,
+                'content_type' => 'audio',
+                'collection_name' => 'generated-music',
+                'name' => 'elevenlabs-music',
                 'mime_type' => 'audio/mpeg',
             ]
         );

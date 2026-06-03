@@ -82,6 +82,8 @@ class AiNativeResponseFactory
         );
         $response->strategy = 'ai_native';
         $response->metadata = ['ai_native' => $this->stateStore->redactedState($state)];
+        $this->attachReasoningTrace($response, $state);
+        $this->attachPlanTimeline($response, $state);
 
         return $response;
     }
@@ -176,7 +178,65 @@ class AiNativeResponseFactory
         );
         $response->strategy = 'ai_native';
         $response->metadata = ['ai_native' => $this->stateStore->redactedState($state)];
+        $this->attachReasoningTrace($response, $state);
+        $this->attachPlanTimeline($response, $state);
 
         return $response;
+    }
+
+    /**
+     * Copy any accumulated per-turn planner rationale onto the returned response as
+     * a top-level metadata['reasoning_trace'][] (alongside metadata['ai_native']).
+     * No-op when the trace is absent (expose_reasoning OFF), preserving today's
+     * metadata byte-for-byte.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function attachReasoningTrace(AgentResponse $response, array $state): void
+    {
+        if (empty($state['reasoning_trace'])) {
+            return;
+        }
+
+        $trace = array_values(array_filter(
+            (array) $state['reasoning_trace'],
+            static fn (mixed $entry): bool => is_string($entry) && trim($entry) !== ''
+        ));
+
+        if ($trace === []) {
+            return;
+        }
+
+        $response->metadata['reasoning_trace'] = $trace;
+    }
+
+    /**
+     * Copy the per-turn live plan snapshot onto the returned response as a
+     * top-level metadata['plan'] = {steps, current} (alongside metadata['ai_native']).
+     * No-op when the snapshot is absent or has no steps (plan_timeline OFF),
+     * preserving today's metadata byte-for-byte.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function attachPlanTimeline(AgentResponse $response, array $state): void
+    {
+        $snapshot = $state['plan_timeline'] ?? null;
+        if (!is_array($snapshot)) {
+            return;
+        }
+
+        $steps = array_values(array_filter(
+            (array) ($snapshot['steps'] ?? []),
+            static fn (mixed $step): bool => is_string($step) && trim($step) !== ''
+        ));
+
+        if ($steps === []) {
+            return;
+        }
+
+        $current = (int) ($snapshot['current'] ?? 1);
+        $current = max(1, min($current, count($steps)));
+
+        $response->metadata['plan'] = ['steps' => $steps, 'current' => $current];
     }
 }

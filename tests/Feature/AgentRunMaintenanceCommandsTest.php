@@ -7,10 +7,52 @@ namespace LaravelAIEngine\Tests\Feature;
 use Illuminate\Support\Facades\Artisan;
 use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Repositories\AgentRunRepository;
+use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
+use LaravelAIEngine\Services\Agent\AgentRunMaintenanceService;
 use LaravelAIEngine\Tests\TestCase;
 
 class AgentRunMaintenanceCommandsTest extends TestCase
 {
+    public function test_recover_stuck_emits_failed_event_recovery_step_and_final_response(): void
+    {
+        $repo = app(AgentRunRepository::class);
+        $run = $repo->create([
+            'session_id' => 'stuck-run',
+            'status' => AIAgentRun::STATUS_RUNNING,
+            'started_at' => now()->subHour(),
+            'created_at' => now()->subHour(),
+            'updated_at' => now()->subHour(),
+        ]);
+
+        $report = app(AgentRunMaintenanceService::class)->recoverStuck(30);
+
+        $this->assertSame(1, $report['updated']);
+
+        $run->refresh();
+        $this->assertSame(AIAgentRun::STATUS_FAILED, $run->status);
+
+        // final_response describes the auto-fail
+        $this->assertNotNull($run->final_response);
+        $this->assertFalse($run->final_response['success']);
+        $this->assertTrue($run->final_response['metadata']['auto_failed']);
+
+        // recovery metadata appended to the run
+        $this->assertSame(AIAgentRun::STATUS_RUNNING, $run->metadata['recovery']['previous_status']);
+        $this->assertArrayHasKey('recovered_at', $run->metadata['recovery']);
+
+        // a recovery step was created
+        $recoveryStep = $run->steps()->where('type', 'recovery')->first();
+        $this->assertNotNull($recoveryStep);
+        $this->assertSame(AIAgentRun::STATUS_FAILED, $recoveryStep->status);
+        $this->assertSame('auto_fail', $recoveryStep->action);
+
+        // RUN_FAILED event emitted so subscribers learn the run auto-failed
+        $events = collect(app(AgentRunEventStreamService::class)->fallbackEvents($run))
+            ->pluck('name')
+            ->all();
+        $this->assertContains(AgentRunEventStreamService::RUN_FAILED, $events);
+    }
+
     public function test_recover_stuck_agent_runs_command_marks_old_running_runs_failed(): void
     {
         $repo = app(AgentRunRepository::class);

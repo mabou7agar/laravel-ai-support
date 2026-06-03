@@ -9,6 +9,7 @@ use LaravelAIEngine\DTOs\RoutingDecision;
 use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\RoutingDecisionSource;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
@@ -67,20 +68,60 @@ class LaravelAgentProcessor
             'message' => substr($message, 0, 100),
         ]);
 
+        // Idempotency guard: when the client supplies an explicit idempotency_key, an
+        // intentional retry of the same logical request must return the prior response
+        // verbatim rather than being silently dropped (or re-executed). The cached
+        // response is returned as-is and the retry is NOT treated as a new turn.
+        $idempotencyKey = $this->idempotencyKey($options);
+        if ($idempotencyKey !== null) {
+            $cached = Cache::get($this->idempotencyCacheKey($idempotencyKey, $sessionId));
+            if (is_array($cached)) {
+                Log::channel('ai-engine')->debug('Returning idempotent replay of prior response', [
+                    'session_id' => $sessionId,
+                    'idempotency_key' => $idempotencyKey,
+                ]);
+
+                return $this->responseFromCache($cached);
+            }
+        }
+
         $context = $this->contextManager->getOrCreate($sessionId, $userId);
         $this->hydrateConversationHistory($context, $options);
 
-        // Dedup guard: if the client already included the current turn as the last entry
-        // in conversation_history, skip addUserMessage to avoid a double-user-turn in the
+        // Dedup guard (fallback only — used when no idempotency_key is supplied): if the
+        // client already included the current turn as the last entry in
+        // conversation_history, skip addUserMessage to avoid a double-user-turn in the
         // context that would confuse the model (stateless multi-turn pattern).
         $lastHydrated = end($context->conversationHistory);
+        $trimmedMessage = trim($message);
         $alreadyPresent = is_array($lastHydrated)
             && ($lastHydrated['role'] ?? null) === 'user'
-            && trim((string) ($lastHydrated['content'] ?? '')) === trim($message);
+            && $trimmedMessage !== ''
+            && trim((string) ($lastHydrated['content'] ?? '')) === $trimmedMessage;
 
         if (!$alreadyPresent) {
             $context->addUserMessage($message);
         }
+
+        if ($idempotencyKey !== null) {
+            return $this->rememberIdempotentResponse(
+                $idempotencyKey,
+                $sessionId,
+                $this->dispatchProcess($message, $context, $options)
+            );
+        }
+
+        return $this->dispatchProcess($message, $context, $options);
+    }
+
+    /**
+     * Core routing pipeline for a single turn, shared by direct and idempotent paths.
+     */
+    protected function dispatchProcess(
+        string $message,
+        UnifiedActionContext $context,
+        array $options
+    ): AgentResponse {
 
         if ($this->shouldUseGoalAgent($options)) {
             return $this->finalizeDirect(
@@ -94,7 +135,8 @@ class LaravelAgentProcessor
                         'target' => (string) ($options['target'] ?? $message),
                         'sub_agents' => $options['sub_agents'] ?? null,
                     ]
-                ), $message, $context, $options)
+                ), $message, $context, $options),
+                $options
             );
         }
 
@@ -104,19 +146,21 @@ class LaravelAgentProcessor
         ) {
             return $this->finalizeDirect(
                 $context,
-                $this->aiNativeRuntime()->process($message, $context, $options)
+                $this->aiNativeRuntime()->process($message, $context, $options),
+                $options
             );
         }
 
         if ($context->has('routed_to_node')) {
             if ($this->nodeSessionManager->shouldContinueSession($message, $context)) {
                 Log::channel('ai-engine')->debug('Continuing routed node session');
-                $response = $this->dispatchRoutingDecision(new RoutingDecision(
+                $continueDecision = new RoutingDecision(
                     action: RoutingDecisionAction::CONTINUE_NODE,
                     source: RoutingDecisionSource::SESSION,
                     confidence: 'high',
                     reason: 'Continuing active routed node session.'
-                ), $message, $context, $options);
+                );
+                $response = $this->dispatchRoutingDecision($continueDecision, $message, $context, $options);
                 if ($response->success || $response->message !== 'No routed node session is available to continue.') {
                     if ($this->shouldFallbackToLocalRag($response, $options)) {
                         Log::channel('ai-engine')->warning('Remote node follow-up failed; attempting degraded local fallback', [
@@ -129,13 +173,28 @@ class LaravelAgentProcessor
                         if (is_array($context->pendingAction) && ($context->pendingAction['type'] ?? null) === 'remote_node_session') {
                             $context->pendingAction = null;
                         }
+
+                        // Record that CONTINUE_NODE was attempted and failed so the fallback
+                        // SEARCH_RAG dispatch carries the full decision chain instead of
+                        // appearing as a fresh, context-free RAG search.
+                        $failedContinue = new RoutingDecision(
+                            action: $continueDecision->action,
+                            source: $continueDecision->source,
+                            confidence: $continueDecision->confidence,
+                            reason: $continueDecision->reason,
+                            payload: $continueDecision->payload,
+                            metadata: array_merge($continueDecision->metadata, [
+                                'failed' => true,
+                                'failure_reason' => $response->message,
+                            ])
+                        );
                         $fallback = $this->searchRag($message, $context, array_merge($options, [
                             'local_only' => true,
-                        ]));
+                        ]), new RoutingTrace([$failedContinue]));
 
                         if ($fallback->success) {
                             $fallback->message = $this->fallbackNotice() . "\n\n" . $fallback->message;
-                            return $this->responseFinalizer->finalize($context, $fallback);
+                            return $this->responseFinalizer->finalize($context, $fallback, $options);
                         }
                     }
 
@@ -167,16 +226,18 @@ class LaravelAgentProcessor
      *   - The current user turn MUST NOT be included as the last entry; if it is, the
      *     dedup guard below will skip addUserMessage to avoid duplicating the turn.
      *
-     * This method is idempotent: if the context already carries history it returns
-     * immediately so re-entrant calls (e.g. goal-agent reroutes) are safe.
+     * Re-entrant calls (e.g. RAG -> orchestrator reroutes) are safe: when NO fresh
+     * conversation_history is supplied the existing context history is left untouched,
+     * but when the client DOES supply a fresh history it is applied so updated turns
+     * are not silently ignored. The dedup guard in process() prevents the current user
+     * turn being duplicated after re-hydration.
      */
     protected function hydrateConversationHistory(UnifiedActionContext $context, array $options): void
     {
-        if ($context->conversationHistory !== []) {
-            return;
-        }
-
         $history = $options['conversation_history'] ?? [];
+
+        // No fresh history supplied: keep whatever the context already carries (if any)
+        // so re-entrant reroutes that omit conversation_history are non-destructive.
         if (!is_array($history) || $history === []) {
             return;
         }
@@ -208,6 +269,12 @@ class LaravelAgentProcessor
 
             return $message;
         }, $filtered);
+
+        // If every supplied entry was invalid, do not clobber any existing context
+        // history with an empty array — leave the prior history intact.
+        if ($filtered === []) {
+            return;
+        }
 
         // Hard-cap the replayed history to avoid unbounded context growth.
         // Preserve the most-recent messages (tail of the array) so context is current.
@@ -245,7 +312,7 @@ class LaravelAgentProcessor
                 $decisionOptions
             );
 
-            return $this->responseFinalizer->finalize($context, $response);
+            return $this->responseFinalizer->finalize($context, $response, $decisionOptions);
 
         } catch (\Throwable $e) {
             Log::channel('ai-engine')->error('AI orchestration failed', [
@@ -257,12 +324,12 @@ class LaravelAgentProcessor
                 return $this->responseFinalizer->finalize($context, AgentResponse::failure(
                     message: 'I could not route this request to an available action.',
                     context: $context
-                ));
+                ), $options);
             }
 
             $response = $this->searchRag($message, $context, $options);
 
-            return $this->responseFinalizer->finalize($context, $response);
+            return $this->responseFinalizer->finalize($context, $response, $options);
         }
     }
 
@@ -300,13 +367,19 @@ class LaravelAgentProcessor
                     $context,
                     $this->optionsForRoutingDecision($decision, $options),
                     $trace
-                )
+                ),
+                $options
             );
         } catch (\Throwable $e) {
             Log::channel('ai-engine')->error('Routing pipeline failed', [
                 'error' => $e->getMessage(),
                 'exception' => $e::class,
             ]);
+
+            // The failed pipeline attempt may have merged a selected entity into
+            // $options (mergeConversationContext only sets keys when unset). Drop
+            // it so the heuristic fallback is not biased by a partial failed run.
+            unset($options['selected_entity'], $options['selected_entity_context']);
 
             return $this->heuristicRoute($message, $context, $options);
         }
@@ -334,7 +407,8 @@ class LaravelAgentProcessor
                     'preclassified_route_mode' => 'semantic_retrieval',
                     'decision_path' => 'forced_rag',
                     'decision_source' => 'forced',
-                ]))
+                ])),
+                $options
             );
         }
 
@@ -362,7 +436,8 @@ class LaravelAgentProcessor
                 ), $message, $context, array_merge($options, [
                     'decision_path' => 'heuristic_conversational',
                     'decision_source' => $classification['source'],
-                ]))
+                ])),
+                $options
             );
         }
 
@@ -383,7 +458,8 @@ class LaravelAgentProcessor
                     'preclassified_route_mode' => $classification['mode'],
                     'decision_path' => 'heuristic_' . $classification['mode'],
                     'decision_source' => $classification['source'],
-                ]))
+                ])),
+                $options
             );
         }
 
@@ -393,7 +469,8 @@ class LaravelAgentProcessor
     protected function searchRag(
         string $message,
         UnifiedActionContext $context,
-        array $options
+        array $options,
+        ?RoutingTrace $priorTrace = null
     ): AgentResponse {
         if (!$this->ragEnabledForRequest($options)) {
             return AgentResponse::failure(
@@ -402,12 +479,20 @@ class LaravelAgentProcessor
             );
         }
 
-        return $this->dispatchRoutingDecision(new RoutingDecision(
+        $ragDecision = new RoutingDecision(
             action: RoutingDecisionAction::SEARCH_RAG,
             source: RoutingDecisionSource::RUNTIME,
             confidence: 'high',
             reason: 'RAG execution requested by orchestrator callback.'
-        ), $message, $context, $options);
+        );
+
+        // When the caller supplies a prior trace (e.g. a failed CONTINUE_NODE), prepend
+        // those decisions so the dispatched RAG response records the full routing chain.
+        $trace = $priorTrace instanceof RoutingTrace
+            ? $priorTrace->record($ragDecision)
+            : null;
+
+        return $this->dispatchRoutingDecision($ragDecision, $message, $context, $options, $trace);
     }
 
     protected function ragEnabledForRequest(array $options): bool
@@ -450,17 +535,40 @@ class LaravelAgentProcessor
                 $rerouteMessage,
                 $sessionId,
                 $userId,
-                $rerouteOptions
+                // Strip the idempotency key on reroutes so a nested process() does not replay
+                // or re-cache under the parent turn's key; the outer turn owns the key.
+                array_diff_key($rerouteOptions, ['idempotency_key' => true])
             )
         );
 
-        $response->metadata = array_merge($response->metadata ?? [], [
+        $existingMetadata = $response->metadata ?? [];
+
+        // A nested process()/dispatch() (e.g. a SEARCH_RAG reroute) may have already stamped
+        // its own routing_decision/routing_trace onto the response metadata. Preserve that
+        // nested decision instead of silently overwriting it with the outer decision: the
+        // nested decision is recorded under 'nested_routing_decision' and the outer trace is
+        // prepended to the existing trace so the full routing chain is visible.
+        $nestedDecision = $existingMetadata['routing_decision'] ?? null;
+        $nestedTrace = is_array($existingMetadata['routing_trace'] ?? null)
+            ? $existingMetadata['routing_trace']
+            : [];
+
+        $outerTrace = $trace instanceof RoutingTrace
+            ? array_map(static fn (RoutingDecision $candidate): array => $candidate->toArray(), $trace->decisions)
+            : [$decision->toArray()];
+
+        $mergedMetadata = array_merge($existingMetadata, [
             'routing_decision' => $decision->toArray(),
-            'routing_trace' => $trace instanceof RoutingTrace
-                ? array_map(static fn (RoutingDecision $candidate): array => $candidate->toArray(), $trace->decisions)
-                : [$decision->toArray()],
+            'routing_trace' => array_merge($outerTrace, $nestedTrace),
             'route_explanation' => $this->routeExplanation($decision, $options),
         ]);
+
+        if ($nestedDecision !== null && $nestedDecision !== $decision->toArray()) {
+            // Don't clobber a nested decision recorded by a deeper dispatch; chain it.
+            $mergedMetadata['nested_routing_decision'] = $existingMetadata['nested_routing_decision'] ?? $nestedDecision;
+        }
+
+        $response->metadata = $mergedMetadata;
 
         return $response;
     }
@@ -573,9 +681,80 @@ class LaravelAgentProcessor
         return 'Remote node is unavailable. Showing local results only (degraded mode).';
     }
 
-    protected function finalizeDirect(UnifiedActionContext $context, AgentResponse $response): AgentResponse
+    /**
+     * Extract a non-empty idempotency key from the request options, if supplied.
+     */
+    protected function idempotencyKey(array $options): ?string
     {
-        return $this->responseFinalizer->finalize($context, $response);
+        $key = $options['idempotency_key'] ?? null;
+        if (!is_string($key)) {
+            return null;
+        }
+
+        $key = trim($key);
+
+        return $key === '' ? null : $key;
+    }
+
+    protected function idempotencyCacheKey(string $key, string $sessionId): string
+    {
+        return 'ai-agent:processor:idempotency:' . sha1($sessionId . '|' . $key);
+    }
+
+    protected function idempotencyTtl(): int
+    {
+        return max(1, (int) config('ai-agent.idempotency.ttl_seconds', 3600));
+    }
+
+    /**
+     * Cache the response under the idempotency key so a later retry replays it verbatim.
+     */
+    protected function rememberIdempotentResponse(
+        string $key,
+        string $sessionId,
+        AgentResponse $response
+    ): AgentResponse {
+        Cache::put(
+            $this->idempotencyCacheKey($key, $sessionId),
+            $response->toArray(),
+            now()->addSeconds($this->idempotencyTtl())
+        );
+
+        return $response;
+    }
+
+    /**
+     * Rebuild an AgentResponse from its cached array form (context is intentionally dropped;
+     * a replay returns the prior payload, not a live context handle).
+     *
+     * @param array<string, mixed> $cached
+     */
+    protected function responseFromCache(array $cached): AgentResponse
+    {
+        $metadata = is_array($cached['metadata'] ?? null) ? $cached['metadata'] : [];
+        $metadata['idempotent_replay'] = true;
+
+        return new AgentResponse(
+            success: (bool) ($cached['success'] ?? false),
+            message: (string) ($cached['message'] ?? ''),
+            data: is_array($cached['data'] ?? null) ? $cached['data'] : null,
+            strategy: $cached['strategy'] ?? null,
+            context: null,
+            needsUserInput: (bool) ($cached['needs_user_input'] ?? false),
+            actions: is_array($cached['actions'] ?? null) ? $cached['actions'] : null,
+            metadata: $metadata,
+            isComplete: (bool) ($cached['is_complete'] ?? false),
+            nextStep: $cached['next_step'] ?? null,
+            requiredInputs: is_array($cached['required_inputs'] ?? null) ? $cached['required_inputs'] : null
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $options Current-request scope threaded into finalization/compaction.
+     */
+    protected function finalizeDirect(UnifiedActionContext $context, AgentResponse $response, array $options = []): AgentResponse
+    {
+        return $this->responseFinalizer->finalize($context, $response, $options);
     }
 
     protected function shouldUseGoalAgent(array $options): bool

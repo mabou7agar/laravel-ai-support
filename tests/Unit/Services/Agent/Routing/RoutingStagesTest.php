@@ -118,6 +118,19 @@ class RoutingStagesTest extends UnitTestCase
         $this->assertSame(['customer' => 'Acme'], $decision->payload['params']);
     }
 
+    public function test_ai_router_stage_abstains_when_router_throws(): void
+    {
+        $router = Mockery::mock(IntentRouter::class);
+        $router->shouldReceive('route')
+            ->once()
+            ->andThrow(new \RuntimeException('router exploded'));
+
+        $decision = (new AIRouterStage($router))
+            ->decide('create invoice', new UnifiedActionContext('ai-router-crash-session'));
+
+        $this->assertNull($decision);
+    }
+
     public function test_fallback_stage_returns_conversational_decision(): void
     {
         $decision = (new FallbackConversationalStage())->decide('anything', new UnifiedActionContext('fallback-session'));

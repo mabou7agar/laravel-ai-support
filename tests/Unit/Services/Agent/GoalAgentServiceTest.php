@@ -94,6 +94,147 @@ class GoalAgentServiceTest extends UnitTestCase
         $this->assertSame("No handler registered for sub-agent 'research'.", $response->data['results']['research_task']['error']);
     }
 
+    public function test_goal_agent_fails_task_depending_on_nonexistent_task(): void
+    {
+        $writerRan = false;
+        $registry = new SubAgentRegistry($this->app, [
+            'writer' => [
+                'handler' => function (SubAgentTask $task, UnifiedActionContext $context, array $previousResults) use (&$writerRan) {
+                    $writerRan = true;
+
+                    return SubAgentResult::success($task->id, $task->agentId, 'Writer complete');
+                },
+            ],
+        ]);
+
+        $service = new GoalAgentService(
+            new SubAgentPlanner($registry),
+            new SubAgentExecutionService($registry)
+        );
+
+        $response = $service->execute('Ship an answer', new UnifiedActionContext('goal-session', 1), [
+            'sub_agents' => [
+                [
+                    'id' => 'write_task',
+                    'agent_id' => 'writer',
+                    'objective' => 'Write result',
+                    'depends_on' => ['research_task'],
+                ],
+            ],
+        ]);
+
+        $this->assertFalse($writerRan);
+        $this->assertFalse($response->success);
+        $result = $response->data['results']['write_task'];
+        $this->assertFalse($result['success']);
+        $this->assertSame('research_task', $result['metadata']['missing_dependency']);
+    }
+
+    public function test_goal_agent_fails_circular_dependencies(): void
+    {
+        $aRan = false;
+        $bRan = false;
+        $registry = new SubAgentRegistry($this->app, [
+            'agent_a' => [
+                'handler' => function (SubAgentTask $task, UnifiedActionContext $context, array $previousResults) use (&$aRan) {
+                    $aRan = true;
+
+                    return SubAgentResult::success($task->id, $task->agentId, 'A complete');
+                },
+            ],
+            'agent_b' => [
+                'handler' => function (SubAgentTask $task, UnifiedActionContext $context, array $previousResults) use (&$bRan) {
+                    $bRan = true;
+
+                    return SubAgentResult::success($task->id, $task->agentId, 'B complete');
+                },
+            ],
+        ]);
+
+        $service = new GoalAgentService(
+            new SubAgentPlanner($registry),
+            new SubAgentExecutionService($registry)
+        );
+
+        $response = $service->execute('Ship an answer', new UnifiedActionContext('goal-session', 1), [
+            'sub_agents' => [
+                [
+                    'id' => 'task_a',
+                    'agent_id' => 'agent_a',
+                    'objective' => 'A',
+                    'depends_on' => ['task_b'],
+                ],
+                [
+                    'id' => 'task_b',
+                    'agent_id' => 'agent_b',
+                    'objective' => 'B',
+                    'depends_on' => ['task_a'],
+                ],
+            ],
+        ]);
+
+        // No handler should run when the plan contains a cycle.
+        $this->assertFalse($aRan);
+        $this->assertFalse($bRan);
+        $this->assertFalse($response->success);
+        $this->assertTrue($response->data['results']['task_a']['metadata']['circular_dependency']);
+
+        // Any other emitted task in the cycle must also be flagged circular
+        // (critical stop_on_failure may halt the loop before reaching it).
+        if (isset($response->data['results']['task_b'])) {
+            $this->assertTrue($response->data['results']['task_b']['metadata']['circular_dependency']);
+        }
+    }
+
+    public function test_goal_agent_fails_forward_reference_dependency(): void
+    {
+        $writerRan = false;
+        $registry = new SubAgentRegistry($this->app, [
+            'writer' => [
+                'handler' => function (SubAgentTask $task, UnifiedActionContext $context, array $previousResults) use (&$writerRan) {
+                    $writerRan = true;
+
+                    return SubAgentResult::success($task->id, $task->agentId, 'Writer complete');
+                },
+            ],
+            'research' => [
+                'handler' => fn (SubAgentTask $task, UnifiedActionContext $context, array $previousResults) => SubAgentResult::success(
+                    $task->id,
+                    $task->agentId,
+                    'Research complete'
+                ),
+            ],
+        ]);
+
+        $service = new GoalAgentService(
+            new SubAgentPlanner($registry),
+            new SubAgentExecutionService($registry)
+        );
+
+        // write_task (order 0) depends on research_task (order 1) -> forward reference.
+        $response = $service->execute('Ship an answer', new UnifiedActionContext('goal-session', 1), [
+            'sub_agents' => [
+                [
+                    'id' => 'write_task',
+                    'agent_id' => 'writer',
+                    'objective' => 'Write result',
+                    'order' => 0,
+                    'depends_on' => ['research_task'],
+                ],
+                [
+                    'id' => 'research_task',
+                    'agent_id' => 'research',
+                    'objective' => 'Find facts',
+                    'order' => 1,
+                ],
+            ],
+        ]);
+
+        $this->assertFalse($writerRan);
+        $this->assertFalse($response->success);
+        $this->assertSame('research_task', $response->data['results']['write_task']['metadata']['forward_dependency']);
+    }
+
     public function test_goal_agent_can_request_more_input_from_sub_agent(): void
     {
         $registry = new SubAgentRegistry($this->app, [

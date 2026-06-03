@@ -56,6 +56,19 @@ return array_replace_recursive($defaults, [
         'anthropic' => [
             'api_key' => env('ANTHROPIC_API_KEY'),
         ],
+        'bedrock' => [
+            'region' => env('AWS_BEDROCK_REGION', env('AWS_DEFAULT_REGION', 'us-east-1')),
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'token' => env('AWS_SESSION_TOKEN'),
+            'profile' => env('AWS_PROFILE'),
+            'default_model' => env('AWS_BEDROCK_DEFAULT_MODEL', data_get($defaults, 'engines.bedrock.default_model', 'anthropic.claude-3-5-sonnet-20241022-v2:0')),
+        ],
+        'clipdrop' => [
+            'api_key' => env('CLIPDROP_API_KEY'),
+            'base_url' => env('CLIPDROP_BASE_URL', 'https://clipdrop-api.co'),
+            'timeout' => (int) env('CLIPDROP_TIMEOUT', 60),
+        ],
         'gemini' => [
             'api_key' => env('GEMINI_API_KEY'),
         ],
@@ -88,6 +101,12 @@ return array_replace_recursive($defaults, [
                     'completion' => env('OPENROUTER_MAX_COMPLETION_PRICE'),
                 ],
             ],
+        ],
+        'xai' => [
+            'api_key' => env('XAI_API_KEY'),
+            'base_url' => env('XAI_BASE_URL', 'https://api.x.ai/v1'),
+            'default_model' => env('XAI_DEFAULT_MODEL', data_get($defaults, 'engines.xai.default_model', 'grok-4.1')),
+            'timeout' => env('XAI_TIMEOUT', data_get($defaults, 'engines.xai.timeout', 60)),
         ],
         'pexels' => [
             'api_key' => env('PEXELS_API_KEY'),
@@ -131,6 +150,20 @@ return array_replace_recursive($defaults, [
     'credits' => [
         'enabled' => env('AI_ENGINE_CREDITS_ENABLED', data_get($defaults, 'credits.enabled', true)),
     ],
+    'data_query' => [
+        // Built-in structured count/list/filter tool ("data_query") the router
+        // auto-routes structured queries to.
+        'enabled' => env('AI_ENGINE_DATA_QUERY_ENABLED', data_get($defaults, 'data_query.enabled', true)),
+        // When 'models' is empty, queryable models are auto-discovered from the
+        // RAG-able model set. Provide an explicit map to control keywords/columns:
+        //   'invoice' => ['class' => App\Models\Invoice::class, 'aliases' => ['invoice','invoices'],
+        //                 'list' => ['id','invoice_number','total','status'],
+        //                 'status_column' => 'status', 'statuses' => ['paid','overdue']],
+        'models' => data_get($defaults, 'data_query.models', []),
+        'use_discovery' => env('AI_ENGINE_DATA_QUERY_DISCOVERY', data_get($defaults, 'data_query.use_discovery', true)),
+        'scope_columns' => data_get($defaults, 'data_query.scope_columns', ['user_id', 'workspace_id', 'tenant_id']),
+        'max_limit' => (int) env('AI_ENGINE_DATA_QUERY_MAX_LIMIT', data_get($defaults, 'data_query.max_limit', 50)),
+    ],
     'vector' => [
         'auto_index' => env('AI_ENGINE_VECTOR_AUTO_INDEX', data_get($defaults, 'vector.auto_index', false)),
         'driver' => env('AI_ENGINE_VECTOR_DRIVER', data_get($defaults, 'vector.driver', 'qdrant')),
@@ -162,9 +195,25 @@ return array_replace_recursive($defaults, [
                 'command' => data_get($defaults, 'learning.adapters.getdesign.command', []),
                 'output_file' => env('GETDESIGN_OUTPUT_FILE', data_get($defaults, 'learning.adapters.getdesign.output_file', 'DESIGN.md')),
             ],
+            'crawl' => [
+                'enabled' => env('AI_ENGINE_LEARNING_CRAWL_ENABLED', data_get($defaults, 'learning.adapters.crawl.enabled', false)),
+                'max_pages' => env('AI_ENGINE_LEARNING_CRAWL_MAX_PAGES', data_get($defaults, 'learning.adapters.crawl.max_pages', 30)),
+                'timeout' => env('AI_ENGINE_LEARNING_CRAWL_TIMEOUT', data_get($defaults, 'learning.adapters.crawl.timeout', 30)),
+            ],
         ],
     ],
     'media' => [
+        'document_extraction' => [
+            // When true, extraction failures are swallowed and an empty string is
+            // returned (legacy graceful-degradation contract). When false, a
+            // RuntimeException is thrown so callers can react to extraction errors.
+            // Failures are always logged regardless of this flag.
+            'graceful_degradation' => (bool) env('AI_ENGINE_DOC_EXTRACTION_GRACEFUL', data_get($defaults, 'media.document_extraction.graceful_degradation', true)),
+            // Maximum number of presentation slides scanned during PPTX extraction.
+            'max_slides' => (int) env('AI_ENGINE_DOC_EXTRACTION_MAX_SLIDES', data_get($defaults, 'media.document_extraction.max_slides', 100)),
+            // Maximum file size (in bytes) accepted for extraction. 0 disables the cap.
+            'max_file_size' => (int) env('AI_ENGINE_DOC_EXTRACTION_MAX_FILE_SIZE', data_get($defaults, 'media.document_extraction.max_file_size', 0)),
+        ],
         'transcription_normalization' => [
             'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', data_get($defaults, 'media.transcription_normalization.enabled', false)),
             'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', data_get($defaults, 'media.transcription_normalization.engine', 'openai')),

@@ -243,11 +243,46 @@ class VisionService
             throw new \InvalidArgumentException("Image file not found: {$imagePath}");
         }
 
-        $imageData = file_get_contents($imagePath);
-        $mimeType = mime_content_type($imagePath);
+        $imageData = @file_get_contents($imagePath);
+        if ($imageData === false) {
+            throw new \InvalidArgumentException("Unable to read image file: {$imagePath}");
+        }
+
+        $mimeType = $this->detectMimeType($imagePath);
+        if ($mimeType === null) {
+            throw new \InvalidArgumentException("Unable to determine MIME type for image file: {$imagePath}");
+        }
+
         $base64 = base64_encode($imageData);
 
         return "data:{$mimeType};base64,{$base64}";
+    }
+
+    /**
+     * Detect a file's MIME type via finfo (preferred over mime_content_type()),
+     * with a graceful fallback when the fileinfo extension is unavailable.
+     */
+    protected function detectMimeType(string $filePath): ?string
+    {
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo !== false) {
+                $mime = finfo_file($finfo, $filePath);
+                finfo_close($finfo);
+                if (is_string($mime) && $mime !== '') {
+                    return $mime;
+                }
+            }
+        }
+
+        if (function_exists('mime_content_type')) {
+            $mime = @mime_content_type($filePath);
+            if (is_string($mime) && $mime !== '') {
+                return $mime;
+            }
+        }
+
+        return null;
     }
 
     protected function buildCreditRequest(?string $userId, string $operation, array $parameters = []): AIRequest

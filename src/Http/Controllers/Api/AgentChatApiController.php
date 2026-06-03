@@ -32,7 +32,7 @@ class AgentChatApiController extends Controller
         try {
             $dto = $request->toDTO();
             $ragCollections = $this->resolveRagCollections($request->input('rag_collections'));
-            $useRag = $request->boolean('use_rag', true);
+            $useRag = $request->useRag();
             $execution = $this->executionModes->resolve($dto, $useRag, $ragCollections);
             $executionOptions = array_merge($dto->agentOptions(), [
                 'execution_mode_resolved' => $execution->mode,
@@ -43,7 +43,7 @@ class AgentChatApiController extends Controller
                 return response()->json($this->jsonSafe([
                     'success' => true,
                     'data' => array_merge($this->agentChatRuns->start([
-                        'message' => $dto->message,
+                        'message' => $dto->composedMessage(),
                         'session_id' => $dto->sessionId,
                         'user_id' => $dto->userId,
                         'options' => array_merge([
@@ -63,7 +63,7 @@ class AgentChatApiController extends Controller
             }
 
             $response = $this->chatService->processMessage(
-                message: $dto->message,
+                message: $dto->composedMessage(),
                 sessionId: $dto->sessionId,
                 engine: $dto->engine,
                 model: $dto->model,
@@ -135,6 +135,10 @@ class AgentChatApiController extends Controller
             && config('ai-engine.nodes.is_master', true)
             && config('ai-engine.nodes.search_mode', 'routing') === 'routing'
         ) {
+            Log::channel('ai-engine')->debug('Node routing mode active; skipping centralized RAG collection discovery', [
+                'search_mode' => 'routing',
+            ]);
+
             return [];
         }
 

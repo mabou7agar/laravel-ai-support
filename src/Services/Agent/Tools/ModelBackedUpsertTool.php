@@ -103,20 +103,22 @@ abstract class ModelBackedUpsertTool extends ModelBackedLookupTool
         $payload = array_merge($this->defaults($context, $parameters), Arr::only($parameters, $this->writeFields()));
         $missing = $this->missingRequired($payload, $this->requiredFields());
         if ($missing !== []) {
-            return ActionResult::failure('Required fields are missing.', [
-                'success' => false,
-                'message' => 'Required fields are missing.',
-                'missing_fields' => $missing,
-            ]);
+            // Ask for the missing input instead of hard-failing, so the
+            // orchestrator re-prompts the user (consistent with the guided
+            // needs_user_input UX used by higher-level tools like create_invoice).
+            return ActionResult::needsUserInput(
+                'Please provide the required ' . (count($missing) === 1 ? 'field' : 'fields')
+                    . ': ' . implode(', ', $missing) . '.',
+                ['missing_fields' => $missing]
+            );
         }
 
         $identity = $this->identityPayload($modelClass, $payload, $this->identityFields());
         if ($identity === []) {
-            return ActionResult::failure('At least one identity field is required.', [
-                'success' => false,
-                'message' => 'At least one identity field is required.',
-                'missing_fields' => $this->identityFields(),
-            ]);
+            return ActionResult::needsUserInput(
+                'Please provide at least one of: ' . implode(', ', $this->identityFields()) . '.',
+                ['missing_fields' => $this->identityFields()]
+            );
         }
 
         $attributes = $this->existingColumnPayload($modelClass, $payload);

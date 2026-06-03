@@ -5,11 +5,20 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Media;
 
 use Illuminate\Support\Facades\Log;
+use LaravelAIEngine\Exceptions\DocumentExtractionException;
 
 class DocumentService
 {
     /**
-     * Extract text from document
+     * Extract text from document.
+     *
+     * On failure the behaviour depends on the
+     * `ai-engine.media.document_extraction.graceful_degradation` config flag:
+     *  - true (default): logs a warning and returns '' to preserve the legacy
+     *    graceful-degradation contract relied upon by media embedding callers.
+     *  - false: throws a {@see DocumentExtractionException} so callers can react.
+     *
+     * Either way the failure is always logged so it is observable.
      */
     public function extractText(string $filePath, string $extension): string
     {
@@ -18,6 +27,8 @@ class DocumentService
         }
 
         $extension = strtolower($extension);
+
+        $this->assertWithinSizeLimit($filePath, $extension);
 
         try {
             return match ($extension) {
@@ -32,13 +43,69 @@ class DocumentService
                 'ppt', 'pptx' => $this->extractFromPowerPoint($filePath),
                 default => $this->extractFromTXT($filePath), // Try as text for unknown formats
             };
-        } catch (\Exception $e) {
-            Log::warning('Document text extraction failed, returning empty', [
+        } catch (\Throwable $e) {
+            Log::warning('Document text extraction failed', [
                 'file_path' => $filePath,
                 'extension' => $extension,
                 'error' => $e->getMessage(),
+                'graceful_degradation' => $this->gracefulDegradationEnabled(),
             ]);
-            return ''; // Return empty instead of throwing to allow graceful degradation
+
+            if ($this->gracefulDegradationEnabled()) {
+                return ''; // Preserve legacy graceful-degradation contract.
+            }
+
+            if ($e instanceof DocumentExtractionException) {
+                throw $e;
+            }
+
+            throw new DocumentExtractionException(
+                "Failed to extract text from {$extension} document: {$e->getMessage()}",
+                $extension,
+                $filePath,
+                $e
+            );
+        }
+    }
+
+    /**
+     * Whether extraction failures should be swallowed into an empty string.
+     */
+    protected function gracefulDegradationEnabled(): bool
+    {
+        return (bool) $this->config('graceful_degradation', true);
+    }
+
+    /**
+     * Read a document-extraction config value with a safe fallback when the
+     * Laravel config repository is unavailable (e.g. standalone usage).
+     */
+    protected function config(string $key, mixed $default): mixed
+    {
+        if (function_exists('config')) {
+            return config("ai-engine.media.document_extraction.{$key}", $default);
+        }
+
+        return $default;
+    }
+
+    /**
+     * Enforce the configurable maximum file size before extraction.
+     */
+    protected function assertWithinSizeLimit(string $filePath, string $extension): void
+    {
+        $maxBytes = (int) $this->config('max_file_size', 0);
+        if ($maxBytes <= 0) {
+            return; // Cap disabled.
+        }
+
+        $size = @filesize($filePath);
+        if ($size !== false && $size > $maxBytes) {
+            throw new DocumentExtractionException(
+                "Document exceeds configured size limit ({$size} > {$maxBytes} bytes).",
+                $extension,
+                $filePath
+            );
         }
     }
 
@@ -47,21 +114,35 @@ class DocumentService
      */
     protected function extractFromPDF(string $filePath): string
     {
-        // Try pdftotext (poppler-utils) first
+        // Prefer the smalot/pdfparser PHP library when available (mirrors
+        // MagicAI's ParserService). It is loss-tolerant and requires no CLI.
+        if (class_exists(\Smalot\PdfParser\Parser::class)) {
+            $parser = new \Smalot\PdfParser\Parser();
+            $text = $parser->parseFile($filePath)->getText();
+
+            return trim($text);
+        }
+
+        // Try pdftotext (poppler-utils) next.
         if ($this->isPdfToTextAvailable()) {
             $tempFile = tempnam(sys_get_temp_dir(), 'pdf_');
-            $command = sprintf(
-                'pdftotext %s %s 2>&1',
-                escapeshellarg($filePath),
-                escapeshellarg($tempFile)
-            );
 
-            exec($command, $output, $returnCode);
+            try {
+                $command = sprintf(
+                    'pdftotext %s %s 2>&1',
+                    escapeshellarg($filePath),
+                    escapeshellarg($tempFile)
+                );
 
-            if ($returnCode === 0 && file_exists($tempFile)) {
-                $text = file_get_contents($tempFile);
-                unlink($tempFile);
-                return trim($text);
+                exec($command, $output, $returnCode);
+
+                if ($returnCode === 0 && file_exists($tempFile)) {
+                    return trim(file_get_contents($tempFile));
+                }
+            } finally {
+                // Always clean up the temp file, even when pdftotext exits
+                // non-zero or throws, to avoid leaking files into the temp dir.
+                @unlink($tempFile);
             }
         }
 
@@ -73,7 +154,11 @@ class DocumentService
             return implode(' ', $matches[1]);
         }
 
-        throw new \RuntimeException('PDF text extraction failed. Please install poppler-utils (pdftotext).');
+        throw new DocumentExtractionException(
+            'PDF text extraction failed. Install the smalot/pdfparser library (composer require smalot/pdfparser) or poppler-utils (pdftotext).',
+            'pdf',
+            $filePath
+        );
     }
 
     /**
@@ -174,7 +259,11 @@ class DocumentService
         
         // If we got mostly garbage, throw an error
         if (strlen(trim($text)) < 50) {
-            throw new \RuntimeException('Cannot extract text from DOC file. Please install antiword or catdoc.');
+            throw new DocumentExtractionException(
+                'Cannot extract text from legacy DOC file. Install antiword, catdoc, or LibreOffice (soffice).',
+                'doc',
+                $filePath
+            );
         }
 
         return trim($text);
@@ -252,6 +341,12 @@ class DocumentService
      */
     protected function extractFromCSV(string $filePath): string
     {
+        // Prefer phpoffice/phpspreadsheet when available (mirrors MagicAI's
+        // ParserExcelService), falling back to native fgetcsv parsing.
+        if (class_exists(\PhpOffice\PhpSpreadsheet\IOFactory::class)) {
+            return $this->extractWithPhpSpreadsheet($filePath);
+        }
+
         $handle = fopen($filePath, 'r');
         if ($handle === false) {
             throw new \RuntimeException('Failed to open CSV file');
@@ -271,8 +366,18 @@ class DocumentService
      */
     protected function extractFromExcel(string $filePath): string
     {
+        // Prefer phpoffice/phpspreadsheet when available (mirrors MagicAI's
+        // ParserExcelService). It reads xls/xlsx across all sheets correctly.
+        if (class_exists(\PhpOffice\PhpSpreadsheet\IOFactory::class)) {
+            return $this->extractWithPhpSpreadsheet($filePath);
+        }
+
         if (!class_exists('\ZipArchive')) {
-            throw new \RuntimeException('ZipArchive extension required for Excel extraction');
+            throw new DocumentExtractionException(
+                'Excel extraction requires the phpoffice/phpspreadsheet library or the ZipArchive extension.',
+                'xlsx',
+                $filePath
+            );
         }
 
         $zip = new \ZipArchive();
@@ -322,24 +427,56 @@ class DocumentService
     }
 
     /**
+     * Extract text from a spreadsheet using phpoffice/phpspreadsheet.
+     * Reads every worksheet and flattens non-empty cell values, mirroring
+     * MagicAI's ParserExcelService.
+     */
+    protected function extractWithPhpSpreadsheet(string $filePath): string
+    {
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
+
+        $values = [];
+        foreach ($spreadsheet->getAllSheets() as $sheet) {
+            foreach ($sheet->toArray() as $row) {
+                foreach ($row as $cell) {
+                    if ($cell !== null && $cell !== '') {
+                        $values[] = (string) $cell;
+                    }
+                }
+            }
+        }
+
+        return implode(' ', $values);
+    }
+
+    /**
      * Extract text from PowerPoint (PPTX)
      */
     protected function extractFromPowerPoint(string $filePath): string
     {
         if (!class_exists('\ZipArchive')) {
-            throw new \RuntimeException('ZipArchive extension required for PowerPoint extraction');
+            throw new DocumentExtractionException(
+                'PowerPoint extraction requires the ZipArchive extension.',
+                'pptx',
+                $filePath
+            );
         }
 
         $zip = new \ZipArchive();
-        
+
         if ($zip->open($filePath) !== true) {
             throw new \RuntimeException('Failed to open PowerPoint file');
         }
 
         $text = [];
-        
-        // Extract text from all slides
-        for ($i = 1; $i <= 100; $i++) { // Check up to 100 slides
+
+        $maxSlides = (int) $this->config('max_slides', 100);
+        if ($maxSlides <= 0) {
+            $maxSlides = 100;
+        }
+
+        // Extract text from slides (configurable cap).
+        for ($i = 1; $i <= $maxSlides; $i++) {
             $slideContent = $zip->getFromName("ppt/slides/slide{$i}.xml");
             if ($slideContent === false) {
                 break;
@@ -386,9 +523,36 @@ class DocumentService
     {
         return [
             'file_size' => filesize($filePath),
-            'mime_type' => mime_content_type($filePath),
+            'mime_type' => $this->detectMimeType($filePath),
             'extension' => pathinfo($filePath, PATHINFO_EXTENSION),
             'modified_at' => date('Y-m-d H:i:s', filemtime($filePath)),
         ];
+    }
+
+    /**
+     * Detect a file's MIME type via finfo (preferred over mime_content_type()),
+     * with a graceful fallback when the fileinfo extension is unavailable.
+     */
+    protected function detectMimeType(string $filePath): ?string
+    {
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo !== false) {
+                $mime = finfo_file($finfo, $filePath);
+                finfo_close($finfo);
+                if (is_string($mime) && $mime !== '') {
+                    return $mime;
+                }
+            }
+        }
+
+        if (function_exists('mime_content_type')) {
+            $mime = @mime_content_type($filePath);
+            if (is_string($mime) && $mime !== '') {
+                return $mime;
+            }
+        }
+
+        return null;
     }
 }
