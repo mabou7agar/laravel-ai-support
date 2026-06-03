@@ -91,6 +91,21 @@ class AiNativePromptBuilder
             }
         }
 
+        if (!empty($options['force_rag'])) {
+            // The caller demanded a knowledge-base-grounded answer (force_rag). AiNative
+            // is model-driven, so we make retrieval mandatory via an imperative
+            // instruction anchored next to the JSON-shape guidance; search_knowledge is
+            // the tool that reaches the RAG store. Falls back to an append if the anchor
+            // line is ever renamed.
+            $anchor = array_search('Return JSON only. No markdown.', $lines, true);
+            $instruction = 'This turn requires a knowledge-base-grounded answer: you MUST call the search_knowledge tool before returning a final answer, unless a search_knowledge result for this turn is already present in the runtime state.';
+            if ($anchor === false) {
+                $lines[] = $instruction;
+            } else {
+                array_splice($lines, $anchor, 0, [$instruction]);
+            }
+        }
+
         // A concrete worked example carries far more weight than prose for a
         // low-temperature planner: it mirrors the "Allowed JSON shapes" examples
         // (which omit these fields) so the model actually emits them every turn.

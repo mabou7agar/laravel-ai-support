@@ -123,7 +123,13 @@ class LaravelAgentProcessor
         array $options
     ): AgentResponse {
 
-        if ($this->shouldUseGoalAgent($options)) {
+        $useAiNative = $this->shouldUseAiNativeRuntime($options)
+            && !$context->has('routed_to_node');
+
+        // The classic goal-agent short-circuit only applies when AiNative is NOT
+        // handling this turn (e.g. AiNative disabled via config). When AiNative is on
+        // it owns goal_agent / sub_agents too, reaching them via the run_sub_agent tool.
+        if (!$useAiNative && $this->shouldUseGoalAgent($options)) {
             return $this->finalizeDirect(
                 $context,
                 $this->dispatchRoutingDecision(new RoutingDecision(
@@ -140,10 +146,7 @@ class LaravelAgentProcessor
             );
         }
 
-        if (
-            $this->shouldUseAiNativeRuntime($options)
-            && !$context->has('routed_to_node')
-        ) {
+        if ($useAiNative) {
             return $this->finalizeDirect(
                 $context,
                 $this->aiNativeRuntime()->process($message, $context, $options),
@@ -759,10 +762,10 @@ class LaravelAgentProcessor
             return false;
         }
 
-        if (!empty($options['force_rag']) || !empty($options['goal_agent']) || !empty($options['sub_agents'])) {
-            return false;
-        }
-
+        // AiNative owns every turn when enabled. force_rag / goal_agent / sub_agents
+        // no longer bypass it — they reach RAG and the run_sub_agent tool from inside
+        // the runtime. The only thing that may still skip AiNative is a routed_to_node
+        // continuation, which is handled separately in dispatchProcess().
         return (bool) config('ai-agent.ai_native.enabled', false);
     }
 
