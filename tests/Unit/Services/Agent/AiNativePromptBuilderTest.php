@@ -219,6 +219,24 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringContainsString('Never reuse a value extracted for one relation as another relation create payload', $prompt);
     }
 
+    public function test_prompt_forces_knowledge_retrieval_when_force_rag_is_set(): void
+    {
+        $tools = new ToolRegistry();
+        $tools->register('search_knowledge', $this->tool('search_knowledge'));
+
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+
+        $builder = new AiNativePromptBuilder($tools, $skills);
+
+        $forced = $builder->build('what is our refund policy', new UnifiedActionContext('prompt-force-rag'), [], ['force_rag' => true]);
+        $this->assertStringContainsString('you MUST call the search_knowledge tool before returning a final answer', $forced);
+
+        // Without force_rag the directive must NOT appear — retrieval stays the model's choice.
+        $unforced = $builder->build('what is our refund policy', new UnifiedActionContext('prompt-no-force-rag'), [], []);
+        $this->assertStringNotContainsString('you MUST call the search_knowledge tool', $unforced);
+    }
+
     private function tool(string $name): AgentTool
     {
         return new class($name) extends AgentTool {

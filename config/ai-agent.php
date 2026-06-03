@@ -177,6 +177,9 @@ return [
         'enabled' => env('AI_AGENT_AI_NATIVE_ENABLED', true),
         'skills' => env('AI_AGENT_AI_NATIVE_SKILLS', true),
         'max_steps' => (int) env('AI_AGENT_AI_NATIVE_MAX_STEPS', 8),
+        // Registers the search_knowledge tool so the runtime can reach the vector /
+        // document RAG store. Also the tool a force_rag turn is told to call.
+        'knowledge_tool_enabled' => env('AI_AGENT_AI_NATIVE_KNOWLEDGE_TOOL', true),
         'budget' => [
             'enabled' => env('AI_AGENT_AI_NATIVE_BUDGET_ENABLED', false),
             'max_steps' => (int) env('AI_AGENT_AI_NATIVE_BUDGET_MAX_STEPS', 16),

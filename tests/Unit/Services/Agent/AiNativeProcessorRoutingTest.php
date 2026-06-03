@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AgentResponse;
-use LaravelAIEngine\DTOs\RoutingDecision;
-use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
@@ -125,8 +123,11 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
         $this->assertSame([], $response->metadata['ai_native']['tool_results']);
     }
 
-    public function test_processor_can_force_rag_instead_of_ai_native(): void
+    public function test_processor_routes_force_rag_through_ai_native(): void
     {
+        // force_rag no longer bypasses AiNative. When AiNative is enabled it owns the
+        // turn and reaches RAG from inside the runtime; the flag is passed through as a
+        // hint. Only a routed_to_node continuation may still skip AiNative.
         config()->set('ai-agent.ai_native.enabled', true);
 
         $context = new UnifiedActionContext('force-rag-processor', 42);
@@ -138,16 +139,16 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
             ->andReturn($context);
 
         $native = Mockery::mock(AiNativeRuntime::class);
-        $native->shouldNotReceive('process');
+        $native->shouldReceive('process')
+            ->once()
+            ->with('hello', $context, Mockery::on(fn (array $options): bool => ($options['force_rag'] ?? false) === true))
+            ->andReturn(AgentResponse::conversational('AI native handled it.', $context));
 
         $intentRouter = Mockery::mock(IntentRouter::class);
         $intentRouter->shouldNotReceive('route');
 
         $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
-        $dispatcher->shouldReceive('dispatch')
-            ->once()
-            ->withArgs(static fn (RoutingDecision $decision): bool => $decision->action === RoutingDecisionAction::SEARCH_RAG)
-            ->andReturn(AgentResponse::success('RAG handled it.', context: $context));
+        $dispatcher->shouldNotReceive('dispatch');
 
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);
         $finalizer->shouldReceive('finalize')
@@ -168,6 +169,6 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
         $response = $processor->process('hello', 'force-rag-processor', 42, ['force_rag' => true]);
 
         $this->assertTrue($response->success);
-        $this->assertSame('RAG handled it.', $response->message);
+        $this->assertSame('AI native handled it.', $response->message);
     }
 }

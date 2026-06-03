@@ -50,6 +50,12 @@ class AgentToolServiceRegistrar
             if ((bool) config('ai-engine.data_query.enabled', true) && !$registry->has('data_query')) {
                 $registry->register('data_query', $app->make(\LaravelAIEngine\Services\Agent\Tools\DataQueryTool::class));
             }
+            // Grounded knowledge-base retrieval. Without this the AiNative loop has no
+            // way to reach the vector/document RAG store; it is also the tool a
+            // force_rag turn is instructed to call (see AiNativePromptBuilder).
+            if ((bool) config('ai-agent.ai_native.knowledge_tool_enabled', true) && !$registry->has('search_knowledge')) {
+                $registry->register('search_knowledge', $app->make(\LaravelAIEngine\Services\Agent\Tools\SearchKnowledgeTool::class));
+            }
 
             return $registry;
         });
