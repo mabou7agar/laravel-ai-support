@@ -11,6 +11,8 @@ use PHPUnit\Framework\TestCase;
 
 class NodeRouterServiceTest extends TestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_route_prefers_explicit_collection_ownership(): void
     {
         $node = $this->getMockBuilder(AINode::class)

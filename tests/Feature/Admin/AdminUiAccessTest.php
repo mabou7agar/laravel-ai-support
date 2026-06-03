@@ -48,10 +48,13 @@ class AdminUiAccessTest extends UnitTestCase
         config()->set('ai-engine.admin_ui.access.allowed_emails', []);
         config()->set('ai-engine.admin_ui.access.allowed_ips', ['203.0.113.10']);
 
-        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
-            ->get('/ai-engine/admin/nodes')
-            ->assertOk()
-            ->assertSee('Nodes');
+        // The /nodes admin page is provided by the optional federation package.
+        if (\Illuminate\Support\Facades\Route::has('ai-engine.admin.nodes')) {
+            $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
+                ->get('/ai-engine/admin/nodes')
+                ->assertOk()
+                ->assertSee('Nodes');
+        }
 
         $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
             ->get('/ai-engine/admin/health')

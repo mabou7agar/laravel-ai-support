@@ -30,6 +30,8 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class AgentServiceResolutionTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_intent_router_resolves_from_container(): void
     {
         $this->assertInstanceOf(IntentRouter::class, $this->app->make(IntentRouter::class));

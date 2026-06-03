@@ -10,6 +10,8 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class NodeHttpClientTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_extract_forwardable_headers_filters_and_maps_bearer_authorization(): void
     {
         $request = Request::create('/search', 'POST', server: [

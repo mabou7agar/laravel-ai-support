@@ -9,6 +9,8 @@ use PHPUnit\Framework\TestCase;
 
 class NodeOwnershipResolverTest extends TestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_resolve_for_collection_checks_normalized_candidates(): void
     {
         $node = new AINode();

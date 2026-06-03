@@ -9,6 +9,8 @@ use PHPUnit\Framework\TestCase;
 
 class DocsCoverageMatrixTest extends TestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     private const COVERAGE_MAP = [
         'index' => [
             'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',

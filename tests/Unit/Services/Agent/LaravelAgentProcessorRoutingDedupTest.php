@@ -26,6 +26,8 @@ use Mockery;
  */
 class LaravelAgentProcessorRoutingDedupTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_failed_pipeline_attempt_does_not_bias_heuristic_fallback_with_stale_entity(): void
     {
         $context = new UnifiedActionContext('session-dedup-bias', 7);

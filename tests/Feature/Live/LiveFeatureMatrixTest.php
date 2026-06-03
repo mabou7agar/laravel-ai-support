@@ -193,23 +193,23 @@ class LiveFeatureMatrixTest extends TestCase
         config()->set('ai-engine.admin_ui.access.allowed_ips', ['127.0.0.1']);
 
         $dashboard = $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])->get('/ai-engine/admin');
-        $nodes = $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])->get('/ai-engine/admin/nodes');
         $health = $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])->get('/ai-engine/admin/health');
         $policies = $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])->get('/ai-engine/admin/policies');
 
         $dashboard->assertOk()->assertSee('Admin')->assertSee('Manifest Manager');
-        $nodes->assertOk()->assertSee('Nodes');
         $health->assertOk()->assertSee('Infrastructure Health');
         $policies->assertOk()->assertSee('Prompt Policies');
 
-        return $this->passedResult('Admin UI routes responded successfully.', [
-            'paths' => [
-                '/ai-engine/admin',
-                '/ai-engine/admin/nodes',
-                '/ai-engine/admin/health',
-                '/ai-engine/admin/policies',
-            ],
-        ]);
+        $paths = ['/ai-engine/admin', '/ai-engine/admin/health', '/ai-engine/admin/policies'];
+
+        // The /admin/nodes page is provided by the optional federation package.
+        if (\Illuminate\Support\Facades\Route::has('ai-engine.admin.nodes')) {
+            $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])->get('/ai-engine/admin/nodes')
+                ->assertOk()->assertSee('Nodes');
+            $paths[] = '/ai-engine/admin/nodes';
+        }
+
+        return $this->passedResult('Admin UI routes responded successfully.', ['paths' => $paths]);
     }
 
     private function checkCapabilityApi(): array
@@ -231,6 +231,14 @@ class LiveFeatureMatrixTest extends TestCase
 
     private function checkNodePublicApi(): array
     {
+        if (!class_exists(\LaravelAIEngine\Services\Agent\NodeSessionManager::class)) {
+            return [
+                'status' => 'skipped',
+                'message' => 'Node public API requires the optional laravel-ai-engine-federation package.',
+                'details' => [],
+            ];
+        }
+
         $health = $this->getJson('/api/ai-engine/health');
         $manifest = $this->getJson('/api/ai-engine/manifest');
 

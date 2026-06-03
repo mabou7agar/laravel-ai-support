@@ -37,6 +37,8 @@ use Mockery;
 
 class AgentRunApprovalLifecycleTest extends TestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_agent_step_approval_reuses_provider_tool_approval_and_audit_lifecycle(): void
     {
         $run = app(AgentRunRepository::class)->create([

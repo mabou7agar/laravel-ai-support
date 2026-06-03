@@ -29,6 +29,8 @@ use Mockery;
 
 class AgentExecutionDispatcherTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_dispatches_conversational_decision(): void
     {
         $context = $this->context();

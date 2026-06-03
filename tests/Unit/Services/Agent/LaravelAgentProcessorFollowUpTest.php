@@ -17,6 +17,8 @@ use Mockery;
 
 class LaravelAgentProcessorFollowUpTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_follow_up_uses_selected_entity_context_without_relisting(): void
     {
         Cache::forget('agent_context:session-follow-up');

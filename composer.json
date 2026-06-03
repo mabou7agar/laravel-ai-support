@@ -46,8 +46,7 @@
         "orchestra/testbench": "^6.0|^7.0|^8.0|^9.0",
         "pestphp/pest": "^2.36",
         "pestphp/pest-plugin-laravel": "^2.0",
-        "phpunit/phpunit": "^9.5|^10.0",
-        "m-tech-stack/laravel-ai-engine-federation": "dev-main"
+        "phpunit/phpunit": "^9.5|^10.0"
     },
     "repositories": [
         {
@@ -67,6 +66,7 @@
         "cboden/ratchet": "Required for WebSocket streaming support (^0.4)",
         "ext-mongodb": "Required for MongoDB memory driver support",
         "mongodb/mongodb": "Required for MongoDB memory driver support (^1.8)",
+        "m-tech-stack/laravel-ai-engine-federation": "Add multi-node / remote-node federation (composer require m-tech-stack/laravel-ai-engine-federation). Not required for core; node features and node tests activate only when it is installed.",
         "firebase/php-jwt": "Required for node JWT authentication (^6.0)",
         "tymon/jwt-auth": "Alternative JWT library for node authentication (^2.0)",
         "aws/aws-sdk-php": "Required for the AWS Bedrock engine (BedrockEngineDriver) (^3.0)"
