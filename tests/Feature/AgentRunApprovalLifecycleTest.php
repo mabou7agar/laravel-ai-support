@@ -18,7 +18,6 @@ use LaravelAIEngine\Models\AIProviderToolAuditEvent;
 use LaravelAIEngine\Repositories\AgentRunRepository;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
 use LaravelAIEngine\Repositories\ProviderToolRunRepository;
-use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentRunApprovalService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
@@ -192,7 +191,7 @@ class AgentRunApprovalLifecycleTest extends TestCase
         ]);
     }
 
-    public function test_dispatcher_audits_tool_and_sub_agent_execution_when_agent_step_is_available(): void
+    public function test_dispatcher_audits_sub_agent_execution_when_agent_step_is_available(): void
     {
         $run = app(AgentRunRepository::class)->create([
             'session_id' => 'dispatcher-audit-session',
@@ -204,11 +203,6 @@ class AgentRunApprovalLifecycleTest extends TestCase
             'status' => AIAgentRun::STATUS_RUNNING,
             'action' => 'echo',
         ]);
-
-        $action = Mockery::mock(AgentActionExecutionService::class);
-        $action->shouldReceive('executeUseTool')
-            ->once()
-            ->andReturn(AgentResponse::success('Tool done'));
 
         $goalAgent = Mockery::mock(GoalAgentService::class);
         $goalAgent->shouldReceive('execute')
@@ -224,7 +218,6 @@ class AgentRunApprovalLifecycleTest extends TestCase
         }));
 
         $dispatcher = new AgentExecutionDispatcher(
-            $action,
             Mockery::mock(AgentConversationService::class),
             $registry,
             $goalAgent,
@@ -237,14 +230,6 @@ class AgentRunApprovalLifecycleTest extends TestCase
         ];
 
         $dispatcher->dispatch(new RoutingDecision(
-            action: RoutingDecisionAction::USE_TOOL,
-            source: RoutingDecisionSource::CLASSIFIER,
-            confidence: 'high',
-            reason: 'Use a tool.',
-            payload: ['tool_name' => 'echo', 'params' => ['value' => 'ok']]
-        ), 'run echo', $context, $options);
-
-        $dispatcher->dispatch(new RoutingDecision(
             action: RoutingDecisionAction::RUN_SUB_AGENT,
             source: RoutingDecisionSource::CLASSIFIER,
             confidence: 'high',
@@ -252,16 +237,6 @@ class AgentRunApprovalLifecycleTest extends TestCase
             payload: ['target' => 'Summarize', 'sub_agents' => ['general']]
         ), 'delegate', $context, $options);
 
-        $this->assertDatabaseHas('ai_provider_tool_audit_events', [
-            'agent_run_step_id' => $step->id,
-            'event' => 'agent_tool.started',
-            'tool_name' => 'echo',
-        ]);
-        $this->assertDatabaseHas('ai_provider_tool_audit_events', [
-            'agent_run_step_id' => $step->id,
-            'event' => 'agent_tool.completed',
-            'tool_name' => 'echo',
-        ]);
         $this->assertDatabaseHas('ai_provider_tool_audit_events', [
             'agent_run_step_id' => $step->id,
             'event' => 'agent_sub_agent.started',
@@ -275,8 +250,6 @@ class AgentRunApprovalLifecycleTest extends TestCase
         $events = collect(app(AgentRunEventStreamService::class)->fallbackEvents($run))
             ->pluck('name')
             ->all();
-        $this->assertContains('tool.started', $events);
-        $this->assertContains('tool.completed', $events);
         $this->assertContains('sub_agent.started', $events);
         $this->assertContains('sub_agent.completed', $events);
     }

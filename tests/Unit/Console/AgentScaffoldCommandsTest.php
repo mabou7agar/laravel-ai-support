@@ -185,7 +185,6 @@ class AgentScaffoldCommandsTest extends UnitTestCase
     public function test_scaffold_runtime_graph_extension_types_register_manifest_entries(): void
     {
         $types = [
-            'routing-stage' => ['InvoiceGuard', 'AI/Routing/InvoiceGuardRoutingStage.php', 'routing_stages', 'invoice_guard', 'implements RoutingStageContract'],
             'execution-handler' => ['ApproveInvoice', 'AI/Execution/ApproveInvoiceExecutionHandler.php', 'execution_handlers', 'approve_invoice', 'implements ExecutionHandlerContract'],
             'runtime' => ['DurableGraph', 'AI/Runtimes/DurableGraphRuntime.php', 'runtimes', 'durable_graph', 'implements AgentRuntimeContract'],
             'rag-retriever' => ['HybridKnowledge', 'AI/RAG/HybridKnowledgeRAGRetriever.php', 'rag_retrievers', 'hybrid_knowledge', 'implements RAGRetrieverContract'],

@@ -14,7 +14,9 @@ Context: after making AiNative the default execution path for every turn (only `
 - **Federation path-1 preserved** via a new `route_to_node` AiNative tool (federation package): the planner can explicitly route a turn to a remote node, reusing `NodeSessionManager::routeToNode`. Path-2 (RAG model-router) was already reachable via `search_knowledge`.
 - `ai-agent.ai_native.enabled` is now vestigial (AiNative is unconditional); kept for config back-compat, no longer read.
 
-Deferred: structured-query consolidation (§4 below). Dead dispatcher arms (`USE_TOOL`/`HANDLE_SELECTION`) were left in place (harmless, still covered by dispatcher tests).
+Follow-up cleanup (done): the dead `USE_TOOL`/`HANDLE_SELECTION` dispatcher arms + `executeTool`/`executeSelection`, the orphaned `AgentActionExecutionService` (379 LOC), and the `RoutingStageContract` + scaffold `routing-stage` artifact type were all removed once the classic decision producers were gone.
+
+**Structured-query consolidation — investigated, intentionally NOT done.** "Make `data_query` the only SQL home" cannot be completed without regressing live behavior. `RAGDecisionEngine`'s db-arms (`db_query`/`db_count`/`db_aggregate`/`db_query_next`) are reached whenever `selected_entity`, `selected_entity_context`, `allow_rag_exit_to_orchestrator`, or `structured_query` is present — i.e. entity-selection follow-ups and explicit structured queries on the **federation-fallback** and **sub-agent RAG** paths (not the AiNative planner). That SQL is federation-aware (remote-node routing) and paginated; the `data_query` tool is local + simple. Removing the db-arms breaks those paths; making either delegate to the other loses node-routing/pagination. The original concern — two SQL routes confusing the *AiNative planner* — is already moot, because the planner only sees the `data_query` and `search_knowledge` tools, never `RAGDecisionEngine`'s internals. So the two SQL paths are parallel capabilities for different execution contexts, kept as-is.
 
 ---
 
