@@ -21,7 +21,12 @@ class AgentRuntimeServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentSkillMatcher::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner::class)
+            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner::class),
+            null,
+            null,
+            $app->bound(\LaravelAIEngine\Contracts\Federation\NodeMetadataProvider::class)
+                ? $app->make(\LaravelAIEngine\Contracts\Federation\NodeMetadataProvider::class)
+                : null
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentPlanner::class, fn () => new \LaravelAIEngine\Services\Agent\AgentPlanner());
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentResponseFinalizer(
@@ -56,10 +61,27 @@ class AgentRuntimeServiceRegistrar
             null,
             $app->make(\LaravelAIEngine\Services\Agent\AgentFinalResponseStreamingService::class)
         ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry::class, function ($app) {
+            $registry = new \LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry();
+
+            // Node action handlers remain in core for now (move to the federation
+            // extension in Phase C); register them so the dispatcher delegates the
+            // CONTINUE_NODE / ROUTE_TO_NODE actions through the registry.
+            $registry->register(new \LaravelAIEngine\Services\Agent\Execution\ActionHandlers\ContinueNodeActionHandler(
+                $app->make(\LaravelAIEngine\Services\Agent\NodeSessionManager::class),
+                fn () => $app->make(\LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher::class)
+            ));
+            $registry->register(new \LaravelAIEngine\Services\Agent\Execution\ActionHandlers\RouteToNodeActionHandler(
+                $app->make(\LaravelAIEngine\Services\Agent\NodeSessionManager::class),
+                fn () => $app->make(\LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher::class)
+            ));
+
+            return $registry;
+        });
         $app->singleton(\LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher(
             $app->make(\LaravelAIEngine\Services\Agent\AgentActionExecutionService::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentConversationService::class),
-            $app->make(\LaravelAIEngine\Services\Agent\NodeSessionManager::class),
+            $app->make(\LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry::class),
             $app->make(\LaravelAIEngine\Services\Agent\GoalAgentService::class),
             $app->make(\LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentExecutionPolicyService::class),

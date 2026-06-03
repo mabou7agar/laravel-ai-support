@@ -20,7 +20,10 @@ class AgentRagServiceRegistrar
                 $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class),
                 $app->make(\LaravelAIEngine\Services\RAG\RAGContextService::class),
                 $app->make(\LaravelAIEngine\Services\RAG\RAGModelMetadataService::class),
-                $app->make(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class)
+                $app->make(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class),
+                $app->bound(\LaravelAIEngine\Contracts\RAG\FederatedModelRouter::class)
+                    ? $app->make(\LaravelAIEngine\Contracts\RAG\FederatedModelRouter::class)
+                    : null
             );
         });
     }

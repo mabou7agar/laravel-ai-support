@@ -31,6 +31,11 @@ class NodeServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Node\NodeRouterService::class, fn ($app) => new \LaravelAIEngine\Services\Node\NodeRouterService($app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class), $app->make(\LaravelAIEngine\Services\Node\NodeOwnershipResolver::class)));
         $app->singleton(\LaravelAIEngine\Services\Node\RemoteActionService::class, fn ($app) => new \LaravelAIEngine\Services\Node\RemoteActionService($app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class), $app->make(\LaravelAIEngine\Services\Node\CircuitBreakerService::class), $app->make(\LaravelAIEngine\Services\Node\NodeAuthService::class)));
         $app->singleton(\LaravelAIEngine\Services\TemplateEngine::class, fn ($app) => new \LaravelAIEngine\Services\TemplateEngine($app->bound(\LaravelAIEngine\Services\AIEngineService::class) ? $app->make(\LaravelAIEngine\Services\AIEngineService::class) : null));
+
+        // Node-aware RAG providers (only bound when nodes are enabled).
+        $app->singleton(\LaravelAIEngine\Contracts\RAG\NodeContextProvider::class, fn ($app) => new \LaravelAIEngine\Services\Node\NodeContextProviderImpl($app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)));
+        $app->singleton(\LaravelAIEngine\Contracts\RAG\FederatedModelRouter::class, fn ($app) => new \LaravelAIEngine\Services\Node\NodeFederatedModelRouter($app->make(\LaravelAIEngine\Services\RAG\RAGModelMetadataService::class)));
+        $app->singleton(\LaravelAIEngine\Contracts\RAG\FederatedCollectionProvider::class, fn ($app) => new \LaravelAIEngine\Services\Node\NodeFederatedCollectionProvider($app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class)));
     }
 
     protected static function registerActionServices($app): void

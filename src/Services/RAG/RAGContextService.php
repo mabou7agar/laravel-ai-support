@@ -4,21 +4,17 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\RAG;
 
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
-use LaravelAIEngine\Models\AINode;
-use LaravelAIEngine\Services\Node\NodeRegistryService;
+use LaravelAIEngine\Contracts\RAG\NodeContextProvider;
 
 class RAGContextService
 {
     public function __construct(
         protected RAGModelMetadataService $models,
         protected ?RAGDecisionPolicy $policy = null,
-        protected ?NodeRegistryService $nodeRegistry = null
+        protected ?NodeContextProvider $nodeContext = null
     ) {
         $this->policy = $policy ?? new RAGDecisionPolicy();
-        $this->nodeRegistry = $nodeRegistry ?? (app()->bound(NodeRegistryService::class) ? app(NodeRegistryService::class) : null);
+        $this->nodeContext = $nodeContext ?? (app()->bound(NodeContextProvider::class) ? app(NodeContextProvider::class) : null);
     }
 
     public function build(string $message, array $conversationHistory, $userId, array $options): array
@@ -80,59 +76,12 @@ class RAGContextService
 
     public function getAvailableNodes(): array
     {
-        $nodes = new Collection();
-
-        if ($this->nodeRegistry) {
-            try {
-                $nodes = $this->nodeRegistry->getActiveNodes();
-            } catch (\Throwable $e) {
-                Log::channel('ai-engine')->warning('Failed loading nodes from NodeRegistryService', [
-                    'error' => $e->getMessage(),
-                ]);
-            }
+        if ($this->nodeContext) {
+            return $this->nodeContext->getAvailableNodes();
         }
 
-        if (
-            $nodes->isEmpty()
-            && config('ai-engine.nodes.enabled', true)
-            && Schema::hasTable((new AINode())->getTable())
-        ) {
-            $nodes = AINode::active()->healthy()->get();
-        }
-
-        return $nodes->map(function ($node) {
-            $collections = $node->collections ?? [];
-            $models = [];
-
-            if (!empty($collections) && is_array($collections)) {
-                $firstItem = reset($collections);
-                if (is_array($firstItem) && isset($firstItem['name'])) {
-                    $models = collect($collections)->map(fn (array $collection) => [
-                        'name' => $collection['name'],
-                        'display_name' => $collection['display_name'] ?? $collection['name'],
-                        'description' => $collection['description'] ?? "Model for {$collection['name']} data",
-                        'aliases' => array_values((array) ($collection['aliases'] ?? [])),
-                        'capabilities' => $collection['capabilities'] ?? [],
-                    ])->toArray();
-                } else {
-                    $models = collect($collections)->map(fn ($collection) => [
-                        'name' => strtolower(class_basename($collection)),
-                        'display_name' => class_basename($collection),
-                        'description' => 'Model for ' . class_basename($collection) . ' data',
-                        'aliases' => [],
-                        'capabilities' => [],
-                    ])->toArray();
-                }
-            }
-
-            return [
-                'slug' => $node->slug,
-                'name' => $node->name,
-                'description' => $node->description,
-                'models' => $models,
-                'collections' => $collections,
-            ];
-        })->toArray();
+        // No node context provider bound: local-only, no remote nodes.
+        return [];
     }
 
     protected function mergeRemoteNodeModels(array $models, array $nodes): array

@@ -14,8 +14,8 @@ use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
+use LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
-use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
 
 class AgentExecutionDispatcher
@@ -23,7 +23,7 @@ class AgentExecutionDispatcher
     public function __construct(
         protected AgentActionExecutionService $actionExecutionService,
         protected AgentConversationService $conversationService,
-        protected NodeSessionManager $nodeSessionManager,
+        protected RoutingActionHandlerRegistry $actionHandlers,
         protected GoalAgentService $goalAgent,
         protected ?ProviderToolAuditService $audit = null,
         protected ?AgentExecutionPolicyService $policy = null,
@@ -46,8 +46,6 @@ class AgentExecutionDispatcher
             RoutingDecisionAction::SEARCH_RAG => $this->executeSearchRag($message, $context, $options, $reroute),
             RoutingDecisionAction::USE_TOOL => $this->executeTool($decision, $message, $context, $options),
             RoutingDecisionAction::RUN_SUB_AGENT => $this->executeSubAgent($decision, $message, $context, $options),
-            RoutingDecisionAction::CONTINUE_NODE => $this->executeContinueNode($message, $context, $options),
-            RoutingDecisionAction::ROUTE_TO_NODE => $this->executeRouteToNode($decision, $message, $context, $options, $reroute),
             RoutingDecisionAction::NEED_USER_INPUT => AgentResponse::needsUserInput(
                 message: $decision->reason,
                 data: $decision->payload,
@@ -59,11 +57,13 @@ class AgentExecutionDispatcher
                 data: $decision->payload,
                 context: $context
             ),
-            default => AgentResponse::failure(
-                message: "Unsupported routing decision action [{$decision->action}].",
-                data: $decision->toArray(),
-                context: $context
-            ),
+            default => $this->actionHandlers->has($decision->action)
+                ? $this->actionHandlers->get($decision->action)->handle($decision, $message, $context, $options, $reroute)
+                : AgentResponse::failure(
+                    message: "Unsupported routing decision action [{$decision->action}].",
+                    data: $decision->toArray(),
+                    context: $context
+                ),
         };
     }
 
@@ -82,18 +82,12 @@ class AgentExecutionDispatcher
                 $context,
                 $options,
                 fn (string $searchMessage, UnifiedActionContext $searchContext, array $searchOptions): AgentResponse => $this->executeSearchRag($searchMessage, $searchContext, $searchOptions, null),
-                fn (string $resourceName, string $routeMessage, UnifiedActionContext $routeContext, array $routeOptions): AgentResponse => $this->executeRouteToNode(
-                    new RoutingDecision(
-                        action: RoutingDecisionAction::ROUTE_TO_NODE,
-                        source: $decision->source,
-                        confidence: 'high',
-                        reason: 'Selection resolved to a remote node.',
-                        payload: ['resource_name' => $resourceName]
-                    ),
+                fn (string $resourceName, string $routeMessage, UnifiedActionContext $routeContext, array $routeOptions): AgentResponse => $this->routeToNode(
+                    $resourceName,
+                    $decision->source,
                     $routeMessage,
                     $routeContext,
-                    $routeOptions,
-                    null
+                    $routeOptions
                 )
             );
 
@@ -108,19 +102,46 @@ class AgentExecutionDispatcher
             $context,
             $options,
             fn (string $searchMessage, UnifiedActionContext $searchContext, array $searchOptions): AgentResponse => $this->executeSearchRag($searchMessage, $searchContext, $searchOptions, null),
-            fn (string $resourceName, string $routeMessage, UnifiedActionContext $routeContext, array $routeOptions): AgentResponse => $this->executeRouteToNode(
-                new RoutingDecision(
-                    action: RoutingDecisionAction::ROUTE_TO_NODE,
-                    source: $decision->source,
-                    confidence: 'high',
-                    reason: 'Selection resolved to a remote node.',
-                    payload: ['resource_name' => $resourceName]
-                ),
+            fn (string $resourceName, string $routeMessage, UnifiedActionContext $routeContext, array $routeOptions): AgentResponse => $this->routeToNode(
+                $resourceName,
+                $decision->source,
                 $routeMessage,
                 $routeContext,
-                $routeOptions,
-                null
+                $routeOptions
             )
+        );
+    }
+
+    /**
+     * Resolve the ROUTE_TO_NODE action handler from the registry to route a
+     * selection-resolved resource to a remote node, falling back to a failure
+     * response (preserving prior behavior) when no handler is registered.
+     */
+    protected function routeToNode(
+        string $resourceName,
+        string $source,
+        string $message,
+        UnifiedActionContext $context,
+        array $options
+    ): AgentResponse {
+        $decision = new RoutingDecision(
+            action: RoutingDecisionAction::ROUTE_TO_NODE,
+            source: $source,
+            confidence: 'high',
+            reason: 'Selection resolved to a remote node.',
+            payload: ['resource_name' => $resourceName]
+        );
+
+        return $this->actionHandlers->get(RoutingDecisionAction::ROUTE_TO_NODE)?->handle(
+            $decision,
+            $message,
+            $context,
+            $options,
+            null
+        ) ?? AgentResponse::failure(
+            message: "Unsupported routing decision action [{$decision->action}].",
+            data: $decision->toArray(),
+            context: $context
         );
     }
 
@@ -234,77 +255,6 @@ class AgentExecutionDispatcher
         }
     }
 
-    protected function executeContinueNode(string $message, UnifiedActionContext $context, array $options): AgentResponse
-    {
-        $response = $this->nodeSessionManager->continueSession($message, $context, $options);
-
-        return $response ?? AgentResponse::failure(
-            message: 'No routed node session is available to continue.',
-            context: $context
-        );
-    }
-
-    protected function executeRouteToNode(
-        RoutingDecision $decision,
-        string $message,
-        UnifiedActionContext $context,
-        array $options,
-        ?callable $reroute
-    ): AgentResponse {
-        if (!empty($options['local_only'])) {
-            Log::channel('ai-engine')->info('Local-only mode enabled, skipping remote routing', [
-                'message' => substr($message, 0, 120),
-                'session_id' => $context->sessionId,
-            ]);
-
-            return $this->executeSearchRag($message, $context, $options, $reroute);
-        }
-
-        $requestedResource = trim((string) ($decision->payload['resource_name'] ?? $decision->payload['node_slug'] ?? ''));
-        if ($requestedResource === '' || $requestedResource === 'local') {
-            Log::channel('ai-engine')->warning('route_to_node decision without resource_name, falling back to RAG', [
-                'message' => substr($message, 0, 120),
-                'session_id' => $context->sessionId,
-            ]);
-
-            return $this->executeSearchRag($message, $context, $options, $reroute);
-        }
-
-        if (!$this->policy()->canRouteToNode($requestedResource, $options)) {
-            return $this->policyBlockedResponse('node', $requestedResource, $context, $options);
-        }
-
-        Log::channel('ai-engine')->info('Routing message to remote node', [
-            'requested_resource' => $requestedResource,
-            'session_id' => $context->sessionId,
-        ]);
-
-        $response = $this->nodeSessionManager->routeToNode($requestedResource, $message, $context, $options);
-        if ($this->shouldFallbackToLocalRag($response, $options)) {
-            Log::channel('ai-engine')->warning('Remote node routing failed; attempting degraded local fallback', [
-                'requested_resource' => $requestedResource,
-                'session_id' => $context->sessionId,
-            ]);
-
-            $fallback = $this->executeSearchRag($message, $context, array_merge($options, [
-                'local_only' => true,
-            ]), $reroute);
-
-            if ($fallback->success) {
-                $fallback->message = $this->fallbackNotice() . "\n\n" . $fallback->message;
-                $fallback->metadata = array_merge($fallback->metadata ?? [], [
-                    'fallback_mode' => true,
-                    'fallback_reason' => 'remote_node_unreachable',
-                    'original_resource' => $requestedResource,
-                ]);
-
-                return $fallback;
-            }
-        }
-
-        return $response;
-    }
-
     protected function withDecisionMetadata(array $options, RoutingDecision $decision): array
     {
         return array_merge([
@@ -324,31 +274,39 @@ class AgentExecutionDispatcher
         return $response->success ? 'agent_tool.completed' : 'agent_tool.failed';
     }
 
-    protected function shouldFallbackToLocalRag(AgentResponse $response, array $options): bool
-    {
-        if ($response->success) {
-            return false;
-        }
-
-        $enabled = array_key_exists('allow_local_fallback_on_node_failure', $options)
-            ? (bool) $options['allow_local_fallback_on_node_failure']
-            : (bool) config('ai-engine.nodes.routing.local_fallback_on_failure', false);
-
-        if (!$enabled) {
-            return false;
-        }
-
-        return str_contains(strtolower($response->message), "couldn't reach remote node");
+    /**
+     * Public RAG-search delegate used by node action handlers so the
+     * executeSearchRag behavior (policy enforcement + RAG search) stays in one place.
+     */
+    public function searchRag(
+        string $message,
+        UnifiedActionContext $context,
+        array $options,
+        ?callable $reroute
+    ): AgentResponse {
+        return $this->executeSearchRag($message, $context, $options, $reroute);
     }
 
-    protected function fallbackNotice(): string
+    /**
+     * Public policy accessor for node action handlers, reusing the lazily
+     * resolved AgentExecutionPolicyService instance.
+     */
+    public function policyService(): AgentExecutionPolicyService
     {
-        $notice = config('ai-engine.nodes.routing.local_fallback_notice');
-        if (is_string($notice) && trim($notice) !== '') {
-            return trim($notice);
-        }
+        return $this->policy();
+    }
 
-        return 'Remote node is unavailable. Showing local results only (degraded mode).';
+    /**
+     * Public policy-blocked response delegate for node action handlers,
+     * preserving audit + logging behavior in one place.
+     */
+    public function blockedByPolicy(
+        string $type,
+        string $resource,
+        UnifiedActionContext $context,
+        array $options
+    ): AgentResponse {
+        return $this->policyBlockedResponse($type, $resource, $context, $options);
     }
 
     protected function policyBlockedResponse(

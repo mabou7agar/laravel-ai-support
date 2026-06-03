@@ -11,7 +11,10 @@ use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ContextManager;
+use LaravelAIEngine\Services\Agent\Execution\ActionHandlers\ContinueNodeActionHandler;
+use LaravelAIEngine\Services\Agent\Execution\ActionHandlers\RouteToNodeActionHandler;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
+use LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
@@ -78,10 +81,17 @@ class LaravelAgentProcessorRoutingFallbackTest extends UnitTestCase
                 context: $context
             ));
 
+        $registry = new RoutingActionHandlerRegistry();
+        $dispatcher = null;
+        $registry->register(new ContinueNodeActionHandler($node));
+        $registry->register(new RouteToNodeActionHandler($node, function () use (&$dispatcher): AgentExecutionDispatcher {
+            return $dispatcher;
+        }));
+
         $dispatcher = new AgentExecutionDispatcher(
             Mockery::mock(AgentActionExecutionService::class),
             $conversation,
-            $node,
+            $registry,
             Mockery::mock(GoalAgentService::class)
         );
 

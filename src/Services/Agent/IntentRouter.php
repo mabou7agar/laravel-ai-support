@@ -8,9 +8,9 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Contracts\Federation\NodeMetadataProvider;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Agent\AgentManifestService;
-use LaravelAIEngine\Services\Node\NodeMetadataDiscovery;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
@@ -29,7 +29,8 @@ class IntentRouter
         protected ?AgentSkillMatcher $skillMatcher = null,
         protected ?AgentSkillExecutionPlanner $skillPlanner = null,
         protected ?RAGPromptPolicyService $promptPolicyService = null,
-        protected ?IntentSignalService $intentSignals = null
+        protected ?IntentSignalService $intentSignals = null,
+        protected ?NodeMetadataProvider $nodeMetadataProvider = null
     ) {
         $this->messageClassifier ??= app()->bound(MessageRoutingClassifier::class)
             ? app(MessageRoutingClassifier::class)
@@ -326,9 +327,13 @@ class IntentRouter
     protected function buildPrompt(string $message, array $resources, UnifiedActionContext $context, array $promptPolicy = []): string
     {
         $history = $this->formatHistory($context);
-        $discovery = new NodeMetadataDiscovery();
-        $localNodeMeta = $discovery->discover();
-        $localNodeMeta['slug'] = 'local';
+        $localNodeMeta = [];
+        $localNodes = [];
+        if ($this->nodeMetadataProvider !== null) {
+            $localNodeMeta = $this->nodeMetadataProvider->discover();
+            $localNodeMeta['slug'] = 'local';
+            $localNodes = [$localNodeMeta];
+        }
         $selectedEntityContext = $this->formatSelectedEntityContext($context);
         $userProfile = $this->getUserProfile($context->userId);
         $entityContext = $this->formatEntityMetadata($context);
@@ -366,7 +371,7 @@ Remote Nodes:
 {$this->formatNodes($resources['nodes'])}
 
 Local Node:
-{$this->formatNodes([$localNodeMeta])}
+{$this->formatNodes($localNodes)}
 
 USER MESSAGE: "{$message}"
 
