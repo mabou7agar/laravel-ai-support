@@ -11,7 +11,6 @@ use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Contracts\Federation\NodeMetadataProvider;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Agent\AgentManifestService;
-use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\RAG\RAGPromptPolicyService;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 use Illuminate\Support\Facades\Log;
@@ -20,7 +19,6 @@ class IntentRouter
 {
     public function __construct(
         protected AIEngineService $ai,
-        protected NodeRegistryService $nodeRegistry,
         protected SelectedEntityContextService $selectedEntityContext,
         protected ?AgentManifestService $manifestService = null,
         protected ?MessageRoutingClassifier $messageClassifier = null,
@@ -247,7 +245,7 @@ class IntentRouter
         }
 
         $nodes = [];
-        $activeNodes = $this->nodeRegistry->getActiveNodes();
+        $activeNodes = $this->nodeMetadataProvider?->getActiveNodes() ?? [];
 
         foreach ($activeNodes as $node) {
             $nodes[] = [

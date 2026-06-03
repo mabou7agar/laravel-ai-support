@@ -14,7 +14,6 @@ class AgentRuntimeServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class, fn () => new \LaravelAIEngine\Services\Agent\SelectedEntityContextService());
         $app->singleton(\LaravelAIEngine\Services\Agent\IntentRouter::class, fn ($app) => new \LaravelAIEngine\Services\Agent\IntentRouter(
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
-            $app->make(\LaravelAIEngine\Services\Node\NodeRegistryService::class),
             $app->make(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class),
             $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class),
@@ -39,6 +38,9 @@ class AgentRuntimeServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Node\NodeRouterService::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class)
         ));
+        // Core depends on the NodeSessionContract abstraction; bind it to the concrete
+        // manager (which moves to the federation package in Phase C).
+        $app->singleton(\LaravelAIEngine\Contracts\Federation\NodeSessionContract::class, fn ($app) => $app->make(\LaravelAIEngine\Services\Agent\NodeSessionManager::class));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentSelectionService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentSelectionService(
             $app->make(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class)
         ));
@@ -93,7 +95,9 @@ class AgentRuntimeServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Agent\AgentPlanner::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentSelectionService::class),
-            $app->make(\LaravelAIEngine\Services\Agent\NodeSessionManager::class),
+            $app->bound(\LaravelAIEngine\Contracts\Federation\NodeSessionContract::class)
+                ? $app->make(\LaravelAIEngine\Contracts\Federation\NodeSessionContract::class)
+                : null,
             $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class),
             $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class),
             $app->make(\LaravelAIEngine\Services\Agent\GoalAgentService::class),

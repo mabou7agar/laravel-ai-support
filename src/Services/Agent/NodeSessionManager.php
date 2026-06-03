@@ -8,13 +8,14 @@ use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Contracts\Federation\NodeSessionContract;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Node\NodeRegistryService;
 use LaravelAIEngine\Services\Node\NodeRouterService;
 
-class NodeSessionManager
+class NodeSessionManager implements NodeSessionContract
 {
     public function __construct(
         protected AIEngineService $ai,
