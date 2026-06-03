@@ -12,7 +12,6 @@ use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\RoutingDecisionSource;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Events\AgentRunStreamed;
-use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\Execution\ActionHandlers\ContinueNodeActionHandler;
@@ -92,145 +91,6 @@ class AgentExecutionDispatcherTest extends UnitTestCase
 
         $this->assertFalse($response->success);
         $this->assertStringContainsString('blocked by execution policy', $response->message);
-    }
-
-    public function test_dispatches_tool_decision_and_exposes_rag_callback(): void
-    {
-        $context = $this->context();
-        $expected = AgentResponse::success('Tool used.', context: $context);
-        $action = Mockery::mock(AgentActionExecutionService::class);
-        $conversation = Mockery::mock(AgentConversationService::class);
-
-        $conversation->shouldReceive('executeSearchRAG')
-            ->once()
-            ->with(
-                'lookup after tool',
-                $context,
-                ['from_tool' => true],
-                Mockery::on(static fn ($callback): bool => is_callable($callback))
-            )
-            ->andReturn($expected);
-
-        $action->shouldReceive('executeUseTool')
-            ->once()
-            ->withArgs(function (string $toolName, string $message, UnifiedActionContext $ctx, array $options, $searchRag) use ($context, $expected): bool {
-                $this->assertSame('data_query', $toolName);
-                $this->assertSame('list tasks', $message);
-                $this->assertSame($context, $ctx);
-                $this->assertSame(['status' => 'open'], $options['tool_params'] ?? null);
-                $this->assertTrue($this->hasDecisionMetadata($options, RoutingDecisionAction::USE_TOOL));
-                $this->assertSame($expected, $searchRag('lookup after tool', $context, ['from_tool' => true]));
-
-                return true;
-            })
-            ->andReturn($expected);
-
-        $response = $this->dispatcher(actionExecutionService: $action, conversationService: $conversation)->dispatch(
-            $this->decision(RoutingDecisionAction::USE_TOOL, [
-                'resource_name' => 'data_query',
-                'params' => ['status' => 'open'],
-            ]),
-            'list tasks',
-            $context
-        );
-
-        $this->assertSame($expected, $response);
-    }
-
-    public function test_tool_needing_user_input_emits_progress_instead_of_failed(): void
-    {
-        Event::fake([AgentRunStreamed::class]);
-
-        $context = $this->context();
-        $expected = AgentResponse::fromActionResult(
-            ActionResult::needsUserInput('Need customer email.', metadata: [
-                'required_inputs' => ['customer_email'],
-            ]),
-            $context
-        );
-        $action = Mockery::mock(AgentActionExecutionService::class);
-        $audit = Mockery::mock(ProviderToolAuditService::class);
-
-        $action->shouldReceive('executeUseTool')
-            ->once()
-            ->andReturn($expected);
-
-        $audit->shouldReceive('record')
-            ->once()
-            ->withArgs(static fn (string $event, mixed $_run, mixed $_approval, array $payload): bool => $event === 'agent_tool.started'
-                && ($payload['tool_name'] ?? null) === 'create_customer');
-
-        $audit->shouldReceive('record')
-            ->once()
-            ->withArgs(static fn (string $event, mixed $_run, mixed $_approval, array $payload): bool => $event === 'agent_tool.progress'
-                && ($payload['tool_name'] ?? null) === 'create_customer'
-                && ($payload['success'] ?? null) === false
-                && ($payload['needs_user_input'] ?? null) === true);
-
-        $response = $this->dispatcher(actionExecutionService: $action, audit: $audit)->dispatch(
-            $this->decision(RoutingDecisionAction::USE_TOOL, [
-                'resource_name' => 'create_customer',
-            ]),
-            'create customer',
-            $context
-        );
-
-        $this->assertSame($expected, $response);
-        Event::assertDispatched(
-            AgentRunStreamed::class,
-            static fn (AgentRunStreamed $event): bool => ($event->event['name'] ?? null) === AgentRunEventStreamService::TOOL_PROGRESS
-                && ($event->event['payload']['tool_name'] ?? null) === 'create_customer'
-                && ($event->event['payload']['needs_user_input'] ?? null) === true
-        );
-        Event::assertNotDispatched(
-            AgentRunStreamed::class,
-            static fn (AgentRunStreamed $event): bool => ($event->event['name'] ?? null) === AgentRunEventStreamService::TOOL_FAILED
-        );
-    }
-
-    public function test_blocked_tool_returns_policy_failure_without_execution(): void
-    {
-        config()->set('ai-agent.execution_policy.tool_deny', ['dangerous_tool']);
-
-        $action = Mockery::mock(AgentActionExecutionService::class);
-        $action->shouldNotReceive('executeUseTool');
-
-        $response = $this->dispatcher(actionExecutionService: $action)->dispatch(
-            $this->decision(RoutingDecisionAction::USE_TOOL, ['tool_name' => 'dangerous_tool']),
-            'run dangerous tool',
-            $this->context()
-        );
-
-        $this->assertFalse($response->success);
-        $this->assertStringContainsString('blocked by execution policy', $response->message);
-    }
-
-    public function test_blocked_tool_marks_policy_metadata_and_records_audit(): void
-    {
-        config()->set('ai-agent.execution_policy.tool_deny', ['dangerous_tool']);
-
-        $action = Mockery::mock(AgentActionExecutionService::class);
-        $action->shouldNotReceive('executeUseTool');
-
-        $audit = Mockery::mock(ProviderToolAuditService::class);
-        $audit->shouldReceive('record')
-            ->once()
-            ->withArgs(static fn (string $event, mixed $_run, mixed $_approval, array $payload): bool => $event === 'agent_policy.blocked'
-                && ($payload['policy_blocked'] ?? null) === true
-                && ($payload['blocked_type'] ?? null) === 'tool'
-                && ($payload['blocked_resource'] ?? null) === 'dangerous_tool');
-
-        $response = $this->dispatcher(actionExecutionService: $action, audit: $audit)->dispatch(
-            $this->decision(RoutingDecisionAction::USE_TOOL, ['tool_name' => 'dangerous_tool']),
-            'run dangerous tool',
-            $this->context()
-        );
-
-        $this->assertFalse($response->success);
-        $this->assertStringContainsString('blocked by execution policy', $response->message);
-        $this->assertTrue($response->metadata['policy_blocked'] ?? false);
-        $this->assertSame('tool', $response->metadata['blocked_type'] ?? null);
-        $this->assertSame('dangerous_tool', $response->metadata['blocked_resource'] ?? null);
     }
 
     public function test_blocked_node_marks_policy_metadata(): void
@@ -408,36 +268,6 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         $this->assertStringContainsString('Here are local results.', $response->message);
     }
 
-    public function test_audit_stream_emit_failure_does_not_halt_tool_execution(): void
-    {
-        $context = $this->context();
-        $expected = AgentResponse::success('Tool used.', context: $context);
-
-        $action = Mockery::mock(AgentActionExecutionService::class);
-        $action->shouldReceive('executeUseTool')->once()->andReturn($expected);
-
-        $audit = Mockery::mock(ProviderToolAuditService::class);
-        $audit->shouldReceive('record');
-
-        $stream = Mockery::mock(AgentRunEventStreamService::class);
-        $stream->shouldReceive('emit')->andThrow(new \RuntimeException('stream down'));
-        $this->app->instance(AgentRunEventStreamService::class, $stream);
-
-        \Illuminate\Support\Facades\Log::shouldReceive('channel')->andReturnSelf();
-        \Illuminate\Support\Facades\Log::shouldReceive('warning')->atLeast()->once();
-        \Illuminate\Support\Facades\Log::shouldReceive('info');
-        \Illuminate\Support\Facades\Log::shouldReceive('debug');
-        \Illuminate\Support\Facades\Log::shouldReceive('error');
-
-        $response = $this->dispatcher(actionExecutionService: $action, audit: $audit)->dispatch(
-            $this->decision(RoutingDecisionAction::USE_TOOL, ['resource_name' => 'data_query']),
-            'list tasks',
-            $context
-        );
-
-        $this->assertSame($expected, $response);
-    }
-
     public function test_dispatches_need_user_input_decision(): void
     {
         $context = $this->context();
@@ -531,7 +361,6 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         }));
 
         return $dispatcher = new AgentExecutionDispatcher(
-            $actionExecutionService ?? Mockery::mock(AgentActionExecutionService::class),
             $conversationService ?? Mockery::mock(AgentConversationService::class),
             $registry,
             $goalAgent ?? Mockery::mock(GoalAgentService::class),

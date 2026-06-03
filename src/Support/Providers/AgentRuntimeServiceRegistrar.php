@@ -23,12 +23,6 @@ class AgentRuntimeServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentSelectionService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentSelectionService(
             $app->make(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class)
         ));
-        $app->singleton(\LaravelAIEngine\Services\Agent\AgentActionExecutionService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentActionExecutionService(
-            $app->make(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class),
-            null,
-            $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class),
-            $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class)
-        ));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentConversationService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentConversationService(
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
             $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionEngine::class),
@@ -49,13 +43,11 @@ class AgentRuntimeServiceRegistrar
         // i.e. never without federation.
         $app->singleton(\LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry::class, fn () => new \LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry());
         $app->singleton(\LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher(
-            $app->make(\LaravelAIEngine\Services\Agent\AgentActionExecutionService::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentConversationService::class),
             $app->make(\LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry::class),
             $app->make(\LaravelAIEngine\Services\Agent\GoalAgentService::class),
             $app->make(\LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentExecutionPolicyService::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSelectionService::class)
+            $app->make(\LaravelAIEngine\Services\Agent\AgentExecutionPolicyService::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor(
             $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class),

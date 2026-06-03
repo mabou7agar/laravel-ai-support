@@ -9,11 +9,9 @@ use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\RoutingDecision;
 use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
-use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
@@ -21,13 +19,11 @@ use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
 class AgentExecutionDispatcher
 {
     public function __construct(
-        protected AgentActionExecutionService $actionExecutionService,
         protected AgentConversationService $conversationService,
         protected RoutingActionHandlerRegistry $actionHandlers,
         protected GoalAgentService $goalAgent,
         protected ?ProviderToolAuditService $audit = null,
-        protected ?AgentExecutionPolicyService $policy = null,
-        protected ?AgentSelectionService $selectionService = null
+        protected ?AgentExecutionPolicyService $policy = null
     ) {
     }
 
@@ -42,9 +38,7 @@ class AgentExecutionDispatcher
 
         return match ($decision->action) {
             RoutingDecisionAction::CONVERSATIONAL => $this->conversationService->executeConversational($message, $context, $options),
-            RoutingDecisionAction::HANDLE_SELECTION => $this->executeSelection($decision, $message, $context, $options),
             RoutingDecisionAction::SEARCH_RAG => $this->executeSearchRag($message, $context, $options, $reroute),
-            RoutingDecisionAction::USE_TOOL => $this->executeTool($decision, $message, $context, $options),
             RoutingDecisionAction::RUN_SUB_AGENT => $this->executeSubAgent($decision, $message, $context, $options),
             RoutingDecisionAction::NEED_USER_INPUT => AgentResponse::needsUserInput(
                 message: $decision->reason,
@@ -65,84 +59,6 @@ class AgentExecutionDispatcher
                     context: $context
                 ),
         };
-    }
-
-    protected function executeSelection(
-        RoutingDecision $decision,
-        string $message,
-        UnifiedActionContext $context,
-        array $options
-    ): AgentResponse {
-        $type = (string) ($decision->payload['selection_type'] ?? '');
-        $selection = $this->selectionService();
-
-        if ($type === 'option_selection') {
-            $response = $selection->handleOptionSelection(
-                $message,
-                $context,
-                $options,
-                fn (string $searchMessage, UnifiedActionContext $searchContext, array $searchOptions): AgentResponse => $this->executeSearchRag($searchMessage, $searchContext, $searchOptions, null),
-                fn (string $resourceName, string $routeMessage, UnifiedActionContext $routeContext, array $routeOptions): AgentResponse => $this->routeToNode(
-                    $resourceName,
-                    $decision->source,
-                    $routeMessage,
-                    $routeContext,
-                    $routeOptions
-                )
-            );
-
-            return $response ?? AgentResponse::failure(
-                message: 'Selected option could not be resolved.',
-                context: $context
-            );
-        }
-
-        return $selection->handlePositionalReference(
-            $message,
-            $context,
-            $options,
-            fn (string $searchMessage, UnifiedActionContext $searchContext, array $searchOptions): AgentResponse => $this->executeSearchRag($searchMessage, $searchContext, $searchOptions, null),
-            fn (string $resourceName, string $routeMessage, UnifiedActionContext $routeContext, array $routeOptions): AgentResponse => $this->routeToNode(
-                $resourceName,
-                $decision->source,
-                $routeMessage,
-                $routeContext,
-                $routeOptions
-            )
-        );
-    }
-
-    /**
-     * Resolve the ROUTE_TO_NODE action handler from the registry to route a
-     * selection-resolved resource to a remote node, falling back to a failure
-     * response (preserving prior behavior) when no handler is registered.
-     */
-    protected function routeToNode(
-        string $resourceName,
-        string $source,
-        string $message,
-        UnifiedActionContext $context,
-        array $options
-    ): AgentResponse {
-        $decision = new RoutingDecision(
-            action: RoutingDecisionAction::ROUTE_TO_NODE,
-            source: $source,
-            confidence: 'high',
-            reason: 'Selection resolved to a remote node.',
-            payload: ['resource_name' => $resourceName]
-        );
-
-        return $this->actionHandlers->get(RoutingDecisionAction::ROUTE_TO_NODE)?->handle(
-            $decision,
-            $message,
-            $context,
-            $options,
-            null
-        ) ?? AgentResponse::failure(
-            message: "Unsupported routing decision action [{$decision->action}].",
-            data: $decision->toArray(),
-            context: $context
-        );
     }
 
     protected function executeSearchRag(
@@ -166,51 +82,6 @@ class AgentExecutionDispatcher
                 context: $context
             )
         );
-    }
-
-    protected function executeTool(
-        RoutingDecision $decision,
-        string $message,
-        UnifiedActionContext $context,
-        array $options
-    ): AgentResponse {
-        $toolName = (string) ($decision->payload['resource_name'] ?? $decision->payload['tool_name'] ?? '');
-        if (!$this->policy()->canUseTool($toolName, $options)) {
-            return $this->policyBlockedResponse('tool', $toolName, $context, $options);
-        }
-
-        $this->recordExecutionAudit('agent_tool.started', $toolName, $context, $options, $decision->payload);
-
-        try {
-            $response = $this->actionExecutionService->executeUseTool(
-                $toolName,
-                $message,
-                $context,
-                array_merge($options, [
-                    'tool_params' => is_array($decision->payload['params'] ?? null) ? $decision->payload['params'] : [],
-                ]),
-                fn (string $searchMessage, UnifiedActionContext $searchContext, array $searchOptions): AgentResponse => $this->executeSearchRag(
-                    $searchMessage,
-                    $searchContext,
-                    $searchOptions,
-                    null
-                )
-            );
-
-            $this->recordExecutionAudit($this->toolFinishedEvent($response), $toolName, $context, $options, [
-                'success' => $response->success,
-                'needs_user_input' => $response->needsUserInput,
-                'message' => $response->message,
-            ]);
-
-            return $response;
-        } catch (\Throwable $e) {
-            $this->recordExecutionAudit('agent_tool.failed', $toolName, $context, $options, [
-                'error' => $e->getMessage(),
-            ]);
-
-            throw $e;
-        }
     }
 
     protected function executeSubAgent(
@@ -263,15 +134,6 @@ class AgentExecutionDispatcher
             'decision_confidence' => $decision->confidence,
             'decision_reason' => $decision->reason,
         ], $options);
-    }
-
-    protected function toolFinishedEvent(AgentResponse $response): string
-    {
-        if ($response->needsUserInput) {
-            return 'agent_tool.progress';
-        }
-
-        return $response->success ? 'agent_tool.completed' : 'agent_tool.failed';
     }
 
     /**
@@ -396,11 +258,6 @@ class AgentExecutionDispatcher
         return $this->policy = app()->bound(AgentExecutionPolicyService::class)
             ? app(AgentExecutionPolicyService::class)
             : new AgentExecutionPolicyService();
-    }
-
-    protected function selectionService(): AgentSelectionService
-    {
-        return $this->selectionService ??= app(AgentSelectionService::class);
     }
 
     /**

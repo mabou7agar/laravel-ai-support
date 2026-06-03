@@ -4,7 +4,6 @@ namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
-use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
@@ -71,10 +70,6 @@ class AgentServiceResolutionTest extends UnitTestCase
         $this->assertInstanceOf(AgentSelectionService::class, $this->app->make(AgentSelectionService::class));
     }
 
-    public function test_agent_action_execution_service_resolves_from_container(): void
-    {
-        $this->assertInstanceOf(AgentActionExecutionService::class, $this->app->make(AgentActionExecutionService::class));
-    }
 
     public function test_agent_conversation_service_resolves_from_container(): void
     {
