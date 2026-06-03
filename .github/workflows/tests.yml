@@ -30,6 +30,12 @@ jobs:
       - name: Validate composer.json
         run: composer validate --strict
 
+      - name: Configure composer (do not block dev deps on advisories)
+        # testbench pulls older laravel/framework versions that carry security
+        # advisories; these are test-only dev dependencies, so don't let composer's
+        # advisory policy block resolution of the test toolchain.
+        run: composer config --no-plugins policy.advisories.block false
+
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction
 
