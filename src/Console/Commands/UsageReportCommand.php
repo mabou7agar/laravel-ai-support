@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
+use LaravelAIEngine\Services\AnalyticsManager;
 use LaravelAIEngine\Services\CreditManager;
 use LaravelAIEngine\Enums\EngineEnum;
 use Carbon\Carbon;
@@ -81,22 +82,30 @@ class UsageReportCommand extends Command
             $this->outputCsv($creditTable, ['Engine', 'Model', 'Balance', 'Status']);
         }
 
-        // Usage statistics (mock data for demonstration)
-        $usageStats = $this->getMockUsageStats($userId, $engine, $days);
-        
+        // Usage statistics (real data from the analytics store)
+        $usageStats = app(AnalyticsManager::class)->getUsageStats(
+            $this->buildFilters($userId, $engine, $days)
+        );
+
+        $totalRequests = (int) ($usageStats['total_requests'] ?? 0);
+        $totalCreditsUsed = (float) ($usageStats['total_credits_used'] ?? 0);
+        $avgCreditsPerRequest = $totalRequests > 0
+            ? round($totalCreditsUsed / $totalRequests, 2)
+            : 0;
+
         $this->newLine();
         $this->info("📈 Usage Statistics (Last {$days} days):");
-        
+
         if ($format === 'table') {
             $this->table(
                 ['Metric', 'Value'],
                 [
-                    ['Total Requests', $usageStats['total_requests']],
-                    ['Total Credits Used', $usageStats['total_credits_used']],
-                    ['Average Credits/Request', $usageStats['avg_credits_per_request']],
-                    ['Most Used Engine', $usageStats['most_used_engine']],
-                    ['Most Used Model', $usageStats['most_used_model']],
-                    ['Success Rate', $usageStats['success_rate'] . '%'],
+                    ['Total Requests', $totalRequests],
+                    ['Total Credits Used', round($totalCreditsUsed, 2)],
+                    ['Average Credits/Request', $avgCreditsPerRequest],
+                    ['Most Used Engine', $usageStats['most_used_engine'] ?? 'N/A'],
+                    ['Most Used Model', $usageStats['most_used_model'] ?? 'N/A'],
+                    ['Success Rate', round((float) ($usageStats['success_rate'] ?? 0), 2) . '%'],
                 ]
             );
         }
@@ -111,102 +120,72 @@ class UsageReportCommand extends Command
         $this->info("🌐 System-wide Usage Report");
         $this->newLine();
 
-        // Mock system statistics
-        $systemStats = $this->getMockSystemStats($engine, $days);
-        
+        // Real system statistics from the analytics store
+        $analytics = app(AnalyticsManager::class);
+        $filters = $this->buildFilters(null, $engine, $days);
+
+        $overview = $analytics->getSystemOverview($filters);
+        $engineBreakdown = $analytics->getEngineBreakdown($filters);
+
         $this->info("📊 System Overview (Last {$days} days):");
-        
+
         if ($format === 'table') {
             $this->table(
                 ['Metric', 'Value'],
                 [
-                    ['Total Users', $systemStats['total_users']],
-                    ['Active Users', $systemStats['active_users']],
-                    ['Total Requests', $systemStats['total_requests']],
-                    ['Total Credits Used', $systemStats['total_credits_used']],
-                    ['Average Response Time', $systemStats['avg_response_time'] . 'ms'],
-                    ['Error Rate', $systemStats['error_rate'] . '%'],
+                    ['Total Users', (int) ($overview['total_users'] ?? 0)],
+                    ['Active Users', (int) ($overview['active_users'] ?? 0)],
+                    ['Total Requests', (int) ($overview['total_requests'] ?? 0)],
+                    ['Total Credits Used', round((float) ($overview['total_credits_used'] ?? 0), 2)],
+                    ['Average Response Time', round((float) ($overview['avg_response_time'] ?? 0), 2) . 'ms'],
+                    ['Error Rate', round((float) ($overview['error_rate'] ?? 0), 2) . '%'],
                 ]
             );
         }
 
         $this->newLine();
         $this->info("🔧 Engine Usage Breakdown:");
-        
+
+        $engineRows = array_map(static function (array $row): array {
+            return [
+                $row['engine'],
+                $row['requests'],
+                round((float) $row['credits_used'], 2),
+                ($row['avg_response_time'] !== null ? round((float) $row['avg_response_time'], 2) : 0) . 'ms',
+                round((float) $row['success_rate'], 2) . '%',
+            ];
+        }, $engineBreakdown);
+
         if ($format === 'table') {
             $this->table(
                 ['Engine', 'Requests', 'Credits Used', 'Avg Response Time', 'Success Rate'],
-                $systemStats['engine_breakdown']
-            );
-        }
-
-        $this->newLine();
-        $this->info("📅 Daily Usage Trend:");
-        
-        if ($format === 'table') {
-            $this->table(
-                ['Date', 'Requests', 'Credits Used', 'Unique Users'],
-                $systemStats['daily_trend']
+                $engineRows
             );
         }
 
         if ($exportPath) {
-            $this->exportSystemReport($systemStats, $exportPath, $format);
+            $this->exportSystemReport([
+                'overview' => $overview,
+                'engine_breakdown' => $engineBreakdown,
+            ], $exportPath, $format);
         }
     }
 
-    private function getMockUsageStats(string $userId, ?string $engine, int $days): array
+    private function buildFilters(?string $userId, ?string $engine, int $days): array
     {
-        // In a real implementation, this would query the database
-        return [
-            'total_requests' => rand(50, 500),
-            'total_credits_used' => rand(100, 1000),
-            'avg_credits_per_request' => round(rand(1, 10), 2),
-            'most_used_engine' => $engine ?? 'openai',
-            'most_used_model' => 'gpt-4o',
-            'success_rate' => rand(85, 99),
+        $filters = [
+            'from_date' => Carbon::now()->subDays($days),
         ];
-    }
 
-    private function getMockSystemStats(?string $engine, int $days): array
-    {
-        $engines = ['openai', 'anthropic', 'gemini', 'stable_diffusion'];
+        if ($userId) {
+            $filters['user_id'] = $userId;
+        }
+
         if ($engine) {
-            $engines = [$engine];
+            $filters['engine'] = $engine;
         }
 
-        $engineBreakdown = [];
-        foreach ($engines as $eng) {
-            $engineBreakdown[] = [
-                $eng,
-                rand(100, 1000),
-                rand(500, 5000),
-                rand(500, 2000) . 'ms',
-                rand(85, 99) . '%',
-            ];
-        }
-
-        $dailyTrend = [];
-        for ($i = $days - 1; $i >= 0; $i--) {
-            $date = Carbon::now()->subDays($i)->format('Y-m-d');
-            $dailyTrend[] = [
-                $date,
-                rand(10, 100),
-                rand(50, 500),
-                rand(5, 50),
-            ];
-        }
-
-        return [
-            'total_users' => rand(100, 1000),
-            'active_users' => rand(50, 500),
-            'total_requests' => rand(1000, 10000),
-            'total_credits_used' => rand(5000, 50000),
-            'avg_response_time' => rand(500, 2000),
-            'error_rate' => rand(1, 5),
-            'engine_breakdown' => $engineBreakdown,
-            'daily_trend' => $dailyTrend,
-        ];
+        return $filters;
     }
 
     private function outputCsv(array $data, array $headers): void

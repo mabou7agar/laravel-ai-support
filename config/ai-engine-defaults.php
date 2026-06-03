@@ -324,6 +324,32 @@ return [
             'allowed_extensions' => ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'ogg', 'pdf', 'txt', 'csv', 'json', 'xlsx', 'docx', 'zip'],
             'allowed_mime_types' => ['image/*', 'video/*', 'audio/*', 'application/pdf', 'text/*', 'application/json', 'application/zip', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
         ],
+
+        /*
+        | Per-provider descriptors for downloading a provider-hosted file by its
+        | provider_file_id. Adding a provider here is enough to make
+        | ProviderFileDownloadService support it — no code changes required.
+        |
+        | Placeholders {base_url} and {file_id} are interpolated into content_url.
+        | base_url / api_key / timeout fall back to the matching ai-engine.engines.*
+        | entry when omitted. auth is one of: bearer, x-api-key.
+        */
+        'file_download' => [
+            'openai' => [
+                'content_url' => '{base_url}/files/{file_id}/content',
+                'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+                'auth' => 'bearer',
+            ],
+            'anthropic' => [
+                'content_url' => '{base_url}/v1/files/{file_id}/content',
+                'base_url' => env('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
+                'auth' => 'x-api-key',
+                'headers' => [
+                    'anthropic-version' => env('AI_ENGINE_ANTHROPIC_VERSION', '2023-06-01'),
+                    'anthropic-beta' => env('AI_ENGINE_ANTHROPIC_FILES_BETA', 'files-api-2025-04-14'),
+                ],
+            ],
+        ],
     ],
 
     /*
