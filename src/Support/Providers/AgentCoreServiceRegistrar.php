@@ -93,26 +93,5 @@ class AgentCoreServiceRegistrar
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentRunEventStreamService::class)
         ));
-        $app->singleton(\LaravelAIEngine\Services\Agent\Routing\Stages\ActiveRunContinuationStage::class);
-        $app->singleton(\LaravelAIEngine\Services\Agent\Routing\Stages\ExplicitModeStage::class);
-        $app->singleton(\LaravelAIEngine\Services\Agent\Routing\Stages\SelectionReferenceStage::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Routing\Stages\SelectionReferenceStage(
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSelectionService::class)
-        ));
-        $app->singleton(\LaravelAIEngine\Services\Agent\Routing\Stages\AgentSkillMatchStage::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Routing\Stages\AgentSkillMatchStage(
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillMatcher::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner::class)
-        ));
-        $app->singleton(\LaravelAIEngine\Services\Agent\Routing\Stages\MessageClassificationStage::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Routing\Stages\MessageClassificationStage(
-            $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class),
-            $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class)
-        ));
-        $app->singleton(\LaravelAIEngine\Services\Agent\Routing\Stages\AIRouterStage::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Routing\Stages\AIRouterStage(
-            $app->make(\LaravelAIEngine\Services\Agent\IntentRouter::class)
-        ));
-        $app->singleton(\LaravelAIEngine\Services\Agent\Routing\Stages\FallbackConversationalStage::class);
-        $app->singleton(\LaravelAIEngine\Services\Agent\Routing\RoutingPipeline::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Routing\RoutingPipeline(array_map(
-            static fn (string $stage): \LaravelAIEngine\Contracts\RoutingStageContract => $app->make($stage),
-            array_values((array) config('ai-agent.routing_pipeline.stages', []))
-        )));
     }
 }

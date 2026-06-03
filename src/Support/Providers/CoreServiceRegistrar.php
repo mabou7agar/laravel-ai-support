@@ -182,7 +182,7 @@ class CoreServiceRegistrar
         ));
         // NodeMetadataProvider is bound by the laravel-ai-engine-federation package
         // (NodeMetadataProviderImpl). When that package is absent the contract stays
-        // unbound and IntentRouter resolves it to null (no remote-node metadata).
+        // unbound and consumers resolve it to null (no remote-node metadata).
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class, fn () => new \LaravelAIEngine\Services\RAG\RAGDecisionPolicy());
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class)));
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGDecisionPromptService::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGDecisionPromptService($app->make(\LaravelAIEngine\Services\RAG\RAGDecisionPolicy::class), $app->make(\LaravelAIEngine\Services\RAG\RAGDecisionFeedbackService::class)));

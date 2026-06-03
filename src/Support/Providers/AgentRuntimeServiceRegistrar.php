@@ -12,21 +12,6 @@ class AgentRuntimeServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class, fn () => new \LaravelAIEngine\Services\Agent\SelectedEntityContextService());
-        $app->singleton(\LaravelAIEngine\Services\Agent\IntentRouter::class, fn ($app) => new \LaravelAIEngine\Services\Agent\IntentRouter(
-            $app->make(\LaravelAIEngine\Services\AIEngineService::class),
-            $app->make(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class),
-            $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class),
-            $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillMatcher::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSkillExecutionPlanner::class),
-            null,
-            null,
-            $app->bound(\LaravelAIEngine\Contracts\Federation\NodeMetadataProvider::class)
-                ? $app->make(\LaravelAIEngine\Contracts\Federation\NodeMetadataProvider::class)
-                : null
-        ));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentPlanner::class, fn () => new \LaravelAIEngine\Services\Agent\AgentPlanner());
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentResponseFinalizer(
             $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class),
@@ -74,18 +59,12 @@ class AgentRuntimeServiceRegistrar
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor(
             $app->make(\LaravelAIEngine\Services\Agent\ContextManager::class),
-            $app->make(\LaravelAIEngine\Services\Agent\IntentRouter::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentPlanner::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentResponseFinalizer::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AgentSelectionService::class),
             $app->bound(\LaravelAIEngine\Contracts\Federation\NodeSessionContract::class)
                 ? $app->make(\LaravelAIEngine\Contracts\Federation\NodeSessionContract::class)
                 : null,
-            $app->make(\LaravelAIEngine\Services\Agent\MessageRoutingClassifier::class),
-            $app->make(\LaravelAIEngine\Services\Agent\RoutingContextResolver::class),
-            $app->make(\LaravelAIEngine\Services\Agent\GoalAgentService::class),
             $app->make(\LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher::class),
-            $app->make(\LaravelAIEngine\Services\Agent\Routing\RoutingPipeline::class)
+            $app->make(\LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\Runtime\LaravelAgentRuntime::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Runtime\LaravelAgentRuntime(
             $app->make(\LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor::class)

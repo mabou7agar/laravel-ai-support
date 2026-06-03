@@ -13,7 +13,7 @@ class DocsCoverageMatrixTest extends TestCase
 
     private const COVERAGE_MAP = [
         'index' => [
-            'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
+            'tests/Unit/Services/Agent/AiNativeProcessorRoutingTest.php',
             'tests/Feature/AIEngineIntegrationTest.php',
         ],
         'guides/admin-ui' => [
@@ -31,12 +31,12 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Services/Agent/AgentCapabilityRegistryTest.php',
         ],
         'guides/chat-flow-examples' => [
-            'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
-            'tests/Unit/Services/Agent/LaravelAgentProcessorFollowUpTest.php',
+            'tests/Unit/Services/Agent/AiNativeProcessorRoutingTest.php',
+            'tests/Unit/Services/Agent/LaravelAgentProcessorTraceAndIdempotencyTest.php',
             'tests/Unit/Services/Agent/AgentConversationServiceTest.php',
         ],
         'guides/concepts' => [
-            'tests/Unit/Services/Agent/IntentRouterTest.php',
+            'tests/Unit/Services/Agent/AiNativeRuntimeTest.php',
             'tests/Unit/Services/Agent/AgentPlannerTest.php',
             'tests/Unit/Services/RAG/RAGPlannerServiceTest.php',
         ],
@@ -50,7 +50,7 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Http/Controllers/Concerns/ExtractsConversationContextPayloadTest.php',
         ],
         'guides/copy-paste-playbooks' => [
-            'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
+            'tests/Feature/AIEngineIntegrationTest.php',
             'tests/Feature/Api/ConversationListApiTest.php',
             'tests/Feature/Node/NodeApiRoutesTest.php',
         ],
@@ -67,7 +67,7 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Services/Graph/Neo4jRetrievalServiceTest.php',
         ],
         'guides/entity-list-preview-ux' => [
-            'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
+            'tests/Unit/Services/Agent/AiNativeProcessorRoutingTest.php',
             'tests/Unit/Services/Summary/EntitySummaryServiceTest.php',
             'tests/Unit/Services/RAG/RAGStructuredDataServiceTest.php',
         ],
@@ -141,7 +141,7 @@ class DocsCoverageMatrixTest extends TestCase
         'guides/testing-playbook' => [
             'tests/Unit/Console/TestRealAgentFlowCommandTest.php',
             'tests/Unit/Console/InfrastructureHealthCommandTest.php',
-            'tests/Feature/Acceptance/AgentRefactorAcceptanceTest.php',
+            'tests/Feature/AIEngineIntegrationTest.php',
         ],
         'guides/troubleshooting' => [
             'tests/Unit/Support/InfrastructureHealthServiceTest.php',

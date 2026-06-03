@@ -13,7 +13,6 @@ class AgentRuntimeConfigValidator
     {
         $issues = array_merge(
             $this->runtimeIssues(),
-            $this->routingStageIssues(),
             $this->toolIssues()
         );
 
@@ -93,61 +92,6 @@ class AgentRuntimeConfigValidator
                     'missing_tool_class',
                     "Tool [{$name}] references missing class [{$class}].",
                     "ai-agent.tools.{$name}"
-                );
-            }
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @return array<int,array{severity:string,code:string,message:string,subject:string}>
-     */
-    protected function routingStageIssues(): array
-    {
-        $issues = [];
-        $stages = (array) config('ai-agent.routing_pipeline.stages', []);
-
-        if ($stages === []) {
-            return [
-                $this->issue(
-                    'error',
-                    'routing_stages_empty',
-                    'At least one routing stage must be configured.',
-                    'ai-agent.routing_pipeline.stages'
-                ),
-            ];
-        }
-
-        foreach ($stages as $index => $stage) {
-            if (!is_string($stage) || trim($stage) === '') {
-                $issues[] = $this->issue(
-                    'error',
-                    'invalid_routing_stage',
-                    "Routing stage at index [{$index}] must be a class name.",
-                    "ai-agent.routing_pipeline.stages.{$index}"
-                );
-
-                continue;
-            }
-
-            if (!class_exists($stage)) {
-                $issues[] = $this->issue(
-                    'error',
-                    'missing_routing_stage',
-                    "Routing stage [{$stage}] does not exist.",
-                    "ai-agent.routing_pipeline.stages.{$index}"
-                );
-
-                continue;
-            }
-
-            if (!is_subclass_of($stage, \LaravelAIEngine\Contracts\RoutingStageContract::class)) {
-                $issues[] = $this->issue(
-                    'error',
-                    'invalid_routing_stage_contract',
-                    "Routing stage [{$stage}] must implement RoutingStageContract.",
-                    "ai-agent.routing_pipeline.stages.{$index}"
                 );
             }
         }

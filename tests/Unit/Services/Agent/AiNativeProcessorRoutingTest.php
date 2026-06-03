@@ -6,13 +6,10 @@ namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
-use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime;
 use LaravelAIEngine\Services\Agent\ContextManager;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
-use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
 use LaravelAIEngine\Tests\UnitTestCase;
@@ -34,9 +31,6 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
             ->with('ai-native-processor', 42)
             ->andReturn($context);
 
-        $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldNotReceive('route');
-
         $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
         $dispatcher->shouldNotReceive('dispatch');
 
@@ -54,13 +48,10 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
 
         $processor = new LaravelAgentProcessor(
             $contextManager,
-            $intentRouter,
-            new AgentPlanner(),
             $finalizer,
-            Mockery::mock(AgentSelectionService::class),
             Mockery::mock(NodeSessionManager::class),
-            executionDispatcher: $dispatcher,
-            aiNativeRuntime: $native
+            $dispatcher,
+            $native
         );
 
         $response = $processor->process('create invoice', 'ai-native-processor', 42);
@@ -80,9 +71,6 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
             ->once()
             ->with('ai-native-processor-small-talk', 42)
             ->andReturn($context);
-
-        $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldNotReceive('route');
 
         $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
         $dispatcher->shouldNotReceive('dispatch');
@@ -106,13 +94,10 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
 
         $processor = new LaravelAgentProcessor(
             $contextManager,
-            $intentRouter,
-            new AgentPlanner(),
             $finalizer,
-            Mockery::mock(AgentSelectionService::class),
             Mockery::mock(NodeSessionManager::class),
-            executionDispatcher: $dispatcher,
-            aiNativeRuntime: $native
+            $dispatcher,
+            $native
         );
 
         $response = $processor->process('hello', 'ai-native-processor-small-talk', 42);
@@ -144,9 +129,6 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
             ->with('hello', $context, Mockery::on(fn (array $options): bool => ($options['force_rag'] ?? false) === true))
             ->andReturn(AgentResponse::conversational('AI native handled it.', $context));
 
-        $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldNotReceive('route');
-
         $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
         $dispatcher->shouldNotReceive('dispatch');
 
@@ -157,13 +139,10 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
 
         $processor = new LaravelAgentProcessor(
             $contextManager,
-            $intentRouter,
-            new AgentPlanner(),
             $finalizer,
-            Mockery::mock(AgentSelectionService::class),
             Mockery::mock(NodeSessionManager::class),
-            executionDispatcher: $dispatcher,
-            aiNativeRuntime: $native
+            $dispatcher,
+            $native
         );
 
         $response = $processor->process('hello', 'force-rag-processor', 42, ['force_rag' => true]);

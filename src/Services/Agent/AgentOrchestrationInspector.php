@@ -24,17 +24,15 @@ class AgentOrchestrationInspector
         $subAgentNames = array_keys($this->subAgents->all());
         $skillDefinitions = $this->skillDefinitions();
         $runtimeNames = $this->runtimeNames();
-        $routingStageNames = $this->routingStageNames();
 
         $nodes = [
             'runtimes' => $runtimeNames,
-            'routing_stages' => $routingStageNames,
             'tools' => array_values($toolNames),
             'sub_agents' => array_values($subAgentNames),
             'skills' => array_map(static fn (AgentSkillDefinition $skill): string => $skill->id, $skillDefinitions),
         ];
 
-        $links = $this->routingStageLinks($runtimeNames, $routingStageNames);
+        $links = $this->runtimeLinks($runtimeNames);
         $issues = [];
 
         foreach ($this->subAgents->all() as $agentId => $definition) {
@@ -82,7 +80,6 @@ class AgentOrchestrationInspector
 
         $complexityScore = count($links)
             + count($nodes['runtimes'])
-            + count($nodes['routing_stages'])
             + count($nodes['tools'])
             + count($nodes['sub_agents'])
             + count($nodes['skills']);
@@ -102,7 +99,6 @@ class AgentOrchestrationInspector
             issues: $issues,
             metrics: [
                 'runtime_count' => count($nodes['runtimes']),
-                'routing_stage_count' => count($nodes['routing_stages']),
                 'tool_count' => count($nodes['tools']),
                 'sub_agent_count' => count($nodes['sub_agents']),
                 'skill_count' => count($nodes['skills']),
@@ -135,31 +131,12 @@ class AgentOrchestrationInspector
     }
 
     /**
-     * @return array<int, string>
-     */
-    private function routingStageNames(): array
-    {
-        return array_values(array_filter(array_map(
-            static fn (mixed $stage): string => trim((string) $stage),
-            (array) config('ai-agent.routing_pipeline.stages', [])
-        )));
-    }
-
-    /**
      * @param array<int, string> $runtimeNames
-     * @param array<int, string> $routingStageNames
      * @return array<int, array{from:string,to:string,type:string,metadata:array<string,mixed>}>
      */
-    private function routingStageLinks(array $runtimeNames, array $routingStageNames): array
+    private function runtimeLinks(array $runtimeNames): array
     {
         $links = [];
-
-        foreach ($routingStageNames as $index => $stageClass) {
-            $links[] = $this->link('runtime:laravel', "routing_stage:{$stageClass}", 'runs_stage', [
-                'order' => $index + 1,
-                'stage' => class_basename($stageClass),
-            ]);
-        }
 
         if (in_array('langgraph', $runtimeNames, true)) {
             $links[] = $this->link('runtime:langgraph', 'runtime:laravel', 'fallback_runtime', [
