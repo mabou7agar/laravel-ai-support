@@ -21,8 +21,9 @@ class ProviderFileDownloadService
             ];
         }
 
-        if ($artifact->provider === 'openai' && is_string($artifact->provider_file_id) && $artifact->provider_file_id !== '') {
-            return $this->downloadOpenAIFile($artifact);
+        if (is_string($artifact->provider_file_id) && $artifact->provider_file_id !== ''
+            && $this->fileDownloadDescriptor($artifact->provider) !== null) {
+            return $this->downloadProviderFile($artifact);
         }
 
         $url = $artifact->download_url ?? $artifact->source_url;
@@ -42,14 +43,46 @@ class ProviderFileDownloadService
         throw new AIEngineException("Provider artifact [{$artifact->uuid}] is not downloadable.");
     }
 
-    private function downloadOpenAIFile(AIProviderToolArtifact $artifact): array
+    /**
+     * Download a provider-hosted file using the configured descriptor for its
+     * provider. Any provider declared under provider_tools.file_download is
+     * supported without code changes.
+     */
+    private function downloadProviderFile(AIProviderToolArtifact $artifact): array
     {
-        $response = Http::timeout((int) config('ai-engine.engines.openai.timeout', 120))
-            ->withToken((string) config('ai-engine.engines.openai.api_key'))
-            ->get(rtrim((string) config('ai-engine.engines.openai.base_url', 'https://api.openai.com/v1'), '/') . '/files/' . $artifact->provider_file_id . '/content');
+        $provider = (string) $artifact->provider;
+        $descriptor = $this->fileDownloadDescriptor($provider);
+
+        if ($descriptor === null) {
+            throw new AIEngineException("No file download descriptor configured for provider [{$provider}].");
+        }
+
+        $engine = (array) config("ai-engine.engines.{$provider}", []);
+        $baseUrl = (string) ($descriptor['base_url'] ?? $engine['base_url'] ?? '');
+        $apiKey = (string) ($descriptor['api_key'] ?? $engine['api_key'] ?? '');
+        $timeout = (int) ($descriptor['timeout'] ?? $engine['timeout'] ?? 120);
+
+        if ($apiKey === '') {
+            throw new AIEngineException("Missing API key for provider [{$provider}] file download.");
+        }
+
+        $url = strtr((string) $descriptor['content_url'], [
+            '{base_url}' => rtrim($baseUrl, '/'),
+            '{file_id}' => $artifact->provider_file_id,
+        ]);
+
+        $request = Http::timeout($timeout)
+            ->withHeaders((array) ($descriptor['headers'] ?? []));
+
+        $request = match ($descriptor['auth'] ?? 'bearer') {
+            'x-api-key' => $request->withHeaders(['x-api-key' => $apiKey]),
+            default => $request->withToken($apiKey),
+        };
+
+        $response = $request->get($url);
 
         if (!$response->successful()) {
-            throw new AIEngineException('Unable to download OpenAI provider file: ' . $response->body());
+            throw new AIEngineException("Unable to download {$provider} provider file: " . $response->body());
         }
 
         return [
@@ -57,5 +90,19 @@ class ProviderFileDownloadService
             'file_name' => $artifact->name ?: ($artifact->provider_file_id . '.bin'),
             'mime_type' => $artifact->mime_type ?? $response->header('Content-Type', 'application/octet-stream'),
         ];
+    }
+
+    /**
+     * Resolve the configured file-download descriptor for a provider, if any.
+     */
+    private function fileDownloadDescriptor(?string $provider): ?array
+    {
+        if (!is_string($provider) || $provider === '') {
+            return null;
+        }
+
+        $descriptor = config("ai-engine.provider_tools.file_download.{$provider}");
+
+        return is_array($descriptor) && isset($descriptor['content_url']) ? $descriptor : null;
     }
 }
