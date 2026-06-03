@@ -174,6 +174,10 @@ return [
     |
     */
     'ai_native' => [
+        // DEPRECATED / no-op: AiNative is now the sole runtime (the classic routing
+        // pipeline was removed — see docs/decisions/0001-classic-routing-path.md).
+        // Setting this to false no longer switches to a classic path; it is kept only
+        // for config back-compat and will be removed in a future major version.
         'enabled' => env('AI_AGENT_AI_NATIVE_ENABLED', true),
         'skills' => env('AI_AGENT_AI_NATIVE_SKILLS', true),
         'max_steps' => (int) env('AI_AGENT_AI_NATIVE_MAX_STEPS', 8),

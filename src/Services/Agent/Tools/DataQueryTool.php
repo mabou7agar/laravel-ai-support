@@ -89,7 +89,15 @@ class DataQueryTool extends AgentTool
         $builder = $modelClass::query();
         $table = (new $modelClass)->getTable();
 
-        $this->applyScope($builder, $table, $context);
+        $scoped = $this->applyScope($builder, $table, $context);
+        if (!$scoped && $this->requiresScope($config)) {
+            return ActionResult::failure(
+                "Access to '{$label}' is blocked: no user/workspace/tenant scope could be applied "
+                . '(the model has no scope column or there is no caller context). Mark the model '
+                . "'public' => true in ai-engine.data_query.models to allow unscoped access."
+            );
+        }
+
         $appliedStatus = $this->applyStatusFilter($builder, $table, $config, $query);
         $displayLabel = $appliedStatus !== null ? "{$appliedStatus} {$label}" : $label;
 
@@ -185,10 +193,28 @@ class DataQueryTool extends AgentTool
             'list' => $extra['list'] ?? null,
             'status_column' => $extra['status_column'] ?? 'status',
             'statuses' => array_map('strtolower', (array) ($extra['statuses'] ?? [])),
+            // Intentionally-unscoped (catalog-style) model: bypass require_scope.
+            'public' => (bool) ($extra['public'] ?? false),
         ];
     }
 
-    protected function applyScope(Builder $builder, string $table, UnifiedActionContext $context): void
+    /**
+     * @param array<string, mixed> $config
+     */
+    protected function requiresScope(array $config): bool
+    {
+        if ($config['public'] ?? false) {
+            return false;
+        }
+
+        return (bool) config('ai-engine.data_query.require_scope', true);
+    }
+
+    /**
+     * Apply per-request access scope. Returns true when at least one scope
+     * predicate (user/workspace/tenant) was actually applied to the query.
+     */
+    protected function applyScope(Builder $builder, string $table, UnifiedActionContext $context): bool
     {
         $values = [
             'user_id' => auth()->id() ?? $context->userId,
@@ -196,12 +222,16 @@ class DataQueryTool extends AgentTool
             'tenant_id' => $context->metadata['tenant_id'] ?? null,
         ];
 
+        $applied = false;
         foreach ((array) config('ai-engine.data_query.scope_columns', ['user_id', 'workspace_id', 'tenant_id']) as $column) {
             $value = $values[$column] ?? null;
             if ($value !== null && $value !== '' && Schema::hasColumn($table, $column)) {
                 $builder->where($column, $value);
+                $applied = true;
             }
         }
+
+        return $applied;
     }
 
     /**

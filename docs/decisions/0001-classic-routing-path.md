@@ -113,9 +113,9 @@ The decision that must NOT be made is "leave it exactly as-is." The `ai_native:o
 
 ## 6. Open questions for the owner
 
-1. Will any real deployment run `ai_native.enabled=false`? (If definitively no → go straight to B.)
-2. Do you want the deterministic-routing benchmark commands kept as a quality signal, or removed?
-3. ~~Should structured queries live in `RAGDecisionEngine` or the `data_query` tool?~~ **Resolved: both, intentionally** — `DataQueryTool` is the local, fail-open, AI-free AiNative arm; `RAGStructuredDataService` is the federation-aware, fail-closed, paginated RAG engine. See the Structured-query boundary section.
+1. ~~Will any real deployment run `ai_native.enabled=false`?~~ **Resolved: moot** — Option B was executed; the classic path is gone and `ai_native.enabled` is now a deprecated no-op.
+2. ~~Keep the deterministic-routing benchmark commands?~~ **Resolved: removed** in the Phase-3 cleanup (`BenchmarkOrchestrationV2Command` / `EvaluateRoutingFixturesCommand` deleted).
+3. ~~Should structured queries live in `RAGDecisionEngine` or the `data_query` tool?~~ **Resolved: both, intentionally** — `DataQueryTool` is the local, AI-free AiNative arm (fail-closed-by-default scoping, opt-out via `data_query.require_scope=false` or a per-model `public` flag); `RAGStructuredDataService` is the federation-aware, paginated RAG engine. See the Structured-query boundary section.
 
 ---
 
@@ -126,8 +126,10 @@ The `data_query` tool and `RAGStructuredDataService` both answer count/list ques
 | Axis | `DataQueryTool` (AiNative arm) | `RAGStructuredDataService` (RAG engine) |
 | --- | --- | --- |
 | **Dependency footprint** | one optional nullable dep (`RAGCollectionDiscovery`) — lightweight, AI-free, self-contained | 7 collaborators + a 4-callable dependency map (model metadata, scope guard, aggregate, locale, summary, graph, state) |
-| **Scope default** | **fail-open** — `where()` only when `Schema::hasColumn`, never blocks | **fail-closed** — `RAGModelScopeGuard` (`require_structured_scope` default true) blocks unscoped models (`scope_blocked`) |
+| **Scope default** | **fail-closed** — `data_query.require_scope` (default true) refuses a query when no user/workspace/tenant scope applies; opt out per-model with `public => true` | **fail-closed** — `RAGModelScopeGuard` (`require_structured_scope` default true) blocks unscoped models (`scope_blocked`) |
 | **Federation** | none | emits `should_route_to_node` from local-SQL/`isMissingTableException` failures — the **sole** remote-node handoff signal, then routed + paginated |
 | **Reachability** | the AiNative planner sees only `data_query` + `search_knowledge` | reached only when `AgentConversationService::shouldUseRagPipeline()` is false (entity selection / structured_query / exit-to-orchestrator on the RAG-agent + federation-fallback paths) |
 
-Consolidating either direction loses capability (delegating the tool to the service was **refuted**: fail-open→fail-closed regression, hardcoded `status` column, dead `scope_columns` config). They are kept as two arms; `tests/Unit/Services/Structured/StructuredQueryParityTest.php` is an anti-divergence tripwire that pins both engines to the same numeric count/list result for identical scoped data, so they can't silently drift.
+Consolidating either direction loses capability (delegating the tool to the service was **refuted**: it would hardcode the `status` column, dead the configurable `scope_columns`, couple the lightweight tool to the whole RAG metadata stack, and replace the tool's own scope model). They are kept as two arms; `tests/Unit/Services/Structured/StructuredQueryParityTest.php` is an anti-divergence tripwire that pins both engines to the same numeric count/list result for identical scoped data, so they can't silently drift.
+
+> Note: the tool's scope is now fail-closed-by-default (`data_query.require_scope`), aligning its security posture with the RAG engine while keeping its lightweight, dependency-free design.
