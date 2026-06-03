@@ -8,14 +8,23 @@ use LaravelAIEngine\DTOs\SubAgentResult;
 use LaravelAIEngine\DTOs\SubAgentTask;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Contracts\SubAgentHandler;
+use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 
 class ToolCallingSubAgentHandler implements SubAgentHandler
 {
     public function __construct(
         private readonly ToolRegistry $tools,
-        private readonly SubAgentRegistry $subAgents
+        private readonly SubAgentRegistry $subAgents,
+        private ?AgentExecutionPolicyService $policy = null
     ) {
+    }
+
+    private function policy(): AgentExecutionPolicyService
+    {
+        return $this->policy ??= app()->bound(AgentExecutionPolicyService::class)
+            ? app(AgentExecutionPolicyService::class)
+            : new AgentExecutionPolicyService();
     }
 
     public function handle(
@@ -39,6 +48,16 @@ class ToolCallingSubAgentHandler implements SubAgentHandler
             $toolName = $this->toolName($toolSpec);
             if ($toolName === '') {
                 continue;
+            }
+
+            if (!$this->policy()->canUseTool($toolName, $options)) {
+                return SubAgentResult::failure(
+                    $task->id,
+                    $task->agentId,
+                    $this->policy()->blockedMessage('tool', $toolName),
+                    ['tool_results' => $results],
+                    ['tool_name' => $toolName, 'policy_blocked' => true]
+                );
             }
 
             $tool = $this->tools->get($toolName);
@@ -107,8 +126,23 @@ class ToolCallingSubAgentHandler implements SubAgentHandler
             ?? $options['tools']
             ?? $definition['tools']
             ?? [];
+        $requested = is_array($tools) ? array_values($tools) : [];
 
-        return is_array($tools) ? array_values($tools) : [];
+        // The agent definition's declared tools are a capability BOUND. A per-task
+        // tools override (which can originate from the HTTP request or the LLM via
+        // run_sub_agent) may SELECT a subset of the declared tools but must not
+        // escalate to tools the agent never declared. When the agent declares no
+        // tools it runs in open mode (dynamic provisioning via task/options).
+        $declared = is_array($definition['tools'] ?? null) ? $definition['tools'] : [];
+        if ($declared !== []) {
+            $allowed = array_map(fn ($spec) => $this->toolName($spec), $declared);
+            $requested = array_values(array_filter(
+                $requested,
+                fn ($spec) => in_array($this->toolName($spec), $allowed, true)
+            ));
+        }
+
+        return $requested;
     }
 
     private function toolName(string|array $toolSpec): string

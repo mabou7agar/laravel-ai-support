@@ -806,6 +806,57 @@ class SubAgentsFlowTest extends UnitTestCase
             }
         };
     }
+
+    // ------------------------------------------------------------------
+    // Security: a per-task tools override (HTTP/LLM-reachable) cannot escalate
+    // beyond the agent's DECLARED tools, and open-mode tools stay policy-gated.
+    // ------------------------------------------------------------------
+    public function test_task_tools_override_cannot_escalate_beyond_declared_tools(): void
+    {
+        $executed = [];
+        $tools = new ToolRegistry();
+        $tools->register('safe_tool', $this->tool(executeResult: ActionResult::success('safe'), onExecute: function () use (&$executed): void {
+            $executed[] = 'safe_tool';
+        }));
+        $tools->register('dangerous_tool', $this->tool(executeResult: ActionResult::success('danger'), onExecute: function () use (&$executed): void {
+            $executed[] = 'dangerous_tool';
+        }));
+
+        // Agent declares ONLY safe_tool — that is its capability bound.
+        $registry = $this->registry(['bounded' => ['tools' => ['safe_tool']]]);
+        $handler = new ToolCallingSubAgentHandler($tools, $registry);
+
+        // A per-task override tries to add a tool the agent never declared.
+        $task = new SubAgentTask('t', 'bounded', 'Bounded', 'go', input: ['tools' => ['safe_tool', 'dangerous_tool']]);
+        $result = $handler->handle($task, $this->context());
+
+        $this->assertTrue($result->success);
+        $this->assertSame(['safe_tool'], $executed, 'dangerous_tool must be filtered out by the declared-tools bound.');
+        $this->assertArrayHasKey('safe_tool', $result->data['tool_results']);
+        $this->assertArrayNotHasKey('dangerous_tool', $result->data['tool_results']);
+    }
+
+    public function test_open_mode_sub_agent_tools_are_gated_by_execution_policy(): void
+    {
+        config()->set('ai-agent.execution_policy.tool_deny', ['denied_tool']);
+
+        $executed = [];
+        $tools = new ToolRegistry();
+        $tools->register('denied_tool', $this->tool(executeResult: ActionResult::success('x'), onExecute: function () use (&$executed): void {
+            $executed[] = 'denied_tool';
+        }));
+
+        // Agent declares no tools (open mode); the policy deny-list must still gate it.
+        $registry = $this->registry(['open' => ['tools' => []]]);
+        $handler = new ToolCallingSubAgentHandler($tools, $registry);
+
+        $task = new SubAgentTask('t', 'open', 'Open', 'go', input: ['tools' => ['denied_tool']]);
+        $result = $handler->handle($task, $this->context());
+
+        $this->assertFalse($result->success);
+        $this->assertTrue($result->metadata['policy_blocked'] ?? false);
+        $this->assertSame([], $executed, 'a policy-denied tool must never execute.');
+    }
 }
 
 class InlineSubAgentHandlerStub implements SubAgentHandler

@@ -98,7 +98,9 @@ class AgentResponse
 
         return new self(
             success: $result->success,
-            message: $result->message ?? ($result->success ? 'Action completed' : 'Action failed'),
+            // ActionResult::failure() populates ->error (not ->message); fall back to it
+            // so a failed result's text is surfaced instead of the generic 'Action failed'.
+            message: $result->message ?? $result->error ?? ($result->success ? 'Action completed' : 'Action failed'),
             data: $result->data,
             strategy: 'quick_action',
             context: $context,
