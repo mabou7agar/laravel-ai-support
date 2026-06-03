@@ -12,6 +12,8 @@ use Mockery;
 
 class AdminNodeManagementTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     protected function getEnvironmentSetUp($app): void
     {
         parent::getEnvironmentSetUp($app);

@@ -33,6 +33,8 @@ use Mockery;
  */
 class ConversationHistoryHardeningTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     // ------------------------------------------------------------------
     // Finding 1 — Dedup guard
     // ------------------------------------------------------------------

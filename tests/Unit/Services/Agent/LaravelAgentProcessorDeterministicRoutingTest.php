@@ -29,6 +29,8 @@ class ThrowingRoutingPipeline extends RoutingPipeline
 
 class LaravelAgentProcessorDeterministicRoutingTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_semantic_question_bypasses_intent_router_and_uses_search_rag(): void
     {
         $context = new UnifiedActionContext('session-semantic', 5);

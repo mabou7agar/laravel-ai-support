@@ -10,6 +10,8 @@ use Orchestra\Testbench\TestCase;
 
 class NodeManifestServiceTest extends TestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     protected function getEnvironmentSetUp($app): void
     {
         $app['config']->set('app.name', 'Billing');

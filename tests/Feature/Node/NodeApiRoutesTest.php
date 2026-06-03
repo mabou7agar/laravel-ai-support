@@ -17,6 +17,8 @@ use Mockery;
 
 class NodeApiRoutesTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     protected ActionOrchestrator $actions;
     protected ChatService $chat;
 

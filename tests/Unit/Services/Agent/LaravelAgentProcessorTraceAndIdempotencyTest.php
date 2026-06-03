@@ -20,6 +20,8 @@ use Mockery;
 
 class LaravelAgentProcessorTraceAndIdempotencyTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     private function passthroughFinalizer(UnifiedActionContext $context): AgentResponseFinalizer
     {
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);

@@ -22,6 +22,8 @@ use Mockery;
 
 class AiNativeProcessorRoutingTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_processor_uses_ai_native_runtime_when_enabled(): void
     {
         config()->set('ai-agent.ai_native.enabled', true);

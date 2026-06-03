@@ -30,6 +30,8 @@ use Mockery;
 
 class AgentChatFlowTraceTest extends TestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_sync_agent_chat_flow_traces_request_chat_runtime_routing_and_response(): void
     {
         $context = new UnifiedActionContext('trace-session', 'trace-user');

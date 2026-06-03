@@ -23,6 +23,8 @@ use Mockery;
 
 class LaravelAgentProcessorRoutingFallbackTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_route_to_node_failure_falls_back_to_local_rag_when_enabled(): void
     {
         config()->set('ai-engine.nodes.routing.local_fallback_on_failure', true);

@@ -7,6 +7,8 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class NodeBulkSyncServiceTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_normalize_definitions_with_diagnostics_returns_invalid_reasons_and_suggestions(): void
     {
         $service = app(NodeBulkSyncService::class);

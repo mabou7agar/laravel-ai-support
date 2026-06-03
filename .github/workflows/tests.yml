@@ -12,6 +12,11 @@ jobs:
       fail-fast: false
       matrix:
         php: ['8.2', '8.3']
+        # 'without' proves core is self-contained (node tests skip); 'with' installs
+        # the optional federation package on demand and runs the node-integration tests.
+        federation: ['without', 'with']
+
+    name: phpunit (PHP ${{ matrix.php }}, federation ${{ matrix.federation }})
 
     steps:
       - name: Checkout
@@ -29,6 +34,10 @@ jobs:
 
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction
+
+      - name: Install optional federation package (matrix: with)
+        if: matrix.federation == 'with'
+        run: composer require --dev "m-tech-stack/laravel-ai-engine-federation:dev-main" --no-interaction
 
       - name: Run tests
         run: |

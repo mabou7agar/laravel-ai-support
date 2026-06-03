@@ -10,6 +10,8 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class NodeRouterServiceGraphPreferenceTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_route_stays_local_when_central_graph_reads_are_enabled(): void
     {
         config()->set('ai-engine.graph.reads_prefer_central_graph', true);

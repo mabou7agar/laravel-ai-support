@@ -9,6 +9,8 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class BulkSyncNodesCommandTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     protected array $tempFiles = [];
 
     protected function getEnvironmentSetUp($app): void

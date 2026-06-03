@@ -17,7 +17,7 @@
     <p class="muted">
         <a href="{{ route('ai-engine.admin.dashboard') }}">Dashboard</a>
         | <a href="{{ route('ai-engine.admin.manifest.index') }}">Manifest</a>
-        | <a href="{{ route('ai-engine.admin.nodes') }}">Nodes</a>
+        @if (\Illuminate\Support\Facades\Route::has('ai-engine.admin.nodes'))| <a href="{{ route('ai-engine.admin.nodes') }}">Nodes</a>@endif
         | <a href="{{ route('ai-engine.admin.policies') }}">Policies</a>
     </p>
 

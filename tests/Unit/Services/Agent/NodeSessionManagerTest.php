@@ -14,6 +14,8 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class NodeSessionManagerTest extends UnitTestCase
 {
+    use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
+
     public function test_should_continue_session_when_remote_pending_action_exists(): void
     {
         $node = new AINode();
