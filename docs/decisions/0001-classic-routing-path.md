@@ -105,7 +105,7 @@ Delete `RoutingPipeline` + stages + `IntentRouter`; keep all shared infra (§1a)
 
 - AiNative is young as the *sole* hot path. Keeping a *proven* fallback (not dead code) is cheap insurance — but only if §3 step 1 (the `ai_native:off` CI job) is done, which converts the limbo into a real safety net.
 - Revisit in ~2 release cycles: if telemetry shows no one runs `ai_native.enabled=false` and AiNative has been stable, execute Option B.
-- Independently of A/B, address the **structured-query overlap** (`RAGDecisionEngine.db_query` vs the `data_query` tool) — that smell exists in both worlds and should converge on one home.
+- The **structured-query "overlap"** (`RAGDecisionEngine` db-arms vs the `data_query` tool) was investigated in depth (design panel + adversarial review) and is the **accepted terminal design — they do NOT converge**. See the "Structured-query consolidation — investigated, intentionally NOT done" note above and the **Structured-query boundary** section below.
 
 The decision that must NOT be made is "leave it exactly as-is." The `ai_native:off` CI job is the minimum next action under either path.
 
@@ -115,4 +115,19 @@ The decision that must NOT be made is "leave it exactly as-is." The `ai_native:o
 
 1. Will any real deployment run `ai_native.enabled=false`? (If definitively no → go straight to B.)
 2. Do you want the deterministic-routing benchmark commands kept as a quality signal, or removed?
-3. Should structured queries live in `RAGDecisionEngine` or the `data_query` tool? (Pick one before either A or B.)
+3. ~~Should structured queries live in `RAGDecisionEngine` or the `data_query` tool?~~ **Resolved: both, intentionally** — `DataQueryTool` is the local, fail-open, AI-free AiNative arm; `RAGStructuredDataService` is the federation-aware, fail-closed, paginated RAG engine. See the Structured-query boundary section.
+
+---
+
+## 7. Structured-query boundary (resolved)
+
+The `data_query` tool and `RAGStructuredDataService` both answer count/list questions but are **deliberately separate** — a design panel + adversarial review confirmed the only byte-identical code is `(clone $builder)->count()`, while everything load-bearing differs by design. Four verified discriminators:
+
+| Axis | `DataQueryTool` (AiNative arm) | `RAGStructuredDataService` (RAG engine) |
+| --- | --- | --- |
+| **Dependency footprint** | one optional nullable dep (`RAGCollectionDiscovery`) — lightweight, AI-free, self-contained | 7 collaborators + a 4-callable dependency map (model metadata, scope guard, aggregate, locale, summary, graph, state) |
+| **Scope default** | **fail-open** — `where()` only when `Schema::hasColumn`, never blocks | **fail-closed** — `RAGModelScopeGuard` (`require_structured_scope` default true) blocks unscoped models (`scope_blocked`) |
+| **Federation** | none | emits `should_route_to_node` from local-SQL/`isMissingTableException` failures — the **sole** remote-node handoff signal, then routed + paginated |
+| **Reachability** | the AiNative planner sees only `data_query` + `search_knowledge` | reached only when `AgentConversationService::shouldUseRagPipeline()` is false (entity selection / structured_query / exit-to-orchestrator on the RAG-agent + federation-fallback paths) |
+
+Consolidating either direction loses capability (delegating the tool to the service was **refuted**: fail-open→fail-closed regression, hardcoded `status` column, dead `scope_columns` config). They are kept as two arms; `tests/Unit/Services/Structured/StructuredQueryParityTest.php` is an anti-divergence tripwire that pins both engines to the same numeric count/list result for identical scoped data, so they can't silently drift.
