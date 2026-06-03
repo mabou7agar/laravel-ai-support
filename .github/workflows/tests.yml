@@ -16,7 +16,7 @@ jobs:
         # the optional federation package on demand and runs the node-integration tests.
         federation: ['without', 'with']
 
-    name: phpunit (PHP ${{ matrix.php }}, federation ${{ matrix.federation }})
+    name: "phpunit (PHP ${{ matrix.php }}, federation ${{ matrix.federation }})"
 
     steps:
       - name: Checkout
