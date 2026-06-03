@@ -6,14 +6,11 @@ use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\RoutingDecision;
 use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use LaravelAIEngine\Services\Agent\AgentPlanner;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
-use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\ConversationContextCompactor;
 use LaravelAIEngine\Services\Agent\ContextManager;
+use LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
-use LaravelAIEngine\Services\Agent\IntentRouter;
-use LaravelAIEngine\Services\Agent\MessageRoutingClassifier;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
 use LaravelAIEngine\Tests\UnitTestCase;
@@ -212,67 +209,6 @@ class ConversationHistoryHardeningTest extends UnitTestCase
     }
 
     // ------------------------------------------------------------------
-    // Finding 5 — \Throwable caught in routeThroughPipeline
-    // ------------------------------------------------------------------
-
-    public function test_type_error_in_routing_pipeline_falls_back_gracefully(): void
-    {
-        $context = new UnifiedActionContext('session-throwable', 8);
-
-        $contextManager = Mockery::mock(ContextManager::class);
-        $contextManager->shouldReceive('getOrCreate')->andReturn($context);
-
-        $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldReceive('route')
-            ->andReturn([
-                'action' => 'conversational',
-                'reasoning' => 'fallback',
-                'decision_source' => 'fallback',
-            ]);
-
-        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
-        $dispatcher->shouldReceive('dispatch')
-            ->andReturn(AgentResponse::conversational(message: 'graceful', context: $context));
-
-        $finalizer = Mockery::mock(AgentResponseFinalizer::class);
-        $finalizer->shouldReceive('finalize')
-            ->andReturnUsing(fn (UnifiedActionContext $ctx, AgentResponse $r) => $r);
-
-        // RoutingPipeline subclass that throws a TypeError (not \Exception).
-        $pipeline = new class extends \LaravelAIEngine\Services\Agent\Routing\RoutingPipeline {
-            public function decide(string $message, UnifiedActionContext $context, array $options = []): \LaravelAIEngine\DTOs\RoutingTrace
-            {
-                throw new \TypeError('Simulated TypeError from pipeline');
-            }
-        };
-
-        $selection = Mockery::mock(AgentSelectionService::class);
-        $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
-        $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
-
-        $processor = new LaravelAgentProcessor(
-            $contextManager,
-            $intentRouter,
-            new AgentPlanner(),
-            $finalizer,
-            $selection,
-            Mockery::mock(NodeSessionManager::class),
-            new MessageRoutingClassifier(),
-            null,
-            null,
-            $dispatcher,
-            $pipeline
-        );
-
-        // Must not throw; should fall through to heuristic route.
-        $response = $processor->process('test throwable', 'session-throwable', 8, [
-            'use_rag' => false,
-        ]);
-
-        $this->assertInstanceOf(AgentResponse::class, $response);
-    }
-
-    // ------------------------------------------------------------------
     // Edge cases — empty / non-array / missing history
     // ------------------------------------------------------------------
 
@@ -410,38 +346,21 @@ class ConversationHistoryHardeningTest extends UnitTestCase
         $contextManager = Mockery::mock(ContextManager::class);
         $contextManager->shouldReceive('getOrCreate')->andReturn($context);
 
-        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
-        $dispatcher->shouldReceive('dispatch')
-            ->andReturnUsing(static fn (RoutingDecision $d, string $m, UnifiedActionContext $c): AgentResponse
-                => AgentResponse::conversational(message: 'ok', context: $c));
-
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);
         $finalizer->shouldReceive('finalize')
             ->andReturnUsing(fn (UnifiedActionContext $ctx, AgentResponse $r) => $r);
 
-        $selection = Mockery::mock(AgentSelectionService::class);
-        $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
-        $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
-
-        $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldReceive('route')
-            ->andReturn([
-                'action'          => 'conversational',
-                'reasoning'       => 'test fallback',
-                'decision_source' => 'fallback',
-            ]);
+        $native = Mockery::mock(AiNativeRuntime::class);
+        $native->shouldReceive('process')
+            ->andReturnUsing(static fn (string $m, UnifiedActionContext $c, array $o): AgentResponse
+                => AgentResponse::conversational(message: 'ok', context: $c));
 
         $processor = new LaravelAgentProcessor(
             $contextManager,
-            $intentRouter,
-            new AgentPlanner(),
             $finalizer,
-            $selection,
             Mockery::mock(NodeSessionManager::class),
-            new MessageRoutingClassifier(),
-            null,
-            null,
-            $dispatcher
+            Mockery::mock(AgentExecutionDispatcher::class),
+            $native
         );
 
         $processor->process($message, $context->sessionId, 99, $opts);
@@ -469,38 +388,21 @@ class ConversationHistoryHardeningTest extends UnitTestCase
         $contextManager = Mockery::mock(ContextManager::class);
         $contextManager->shouldReceive('getOrCreate')->andReturn($context);
 
-        $dispatcher = Mockery::mock(AgentExecutionDispatcher::class);
-        $dispatcher->shouldReceive('dispatch')
-            ->andReturnUsing(static fn (RoutingDecision $d, string $m, UnifiedActionContext $c): AgentResponse
-                => AgentResponse::conversational(message: 'ok', context: $c));
-
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);
         $finalizer->shouldReceive('finalize')
             ->andReturnUsing(fn (UnifiedActionContext $ctx, AgentResponse $r) => $r);
 
-        $selection = Mockery::mock(AgentSelectionService::class);
-        $selection->shouldReceive('detectsOptionSelection')->andReturnFalse();
-        $selection->shouldReceive('detectsPositionalReference')->andReturnFalse();
-
-        $intentRouter = Mockery::mock(IntentRouter::class);
-        $intentRouter->shouldReceive('route')
-            ->andReturn([
-                'action'          => 'conversational',
-                'reasoning'       => 'test fallback',
-                'decision_source' => 'fallback',
-            ]);
+        $native = Mockery::mock(AiNativeRuntime::class);
+        $native->shouldReceive('process')
+            ->andReturnUsing(static fn (string $m, UnifiedActionContext $c, array $o): AgentResponse
+                => AgentResponse::conversational(message: 'ok', context: $c));
 
         $processor = new LaravelAgentProcessor(
             $contextManager,
-            $intentRouter,
-            new AgentPlanner(),
             $finalizer,
-            $selection,
             Mockery::mock(NodeSessionManager::class),
-            new MessageRoutingClassifier(),
-            null,
-            null,
-            $dispatcher
+            Mockery::mock(AgentExecutionDispatcher::class),
+            $native
         );
 
         $opts = $extraOpts;

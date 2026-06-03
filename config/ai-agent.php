@@ -470,18 +470,6 @@ return [
         ],
     ],
 
-    'routing_pipeline' => [
-        'stages' => [
-            \LaravelAIEngine\Services\Agent\Routing\Stages\ActiveRunContinuationStage::class,
-            \LaravelAIEngine\Services\Agent\Routing\Stages\ExplicitModeStage::class,
-            \LaravelAIEngine\Services\Agent\Routing\Stages\SelectionReferenceStage::class,
-            \LaravelAIEngine\Services\Agent\Routing\Stages\AgentSkillMatchStage::class,
-            \LaravelAIEngine\Services\Agent\Routing\Stages\MessageClassificationStage::class,
-            \LaravelAIEngine\Services\Agent\Routing\Stages\AIRouterStage::class,
-            \LaravelAIEngine\Services\Agent\Routing\Stages\FallbackConversationalStage::class,
-        ],
-    ],
-
     'sub_agents' => [
         'general' => [
             'enabled' => env('AI_AGENT_GENERAL_SUB_AGENT_ENABLED', true),

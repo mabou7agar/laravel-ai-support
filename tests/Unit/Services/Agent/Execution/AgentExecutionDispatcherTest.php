@@ -12,7 +12,6 @@ use LaravelAIEngine\DTOs\RoutingDecisionAction;
 use LaravelAIEngine\DTOs\RoutingDecisionSource;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Events\AgentRunStreamed;
-use LaravelAIEngine\Contracts\RoutingStageContract;
 use LaravelAIEngine\Services\Agent\AgentActionExecutionService;
 use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
@@ -22,7 +21,6 @@ use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\Execution\RoutingActionHandlerRegistry;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
 use LaravelAIEngine\Services\Agent\NodeSessionManager;
-use LaravelAIEngine\Services\Agent\Routing\RoutingPipeline;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
@@ -487,29 +485,18 @@ class AgentExecutionDispatcherTest extends UnitTestCase
         $this->assertStringContainsString('Unsupported routing decision action [abstain].', $response->message);
     }
 
-    public function test_pipeline_decision_maps_to_expected_dispatcher_handler(): void
+    public function test_search_rag_decision_maps_to_expected_dispatcher_handler(): void
     {
         $context = $this->context();
         $expected = AgentResponse::success('Pipeline search executed.', context: $context);
         $conversation = Mockery::mock(AgentConversationService::class);
-        $pipeline = new RoutingPipeline([
-            new class implements RoutingStageContract {
-                public function name(): string
-                {
-                    return 'test_pipeline_stage';
-                }
 
-                public function decide(string $message, UnifiedActionContext $context, array $options = []): ?RoutingDecision
-                {
-                    return new RoutingDecision(
-                        action: RoutingDecisionAction::SEARCH_RAG,
-                        source: RoutingDecisionSource::CLASSIFIER,
-                        confidence: 'high',
-                        reason: 'Pipeline selected RAG.'
-                    );
-                }
-            },
-        ]);
+        $decision = new RoutingDecision(
+            action: RoutingDecisionAction::SEARCH_RAG,
+            source: RoutingDecisionSource::CLASSIFIER,
+            confidence: 'high',
+            reason: 'Pipeline selected RAG.'
+        );
 
         $conversation->shouldReceive('executeSearchRAG')
             ->once()
@@ -523,8 +510,7 @@ class AgentExecutionDispatcherTest extends UnitTestCase
             )
             ->andReturn($expected);
 
-        $trace = $pipeline->decide('find invoice context', $context);
-        $response = $this->dispatcher(conversationService: $conversation)->dispatch($trace->selected, 'find invoice context', $context);
+        $response = $this->dispatcher(conversationService: $conversation)->dispatch($decision, 'find invoice context', $context);
 
         $this->assertSame($expected, $response);
     }

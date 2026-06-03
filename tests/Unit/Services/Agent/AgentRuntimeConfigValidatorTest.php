@@ -39,14 +39,4 @@ class AgentRuntimeConfigValidatorTest extends UnitTestCase
         $this->assertTrue($report['passed']);
     }
 
-    public function test_validator_reports_invalid_routing_stage_config(): void
-    {
-        config()->set('ai-agent.routing_pipeline.stages', ['App\\MissingStage']);
-
-        $report = (new AgentRuntimeConfigValidator())->validate();
-
-        $this->assertFalse($report['passed']);
-        $this->assertContains('missing_routing_stage', array_column($report['issues'], 'code'));
-    }
-
 }

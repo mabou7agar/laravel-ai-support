@@ -9,7 +9,6 @@ use LaravelAIEngine\Services\Agent\AgentConversationService;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Services\Agent\AgentSelectionService;
 use LaravelAIEngine\Services\Agent\GoalAgentService;
-use LaravelAIEngine\Services\Agent\IntentRouter;
 use LaravelAIEngine\Services\Agent\AgentManifestDoctor;
 use LaravelAIEngine\Services\Agent\AgentOrchestrationInspector;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor;
@@ -32,12 +31,7 @@ class AgentServiceResolutionTest extends UnitTestCase
 {
     use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
 
-    public function test_intent_router_resolves_from_container(): void
-    {
-        $this->assertInstanceOf(IntentRouter::class, $this->app->make(IntentRouter::class));
-    }
-
-    public function test_agent_processor_resolves_with_intent_router_dependency(): void
+    public function test_agent_processor_resolves_from_container(): void
     {
         $this->assertInstanceOf(LaravelAgentProcessor::class, $this->app->make(LaravelAgentProcessor::class));
     }
