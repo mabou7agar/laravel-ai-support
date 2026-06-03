@@ -542,8 +542,11 @@ class SkillsFlowTest extends UnitTestCase
         $this->assertSame(['submit_invoice', 'create_invoice'], $tools);
     }
 
-    public function test_final_tool_policy_required_until_every_tool_succeeds(): void
+    public function test_final_tool_requirement_clears_when_any_declared_tool_succeeds(): void
     {
+        // Documented contract (docs/agent-skills.mdx): the runtime rejects a final
+        // answer "until ONE declared final tool has executed successfully" — i.e. OR
+        // semantics across the declared final tools, not all-of-them.
         $skill = $this->createInvoiceSkill([
             'final_tools' => ['submit_invoice'],
             'final_tool' => 'create_invoice',
@@ -564,7 +567,8 @@ class SkillsFlowTest extends UnitTestCase
         ]];
         $this->assertTrue($policy->needsRequiredFinalToolBeforeFinal('create invoice', $stateFalse, $options));
 
-        // A successful required tool result clears the requirement.
+        // ANY one declared final tool succeeding clears the requirement (OR), even
+        // though the other declared final tool (create_invoice) never ran.
         $stateOne = ['tool_results' => [
             ['tool' => 'submit_invoice', 'result' => ['success' => true]],
         ]];
