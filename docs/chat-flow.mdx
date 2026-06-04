@@ -2,7 +2,9 @@
 
 ChatFlow is the package path behind `POST /api/v1/agent/chat` and `ChatService::processMessage()`. It validates the request, builds a structured chat DTO, resolves sync or async execution, delegates the turn to the configured agent runtime, records routing metadata, and returns a normalized API response.
 
-Use this page when debugging a chat response, adding a routing stage, changing RAG behavior, or checking whether a new feature belongs in the controller, service, runtime, routing, dispatcher, or RAG layer.
+Use this page when debugging a chat response, adding an agent tool or skill, changing RAG behavior, or checking whether a new feature belongs in the controller, service, runtime, AiNative loop, or RAG layer.
+
+> **Runtime model (current).** The legacy multi-stage `RoutingPipeline` routing brain has been removed. `AiNativeRuntime` is now the sole router: it runs an agentic tool-calling loop and decides every turn. The only branch that runs *before* AiNative is an active federated node session (`routed_to_node`), which either continues the remote session or, on a new topic, clears it and falls through to AiNative.
 
 ## High-Level Flow
 
@@ -19,9 +21,11 @@ flowchart TD
   I --> J["AgentRuntimeContract processes the message"]
   J --> K["LaravelAgentRuntime decorates runtime metadata"]
   K --> L["LaravelAgentProcessor loads UnifiedActionContext"]
-  L --> M["RoutingPipeline records routing decisions"]
-  M --> N["AgentExecutionDispatcher executes selected action"]
-  N --> O["AgentResponse is converted to AIResponse"]
+  L --> M{"Active routed_to_node session?"}
+  M -->|"yes"| N1["Continue/clear remote node session"]
+  M -->|"no"| N2["AiNativeRuntime runs the tool-calling loop"]
+  N1 --> O["AgentResponse is converted to AIResponse"]
+  N2 --> O["AgentResponse is converted to AIResponse"]
   O --> P["ChatResponsePresentationService adds points or suggestions"]
   P --> Q["AgentChatApiController returns JSON response"]
 ```
@@ -40,7 +44,7 @@ Important request fields:
 | `memory` | Enables transcript loading and persistence. |
 | `actions` | Allows runtime actions/tools to be returned and executed. |
 | `use_rag` | Enables RAG for the request. |
-| `force_rag` | Forces the routing pipeline toward `search_rag`. |
+| `force_rag` | Requires the turn to be knowledge-grounded: AiNative must call the `search_knowledge` tool before returning a final answer. |
 | `rag_collections` | Restricts retrieval to selected collections. |
 | `search_instructions` | Adds retrieval/generation instructions. |
 | `execution_mode` | `sync`, `async`, or `auto`. |
@@ -94,43 +98,43 @@ The default runtime path is:
 ```mermaid
 flowchart TD
   A["AgentRuntimeContract"] --> B["AgentRuntimeManager"]
-  B --> C["LaravelAgentRuntime"]
-  C --> D["LaravelAgentProcessor"]
+  B --> C["LaravelAgentRuntime (stamps agent_runtime=laravel)"]
+  C --> D["LaravelAgentProcessor::dispatchProcess"]
   D --> E["ContextManager::getOrCreate"]
   E --> F["UnifiedActionContext::addUserMessage"]
-  F --> G["RoutingPipeline::decide"]
-  G --> H["AgentExecutionDispatcher::dispatch"]
+  F --> G{"Active routed_to_node session?"}
+  G -->|"yes, same topic"| H["CONTINUE_NODE dispatch (with degraded local-RAG fallback)"]
+  G -->|"no / new topic"| I["AiNativeRuntime::process — agentic tool-calling loop"]
 ```
 
-`LaravelAgentProcessor` is responsible for context and routing. It should not execute RAG, tools, nodes, or sub-agents directly. It creates a `RoutingDecision`, then passes it to `AgentExecutionDispatcher`.
+`LaravelAgentProcessor` owns context assembly and the single federation branch. It does not
+implement a routing brain: there is no `RoutingPipeline`, no ordered `RoutingStageContract`
+stages, and no message-classification/AI-router decision step. Every turn that is not an
+active routed node continuation is delegated to `AiNativeRuntime`, which plans and calls
+tools (RAG via `search_knowledge`, application/provider tools, sub-agents) inside its own
+loop until it produces a final answer.
 
-`RoutingPipeline` records every stage decision in a `RoutingTrace`. The default stage order is:
+The federation branch is the only exception. When a prior turn routed to a remote node and
+left a `routed_to_node` marker in context, `dispatchProcess`:
 
-1. `ActiveRunContinuationStage`
-2. `ExplicitModeStage`
-3. `SelectionReferenceStage`
-4. `AgentSkillMatchStage`
-5. `MessageClassificationStage`
-6. `AIRouterStage`
-7. `FallbackConversationalStage`
+1. Continues the remote session (`CONTINUE_NODE`) when the new message stays on topic.
+2. Falls back to a degraded **local** RAG search if the remote follow-up fails, prefixing a
+   notice so the chain is observable.
+3. Clears the marker and falls through to AiNative when a new topic is detected.
 
-Stages may return `null` to abstain. The pipeline stops on the first high-confidence non-abstention and stores earlier skipped stages in `metadata.skipped_stages`.
+## Federation Routing Actions
 
-## Routing Decision Actions
+The `RoutingDecision` DTO survives only to carry the federation handoff. AiNative is what
+actually selects tools; these actions are produced by the node-session path, not a router:
 
-| Action | Executor responsibility |
+| Action | Responsibility |
 | --- | --- |
-| `conversational` | Generate a normal assistant response. |
-| `search_rag` | Execute the RAG pipeline. |
-| `handle_selection` | Resolve numbered options or positional references. |
-| `use_tool` | Execute an application/provider tool through policy checks. |
-| `run_sub_agent` | Execute goal/sub-agent orchestration. |
-| `route_to_node` | Forward to a configured remote node. |
+| `route_to_node` | Hand the turn to a configured remote node (AiNative `route_to_node` tool). |
 | `continue_node` | Continue an active routed node session. |
-| `need_user_input` | Return structured required input metadata. |
-| `fail` | Return a controlled failure response. |
 
-Routing stages decide only. Side effects, authorization checks, RAG retrieval, tool execution, remote node calls, and sub-agent execution belong behind `AgentExecutionDispatcher` and its downstream services.
+All other capabilities — RAG retrieval, application/provider tools, sub-agents, selection
+handling — are AiNative tools invoked inside its loop, gated by `AgentExecutionPolicyService`,
+not pre-decided routing actions.
 
 ## Response Metadata
 
@@ -143,40 +147,7 @@ A successful sync response includes the rendered `data.response` plus normalized
     "response": "Found 2 relevant records.",
     "metadata": {
       "agent_runtime": "laravel",
-      "routing_decision": {
-        "action": "search_rag",
-        "source": "explicit",
-        "confidence": "high",
-        "reason": "Request explicitly forced RAG.",
-        "payload": [],
-        "metadata": {"stage": "explicit_mode"}
-      },
-      "routing_trace": [
-        {
-          "action": "abstain",
-          "source": "active_run_continuation",
-          "confidence": "none",
-          "reason": "Stage did not match.",
-          "payload": [],
-          "metadata": []
-        },
-        {
-          "action": "search_rag",
-          "source": "explicit",
-          "confidence": "high",
-          "reason": "Request explicitly forced RAG.",
-          "payload": [],
-          "metadata": {"stage": "explicit_mode"}
-        }
-      ],
-      "route_explanation": {
-        "action": "search_rag",
-        "source": "explicit",
-        "confidence": "high",
-        "reason": "Request explicitly forced RAG.",
-        "decision_path": "forced_rag",
-        "decision_source": "explicit"
-      },
+      "agent_strategy": "ai_native",
       "rag_enabled": true,
       "context_count": 2,
       "sources": []
@@ -191,15 +162,26 @@ A successful sync response includes the rendered `data.response` plus normalized
 }
 ```
 
-Clients should use top-level `data.response`, `data.rag_enabled`, `data.sources`, `data.response_points`, `data.suggestions`, `data.collection`, and `data.actions` for UI rendering. Use `data.metadata.routing_decision`, `data.metadata.routing_trace`, and `data.metadata.route_explanation` for debugging and observability.
+Metadata keys:
+
+- `agent_runtime` is always present (`laravel`, or `langgraph` when that runtime is selected).
+- `agent_strategy` is `ai_native` for turns handled by the AiNative loop.
+- `routing_decision`, `routing_trace`, and `route_explanation` are emitted on the **federation
+  node path** (`continue_node`) and on a degraded local-RAG fallback, where a `RoutingDecision`
+  is dispatched. A plain AiNative turn does not pre-decide a route, so these keys may be
+  absent — their presence is not a per-turn invariant. (The old per-stage `metadata.stage`
+  field no longer exists.)
+
+Clients should use top-level `data.response`, `data.rag_enabled`, `data.sources`, `data.response_points`, `data.suggestions`, `data.collection`, and `data.actions` for UI rendering. Use `data.metadata` (including `routing_decision`/`route_explanation` when present) for debugging and observability.
 
 ## RAG Path
 
-RAG is reached through `RoutingDecisionAction::SEARCH_RAG`.
+RAG is reached through the AiNative `search_knowledge` tool (and the federation degraded
+local-RAG fallback). Both converge on `AgentConversationService::executeSearchRAG`.
 
 ```mermaid
 flowchart TD
-  A["RoutingDecision: search_rag"] --> B["AgentExecutionDispatcher::executeSearchRag"]
+  A["AiNative search_knowledge tool / local-RAG fallback"] --> B["force_rag grounds the turn"]
   B --> C["AgentExecutionPolicyService checks collection access"]
   C --> D["AgentConversationService::executeSearchRAG"]
   D --> E["RAGPipeline"]
@@ -222,8 +204,8 @@ The routing layer never retrieves records. Collection access policy and retrieva
 | Add structured input fields | `SendMessageDTO` and `agentOptions()` |
 | Change sync/async selection | `AgentChatExecutionModeResolver` |
 | Change transcript or runtime option assembly | `ChatService` |
-| Add a routing condition | New `RoutingStageContract` implementation |
-| Add execution behavior | `AgentExecutionDispatcher` or a downstream service |
+| Add an agent capability | New AiNative tool (registered in the AiNative tool registry) or skill |
+| Add federation behavior | `LaravelAgentProcessor::dispatchProcess` node branch / node-session services |
 | Change RAG retrieval/generation | RAG services behind `RAGPipeline` |
 | Change public JSON shape | `AgentChatApiController` and API docs |
 | Change UI-friendly points/suggestions | `ChatResponsePresentationService` |
@@ -232,24 +214,14 @@ For host-app business records, keep model access in repositories/services and ex
 
 ## Tests To Run
 
-Focused ChatFlow trace:
-
-```bash
-php vendor/bin/phpunit tests/Feature/Api/AgentChatFlowTraceTest.php
-```
-
-Focused chat and routing suite:
+Focused chat and runtime suite:
 
 ```bash
 php vendor/bin/phpunit \
-  tests/Feature/Api/AgentChatFlowTraceTest.php \
-  tests/Feature/Api/AgentChatAsyncRunApiTest.php \
-  tests/Feature/Api/AgentChatResponsePresentationApiTest.php \
   tests/Unit/Services/ChatServiceTest.php \
-  tests/Unit/Services/Agent/LaravelAgentProcessorDeterministicRoutingTest.php \
-  tests/Unit/Services/Agent/Routing/RoutingPipelineTest.php \
-  tests/Unit/Services/Agent/Routing/RoutingStagesTest.php \
-  tests/Unit/Services/Agent/Execution/AgentExecutionDispatcherTest.php
+  tests/Unit/Services/Agent/LaravelAgentProcessorTraceAndIdempotencyTest.php \
+  tests/Unit/Services/Agent/Execution/AgentExecutionDispatcherTest.php \
+  tests/Feature/FlowAllFullChatFlowEndToEndTest.php
 ```
 
 Full package suite:
@@ -273,10 +245,10 @@ When a chat turn is wrong, check these in order:
 3. `use_rag`, `force_rag`, `rag_collections`, and `search_instructions` reach runtime options.
 4. Structured collection did not short-circuit unexpectedly.
 5. `UnifiedActionContext` has the expected session, user, and conversation history.
-6. `routing_trace` shows the expected stage order and selected decision.
-7. `route_explanation.decision_path` explains the path the dispatcher received.
-8. Dispatcher policy did not block the selected collection, tool, sub-agent, or node.
+6. AiNative selected the expected tools for the turn (check `agent_strategy` and any tool/run steps).
+7. On the federation path, `routing_decision`/`route_explanation` show `continue_node` and any local-RAG fallback.
+8. `AgentExecutionPolicyService` did not block the selected collection, tool, sub-agent, or node.
 9. RAG responses include `rag_enabled`, `context_count`, and normalized `sources`.
 10. Presentation did not change the response text or hide points/suggestions unexpectedly.
 
-If `routing_trace` is missing from a sync response, treat that as a regression. The trace is the fastest way to debug whether the request was classified, forced to RAG, matched to a skill, routed to a node, or handled as normal conversation.
+A plain AiNative turn does not pre-decide a route, so `routing_trace` is not expected on every response — its absence is normal. It is emitted on the federation node path and on a degraded local-RAG fallback, where it is the fastest way to see whether the turn continued a remote node session or fell back to local RAG.

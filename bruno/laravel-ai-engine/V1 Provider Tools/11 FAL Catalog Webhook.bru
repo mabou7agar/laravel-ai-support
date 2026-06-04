@@ -16,6 +16,14 @@ auth:bearer {
 
 headers {
   Accept: application/json
+  ~X-Fal-Webhook-Secret: {{falWebhookSecret}}
+}
+
+docs {
+  When `ai-engine.provider_tools.fal.webhook_secret` (env `AI_ENGINE_FAL_WEBHOOK_SECRET`)
+  is set, this endpoint requires the shared secret via the `X-Fal-Webhook-Secret` header
+  (or a `?webhook_secret=` query param). Requests without a matching secret are rejected
+  with HTTP 401. Enable the header above and set `falWebhookSecret` in your environment.
 }
 
 body:json {

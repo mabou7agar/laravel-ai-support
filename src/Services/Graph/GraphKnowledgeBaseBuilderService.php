@@ -59,23 +59,29 @@ class GraphKnowledgeBaseBuilderService
      */
     public function buildEntitySnapshots(array $scope, int $limit = 25): array
     {
+        // Opt-in: when access-scope is required, an unscoped build (no user identity)
+        // must not snapshot the whole graph. Dropping the NULL-NULL clause makes the
+        // remaining EXISTS predicates match nothing when no identity is bound.
+        $unscopedClause = (bool) config('ai-engine.graph.require_access_scope', false)
+            ? ''
+            : '($canonical_user_id IS NULL AND $user_email_normalized IS NULL)' . "\n   OR ";
+
         $result = $this->transport->executeStatement([
-            'statement' => <<<'CYPHER'
+            'statement' => <<<CYPHER
 MATCH (e:Entity)-[:SOURCE_APP]->(a:App)
 OPTIONAL MATCH (e)-[:BELONGS_TO]->(s:Scope)
-WHERE ($canonical_user_id IS NULL AND $user_email_normalized IS NULL)
-   OR EXISTS { MATCH (:User {canonical_user_id: $canonical_user_id})-[:CAN_ACCESS]->(e) }
-   OR EXISTS { MATCH (:User {user_email_normalized: $user_email_normalized})-[:CAN_ACCESS]->(e) }
+WHERE {$unscopedClause}EXISTS { MATCH (:User {canonical_user_id: \$canonical_user_id})-[:CAN_ACCESS]->(e) }
+   OR EXISTS { MATCH (:User {user_email_normalized: \$user_email_normalized})-[:CAN_ACCESS]->(e) }
    OR (
         s IS NOT NULL AND (
-            EXISTS { MATCH (:User {canonical_user_id: $canonical_user_id})-[:CAN_ACCESS]->(s) }
-            OR EXISTS { MATCH (:User {user_email_normalized: $user_email_normalized})-[:CAN_ACCESS]->(s) }
+            EXISTS { MATCH (:User {canonical_user_id: \$canonical_user_id})-[:CAN_ACCESS]->(s) }
+            OR EXISTS { MATCH (:User {user_email_normalized: \$user_email_normalized})-[:CAN_ACCESS]->(s) }
         )
    )
 OPTIONAL MATCH (e)-[r]-(n:Entity)
 WITH e, count(DISTINCT r) AS relation_count
 ORDER BY relation_count DESC, coalesce(e.updated_at, '') DESC
-LIMIT $limit
+LIMIT \$limit
 OPTIONAL MATCH (e)-[r]-(n:Entity)
 RETURN e.entity_key AS entity_key,
        e.title AS title,

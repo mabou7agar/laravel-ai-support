@@ -108,7 +108,6 @@ The complete ordered lifecycle a frontend can subscribe to (`AgentRunEventStream
 
 ```
 run.started
-routing.stage_started · routing.stage_abstained · routing.decided
 rag.started · rag.sources_found · rag.completed
 tool.started · tool.progress · tool.completed · tool.failed
 sub_agent.started · sub_agent.completed

@@ -62,6 +62,23 @@ The returned objects keep the normal RAG shape and add:
 - `vector_metadata.vector_score`
 - `vector_metadata.graph_score`
 
+## Access Scope
+
+Graph retrieval enforces per-user `CAN_ACCESS` edges, but an unscoped query (no resolved
+`canonical_user_id` / `user_email_normalized`) returns the whole graph by default — fine
+for single-tenant and system queries. For multi-tenant deployments, enable scope
+enforcement so an unscoped query matches nothing instead of leaking across tenants:
+
+```php
+'graph' => [
+    'require_access_scope' => env('AI_ENGINE_GRAPH_REQUIRE_ACCESS_SCOPE', false),
+],
+```
+
+With this on, always pass the authenticated `userId` (as in the usage example above), or
+an explicit `options['access_scope']`, so real users still resolve via their access edges.
+See [Security](security.mdx#graph-access-scope) for the full rationale.
+
 ## Deployment Notes
 
 Keep `AI_ENGINE_GRAPH_SYNC_ON_INDEX=true` when you want every vector-indexed model to publish into Neo4j as well. Existing Qdrant-only installs can leave hybrid disabled and continue using vector search unchanged.
