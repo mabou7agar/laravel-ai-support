@@ -416,7 +416,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
         return match ($model) {
             EntityEnum::SD3_LARGE, EntityEnum::SD3_MEDIUM => '/v2beta/stable-image/generate/sd3',
             EntityEnum::SDXL_1024 => '/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image',
-            default => '/v1/generation/' . $model->value . '/text-to-image',
+            default => '/v1/generation/' . $this->encodePathSegment($model->value) . '/text-to-image',
         };
     }
 

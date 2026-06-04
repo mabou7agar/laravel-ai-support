@@ -136,7 +136,7 @@ class GeminiEngineDriver extends BaseEngineDriver
             unset($providerOptions['query'], $providerOptions['headers']);
             $payload = array_replace_recursive($payload, $providerOptions);
 
-            $url = "/v1beta/models/{$request->getModel()->value}:generateContent";
+            $url = "/v1beta/models/{$this->encodePathSegment($request->getModel()->value)}:generateContent";
             $response = $this->httpClient->post($url, [
                 'json' => $payload,
                 'query' => array_replace(['key' => $this->getApiKey()], $queryOptions),
@@ -182,7 +182,7 @@ class GeminiEngineDriver extends BaseEngineDriver
             $this->applyToolPayload($payload, $request);
             $this->applyGeminiStructuredOutputPayload($payload, $request);
 
-            $url = "/v1beta/models/{$request->getModel()->value}:streamGenerateContent";
+            $url = "/v1beta/models/{$this->encodePathSegment($request->getModel()->value)}:streamGenerateContent";
             $response = $this->httpClient->post($url, [
                 'json' => $payload,
                 'query' => ['key' => $this->getApiKey()],
@@ -220,7 +220,7 @@ class GeminiEngineDriver extends BaseEngineDriver
                 ], static fn ($value): bool => $value !== null),
             ];
 
-            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:predict", [
+            $response = $this->httpClient->post("/v1beta/models/{$this->encodePathSegment($request->getModel()->value)}:predict", [
                 'json' => $payload,
                 'query' => ['key' => $this->getApiKey()],
             ]);
@@ -261,7 +261,7 @@ class GeminiEngineDriver extends BaseEngineDriver
                 'parameters' => array_diff_key($request->getParameters(), ['image' => true, 'image_url' => true]),
             ];
 
-            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:predictLongRunning", [
+            $response = $this->httpClient->post("/v1beta/models/{$this->encodePathSegment($request->getModel()->value)}:predictLongRunning", [
                 'json' => $payload,
                 'query' => ['key' => $this->getApiKey()],
             ]);
@@ -306,7 +306,7 @@ class GeminiEngineDriver extends BaseEngineDriver
                 ], static fn ($value): bool => $value !== null && $value !== []),
             ];
 
-            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:generateContent", [
+            $response = $this->httpClient->post("/v1beta/models/{$this->encodePathSegment($request->getModel()->value)}:generateContent", [
                 'json' => $payload,
                 'query' => ['key' => $this->getApiKey()],
             ]);
@@ -372,7 +372,7 @@ class GeminiEngineDriver extends BaseEngineDriver
                 ], static fn ($value): bool => $value !== null),
             ];
 
-            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:generateContent", [
+            $response = $this->httpClient->post("/v1beta/models/{$this->encodePathSegment($request->getModel()->value)}:generateContent", [
                 'json' => $payload,
                 'query' => ['key' => $this->getApiKey()],
             ]);
@@ -435,7 +435,7 @@ class GeminiEngineDriver extends BaseEngineDriver
     private function generatePredictAudio(AIRequest $request): AIResponse
     {
         try {
-            $response = $this->httpClient->post("/v1beta/models/{$request->getModel()->value}:predict", [
+            $response = $this->httpClient->post("/v1beta/models/{$this->encodePathSegment($request->getModel()->value)}:predict", [
                 'json' => [
                     'instances' => [['prompt' => $request->getPrompt()]],
                     'parameters' => $request->getParameters(),

@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Services\SDK;
 
 use Illuminate\Support\Facades\Http;
 use LaravelAIEngine\DTOs\RealtimeSessionConfig;
+use LaravelAIEngine\Exceptions\RealtimeRoomNotAllowedException;
 
 class RealtimeSessionService
 {
@@ -422,7 +423,7 @@ class RealtimeSessionService
         ));
 
         if ($allowed !== [] && !in_array($requested, $allowed, true)) {
-            throw new \InvalidArgumentException("LiveKit room [{$requested}] is not allowed.");
+            throw new RealtimeRoomNotAllowedException($requested);
         }
 
         return $requested;
