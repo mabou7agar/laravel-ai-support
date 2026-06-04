@@ -194,6 +194,28 @@ flowchart TD
   K --> L["AgentResponse with sources and citations"]
 ```
 
+### Cost of `force_rag`
+
+`force_rag=true` makes the turn knowledge-grounded by requiring AiNative to call
+`search_knowledge` before answering. That adds cost over a plain conversational reply:
+
+| Cost component | Plain reply | `force_rag` reply |
+| --- | --- | --- |
+| LLM round-trips | 1 (answer) | **≥2** (decide+emit the tool call, then answer from the result) |
+| Embedding calls | 0 | 1 (embed the query for vector search) |
+| Vector/graph retrieval | 0 | 1 retrieval pass (+ graph expansion if hybrid RAG is on) |
+| Prompt tokens | base | base **+ retrieved context** injected into the final call |
+
+So the dominant new cost is the **extra LLM round-trip plus the retrieved-context tokens**
+on the final call — roughly a 1.5–2× token bill versus an ungrounded reply, plus one
+embedding + one retrieval. Use it when grounding is required (factual/citation answers),
+not for chit-chat. To reduce it: scope `rag_collections` so retrieval returns fewer/smaller
+chunks, cap `RAGContextBuilder` context size, and leave `force_rag` off for turns that do
+not need sources (AiNative will still call `search_knowledge` on its own when the question
+warrants it). A precise token figure depends on your model, context size, and corpus —
+benchmark with your own provider; the package itself makes no extra LLM calls beyond the
+tool-call round-trip described here.
+
 The routing layer never retrieves records. Collection access policy and retrieval stay inside the execution/RAG services.
 
 ## Where To Change Things
