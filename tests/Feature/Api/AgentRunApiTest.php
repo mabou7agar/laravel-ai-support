@@ -15,6 +15,11 @@ class AgentRunApiTest extends TestCase
 {
     public function test_agent_run_api_lists_shows_trace_and_capabilities(): void
     {
+        // This test exercises payload shape, not access control; run the documented
+        // opt-out so owner-scoping does not 403 the unauthenticated functional calls.
+        // Cross-owner enforcement is covered by AgentRunAccessControlTest.
+        config()->set('ai-agent.event_stream.access.authorize_owned_runs', false);
+
         $run = app(AgentRunRepository::class)->create([
             'session_id' => 'agent-run-api',
             'user_id' => '99',
@@ -74,6 +79,7 @@ class AgentRunApiTest extends TestCase
 
     public function test_agent_run_api_resumes_and_cancels_langgraph_runs(): void
     {
+        config()->set('ai-agent.event_stream.access.authorize_owned_runs', false);
         config()->set('ai-agent.runtime.langgraph.enabled', true);
         config()->set('ai-agent.runtime.langgraph.base_url', 'https://langgraph.test');
 
