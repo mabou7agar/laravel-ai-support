@@ -61,6 +61,21 @@ class ProviderToolApprovalRepository
             ->first();
     }
 
+    /**
+     * The most recent approval for (run, tool) whose status is NOT 'approved'
+     * (i.e. pending, rejected, or expired) — used to BLOCK continuation so a
+     * rejected/unresolved tool can never be executed.
+     */
+    public function blockingForRunAndTool(int $runId, string $toolName): ?AIProviderToolApproval
+    {
+        return AIProviderToolApproval::query()
+            ->where('tool_run_id', $runId)
+            ->where('tool_name', $toolName)
+            ->where('status', '!=', 'approved')
+            ->orderByDesc('id')
+            ->first();
+    }
+
     public function approvedByKeys(int $runId, array $approvalKeys): Collection
     {
         return AIProviderToolApproval::query()

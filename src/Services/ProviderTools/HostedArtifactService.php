@@ -247,26 +247,9 @@ class HostedArtifactService
 
     private function isAllowedRemoteUrl(string $url): bool
     {
-        $parts = parse_url($url);
-        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
-        if (!in_array($scheme, ['http', 'https'], true)) {
-            return false;
-        }
-
-        if ((bool) config('ai-engine.provider_tools.artifacts.block_private_urls', true) !== true) {
-            return true;
-        }
-
-        $host = strtolower((string) ($parts['host'] ?? ''));
-        if ($host === '' || $host === 'localhost' || str_ends_with($host, '.localhost')) {
-            return false;
-        }
-
-        if (filter_var($host, FILTER_VALIDATE_IP) === false) {
-            return true;
-        }
-
-        return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+        // Delegate to the shared SSRF guard, which (unlike the previous literal-IP-only
+        // check) resolves the host and rejects any private/reserved/loopback address.
+        return RemoteUrlGuard::isFetchable($url);
     }
 
     private function isAllowedExtension(string $url): bool

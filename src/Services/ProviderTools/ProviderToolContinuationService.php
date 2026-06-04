@@ -76,9 +76,14 @@ class ProviderToolContinuationService
     {
         $requiredTools = array_values(array_filter((array) ($run->tool_names ?? [])));
         foreach ($requiredTools as $toolName) {
-            $pending = $this->approvals->pendingForRunAndTool((int) $run->id, (string) $toolName);
-            if ($pending !== null) {
-                throw new AIEngineException("Provider tool run [{$run->uuid}] still has pending approval for [{$toolName}].");
+            // Block on ANY non-approved approval (pending, rejected, or expired) — not just
+            // pending. Otherwise a REJECTED tool call would slip through and execute, since
+            // a rejected record is no longer "pending".
+            $blocking = $this->approvals->blockingForRunAndTool((int) $run->id, (string) $toolName);
+            if ($blocking !== null) {
+                throw new AIEngineException(
+                    "Provider tool run [{$run->uuid}] is not approved for [{$toolName}] (status: {$blocking->status})."
+                );
             }
         }
     }
