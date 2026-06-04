@@ -36,16 +36,11 @@ jobs:
         # part of the TEST harness only — the package's runtime `require` has no
         # laravel/framework (just specific illuminate/* components), so consumers never
         # install them. We therefore don't let composer's advisory policy block the test
-        # toolchain here, and instead gate the RUNTIME tree explicitly below.
+        # toolchain here; the separate `runtime-audit` job gates the RUNTIME tree instead.
         run: composer config --no-plugins policy.advisories.block false
 
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction
-
-      - name: Audit runtime dependencies for security advisories
-        # Gates only what consumers actually inherit (the non-dev tree). Dev-only
-        # advisories are excluded above; real runtime advisories must still fail CI.
-        run: composer audit --no-dev --abandoned=ignore
 
       - name: Install optional federation package (matrix with)
         if: matrix.federation == 'with'
@@ -67,3 +62,26 @@ jobs:
           fi
 
           exit "$status"
+
+  runtime-audit:
+    name: Runtime dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      # Resolve ONLY the runtime dependency tree (drops orchestra/testbench and its
+      # transitive laravel/framework), then audit it. This gates exactly what consumers
+      # inherit from this package for real security advisories, while the phpunit job
+      # keeps the dev-only advisory block disabled (see comment there).
+      - name: Resolve runtime-only dependencies
+        run: composer update --no-dev --prefer-dist --no-interaction
+
+      - name: Audit runtime dependencies
+        run: composer audit --abandoned=ignore
