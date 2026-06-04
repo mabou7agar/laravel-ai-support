@@ -191,6 +191,31 @@ scope enforcement so an unscoped query matches nothing instead:
 When enabled, always pass the authenticated `user_id` (or an explicit `access_scope`)
 through retrieval so real users still resolve via their `CAN_ACCESS` edges.
 
+## Admin UI
+
+The admin UI (`ai-engine.admin_ui`, disabled by default) exposes cross-user run control,
+policy management, and provider-tool approvals. Its access gate is **fail-closed**: name
+admins explicitly, or opt into the broad modes.
+
+```php
+'admin_ui' => [
+    'access' => [
+        'allowed_user_ids' => [...],   // explicit admin user ids
+        'allowed_emails'   => [...],   // or emails
+        'allowed_ips'      => [...],   // or trusted IPs (bastion)
+        // An EMPTY allowlist does NOT grant every authenticated user — opt in:
+        'allow_any_authenticated' => false,
+        // Localhost is NOT implicitly trusted (proxies can forge 127.0.0.1) — opt in:
+        'allow_localhost'         => false,
+    ],
+],
+```
+
+Provider-tool approve/reject audit attribution is taken from the authenticated identity
+only — a client-supplied `actor_id` is never trusted. The `ai:scaffold` command
+backslash-escapes descriptions so a generated (autoloaded) artifact cannot be coerced into
+executing injected code.
+
 ## Credit Guards
 
 Synchronous media services check credits before provider calls and only deduct after successful provider responses. Async FAL video jobs reserve credits before submission and finalize only after the provider accepts or completes the job.

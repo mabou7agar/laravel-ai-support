@@ -104,4 +104,59 @@ class AdminUiAccessTest extends UnitTestCase
             ->get('/ai-engine/admin')
             ->assertForbidden();
     }
+
+    public function test_empty_allowlist_denies_any_authenticated_user_by_default(): void
+    {
+        // Fail-closed: an empty allowlist must NOT grant admin to every logged-in user.
+        config()->set('ai-engine.admin_ui.access.allowed_user_ids', []);
+        config()->set('ai-engine.admin_ui.access.allowed_emails', []);
+        config()->set('ai-engine.admin_ui.access.allowed_ips', []);
+
+        $user = new User();
+        $user->id = 42;
+        $user->email = 'user@example.test';
+
+        $this->actingAs($user)
+            ->withServerVariables(['REMOTE_ADDR' => '198.51.100.25'])
+            ->get('/ai-engine/admin')
+            ->assertForbidden();
+    }
+
+    public function test_empty_allowlist_allows_any_authenticated_user_only_when_opted_in(): void
+    {
+        config()->set('ai-engine.admin_ui.access.allowed_user_ids', []);
+        config()->set('ai-engine.admin_ui.access.allowed_emails', []);
+        config()->set('ai-engine.admin_ui.access.allowed_ips', []);
+        config()->set('ai-engine.admin_ui.access.allow_any_authenticated', true);
+
+        $user = new User();
+        $user->id = 42;
+        $user->email = 'user@example.test';
+
+        $this->actingAs($user)
+            ->withServerVariables(['REMOTE_ADDR' => '198.51.100.25'])
+            ->get('/ai-engine/admin')
+            ->assertOk()
+            ->assertSee('Laravel Admin');
+    }
+
+    public function test_localhost_is_not_trusted_by_default(): void
+    {
+        // Default fail-closed: an unauthenticated localhost request is refused unless
+        // allow_localhost is explicitly enabled.
+        config()->set('ai-engine.admin_ui.access.allowed_user_ids', []);
+        config()->set('ai-engine.admin_ui.access.allowed_emails', []);
+        config()->set('ai-engine.admin_ui.access.allowed_ips', []);
+        config()->set('ai-engine.admin_ui.access.allow_localhost', false);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+            ->get('/ai-engine/admin')
+            ->assertForbidden();
+
+        // Opt-in restores localhost access.
+        config()->set('ai-engine.admin_ui.access.allow_localhost', true);
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+            ->get('/ai-engine/admin')
+            ->assertOk();
+    }
 }

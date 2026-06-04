@@ -325,6 +325,49 @@ class AgentScaffoldCommandsTest extends UnitTestCase
         $this->assertContains('ai:pricing-simulate', $payload['developer_commands']['pricing']);
     }
 
+    public function test_scaffold_description_cannot_break_out_of_generated_php(): void
+    {
+        // A malicious --description must not escape the generated single-quoted string
+        // literal (trailing backslash + quote) nor the /** */ doc comment (*/). The
+        // generated file is autoloaded, so a breakout would be code execution.
+        $stringBreakout = "x'; echo 'PWNED'; //\\"; // ends with a single backslash
+        $commentBreakout = "*/ echo 'PWNED'; /*";
+
+        $this->assertSame(0, Artisan::call('ai:scaffold', [
+            'type' => 'agent',
+            'name' => 'EvilString',
+            '--model' => 'App\\Models\\Invoice',
+            '--description' => $stringBreakout,
+        ]));
+
+        $this->assertSame(0, Artisan::call('ai:scaffold', [
+            'type' => 'filter',
+            'name' => 'EvilComment',
+            '--description' => $commentBreakout,
+        ]));
+
+        $stringFile = app_path('AI/Configs/EvilStringConfig.php');
+        $commentFile = app_path('AI/Filters/EvilCommentFilter.php');
+
+        foreach ([$stringFile, $commentFile] as $path) {
+            $this->assertFileExists($path);
+            // Definitive proof of no breakout: the autoloaded file is still valid PHP.
+            $lint = (string) shell_exec('php -l ' . escapeshellarg($path) . ' 2>&1');
+            $this->assertStringContainsString(
+                'No syntax errors detected',
+                $lint,
+                "Scaffolded file {$path} must be valid PHP (no string/comment breakout): {$lint}"
+            );
+        }
+
+        // String context: the embedded quote is backslash-escaped (stays inside the literal).
+        $this->assertStringContainsString("echo \\'PWNED\\';", file_get_contents($stringFile) ?: '');
+        // Comment context: the */ terminator is neutralized so the payload stays inert.
+        $commentSource = file_get_contents($commentFile) ?: '';
+        $this->assertStringContainsString('*\\/', $commentSource);
+        $this->assertStringNotContainsString("*/ echo 'PWNED'", $commentSource);
+    }
+
     protected function tearDown(): void
     {
         File::deleteDirectory(app_path('AI'));

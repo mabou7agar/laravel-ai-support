@@ -678,7 +678,13 @@ return [
                 static fn ($value): string => trim((string) $value),
                 explode(',', (string) env('AI_ENGINE_ADMIN_ALLOWED_IPS', ''))
             ))),
-            'allow_localhost' => env('AI_ENGINE_ADMIN_ALLOW_LOCALHOST', true),
+            // Fail-closed defaults. The admin UI exposes cross-user run control, policy
+            // management, and provider-tool approvals — so once enabled it must NOT be
+            // open to every authenticated user or to unauthenticated localhost requests.
+            // Name admins explicitly via allowed_user_ids/allowed_emails, or opt into the
+            // broad modes below.
+            'allow_any_authenticated' => env('AI_ENGINE_ADMIN_ALLOW_ANY_AUTHENTICATED', false),
+            'allow_localhost' => env('AI_ENGINE_ADMIN_ALLOW_LOCALHOST', false),
         ],
     ],
 

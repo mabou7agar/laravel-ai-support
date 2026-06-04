@@ -309,7 +309,7 @@ use Illuminate\Database\Eloquent\Builder;
 class {$className}
 {
     /**
-     * {$this->escapeSingleQuotes($description)}
+     * {$this->escapeDocComment($description)}
      */
     public function __invoke(Builder \$query, array \$context = []): Builder
     {
@@ -686,7 +686,17 @@ PHP;
 
     protected function escapeSingleQuotes(string $value): string
     {
-        return str_replace("'", "\\'", $value);
+        // Backslash-safe: escape the backslash too, otherwise a trailing '\' would
+        // escape the generated closing quote and break out of the single-quoted PHP
+        // string literal (code injection into the scaffolded, autoloaded file).
+        return addcslashes($value, "\\'");
+    }
+
+    protected function escapeDocComment(string $value): string
+    {
+        // Neutralize comment terminators and line breaks so a description cannot
+        // escape the generated /** ... */ doc block.
+        return str_replace(['*/', "\r", "\n"], ['*\\/', ' ', ' '], $value);
     }
 
     protected function normalizePath(string $path): string
