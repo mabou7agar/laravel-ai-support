@@ -17,6 +17,7 @@ class ProviderToolApprovalRepository
             ->when($filters['status'] ?? null, fn ($query, string $status) => $query->where('status', $status))
             ->when($filters['provider'] ?? null, fn ($query, string $provider) => $query->where('provider', $provider))
             ->when($filters['tool_name'] ?? null, fn ($query, string $toolName) => $query->where('tool_name', $toolName))
+            ->when($filters['owner_user_id'] ?? null, fn ($query, string $ownerId) => $query->whereHas('run', fn ($q) => $q->where('user_id', $ownerId)))
             ->latest()
             ->paginate(max(1, min(100, $perPage)));
     }

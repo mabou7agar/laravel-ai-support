@@ -31,6 +31,8 @@ class ProviderToolApiOperationsService
 
     public function runs(array $filters): JsonResponse
     {
+        $filters = $this->scopeFilters($filters, 'user_id');
+
         return response()->json([
             'success' => true,
             'message' => 'Provider tool runs loaded.',
@@ -43,6 +45,7 @@ class ProviderToolApiOperationsService
     public function showRun(string $run): JsonResponse
     {
         $record = $this->runs->findOrFail($run);
+        $this->guardOwner($record->user_id);
 
         return response()->json([
             'success' => true,
@@ -60,7 +63,7 @@ class ProviderToolApiOperationsService
         return response()->json([
             'success' => true,
             'message' => 'Provider tool approvals loaded.',
-            'data' => $this->redactPaginated($this->approvals->paginate($filters, (int) ($filters['per_page'] ?? 25))->toArray(), 'approval'),
+            'data' => $this->redactPaginated($this->approvals->paginate($this->scopeFilters($filters, 'owner_user_id'), (int) ($filters['per_page'] ?? 25))->toArray(), 'approval'),
             'error' => null,
             'meta' => ['schema' => 'ai-engine.v1'],
         ]);
@@ -68,6 +71,8 @@ class ProviderToolApiOperationsService
 
     public function approve(string $approvalKey, array $validated): JsonResponse
     {
+        $this->guardApprovalOwner($approvalKey);
+
         $approval = $this->approvalService->approve(
             $approvalKey,
             $this->actorId($validated),
@@ -91,6 +96,8 @@ class ProviderToolApiOperationsService
 
     public function reject(string $approvalKey, array $validated): JsonResponse
     {
+        $this->guardApprovalOwner($approvalKey);
+
         $approval = $this->approvalService->reject(
             $approvalKey,
             $this->actorId($validated),
@@ -109,6 +116,8 @@ class ProviderToolApiOperationsService
 
     public function continueRun(string $run, array $validated): JsonResponse
     {
+        $this->guardOwner($this->runs->find($run)?->user_id);
+
         if ((bool) ($validated['async'] ?? false)) {
             $jobId = (string) Str::uuid();
             ContinueProviderToolRunJob::dispatch($jobId, $run, $validated['options'] ?? []);
@@ -142,7 +151,7 @@ class ProviderToolApiOperationsService
         return response()->json([
             'success' => true,
             'message' => 'Provider tool artifacts loaded.',
-            'data' => $this->artifacts->paginate($filters, (int) ($filters['per_page'] ?? 25))->toArray(),
+            'data' => $this->artifacts->paginate($this->scopeFilters($filters, 'owner_user_id'), (int) ($filters['per_page'] ?? 25))->toArray(),
             'error' => null,
             'meta' => ['schema' => 'ai-engine.v1'],
         ]);
@@ -151,6 +160,7 @@ class ProviderToolApiOperationsService
     public function downloadArtifact(string $artifact): Response
     {
         $record = $this->artifacts->findOrFail($artifact);
+        $this->guardOwner($this->runs->find($record->tool_run_id)?->user_id);
         $download = $this->downloads->download($record);
 
         return response($download['contents'], 200, [
@@ -327,6 +337,49 @@ class ProviderToolApiOperationsService
     private function redactor(): \LaravelAIEngine\Services\Agent\AgentExecutionPolicyService
     {
         return app(\LaravelAIEngine\Services\Agent\AgentExecutionPolicyService::class);
+    }
+
+    /**
+     * Refuse cross-owner access when an owner resolver is configured (closes the IDOR).
+     * No-op when scoping is disabled (single-tenant / host enforces its own authz).
+     */
+    private function guardOwner(int|string|null $resourceOwnerId): void
+    {
+        $owner = ProviderToolAccessScope::currentOwnerId();
+        if ($owner !== null && (string) $resourceOwnerId !== $owner) {
+            abort(403, 'You are not authorized to access this provider-tool resource.');
+        }
+    }
+
+    private function guardApprovalOwner(string $approvalKey): void
+    {
+        if (ProviderToolAccessScope::currentOwnerId() === null) {
+            return;
+        }
+
+        $approval = $this->approvals->findByKey($approvalKey);
+        if ($approval !== null) {
+            // Owner is the run's user_id; a caller can't approve/reject another owner's run.
+            $this->guardOwner($this->runs->find($approval->tool_run_id)?->user_id);
+        }
+        // A missing approval falls through to the approval service's not-found handling.
+    }
+
+    /**
+     * Force the owner filter on a list query when scoping is enabled (overriding any
+     * client-supplied value), so list endpoints can't enumerate other owners' resources.
+     *
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    private function scopeFilters(array $filters, string $key): array
+    {
+        $owner = ProviderToolAccessScope::currentOwnerId();
+        if ($owner !== null) {
+            $filters[$key] = $owner;
+        }
+
+        return $filters;
     }
 
     private function actorId(array $validated): ?string
