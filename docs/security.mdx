@@ -25,12 +25,34 @@ is refused with a `policy_blocked` result and never executes — and honours per
 
 - It runs whatever tool name the caller supplies (subject to the deny-list and approvals),
   so keep it behind your authenticated API middleware, not exposed to anonymous browsers.
-- The `agent_chat` bridge accepts `user_id`/`session_id` in the tool arguments; resolve
-  those server-side from the authenticated user rather than trusting client-supplied values
-  if end users can reach the endpoint directly.
+- The `agent_chat` bridge can read/act on a user's conversation memory keyed by
+  `user_id`/`session_id`. Those can arrive as model- or client-supplied tool arguments, so
+  trusting them lets a caller load another user's conversation. Binding to the authenticated
+  request context is opt-in via `ai-engine.realtime.trust_client_identity` (default
+  `false`): while it is `false`, argument-supplied `user_id`/`session_id` are ignored and
+  only the context the host established for the request is used. Set it `true` only for
+  trusted backend-to-backend callers that intentionally relay identity in the arguments.
 - LiveKit session descriptors mint a room token from request `metadata.room` /
-  `participant_identity`. Constrain those server-side so a caller cannot mint a token for
-  another user's room or identity.
+  `participant_identity`. Constrain those server-side with the opt-in
+  `ai-engine.realtime.livekit` settings: `identity_resolver` / `room_resolver` (closure or
+  `Class@method`) override the client value with a server-resolved one, and `allowed_rooms`
+  refuses any room not on the allow-list. With none configured (default) behaviour is
+  unchanged.
+
+```php
+'realtime' => [
+    // Ignore argument-supplied identity in agent_chat; bind to the request context only.
+    'trust_client_identity' => false,
+
+    'livekit' => [
+        // Closure / invokable / 'Class@method' returning the authoritative value (or null).
+        'identity_resolver' => fn () => (string) auth()->id(),
+        'room_resolver' => null,
+        // When non-empty, a requested room must be listed or the token mint is refused.
+        'allowed_rooms' => [],
+    ],
+],
+```
 
 ## Preview HTML
 
