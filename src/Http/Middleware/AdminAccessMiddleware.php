@@ -35,9 +35,12 @@ class AdminAccessMiddleware
         $allowedUserIds = $this->normalizeList($accessConfig['allowed_user_ids'] ?? []);
         $allowedEmails = array_map('strtolower', $this->normalizeList($accessConfig['allowed_emails'] ?? []));
 
-        // No explicit user allowlist means any authenticated user can access.
+        // Fail closed: an empty allowlist grants access to ANY authenticated user ONLY
+        // when the host explicitly opts in. Otherwise admin requires being named in the
+        // user-id or email allowlist. (Previously empty meant "everyone" — privilege
+        // escalation for any logged-in user once the admin UI was enabled.)
         if ($allowedUserIds === [] && $allowedEmails === []) {
-            return true;
+            return (bool) ($accessConfig['allow_any_authenticated'] ?? false);
         }
 
         $identifier = (string) $user->getAuthIdentifier();
@@ -58,7 +61,10 @@ class AdminAccessMiddleware
 
         $allowedIps = $this->normalizeList($accessConfig['allowed_ips'] ?? []);
 
-        if ((bool) ($accessConfig['allow_localhost'] ?? true)) {
+        // Fail closed: do NOT implicitly trust localhost. Granting admin to any
+        // unauthenticated localhost-origin request (including proxies that forward as
+        // 127.0.0.1) is an escalation path. Opt in explicitly via allow_localhost.
+        if ((bool) ($accessConfig['allow_localhost'] ?? false)) {
             $allowedIps = array_values(array_unique(array_merge($allowedIps, ['127.0.0.1', '::1'])));
         }
 

@@ -135,16 +135,9 @@ class AdminProviderToolOperationsService
 
     private function actorId(array $validated): ?string
     {
-        // Prefer the authenticated identity; only trust a client-supplied actor_id when
-        // there is no auth context, so an action can't be attributed to someone else.
-        if (auth()->id() !== null) {
-            return (string) auth()->id();
-        }
-
-        if (isset($validated['actor_id']) && trim((string) $validated['actor_id']) !== '') {
-            return trim((string) $validated['actor_id']);
-        }
-
-        return null;
+        // Audit attribution comes from the authenticated identity ONLY — never from a
+        // client-supplied actor_id, which would let an approve/reject be attributed to
+        // an arbitrary user (forged audit trail). Null when there is no auth context.
+        return auth()->id() !== null ? (string) auth()->id() : null;
     }
 }
