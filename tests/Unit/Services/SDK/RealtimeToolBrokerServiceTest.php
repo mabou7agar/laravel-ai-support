@@ -5,14 +5,78 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Tests\Unit\Services\SDK;
 
 use LaravelAIEngine\DTOs\ActionResult;
+use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\Tools\SimpleAgentTool;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
+use LaravelAIEngine\Services\ChatService;
 use LaravelAIEngine\Services\SDK\RealtimeToolBrokerService;
 use LaravelAIEngine\Tests\UnitTestCase;
+use Mockery;
 
 class RealtimeToolBrokerServiceTest extends UnitTestCase
 {
+    public function test_agent_chat_ignores_client_supplied_identity_by_default(): void
+    {
+        // Default (trust_client_identity=false): the argument-supplied user_id/session_id
+        // must be ignored so a caller cannot load/act on another user's conversation —
+        // only the authenticated request context is used.
+        $captured = [];
+        $chat = Mockery::mock(ChatService::class);
+        $chat->shouldReceive('processMessage')
+            ->once()
+            ->andReturnUsing(function (...$args) use (&$captured): AIResponse {
+                $captured['session_id'] = $args[1];
+                $captured['user_id'] = $args[8];
+
+                return AIResponse::success('ok', 'openai', 'gpt-4o-mini');
+            });
+        $this->app->instance(ChatService::class, $chat);
+
+        (new RealtimeToolBrokerService(new ToolRegistry()))->dispatch([
+            'id' => 'call_agent_chat',
+            'name' => 'agent_chat',
+            'arguments' => [
+                'message' => 'hello',
+                'user_id' => 'attacker-victim',
+                'session_id' => 'victim-session',
+            ],
+        ], new UnifiedActionContext('ctx-session', 'ctx-user'));
+
+        $this->assertSame('ctx-session', $captured['session_id']);
+        $this->assertSame('ctx-user', $captured['user_id']);
+    }
+
+    public function test_agent_chat_trusts_client_supplied_identity_when_opted_in(): void
+    {
+        config()->set('ai-engine.realtime.trust_client_identity', true);
+
+        $captured = [];
+        $chat = Mockery::mock(ChatService::class);
+        $chat->shouldReceive('processMessage')
+            ->once()
+            ->andReturnUsing(function (...$args) use (&$captured): AIResponse {
+                $captured['session_id'] = $args[1];
+                $captured['user_id'] = $args[8];
+
+                return AIResponse::success('ok', 'openai', 'gpt-4o-mini');
+            });
+        $this->app->instance(ChatService::class, $chat);
+
+        (new RealtimeToolBrokerService(new ToolRegistry()))->dispatch([
+            'id' => 'call_agent_chat',
+            'name' => 'agent_chat',
+            'arguments' => [
+                'message' => 'hello',
+                'user_id' => 'relayed-user',
+                'session_id' => 'relayed-session',
+            ],
+        ], new UnifiedActionContext('ctx-session', 'ctx-user'));
+
+        $this->assertSame('relayed-session', $captured['session_id']);
+        $this->assertSame('relayed-user', $captured['user_id']);
+    }
+
     public function test_dispatches_openai_realtime_tool_call_to_registered_tool(): void
     {
         $registry = new ToolRegistry();

@@ -165,7 +165,7 @@ class ClipdropEngineDriver extends BaseEngineDriver
             $value = $comma !== false ? substr($value, $comma + 1) : $value;
         }
 
-        if (strlen($value) < 1024 && @is_file($value)) {
+        if ($this->localImageFileReadable($value)) {
             return (string) file_get_contents($value);
         }
 

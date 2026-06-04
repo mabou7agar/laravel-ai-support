@@ -242,8 +242,24 @@ class RealtimeSessionService
     {
         $liveKit = (array) config('ai-engine.realtime.livekit', []);
         $pipeline = array_replace_recursive((array) config('ai-engine.realtime.fallback_pipeline', []), $config->fallbackPipeline);
-        $room = (string) ($config->metadata['room'] ?? $liveKit['default_room'] ?? 'ai-engine-voice');
-        $identity = (string) ($config->metadata['participant_identity'] ?? $config->metadata['user_id'] ?? 'ai-engine-user');
+        // The LiveKit token grants joining a specific room as a specific identity. Both the
+        // room and the participant identity arrive from request metadata, so without a
+        // server-side constraint a caller could mint a token for another user's room or
+        // identity. Constraining is OPT-IN, mirroring provider-tools owner_resolver:
+        //  - livekit.identity_resolver / livekit.room_resolver (closure or 'Class@method'):
+        //    when they return a value it overrides the client-supplied one with a
+        //    server-resolved value.
+        //  - livekit.allowed_rooms: when non-empty, the requested room must be on the list
+        //    (a room_resolver result is always honoured first), else the mint is refused.
+        // With none configured (default), behaviour is unchanged.
+        $room = $this->resolveLiveKitRoom(
+            (string) ($config->metadata['room'] ?? $liveKit['default_room'] ?? 'ai-engine-voice'),
+            $liveKit
+        );
+        $identity = $this->resolveLiveKitIdentity(
+            (string) ($config->metadata['participant_identity'] ?? $config->metadata['user_id'] ?? 'ai-engine-user'),
+            $liveKit
+        );
         $participantName = (string) ($config->metadata['participant_name'] ?? $identity);
         $agentName = (string) ($config->providerOptions['agent_name'] ?? $config->metadata['agent_name'] ?? $liveKit['default_agent_name'] ?? 'laravel-ai-engine');
         $url = (string) ($config->providerOptions['url'] ?? $liveKit['url'] ?? '');
@@ -372,6 +388,78 @@ class RealtimeSessionService
         $segments[] = $this->base64UrlEncode(hash_hmac('sha256', implode('.', $segments), $apiSecret, true));
 
         return implode('.', $segments);
+    }
+
+    /**
+     * Resolve the participant identity, preferring a server-resolved value when an
+     * identity_resolver is configured so a client cannot mint a token for another identity.
+     *
+     * @param  array<string, mixed>  $liveKit
+     */
+    protected function resolveLiveKitIdentity(string $requested, array $liveKit): string
+    {
+        $resolved = $this->resolveServerValue($liveKit['identity_resolver'] ?? null);
+
+        return $resolved ?? $requested;
+    }
+
+    /**
+     * Resolve the room, preferring a server-resolved value (room_resolver) and otherwise
+     * enforcing the allowed_rooms allow-list when one is configured.
+     *
+     * @param  array<string, mixed>  $liveKit
+     */
+    protected function resolveLiveKitRoom(string $requested, array $liveKit): string
+    {
+        $resolved = $this->resolveServerValue($liveKit['room_resolver'] ?? null);
+        if ($resolved !== null) {
+            return $resolved;
+        }
+
+        $allowed = array_values(array_filter(
+            array_map(static fn ($room): string => (string) $room, (array) ($liveKit['allowed_rooms'] ?? [])),
+            static fn (string $room): bool => $room !== ''
+        ));
+
+        if ($allowed !== [] && !in_array($requested, $allowed, true)) {
+            throw new \InvalidArgumentException("LiveKit room [{$requested}] is not allowed.");
+        }
+
+        return $requested;
+    }
+
+    /**
+     * Evaluate a resolver (closure, invokable, or 'Class@method' string) to a server-side
+     * string value, mirroring the provider-tools owner_resolver contract. Returns null when
+     * the resolver is unset or yields an empty value (caller falls back to the request).
+     */
+    protected function resolveServerValue(mixed $resolver): ?string
+    {
+        if ($resolver === null) {
+            return null;
+        }
+
+        $value = null;
+
+        if ($resolver instanceof \Closure || (is_object($resolver) && is_callable($resolver))) {
+            $value = $resolver();
+        } elseif (is_string($resolver) && $resolver !== '') {
+            if (str_contains($resolver, '@')) {
+                [$class, $method] = explode('@', $resolver, 2);
+                if (class_exists($class)) {
+                    $value = app($class)->{$method}();
+                }
+            } elseif (is_callable($resolver)) {
+                $value = $resolver();
+            } elseif (class_exists($resolver)) {
+                $instance = app($resolver);
+                if (is_callable($instance)) {
+                    $value = $instance();
+                }
+            }
+        }
+
+        return ($value === null || $value === '') ? null : (string) $value;
     }
 
     protected function base64UrlEncode(string $value): string

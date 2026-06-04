@@ -1498,6 +1498,11 @@ return [
         'default_model' => env('AI_ENGINE_REALTIME_MODEL', 'gpt-realtime'),
         'default_transport' => env('AI_ENGINE_REALTIME_TRANSPORT', 'webrtc'),
         'default_voice' => env('AI_ENGINE_REALTIME_VOICE', 'marin'),
+        // OPT-IN: when false (default), the agent_chat bridge ignores any user_id/session_id
+        // supplied in the realtime tool arguments and binds to the authenticated request
+        // context only, so a caller cannot load/act on another user's conversation memory.
+        // Set true only for trusted backend-to-backend callers that relay identity in args.
+        'trust_client_identity' => (bool) env('AI_ENGINE_REALTIME_TRUST_CLIENT_IDENTITY', false),
         'input_audio_format' => env('AI_ENGINE_REALTIME_INPUT_AUDIO_FORMAT', 'pcm16'),
         'output_audio_format' => env('AI_ENGINE_REALTIME_OUTPUT_AUDIO_FORMAT', 'pcm16'),
         'timeout' => env('AI_ENGINE_REALTIME_TIMEOUT', 30),
@@ -1522,6 +1527,16 @@ return [
             'default_agent_name' => env('LIVEKIT_AGENT_NAME', 'laravel-ai-engine'),
             'token_ttl' => (int) env('LIVEKIT_TOKEN_TTL', 3600),
             'token_endpoint' => env('LIVEKIT_TOKEN_ENDPOINT', '/api/v1/ai/realtime/sessions'),
+            // OPT-IN token-minting constraints (default off = behaviour unchanged):
+            //  - identity_resolver / room_resolver: closure or 'Class@method' returning the
+            //    server-resolved participant identity / room; when set it overrides the
+            //    client-supplied metadata so a caller cannot mint a token for another
+            //    user's identity or room.
+            //  - allowed_rooms: when non-empty, a requested room must be on this list (a
+            //    room_resolver result is honoured first) or the mint is refused.
+            'identity_resolver' => null,
+            'room_resolver' => null,
+            'allowed_rooms' => [],
         ],
         'fallback_pipeline' => [
             'stt' => [

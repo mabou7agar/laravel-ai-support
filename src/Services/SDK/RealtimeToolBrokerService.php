@@ -160,17 +160,34 @@ class RealtimeToolBrokerService
             ];
         }
 
+        // The agent_chat bridge loads/acts on a user's conversation memory keyed by
+        // user_id/session_id. In a realtime session those can arrive as model- or
+        // client-supplied tool arguments, so trusting them lets a caller reach the
+        // dispatch endpoint and read/act on another user's conversation (IDOR).
+        // Trusting client identity is OPT-IN (ai-engine.realtime.trust_client_identity,
+        // default false): when false we ignore the argument-supplied user_id/session_id
+        // and bind strictly to the authenticated context the host established for the
+        // request. Backend-to-backend callers that set the context envelope are
+        // unaffected; those that intentionally relay identity in tool arguments opt in.
+        $trustClientIdentity = (bool) config('ai-engine.realtime.trust_client_identity', false);
+        $sessionId = $trustClientIdentity
+            ? (string) ($arguments['session_id'] ?? $context->sessionId)
+            : (string) $context->sessionId;
+        $userId = $trustClientIdentity
+            ? ($arguments['user_id'] ?? $context->userId)
+            : $context->userId;
+
         try {
             $response = app(ChatService::class)->processMessage(
                 message: $message,
-                sessionId: (string) ($arguments['session_id'] ?? $context->sessionId),
+                sessionId: $sessionId,
                 engine: (string) ($arguments['engine'] ?? $context->metadata['engine'] ?? config('ai-engine.default', 'openai')),
                 model: (string) ($arguments['model'] ?? $context->metadata['model'] ?? config('ai-engine.default_model', 'gpt-4o-mini')),
                 useMemory: (bool) ($arguments['memory'] ?? $arguments['use_memory'] ?? $context->metadata['memory'] ?? true),
                 useActions: (bool) ($arguments['actions'] ?? $arguments['use_actions'] ?? $context->metadata['actions'] ?? true),
                 useRag: (bool) ($arguments['use_rag'] ?? $context->metadata['use_rag'] ?? false),
                 ragCollections: (array) ($arguments['rag_collections'] ?? $context->metadata['rag_collections'] ?? []),
-                userId: $arguments['user_id'] ?? $context->userId,
+                userId: $userId,
                 searchInstructions: isset($arguments['search_instructions']) ? (string) $arguments['search_instructions'] : ($context->metadata['search_instructions'] ?? null),
                 conversationHistory: (array) ($arguments['conversation_history'] ?? []),
                 extraOptions: array_filter([

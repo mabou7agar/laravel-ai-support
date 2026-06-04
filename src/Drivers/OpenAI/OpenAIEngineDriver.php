@@ -556,7 +556,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
             $value = $comma !== false ? substr($value, $comma + 1) : $value;
         }
 
-        if (strlen($value) < 1024 && @is_file($value)) {
+        if ($this->localImageFileReadable($value)) {
             $contents = (string) file_get_contents($value);
         } else {
             $decoded = base64_decode($value, true);

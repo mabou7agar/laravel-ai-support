@@ -24,6 +24,43 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     }
 
     /**
+     * Decide whether a request-supplied image value may be read from the local
+     * filesystem. Image params (image/init_image/...) come from the request, so
+     * treating an arbitrary string as a server path and reading it is a local-file
+     * disclosure (LFI) vector. Fail closed: reads are refused unless the host opts in
+     * via `ai-engine.security.allow_local_image_paths` or the realpath sits inside an
+     * `ai-engine.security.image_path_allowlist` directory.
+     */
+    protected function localImageFileReadable(string $value): bool
+    {
+        if ($value === '' || strlen($value) >= 1024 || @is_file($value) !== true) {
+            return false;
+        }
+
+        $allowlist = array_values(array_filter(array_map(
+            static fn ($dir): string => is_string($dir) ? (string) (realpath($dir) ?: '') : '',
+            (array) config('ai-engine.security.image_path_allowlist', [])
+        )));
+
+        if ($allowlist === []) {
+            return (bool) config('ai-engine.security.allow_local_image_paths', false);
+        }
+
+        $real = realpath($value);
+        if ($real === false) {
+            return false;
+        }
+
+        foreach ($allowlist as $base) {
+            if ($base !== '' && str_starts_with($real, rtrim($base, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Get the engine configuration
      */
     public function getConfig(): array
