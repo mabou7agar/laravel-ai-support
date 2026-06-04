@@ -1024,6 +1024,10 @@ CYPHER,
 
     protected function accessPredicate(string $entityAlias): string
     {
+        // When access-scope is required, an unscoped query (no user identity bound)
+        // must match NOTHING rather than leaking the entire graph across tenants.
+        $unscoped = $this->requireAccessScope() ? 'false' : 'true';
+
         return <<<CYPHER
 CASE
   WHEN \$canonical_user_id IS NOT NULL THEN EXISTS {
@@ -1036,9 +1040,14 @@ CASE
   } OR EXISTS {
     MATCH (u:User {user_email_normalized: \$user_email_normalized})-[:CAN_ACCESS]->(:Scope)<-[:BELONGS_TO]-({$entityAlias})
   }
-  ELSE true
+  ELSE {$unscoped}
 END
 CYPHER;
+    }
+
+    protected function requireAccessScope(): bool
+    {
+        return (bool) config('ai-engine.graph.require_access_scope', false);
     }
 
     protected function candidateLimit(int $limit): int

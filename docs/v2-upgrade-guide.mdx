@@ -2,6 +2,12 @@
 
 Orchestration v2 is a breaking runtime refactor. New applications should enter through the runtime boundary instead of broad services.
 
+> **Note (post-v2).** The intermediate v2 `RoutingPipeline` / `RoutingStageContract` routing
+> brain has since been removed. `AiNativeRuntime` is now the sole router (an agentic
+> tool-calling loop); the only pre-AiNative branch is an active federated node session. See
+> [ChatFlow Trace](chat-flow.mdx) for the current runtime model. References to routing stages
+> below are retained only to map old names to their current replacements.
+
 ## Why This Is Breaking
 
 The old flow mixed routing, RAG selection, action execution, remote node routing, and continuation handling in the same orchestration path. V2 separates those responsibilities:
@@ -9,9 +15,9 @@ The old flow mixed routing, RAG selection, action execution, remote node routing
 | Old area | V2 replacement |
 | --- | --- |
 | `AgentOrchestrator::process()` as the public brain | `AgentRuntimeContract::process()` resolved from the container |
-| Embedded route branches | `RoutingPipeline` and `RoutingStageContract` |
-| In-method execution branches | `AgentExecutionDispatcher` and execution handlers |
-| RAG decisions inside orchestration | `search_rag` routing decision plus `RAGPipeline` |
+| Embedded route branches | the `AiNativeRuntime` tool-calling loop (sole router) |
+| In-method execution branches | AiNative tools, gated by `AgentExecutionPolicyService` |
+| RAG decisions inside orchestration | the `search_knowledge` tool plus `RAGPipeline` |
 | Ad hoc run state | `ai_agent_runs` and `ai_agent_run_steps` |
 | Provider tool side effects without unified run links | provider tool runs, approvals, artifacts, and audit events linked to agent run steps |
 
@@ -94,17 +100,22 @@ php artisan ai:agent-runs:replay-step {step}
 Scaffolding is still routed through the existing scaffold command where possible:
 
 ```bash
-php artisan ai:scaffold routing-stage BillingQuestion
+php artisan ai:scaffold tool SendInvoice
+php artisan ai:scaffold skill BillingQuestion
 php artisan ai:scaffold execution-handler SendInvoice
 php artisan ai:scaffold runtime MyRuntime
 ```
 
+Valid scaffold types include `tool`, `skill`, `execution-handler`, `runtime`, `filter`, and
+`rag-retriever`. The removed `routing-stage` type has no replacement — add capabilities as
+AiNative tools or skills instead.
+
 ## Old-To-New Flow
 
 1. Runtime receives the request.
-2. Routing stages produce a trace and one selected decision.
-3. Dispatcher executes that decision.
-4. RAG, tools, sub-agents, approvals, and artifacts stay in their own services.
+2. An active federated node session continues or is cleared; otherwise AiNative owns the turn.
+3. AiNative plans and calls tools in a loop until it returns a final answer.
+4. RAG, tools, sub-agents, approvals, and artifacts stay in their own services, gated by policy.
 5. Agent run and step records store trace, status, response, audit, and recovery metadata.
 6. API/admin consumers inspect `/api/v1/ai/agent-runs`.
 

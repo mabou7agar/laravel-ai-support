@@ -2064,6 +2064,11 @@ return [
         'enabled' => env('AI_ENGINE_GRAPH_ENABLED', true),
         'backend' => env('AI_ENGINE_GRAPH_BACKEND', 'neo4j'),
         'reads_prefer_central_graph' => env('AI_ENGINE_GRAPH_READS_PREFER_CENTRAL', true),
+        // When true, graph retrieval/snapshot queries that resolve to NO user scope
+        // (no canonical_user_id and no user_email_normalized) return nothing instead of
+        // the entire graph. Opt-in (default false) to preserve single-tenant/system
+        // queries; enable for multi-tenant deployments as defense-in-depth.
+        'require_access_scope' => env('AI_ENGINE_GRAPH_REQUIRE_ACCESS_SCOPE', false),
         'sync_on_index' => env('AI_ENGINE_GRAPH_SYNC_ON_INDEX', false),
         'neighbor_limit' => (int) env('AI_ENGINE_GRAPH_NEIGHBOR_LIMIT', 3),
         'neighbor_result_limit' => (int) env('AI_ENGINE_GRAPH_NEIGHBOR_RESULT_LIMIT', 2),

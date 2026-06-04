@@ -66,6 +66,58 @@ Remote artifact persistence rejects private/local URLs by default. Keep private 
 ],
 ```
 
+## Provider Tool Ownership And Webhooks
+
+Provider-tool runs, approvals, and artifacts are scoped to an owner when you configure a
+resolver. Scoping is opt-in: with no resolver (default), the API is unscoped and your app
+is expected to enforce its own authorization. Once a resolver returns an id, every
+run/approval/artifact lookup is constrained to that owner and cross-owner access returns
+HTTP 403 (closing IDOR on the provider-tool endpoints).
+
+```php
+'provider_tools' => [
+    // Closure, invokable class, or 'Class@method' returning the current owner id (or null).
+    'owner_resolver' => fn () => auth()->id(),
+
+    'fal' => [
+        // When set, the FAL catalog webhook requires this shared secret via the
+        // `X-Fal-Webhook-Secret` header (or `?webhook_secret=`). Mismatch => HTTP 401.
+        'webhook_secret' => env('AI_ENGINE_FAL_WEBHOOK_SECRET'),
+    ],
+],
+```
+
+Secrets inside stored payloads (`authorization`, `server_url`, MCP headers, etc.) are
+redacted in API responses while the stored value stays intact for continuation replay.
+
+## Structured Data Queries
+
+The `data_query` tool fails closed by default: a query that resolves to no tenant/user
+scope is blocked rather than returning unscoped rows. Mark a query `public` to opt a
+specific dataset out, or relax globally (not recommended for multi-tenant apps):
+
+```php
+'data_query' => [
+    'require_scope' => env('AI_ENGINE_DATA_QUERY_REQUIRE_SCOPE', true),
+],
+```
+
+## Graph Access Scope
+
+GraphRAG retrieval enforces `CAN_ACCESS` edges per user. By default an unscoped query (no
+`canonical_user_id` and no `user_email_normalized`) returns the whole graph — correct for
+single-tenant and system queries, but a leak risk for multi-tenant deployments. Enable
+scope enforcement so an unscoped query matches nothing instead:
+
+```php
+'graph' => [
+    'require_access_scope' => env('AI_ENGINE_GRAPH_REQUIRE_ACCESS_SCOPE', false),
+],
+```
+
+When enabled, always pass the authenticated `user_id` (or an explicit `access_scope`)
+through retrieval so real users still resolve via their `CAN_ACCESS` edges.
+
 ## Credit Guards
 
 Synchronous media services check credits before provider calls and only deduct after successful provider responses. Async FAL video jobs reserve credits before submission and finalize only after the provider accepts or completes the job.

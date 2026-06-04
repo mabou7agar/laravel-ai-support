@@ -68,42 +68,21 @@ final class MyRuntime implements AgentRuntimeContract
 
 Register the runtime in the container and select it with `agent_runtime` or `ai-agent.runtime.default`.
 
-## Routing Stages
+## Routing Model
 
-Routing stages decide, but never execute. Execution belongs to the dispatcher.
+> The earlier v2 `RoutingStageContract` / `ai-agent.routing_pipeline` mechanism has been
+> removed. `AiNativeRuntime` is now the sole router and decides every turn inside an agentic
+> tool-calling loop. There is no ordered stage pipeline to register into.
 
-```php
-use LaravelAIEngine\Contracts\RoutingStageContract;
-use LaravelAIEngine\DTOs\RoutingDecision;
-use LaravelAIEngine\DTOs\RoutingDecisionAction;
-use LaravelAIEngine\DTOs\RoutingDecisionSource;
-use LaravelAIEngine\DTOs\UnifiedActionContext;
+To make the agent reach for a capability on a "billing question", you no longer write a
+routing stage — you give it a **tool** (or skill) and let AiNative call it. For example, a
+knowledge lookup is the `search_knowledge` tool, and `force_rag` makes AiNative call it
+before answering. Application capabilities are registered as tools in the AiNative tool
+registry and gated by `AgentExecutionPolicyService`. See [Agent skills](agent-skills.mdx)
+and [Sub-agents](agent-sub-agents.mdx).
 
-final class BillingQuestionStage implements RoutingStageContract
-{
-    public function name(): string
-    {
-        return 'billing_question';
-    }
-
-    public function decide(string $message, UnifiedActionContext $context, array $options = []): ?RoutingDecision
-    {
-        if (! str_contains(strtolower($message), 'invoice')) {
-            return null;
-        }
-
-        return new RoutingDecision(
-            action: RoutingDecisionAction::SEARCH_RAG,
-            source: RoutingDecisionSource::CLASSIFIER,
-            confidence: 'high',
-            reason: 'Billing terms require retrieval.',
-            payload: ['collections' => ['App\\Models\\Invoice']]
-        );
-    }
-}
-```
-
-Add the stage to `ai-agent.routing_pipeline.stages` in the order it should run.
+The only branch that runs before AiNative is an active federated node session
+(`routed_to_node`), which continues the remote session or clears it on a new topic.
 
 ## Execution Handlers
 
@@ -169,7 +148,6 @@ LangGraph interrupts that require approval are mapped into Laravel approval reco
 The native runtime emits stable event names:
 
 - `run.started`, `run.completed`, `run.failed`, `run.cancelled`, `run.expired`
-- `routing.stage_started`, `routing.stage_abstained`, `routing.decided`
 - `rag.started`, `rag.sources_found`, `rag.completed`
 - `tool.started`, `tool.progress`, `tool.completed`, `tool.failed`
 - `sub_agent.started`, `sub_agent.completed`
@@ -200,7 +178,7 @@ When auto resolves to async, the controller creates an `ai_agent_runs` row, disp
 
 ## RAG Pipeline
 
-RAG belongs behind the `search_rag` decision and should stay in RAG services:
+RAG is reached through the AiNative `search_knowledge` tool and stays in RAG services:
 
 - `RAGQueryAnalyzer` expands or normalizes the user query.
 - `RAGCollectionResolver` chooses collections.
@@ -209,7 +187,7 @@ RAG belongs behind the `search_rag` decision and should stay in RAG services:
 - `RAGPromptBuilder` creates the generation prompt.
 - `RAGResponseGenerator` returns an `AgentResponse` with normalized sources and citations.
 
-The agent dispatcher calls the pipeline; routing stages do not retrieve records directly.
+The `search_knowledge` tool calls the pipeline; the AiNative loop never retrieves records directly.
 
 ## Run Statuses
 
