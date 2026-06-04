@@ -90,6 +90,27 @@ HTTP 403 (closing IDOR on the provider-tool endpoints).
 Secrets inside stored payloads (`authorization`, `server_url`, MCP headers, etc.) are
 redacted in API responses while the stored value stays intact for continuation replay.
 
+## Agent Run Endpoints
+
+The agent-run REST endpoints (`GET /agent-runs`, `/{run}`, `/{run}/trace`, `POST
+/{run}/resume`, `/{run}/cancel`) expose the full conversation, tool payloads, and trace of
+a run. They are owner-scoped by default, exactly like the SSE stream endpoint: a run that
+has a `user_id` is only readable/controllable by that authenticated user, and the list
+endpoint cannot be widened past the caller via a client-supplied `user_id` filter.
+
+```php
+'event_stream' => [
+    'access' => [
+        // Default ON (fail-closed). Set false only if the host enforces its own authz.
+        'authorize_owned_runs' => env('AI_AGENT_AGENT_RUN_AUTHORIZE_OWNED_RUNS', true),
+        // Expose runs that have no user_id (default false).
+        'allow_anonymous_runs' => env('AI_AGENT_AGENT_RUN_ALLOW_ANONYMOUS_RUNS', false),
+        // Optional callable|class with authorize($run, $authUserId): bool to override.
+        'authorizer' => null,
+    ],
+],
+```
+
 ## Structured Data Queries
 
 The `data_query` tool fails closed by default: a query that resolves to no tenant/user
