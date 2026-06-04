@@ -31,13 +31,21 @@ jobs:
         run: composer validate --strict
 
       - name: Configure composer (do not block dev deps on advisories)
-        # testbench pulls older laravel/framework versions that carry security
-        # advisories; these are test-only dev dependencies, so don't let composer's
-        # advisory policy block resolution of the test toolchain.
+        # Deliberate, not a workaround: orchestra/testbench (a require-DEV dependency)
+        # pulls transitive laravel/framework versions that carry advisories. Those are
+        # part of the TEST harness only — the package's runtime `require` has no
+        # laravel/framework (just specific illuminate/* components), so consumers never
+        # install them. We therefore don't let composer's advisory policy block the test
+        # toolchain here, and instead gate the RUNTIME tree explicitly below.
         run: composer config --no-plugins policy.advisories.block false
 
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction
+
+      - name: Audit runtime dependencies for security advisories
+        # Gates only what consumers actually inherit (the non-dev tree). Dev-only
+        # advisories are excluded above; real runtime advisories must still fail CI.
+        run: composer audit --no-dev --abandoned=ignore
 
       - name: Install optional federation package (matrix with)
         if: matrix.federation == 'with'
