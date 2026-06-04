@@ -264,6 +264,16 @@ return [
             'enabled' => env('AI_ENGINE_PROVIDER_TOOL_LIFECYCLE_ENABLED', true),
             'store_payloads' => env('AI_ENGINE_PROVIDER_TOOL_STORE_PAYLOADS', true),
         ],
+        // OPT-IN ownership scoping for the provider-tool API. Set to a closure or a
+        // 'Class@method' string returning the current owner id (e.g. fn () => auth()->id()),
+        // or null. When it resolves to an id, every run/approval/artifact lookup is scoped to
+        // that owner and cross-owner access is refused; null (default) disables scoping.
+        'owner_resolver' => null,
+        'fal' => [
+            // Shared secret for the FAL catalog webhook. When set, the webhook must present it
+            // (header X-Fal-Webhook-Secret or ?webhook_secret=) or the request is rejected.
+            'webhook_secret' => env('AI_ENGINE_FAL_WEBHOOK_SECRET'),
+        ],
         'versions' => [
             'anthropic' => [
                 'web_search' => [

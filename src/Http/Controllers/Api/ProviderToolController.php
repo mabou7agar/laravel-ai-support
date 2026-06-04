@@ -69,6 +69,18 @@ class ProviderToolController extends Controller
 
     public function falCatalogWebhook(FalCatalogWebhookRequest $request): JsonResponse
     {
+        // The webhook can force a run to failed/completed by id, so when a shared secret is
+        // configured it MUST be presented (header or query). Enforced only when configured,
+        // to stay non-breaking; configuring it is strongly recommended.
+        $secret = trim((string) config('ai-engine.provider_tools.fal.webhook_secret', ''));
+        if ($secret !== '') {
+            $provided = (string) ($request->header('X-Fal-Webhook-Secret')
+                ?? $request->query('webhook_secret', ''));
+            if ($provided === '' || !hash_equals($secret, $provided)) {
+                abort(401, 'Invalid or missing webhook signature.');
+            }
+        }
+
         return $this->operations->falCatalogWebhook(
             $request->validated(),
             $request->all(),

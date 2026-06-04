@@ -19,6 +19,7 @@ class ProviderToolArtifactRepository
             ->when($filters['artifact_type'] ?? null, fn ($query, string $type) => $query->where('artifact_type', $type))
             ->when($filters['owner_type'] ?? null, fn ($query, string $type) => $query->where('owner_type', $type))
             ->when($filters['owner_id'] ?? null, fn ($query, string $id) => $query->where('owner_id', $id))
+            ->when($filters['owner_user_id'] ?? null, fn ($query, string $ownerId) => $query->whereHas('run', fn ($q) => $q->where('user_id', $ownerId)))
             ->when($filters['source'] ?? null, fn ($query, string $source) => $query->where('source', $source))
             ->latest()
             ->paginate(max(1, min(100, $perPage)));
