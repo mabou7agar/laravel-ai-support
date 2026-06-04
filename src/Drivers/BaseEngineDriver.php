@@ -24,6 +24,31 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     }
 
     /**
+     * rawurlencode a single URL path segment so a free-form, request-controlled model
+     * name cannot inject path/query characters (?, #, /) into the request URL. Normal
+     * model ids (letters, digits, '-', '.', '_') are left intact.
+     */
+    protected function encodePathSegment(string $value): string
+    {
+        return rawurlencode($value);
+    }
+
+    /**
+     * Encode a slash-delimited provider path (e.g. a FalAI endpoint like
+     * "fal-ai/flux/dev"): drop empty / "." / ".." segments to stop traversal, then
+     * rawurlencode each remaining segment while preserving the legitimate separators.
+     */
+    protected function encodeProviderPath(string $path): string
+    {
+        $segments = array_filter(
+            explode('/', $path),
+            static fn (string $segment): bool => $segment !== '' && $segment !== '.' && $segment !== '..'
+        );
+
+        return implode('/', array_map('rawurlencode', $segments));
+    }
+
+    /**
      * Decide whether a request-supplied image value may be read from the local
      * filesystem. Image params (image/init_image/...) come from the request, so
      * treating an arbitrary string as a server path and reading it is a local-file

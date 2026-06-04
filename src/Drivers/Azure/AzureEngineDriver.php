@@ -268,7 +268,14 @@ class AzureEngineDriver implements EngineDriverInterface
             throw new AIEngineException('Image URL or file is required for computer vision');
         }
 
+        // analysis_type is request-controlled and lands in the URL path; restrict it to
+        // the known Azure Computer Vision v3.2 operations so it cannot inject path/query
+        // segments. Unknown values fall back to the safe default.
         $analysisType = $request->getParameters()['analysis_type'] ?? 'analyze';
+        $allowedAnalysisTypes = ['analyze', 'describe', 'detect', 'tag', 'areaOfInterest', 'ocr', 'read'];
+        if (!in_array($analysisType, $allowedAnalysisTypes, true)) {
+            $analysisType = 'analyze';
+        }
 
         if (!empty($request->getParameters()['image_url'])) {
             $payload = ['url' => $request->getParameters()['image_url']];

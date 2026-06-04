@@ -635,7 +635,7 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     private function postToEndpoint(string $endpoint, array $payload): array
     {
-        $response = $this->httpClient->post(ltrim($endpoint, '/'), [
+        $response = $this->httpClient->post($this->encodeProviderPath($endpoint), [
             'json' => $payload,
         ]);
 
@@ -644,7 +644,7 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     private function postToQueueEndpoint(string $endpoint, array $payload, array $query = []): array
     {
-        $response = $this->queueHttpClient->post(ltrim($endpoint, '/'), [
+        $response = $this->queueHttpClient->post($this->encodeProviderPath($endpoint), [
             'query' => $query,
             'json' => $payload,
         ]);
