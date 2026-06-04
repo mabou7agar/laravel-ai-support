@@ -135,10 +135,16 @@ class AdminProviderToolOperationsService
 
     private function actorId(array $validated): ?string
     {
+        // Prefer the authenticated identity; only trust a client-supplied actor_id when
+        // there is no auth context, so an action can't be attributed to someone else.
+        if (auth()->id() !== null) {
+            return (string) auth()->id();
+        }
+
         if (isset($validated['actor_id']) && trim((string) $validated['actor_id']) !== '') {
             return trim((string) $validated['actor_id']);
         }
 
-        return auth()->id() !== null ? (string) auth()->id() : null;
+        return null;
     }
 }

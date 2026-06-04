@@ -8,6 +8,8 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Repositories\ProviderToolRunRepository;
+use LaravelAIEngine\Services\ProviderTools\ProviderToolApiOperationsService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolApprovalService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolContinuationService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolRunService;
@@ -66,5 +68,31 @@ class ProviderToolSecurityTest extends TestCase
         $this->expectExceptionMessageMatches('/not approved for \[computer_use\]/');
 
         app(ProviderToolContinuationService::class)->continueRun($result->run->id, []);
+    }
+
+    public function test_api_redacts_secrets_in_responses_but_keeps_the_stored_value(): void
+    {
+        $run = app(ProviderToolRunRepository::class)->create([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'provider' => 'openai',
+            'status' => 'awaiting_approval',
+            'tool_names' => ['mcp_server'],
+            'user_id' => '42',
+            'request_payload' => [
+                'tools' => [[
+                    'type' => 'mcp',
+                    'server_url' => 'https://mcp.example',
+                    'authorization' => 'Bearer sk-super-secret-123',
+                ]],
+            ],
+        ]);
+
+        $response = app(ProviderToolApiOperationsService::class)->showRun($run->uuid);
+        $body = json_encode($response->getData(true));
+
+        // The secret never appears in the API response...
+        $this->assertStringNotContainsString('sk-super-secret-123', $body);
+        // ...but the stored payload is intact, so continuation replay still has it.
+        $this->assertSame('Bearer sk-super-secret-123', $run->fresh()->request_payload['tools'][0]['authorization']);
     }
 }
