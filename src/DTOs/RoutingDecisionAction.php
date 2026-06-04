@@ -7,9 +7,7 @@ namespace LaravelAIEngine\DTOs;
 final class RoutingDecisionAction
 {
     public const CONTINUE_NODE = 'continue_node';
-    public const HANDLE_SELECTION = 'handle_selection';
     public const SEARCH_RAG = 'search_rag';
-    public const USE_TOOL = 'use_tool';
     public const RUN_SUB_AGENT = 'run_sub_agent';
     public const ROUTE_TO_NODE = 'route_to_node';
     public const CONVERSATIONAL = 'conversational';
@@ -21,9 +19,7 @@ final class RoutingDecisionAction
     {
         return [
             self::CONTINUE_NODE,
-            self::HANDLE_SELECTION,
             self::SEARCH_RAG,
-            self::USE_TOOL,
             self::RUN_SUB_AGENT,
             self::ROUTE_TO_NODE,
             self::CONVERSATIONAL,
