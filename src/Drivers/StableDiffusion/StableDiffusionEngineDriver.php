@@ -14,6 +14,7 @@ use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\AIMediaManager;
+use LaravelAIEngine\Services\ProviderTools\RemoteUrlGuard;
 
 class StableDiffusionEngineDriver extends BaseEngineDriver
 {
@@ -356,7 +357,7 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
             $value = $comma !== false ? substr($value, $comma + 1) : $value;
         }
 
-        if (strlen($value) < 1024 && @is_file($value)) {
+        if ($this->localImageFileReadable($value)) {
             return (string) file_get_contents($value);
         }
 
@@ -460,10 +461,19 @@ class StableDiffusionEngineDriver extends BaseEngineDriver
 
     private function downloadRemoteImage(string $url): string
     {
+        // init_image_url is request-controlled; gate it through the SSRF guard
+        // (scheme allow-list + private/reserved IP block) and disable redirects so a
+        // public URL cannot 30x into an internal host. Prevents server-side requests to
+        // localhost / link-local / cloud metadata endpoints.
+        if (!RemoteUrlGuard::isFetchable($url)) {
+            throw new \RuntimeException('The init image URL is not allowed.');
+        }
+
         $response = Http::timeout((int) $this->getTimeout())
             ->withHeaders([
                 'User-Agent' => 'Laravel-AI-Engine/1.0',
             ])
+            ->withoutRedirecting()
             ->get($url);
 
         if (!$response->successful()) {

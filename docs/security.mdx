@@ -54,6 +54,19 @@ is refused with a `policy_blocked` result and never executes — and honours per
 ],
 ```
 
+## Image Inputs (SSRF / LFI)
+
+Media engine drivers accept request-supplied image inputs. Two are guarded:
+
+- **Remote image URLs** (e.g. Stable Diffusion `init_image_url`) are fetched server-side
+  only after passing the SSRF guard (scheme allow-list + private/reserved-IP block, no
+  redirects), so a caller cannot point them at `localhost`, link-local, or cloud-metadata
+  hosts. Governed by `ai-engine.provider_tools.artifacts.block_private_urls` (default on).
+- **Local file paths** in image params are **not** read from the server filesystem by
+  default (fail-closed) — a request value like `/etc/passwd` is treated as opaque, not a
+  path. Opt in with `ai-engine.security.allow_local_image_paths=true`, or scope reads to
+  specific directories via `ai-engine.security.image_path_allowlist`.
+
 ## Preview HTML
 
 Structured collection previews are package-rendered and escaped. The package does not ask AI to return HTML or JavaScript.
