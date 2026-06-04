@@ -36,8 +36,8 @@ is refused with a `policy_blocked` result and never executes — and honours per
   `participant_identity`. Constrain those server-side with the opt-in
   `ai-engine.realtime.livekit` settings: `identity_resolver` / `room_resolver` (closure or
   `Class@method`) override the client value with a server-resolved one, and `allowed_rooms`
-  refuses any room not on the allow-list. With none configured (default) behaviour is
-  unchanged.
+  refuses any room not on the allow-list with HTTP 422. With none configured (default)
+  behaviour is unchanged.
 
 ```php
 'realtime' => [

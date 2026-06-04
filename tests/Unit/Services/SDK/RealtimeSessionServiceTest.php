@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services\SDK;
 
+use LaravelAIEngine\Exceptions\RealtimeRoomNotAllowedException;
 use LaravelAIEngine\Services\SDK\RealtimeSessionService;
 use LaravelAIEngine\Tests\UnitTestCase;
 
@@ -88,7 +89,7 @@ class RealtimeSessionServiceTest extends UnitTestCase
     {
         config()->set('ai-engine.realtime.livekit.allowed_rooms', ['room-a', 'room-b']);
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RealtimeRoomNotAllowedException::class);
 
         $this->liveKitDescriptor([
             'room' => 'other-users-room',

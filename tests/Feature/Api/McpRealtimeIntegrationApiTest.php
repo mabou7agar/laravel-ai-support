@@ -260,6 +260,28 @@ class McpRealtimeIntegrationApiTest extends TestCase
             ->assertJsonPath('data.session.pipeline.chat.provider', 'ollama');
     }
 
+    public function test_realtime_session_api_refuses_room_outside_allow_list_with_422(): void
+    {
+        config()->set('ai-engine.realtime.livekit', [
+            'url' => 'wss://voice.example.test',
+            'api_key' => 'lk_key',
+            'api_secret' => 'lk_secret',
+            'allowed_rooms' => ['room-a', 'room-b'],
+        ]);
+
+        $this->postJson('/api/v1/ai/realtime/sessions', [
+            'provider' => 'livekit',
+            'transport' => 'livekit',
+            'metadata' => [
+                'room' => 'other-users-room',
+                'participant_identity' => 'api-user',
+            ],
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error.room', 'other-users-room');
+    }
+
     public function test_realtime_session_api_can_mint_openai_client_secret(): void
     {
         config()->set('ai-engine.engines.openai.api_key', 'test-openai-key');

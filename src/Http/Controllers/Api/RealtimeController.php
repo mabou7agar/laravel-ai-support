@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Http\Controllers\Api;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use LaravelAIEngine\DTOs\RealtimeSessionConfig;
+use LaravelAIEngine\Exceptions\RealtimeRoomNotAllowedException;
 use LaravelAIEngine\Http\Requests\CreateRealtimeSessionRequest;
 use LaravelAIEngine\Http\Requests\RealtimeSdpExchangeRequest;
 use LaravelAIEngine\Services\SDK\RealtimeSessionService;
@@ -21,9 +22,14 @@ class RealtimeController extends Controller
     {
         $validated = $request->validated();
         $config = $this->config($validated);
-        $descriptor = (bool) ($validated['mint_client_secret'] ?? false)
-            ? $this->sessions->createClientSecret($config)
-            : $this->sessions->create($config);
+
+        try {
+            $descriptor = (bool) ($validated['mint_client_secret'] ?? false)
+                ? $this->sessions->createClientSecret($config)
+                : $this->sessions->create($config);
+        } catch (RealtimeRoomNotAllowedException $e) {
+            return $this->roomNotAllowed($e);
+        }
 
         return response()->json([
             'success' => true,
@@ -39,10 +45,15 @@ class RealtimeController extends Controller
     public function sdp(RealtimeSdpExchangeRequest $request): JsonResponse
     {
         $validated = $request->validated();
-        $descriptor = $this->sessions->exchangeWebRtcSdp(
-            $this->config($validated),
-            (string) $validated['sdp']
-        );
+
+        try {
+            $descriptor = $this->sessions->exchangeWebRtcSdp(
+                $this->config($validated),
+                (string) $validated['sdp']
+            );
+        } catch (RealtimeRoomNotAllowedException $e) {
+            return $this->roomNotAllowed($e);
+        }
 
         return response()->json([
             'success' => (bool) ($descriptor['sdp']['answer'] ?? false),
@@ -53,6 +64,17 @@ class RealtimeController extends Controller
             'error' => null,
             'meta' => ['schema' => 'ai-engine.v1'],
         ]);
+    }
+
+    protected function roomNotAllowed(RealtimeRoomNotAllowedException $e): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage(),
+            'data' => null,
+            'error' => ['message' => $e->getMessage(), 'room' => $e->room],
+            'meta' => ['schema' => 'ai-engine.v1'],
+        ], 422);
     }
 
     protected function config(array $validated): RealtimeSessionConfig
