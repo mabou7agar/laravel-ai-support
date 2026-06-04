@@ -168,12 +168,59 @@ class LaravelAgentProcessor
             }
         }
 
+        // Goal-agent: a turn that explicitly declares a goal/sub-agents runs deterministically
+        // through the intact GoalAgentService (plan -> sub-agents -> summary) and returns. This
+        // is a single explicit capability dispatch inside the AiNative-owned processor — a
+        // sibling to the federation branch above, NOT a revived routing brain. It runs without
+        // an LLM round-trip so a declared goal executes the same way every time.
+        if ($this->goalAgentRequested($options)) {
+            $decision = new RoutingDecision(
+                action: RoutingDecisionAction::RUN_SUB_AGENT,
+                source: RoutingDecisionSource::EXPLICIT,
+                confidence: 'high',
+                reason: 'Request explicitly declared a goal/sub-agents.',
+                payload: array_filter([
+                    'target' => $this->goalTarget($message, $options),
+                    'sub_agents' => $options['sub_agents'] ?? null,
+                ], static fn ($value): bool => $value !== null && $value !== '')
+            );
+
+            return $this->finalizeDirect(
+                $context,
+                $this->dispatchRoutingDecision($decision, $message, $context, $options),
+                $options
+            );
+        }
+
         // AiNative owns every turn that is not an active routed_to_node continuation.
         return $this->finalizeDirect(
             $context,
             $this->aiNativeRuntime()->process($message, $context, $options),
             $options
         );
+    }
+
+    protected function goalAgentRequested(array $options): bool
+    {
+        if (!(bool) config('ai-agent.goal_agent.enabled', true)) {
+            return false;
+        }
+
+        return !empty($options['agent_goal'])
+            || !empty($options['goal_agent'])
+            || !empty($options['sub_agents']);
+    }
+
+    protected function goalTarget(string $message, array $options): string
+    {
+        foreach (['target', 'goal'] as $key) {
+            $value = $options[$key] ?? null;
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        return trim($message);
     }
 
     /**

@@ -47,7 +47,9 @@ jobs:
       - name: Run tests
         run: |
           set +e
-          vendor/bin/phpunit --order-by=default --display-errors --display-warnings --display-deprecations --display-notices 2>&1 | tee /tmp/phpunit.log
+          # Run BOTH suites. phpunit.xml sets defaultTestSuite="Unit", so omitting
+          # --testsuite would silently skip every Feature test (API, security, IDOR).
+          vendor/bin/phpunit --testsuite Unit,Feature --order-by=default --display-errors --display-warnings --display-deprecations --display-notices 2>&1 | tee /tmp/phpunit.log
           status=${PIPESTATUS[0]}
 
           if [ "$status" -ne 0 ]; then
