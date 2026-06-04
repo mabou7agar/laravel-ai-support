@@ -7,9 +7,11 @@ namespace LaravelAIEngine\Services\ProviderTools;
 use Illuminate\Support\Str;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\ProviderToolRunResult;
+use LaravelAIEngine\Exceptions\AIEngineException;
 use LaravelAIEngine\Models\AIProviderToolRun;
 use LaravelAIEngine\Repositories\ProviderToolApprovalRepository;
 use LaravelAIEngine\Repositories\ProviderToolRunRepository;
+use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 
 class ProviderToolRunService
 {
@@ -18,8 +20,16 @@ class ProviderToolRunService
         private readonly ProviderToolApprovalRepository $approvalRepository,
         private readonly ProviderToolPolicyService $policy,
         private readonly ProviderToolApprovalService $approvals,
-        private readonly ProviderToolAuditService $audit
+        private readonly ProviderToolAuditService $audit,
+        private ?AgentExecutionPolicyService $executionPolicy = null
     ) {}
+
+    private function executionPolicy(): AgentExecutionPolicyService
+    {
+        return $this->executionPolicy ??= app()->bound(AgentExecutionPolicyService::class)
+            ? app(AgentExecutionPolicyService::class)
+            : new AgentExecutionPolicyService();
+    }
 
     public function prepare(string $provider, AIRequest $request, array $tools, array $requestPayload = []): ProviderToolRunResult
     {
@@ -31,11 +41,20 @@ class ProviderToolRunService
         $requiredTools = [];
 
         foreach ($tools as $tool) {
+            $toolName = $this->policy->toolName($tool);
+
+            // Org execution policy gates provider tools too (e.g. deny computer_use /
+            // mcp_server), INDEPENDENT of the approval toggle — so a denied tool can't run
+            // even when approvals are disabled. Mirrors the canUseTool gate already applied
+            // on the AiNative + sub-agent tool paths.
+            if ($toolName !== '' && !$this->executionPolicy()->canUseTool($toolName)) {
+                throw new AIEngineException($this->executionPolicy()->blockedMessage('tool', $toolName));
+            }
+
             if (!$this->policy->requiresApproval($tool)) {
                 continue;
             }
 
-            $toolName = $this->policy->toolName($tool);
             $requiredTools[] = $toolName;
 
             $approvedApproval = $this->approvalRepository->approvedForRunAndTool((int) $run->id, $toolName);
