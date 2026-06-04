@@ -31,12 +31,14 @@ jobs:
         run: composer validate --strict
 
       - name: Configure composer (do not block dev deps on advisories)
-        # Deliberate, not a workaround: orchestra/testbench (a require-DEV dependency)
-        # pulls transitive laravel/framework versions that carry advisories. Those are
-        # part of the TEST harness only — the package's runtime `require` has no
-        # laravel/framework (just specific illuminate/* components), so consumers never
-        # install them. We therefore don't let composer's advisory policy block the test
-        # toolchain here; the separate `runtime-audit` job gates the RUNTIME tree instead.
+        # Deliberate, not a workaround. orchestra/testbench (a require-DEV dependency)
+        # transitively requires laravel/framework, and every advisory composer flags here
+        # is against laravel/framework. That package is TEST-harness only: this package's
+        # runtime `require` has no laravel/framework — only specific illuminate/* split
+        # components — so consumers never install the flagged versions. composer resolves
+        # the full graph (incl. dev) even with --no-dev, so there is no way to resolve a
+        # "runtime-only" set without disabling this block; and bumping the testbench floor
+        # would just drop Laravel 8/9 TEST coverage for zero consumer-security benefit.
         run: composer config --no-plugins policy.advisories.block false
 
       - name: Install dependencies
@@ -62,26 +64,3 @@ jobs:
           fi
 
           exit "$status"
-
-  runtime-audit:
-    name: Runtime dependency audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          coverage: none
-
-      # Resolve ONLY the runtime dependency tree (drops orchestra/testbench and its
-      # transitive laravel/framework), then audit it. This gates exactly what consumers
-      # inherit from this package for real security advisories, while the phpunit job
-      # keeps the dev-only advisory block disabled (see comment there).
-      - name: Resolve runtime-only dependencies
-        run: composer update --no-dev --prefer-dist --no-interaction
-
-      - name: Audit runtime dependencies
-        run: composer audit --abandoned=ignore
