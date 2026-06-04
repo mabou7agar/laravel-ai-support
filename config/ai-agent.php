@@ -128,6 +128,17 @@ return [
             'private' => env('AI_AGENT_EVENT_STREAM_BROADCAST_PRIVATE', true),
             'channel_prefix' => env('AI_AGENT_EVENT_STREAM_BROADCAST_CHANNEL_PREFIX', 'agent-run'),
         ],
+        // Owner-scopes the agent-run REST endpoints (show, trace, list, resume, cancel)
+        // exactly like the SSE stream endpoint, closing IDOR on those routes. Default ON
+        // (fail-closed): a run that has a user_id is only readable/controllable by that
+        // user. Set authorize_owned_runs=false to disable (e.g. when the host app enforces
+        // its own authorization), allow_anonymous_runs=true to expose runs with no user_id,
+        // or provide a custom 'authorizer' (callable|class with authorize($run, $authUserId)).
+        'access' => [
+            'authorize_owned_runs' => env('AI_AGENT_AGENT_RUN_AUTHORIZE_OWNED_RUNS', true),
+            'allow_anonymous_runs' => env('AI_AGENT_AGENT_RUN_ALLOW_ANONYMOUS_RUNS', false),
+            'authorizer' => null,
+        ],
     ],
 
     /*
