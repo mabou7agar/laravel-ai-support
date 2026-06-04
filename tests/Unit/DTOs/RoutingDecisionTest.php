@@ -37,9 +37,7 @@ class RoutingDecisionTest extends UnitTestCase
     {
         $this->assertSame([
             RoutingDecisionAction::CONTINUE_NODE,
-            RoutingDecisionAction::HANDLE_SELECTION,
             RoutingDecisionAction::SEARCH_RAG,
-            RoutingDecisionAction::USE_TOOL,
             RoutingDecisionAction::RUN_SUB_AGENT,
             RoutingDecisionAction::ROUTE_TO_NODE,
             RoutingDecisionAction::CONVERSATIONAL,
