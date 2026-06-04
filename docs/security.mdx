@@ -15,6 +15,23 @@ Treat these tools as high-risk by default:
 
 Use the provider tool approval layer before exposing them to end users. Approvals and audit events are persisted through the provider tool lifecycle tables.
 
+## Realtime Tool Dispatch
+
+The realtime SDK broker (`POST /api/v1/ai/realtime/tools/dispatch`) executes registered
+tools and skills requested during a voice/WebRTC session. It enforces the same org
+execution-policy deny-list as the agent loop — a tool in `ai-agent.execution_policy.tool_deny`
+is refused with a `policy_blocked` result and never executes — and honours per-tool
+`requiresConfirmation()` approvals. Treat the dispatch endpoint as privileged:
+
+- It runs whatever tool name the caller supplies (subject to the deny-list and approvals),
+  so keep it behind your authenticated API middleware, not exposed to anonymous browsers.
+- The `agent_chat` bridge accepts `user_id`/`session_id` in the tool arguments; resolve
+  those server-side from the authenticated user rather than trusting client-supplied values
+  if end users can reach the endpoint directly.
+- LiveKit session descriptors mint a room token from request `metadata.room` /
+  `participant_identity`. Constrain those server-side so a caller cannot mint a token for
+  another user's room or identity.
+
 ## Preview HTML
 
 Structured collection previews are package-rendered and escaped. The package does not ask AI to return HTML or JavaScript.

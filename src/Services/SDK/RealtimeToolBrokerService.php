@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\SDK;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 use LaravelAIEngine\Services\ChatService;
 use Throwable;
@@ -12,8 +13,29 @@ use Throwable;
 class RealtimeToolBrokerService
 {
     public function __construct(
-        protected ToolRegistry $tools
+        protected ToolRegistry $tools,
+        protected ?AgentExecutionPolicyService $policy = null
     ) {
+    }
+
+    protected function policy(): AgentExecutionPolicyService
+    {
+        return $this->policy ??= app(AgentExecutionPolicyService::class);
+    }
+
+    /**
+     * @param array<string, mixed> $call
+     * @return array<string, mixed>
+     */
+    protected function policyBlocked(array $call, string $toolName): array
+    {
+        return [
+            'success' => false,
+            'status' => 'policy_blocked',
+            'tool_call_id' => $call['id'],
+            'tool_name' => $toolName,
+            'error' => "Realtime tool [{$toolName}] is blocked by execution policy.",
+        ];
     }
 
     /**
@@ -24,10 +46,23 @@ class RealtimeToolBrokerService
     {
         $call = $this->normalizeToolCall($event);
         $toolName = $call['name'];
+        $contextMeta = is_array($context->metadata ?? null) ? $context->metadata : [];
+
+        // The org execution-policy deny-list must gate the realtime tool path too: a
+        // realtime client must not be able to invoke a tool the policy forbids just
+        // because it reaches the broker over the SDK endpoint instead of the agent loop.
+        if ($toolName !== '' && !$this->policy()->canUseTool($toolName, $contextMeta)) {
+            return $this->policyBlocked($call, $toolName);
+        }
+
         $tool = $this->tools->get($toolName);
         $arguments = $call['arguments'];
 
         if ($tool === null && ($skillId = RealtimeToolName::skillIdFromName($toolName)) !== null) {
+            // Skills execute through the run_skill tool; honour a run_skill deny too.
+            if (!$this->policy()->canUseTool('run_skill', $contextMeta)) {
+                return $this->policyBlocked($call, 'run_skill');
+            }
             $tool = $this->tools->get('run_skill');
             $arguments = array_replace($arguments, ['skill_id' => $skillId]);
         }

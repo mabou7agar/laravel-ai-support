@@ -40,6 +40,40 @@ class RealtimeToolBrokerServiceTest extends UnitTestCase
         $this->assertSame('user-1', $result['output']['data']['user_id']);
     }
 
+    public function test_execution_policy_deny_blocks_realtime_tool_without_executing(): void
+    {
+        // The org deny-list must gate the realtime SDK path too — otherwise a realtime
+        // client could invoke a forbidden tool that the agent loop would refuse.
+        config()->set('ai-agent.execution_policy.tool_deny', ['echo_tool']);
+
+        $tool = new class extends SimpleAgentTool {
+            public string $name = 'echo_tool';
+            public string $description = 'Echo input.';
+            public bool $executed = false;
+
+            protected function handle(array $parameters, UnifiedActionContext $context): ActionResult
+            {
+                $this->executed = true;
+
+                return ActionResult::success('Echoed.');
+            }
+        };
+
+        $registry = new ToolRegistry();
+        $registry->register('echo_tool', $tool);
+
+        $result = (new RealtimeToolBrokerService($registry))->dispatch([
+            'call_id' => 'call_deny',
+            'name' => 'echo_tool',
+            'arguments' => json_encode(['text' => 'hello']),
+        ], new UnifiedActionContext('rt-session', 'user-1'));
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('policy_blocked', $result['status']);
+        $this->assertSame('echo_tool', $result['tool_name']);
+        $this->assertFalse($tool->executed, 'A policy-denied realtime tool must never execute.');
+    }
+
     public function test_confirmation_required_tool_returns_approval_payload_without_execution(): void
     {
         $registry = new ToolRegistry();
