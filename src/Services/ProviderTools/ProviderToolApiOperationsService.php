@@ -34,7 +34,7 @@ class ProviderToolApiOperationsService
         return response()->json([
             'success' => true,
             'message' => 'Provider tool runs loaded.',
-            'data' => $this->runs->paginate($filters, (int) ($filters['per_page'] ?? 25))->toArray(),
+            'data' => $this->redactPaginated($this->runs->paginate($filters, (int) ($filters['per_page'] ?? 25))->toArray(), 'run'),
             'error' => null,
             'meta' => ['schema' => 'ai-engine.v1'],
         ]);
@@ -48,7 +48,7 @@ class ProviderToolApiOperationsService
             'success' => true,
             'message' => 'Provider tool run loaded.',
             'data' => [
-                'run' => $record->load(['approvals', 'artifacts'])->toArray(),
+                'run' => $this->redactRunArray($record->load(['approvals', 'artifacts'])->toArray()),
             ],
             'error' => null,
             'meta' => ['schema' => 'ai-engine.v1'],
@@ -60,7 +60,7 @@ class ProviderToolApiOperationsService
         return response()->json([
             'success' => true,
             'message' => 'Provider tool approvals loaded.',
-            'data' => $this->approvals->paginate($filters, (int) ($filters['per_page'] ?? 25))->toArray(),
+            'data' => $this->redactPaginated($this->approvals->paginate($filters, (int) ($filters['per_page'] ?? 25))->toArray(), 'approval'),
             'error' => null,
             'meta' => ['schema' => 'ai-engine.v1'],
         ]);
@@ -81,7 +81,7 @@ class ProviderToolApiOperationsService
             'success' => true,
             'message' => 'Provider tool approval approved.',
             'data' => [
-                'approval' => $approval->toArray(),
+                'approval' => $this->redactApprovalArray($approval->toArray()),
                 'continuation' => $continuation,
             ],
             'error' => null,
@@ -101,7 +101,7 @@ class ProviderToolApiOperationsService
         return response()->json([
             'success' => true,
             'message' => 'Provider tool approval rejected.',
-            'data' => ['approval' => $approval->toArray()],
+            'data' => ['approval' => $this->redactApprovalArray($approval->toArray())],
             'error' => null,
             'meta' => ['schema' => 'ai-engine.v1'],
         ]);
@@ -131,7 +131,7 @@ class ProviderToolApiOperationsService
         return response()->json([
             'success' => true,
             'message' => 'Provider tool run continued.',
-            'data' => ['run' => $record->toArray()],
+            'data' => ['run' => $this->redactRunArray($record->toArray())],
             'error' => null,
             'meta' => ['schema' => 'ai-engine.v1'],
         ]);
@@ -263,11 +263,84 @@ class ProviderToolApiOperationsService
         ];
     }
 
+    /**
+     * Redact sensitive values (MCP authorization tokens, api keys, etc.) out of the
+     * provider-tool payloads BEFORE they are returned over the API. The stored DB value is
+     * left intact — only the serialized API response is redacted — so continuation replay
+     * still has the secrets it needs.
+     *
+     * @param array<string, mixed> $run
+     * @return array<string, mixed>
+     */
+    private function redactRunArray(array $run): array
+    {
+        foreach (['request_payload', 'response_payload', 'continuation_payload'] as $key) {
+            if (is_array($run[$key] ?? null)) {
+                $run[$key] = $this->redactor()->redactSensitive($run[$key]);
+            }
+        }
+
+        if (is_array($run['approvals'] ?? null)) {
+            $run['approvals'] = array_map(
+                fn ($approval) => is_array($approval) ? $this->redactApprovalArray($approval) : $approval,
+                $run['approvals']
+            );
+        }
+
+        return $run;
+    }
+
+    /**
+     * @param array<string, mixed> $approval
+     * @return array<string, mixed>
+     */
+    private function redactApprovalArray(array $approval): array
+    {
+        foreach (['tool_payload', 'metadata', 'request_metadata'] as $key) {
+            if (is_array($approval[$key] ?? null)) {
+                $approval[$key] = $this->redactor()->redactSensitive($approval[$key]);
+            }
+        }
+
+        return $approval;
+    }
+
+    /**
+     * @param array<string, mixed> $paginated
+     * @return array<string, mixed>
+     */
+    private function redactPaginated(array $paginated, string $type): array
+    {
+        if (is_array($paginated['data'] ?? null)) {
+            $paginated['data'] = array_map(function ($row) use ($type) {
+                if (!is_array($row)) {
+                    return $row;
+                }
+
+                return $type === 'run' ? $this->redactRunArray($row) : $this->redactApprovalArray($row);
+            }, $paginated['data']);
+        }
+
+        return $paginated;
+    }
+
+    private function redactor(): \LaravelAIEngine\Services\Agent\AgentExecutionPolicyService
+    {
+        return app(\LaravelAIEngine\Services\Agent\AgentExecutionPolicyService::class);
+    }
+
     private function actorId(array $validated): ?string
     {
+        // Prefer the AUTHENTICATED identity for audit/attribution integrity; only fall back
+        // to a client-supplied actor_id when there is no auth context (e.g. a trusted
+        // backend integration), so a caller can't attribute an action to someone else.
+        if (auth()->id() !== null) {
+            return (string) auth()->id();
+        }
+
         return isset($validated['actor_id']) && $validated['actor_id'] !== ''
             ? (string) $validated['actor_id']
-            : (auth()->id() !== null ? (string) auth()->id() : null);
+            : null;
     }
 
     private function falError(string $message, string $error): JsonResponse
