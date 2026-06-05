@@ -122,6 +122,33 @@ class AiResourceTest extends TestCase
         $this->assertFalse($registry->has('create_reader'));
     }
 
+    public function test_detail_only_registers_just_the_show_tool(): void
+    {
+        $registry = new ToolRegistry();
+        AiResource::for(User::class)
+            ->name('record')
+            ->search(['email'])
+            ->with(['roles' => ['name']])
+            ->detailOnly()
+            ->register($registry);
+
+        $this->assertTrue($registry->has('show_record'), 'detailOnly must register the show tool.');
+        $this->assertFalse($registry->has('find_record'), 'detailOnly must NOT register a find tool.');
+        $this->assertFalse($registry->has('create_record'), 'detailOnly must NOT register a create tool.');
+    }
+
+    public function test_detail_only_via_config(): void
+    {
+        $tools = AiResource::fromConfig('ticket', [
+            'model' => User::class,
+            'search' => ['email'],
+            'with' => ['roles'],
+            'detail_only' => true,
+        ])->tools();
+
+        $this->assertSame(['show_ticket'], array_keys($tools));
+    }
+
     public function test_defaults_closure_receives_context_for_server_set_columns(): void
     {
         $registry = new ToolRegistry();

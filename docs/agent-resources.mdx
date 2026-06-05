@@ -29,6 +29,10 @@ Options:
   the agent sees an invoice's line items, an order's products, etc. — without it, "show
   this X" omits the children and "list the items on X" falls back to the knowledge base.
 - `->detail()` — register `show_<name>` even with no relations (record detail by id).
+- `->detailOnly()` — register **only** `show_<name>` (no `find_`/`create_`). Use when the
+  agent should display a record with its relations but never search or write through this
+  resource — e.g. an invoice whose listing is owned by `data_query` and whose creation is
+  owned by a skill. Config: `'detail_only' => true`.
 - `->lookupOnly()` — register only `find_<name>` (read-only resources).
 - `->name('client')` — override the tool name base (defaults to the snaked model name).
 - `->defaults(['source' => 'ai'])` or `->defaults(fn ($ctx) => ['user_id' => $ctx->userId])`
