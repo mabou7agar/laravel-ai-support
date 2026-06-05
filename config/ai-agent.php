@@ -285,9 +285,11 @@ return [
         // schema goes into the prompt, so a large registry inflates context.
         //   'all'          — expose every tool (default; no behaviour change)
         //   'skill_scoped' — when a skill is active, expose only its tools + the 'always' core
+        //   'keyword'      — top-K tools by lexical overlap with the turn + the 'always' core
         'tool_selection' => [
             'strategy' => env('AI_AGENT_TOOL_SELECTION', 'all'),
             'always' => ['search_knowledge', 'data_query'],
+            'limit' => (int) env('AI_AGENT_TOOL_SELECTION_LIMIT', 12),
         ],
         'confirmation_summary' => [
             'enabled' => env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY', true),
