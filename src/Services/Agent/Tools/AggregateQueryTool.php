@@ -162,21 +162,109 @@ class AggregateQueryTool extends DataQueryTool
             }
         }
 
-        $primary = $this->resolveEntity($query, $entities);
+        // Candidates: any entity the question names by alias, or by a groupable dimension it
+        // exposes ("products by revenue" reaches line items via their product_name dimension).
+        $byAlias = [];
+        $byDimension = [];
+        foreach ($entities as $config) {
+            if ($this->aliasReferenced($config, $query)) {
+                $byAlias[] = $config;
+            } elseif ($this->groupableReferenced($config, $query)) {
+                $byDimension[] = $config;
+            }
+        }
+        $candidates = array_merge($byAlias, $byDimension);
 
-        // "which customer spent the most" names the dimension (customer) but the money lives on
-        // another entity (invoice). When the primary match cannot supply a metric, redirect to
-        // an aggregatable entity that groups by a dimension the question references. (count
-        // never needs a metric, so it stays on the named entity.)
-        if ($operation !== 'count' && ($primary === null || !$this->isAggregatable($primary[1]))) {
-            $redirect = $this->aggregatableEntityGroupedBy($query, $entities)
-                ?? $this->aggregatableEntityWithMetric($query, $entities);
-            if ($redirect !== null) {
-                return $redirect;
+        if ($operation === 'count') {
+            // Count keeps to the named entity (count rows of it), not a metric-bearing relation.
+            $pick = $byAlias[0] ?? $candidates[0] ?? null;
+
+            return $pick !== null ? [$pick['label'], $pick] : $this->resolveEntity($query, $entities);
+        }
+
+        // Score: owning the referenced metric dominates (price vs revenue disambiguation),
+        // then grouping by a referenced dimension, then merely being aggregatable.
+        $best = null;
+        $bestScore = 0.0;
+        foreach ($candidates as $config) {
+            $score = ($this->ownsReferencedMetric($config, $query) ? 3.0 : 0.0)
+                + ($this->groupableReferenced($config, $query) ? 1.0 : 0.0)
+                + ($this->isAggregatable($config) ? 0.5 : 0.0);
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $config;
+            }
+        }
+        if ($best !== null && $bestScore > 0.0) {
+            return [$best['label'], $best];
+        }
+
+        // Nothing aggregatable named — redirect to an entity that groups by / holds the metric
+        // the question references (e.g. "which customer spent the most" → invoices).
+        $redirect = $this->aggregatableEntityGroupedBy($query, $entities)
+            ?? $this->aggregatableEntityWithMetric($query, $entities);
+        if ($redirect !== null) {
+            return $redirect;
+        }
+
+        if ($candidates !== []) {
+            return [$candidates[0]['label'], $candidates[0]];
+        }
+
+        return $this->resolveEntity($query, $entities);
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function aliasReferenced(array $config, string $query): bool
+    {
+        foreach ((array) ($config['aliases'] ?? []) as $alias) {
+            if (preg_match('/\b' . preg_quote((string) $alias, '/') . '\b/i', $query) === 1) {
+                return true;
             }
         }
 
-        return $primary;
+        return false;
+    }
+
+    /**
+     * Does the question name one of this entity's aggregatable columns (or a metric alias)?
+     *
+     * @param array<string, mixed> $config
+     */
+    private function ownsReferencedMetric(array $config, string $query): bool
+    {
+        $aggregatable = (array) ($config['aggregatable'] ?? []);
+        foreach ($aggregatable as $column) {
+            if ($this->columnAppearsIn((string) $column, $query)) {
+                return true;
+            }
+        }
+        foreach ((array) ($config['metric_aliases'] ?? []) as $alias => $column) {
+            if (in_array((string) $column, $aggregatable, true)
+                && preg_match('/\b' . preg_quote(strtolower((string) $alias), '/') . '\b/', $query) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function groupableReferenced(array $config, string $query): bool
+    {
+        foreach ((array) ($config['groupable'] ?? []) as $column) {
+            foreach ($this->groupAliases((string) $column) as $alias) {
+                if (preg_match('/\b' . preg_quote($alias, '/') . '\b/', $query) === 1) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -344,6 +432,10 @@ class AggregateQueryTool extends DataQueryTool
             return $explicit;
         }
 
+        // "how many units sold" is a SUM of quantity, not a row count.
+        if (preg_match('/\b(units?\s+sold|quantity\s+sold|qty\s+sold)\b/', $query)) {
+            return 'sum';
+        }
         if (preg_match('/\b(how many|number of|count of|count the)\b/', $query)) {
             return 'count';
         }
@@ -449,6 +541,8 @@ class AggregateQueryTool extends DataQueryTool
             $base,
             str_replace('_', ' ', $base),
             Str::singular($base),
+            Str::plural($base),
+            Str::plural(str_replace('_', ' ', $base)),
         ], static fn (string $v): bool => $v !== '')));
     }
 

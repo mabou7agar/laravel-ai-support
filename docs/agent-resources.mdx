@@ -204,7 +204,30 @@ Security: `metric` and `group_by` must be in the `aggregatable` / `groupable` al
 column. The same access scope (user / workspace / tenant) as `data_query` is applied, and a
 non-`public` model with no applicable scope is refused.
 
-**Limitation:** `aggregate_data` aggregates one model's own columns. Questions that need
-related-row math — e.g. "best selling product" (sum of *line-item quantities* per product)
-— are not covered; expose those via a purpose-built tool or a database view registered as a
-resource.
+### Line-item / "best selling" questions
+
+`aggregate_data` aggregates a model's own columns, so "best selling product" (units sold)
+or "which product makes the most revenue" must aggregate the **line-item** rows, not the
+catalog. Register the line-item table as its own analytics model and the agent routes there
+automatically:
+
+```php
+'line_item' => [
+    'class'          => \App\Models\InvoiceItem::class,
+    'aliases'        => ['line item', 'sold', 'sale', 'sales', 'selling'],
+    'aggregatable'   => ['quantity', 'total'],
+    'groupable'      => ['product_name'],
+    'metric_aliases' => ['sold' => 'quantity', 'units' => 'quantity', 'revenue' => 'total'],
+],
+```
+
+The resolver scores each entity the question names: owning the referenced **metric** wins
+first (so "average product **price**" stays on the catalog, while "products by **revenue**"
+and "best **selling** product" go to the line items), then grouping by a named **dimension**
+(`product_name`). So "best selling product" → line items, `sum(quantity)` grouped by
+`product_name`; "average product price" → the catalog's `price`.
+
+**Still out of scope:** computed metrics across columns (e.g. profit / margin =
+`sale_price - purchase_price`) — `aggregate_data` sums existing columns, not expressions.
+Add a computed column / database view (registered as another analytics model) when you need
+those, and only when the cost data is actually populated.
