@@ -62,7 +62,9 @@ class AiNativePromptBuilder
             '{"action":"final","message":"answer to user","data":{}}',
             'Available skills JSON:',
             json_encode($this->skillDocuments(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
-            'Available tools JSON:',
+            $this->progressiveDisclosure()
+                ? 'Available tools JSON (name + summary only; call find_tools to load a tool\'s full parameters before using it):'
+                : 'Available tools JSON:',
             json_encode($this->toolDocuments($message, $state, $options), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Recent conversation JSON:',
             json_encode($this->conversationDocuments($context->conversationHistory, $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
@@ -190,10 +192,31 @@ class AiNativePromptBuilder
         // a large registry does not bloat the prompt. Defaults to "all" (no trimming).
         $tools = $this->toolSelector()->select($tools, $message, $state, $options);
 
+        // Progressive disclosure: list tools by name + summary only, and always expose
+        // find_tools (full) so the planner can load a tool's full parameter schema on
+        // demand. Keeps the base prompt small even with a large registry.
+        if ($this->progressiveDisclosure()) {
+            if ($this->tools->has('find_tools') && !isset($tools['find_tools'])) {
+                $tools['find_tools'] = $this->tools->get('find_tools');
+            }
+
+            return array_values(array_map(
+                static fn ($tool): array => $tool->getName() === 'find_tools'
+                    ? $tool->toArray()
+                    : ['name' => $tool->getName(), 'description' => $tool->getDescription()],
+                $tools
+            ));
+        }
+
         return array_values(array_map(
             static fn ($tool): array => $tool->toArray(),
             $tools
         ));
+    }
+
+    private function progressiveDisclosure(): bool
+    {
+        return (string) config('ai-agent.ai_native.tool_selection.disclosure', 'full') === 'progressive';
     }
 
     private function toolSelector(): ToolSelectorContract

@@ -292,6 +292,10 @@ return [
             'strategy' => env('AI_AGENT_TOOL_SELECTION', 'all'),
             'always' => ['search_knowledge', 'data_query'],
             'limit' => (int) env('AI_AGENT_TOOL_SELECTION_LIMIT', 12),
+            // 'full' (default) injects each selected tool's full schema; 'progressive'
+            // lists tools by name + summary only and registers a find_tools meta-tool the
+            // planner calls to load a tool's full parameters on demand.
+            'disclosure' => env('AI_AGENT_TOOL_DISCLOSURE', 'full'),
         ],
         'confirmation_summary' => [
             'enabled' => env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY', true),

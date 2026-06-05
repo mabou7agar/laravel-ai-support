@@ -56,6 +56,11 @@ class AgentToolServiceRegistrar
             if ((bool) config('ai-agent.ai_native.knowledge_tool_enabled', true) && !$registry->has('search_knowledge')) {
                 $registry->register('search_knowledge', $app->make(\LaravelAIEngine\Services\Agent\Tools\SearchKnowledgeTool::class));
             }
+            // Progressive disclosure: the planner loads full tool schemas on demand via
+            // find_tools (the prompt lists tools by name + summary only).
+            if ((string) config('ai-agent.ai_native.tool_selection.disclosure', 'full') === 'progressive' && !$registry->has('find_tools')) {
+                $registry->register('find_tools', new \LaravelAIEngine\Services\Agent\Tools\FindToolsTool($registry));
+            }
 
             // Config-declared resources: expose Eloquent models as find_<name>/create_<name>
             // tools with no code (see AiResource). Each entry mirrors the AiResource fluent
