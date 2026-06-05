@@ -281,6 +281,14 @@ return [
         'excluded_tools' => [
             'run_skill',
         ],
+        // Which registered tools are exposed to the planner each turn. Every tool's full
+        // schema goes into the prompt, so a large registry inflates context.
+        //   'all'          — expose every tool (default; no behaviour change)
+        //   'skill_scoped' — when a skill is active, expose only its tools + the 'always' core
+        'tool_selection' => [
+            'strategy' => env('AI_AGENT_TOOL_SELECTION', 'all'),
+            'always' => ['search_knowledge', 'data_query'],
+        ],
         'confirmation_summary' => [
             'enabled' => env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY', true),
             'prompt' => 'Please review before I run {tool}.',
