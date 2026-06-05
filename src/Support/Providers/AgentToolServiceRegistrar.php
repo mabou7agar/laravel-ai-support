@@ -50,6 +50,13 @@ class AgentToolServiceRegistrar
             if ((bool) config('ai-engine.data_query.enabled', true) && !$registry->has('data_query')) {
                 $registry->register('data_query', $app->make(\LaravelAIEngine\Services\Agent\Tools\DataQueryTool::class));
             }
+            // Exact aggregates (sum/avg/min/max/top/group-by) so analytics questions ("total
+            // revenue", "most expensive invoice", "which customer spent the most") return real
+            // figures instead of being estimated from a data_query list. Fails closed unless the
+            // model declares 'aggregatable'/'groupable' columns in ai-engine.data_query.models.
+            if ((bool) config('ai-engine.data_query.aggregate_enabled', true) && !$registry->has('aggregate_data')) {
+                $registry->register('aggregate_data', $app->make(\LaravelAIEngine\Services\Agent\Tools\AggregateQueryTool::class));
+            }
             // Grounded knowledge-base retrieval. Without this the AiNative loop has no
             // way to reach the vector/document RAG store; it is also the tool a
             // force_rag turn is instructed to call (see AiNativePromptBuilder).
