@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Services\Agent\AiNative;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\Agent\Tools\Selectors\AllToolSelector;
+use LaravelAIEngine\Services\Agent\Tools\Selectors\KeywordToolSelector;
 use LaravelAIEngine\Services\Agent\Tools\Selectors\SkillScopedToolSelector;
 use LaravelAIEngine\Services\Agent\Tools\Selectors\ToolSelectorContract;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
@@ -202,6 +203,7 @@ class AiNativePromptBuilder
 
         return $this->resolvedSelector ??= match ((string) config('ai-agent.ai_native.tool_selection.strategy', 'all')) {
             'skill_scoped' => app(SkillScopedToolSelector::class),
+            'keyword' => app(KeywordToolSelector::class),
             default => app(AllToolSelector::class),
         };
     }
