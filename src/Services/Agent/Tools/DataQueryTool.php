@@ -195,6 +195,12 @@ class DataQueryTool extends AgentTool
             'statuses' => array_map('strtolower', (array) ($extra['statuses'] ?? [])),
             // Intentionally-unscoped (catalog-style) model: bypass require_scope.
             'public' => (bool) ($extra['public'] ?? false),
+            // Aggregation allowlists (see AggregateQueryTool): numeric columns that may be
+            // summed/averaged/etc, dimension columns that may be grouped by, and friendly
+            // metric aliases ('revenue' => 'total'). Empty = aggregation disabled for this model.
+            'aggregatable' => array_values((array) ($extra['aggregatable'] ?? [])),
+            'groupable' => array_values((array) ($extra['groupable'] ?? [])),
+            'metric_aliases' => (array) ($extra['metric_aliases'] ?? []),
         ];
     }
 

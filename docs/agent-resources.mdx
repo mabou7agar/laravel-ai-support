@@ -160,3 +160,51 @@ A reduced strategy never starves the planner: if a scope/score would be empty it
 back to the full set, and `semantic` falls back when embeddings are unavailable. Enabling
 `skill_scoped` is the recommended first step; move to `keyword`/`semantic`/`progressive`
 only when you genuinely have a large, flat toolset.
+
+## Aggregates & analytics
+
+`data_query` answers **count / list / status-filter** questions. It returns scalar columns
+for up to a handful of rows — so analytics questions ("total revenue", "average invoice
+value", "the most expensive invoice", "which customer spent the most") are **not** safe to
+answer from it: the model would eyeball a 10-row sample and report figures that can be an
+order of magnitude wrong.
+
+The `aggregate_data` tool computes the real figure in SQL instead. It is registered
+automatically (disable with `ai-engine.data_query.aggregate_enabled => false`) and **fails
+closed** unless the model declares which columns may be aggregated:
+
+```php
+'data_query' => [
+    'models' => [
+        'invoice' => [
+            'class'          => \App\Models\Invoice::class,
+            'aliases'        => ['invoice', 'invoices'],
+            'aggregatable'   => ['total', 'subtotal', 'tax'],   // numeric columns it may sum/rank
+            'groupable'      => ['customer_name', 'status'],     // dimensions it may group by
+            'metric_aliases' => ['revenue' => 'total', 'spend' => 'total'],
+        ],
+    ],
+],
+```
+
+It supports `sum`, `avg`, `min`, `max`, `count`, ranked records (`top`/`bottom`), and a
+per-group breakdown (`group_by`). The planner fills these structured params from the
+question, but they are also inferred from natural language. Examples it now answers exactly:
+
+| Question | operation |
+| --- | --- |
+| "total revenue across all invoices" | `sum` of `total` |
+| "average invoice value" | `avg` of `total` |
+| "which invoice is the most expensive" | `top` records by `total` |
+| "the cheapest invoice" | `bottom` records by `total` |
+| "which customer has spent the most" | `sum` of `total` grouped by `customer_name` |
+
+Security: `metric` and `group_by` must be in the `aggregatable` / `groupable` allowlists
+**and** exist on the table, so the model can never aggregate or group by an arbitrary
+column. The same access scope (user / workspace / tenant) as `data_query` is applied, and a
+non-`public` model with no applicable scope is refused.
+
+**Limitation:** `aggregate_data` aggregates one model's own columns. Questions that need
+related-row math — e.g. "best selling product" (sum of *line-item quantities* per product)
+— are not covered; expose those via a purpose-built tool or a database view registered as a
+resource.
