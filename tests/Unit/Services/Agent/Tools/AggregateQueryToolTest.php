@@ -139,6 +139,27 @@ class AggregateQueryToolTest extends TestCase
         $this->assertSame(4, $r->data['value']);
     }
 
+    public function test_aggregate_respects_a_relative_time_range(): void
+    {
+        \Illuminate\Support\Carbon::setTestNow('2026-06-15 12:00:00');
+        AqOrder::query()->update(['created_at' => '2026-06-10']);   // the 4 setUp rows -> this month
+        $old = AqOrder::create(['customer' => 'Old', 'status' => 'paid', 'amount' => 9999]);
+        $old->created_at = '2026-01-01';
+        $old->save();
+
+        $r = $this->aggregate(['query' => 'total revenue this month']);
+
+        $this->assertEqualsWithDelta(700.0, $r->data['value'], 0.001, 'the old order is excluded.');
+        \Illuminate\Support\Carbon::setTestNow();
+    }
+
+    public function test_aggregate_filters_by_exact_field_value(): void
+    {
+        $r = $this->aggregate(['query' => 'total revenue', 'filters' => ['customer' => 'Apollo']]);
+
+        $this->assertEqualsWithDelta(400.0, $r->data['value'], 0.001); // Apollo's 100 + 300 only
+    }
+
     public function test_fails_closed_without_scope_on_non_public_model(): void
     {
         config()->set('ai-engine.data_query.models.order.public', false);

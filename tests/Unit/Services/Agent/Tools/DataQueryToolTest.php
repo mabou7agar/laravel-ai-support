@@ -81,6 +81,47 @@ class DataQueryToolTest extends TestCase
         $this->assertArrayHasKey('name', $r->data['rows'][0]);
     }
 
+    public function test_filters_by_a_relative_time_range(): void
+    {
+        \Illuminate\Support\Carbon::setTestNow('2026-06-15 12:00:00');
+        $new = DqWidget::create(['name' => 'new', 'status' => 'active', 'user_id' => 'u1']);
+        $new->created_at = '2026-06-10';
+        $new->save();
+        $old = DqWidget::create(['name' => 'old', 'status' => 'active', 'user_id' => 'u1']);
+        $old->created_at = '2026-04-01';
+        $old->save();
+
+        $r = $this->tool()->execute(['query' => 'how many widgets this month'], new UnifiedActionContext('dq', 'u1'));
+
+        $this->assertSame(1, $r->data['count'], 'only the row created this month counts.');
+        $this->assertSame('this month', $r->data['date']);
+        \Illuminate\Support\Carbon::setTestNow();
+    }
+
+    public function test_filters_by_an_exact_field_value(): void
+    {
+        config()->set('ai-engine.data_query.models.widget.filterable', ['status']);
+        DqWidget::create(['name' => 'a', 'status' => 'active', 'user_id' => 'u1']);
+        DqWidget::create(['name' => 'b', 'status' => 'archived', 'user_id' => 'u1']);
+
+        $r = $this->tool()->execute(['query' => 'how many widgets', 'filters' => ['status' => 'archived']], new UnifiedActionContext('dq', 'u1'));
+
+        $this->assertSame(1, $r->data['count']);
+        $this->assertSame(['status' => 'archived'], $r->data['filters']);
+    }
+
+    public function test_non_allowlisted_filter_is_ignored(): void
+    {
+        DqWidget::create(['name' => 'a', 'status' => 'active', 'user_id' => 'u1']);
+        DqWidget::create(['name' => 'b', 'status' => 'archived', 'user_id' => 'u1']);
+
+        // user_id is neither filterable nor groupable -> ignored (and never overrides scope).
+        $r = $this->tool()->execute(['query' => 'how many widgets', 'filters' => ['user_id' => 'u2']], new UnifiedActionContext('dq', 'u1'));
+
+        $this->assertSame(2, $r->data['count']);
+        $this->assertSame([], $r->data['filters']);
+    }
+
     public function test_unknown_entity_asks_for_clarification(): void
     {
         $r = $this->tool()->execute(['query' => 'what is the weather'], new UnifiedActionContext('dq', 'u1'));

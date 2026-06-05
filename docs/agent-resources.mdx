@@ -204,6 +204,19 @@ Security: `metric` and `group_by` must be in the `aggregatable` / `groupable` al
 column. The same access scope (user / workspace / tenant) as `data_query` is applied, and a
 non-`public` model with no applicable scope is refused.
 
+### Filtering by time and value
+
+Both `data_query` and `aggregate_data` narrow before counting/aggregating, so a qualifier in
+the question is never silently dropped (which would return a confident, wrong figure):
+
+- **Relative time** — "today", "yesterday", "this/last week·month·year", "last N days" are
+  parsed from the question and applied to the model's `date_column` (default `created_at`;
+  set `'date_column' => null` to disable). "total revenue this month" sums only this month.
+- **Exact value** — the planner passes `filters` (e.g. `{"customer_name": "Apollo Labs"}`)
+  so "how many invoices does Apollo Labs have" / "how much has Apollo Labs spent" return that
+  subset. Only columns in `filterable` (plus `groupable`) are honored; anything else is
+  ignored and never overrides the access scope.
+
 ### Line-item / "best selling" questions
 
 `aggregate_data` aggregates a model's own columns, so "best selling product" (units sold)

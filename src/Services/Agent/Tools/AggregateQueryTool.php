@@ -43,7 +43,11 @@ class AggregateQueryTool extends DataQueryTool
             . 'per-group breakdown. Use this for ANY "total revenue", "average value", '
             . '"highest/lowest", "most/least expensive", "which X has the most", or "per X" '
             . 'question. Never estimate these from a list — call this tool so the numbers are '
-            . 'correct across all rows.';
+            . 'correct across all rows. For a figure about ONE specific customer / product / '
+            . 'status (e.g. "how much has Apollo Labs spent", "revenue for product X"), pass '
+            . 'that value in `filters` (e.g. {"customer_name": "Apollo Labs"}) so you get that '
+            . 'subset, NOT the whole-table total. Relative time ("this month", "today") is '
+            . 'applied automatically from the question.';
     }
 
     public function getParameters(): array
@@ -67,6 +71,11 @@ class AggregateQueryTool extends DataQueryTool
             'group_by' => [
                 'type' => 'string',
                 'description' => 'Dimension column to group by (e.g. customer_name, status) for a per-group breakdown. Must be allowlisted. Omit for a whole-table figure.',
+                'required' => false,
+            ],
+            'filters' => [
+                'type' => 'object',
+                'description' => 'Exact field=value filters to narrow the rows before aggregating, e.g. {"customer_name": "Apollo Labs"}. Use for "X\'s total", "revenue for product Y". Only allowlisted columns apply. Relative time ("this month", "today") is parsed from the question automatically.',
                 'required' => false,
             ],
             'direction' => [
@@ -118,6 +127,10 @@ class AggregateQueryTool extends DataQueryTool
         }
 
         $appliedStatus = $this->applyStatusFilter($builder, $table, $config, $query);
+        // Narrow by relative time ("this month") and exact field values (filters) so the
+        // aggregate is for the requested subset, not the whole table.
+        $this->applyDateFilter($builder, $table, $config, $query);
+        $this->applyValueFilters($builder, $table, $config, $parameters);
 
         $aggregatable = array_values(array_filter((array) $config['aggregatable'], fn ($c): bool => is_string($c) && Schema::hasColumn($table, $c)));
         $metric = $this->resolveMetric($parameters, $query, $config, $aggregatable, $table);

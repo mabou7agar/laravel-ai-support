@@ -40,7 +40,11 @@ class DataQueryTool extends AgentTool
 
     public function getDescription(): string
     {
-        return 'Answer structured questions about stored records: count, list, or filter your data (e.g. "how many overdue invoices", "list recent customers").';
+        return 'Answer structured questions about stored records: count or list your data, '
+            . 'optionally narrowed by status, a relative time range ("today", "this month", '
+            . '"last 7 days"), or exact field values via `filters` (e.g. "how many invoices '
+            . 'does Apollo Labs have", "list overdue invoices this week"). Pass the field '
+            . 'value(s) to filter on in `filters` so the count is for that subset, not everything.';
     }
 
     public function getParameters(): array
@@ -50,6 +54,11 @@ class DataQueryTool extends AgentTool
                 'type' => 'string',
                 'description' => 'The natural-language data question.',
                 'required' => true,
+            ],
+            'filters' => [
+                'type' => 'object',
+                'description' => 'Exact field=value filters, e.g. {"customer_name": "Apollo Labs"}. Only allowlisted columns are applied; pass these so the result is for that subset.',
+                'required' => false,
             ],
             'limit' => [
                 'type' => 'integer',
@@ -99,14 +108,18 @@ class DataQueryTool extends AgentTool
         }
 
         $appliedStatus = $this->applyStatusFilter($builder, $table, $config, $query);
-        $displayLabel = $appliedStatus !== null ? "{$appliedStatus} {$label}" : $label;
+        $appliedDate = $this->applyDateFilter($builder, $table, $config, $query);
+        $appliedFilters = $this->applyValueFilters($builder, $table, $config, $parameters);
+        $displayLabel = trim(($appliedStatus !== null ? "{$appliedStatus} " : '') . $label
+            . ($appliedFilters !== [] ? ' (' . $this->describeFilters($appliedFilters) . ')' : '')
+            . ($appliedDate !== null ? " {$appliedDate}" : ''));
 
         if (preg_match('/\b(how many|count|number of|total number|how much)\b/i', $query)) {
             $count = (clone $builder)->count();
 
             return ActionResult::success(
                 sprintf('You have %d %s.', $count, $displayLabel),
-                ['operation' => 'count', 'entity' => $label, 'status' => $appliedStatus, 'count' => $count],
+                ['operation' => 'count', 'entity' => $label, 'status' => $appliedStatus, 'date' => $appliedDate, 'filters' => $appliedFilters, 'count' => $count],
                 ['tool' => $this->getName()]
             );
         }
@@ -124,9 +137,22 @@ class DataQueryTool extends AgentTool
 
         return ActionResult::success(
             $message,
-            ['operation' => 'list', 'entity' => $label, 'status' => $appliedStatus, 'rows' => $rows],
+            ['operation' => 'list', 'entity' => $label, 'status' => $appliedStatus, 'date' => $appliedDate, 'filters' => $appliedFilters, 'rows' => $rows],
             ['tool' => $this->getName()]
         );
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    protected function describeFilters(array $filters): string
+    {
+        $parts = [];
+        foreach ($filters as $column => $value) {
+            $parts[] = str_replace('_', ' ', (string) $column) . ' = ' . $value;
+        }
+
+        return implode(', ', $parts);
     }
 
     /**
@@ -201,6 +227,10 @@ class DataQueryTool extends AgentTool
             'aggregatable' => array_values((array) ($extra['aggregatable'] ?? [])),
             'groupable' => array_values((array) ($extra['groupable'] ?? [])),
             'metric_aliases' => (array) ($extra['metric_aliases'] ?? []),
+            // Date column used by relative-time filters ("this month", "today"); empty disables.
+            'date_column' => array_key_exists('date_column', $extra) ? (string) $extra['date_column'] : 'created_at',
+            // Columns the agent may filter by an exact value (in addition to groupable).
+            'filterable' => array_values((array) ($extra['filterable'] ?? [])),
         ];
     }
 
@@ -274,6 +304,88 @@ class DataQueryTool extends AgentTool
         }
 
         return null;
+    }
+
+    /**
+     * Apply a relative-time range inferred from the question ("today", "this month",
+     * "last 7 days") to the configured date column. Returns a human label, or null.
+     *
+     * @param array<string, mixed> $config
+     */
+    protected function applyDateFilter(Builder $builder, string $table, array $config, string $query): ?string
+    {
+        $column = (string) ($config['date_column'] ?? 'created_at');
+        if ($column === '' || !Schema::hasColumn($table, $column)) {
+            return null;
+        }
+
+        if (preg_match('/\b(?:last|past|previous)\s+(\d+)\s+(day|week|month|year)s?\b/', $query, $m) === 1) {
+            $n = max(1, (int) $m[1]);
+            $start = match ($m[2]) {
+                'day' => now()->subDays($n)->startOfDay(),
+                'week' => now()->subWeeks($n)->startOfDay(),
+                'month' => now()->subMonths($n)->startOfDay(),
+                default => now()->subYears($n)->startOfDay(),
+            };
+            $builder->whereBetween($column, [$start, now()]);
+
+            return "in the last {$n} {$m[2]}s";
+        }
+
+        $ranges = [
+            'today' => static fn (): array => [today(), today()->endOfDay()],
+            'yesterday' => static fn (): array => [today()->subDay(), today()->subDay()->endOfDay()],
+            'this week' => static fn (): array => [now()->startOfWeek(), now()->endOfWeek()],
+            'last week' => static fn (): array => [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()],
+            'this month' => static fn (): array => [now()->startOfMonth(), now()->endOfMonth()],
+            'last month' => static fn (): array => [now()->subMonth()->startOfMonth(), now()->subMonth()->endOfMonth()],
+            'this year' => static fn (): array => [now()->startOfYear(), now()->endOfYear()],
+            'last year' => static fn (): array => [now()->subYear()->startOfYear(), now()->subYear()->endOfYear()],
+        ];
+
+        foreach ($ranges as $phrase => $range) {
+            if (preg_match('/\b' . preg_quote($phrase, '/') . '\b/', $query) === 1) {
+                $builder->whereBetween($column, $range());
+
+                return $phrase;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Apply exact-value filters from the structured `filters` param, restricted to the
+     * model's groupable + filterable columns. Returns the filters actually applied.
+     *
+     * @param array<string, mixed> $config
+     * @param array<string, mixed> $parameters
+     * @return array<string, mixed>
+     */
+    protected function applyValueFilters(Builder $builder, string $table, array $config, array $parameters): array
+    {
+        $filters = $parameters['filters'] ?? null;
+        if (!is_array($filters) || $filters === []) {
+            return [];
+        }
+
+        $allowed = array_values(array_unique(array_merge(
+            (array) ($config['filterable'] ?? []),
+            (array) ($config['groupable'] ?? [])
+        )));
+
+        $applied = [];
+        foreach ($filters as $column => $value) {
+            $column = (string) $column;
+            if (in_array($column, $allowed, true)
+                && Schema::hasColumn($table, $column)
+                && $value !== null && $value !== '') {
+                $builder->where($column, $value);
+                $applied[$column] = $value;
+            }
+        }
+
+        return $applied;
     }
 
     /**
