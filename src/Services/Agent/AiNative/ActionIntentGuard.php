@@ -9,6 +9,18 @@ use LaravelAIEngine\Services\Agent\Tools\AgentTool;
 
 class ActionIntentGuard
 {
+    /** @var array<int, string> */
+    private const DEFAULT_READ_TERMS = [
+        'search', 'find', 'show', 'list', 'display', 'view', 'get', 'lookup', 'look up',
+        'fetch', 'retrieve', 'open', 'how many', 'count', 'what is', 'tell me about',
+    ];
+
+    /** @var array<int, string> */
+    private const DEFAULT_WRITE_TERMS = [
+        'create', 'make', 'add', 'new', 'update', 'edit', 'change', 'delete', 'remove',
+        'modify', 'generate', 'draft', 'issue', 'send',
+    ];
+
     private AiNativeConfirmationIntent $confirmationIntent;
 
     public function __construct(
@@ -49,6 +61,62 @@ class ActionIntentGuard
         }
 
         return $planHasActionPayload;
+    }
+
+    /**
+     * Opt-in guard: should a proposed WRITE tool be blocked because the user's latest
+     * message is a READ request (search/show/list/count) with no write in progress?
+     *
+     * A read request ("search for the invoice for Mohamed") can bias the planner into
+     * re-running a recently-completed write flow. When enabled
+     * (ai-agent.ai_native.guard_read_intent_writes), this nudges the planner back toward a
+     * read/lookup tool instead. Fails open: never blocks when a write is genuinely in
+     * progress (skill scope, pending tool, active objective/payload) or when the message
+     * also carries write intent.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    public function readIntentBlocksWrite(string $message, array $state, array $options, AgentTool $tool): bool
+    {
+        if (!$this->readIntentGuardEnabled() || !$this->toolStartsWriteFlow($tool)) {
+            return false;
+        }
+
+        // A write is genuinely being driven or is mid-flight — never block it.
+        if (($options['skill_id'] ?? '') !== '' || ($options['runtime_scope'] ?? '') === 'skill') {
+            return false;
+        }
+        if (is_array($state['pending_tool'] ?? null) || is_array($state['suggested_tool_continuation'] ?? null)) {
+            return false;
+        }
+        if ($this->isPendingToolApproval($message)) {
+            return false;
+        }
+
+        $taskStatus = (string) data_get($state, 'task_frame.status', '');
+        $hasActiveWrite = $taskStatus !== 'completed'
+            && (trim((string) data_get($state, 'task_frame.active_objective', '')) !== ''
+                || (array) data_get($state, 'task_frame.current_payload', []) !== []);
+        if ($hasActiveWrite) {
+            return false;
+        }
+
+        return $this->messageHasReadIntent($message) && !$this->messageHasWriteIntent($message);
+    }
+
+    /**
+     * @return array{reason:string,message:string}
+     */
+    public function readIntentFeedback(): array
+    {
+        return [
+            'reason' => 'read_intent_no_write',
+            'message' => 'The latest user message asks to view, search, list, or count existing '
+                . 'records — this is a read. Use a read/lookup/detail tool (e.g. a find_, show_, '
+                . 'or data query tool) to answer it. Do NOT call a create, update, or other write '
+                . 'tool, and do not start a new write flow, even if a similar record was just created.',
+        ];
     }
 
     /**
@@ -100,6 +168,41 @@ class ActionIntentGuard
     {
         return $tool->requiresConfirmation()
             || strtolower((string) $tool->getToolKind()) === 'write';
+    }
+
+    private function readIntentGuardEnabled(): bool
+    {
+        return (bool) config('ai-agent.ai_native.guard_read_intent_writes', false);
+    }
+
+    private function messageHasReadIntent(string $message): bool
+    {
+        return $this->matchesAnyTerm($message, (array) config('ai-agent.ai_native.read_intent_terms', self::DEFAULT_READ_TERMS));
+    }
+
+    private function messageHasWriteIntent(string $message): bool
+    {
+        return $this->matchesAnyTerm($message, (array) config('ai-agent.ai_native.write_intent_terms', self::DEFAULT_WRITE_TERMS));
+    }
+
+    /**
+     * @param array<int, string> $terms
+     */
+    private function matchesAnyTerm(string $message, array $terms): bool
+    {
+        $normalized = $this->withoutCommonStopwords($message);
+        if ($normalized === '') {
+            return false;
+        }
+
+        foreach ($terms as $term) {
+            $term = $this->withoutCommonStopwords((string) $term);
+            if ($term !== '' && preg_match('/\b'.preg_quote($term, '/').'\b/u', $normalized) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function messageHasActionIntent(string $message): bool

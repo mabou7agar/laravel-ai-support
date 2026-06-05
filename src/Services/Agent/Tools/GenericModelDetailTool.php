@@ -56,10 +56,15 @@ class GenericModelDetailTool extends AgentTool
 
         $label = str_replace('_', ' ', \Illuminate\Support\Str::after($this->toolName, 'show_') ?: $this->toolName);
         $rel = array_keys($this->relations);
+        $by = array_map(static fn (string $c): string => str_replace('_', ' ', $c), $this->search);
 
         return "Show a {$label} with its full details"
             . ($rel !== [] ? ' including its ' . implode(', ', $rel) . '.' : '.')
-            . " Use this to display a {$label} or list its related items — do not use the knowledge base for its contents.";
+            . ' Look it up by id'
+            . ($by !== [] ? ' or by ' . implode(', ', $by) : '')
+            . ". Use this to display, find, or search for a {$label}"
+            . ($by !== [] ? ' (e.g. for a given ' . $by[0] . ')' : '')
+            . " or to list its related items — do not use the knowledge base for its contents.";
     }
 
     public function getParameters(): array

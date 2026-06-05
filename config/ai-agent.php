@@ -281,6 +281,12 @@ return [
         'excluded_tools' => [
             'run_skill',
         ],
+        // Opt-in: when true, a turn whose message is a READ request (search/show/list/count)
+        // cannot license a WRITE tool unless a write is already in progress. Prevents a
+        // read follow-up ("search for the invoice for Mohamed") from re-triggering a
+        // recently-completed create flow. Read/write verb lists default in ActionIntentGuard;
+        // override with ai_native.read_intent_terms / write_intent_terms.
+        'guard_read_intent_writes' => env('AI_AGENT_GUARD_READ_INTENT_WRITES', false),
         // Which registered tools are exposed to the planner each turn. Every tool's full
         // schema goes into the prompt, so a large registry inflates context.
         //   'all'          — expose every tool (default; no behaviour change)

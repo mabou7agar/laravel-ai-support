@@ -26,6 +26,8 @@ When a model asks the user for a value that is commonly resolvable by lookup too
 
 Confirmed write tools also get duplicate protection. When the same confirming tool is called again with the same normalized payload, the runtime returns an already-completed response instead of executing the write a second time. Host tools should still keep their own database-level idempotency for production workflows, but the runtime now protects the common chat-loop retry path.
 
+Optionally, a read request can be prevented from re-triggering a write. After a write completes, an ambiguous follow-up such as "search for the invoice for Mohamed" can bias the planner into re-running the create flow. Set `AI_AGENT_GUARD_READ_INTENT_WRITES=true` (`ai-agent.ai_native.guard_read_intent_writes`) and the runtime nudges the planner back toward a read/lookup tool when the latest message is a read (search/show/list/count) carrying no write intent and no write is in progress. It fails open — never blocking a write that is genuinely in progress (skill scope, pending tool, active objective) or a message that also asks to create/update. Override the verb lists with `ai-agent.ai_native.read_intent_terms` / `write_intent_terms`.
+
 ```env
 AI_AGENT_AI_NATIVE_ENABLED=true
 AI_AGENT_AI_NATIVE_SKILLS=true
