@@ -6,14 +6,20 @@ namespace LaravelAIEngine\Services\Agent\AiNative;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
+use LaravelAIEngine\Services\Agent\Tools\Selectors\AllToolSelector;
+use LaravelAIEngine\Services\Agent\Tools\Selectors\SkillScopedToolSelector;
+use LaravelAIEngine\Services\Agent\Tools\Selectors\ToolSelectorContract;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 
 class AiNativePromptBuilder
 {
+    private ?ToolSelectorContract $resolvedSelector = null;
+
     public function __construct(
         private readonly ToolRegistry $tools,
         private readonly AgentSkillRegistry $skills,
-        private readonly ?AgentContextSnapshotBuilder $snapshots = null
+        private readonly ?AgentContextSnapshotBuilder $snapshots = null,
+        private readonly ?ToolSelectorContract $toolSelector = null
     ) {
     }
 
@@ -55,7 +61,7 @@ class AiNativePromptBuilder
             'Available skills JSON:',
             json_encode($this->skillDocuments(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Available tools JSON:',
-            json_encode($this->toolDocuments(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            json_encode($this->toolDocuments($message, $state, $options), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Recent conversation JSON:',
             json_encode($this->conversationDocuments($context->conversationHistory, $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Context snapshot JSON:',
@@ -158,22 +164,46 @@ class AiNativePromptBuilder
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function toolDocuments(): array
+    /**
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     * @return array<int, array<string, mixed>>
+     */
+    private function toolDocuments(string $message, array $state, array $options): array
     {
         $excluded = array_flip(array_map(
             static fn (mixed $tool): string => (string) $tool,
             (array) config('ai-agent.ai_native.excluded_tools', ['run_skill'])
         ));
 
-        $tools = array_filter(
-            $this->tools->all(),
-            static fn ($tool): bool => !isset($excluded[$tool->getName()])
-        );
+        $tools = [];
+        foreach ($this->tools->all() as $tool) {
+            $name = $tool->getName();
+            if (!isset($excluded[$name])) {
+                $tools[$name] = $tool;
+            }
+        }
+
+        // A selector trims the exposed set per turn (e.g. to the active skill's tools) so
+        // a large registry does not bloat the prompt. Defaults to "all" (no trimming).
+        $tools = $this->toolSelector()->select($tools, $message, $state, $options);
 
         return array_values(array_map(
             static fn ($tool): array => $tool->toArray(),
             $tools
         ));
+    }
+
+    private function toolSelector(): ToolSelectorContract
+    {
+        if ($this->toolSelector !== null) {
+            return $this->toolSelector;
+        }
+
+        return $this->resolvedSelector ??= match ((string) config('ai-agent.ai_native.tool_selection.strategy', 'all')) {
+            'skill_scoped' => app(SkillScopedToolSelector::class),
+            default => app(AllToolSelector::class),
+        };
     }
 
     private function snapshotBuilder(): AgentContextSnapshotBuilder
