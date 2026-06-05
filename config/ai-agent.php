@@ -286,6 +286,8 @@ return [
         //   'all'          — expose every tool (default; no behaviour change)
         //   'skill_scoped' — when a skill is active, expose only its tools + the 'always' core
         //   'keyword'      — top-K tools by lexical overlap with the turn + the 'always' core
+        //   'semantic'     — top-K tools by embedding similarity + the 'always' core (one
+        //                    embedding call/turn; tool embeddings are cached). Fails open.
         'tool_selection' => [
             'strategy' => env('AI_AGENT_TOOL_SELECTION', 'all'),
             'always' => ['search_knowledge', 'data_query'],
