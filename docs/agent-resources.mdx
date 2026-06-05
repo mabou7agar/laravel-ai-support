@@ -23,6 +23,12 @@ Call this from a service provider's `boot()` (or anywhere with the container ava
 Options:
 
 - `->returns(['id', 'name', 'email'])` — columns returned by the find tool.
+- `->with(['items'])` / `->with(['items' => ['product_name', 'quantity']])` — register a
+  `show_<name>` tool that returns one record **with its related rows** (a model's
+  children). `find_`/`create_` and `data_query` return scalar columns only, so this is how
+  the agent sees an invoice's line items, an order's products, etc. — without it, "show
+  this X" omits the children and "list the items on X" falls back to the knowledge base.
+- `->detail()` — register `show_<name>` even with no relations (record detail by id).
 - `->lookupOnly()` — register only `find_<name>` (read-only resources).
 - `->name('client')` — override the tool name base (defaults to the snaked model name).
 - `->defaults(['source' => 'ai'])` or `->defaults(fn ($ctx) => ['user_id' => $ctx->userId])`

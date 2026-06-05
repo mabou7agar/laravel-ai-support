@@ -36,6 +36,11 @@ class AiResource
     /** @var array<int, string> */
     private array $write = [];
 
+    /** @var array<string, array<int, string>> relation => columns */
+    private array $relations = [];
+
+    private bool $detail = false;
+
     /** @var array<int, string> */
     private array $identity = [];
 
@@ -54,6 +59,8 @@ class AiResource
     private ?string $lookupDescription = null;
 
     private ?string $createDescription = null;
+
+    private ?string $detailDescription = null;
 
     private ?string $confirmationMessage = null;
 
@@ -109,6 +116,12 @@ class AiResource
         if (!empty($config['lookup_only'])) {
             $resource->lookupOnly();
         }
+        if (!empty($config['with'])) {
+            $resource->with((array) $config['with']);
+        }
+        if (!empty($config['detail'])) {
+            $resource->detail();
+        }
         if (!empty($config['confirmation_message'])) {
             $resource->confirmationMessage((string) $config['confirmation_message']);
         }
@@ -139,6 +152,38 @@ class AiResource
     public function returns(array $columns): self
     {
         $this->returns = array_values($columns);
+
+        return $this;
+    }
+
+    /**
+     * Include related rows in a show_<name> detail tool. Accepts relation names
+     * (['items']) or relation => columns (['items' => ['product_name', 'quantity']]).
+     * Implies detail().
+     *
+     * @param array<int|string, mixed> $relations
+     */
+    public function with(array $relations): self
+    {
+        foreach ($relations as $key => $value) {
+            if (is_int($key)) {
+                $this->relations[(string) $value] = [];
+            } else {
+                $this->relations[(string) $key] = array_values((array) $value);
+            }
+        }
+        $this->detail = true;
+
+        return $this;
+    }
+
+    /**
+     * Register a show_<name> tool that returns one record with its full detail (and any
+     * relations from with()). Without this, only find_/create_ tools are registered.
+     */
+    public function detail(bool $enabled = true): self
+    {
+        $this->detail = $enabled;
 
         return $this;
     }
@@ -202,10 +247,11 @@ class AiResource
         return $this;
     }
 
-    public function descriptions(?string $lookup = null, ?string $create = null): self
+    public function descriptions(?string $lookup = null, ?string $create = null, ?string $detail = null): self
     {
         $this->lookupDescription = $lookup;
         $this->createDescription = $create;
+        $this->detailDescription = $detail;
 
         return $this;
     }
@@ -255,6 +301,19 @@ class AiResource
                 $this->defaultsResolver,
                 $this->scope,
                 $this->confirmationMessage
+            );
+        }
+
+        if ($this->detail || $this->relations !== []) {
+            $showName = 'show_' . $this->name;
+            $tools[$showName] = new GenericModelDetailTool(
+                $showName,
+                $this->model,
+                $search,
+                $this->returns,
+                $this->relations,
+                (string) $this->detailDescription,
+                $this->scope
             );
         }
 
