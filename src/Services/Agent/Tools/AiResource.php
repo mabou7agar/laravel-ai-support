@@ -41,6 +41,8 @@ class AiResource
 
     private bool $detail = false;
 
+    private bool $lookup = true;
+
     /** @var array<int, string> */
     private array $identity = [];
 
@@ -122,6 +124,9 @@ class AiResource
         if (!empty($config['detail'])) {
             $resource->detail();
         }
+        if (!empty($config['detail_only'])) {
+            $resource->detailOnly();
+        }
         if (!empty($config['confirmation_message'])) {
             $resource->confirmationMessage((string) $config['confirmation_message']);
         }
@@ -184,6 +189,21 @@ class AiResource
     public function detail(bool $enabled = true): self
     {
         $this->detail = $enabled;
+
+        return $this;
+    }
+
+    /**
+     * Register ONLY the show_<name> detail tool — no find_ or create_ tool. Use when the
+     * agent should display a record (with relations) but never search or write through this
+     * resource (e.g. an invoice whose listing is handled by data_query and whose creation
+     * is owned by a skill).
+     */
+    public function detailOnly(): self
+    {
+        $this->lookup = false;
+        $this->creatable = false;
+        $this->detail = true;
 
         return $this;
     }
@@ -276,16 +296,18 @@ class AiResource
 
         $tools = [];
 
-        $findName = 'find_' . $this->name;
-        $tools[$findName] = new GenericModelLookupTool(
-            $findName,
-            $this->model,
-            $search,
-            $this->returns,
-            (string) $this->lookupDescription,
-            [],
-            $this->scope
-        );
+        if ($this->lookup) {
+            $findName = 'find_' . $this->name;
+            $tools[$findName] = new GenericModelLookupTool(
+                $findName,
+                $this->model,
+                $search,
+                $this->returns,
+                (string) $this->lookupDescription,
+                [],
+                $this->scope
+            );
+        }
 
         if ($this->creatable && $this->write !== []) {
             $createName = 'create_' . $this->name;
