@@ -298,13 +298,10 @@ class LaravelAgentProcessor
         array $options,
         ?RoutingTrace $priorTrace = null
     ): AgentResponse {
-        if (!$this->ragEnabledForRequest($options)) {
-            return AgentResponse::failure(
-                message: 'RAG is disabled for this request.',
-                context: $context
-            );
-        }
-
+        // No use_rag gate: AiNative owns the retrieval decision (the search_knowledge tool
+        // is always available and the planner calls it when warranted). This method is the
+        // degraded local-RAG fallback for a failed node continuation, so a caller-supplied
+        // use_rag=false must not suppress it — the agent, not the flag, decides.
         $ragDecision = new RoutingDecision(
             action: RoutingDecisionAction::SEARCH_RAG,
             source: RoutingDecisionSource::RUNTIME,
@@ -319,15 +316,6 @@ class LaravelAgentProcessor
             : null;
 
         return $this->dispatchRoutingDecision($ragDecision, $message, $context, $options, $trace);
-    }
-
-    protected function ragEnabledForRequest(array $options): bool
-    {
-        if (!empty($options['force_rag'])) {
-            return true;
-        }
-
-        return !array_key_exists('use_rag', $options) || (bool) $options['use_rag'];
     }
 
     protected function dispatchRoutingDecision(
