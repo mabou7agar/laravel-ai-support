@@ -1,0 +1,71 @@
+# Agent Resources
+
+Expose an Eloquent model to the agent as ready-made `find_<name>` and `create_<name>`
+tools — without hand-writing a tool class per entity. `AiResource` builds config-driven
+tools on top of `ModelBackedLookupTool` / `ModelBackedUpsertTool` (find-or-create by an
+identity key, with confirmation) and registers them into the agent tool registry.
+
+## In code
+
+```php
+use LaravelAIEngine\Services\Agent\Tools\AiResource;
+
+AiResource::for(\App\Models\Customer::class)
+    ->search(['name', 'email'])          // columns find_customer searches
+    ->writable(['name', 'email', 'company']) // create_customer fields
+    ->identity(['email'])                // find-or-create key (updateOrCreate)
+    ->required(['name', 'email'])
+    ->register();                        // registers find_customer + create_customer
+```
+
+Call this from a service provider's `boot()` (or anywhere with the container available).
+
+Options:
+
+- `->returns(['id', 'name', 'email'])` — columns returned by the find tool.
+- `->lookupOnly()` — register only `find_<name>` (read-only resources).
+- `->name('client')` — override the tool name base (defaults to the snaked model name).
+- `->defaults(['source' => 'ai'])` or `->defaults(fn ($ctx) => ['user_id' => $ctx->userId])`
+  — server-set columns the model never collects from the user.
+- `->scopedBy(fn ($ctx, $params) => ['tenant_id' => $ctx->metadata['tenant_id'] ?? null])`
+  — constrain every lookup/upsert to a tenant/owner.
+- `->confirmationMessage('Create or update this customer.')`.
+
+## In config (zero code)
+
+Declare resources in `config/ai-agent.php` and they auto-register at boot:
+
+```php
+'resources' => [
+    'customer' => [
+        'model'    => \App\Models\Customer::class,
+        'search'   => ['name', 'email'],
+        'writable' => ['name', 'email', 'company'],
+        'identity' => ['email'],
+        'required' => ['name', 'email'],
+        // 'returns' => ['id', 'name', 'email'],
+        // 'lookup_only' => true,
+        // 'defaults' => ['source' => 'ai'],
+    ],
+    'product' => [
+        'model'    => \App\Models\Product::class,
+        'search'   => ['name', 'sku'],
+        'writable' => ['name', 'price', 'sku'],
+        'identity' => ['sku'],
+    ],
+],
+```
+
+Use the array form for static config; use `AiResource` in code when you need closures
+(tenant scoping, dynamic defaults).
+
+## How it fits
+
+- The generated `create_<name>` tool is a `ModelBackedUpsertTool`: it `updateOrCreate`s by
+  the `identity` key (so it find-or-creates, never duplicates) and `requiresConfirmation()`.
+- The generated `find_<name>` tool is a `ModelBackedLookupTool` (LIKE search over `search`).
+- Both are normal agent tools, so they are gated by `AgentExecutionPolicyService` and appear
+  to the AiNative planner like any other tool.
+
+For multi-step flows (collect → resolve → confirm → final write) compose these resource
+tools inside an [Agent Skill](agent-skills.mdx).

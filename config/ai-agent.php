@@ -402,6 +402,30 @@ return [
     | or callable, keeping domain logic in the host app.
     |
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Agent Resources (zero-code model tools)
+    |--------------------------------------------------------------------------
+    |
+    | Declare Eloquent models here to expose them to the agent as find_<name> and
+    | create_<name> tools — no tool subclasses required (see AiResource). Each entry:
+    |
+    |   'customer' => [
+    |       'model'    => \App\Models\Customer::class,
+    |       'search'   => ['name', 'email'],          // lookup columns
+    |       'writable' => ['name', 'email', 'company'],// create/update fields (omit for read-only)
+    |       'identity' => ['email'],                   // find-or-create key
+    |       'required' => ['name', 'email'],
+    |       // 'returns' => ['id', 'name', 'email'],
+    |       // 'lookup_only' => true,                  // register only find_customer
+    |       // 'defaults' => ['source' => 'ai'],       // server-set columns
+    |   ],
+    |
+    | For tenant scoping or dynamic defaults (closures), register via AiResource in code.
+    |
+    */
+    'resources' => [],
+
     'goal_agent' => [
         'enabled' => env('AI_AGENT_GOAL_ENABLED', true),
         'max_sub_agents' => env('AI_AGENT_GOAL_MAX_SUB_AGENTS', 5),

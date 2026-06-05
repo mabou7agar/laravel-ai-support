@@ -57,6 +57,19 @@ class AgentToolServiceRegistrar
                 $registry->register('search_knowledge', $app->make(\LaravelAIEngine\Services\Agent\Tools\SearchKnowledgeTool::class));
             }
 
+            // Config-declared resources: expose Eloquent models as find_<name>/create_<name>
+            // tools with no code (see AiResource). Each entry mirrors the AiResource fluent
+            // config, e.g. ['model' => Customer::class, 'search' => [...], 'writable' => [...]].
+            foreach ((array) config('ai-agent.resources', []) as $key => $definition) {
+                if (!is_array($definition) || empty($definition['model'])) {
+                    continue;
+                }
+                \LaravelAIEngine\Services\Agent\Tools\AiResource::fromConfig(
+                    is_string($key) ? $key : null,
+                    $definition
+                )->register($registry);
+            }
+
             return $registry;
         });
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentOrchestrationInspector::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentOrchestrationInspector(
