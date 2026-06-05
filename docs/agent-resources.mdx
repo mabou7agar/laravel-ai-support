@@ -69,3 +69,51 @@ Use the array form for static config; use `AiResource` in code when you need clo
 
 For multi-step flows (collect → resolve → confirm → final write) compose these resource
 tools inside an [Agent Skill](agent-skills.mdx).
+
+## Resolving relations deterministically
+
+A skill `->relation()` declaration *nudges* the planner to look up before creating, but it
+does not guarantee a related record exists when your final write tool runs. For a final
+tool that must link a related record (e.g. `create_invoice` needs a `customer_id`), resolve
+it **deterministically** with the `ResolvesAgentRelations` trait instead of hand-coding it
+or relying on the model to call a separate create tool:
+
+```php
+use LaravelAIEngine\Services\Agent\Tools\Concerns\ResolvesAgentRelations;
+
+class CreateInvoiceTool extends AgentTool
+{
+    use ResolvesAgentRelations;
+
+    protected function relations(): array
+    {
+        return [[
+            'field'    => 'customer_id',
+            'model'    => \App\Models\Customer::class,
+            'identity' => ['email'],                                   // find-or-create key
+            'map'      => ['email' => 'customer_email', 'name' => 'customer_name'],
+            'create'   => ['name', 'email'],                          // required to create
+        ]];
+    }
+
+    public function execute(array $params, UnifiedActionContext $context): ActionResult
+    {
+        $params = $this->resolveRelations($params, $context); // customer_id now guaranteed
+        // ... persist the invoice ...
+    }
+}
+```
+
+The resolver runs in PHP (no model round-trip): it looks the customer up by email, creates
+them when missing, and treats the **user-provided identity as the source of truth** — if the
+payload carries a `customer_id` whose email no longer matches (e.g. a loose name match), it
+drops it and re-resolves. Override `relationScope()` for tenant isolation.
+
+### Recommendation
+
+- **Read/write a single model** → declare it as a **resource** (`AiResource` / config). The
+  planner gets `find_*`/`create_*` tools and decides when to use them.
+- **A final tool that must link related records** → resolve those with
+  **`ResolvesAgentRelations`**, so correctness does not depend on the planner remembering to
+  call a create tool. This is the reliable home for find-or-create.
+- Use a **skill** to orchestrate the multi-turn collection and confirmation around them.
