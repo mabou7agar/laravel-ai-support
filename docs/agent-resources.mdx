@@ -117,3 +117,36 @@ drops it and re-resolves. Override `relationScope()` for tenant isolation.
   **`ResolvesAgentRelations`**, so correctness does not depend on the planner remembering to
   call a create tool. This is the reliable home for find-or-create.
 - Use a **skill** to orchestrate the multi-turn collection and confirmation around them.
+
+## Scaling the toolset (context)
+
+Every tool's schema is injected into the planner prompt, so a large registry inflates
+context and can degrade tool selection. Trim what each turn carries via
+`ai-agent.ai_native.tool_selection`:
+
+```php
+'tool_selection' => [
+    'strategy'    => env('AI_AGENT_TOOL_SELECTION', 'all'),
+    'always'      => ['search_knowledge', 'data_query'],  // never trimmed
+    'limit'       => 12,                                   // for keyword/semantic
+    'disclosure'  => env('AI_AGENT_TOOL_DISCLOSURE', 'full'),
+],
+```
+
+Pick the cheapest that fits — reach for embeddings last:
+
+| strategy | what it does | when |
+| --- | --- | --- |
+| `all` (default) | every tool, full schema | small toolset; no change |
+| `skill_scoped` | when a skill is active, only its tools + core | the safest reduction — never hides a tool the skill needs |
+| `keyword` | top-K tools by lexical overlap + core | many flat tools; deterministic, no embeddings |
+| `semantic` | top-K by embedding similarity + core | large flat registry; one embedding call/turn (cached tool vectors); fails open |
+
+`disclosure: 'progressive'` is an orthogonal axis: tools are listed by **name + summary
+only**, and a `find_tools` meta-tool returns a tool's full parameter schema on demand —
+keeping the base prompt small even with hundreds of tools. Combine with any strategy.
+
+A reduced strategy never starves the planner: if a scope/score would be empty it falls
+back to the full set, and `semantic` falls back when embeddings are unavailable. Enabling
+`skill_scoped` is the recommended first step; move to `keyword`/`semantic`/`progressive`
+only when you genuinely have a large, flat toolset.
