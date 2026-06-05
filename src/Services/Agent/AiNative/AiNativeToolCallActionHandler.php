@@ -55,6 +55,16 @@ class AiNativeToolCallActionHandler
             return AiNativeActionOutcome::continueLoop();
         }
 
+        // Read-intent (search/show/list/count) should not license a write tool when no write
+        // is in progress. Nudge the planner toward a read tool once; fail open if it insists.
+        if (!$this->skillPolicy->hasRuntimeFeedback($state, 'read_intent_no_write')
+            && $this->actionIntentGuard->readIntentBlocksWrite($message, $state, $options, $tool)) {
+            $state['runtime_feedback'][] = $this->actionIntentGuard->readIntentFeedback();
+            $this->stateStore->put($context, $state);
+
+            return AiNativeActionOutcome::continueLoop();
+        }
+
         $arguments = $this->authority->sanitizeArguments((array) ($plan['arguments'] ?? $plan['tool_params'] ?? []), $state);
         $isConfirmedSuggestedWrite = $tool->requiresConfirmation()
             && $this->suggestedToolContinuation->writeContinuationIsConfirmed($toolName, $state, $arguments);
