@@ -55,8 +55,13 @@ class AggregateQueryTool extends DataQueryTool
         return [
             'query' => [
                 'type' => 'string',
-                'description' => 'The natural-language analytics question.',
-                'required' => true,
+                'description' => 'The natural-language analytics question. Optional if you pass structured operation/metric/group_by params.',
+                'required' => false,
+            ],
+            'entity' => [
+                'type' => 'string',
+                'description' => 'Which data model to analyze (e.g. invoice, line_item, product). Omit to infer from the question.',
+                'required' => false,
             ],
             'operation' => [
                 'type' => 'string',

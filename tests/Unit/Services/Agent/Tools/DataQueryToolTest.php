@@ -122,6 +122,13 @@ class DataQueryToolTest extends TestCase
         $this->assertSame([], $r->data['filters']);
     }
 
+    public function test_query_is_optional_and_does_not_error_on_structured_only_calls(): void
+    {
+        // A structured-only call (filters, no query) must not leak "Missing required parameter".
+        $this->assertSame([], $this->tool()->validate(['filters' => ['status' => 'active']]));
+        $this->assertSame([], $this->tool()->validate([]));
+    }
+
     public function test_unknown_entity_asks_for_clarification(): void
     {
         $r = $this->tool()->execute(['query' => 'what is the weather'], new UnifiedActionContext('dq', 'u1'));

@@ -160,6 +160,17 @@ class AggregateQueryToolTest extends TestCase
         $this->assertEqualsWithDelta(400.0, $r->data['value'], 0.001); // Apollo's 100 + 300 only
     }
 
+    public function test_query_is_optional_for_structured_calls(): void
+    {
+        // The planner may call with structured params only — this must NOT fail validation
+        // with a raw "Missing required parameter: query" (which would leak as the chat answer).
+        $this->assertSame([], $this->tool()->validate(['entity' => 'order', 'operation' => 'sum', 'metric' => 'amount']));
+
+        $r = $this->aggregate(['entity' => 'order', 'operation' => 'sum', 'metric' => 'amount']);
+        $this->assertTrue($r->success);
+        $this->assertEqualsWithDelta(700.0, $r->data['value'], 0.001);
+    }
+
     public function test_fails_closed_without_scope_on_non_public_model(): void
     {
         config()->set('ai-engine.data_query.models.order.public', false);
