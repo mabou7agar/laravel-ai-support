@@ -18,6 +18,19 @@ All examples reference real classes (`LaravelAIEngine\…`) and config keys.
 - [File Intake (upload → extract → suggest → pre-fill)](#file-intake-upload-extract-suggest-pre-fill)
 - [Scaling Tool Context](#scaling-tool-context)
 - [Structured Data & Analytics](#structured-data-analytics)
+- [Memory & Conversations](#memory-conversations)
+- [Streaming & Realtime](#streaming-realtime)
+- [Observability & Tracing](#observability-tracing)
+- [Billing, Credits & Pricing](#billing-credits-pricing)
+- [Graph & Hybrid (Neo4j) RAG](#graph-hybrid-neo4j-rag)
+- [Voice, TTS & Transcription](#voice-tts-transcription)
+- [Provider Tools & MCP](#provider-tools-mcp)
+- [Multi-tenancy & Scope](#multi-tenancy-scope)
+- [Learning & Design Generation](#learning-design-generation)
+- [Model Council](#model-council)
+- [Structured Collection Flows](#structured-collection-flows)
+- [Admin, Catalog, Diagnostics & SDK](#admin-catalog-diagnostics-sdk)
+- [Federation (Nodes) & Security](#federation-nodes-security)
 
 ---
 
@@ -3002,3 +3015,4141 @@ Each entry in `ai-engine.data_query.models` accepts:
 4. **Date and status detection**: Built-in inference of "this month", "paid status" from natural language—no special setup needed if you name columns and values conventionally.
 
 ---
+
+## Memory & Conversations
+
+The laravel-ai-engine package provides two-layer conversation memory: transcript history for full chat logs, and durable scoped memories for key facts and preferences extracted during context compaction. Conversations are stored in the `ai_conversations` table with associated messages, while persistent memories live in `ai_conversation_memories` with optional semantic indexing for retrieval.
+
+### Basic Conversation Setup
+
+Create and manage conversations using the `ConversationManager`:
+
+```php
+use LaravelAIEngine\Services\ConversationManager;
+
+$manager = app(ConversationManager::class);
+
+// Create a conversation with optional system prompt
+$conversation = $manager->createConversation(
+    userId: auth()->id(),
+    title: 'Customer Support Chat',
+    systemPrompt: 'You are a helpful support agent. Always be professional.',
+    settings: [
+        'max_messages' => 50,
+        'temperature' => 0.7,
+        'auto_title' => true,
+    ]
+);
+
+// Add messages (returns Message model)
+$manager->addUserMessage($conversation->conversation_id, 'What are your hours?');
+
+// Retrieve context (includes system prompt + recent messages formatted for the model)
+$context = $manager->getConversationContext($conversation->conversation_id);
+
+// Get stats on the conversation
+$stats = $manager->getConversationStats($conversation->conversation_id);
+// Returns: total_messages, user_messages, assistant_messages, total_tokens, total_credits, etc.
+```
+
+### Memory Drivers
+
+The `MemoryManager` supports pluggable storage backends configured via `ai-engine.memory.default_driver`:
+
+```php
+use LaravelAIEngine\Services\Memory\MemoryManager;
+
+$memory = app(MemoryManager::class);
+
+// Use the default driver (usually 'database')
+$memory->addMessage($conversationId, 'user', 'Hello!', ['custom_field' => 'value']);
+
+// Explicitly use a different driver
+$memory->addMessage($conversationId, 'user', 'Hello!', driver: 'redis');
+
+// Get messages and context
+$messages = $memory->getMessages($conversationId);
+$context = $memory->getContext($conversationId);
+
+// Create conversation (returns conversation_id string)
+$convId = $memory->createConversation(
+    userId: 'user123',
+    title: 'Support Ticket #456',
+    systemPrompt: 'You are helpful.',
+    settings: ['engine' => 'openai', 'model' => 'gpt-4o']
+);
+
+// Clear history or delete entirely
+$memory->clearConversation($conversationId);  // Delete all messages
+$memory->deleteConversation($conversationId); // Mark inactive
+```
+
+Available drivers: `database` (default), `redis`, `file`, `mongodb` (if MongoDB library is installed).
+
+### MemoryProxy Fluent Interface
+
+For chained operations, use the `MemoryProxy`:
+
+```php
+use LaravelAIEngine\Services\MemoryProxy;
+
+$proxy = app(MemoryProxy::class)
+    ->conversation($conversationId)
+    ->driver('redis'); // optional; defaults to config
+
+// Add messages fluently
+$proxy
+    ->addUserMessage('What is your name?')
+    ->addAssistantMessage('I am Claude, an AI assistant.')
+    ->addUserMessage('Nice to meet you!');
+
+// Retrieve data
+$messages = $proxy->getMessages(limit: 50);
+$context = $proxy->getContext(limit: 50);
+$data = $proxy->getConversation();
+
+// Clean up
+$proxy->clear();  // Clear history
+$proxy->delete(); // Delete conversation
+```
+
+### Durable Conversation Memory (Scoped Facts)
+
+Across compacted turns, the package extracts small facts and preferences into `ai_conversation_memories` for stable context without bloating the prompt:
+
+```php
+use LaravelAIEngine\Repositories\ConversationMemoryRepository;
+
+$repo = app(ConversationMemoryRepository::class);
+
+// Store or update a memory fact
+$repo->upsert(
+    namespace: 'preferences',
+    key: 'language',
+    value: 'Spanish',
+    summary: 'User prefers Spanish language responses',
+    scopeType: 'user',
+    scopeId: auth()->id(),
+    sessionId: $conversationId,
+    confidence: 0.95
+);
+
+// Retrieve memories for a conversation/scope
+$memories = $repo->search(
+    namespace: 'preferences',
+    scopeType: 'user',
+    scopeId: auth()->id(),
+    sessionId: $conversationId,
+    limit: 6
+);
+
+// Each memory is an AIConversationMemory model with:
+// - memory_id, namespace, key, value, summary, metadata
+// - scope_type, scope_id, session_id, confidence
+// - last_seen_at, expires_at (TTL)
+```
+
+### Configuration
+
+Memory behavior is controlled via environment variables and `config/ai-agent.php`:
+
+```env
+# Enable/disable durable conversation memory extraction
+AI_AGENT_CONVERSATION_MEMORY_ENABLED=true
+
+# Storage driver for conversation transcripts
+AI_AGENT_CONVERSATION_MEMORY_DRIVER=database
+
+# Extract facts when context is compacted (before each agent turn)
+AI_AGENT_MEMORY_EXTRACT_ON_COMPACTION=true
+
+# Extraction method: 'ai' (model-backed, multilingual), 'none' (disabled), or custom class
+AI_AGENT_MEMORY_EXTRACTOR=ai
+
+# Memory retrieval limits per turn
+AI_AGENT_MEMORY_MAX_PER_TURN=6
+AI_AGENT_MEMORY_MAX_PROMPT_CHARS=1200
+
+# Relevance filtering (0.0–1.0)
+AI_AGENT_MEMORY_MIN_SCORE=0.45
+
+# Auto-expire memories after N days
+AI_AGENT_MEMORY_TTL_DAYS=180
+
+# Context compaction (keeps recent turns verbatim, compacts older ones)
+AI_AGENT_CONTEXT_COMPACTION_ENABLED=true
+AI_AGENT_CONTEXT_MAX_MESSAGES=12
+AI_AGENT_CONTEXT_KEEP_RECENT_MESSAGES=6
+AI_AGENT_CONTEXT_MAX_TOTAL_CHARS=12000
+```
+
+### Semantic Indexing (Optional Vector Search)
+
+For faster retrieval of relevant memories, opt-in to semantic (vector) indexing:
+
+```env
+# Enable vector-backed memory search
+AI_AGENT_MEMORY_SEMANTIC_ENABLED=true
+
+# Vector driver and collection name
+AI_AGENT_MEMORY_SEMANTIC_DRIVER=qdrant
+AI_AGENT_MEMORY_SEMANTIC_COLLECTION=ai_conversation_memories
+
+# Index memories on every write (vs. only on compaction)
+AI_AGENT_MEMORY_SEMANTIC_INDEX_ON_WRITE=false
+
+# Scope fields to include in vector metadata (for filtering)
+AI_AGENT_MEMORY_VECTOR_SCOPE_FIELDS=scope_type,scope_id,session_id,namespace
+```
+
+The package falls back to lexical (SQL `LIKE`) search if the vector driver is unavailable.
+
+### Conversation Transcript Service
+
+Higher-level abstraction for session-style chat:
+
+```php
+use LaravelAIEngine\Services\ConversationTranscriptService;
+use LaravelAIEngine\DTOs\AIResponse;
+
+$transcript = app(ConversationTranscriptService::class);
+
+// Get or create a conversation by session ID (idempotent)
+$conversationId = $transcript->getOrCreateConversation(
+    sessionId: 'session_' . session()->getId(),
+    userId: auth()->id(),
+    engine: 'openai',
+    model: 'gpt-4o-mini'
+);
+
+// Save a user message and AI response
+$aiResponse = AIResponse::success(
+    content: 'The store is open 9 AM to 6 PM.',
+    engine: \LaravelAIEngine\Enums\EngineEnum::OpenAI,
+    model: \LaravelAIEngine\Enums\EntityEnum::GPT_4O_MINI,
+    metadata: ['sources' => []]
+);
+
+$transcript->saveMessages($conversationId, 'What time is the store open?', $aiResponse);
+
+// Load recent history
+$history = $transcript->loadConversationHistory($conversationId, limit: 20);
+
+// Search conversations by title or message content
+$results = $transcript->searchUserConversations(
+    userId: auth()->id(),
+    term: 'invoice',
+    limit: 20,
+    page: 1
+);
+// Returns ConversationListResponseDTO with paginated results
+
+// List all user conversations (with optional folder filter)
+$conversations = $transcript->listUserConversations(
+    userId: auth()->id(),
+    folderId: 'folder_abc'
+);
+```
+
+### Memory Policy
+
+The `ConversationMemoryPolicy` class centralizes configuration checks. Use it in custom extractors or memory handlers:
+
+```php
+use LaravelAIEngine\Services\Agent\Memory\ConversationMemoryPolicy;
+
+$policy = app(ConversationMemoryPolicy::class);
+
+if ($policy->enabled()) {
+    $maxMemories = $policy->maxMemoriesPerTurn();      // 6 (default)
+    $minScore = $policy->minScore();                    // 0.45 (default)
+    $ttl = $policy->ttlDays();                          // 180 (default)
+    $extractor = $policy->extractor();                  // 'ai' (default)
+    $customClass = $policy->customExtractorClass();    // null or custom class
+    
+    // Semantic config
+    if ($policy->semanticEnabled()) {
+        $driver = $policy->semanticDriver();            // 'qdrant' etc.
+        $collection = $policy->semanticCollection();   // 'ai_conversation_memories'
+        $scopes = $policy->semanticPayloadScopeFields(); // ['scope_type', 'scope_id', ...]
+    }
+}
+```
+
+### Database Schema
+
+Conversations and messages live in:
+- `ai_conversations`: conversation_id, user_id, title, system_prompt, settings, is_active, last_activity_at
+- `ai_messages`: message_id, conversation_id, role (user/assistant/system), content, metadata, tokens_used, credits_used
+
+Durable memories in:
+- `ai_conversation_memories`: memory_id, namespace, key, key_hash, scope_hash, value, summary, metadata, scope_type, scope_id, session_id, confidence, last_seen_at, expires_at
+
+Memory models are in `LaravelAIEngine\Models\Conversation`, `LaravelAIEngine\Models\Message`, and `LaravelAIEngine\Models\AIConversationMemory`.
+
+---
+
+## Streaming & Realtime
+
+Stream agent run events live via Server-Sent Events (SSE), or establish realtime voice/tool sessions with OpenAI, Google Gemini, or LiveKit while keeping provider keys and execution policy server-side in Laravel.
+
+### SSE Streaming for Agent Runs
+
+When an agent run is created asynchronously (with `async=true`), you can stream its lifecycle events to the browser in real-time. The `AgentRunSseStreamService` polls the run's persisted event stream and emits new events:
+
+```php
+use LaravelAIEngine\Services\Agent\AgentRunSseStreamService;
+
+$sseService = app(AgentRunSseStreamService::class);
+
+// Returns a StreamedResponse (SSE 200 with text/event-stream headers)
+return $sseService->response($runId, [
+    'timeout' => 60,           // Max seconds to hold connection
+    'poll' => 500,             // Poll interval in milliseconds
+    'auth_user_id' => auth()->id(),  // Authorization check
+]);
+```
+
+In your route (already registered at `GET /api/v1/ai/agent-runs/{run}/stream`):
+
+```php
+// JavaScript client
+const events = new EventSource('/api/v1/ai/agent-runs/abc123/stream?timeout=60&poll=500');
+
+events.addEventListener('run.started', (event) => {
+    const payload = JSON.parse(event.data);
+    console.log('Run started:', payload.payload);
+});
+
+events.addEventListener('tool.completed', (event) => {
+    const payload = JSON.parse(event.data);
+    console.log('Tool completed:', payload.payload);
+});
+
+events.addEventListener('run.completed', (event) => {
+    console.log('Run finished');
+    events.close();
+});
+```
+
+Events include: `run.started`, `agent.reasoning`, `tool.started`, `tool.completed`, `tool.failed`, `rag.started`, `rag.sources_found`, `rag.completed`, `approval.required`, `final_response.token_streamed`, `final_response.stream_completed`, `run.completed`, `run.failed`, `run.cancelled`, `run.expired`.
+
+**Config:**
+- `ai-agent.event_stream.sse.enabled` (default: `true`)
+- `ai-agent.event_stream.sse.max_seconds` (default: `30`)
+- `ai-agent.event_stream.sse.poll_milliseconds` (default: `500`)
+- `ai-agent.event_stream.sse.heartbeat_seconds` (default: `10`)
+- `ai-agent.event_stream.sse.authorize_owned_runs` (default: `true`) — only owners can stream their runs
+- `ai-agent.event_stream.sse.allow_anonymous_runs` (default: `false`)
+- `ai-agent.event_stream.sse.authorizer` — custom callable `fn($run, $options): bool`
+
+### Token-Level Streaming (Final Responses)
+
+For conversational agent runs, you can stream the final response token-by-token into the event stream so the browser "types out" the reply live:
+
+```env
+AI_AGENT_FINAL_RESPONSE_STREAMING_ENABLED=true
+```
+
+The `AgentFinalResponseStreamingService` yields each token while emitting `final_response.token_streamed` and `final_response.stream_completed` events:
+
+```php
+use LaravelAIEngine\Services\Agent\AgentFinalResponseStreamingService;
+use LaravelAIEngine\DTOs\AIRequest;
+
+$streaming = app(AgentFinalResponseStreamingService::class);
+
+// Returns a Generator yielding each token
+foreach ($streaming->stream(
+    AIRequest::text('Summarize this article'),
+    $run,
+    $step,
+    ['engine' => 'openai', 'model' => 'gpt-4o-mini']
+) as $token) {
+    echo $token;
+}
+```
+
+### Realtime Sessions (WebRTC/LiveKit/Fallback)
+
+Create a provider-agnostic realtime session descriptor—useful for browser voice chat, transcription, or tool-driven conversations:
+
+```php
+use LaravelAIEngine\DTOs\RealtimeSessionConfig;
+use LaravelAIEngine\Services\SDK\RealtimeSessionService;
+
+$sessionService = app(RealtimeSessionService::class);
+
+$session = $sessionService->create(
+    RealtimeSessionConfig::make('openai', 'gpt-realtime')
+        ->voiceChat()
+        ->withVoice('marin')
+        ->withInputAudioTranscription(['model' => 'gpt-realtime-whisper'])
+        ->withTurnDetection(['type' => 'server_vad'])
+        ->withMaxResponseOutputTokens(512)
+);
+// Returns: ['provider' => 'openai', 'connect' => [...], 'capabilities' => [...], 'session' => [...], ...]
+```
+
+**Route:**
+- `POST /api/v1/ai/realtime/sessions` — create a session descriptor
+
+**Config defaults:**
+- `ai-engine.realtime.default_provider` (default: `openai`)
+- `ai-engine.realtime.default_model` (default: `gpt-realtime`)
+- `ai-engine.realtime.default_transport` (default: `webrtc`)
+- `ai-engine.realtime.default_voice` (default: `marin`)
+- `ai-engine.realtime.input_audio_format` (default: `pcm16`)
+- `ai-engine.realtime.output_audio_format` (default: `pcm16`)
+- `ai-engine.realtime.turn_detection` (default: `['type' => 'server_vad']`)
+
+#### WebRTC (OpenAI/Gemini)
+
+For browser-native WebRTC, use `transport: 'webrtc'` and exchange SDP offers:
+
+```bash
+# Create session descriptor
+curl -X POST http://localhost:8000/api/v1/ai/realtime/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "openai",
+    "model": "gpt-realtime-mini",
+    "transport": "webrtc",
+    "voice": "alloy",
+    "modalities": ["audio"],
+    "tools": [{"type": "function", "name": "agent_chat", "description": "Send user turns to Laravel AgentChat"}]
+  }'
+```
+
+Then POST the browser WebRTC offer SDP to `POST /api/v1/ai/realtime/sdp`:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/realtime/sdp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "openai",
+    "model": "gpt-realtime-mini",
+    "transport": "webrtc",
+    "voice": "alloy",
+    "sdp": "v=0\r\no=..."
+  }'
+```
+
+The response includes `sdp.answer` — set it as the remote description on the peer connection.
+
+#### LiveKit (Multi-party Rooms)
+
+For multi-party voice rooms with STT/TTS + chat pipelines, use `transport: 'livekit'`:
+
+```php
+$session = $sessionService->create(
+    RealtimeSessionConfig::make('livekit', 'voice-pipeline')
+        ->withTransport('livekit')
+        ->withMetadata([
+            'room' => 'support-room-123',
+            'participant_identity' => 'user-1',
+            'participant_name' => 'Alice',
+            'agent_name' => 'support-bot',
+        ])
+        ->withFallbackPipeline([
+            'stt' => ['provider' => 'openai', 'model' => 'whisper-1'],
+            'chat' => ['provider' => 'openai', 'model' => 'gpt-4o-mini'],
+            'tts' => ['provider' => 'elevenlabs', 'model' => 'eleven_multilingual_v2'],
+        ])
+);
+// Returns: ['provider' => 'livekit', 'connect' => [...], 'pipeline' => [...]]
+```
+
+The descriptor includes a short-lived room token (if `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are set). Connect the browser to the WebRTC room, then run a LiveKit Agents Python or Node sidecar that joins the same room and uses the returned pipeline config.
+
+**LiveKit config:**
+- `ai-engine.realtime.livekit.url` — WebRTC server URL
+- `ai-engine.realtime.livekit.api_key` / `api_secret` — for token generation
+- `ai-engine.realtime.livekit.default_room` (default: `ai-engine-voice`)
+- `ai-engine.realtime.livekit.token_ttl` (default: `3600`)
+- `ai-engine.realtime.livekit.allowed_rooms` — optional allow-list (empty = all rooms allowed)
+- `ai-engine.realtime.livekit.room_resolver` — optional closure/class method to override requested room (fail-closed when resolver returns a value)
+- `ai-engine.realtime.livekit.identity_resolver` — optional closure to override participant identity (prevents client from minting tokens for other users)
+
+#### Fallback Pipeline (Non-Native Providers)
+
+Providers without native realtime voice (e.g., Anthropic, Ollama) return a fallback descriptor that chains your existing `/api/v1/ai/generate/transcribe`, `/api/v1/agent/chat`, and `/api/v1/ai/generate/tts` endpoints:
+
+```php
+$session = $sessionService->create(
+    RealtimeSessionConfig::make('anthropic', 'claude-3-5-sonnet-20241022')
+        ->withFallbackPipeline([
+            'stt' => ['provider' => 'openai', 'model' => 'whisper-1'],
+            'chat' => ['provider' => 'anthropic', 'model' => 'claude-3-5-sonnet-20241022'],
+            'tts' => ['provider' => 'google_tts', 'voice' => 'en-US-Neural2-C'],
+        ])
+);
+```
+
+### Realtime Tool Dispatch
+
+When the realtime provider calls a tool (e.g., `agent_chat`, `run_skill`, or a custom registered tool), POST the event to `POST /api/v1/ai/realtime/tools/dispatch`:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/realtime/tools/dispatch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": {
+      "id": "call_abc123",
+      "name": "agent_chat",
+      "arguments": {"message": "What is our invoice policy?"}
+    },
+    "session_id": "support-session-123",
+    "user_id": "user-456",
+    "approved": false,
+    "metadata": {}
+  }'
+```
+
+The `RealtimeToolBrokerService` returns:
+
+```json
+{
+  "success": true,
+  "status": "completed",
+  "tool_call_id": "call_abc123",
+  "tool_name": "agent_chat",
+  "message": "Our invoice policy requires...",
+  "output": {
+    "success": true,
+    "message": "...",
+    "metadata": { "needs_user_input": false },
+    "response": { ... }
+  }
+}
+```
+
+**Possible statuses:**
+- `completed` — tool ran successfully
+- `needs_user_input` — tool is collecting missing data; ask the user for more input
+- `approval_required` — tool requires confirmation (set `approved: true` to execute)
+- `policy_blocked` — tool is blocked by org execution policy
+- `tool_not_found` — tool is not registered
+- `failed` — exception during tool execution
+
+**Security:**
+- By default, the broker uses the authenticated context from Laravel (user_id, session_id); client-supplied values are ignored.
+- Set `ai-engine.realtime.trust_client_identity: true` to allow the tool request to override user_id/session_id (OPT-IN for backend-to-backend callers that intentionally relay identity).
+- Execution policy (org deny-list) is enforced; check `ai-agent.restrictions` to deny specific tools.
+
+**Route:**
+- `POST /api/v1/ai/realtime/tools/dispatch` — handle tool calls from provider
+
+### Broadcasting (Alternative to SSE)
+
+Instead of SSE polling, enable Laravel Broadcasting for live agent-run updates:
+
+```env
+AI_AGENT_EVENT_STREAM_BROADCAST_ENABLED=true
+AI_AGENT_EVENT_STREAM_BROADCAST_PRIVATE=true
+AI_AGENT_EVENT_STREAM_BROADCAST_CHANNEL_PREFIX=agent-run
+```
+
+Then subscribe to the private channel in your frontend (assuming Reverb, Pusher, or Soketi):
+
+```js
+Echo.private(`agent-run.${runId}`)
+  .listen('.tool.started', (event) => console.log('Tool started:', event))
+  .listen('.tool.completed', (event) => console.log('Tool done:', event))
+  .listen('.run.completed', (event) => console.log('Run finished:', event));
+```
+
+---
+
+## Observability & Tracing
+
+Monitor AI Engine operations with built-in tracing, structured events, and pluggable observability exporters. Trace individual API calls, agent runs, and custom spans, then export metrics to OpenTelemetry, LangSmith, HTTP webhooks, or application logs.
+
+### Record Custom Traces
+
+Use `Engine::traces()` to manually instrument your code with timing and metadata:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+// Record a single operation (start + end in one call)
+$span = Engine::traces()->record('fetch_customer_data', [
+    'customer_id' => 123,
+    'data_source' => 'database',
+]);
+
+// Or control timing manually
+$spanId = Engine::traces()->start('custom_processing', [
+    'batch_size' => 50,
+    'operation' => 'analytics',
+]);
+
+// ... do work ...
+
+$completed = Engine::traces()->end($spanId, 'ok', [
+    'records_processed' => 47,
+    'errors' => 3,
+]);
+```
+
+Each span records an `id`, `name`, `metadata`, `started_at`, `ended_at`, `duration_ms`, and `status`. Metadata is merged across start and end calls, so you can add context progressively.
+
+### Listen to Request Lifecycle Events
+
+The package fires three key events during every API call. Listen to them to build custom observability:
+
+```php
+// In a service provider or listener class
+use LaravelAIEngine\Events\AIRequestStarted;
+use LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\Events\AIFailoverTriggered;
+
+// AIRequestStarted: fired when request begins
+\Illuminate\Support\Facades\Event::listen(AIRequestStarted::class, function (AIRequestStarted $event) {
+    \Illuminate\Support\Facades\Log::info('AI request started', $event->getEventData());
+    // Available: $event->request, $event->requestId, $event->userId, $event->engine, $event->model, $event->metadata
+});
+
+// AIRequestCompleted: fired when response is received
+\Illuminate\Support\Facades\Event::listen(AIRequestCompleted::class, function (AIRequestCompleted $event) {
+    $data = [
+        'request_id' => $event->requestId,
+        'success' => $event->wasSuccessful(),
+        'engine' => $event->engine,
+        'model' => $event->model,
+        'tokens_used' => $event->totalTokens,
+        'execution_time_ms' => $event->responseTime * 1000,
+        'cost' => $event->cost,
+    ];
+    metrics('ai.request.completed', $event->totalTokens, tags: ['model' => $event->model]);
+});
+
+// AIFailoverTriggered: fired when primary engine fails and backup is attempted
+\Illuminate\Support\Facades\Event::listen(AIFailoverTriggered::class, function (AIFailoverTriggered $event) {
+    \Illuminate\Support\Facades\Log::warning('AI failover triggered', [
+        'request_id' => $event->requestId,
+        'from_engine' => $event->primaryEngine,
+        'to_engine' => $event->fallbackEngine,
+        'reason' => $event->reason,
+    ]);
+});
+```
+
+### Enable Observability Exporters
+
+Register exporters in `config/ai-engine.php` to automatically push traces and evaluations to external systems. Exporters are **best-effort**—failures do not stop your application.
+
+```php
+// config/ai-engine.php
+return [
+    'observability' => [
+        'exporters' => [
+            LaravelAIEngine\Services\SDK\Exporters\LogObservabilityExporter::class,
+            LaravelAIEngine\Services\SDK\Exporters\HttpObservabilityExporter::class,
+            LaravelAIEngine\Services\SDK\Exporters\OpenTelemetryObservabilityExporter::class,
+            LaravelAIEngine\Services\SDK\Exporters\LangSmithObservabilityExporter::class,
+        ],
+        
+        // HTTP exporter: POST spans to a webhook endpoint
+        'http' => [
+            'endpoint' => env('AI_ENGINE_OBSERVABILITY_HTTP_ENDPOINT'),
+            'timeout' => (int) env('AI_ENGINE_OBSERVABILITY_HTTP_TIMEOUT', 10),
+            'headers' => [
+                'Authorization' => 'Bearer ' . env('OBSERVABILITY_TOKEN'),
+            ],
+        ],
+        
+        // OpenTelemetry exporter: OTLP endpoint
+        'opentelemetry' => [
+            'endpoint' => env('AI_ENGINE_OTEL_EXPORTER_OTLP_ENDPOINT'),
+            'timeout' => (int) env('AI_ENGINE_OTEL_EXPORTER_TIMEOUT', 10),
+            'headers' => [],
+            'service_name' => env('AI_ENGINE_OTEL_SERVICE_NAME', 'laravel-ai-engine'),
+        ],
+        
+        // LangSmith exporter: integrates with LangSmith debugging platform
+        'langsmith' => [
+            'endpoint' => env('LANGSMITH_ENDPOINT', 'https://api.smith.langchain.com/runs'),
+            'api_key' => env('LANGSMITH_API_KEY'),
+            'project' => env('LANGSMITH_PROJECT', env('APP_NAME', 'laravel-ai-engine')),
+            'timeout' => (int) env('LANGSMITH_TIMEOUT', 10),
+        ],
+        
+        // Log exporter: writes to ai-engine log channel
+        'log' => [
+            'channel' => env('AI_ENGINE_OBSERVABILITY_LOG_CHANNEL', 'ai-engine'),
+        ],
+    ],
+];
+```
+
+Set environment variables to activate exporters:
+
+```bash
+# Enable HTTP webhook export
+AI_ENGINE_OBSERVABILITY_HTTP_ENDPOINT=https://api.example.com/ai-traces
+OBSERVABILITY_TOKEN=sk-...
+
+# Enable OpenTelemetry (e.g., for Datadog, New Relic, Jaeger)
+AI_ENGINE_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+
+# Enable LangSmith (Langchain debugging)
+LANGSMITH_API_KEY=ls_...
+LANGSMITH_PROJECT=my_project
+```
+
+### Define and Run Evaluations
+
+The `EvaluationService` lets you assert conditions on responses and export results:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+$response = Engine::anthropic()->text('Summarize: ' . $content);
+
+// Simple assertion: actual === expected
+Engine::evaluations()->evaluate(
+    'summary_length',
+    strlen($response->content),
+    500  // expected
+);
+
+// Custom assertion with callable
+Engine::evaluations()->assertPassed(
+    'contains_key_points',
+    $response->content,
+    assertion: fn (string $summary) => str_contains($summary, '[1]') && str_contains($summary, '[2]')
+);
+
+// Retrieve all evaluations from this request
+$allEvals = Engine::evaluations()->runs();
+// Each run is: ['name' => '...', 'passed' => true|false, 'actual' => ..., 'expected' => ..., 'created_at' => '...']
+```
+
+Evaluations are exported via the same exporters configured in `observability.exporters`, so they appear in LangSmith, OpenTelemetry dashboards, and webhooks alongside traces.
+
+### Trace Agent Runs (Realtime Observability)
+
+For durable agent runs, use the trace and stream APIs:
+
+```bash
+# Start a long-running agent chat and get URLs for polling/streaming
+curl -X POST http://localhost:8000/api/v1/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Analyze this invoice and create a customer",
+    "async": true
+  }'
+
+# Response includes:
+# {
+#   "status_url": "/api/v1/ai/agent-runs/{runId}",
+#   "trace_url": "/api/v1/ai/agent-runs/{runId}/trace",
+#   "stream_url": "/api/v1/ai/agent-runs/{runId}/stream?timeout=30"
+# }
+```
+
+Poll the trace to see routing decisions and step metadata:
+
+```bash
+curl http://localhost:8000/api/v1/ai/agent-runs/{runId}/trace
+
+# Returns structured trace with all routing decisions, spans, and metadata
+```
+
+Or stream events in real-time (SSE):
+
+```javascript
+const events = new EventSource(`/api/v1/ai/agent-runs/${runId}/stream?timeout=30`);
+
+events.addEventListener('run.started', (event) => {
+  console.log('Run started:', JSON.parse(event.data));
+});
+
+events.addEventListener('tool.started', (event) => {
+  const tool = JSON.parse(event.data);
+  console.log(`Tool ${tool.name} started`);
+});
+
+events.addEventListener('run.completed', (event) => {
+  console.log('Run complete:', JSON.parse(event.data));
+  events.close();
+});
+```
+
+### Custom Observability Exporter
+
+Implement the `ObservabilityExporter` contract to push traces and evaluations anywhere:
+
+```php
+<?php
+
+namespace App\Observability;
+
+use LaravelAIEngine\Contracts\ObservabilityExporter;
+
+class CustomExporter implements ObservabilityExporter
+{
+    public function export(string $type, array $payload): void
+    {
+        // $type is 'trace' or 'evaluation'
+        
+        if ($type === 'trace') {
+            $this->sendToAnalytics($payload);
+        } elseif ($type === 'evaluation') {
+            $this->trackEvaluation($payload);
+        }
+    }
+    
+    private function sendToAnalytics(array $span): void
+    {
+        // Example: write to time-series DB or send to APM vendor
+        redis()->lpush('ai_spans', json_encode($span));
+    }
+    
+    private function trackEvaluation(array $evaluation): void
+    {
+        // Example: track pass rate in your metrics system
+        metrics('ai.evaluation', $evaluation['passed'] ? 1 : 0);
+    }
+}
+```
+
+Register it in config:
+
+```php
+'observability' => [
+    'exporters' => [
+        App\Observability\CustomExporter::class,
+    ],
+],
+```
+
+### Disable Observability (Development)
+
+Observability exporters run on every trace and evaluation. To disable them during testing or development:
+
+```php
+// config/ai-engine.php
+'observability' => [
+    'exporters' => env('AI_ENGINE_OBSERVABILITY_ENABLED', true) ? [
+        // ... exporters ...
+    ] : [],
+],
+```
+
+Or set in `.env`:
+
+```bash
+AI_ENGINE_OBSERVABILITY_ENABLED=false
+```
+
+---
+
+## Billing, Credits & Pricing
+
+The laravel-ai-engine package includes a flexible credit system for tracking and billing AI usage. Credits are calculated based on model `credit_index` (cost per unit), engine rates (markup), and usage, with optional entity-scoped ledgers, custom lifecycle handlers, and async credit reservations.
+
+### Enable Credits
+
+Credits are enabled by default (`AI_ENGINE_CREDITS_ENABLED=true`). Disable them with:
+
+```php
+// config/ai-engine.php
+'credits' => [
+    'enabled' => env('AI_ENGINE_CREDITS_ENABLED', true),
+    'default_balance' => env('AI_DEFAULT_CREDITS', 100.0),
+    'currency' => env('AI_CREDITS_CURRENCY', 'MyCredits'),
+]
+```
+
+### Credit Calculation
+
+Credits are calculated as:
+```
+final_credits = (base_engine_credits + additional_input_engine_credits) × engine_rate
+```
+
+- **base_engine_credits**: From the model's `credit_index` × request unit count (words for text, images for images, minutes for video, etc.)
+- **additional_input_engine_credits**: Input media costs (FAL reference images, edit inputs, etc.)
+- **engine_rate**: Configured markup per engine (e.g., OpenAI at 2.0× means "100 app credits = 50 provider credits")
+
+### Default Engine Rates
+
+```php
+'engine_rates' => [
+    'openai' => 2.0,              // 2 app credits per provider credit
+    'anthropic' => 3.0,           // 3 app credits per provider credit
+    'gemini' => 1.2,              // 20% markup
+    'fal_ai' => 1.3,              // 30% markup
+    'openrouter' => 2.5,
+    'nvidia_nim' => 1.5,
+]
+```
+
+Override via environment:
+
+```bash
+AI_OPENAI_RATE=2.5
+AI_ANTHROPIC_RATE=2.8
+```
+
+### Check & Deduct Credits
+
+Use the `CreditManager` service to check and deduct credits before AI calls:
+
+```php
+use LaravelAIEngine\Services\CreditManager;
+use LaravelAIEngine\DTOs\AIRequest;
+
+$creditManager = app(CreditManager::class);
+$userId = auth()->id();
+
+$request = new AIRequest(
+    prompt: 'Explain quantum computing',
+    engine: 'openai',
+    model: 'gpt-4o',
+    userId: $userId,
+);
+
+// Check if user has sufficient credits
+if (!$creditManager->hasCredits($userId, $request)) {
+    throw new \LaravelAIEngine\Exceptions\InsufficientCreditsException(
+        'Insufficient credits for this request'
+    );
+}
+
+// Calculate required credits (dry-run)
+$requiredCredits = $creditManager->calculateCredits($request);
+echo "This request costs {$requiredCredits} credits.";
+
+// Get detailed breakdown for UI/auditing
+$breakdown = $creditManager->calculateCreditBreakdown($request);
+echo "Engine credits: {$breakdown['total_engine_credits']}, "
+   . "Engine rate: {$breakdown['engine_rate']}, "
+   . "Final app credits: {$breakdown['final_credits']}";
+
+// Deduct credits after successful provider call
+$creditManager->deductCredits($userId, $request, $actualCreditsUsed = null);
+```
+
+### User Credit Ownership Models
+
+By default, credits are stored on the `User` model via `my_credits` (balance) and `has_unlimited_credits` (flag). Change the owner model for multi-tenant setups:
+
+```php
+'credits' => [
+    'owner_model' => env('AI_CREDITS_OWNER_MODEL', 'App\\Models\\User'),
+    'owner_id_column' => env('AI_CREDITS_OWNER_ID_COLUMN', 'id'),
+]
+```
+
+For tenants/organizations:
+
+```bash
+AI_CREDITS_OWNER_MODEL=App\\Models\\Tenant
+AI_CREDITS_OWNER_ID_COLUMN=tenant_id
+```
+
+### Entity-Scoped Credit Ledgers
+
+For per-engine or per-model credit budgets, add an `entity_credits` JSON column to your owner model:
+
+```php
+// Migration
+Schema::table('users', function (Blueprint $table) {
+    $table->json('entity_credits')->nullable(); // stores {'openai': {'gpt-4o': {...}}}
+});
+```
+
+The `CreditManager` will auto-detect and use this ledger:
+
+```php
+// Get per-engine balance
+$balance = $creditManager->getUserCredits($userId, 'openai', 'gpt-4o');
+// Returns: ['balance' => 500.0, 'is_unlimited' => false, 'currency' => 'MyCredits']
+
+// Set per-engine balance
+$creditManager->setCredits($userId, 750.0, 'openai', 'gpt-4o');
+
+// Set engine-specific unlimited
+$creditManager->setUnlimitedCredits($userId, true, 'anthropic', 'claude-3-5-sonnet-20241022');
+```
+
+### Manage Credit Balances
+
+Add, set, and check balances programmatically:
+
+```php
+// Add credits
+$creditManager->addCredits($userId, 100.0);
+
+// Set balance to specific amount
+$creditManager->setCredits($userId, 500.0);
+
+// Grant unlimited credits
+$creditManager->setUnlimitedCredits($userId, true);
+
+// Check total balance across all engines
+$total = $creditManager->getTotalCredits($userId);
+
+// Check for low balance
+if ($creditManager->hasLowCredits($userId)) {
+    // Low balance threshold is configurable
+    // config('ai-engine.credits.low_balance_threshold', 10.0)
+}
+
+// Get breakdown by engine
+$allCredits = $creditManager->getAllUserCredits($userId);
+// Returns engine-specific conversion rates
+```
+
+### Request-Level Credit Accumulation
+
+Track cumulative credits across multiple AI calls in a single request:
+
+```php
+use LaravelAIEngine\Services\CreditManager;
+
+// Start accumulating
+CreditManager::startAccumulating();
+
+// Make AI calls (each internally calls accumulate())
+$response1 = $this->generateText($prompt1);
+$response2 = $this->generateText($prompt2);
+
+// Get total and stop
+$totalCreditsUsed = CreditManager::stopAccumulating();
+echo "This request consumed {$totalCreditsUsed} credits total.";
+```
+
+### Credit Reservations (Async Jobs)
+
+For long-running async jobs (FAL video generation), reserve credits upfront and finalize/refund later:
+
+```php
+// Reserve credits before async submission
+$reservation = $creditManager->reserveCredits(
+    userId: $userId,
+    request: $videoRequest,
+    creditsToReserve: null, // Auto-calculate
+    metadata: ['job_id' => 'abc-123'],
+    idempotencyKey: 'job-abc-123'
+);
+
+if ($reservation) {
+    // Submit async job; if it fails:
+    $creditManager->refundCreditReservation($reservation->uuid);
+    
+    // If it succeeds:
+    $creditManager->finalizeCreditReservation($reservation->uuid);
+}
+```
+
+Reserved credits are stored in the `ai_credit_reservations` table. Publish migrations if not present:
+
+```bash
+php artisan vendor:publish --tag=ai-engine-migrations
+```
+
+### Custom Lifecycle Handlers
+
+Implement custom credit logic (expiration, priority deduction, subscription-based limits) via `CreditLifecycleInterface`:
+
+```php
+namespace App\Services\AI;
+
+use Illuminate\Database\Eloquent\Model;
+use LaravelAIEngine\Contracts\CreditLifecycleInterface;
+use LaravelAIEngine\DTOs\AIRequest;
+
+class ExpiringCreditsHandler implements CreditLifecycleInterface
+{
+    public function hasCredits(Model $owner, AIRequest $request): bool
+    {
+        $expiration = $owner->credits_expire_at;
+        if ($expiration && $expiration->isPast()) {
+            return false;
+        }
+        return ((float) ($owner->my_credits ?? 0)) > 0;
+    }
+
+    public function deductCredits(Model $owner, AIRequest $request, float $creditsToDeduct): bool
+    {
+        // Custom expiration/priority logic
+        $owner->my_credits -= $creditsToDeduct;
+        return $owner->save();
+    }
+
+    public function addCredits(Model $owner, float $credits, array $metadata = []): bool
+    {
+        $owner->my_credits += $credits;
+        $owner->credits_expire_at = now()->addDays(30);
+        return $owner->save();
+    }
+
+    public function getAvailableCredits(Model $owner): float
+    {
+        if ($owner->credits_expire_at && $owner->credits_expire_at->isPast()) {
+            return 0.0;
+        }
+        return (float) ($owner->my_credits ?? 0);
+    }
+
+    public function hasLowCredits(Model $owner): bool
+    {
+        return $this->getAvailableCredits($owner) < 10.0;
+    }
+}
+```
+
+Register via config:
+
+```php
+'credits' => [
+    'lifecycle_handler' => env('AI_LIFECYCLE_HANDLER', 'App\\Services\\AI\\ExpiringCreditsHandler'),
+]
+```
+
+Or set at runtime:
+
+```php
+\LaravelAIEngine\Services\CreditManager::setLifecycleHandler(
+    'App\\Services\\AI\\ExpiringCreditsHandler'
+);
+```
+
+### Custom Query Resolvers
+
+Override owner model resolution for dynamic querying:
+
+```php
+namespace App\Services\AI;
+
+class TenantQueryResolver
+{
+    public function query(string $ownerId)
+    {
+        return \App\Models\Tenant::where('tenant_id', $ownerId)
+            ->with('subscription');
+    }
+}
+```
+
+Register:
+
+```php
+'credits' => [
+    'query_resolver' => env('AI_QUERY_RESOLVER', 'App\\Services\\AI\\TenantQueryResolver'),
+]
+```
+
+### Audit Pricing & Simulate Requests
+
+Use CLI commands to verify rates and preview charges:
+
+```bash
+# Audit all engine rates
+php artisan ai:pricing-audit
+
+# JSON output for tooling
+php artisan ai:pricing-audit --json
+
+# Fail if any rate is discounted or below configured floors
+php artisan ai:pricing-audit --fail-on-warning
+
+# Simulate a request without calling the provider
+php artisan ai:pricing-simulate fal_ai fal-ai/kling-video/o3/standard/image-to-video \
+  --prompt="Animate this product" \
+  --parameters='{"image_url":"https://example.test/product.png"}'
+```
+
+### Model Pricing Floors
+
+Set minimum app-credit charges per unit in the `ai_models.pricing` JSON column:
+
+```php
+// Database seeder or factory
+\App\Models\AIModel::create([
+    'provider' => 'fal_ai',
+    'model_id' => 'fal-ai/kling-video/o3/standard/image-to-video',
+    'pricing' => [
+        'minimum_app_credits_per_unit' => 12.0,
+    ],
+]);
+```
+
+The audit command warns when actual charges fall below the floor.
+
+### Preview API
+
+Return credit estimates to the frontend without deducting:
+
+```http
+POST /api/v1/ai/pricing/preview
+Content-Type: application/json
+
+{
+  "engine": "fal_ai",
+  "model": "fal-ai/kling-video/o3/standard/image-to-video",
+  "prompt": "Animate this product",
+  "parameters": {
+    "image_url": "https://example.test/product.png"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "engine": "fal_ai",
+  "model": "fal-ai/kling-video/o3/standard/image-to-video",
+  "base_engine_credits": 8.0,
+  "additional_input_engine_credits": 0.5,
+  "engine_rate": 1.3,
+  "final_credits": 11.05
+}
+```
+
+### Guard Behavior
+
+- **Synchronous calls** (text, images): Credits are checked *before* the provider call and deducted *after* success.
+- **Async calls** (FAL video): Credits are reserved before queue submission, refunded if submission fails, finalized on job completion.
+
+### InsufficientCreditsException
+
+Thrown when a user lacks credits:
+
+```php
+try {
+    $creditManager->deductCredits($userId, $request);
+} catch (\LaravelAIEngine\Exceptions\InsufficientCreditsException $e) {
+    // HTTP 402 Payment Required by default
+    return response()->json(['error' => $e->getMessage()], 402);
+}
+```
+
+---
+
+## Graph & Hybrid (Neo4j) RAG
+
+Laravel AI Engine can store entities, chunks, and relationships in Neo4j alongside your vector store (Qdrant) for hybrid retrieval that combines semantic search with relationship expansion. Entities publish their scoped access metadata and graph relationships; retrieval then enforces per-user `CAN_ACCESS` edges so results are tenant-safe.
+
+### Enable Hybrid Graph + Vector Retrieval
+
+In your `.env`:
+
+```env
+AI_ENGINE_HYBRID_RAG_ENABLED=true
+AI_ENGINE_HYBRID_RAG_STRATEGY=vector_then_graph
+AI_ENGINE_HYBRID_RAG_VECTOR_DRIVER=qdrant
+AI_ENGINE_HYBRID_RAG_GRAPH_DRIVER=neo4j
+
+AI_ENGINE_GRAPH_ENABLED=true
+AI_ENGINE_GRAPH_BACKEND=neo4j
+AI_ENGINE_GRAPH_SYNC_ON_INDEX=true
+AI_ENGINE_GRAPH_REQUIRE_ACCESS_SCOPE=false
+
+AI_ENGINE_NEO4J_URL=http://localhost:7474
+AI_ENGINE_NEO4J_DATABASE=neo4j
+AI_ENGINE_NEO4J_USERNAME=neo4j
+AI_ENGINE_NEO4J_PASSWORD=secret
+```
+
+Supported hybrid strategies:
+- `vector_then_graph`: search Qdrant first, seed Neo4j graph with the vector hits, then merge related graph context.
+- `graph_then_vector`: query Neo4j first, then backfill semantic matches from Qdrant.
+- `reciprocal_rank`: query both stores and merge with reciprocal rank fusion (RRF).
+
+### Prepare Your Models
+
+Make your models graph-aware by implementing the optional model contracts (overrides add them to the published config):
+
+```php
+use LaravelAIEngine\Traits\Vectorizable;
+use LaravelAIEngine\Contracts\GraphObjectInterface;
+use LaravelAIEngine\Contracts\AccessScopeProviderInterface;
+use LaravelAIEngine\Contracts\GraphRelationProviderInterface;
+
+class Invoice extends Model
+{
+    use Vectorizable;
+
+    /**
+     * Return a sanitized object safe to expose in retrieval responses.
+     * The graph stores this in the entity's object_json field.
+     */
+    public function toGraphObject(): array
+    {
+        return [
+            'id' => $this->id,
+            'invoice_number' => $this->invoice_number,
+            'customer_name' => $this->customer?->name,
+            'total' => (float) $this->total,
+            'status' => $this->status,
+            'issued_at' => $this->created_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Return access and ownership metadata for graph scoping.
+     * Used by Neo4j to build CAN_ACCESS edges for per-user retrieval.
+     */
+    public function getAccessScope(): array
+    {
+        return [
+            'canonical_user_id' => $this->user?->id,
+            'user_email_normalized' => strtolower(trim($this->user?->email ?? '')),
+            'scope_type' => 'workspace',
+            'scope_id' => $this->workspace_id,
+            'scope_label' => $this->workspace?->name,
+        ];
+    }
+
+    /**
+     * Return relationship descriptors for graph publishing.
+     * Each relation becomes a directed edge in Neo4j.
+     */
+    public function getGraphRelations(): array
+    {
+        return [
+            [
+                'relation_type' => 'BELONGS_TO',
+                'target_model_class' => Customer::class,
+                'target_model_id' => $this->customer_id,
+                'properties' => ['created_at' => now()->toIso8601String()],
+            ],
+            [
+                'relation_type' => 'IN_WORKSPACE',
+                'target_model_class' => Workspace::class,
+                'target_model_id' => $this->workspace_id,
+            ],
+        ];
+    }
+
+    /**
+     * Return compact summary for RAG list views.
+     */
+    public function toRAGSummary(): string
+    {
+        return "Invoice #{$this->invoice_number} for {$this->customer?->name}: \${$this->total} ({$this->status})";
+    }
+
+    /**
+     * Return detailed content for RAG context.
+     */
+    public function toRAGDetail(): string
+    {
+        return "Invoice #{$this->invoice_number} issued to {$this->customer?->name} "
+            . "on {$this->created_at?->toDateString()}. "
+            . "Total: \${$this->total}. Status: {$this->status}. "
+            . "Items: " . implode(', ', $this->lineItems->pluck('description')->all());
+    }
+
+    /**
+     * Optional: specify the source node (app/system) that owns this entity.
+     * Defaults to 'local' if not provided.
+     */
+    public function getSourceNode(): string
+    {
+        return 'local';
+    }
+}
+```
+
+### Initialize the Neo4j Graph
+
+Before syncing models, initialize the graph schema:
+
+```bash
+php artisan ai:neo4j-init
+```
+
+Then bulk-sync your models:
+
+```bash
+php artisan ai:neo4j-sync --fresh
+```
+
+When `AI_ENGINE_GRAPH_SYNC_ON_INDEX=true`, every vector index operation also publishes the model into Neo4j as an `Entity` node with `HAS_CHUNK` edges to its indexed chunks.
+
+### Multi-Tenant Access Scoping (Fail-Closed)
+
+By default, unscoped queries (no resolved `canonical_user_id` / `user_email_normalized`) match the entire graph. For multi-tenant deployments, enable strict scoping:
+
+```env
+AI_ENGINE_GRAPH_REQUIRE_ACCESS_SCOPE=true
+```
+
+With this flag, an unscoped retrieval returns no results instead of leaking across tenants. Always pass an authenticated `userId` or an explicit `options['access_scope']`:
+
+```php
+use LaravelAIEngine\Services\RAG\HybridGraphVectorSearchService;
+
+$results = app(HybridGraphVectorSearchService::class)->retrieveRelevantContext(
+    searchQueries: ['invoices from Q4'],
+    collections: [Invoice::class],
+    maxResults: 5,
+    threshold: 0.3,
+    options: ['hybrid_strategy' => 'vector_then_graph'],
+    userId: auth()->id()  // Pass authenticated user
+);
+```
+
+The returned objects include:
+- `vector_metadata.hybrid_score`
+- `vector_metadata.hybrid_sources` (array of 'vector' and/or 'graph')
+- `vector_metadata.vector_score`
+- `vector_metadata.graph_score`
+- `entity_ref` (model class, id, source node, scope metadata)
+- `graph_object` (the sanitized `toGraphObject()` payload)
+- `graph_neighbors` (related entities from 1-hop graph expansion)
+
+### Cross-Store Links
+
+Qdrant points now include stable graph references in their payloads:
+
+```json
+{
+  "graph_node_id": "local:App\\Models\\Invoice:42",
+  "graph_chunk_id": "local:App\\Models\\Invoice:42#chunk:0",
+  "vector_collection": "vec_invoices",
+  "vector_point_id": "42",
+  "qdrant_collection": "vec_invoices",
+  "qdrant_point_id": "42"
+}
+```
+
+Neo4j entity and chunk nodes receive matching Qdrant references. This lets tools, agents, and citations move fluidly from a vector hit to the graph neighborhood, or from a graph node back to the vector store.
+
+### Graph Query Planning
+
+The Neo4j retrieval service uses a planner to classify queries (ownership, dependency, relationship, timeline, etc.) and choose traversal templates. Planned results include:
+
+- `vector_metadata.graph_planned` (bool)
+- `vector_metadata.planner_strategy` (strategy name)
+- `vector_metadata.planner_score` (0.0–1.0)
+- `vector_metadata.planner_score_breakdown` (when `ai-engine.graph.planner_score_breakdown = true`)
+- `vector_metadata.relation_path` (array of relation types traversed)
+- `vector_metadata.path_length` (hops from seed)
+
+Tuning planner behavior:
+
+```env
+AI_ENGINE_GRAPH_MAX_TRAVERSAL_HOPS=2
+AI_ENGINE_GRAPH_PLANNER_ENABLED=true
+AI_ENGINE_GRAPH_PLANNER_SEED_SCORE_FLOOR=0.65
+AI_ENGINE_GRAPH_RELATION_HOP_DECAY=0.9
+```
+
+### Knowledge Base Caching & Warming
+
+The graph knowledge base is a derived acceleration layer that caches query plans and retrieval results per access scope:
+
+```bash
+php artisan ai:neo4j-kb-warm --from-profiles --canonical-user-id=1
+php artisan ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25
+```
+
+Schedule background warming in `routes/console.php`:
+
+```php
+Schedule::command('ai:neo4j-kb-build --profiles-limit=25 --entity-limit=25')
+    ->hourly()
+    ->withoutOverlapping()
+    ->when(static function (): bool {
+        return (bool) config('ai-engine.graph.enabled', false)
+            && (string) config('ai-engine.graph.backend', 'neo4j') === 'neo4j'
+            && (bool) config('ai-engine.graph.knowledge_base.enabled', true);
+    });
+```
+
+### Inspect and Repair the Graph
+
+```bash
+php artisan ai:neo4j-stats
+php artisan ai:neo4j-diagnose
+php artisan ai:neo4j-repair --apply
+```
+
+### Config Reference
+
+Key settings in `config/ai-engine.php`:
+
+```php
+'rag' => [
+    'hybrid' => [
+        'enabled' => env('AI_ENGINE_HYBRID_RAG_ENABLED', false),
+        'strategy' => env('AI_ENGINE_HYBRID_RAG_STRATEGY', 'vector_then_graph'),
+        'vector_driver' => env('AI_ENGINE_HYBRID_RAG_VECTOR_DRIVER', 'qdrant'),
+        'graph_driver' => env('AI_ENGINE_HYBRID_RAG_GRAPH_DRIVER', 'neo4j'),
+        'vector_limit' => 10,
+        'graph_limit' => 10,
+        'vector_weight' => 0.6,
+        'graph_weight' => 0.4,
+        'rrf_k' => 60,
+    ],
+],
+'graph' => [
+    'enabled' => env('AI_ENGINE_GRAPH_ENABLED', true),
+    'backend' => env('AI_ENGINE_GRAPH_BACKEND', 'neo4j'),
+    'require_access_scope' => env('AI_ENGINE_GRAPH_REQUIRE_ACCESS_SCOPE', false),
+    'sync_on_index' => env('AI_ENGINE_GRAPH_SYNC_ON_INDEX', false),
+    'neighbor_limit' => 3,
+    'max_traversal_hops' => 2,
+    'relation_hop_decay' => 0.9,
+    'planner_enabled' => true,
+],
+'neo4j' => [
+    'url' => env('AI_ENGINE_NEO4J_URL', 'http://localhost:7474'),
+    'database' => env('AI_ENGINE_NEO4J_DATABASE', 'neo4j'),
+    'username' => env('AI_ENGINE_NEO4J_USERNAME', 'neo4j'),
+    'password' => env('AI_ENGINE_NEO4J_PASSWORD'),
+],
+```
+
+---
+
+## Voice, TTS & Transcription
+
+Text-to-speech, speech-to-text, and voice conversion provide audio generation and transcription capabilities across OpenAI, ElevenLabs, Google Cloud, Gemini, local servers, and more. Use these features to enable voice interactions, narration, and audio input processing in your application.
+
+### Text to Speech (TTS)
+
+Generate audio from text using any configured TTS provider.
+
+**OpenAI TTS** (quick start with GPT models):
+
+```php
+use LaravelAIEngine\Facades\Engine;
+use LaravelAIEngine\DTOs\AIRequest;
+
+$response = app(\LaravelAIEngine\Services\AIEngineService::class)->generateAudio(
+    new AIRequest(
+        prompt: 'Read this invoice summary.',
+        engine: 'openai',
+        model: 'gpt-4o-mini-tts',
+        parameters: [
+            'voice' => 'nova',      // nova, alloy, echo, fable, onyx, shimmer
+            'format' => 'mp3',      // mp3 (default), opus, aac, flac, pcm, wav
+        ],
+    )
+);
+
+$audioUrl = $response->getFiles()[0] ?? null;
+```
+
+**ElevenLabs TTS** (high-quality multilingual voices):
+
+```php
+$response = Engine::engine('eleven_labs')
+    ->model('eleven_multilingual_v2')
+    ->withParameters([
+        'voice_id' => 'pNInz6obpgDQGcFmaJgB',  // Cloned, preset, or generated voice
+        'stability' => 0.5,                      // 0 to 1 (lower = more variable)
+        'similarity_boost' => 0.5,               // 0 to 1 (higher = closer to voice)
+        'style' => 0.0,                          // 0 to 1 (higher = more exaggerated)
+        'use_speaker_boost' => true,
+    ])
+    ->generateAudio('Read this customer note.');
+```
+
+**Google Cloud TTS** (Google-native voices and effects):
+
+```php
+$response = app(\LaravelAIEngine\Services\AIEngineService::class)->generateAudio(
+    new AIRequest(
+        prompt: 'Read this customer note.',
+        engine: 'google_tts',
+        model: 'google-tts',
+        parameters: [
+            'voice' => 'en-US-Neural2-F',           // Voice name (e.g., en-US-Neural2-F, ja-JP-Neural2-B)
+            'language_code' => 'en-US',             // BCP-47 language code
+            'audio_encoding' => 'MP3',              // MP3 (default), LINEAR16, OGG_OPUS, MULAW, ALAW
+            'speaking_rate' => 1.0,                 // 0.25 to 4.0 (1.0 = normal)
+            'pitch' => 0.0,                         // -20 to 20 (semitones)
+            'volume_gain_db' => 0.0,                // -96 to 16 dB
+        ],
+    )
+);
+```
+
+**Gemini Native TTS** (integrated with Gemini models):
+
+```php
+$response = Engine::engine('gemini')
+    ->model('gemini-2.5-flash-preview-tts')
+    ->withParameters([
+        'voice' => 'Kore',  // Kore, Puck, Breeze, Chime, Echo, Orbit, Sage
+    ])
+    ->generateAudio('Read this invoice summary.');
+```
+
+For multi-speaker TTS:
+
+```php
+$response = Engine::engine('gemini')
+    ->model('gemini-2.5-flash-preview-tts')
+    ->withParameters([
+        'speaker_voice_configs' => [
+            ['speaker' => 'Speaker 1', 'voiceConfig' => ['prebuiltVoiceConfig' => ['voiceName' => 'Kore']]],
+            ['speaker' => 'Speaker 2', 'voiceConfig' => ['prebuiltVoiceConfig' => ['voiceName' => 'Puck']]],
+        ],
+    ])
+    ->generateAudio('Speaker 1: Hello. Speaker 2: Welcome.');
+```
+
+**Local TTS** (self-hosted Kokoro, Piper, or LocalAI):
+
+```php
+// Configure in .env:
+// LOCAL_AUDIO_BASE_URL=http://127.0.0.1:8880/v1
+// LOCAL_AUDIO_TTS_MODE=openai_compatible
+// LOCAL_AUDIO_TTS_MODEL=kokoro
+// LOCAL_AUDIO_TTS_VOICE=af_heart
+
+$response = Engine::engine('local_audio')
+    ->model('local-tts')
+    ->withParameters([
+        'response_format' => 'wav',
+        'voice' => 'af_heart',
+    ])
+    ->generateAudio('Read this locally.');
+```
+
+### Speech to Text (STT / Transcription)
+
+Convert audio files to text using OpenAI Whisper, ElevenLabs Scribe, Gemini, or local models.
+
+**OpenAI Whisper** (standard transcription):
+
+```php
+$response = Engine::engine('openai')
+    ->model('gpt-4o-transcribe')
+    ->speechToText(storage_path('app/audio/order.wav'));
+
+$transcript = $response->getContent();
+```
+
+With optional parameters:
+
+```php
+$response = Engine::engine('openai')
+    ->model('gpt-4o-transcribe')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'language' => 'en',
+        'prompt' => 'Common product names: MacBook, AirPods, iPhone',
+        'temperature' => 0,
+    ]);
+```
+
+**ElevenLabs Scribe** (advanced transcription with diarization and entity detection):
+
+```php
+$response = Engine::engine('eleven_labs')
+    ->model('scribe_v2')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'language_code' => 'en',
+        'diarize' => true,                  // Identify multiple speakers
+        'tag_audio_events' => true,         // Detect background noise, silence, etc.
+        'num_speakers' => 2,                // Optional: hint at expected speaker count
+    ]);
+
+$transcript = $response->getContent();
+$metadata = $response->getMetadata();      // Includes language_code, segments, etc.
+```
+
+**Gemini STT** (audio understanding):
+
+```php
+$response = Engine::engine('gemini')
+    ->model('gemini-2.5-flash-preview-04-17')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'mime_type' => 'audio/wav',
+    ]);
+```
+
+**Local STT** (Whisper-compatible or LocalAI):
+
+```php
+// Configure in .env:
+// LOCAL_AUDIO_BASE_URL=http://127.0.0.1:8080/v1
+// LOCAL_AUDIO_STT_MODE=openai_compatible
+// LOCAL_AUDIO_STT_MODEL=whisper-small
+// LOCAL_AUDIO_STT_LANGUAGE=
+// LOCAL_AUDIO_STT_PROMPT=
+// AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED=false
+// AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE=openai
+// AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL=gpt-4o-mini
+
+$response = Engine::engine('local_audio')
+    ->model('local-whisper')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'language' => 'ar',
+        'prompt' => 'فاتورة، عميل، أحمد، ماك بوك، آيفون',
+        'normalize' => true,  // Clean transcript with a text model
+    ]);
+
+$transcript = $response->getContent();
+```
+
+#### Transcript Normalization
+
+After STT, enable transcript normalization to clean up punctuation and capitalization without changing meaning:
+
+```php
+// Per-request:
+$response = Engine::engine('local_audio')
+    ->model('local-whisper')
+    ->speechToText(storage_path('app/audio/order.wav'), [
+        'language' => 'ar',
+        'normalize' => true,
+    ]);
+
+// Global configuration (config/ai-engine.php):
+'transcription_normalization' => [
+    'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', false),
+    'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', 'openai'),
+    'model' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL', 'gpt-4o-mini'),
+],
+```
+
+### Speech to Speech (STS / Voice Conversion)
+
+Convert audio to audio with voice, tone, or speaker changes.
+
+**ElevenLabs STS** (native speech-to-speech with voice control):
+
+```php
+$response = Engine::engine('eleven_labs')
+    ->model('eleven_multilingual_sts_v2')
+    ->speechToSpeech(storage_path('app/audio/source.wav'), parameters: [
+        'voice_id' => 'JBFqnCBsd6RMkjVDRZzb',     // Target voice
+        'output_format' => 'mp3_44100_128',        // Audio format and bitrate
+        'seed' => 123,                              // Optional: reproducibility
+        'remove_background_noise' => false,
+    ]);
+
+$audioUrl = $response->getFiles()[0] ?? null;
+```
+
+**Gemini STS** (STT → chat → TTS pipeline):
+
+```php
+$response = Engine::engine('gemini')
+    ->model('gemini-2.5-flash-preview-04-17')
+    ->speechToSpeech(storage_path('app/audio/source.wav'), 'Reply naturally to this audio.', [
+        'tts_model' => 'gemini-2.5-flash-preview-tts',
+        'voice' => 'Kore',
+        'mime_type' => 'audio/wav',
+    ]);
+
+$audioUrl = $response->getFiles()[0] ?? null;
+```
+
+**OpenRouter STS** (Whisper → OpenRouter chat models → TTS):
+
+```php
+$response = Engine::engine('openrouter')
+    ->model('openai/whisper-1')
+    ->speechToSpeech(storage_path('app/audio/source.wav'), parameters: [
+        'tts_model' => 'openai/gpt-4o-mini-tts-2025-12-15',
+        'voice' => 'nova',
+    ]);
+```
+
+### Brand Voice Management
+
+Store and apply consistent brand voice rules to generated text or narration.
+
+```php
+use LaravelAIEngine\Services\BrandVoiceManager;
+
+$brandVoiceManager = app(BrandVoiceManager::class);
+$userId = auth()->id();
+
+// Create a brand voice profile
+$voice = $brandVoiceManager->createBrandVoice($userId, [
+    'name' => 'Professional Authority',
+    'tone' => 'professional',
+    'style' => 'informative',
+    'target_audience' => 'enterprise customers',
+    'key_messages' => ['reliability', 'innovation', 'trust'],
+    'avoid_words' => ['cheap', 'limited', 'deprecated'],
+]);
+
+// Apply to text generation
+$appliedPrompt = $brandVoiceManager->applyBrandVoiceToPrompt($userId, $voice['id'], 'Draft a summary.');
+
+// Analyze content for brand alignment
+$analysis = $brandVoiceManager->analyzeContent($userId, $voice['id'], 'This cheap solution is limited.');
+// Returns: ['score' => 70, 'issues' => ['Avoided word found: cheap'], 'suggestions' => [...]]
+
+// Update or delete
+$brandVoiceManager->updateBrandVoice($userId, $voice['id'], ['tone' => 'friendly']);
+$brandVoiceManager->deleteBrandVoice($userId, $voice['id']);
+```
+
+### Supported Audio Formats
+
+All transcription and local audio endpoints support:
+
+- **MP3, WAV, OGG, FLAC, M4A, AAC, WMA**
+- Max file size: 25 MB (OpenAI Whisper), check provider limits for others
+- Sample rates: typically 16 kHz or higher
+
+### Database Storage (Transcription Model)
+
+Track transcriptions with metadata, segments, language, and confidence:
+
+```php
+use LaravelAIEngine\Models\Transcription;
+
+// Transcription is polymorphic (it morphTo "transcribable"). There is NO trait — link it to
+// your own model by declaring the inverse morphMany yourself:
+class VideoAsset extends Model
+{
+    public function transcriptions()
+    {
+        return $this->morphMany(Transcription::class, 'transcribable');
+    }
+}
+
+$asset = VideoAsset::find(1);
+$transcriptions = $asset->transcriptions()->where('status', Transcription::STATUS_COMPLETED)->get();
+// Or query directly via the model's scopes: Transcription::query()->completed()->get();
+
+foreach ($transcriptions as $t) {
+    echo $t->content;                    // Full text
+    echo $t->language;                   // Detected/specified language
+    echo $t->confidence;                 // Confidence score (decimal)
+    echo $t->formatted_duration;         // HH:MM:SS format
+    echo $t->status;                     // pending, processing, completed, failed
+    
+    if ($t->segments) {
+        // Array of [{'start' => 0.0, 'end' => 2.5, 'text' => '...'}]
+        foreach ($t->segments as $segment) {
+            echo "{$segment['text']} ({$segment['start']}–{$segment['end']}s)";
+        }
+    }
+}
+```
+
+### Configuration Reference
+
+**OpenAI TTS/Transcription** (config/ai-engine.php):
+
+```php
+'engines' => [
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        // TTS/transcription use same OpenAI client
+    ],
+],
+```
+
+**ElevenLabs**:
+
+```php
+'engines' => [
+    'eleven_labs' => [
+        'api_key' => env('ELEVENLABS_API_KEY'),
+        'default_voice_id' => 'pNInz6obpgDQGcFmaJgB',
+    ],
+],
+```
+
+**Google Cloud TTS**:
+
+```php
+'engines' => [
+    'google_tts' => [
+        'api_key' => env('GOOGLE_TTS_API_KEY', env('GOOGLE_API_KEY')),
+        'access_token' => env('GOOGLE_TTS_ACCESS_TOKEN'),
+        'base_url' => env('GOOGLE_TTS_BASE_URL', 'https://texttospeech.googleapis.com/v1'),
+        'language_code' => 'en-US',
+        'voice' => 'en-US-Neural2-F',
+    ],
+],
+```
+
+**Local Audio** (Whisper, LocalAI, Kokoro):
+
+```php
+'engines' => [
+    'local_audio' => [
+        'api_key' => env('LOCAL_AUDIO_API_KEY'),
+        'base_url' => env('LOCAL_AUDIO_BASE_URL', 'http://127.0.0.1:8880/v1'),
+        'timeout' => env('LOCAL_AUDIO_TIMEOUT', 120),
+        'stt' => [
+            'mode' => 'openai_compatible',          // or 'command'
+            'model' => 'whisper-small',
+            'language' => '',                        // Auto-detect or specific code
+            'prompt' => '',                          // Domain hints
+            'command' => [],                         // Shell command if mode=command
+            'output_path' => '',                     // File to read results from
+        ],
+        'tts' => [
+            'mode' => 'openai_compatible',          // or 'command'
+            'model' => 'kokoro',
+            'voice' => 'af_heart',
+            'response_format' => 'wav',
+            'command' => [],
+            'output_path' => '',
+        ],
+    ],
+],
+```
+
+**Transcription Normalization**:
+
+```php
+'transcription_normalization' => [
+    'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', false),
+    'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', 'openai'),
+    'model' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL', 'gpt-4o-mini'),
+],
+```
+
+### Tips
+
+- **Multilingual models**: For Arabic, French, or mixed-language content, prefer larger Whisper models (`base` or `small`) or ElevenLabs Scribe over tiny variants.
+- **Voice cloning**: ElevenLabs allows custom voice creation from audio samples—call `cloneVoice()` to upload training samples and create a new voice ID.
+- **Cost-aware routing**: Use `MediaProviderRouter` to select TTS/STT providers by cost, latency, or quality for production workloads.
+- **Streaming TTS**: ElevenLabs offers `generateAudioStream()` for low-latency audio chunk delivery; use in real-time voice chat contexts.
+- **Local first**: Running LocalAI with Whisper and Kokoro avoids API costs and latency; use for privacy-sensitive or high-volume workloads.
+
+---
+
+## Provider Tools & MCP
+
+Provider tools let your app expose hosted capabilities like web search, code execution, computer use, and remote MCP servers through the Laravel AI Engine request path. The package automatically maps provider-native tool definitions to the right provider SDK format, routes executions through approval and audit layers, and records all runs, artifacts, and decisions.
+
+### Using Provider Tools
+
+Build tools using the provider tool classes under `LaravelAIEngine\Tools\Provider\`. Each tool implements `ProviderToolInterface` and uses a fluent builder pattern:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+use LaravelAIEngine\Tools\Provider\WebSearch;
+use LaravelAIEngine\Tools\Provider\FileSearch;
+use LaravelAIEngine\Tools\Provider\CodeInterpreter;
+use LaravelAIEngine\Tools\Provider\ComputerUse;
+use LaravelAIEngine\Tools\Provider\McpServer;
+
+$response = Engine::engine('openai')
+    ->model('gpt-4o')
+    ->withTools([
+        (new WebSearch())->max(5)->location('San Francisco', 'California', 'USA'),
+        (new FileSearch(['vs_abc123', 'vs_xyz789']))->where(['status' => 'active']),
+        (new CodeInterpreter())->memoryLimit('8g'),
+        (new ComputerUse())->display(1920, 1080)->environment('browser'),
+        (new McpServer('docs', 'https://mcp.example.com/docs'))
+            ->authorizationToken('bearer-token-xyz'),
+    ])
+    ->generate('Search and analyze this.');
+```
+
+**Supported tools** (namespace `LaravelAIEngine\Tools\Provider\`):
+- `WebSearch` — web search with optional domain allow list and location context
+- `WebFetch` — fetch page content (Anthropic)
+- `FileSearch` — OpenAI vector store search with filters
+- `CodeInterpreter` — code execution with files and memory limits (OpenAI/Anthropic/Gemini)
+- `ComputerUse` — remote desktop control (OpenAI/Anthropic)
+- `McpServer` — remote MCP server with URL and auth
+- `HostedShell` — execute shell commands (OpenAI)
+- `ApplyPatchTool` — apply file patches with path restrictions (OpenAI)
+- `ImageGenerationTool` — image generation (OpenAI)
+- `ToolSearch` — search available provider skills (OpenAI)
+- `GoogleMapsGrounding` — Google Maps context (Gemini)
+- `ProviderSkill` — OpenAI provider skills
+
+### Tool Configuration
+
+Each tool exposes a fluent API. Common patterns:
+
+```php
+// WebSearch
+(new WebSearch())
+    ->max(5)                              // max results
+    ->allow(['github.com', 'openai.com']) // restrict to domains
+    ->location('London', 'England', 'UK') // optional location context
+
+// FileSearch (OpenAI)
+(new FileSearch(['vs_123']))
+    ->where(['status' => 'active', 'tag' => 'pdf']) // metadata filters
+
+// CodeInterpreter
+(new CodeInterpreter())
+    ->withFiles(['file_abc', 'file_xyz'])
+    ->memoryLimit('4g') // or '8g', '16g'
+    ->container(['type' => 'auto'])
+
+// ComputerUse
+(new ComputerUse())
+    ->display(1600, 900, 1)       // width, height, display_number
+    ->environment('browser')      // or 'server', 'desktop'
+
+// McpServer
+(new McpServer('label', 'https://server.example.com'))
+    ->authorizationToken('secret-token')
+    ->headers(['X-Custom' => 'value'])
+    ->connectorId('connector-uuid') // OpenAI connector_id if using connectors
+
+// HostedShell
+(new HostedShell())
+    ->container(['type' => 'auto'])
+
+// ApplyPatchTool
+(new ApplyPatchTool())
+    ->workspace('/app')
+    ->allowedPaths(['/app/src', '/app/tests'])
+```
+
+### Approvals & Access Control
+
+High-risk tools (computer use, MCP servers, code execution) require approval by default. Configure which tools need approval and their risk levels in `config/ai-engine.php`:
+
+```php
+'provider_tools' => [
+    'approvals' => [
+        'enabled' => env('AI_ENGINE_PROVIDER_TOOL_APPROVALS_ENABLED', true),
+        'expires_after_minutes' => 0, // 0 = never expire
+        'require_for' => ['computer_use', 'mcp_server', 'code_interpreter'],
+        'require_for_sensitive_payloads' => true,
+        'sensitive_keys' => [
+            'password', 'secret', 'token', 'api_key', 'authorization'
+        ],
+        'sensitive_patterns' => [
+            '/sk-[A-Za-z0-9_\-]{16,}/',                    // API keys
+            '/-----BEGIN .*PRIVATE KEY-----/',              // PEM keys
+            '/\b\d{13,19}\b/',                             // Card numbers
+        ],
+        'risk_levels' => [
+            'computer_use' => 'high',
+            'mcp_server' => 'medium',
+            'code_interpreter' => 'medium',
+            'file_search' => 'low',
+            'web_search' => 'low',
+        ],
+    ],
+],
+```
+
+When a request hits approval middleware, the package:
+1. Creates a pending approval record with a unique `approval_key`
+2. Emits an event (captured by your UI or approval handler)
+3. Blocks the AI request until approved/rejected
+
+Approve a pending request:
+
+```php
+use LaravelAIEngine\Services\ProviderTools\ProviderToolApprovalService;
+
+// In your approval handler (controller, event listener, etc.):
+app(ProviderToolApprovalService::class)->approve(
+    approvalKey: 'abc-123-xyz',
+    actorId: auth()->id(),
+    reason: 'Approved by user',
+    metadata: ['ip' => request()->ip()]
+);
+
+// Reject instead:
+app(ProviderToolApprovalService::class)->reject(
+    approvalKey: 'abc-123-xyz',
+    actorId: auth()->id(),
+    reason: 'User rejected'
+);
+```
+
+After approval, retry the request with approval metadata:
+
+```php
+use LaravelAIEngine\DTOs\AIRequest;
+
+$request = AIRequest::make('Generate code', 'openai', 'gpt-4o')
+    ->withMetadata([
+        'provider_tool_run_id' => $runUuid,
+        'provider_tool_approval_keys' => ['abc-123-xyz'],
+    ]);
+
+$response = Engine::request($request);
+```
+
+### MCP App Tool Adapter
+
+Expose your Laravel app's registered tools and skills to MCP clients via `McpAppToolAdapter`. This adapter lists app tools with JSON schemas and routes calls back to your app:
+
+```php
+use LaravelAIEngine\Services\SDK\McpAppToolAdapter;
+use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
+use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
+
+$adapter = new McpAppToolAdapter(
+    tools: app(ToolRegistry::class),
+    skills: app(AgentSkillRegistry::class)
+);
+
+// List all tools + skills in MCP format:
+$toolList = $adapter->listTools(includeSkills: true);
+
+// Sample response:
+// [
+//   {
+//     'name' => 'send_email',
+//     'description' => 'Send an email...',
+//     'inputSchema' => {
+//       'type' => 'object',
+//       'properties' => ['to' => ['type' => 'string'], ...],
+//       'required' => ['to', 'subject', 'body']
+//     },
+//     'metadata' => [
+//       'source' => 'tool',
+//       'dispatch_name' => 'send_email',
+//       'provider_name' => 'send_email',
+//       'requires_confirmation' => false
+//     ]
+//   },
+//   {
+//     'name' => 'skill.summarize-docs',
+//     'description' => 'Summarize documents...',
+//     'inputSchema' => {
+//       'type' => 'object',
+//       'properties' => ['message' => ['type' => 'string']],
+//       'required' => ['message']
+//     },
+//     'metadata' => [
+//       'source' => 'skill',
+//       'skill_id' => 'summarize-docs',
+//       'dispatch_name' => 'skill.summarize-docs',
+//       'requires_confirmation' => false
+//     ]
+//   }
+// ]
+
+// Call a tool by name:
+$result = $adapter->callTool(
+    name: 'send_email',
+    arguments: ['to' => 'user@example.com', 'subject' => 'Test'],
+    context: $unifiedActionContext
+);
+```
+
+Tools are serialized with:
+- `name` — tool identifier (e.g. 'send_email', 'skill.summarize-docs')
+- `description` — tool purpose
+- `inputSchema` — JSON Schema for tool arguments
+- `metadata.source` — 'tool' or 'skill'
+- `metadata.dispatch_name` — internal dispatch key
+- `metadata.provider_name` — safe name for provider transmission (alphanumeric + underscore)
+- `metadata.requires_confirmation` — whether tool needs user approval
+
+Skills are auto-exposed with `message` as the sole input parameter.
+
+### Provider Tool Payload Mapping
+
+The `ProviderToolPayloadMapper` class converts normalized tool definitions to provider-specific payloads. It's transparent; the engine uses it internally:
+
+```php
+use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
+
+$mapper = new ProviderToolPayloadMapper();
+
+// Split tools into provider groups and functions
+$split = $mapper->splitForProvider('openai', [
+    ['type' => 'web_search', 'max' => 5],
+    ['type' => 'code_interpreter'],
+    ['type' => 'mcp_server', 'label' => 'docs', 'url' => 'https://...'],
+    ['type' => 'function', 'name' => 'custom_fn', ...], // custom functions pass through
+]);
+
+// Result:
+// [
+//   'functions' => [['type' => 'function', 'name' => 'custom_fn', ...]],
+//   'tools' => [
+//     ['type' => 'web_search_preview', ...],
+//     ['type' => 'code_interpreter', ...],
+//     ['type' => 'mcp', 'server_label' => 'docs', 'server_url' => 'https://...']
+//   ],
+//   'mcp_servers' => [],
+//   'tool_config' => {},
+//   'beta_headers' => []  // Anthropic beta headers when needed
+// ]
+```
+
+Provider-specific behavior:
+- **OpenAI**: Maps to `web_search_preview`, `file_search`, `code_interpreter`, `computer_use_preview`, `mcp`, `image_generation`, `tool_search`, `hosted_shell`, `apply_patch`, `skill`.
+- **Anthropic**: Maps to `web_search_*`, `web_fetch`, `code_execution_*`, `computer_*`, `mcp_server` (with beta headers). Supports configurable versions.
+- **Gemini**: Maps to `googleSearch`, `urlContext`, `retrieval`, `googleMaps`, `codeExecution`.
+- **OpenRouter**: Subset of OpenAI mappings (no computer use, limited image generation).
+
+### Provider Tool Versions (Anthropic Beta Headers)
+
+Anthropic frequently updates its beta headers. Override them in config without waiting for a package release:
+
+```php
+'provider_tools' => [
+    'versions' => [
+        'anthropic' => [
+            'web_search' => [
+                'type' => 'web_search_20250305',
+            ],
+            'code_execution' => [
+                'type' => 'code_execution_20250825',
+                'beta_header' => 'code-execution-2025-08-25',
+            ],
+            'computer_use' => [
+                'type' => 'computer_20250124',
+                'beta_header' => 'computer-use-2025-01-24',
+            ],
+            'mcp_server' => [
+                'beta_header' => 'mcp-client-2025-04-04',
+            ],
+        ],
+    ],
+],
+```
+
+### Lifecycle: Runs, Approvals & Artifacts
+
+Provider tool work is recorded across four tables:
+
+- **`ai_provider_tool_runs`** — Tool execution records (request/response payloads, status: running/awaiting_approval/completed/failed, conversation_id for OpenAI responses state reuse)
+- **`ai_provider_tool_approvals`** — Approval records with `approval_key`, `status` (pending/approved/rejected), risk_level, expiry
+- **`ai_provider_tool_artifacts`** — Generated files (links to `ai_media` for downloaded files, provider_file_id for remote artifacts, citation URLs)
+- **`ai_provider_tool_audit_events`** — Approval/run lifecycle audit trail (action, actor_id, metadata)
+
+Access them via repositories:
+
+```php
+use LaravelAIEngine\Repositories\ProviderToolRunRepository;
+use LaravelAIEngine\Repositories\ProviderToolApprovalRepository;
+use LaravelAIEngine\Repositories\ProviderToolArtifactRepository;
+use LaravelAIEngine\Repositories\ProviderToolAuditRepository;
+
+// Get run with artifacts and approvals:
+$run = app(ProviderToolRunRepository::class)->find($uuid);
+$run->artifacts;   // HasMany AIProviderToolArtifact
+$run->approvals;   // HasMany AIProviderToolApproval
+$run->auditEvents; // HasMany AIProviderToolAuditEvent
+
+// List pending approvals:
+$pending = app(ProviderToolApprovalRepository::class)
+    ->query()
+    ->where('status', 'pending')
+    ->get();
+
+// Get audit events for a run:
+$events = $run->auditEvents()->orderByDesc('created_at')->get();
+```
+
+### Artifacts & Remote File Handling
+
+When a provider tool returns downloadable file URLs (from code execution, computer use, etc.), the package extracts them and optionally downloads/stores them:
+
+```php
+'provider_tools' => [
+    'artifacts' => [
+        'enabled' => true,
+        'persist_remote_files' => env('AI_ENGINE_PROVIDER_TOOL_PERSIST_REMOTE_ARTIFACTS', true),
+        'block_private_urls' => true,  // Prevent downloads from localhost/10.x/172.16-31.x/192.168.x
+        'max_remote_bytes' => 50 * 1024 * 1024,
+        'allowed_extensions' => ['png', 'jpg', 'mp4', 'wav', 'pdf', 'csv', 'json'],
+        'allowed_mime_types' => ['image/*', 'video/*', 'audio/*', 'application/pdf', 'text/*'],
+    ],
+],
+```
+
+Keep `block_private_urls` enabled for user-facing apps to prevent SSRF. Citation URLs are always audited (recorded without downloading).
+
+### API Surface
+
+The package exposes provider tool APIs under `/api/v1/ai/provider-tools`:
+
+```
+GET  /runs                           # List runs
+GET  /runs/{run}                     # Get run details
+POST /runs/{run}/continue            # Continue a run (follow-up input)
+GET  /approvals                      # List pending approvals
+POST /approvals/{approvalKey}/approve # Approve
+POST /approvals/{approvalKey}/reject  # Reject
+GET  /artifacts                      # List artifacts
+GET  /artifacts/{artifact}/download  # Download artifact
+POST /fal/catalog/execute            # Execute FAL catalog models
+POST /fal/catalog/webhook            # FAL webhook (queued job completion)
+```
+
+Use the approval flow:
+
+```json
+// POST /approvals/{approvalKey}/approve
+{
+  "reason": "Approved by admin",
+  "continue": true
+}
+```
+
+With `"continue": true`, a continuation job is queued automatically. Or call `/runs/{run}/continue` manually with `"async": false` for immediate execution or `"async": true` to queue.
+
+FAL catalog execution:
+
+```json
+// POST /fal/catalog/execute
+{
+  "model": "fal-ai/flux/dev",
+  "prompt": "A clean product render",
+  "input": {
+    "image_size": "square_hd"
+  },
+  "async": false
+}
+```
+
+Queued jobs persist the run and post results back via webhook to `/fal/catalog/webhook`.
+
+### Disabling Approvals & Lifecycle Recording
+
+To disable approvals (not recommended for user-facing apps):
+
+```php
+'provider_tools' => [
+    'approvals' => [
+        'enabled' => env('AI_ENGINE_PROVIDER_TOOL_APPROVALS_ENABLED', false),
+    ],
+],
+```
+
+To disable lifecycle recording:
+
+```php
+'provider_tools' => [
+    'lifecycle' => [
+        'enabled' => env('AI_ENGINE_PROVIDER_TOOL_LIFECYCLE_ENABLED', false),
+        'store_payloads' => false,
+    ],
+],
+```
+
+---
+
+### Provider Tools reference
+
+**Classes:**
+- `LaravelAIEngine\Services\ProviderTools\ProviderToolRunService` — prepare and track runs
+- `LaravelAIEngine\Services\ProviderTools\ProviderToolApprovalService` — approve/reject
+- `LaravelAIEngine\Services\ProviderTools\ProviderToolAuditService` — record events
+- `LaravelAIEngine\Services\SDK\McpAppToolAdapter` — expose app tools to MCP
+- `LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper` — map to provider formats
+
+**Config keys:**
+- `ai-engine.provider_tools.approvals.*` — approval policy
+- `ai-engine.provider_tools.versions.anthropic` — Anthropic beta header versions
+- `ai-engine.provider_tools.artifacts.*` — artifact storage config
+- `ai-engine.provider_tools.lifecycle.*` — enable/disable recording
+
+---
+
+## Multi-tenancy & Scope
+
+The laravel-ai-engine automatically isolates AI operations (RAG, agent memory, data queries) by tenant and workspace, ensuring strict data segregation in multi-tenant architectures. Scopes are resolved from your authenticated user, session, or custom resolvers—then automatically applied to every vector search, structured data query, and memory lookup.
+
+### Scope Basics: Tenant & Workspace
+
+Every AI operation can carry `tenant_id` and/or `workspace_id`. The engine resolves these via the `AIScopeResolver` contract:
+
+```php
+// src/Contracts/AIScopeResolver.php
+public interface AIScopeResolver {
+    /**
+     * Resolve trusted execution scope for AI/RAG/agent requests.
+     * @return array{tenant_id?:mixed, workspace_id?:mixed}
+     */
+    public function resolve(mixed $userId = null, array $options = []): array;
+}
+```
+
+By default, `DefaultAIScopeResolver` reads scope from your authenticated user. Configure which user fields to check in `config/ai-engine.php`:
+
+```php
+'scope' => [
+    'auto_inject' => env('AI_ENGINE_SCOPE_AUTO_INJECT', true),  // Auto-resolve & merge on every request
+    'resolver' => env('AI_ENGINE_SCOPE_RESOLVER', null),        // Custom resolver (class or callable)
+    'tenant_user_fields' => [                                    // Check these fields in order
+        'tenant_id',
+        'organization_id',
+        'company_id',
+        'team_id',
+    ],
+    'workspace_user_fields' => [
+        'workspace_id',
+        'current_workspace_id',
+    ],
+],
+```
+
+### Auto-Injection & Merging
+
+When `ai-engine.scope.auto_inject` is `true` (default), the `AIScopeOptionsService` merges resolved scope into every AI call:
+
+```php
+$scopeService = app(\LaravelAIEngine\Services\Scope\AIScopeOptionsService::class);
+
+// Resolved from user + merged with explicit options
+// Explicit options win (tenant_id here overrides resolved value)
+$merged = $scopeService->merge(auth()->id(), [
+    'tenant_id' => 'custom-tenant',
+]);
+// Result: ['tenant_id' => 'custom-tenant', 'workspace_id' => 'user-workspace-id', ...]
+```
+
+For **custom tenant resolution**, implement `AIScopeResolver` and register it:
+
+```php
+// app/Services/CustomScopeResolver.php
+namespace App\Services;
+
+use LaravelAIEngine\Contracts\AIScopeResolver;
+
+class CustomScopeResolver implements AIScopeResolver {
+    public function resolve(mixed $userId = null, array $options = []): array {
+        $tenant = session('current_tenant');
+        return [
+            'tenant_id' => $tenant?->id,
+            'workspace_id' => $tenant?->workspace_id,
+        ];
+    }
+}
+```
+
+Then register in `config/ai-engine.php`:
+
+```php
+'scope' => [
+    'resolver' => \App\Services\CustomScopeResolver::class,
+],
+```
+
+Or use a callable:
+
+```php
+'scope' => [
+    'resolver' => fn($userId, $options) => [
+        'tenant_id' => session('tenant_id'),
+        'workspace_id' => $options['workspace_id'] ?? session('workspace_id'),
+    ],
+],
+```
+
+### Data Query Scoping
+
+The built-in `data_query` tool filters structured data by scope columns. Configure which columns represent tenant/workspace/user ownership:
+
+```php
+// config/ai-engine.php
+'data_query' => [
+    'scope_columns' => ['user_id', 'workspace_id', 'tenant_id'],  // Checked in order
+    'require_scope' => env('AI_ENGINE_DATA_QUERY_REQUIRE_SCOPE', true),  // Fail-closed by default
+    'models' => [
+        'invoices' => [
+            'class' => \App\Models\Invoice::class,
+            'aliases' => ['invoice', 'invoices'],
+            'list' => ['id', 'invoice_number', 'total', 'status'],
+            'status_column' => 'status',
+            'statuses' => ['paid', 'draft', 'overdue'],
+            'filterable' => ['customer_id', 'status'],
+            // Mark intentionally-unscoped models (public catalog)
+            'public' => false,
+        ],
+    ],
+],
+```
+
+When an agent runs `data_query` to "count invoices for Acme Corp", the engine:
+
+1. Resolves `tenant_id` from context / request options
+2. Checks if the `invoices` table has a `tenant_id` column
+3. Applies `WHERE tenant_id = ?` to all queries
+4. Returns a failure if no scope could be applied and `require_scope` is true
+
+```php
+// Example: agent context with scope
+$context = new \LaravelAIEngine\DTOs\UnifiedActionContext(
+    sessionId: $session->id,
+    userId: auth()->id(),
+    conversationHistory: [],
+    metadata: ['workspace_id' => $workspace->id, 'tenant_id' => $org->id],
+);
+
+// data_query tool automatically applies these scopes to any database query
+```
+
+To allow a model to be queried without scope (e.g., public product catalog), set `'public' => true`:
+
+```php
+'data_query' => [
+    'models' => [
+        'products' => [
+            'class' => \App\Models\Product::class,
+            'public' => true,  // Bypass require_scope check
+        ],
+    ],
+],
+```
+
+### Vector Search & RAG Scoping
+
+Models using the `Vectorizable` trait automatically capture scope in metadata:
+
+```php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use LaravelAIEngine\Traits\Vectorizable;
+
+class Document extends Model {
+    use Vectorizable;
+
+    protected $fillable = ['title', 'content', 'tenant_id', 'workspace_id', 'user_id'];
+}
+```
+
+When indexing, metadata is auto-populated from model fields:
+
+```php
+// When Document is indexed, this metadata is stored with the vector
+public function getVectorMetadata(): array {
+    // Trait auto-extracts from model attributes
+    // Checks: tenant_id, organization_id, company_id, team_id (in order)
+    // Checks: workspace_id, current_workspace_id (in order)
+    // Returns: ['tenant_id' => 1, 'workspace_id' => 'workspace-123']
+}
+```
+
+Vector searches are automatically scoped by the `VectorSearchService` using metadata filters. During RAG retrieval, only vectors matching the current tenant/workspace are returned.
+
+To ensure vectors are indexed with scope metadata, your models must have scope columns:
+
+```php
+// Migration
+Schema::create('documents', function (Blueprint $table) {
+    $table->id();
+    $table->string('title');
+    $table->text('content');
+    $table->unsignedBigInteger('tenant_id')->index();  // RAG will filter on this
+    $table->uuid('workspace_id')->index();
+    $table->unsignedBigInteger('user_id')->nullable();
+    $table->timestamps();
+});
+
+// Model knows how to extract scope
+class Document extends Model {
+    use Vectorizable;
+    // trait auto-reads tenant_id, workspace_id from attributes
+}
+```
+
+### Multi-Database Tenancy
+
+For complete data isolation where each tenant has their own database, enable multi-DB tenancy in `config/vector-access-control.php`:
+
+```php
+// config/vector-access-control.php
+return [
+    'multi_db_tenancy' => env('AI_ENGINE_MULTI_DB_TENANCY', false),
+    'multi_db_collection_strategy' => env('AI_ENGINE_MULTI_DB_COLLECTION_STRATEGY', 'prefix'),
+    // 'prefix' => tenant_slug_vec_documents
+    // 'suffix' => vec_documents_tenant_slug
+    // 'separate' => tenant_slug/vec_documents
+    
+    'tenant_resolver' => env('AI_ENGINE_TENANT_RESOLVER', 'session'),
+    // 'config' => database connection name from config
+    // 'session' => reads session('tenant_id')
+    // 'database' => current database connection name
+    // 'custom' => uses custom_tenant_resolver class
+    
+    'tenant_session_key' => 'tenant_id',
+];
+```
+
+When multi-DB is enabled, the `MultiTenantVectorService` isolates vector collections per tenant:
+
+```php
+$tenantService = app(\LaravelAIEngine\Services\Tenant\MultiTenantVectorService::class);
+
+// Each tenant gets separate vector collections
+$collectionName = $tenantService->getTenantCollectionName('vec_documents');
+// With 'prefix' strategy: 'acme_corp_vec_documents'
+
+// Metadata is automatically tagged with tenant info
+$metadata = $tenantService->buildTenantMetadata();
+// Returns: ['tenant_id' => 'acme', 'tenant_slug' => 'acme', 'scope_key' => 'sha1hash']
+```
+
+For custom tenant resolution (e.g., Spatie Multitenancy, Stancl Tenancy), implement `TenantResolverInterface`:
+
+```php
+namespace App\Services;
+
+use LaravelAIEngine\Contracts\TenantResolverInterface;
+use Spatie\Multitenancy\Models\Tenant;
+
+class SpatieMultitenancyResolver implements TenantResolverInterface {
+    public function getCurrentTenantId(): ?string {
+        $tenant = Tenant::current();
+        return $tenant?->id;
+    }
+
+    public function getCurrentTenantSlug(): ?string {
+        return Tenant::current()?->slug;
+    }
+
+    public function getTenantConnection(): ?string {
+        return Tenant::current()?->database;
+    }
+
+    public function hasTenant(): bool {
+        return Tenant::current() !== null;
+    }
+}
+```
+
+Then register in `config/vector-access-control.php`:
+
+```php
+'tenant_resolver' => 'custom',
+'custom_tenant_resolver' => \App\Services\SpatieMultitenancyResolver::class,
+```
+
+### Agent Memory Scoping
+
+Conversation memory is scoped by the same tenant/workspace rules. Each workspace gets isolated memory retrieval:
+
+```php
+// src/DTOs/ConversationMemoryQuery.php
+$query = new \LaravelAIEngine\DTOs\ConversationMemoryQuery(
+    message: 'what language should I use?',
+    scopeType: 'workspace',      // or 'tenant'
+    scopeId: 'workspace-123',     // current workspace
+    sessionId: $session->id,
+);
+
+// Memory is keyed by scope_hash(tenant_id, workspace_id)
+// So workspace-a and workspace-b never see each other's memories
+```
+
+When compacting conversation context (extracting long-term facts), the extracted memories are written under the **current request's scope**, not any cached context:
+
+```php
+$compactor = app(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class);
+
+$compactor->compact(
+    $context,  // cached context (may have stale workspace_id)
+    ['workspace_id' => $request->user()->current_workspace_id]  // CURRENT workspace
+    // Extracted memories go under current workspace, not stale one
+);
+```
+
+### Fail-Closed Access Control
+
+By default, operations are **fail-closed**: if no scope can be applied, the request is refused:
+
+```php
+// Data query without scope returns an error
+$result = $tool->execute([], new UnifiedActionContext(
+    sessionId: $session->id,
+    userId: null,  // No authenticated user
+    metadata: [],  // No tenant/workspace provided
+));
+// ActionResult::failure("Access to 'invoices' is blocked: no scope could be applied")
+```
+
+Control this behavior with config flags:
+
+```php
+'data_query' => [
+    'require_scope' => true,     // Fail if no scope applied (default)
+],
+
+'vector' => [
+    'require_structured_scope' => true,  // Fail if RAG finds no scope
+],
+```
+
+To bypass scoping for intentionally-public data, mark models explicitly:
+
+```php
+'data_query' => [
+    'models' => [
+        'public_docs' => [
+            'class' => \App\Models\PublicDocument::class,
+            'public' => true,  // Skip require_scope check
+        ],
+    ],
+],
+```
+
+### Scope Aliases
+
+The engine normalizes scope field names for convenience:
+
+```php
+// These are equivalent:
+$options1 = ['tenant_id' => 'org-1'];
+$options2 = ['tenant' => 'org-1'];  // Alias: normalized to tenant_id
+
+$options3 = ['workspace_id' => 'ws-2'];
+$options4 = ['workspace' => 'ws-2'];  // Alias: normalized to workspace_id
+```
+
+This is handled by `AIScopeOptionsService::normalizeAliases()`, so both forms work everywhere.
+
+### Configuration Summary
+
+| Key | Default | Purpose |
+|-----|---------|---------|
+| `ai-engine.scope.auto_inject` | `true` | Auto-resolve & merge scope on every call |
+| `ai-engine.scope.resolver` | `null` | Custom `AIScopeResolver` class or callable |
+| `ai-engine.scope.tenant_user_fields` | `['tenant_id', 'organization_id', 'company_id', 'team_id']` | User fields checked for tenant scope |
+| `ai-engine.scope.workspace_user_fields` | `['workspace_id', 'current_workspace_id']` | User fields checked for workspace scope |
+| `ai-engine.data_query.scope_columns` | `['user_id', 'workspace_id', 'tenant_id']` | Database columns that define scope |
+| `ai-engine.data_query.require_scope` | `true` | Fail if no scope column found or value is null |
+| `vector-access-control.enable_tenant_scope` | `true` | Include tenant_id in RAG metadata filters |
+| `vector-access-control.enable_workspace_scope` | `true` | Include workspace_id in RAG metadata filters |
+| `vector-access-control.multi_db_tenancy` | `false` | Isolate vectors per tenant in separate collections |
+| `vector-access-control.tenant_resolver` | `'session'` | How to resolve current tenant (`'config'`, `'session'`, `'database'`, or `'custom'`) |
+
+---
+
+## Learning & Design Generation
+
+The Learn layer stores and retrieves reusable design examples, workflows, rules, and guidance scoped to tenants, workspaces, or sessions. It works as a generic knowledge repository: learned sources are extracted into sections, optionally indexed for semantic retrieval, and later searched by agents or design generators to influence output.
+
+### Learning & Storing Knowledge
+
+Import knowledge from text, files, URLs, or curated getdesign design packs using the `Engine::learn()` fluent API:
+
+```php
+use LaravelAIEngine\Facades\Engine;
+
+// Learn from inline text
+$result = Engine::learn()
+    ->fromText(
+        'Invoices require customer email, due date, tax rules, and line item totals. '
+        . 'Always show a subtotal, tax amount, and grand total. Use a clean two-column layout.'
+    )
+    ->type('workflow')
+    ->scope(tenantId: $tenantId, workspaceId: $workspaceId)
+    ->save();
+
+// Learn from a file (must be stored on a configured disk or local path)
+$result = Engine::learn()
+    ->fromFile('./docs/design-system.md')
+    ->type('design')
+    ->scope(workspaceId: $workspaceId)
+    ->index()  // Add to vector store for semantic search
+    ->save();
+
+// Learn from a URL (getdesign API, or generic crawl if enabled)
+$result = Engine::learn()
+    ->fromUrl('https://example.com/design-guide')
+    ->using('getdesign')
+    ->type('design')
+    ->scope(workspaceId: $workspaceId)
+    ->index()
+    ->save();
+
+// Learn from a curated getdesign slug (runs CLI: npx getdesign@latest add {slug})
+$result = Engine::learn()
+    ->fromDesignSlug('bmw-m')
+    ->scope(tenantId: $tenantId, workspaceId: $workspaceId)
+    ->index(storeName: 'Premium Design Examples')
+    ->save();
+```
+
+### Configuration
+
+Learning is opt-in. Enable it in `config/ai-engine.php`:
+
+```php
+'learning' => [
+    'enabled' => env('AI_ENGINE_LEARNING_ENABLED', true),
+    'default_type' => 'general',
+    'vector_store_name' => 'Learned Knowledge',
+    'min_search_score' => 0.0,  // Minimum semantic score for retrieval
+    'max_content_bytes' => 1048576,  // 1 MB; file size cap
+    'include_global_in_scoped_search' => false,  // Include unscoped sources in scoped queries?
+    'adapters' => [
+        'file' => [
+            'enabled' => true,
+            'disk' => null,  // null = local paths via allow_local_paths
+            'allow_local_paths' => false,  // Allow non-storage paths?
+            'allowed_paths' => [],  // Explicit path allowlist
+        ],
+        'getdesign' => [
+            'api_url' => env('GETDESIGN_API_URL', 'https://api.getdesign.app/'),
+            'timeout' => 45,
+            'allow_cli' => env('GETDESIGN_ALLOW_CLI', false),  // Enable CLI runner
+            'command' => ['npx', 'getdesign@latest', 'add'],  // npx getdesign command
+            'output_file' => 'DESIGN.md',
+        ],
+        'crawl' => [
+            'enabled' => false,
+            'max_pages' => 30,
+            'timeout' => 30,
+        ],
+    ],
+],
+```
+
+Enable getdesign CLI learning (if you run `fromDesignSlug()` or `--source-type=getdesign_slug`):
+
+```bash
+# .env
+GETDESIGN_ALLOW_CLI=true
+```
+
+### Searching Learned Context
+
+Retrieve learned sources by query and scope:
+
+```php
+// Search scoped to a workspace
+$matches = Engine::learn()->search(
+    'premium automotive layout with red CTAs and performance cards',
+    scope: ['workspace_id' => $workspaceId],
+    limit: 3,
+    type: 'design'  // Optional: filter by knowledge type
+);
+
+// Each match includes score, source metadata, and extracted item content
+foreach ($matches as $match) {
+    echo $match->score;  // Semantic similarity (0-1)
+    echo $match->reason;  // Why it matched
+    echo $match->source->title;  // Source title
+    echo $match->item->kind;  // 'component', 'example', 'rule', 'token', 'section'
+    echo $match->item->content;  // Extracted section text
+}
+```
+
+### Generating Designs from Learned Context
+
+Let the package retrieve learned sources and generate a design artifact (HTML or Markdown):
+
+```php
+$result = Engine::learn()->generateDesign(
+    prompt: 'Create a first screen for an AI invoicing app with invoice review, chat actions, and cash-risk cards.',
+    options: [
+        'scope' => ['workspace_id' => $workspaceId],
+        'format' => 'html',  // 'html' or 'markdown'
+        'engine' => 'openai',  // Optional; defaults to config default_engine
+        'model' => 'gpt-4o-mini',  // Optional
+        'max_tokens' => 2500,
+        'temperature' => 0.25,
+        'limit' => 5,  // Number of learned matches to retrieve
+        'source_context_chars' => 12000,  // Max raw source bytes to include in prompt
+        'compose_html' => true,  // Auto-wrap HTML with doctype, head, body?
+        'media_url' => 'https://example.com/neutral-workspace-photo.jpg',  // Optional banner image
+    ]
+);
+
+// Result includes generated content, matches used, and usage metadata
+$html = $result->content;  // The generated design (HTML or Markdown)
+$format = $result->format;  // 'html' or 'markdown'
+$matches = $result->matches;  // Which learned sources were retrieved
+$engine = $result->engine;  // Engine that generated it
+$model = $result->model;
+$tokensUsed = $result->tokensUsed;
+$creditsUsed = $result->creditsUsed;
+$metadata = $result->metadata;  // Includes 'prompt', 'type', 'scope'
+
+file_put_contents(storage_path('app/previews/invoice-dashboard.html'), $html);
+```
+
+### Console Commands
+
+Learn from the command line:
+
+```bash
+# Learn from inline text
+php artisan ai:learn "Invoices require email and tax rules." \
+  --type=workflow \
+  --workspace=acme \
+  --index
+
+# Learn from a file
+php artisan ai:learn "./docs/workflow.md" \
+  --source-type=file \
+  --type=workflow \
+  --tenant=tenant-1
+
+# Learn from a URL
+php artisan ai:learn "https://example.com/design" \
+  --adapter=getdesign \
+  --type=design \
+  --workspace=acme \
+  --index
+
+# Learn from a getdesign slug
+php artisan ai:learn "bmw-m" \
+  --source-type=getdesign_slug \
+  --type=design \
+  --workspace=acme \
+  --index \
+  --store-name="Premium Designs"
+
+# Add metadata
+php artisan ai:learn "..." \
+  --metadata=category=premium \
+  --metadata=author=design-team \
+  --json
+```
+
+Generate a design from the command line:
+
+```bash
+php artisan ai:design \
+  "Create a billing dashboard from learned design context" \
+  --workspace=acme \
+  --type=design \
+  --format=html \
+  --limit=5 \
+  --source-context-chars=12000 \
+  --media-url="https://example.com/neutral-workspace-photo.jpg" \
+  --output="storage/app/previews/billing.html"
+
+# Output the result as JSON for automation
+php artisan ai:design "..." --workspace=acme --json
+```
+
+### Agent Tools
+
+The package auto-registers two optional agent tools (enable in your agent config or middleware):
+
+**`search_learned_context`** — Retrieve scoped learned examples and rules for the current agent context.
+
+```php
+// Agents can call this tool
+$tool = [
+    'name' => 'search_learned_context',
+    'description' => 'Search scoped learned examples, design rules, workflow rules, and reusable guidance.',
+    'parameters' => [
+        'query' => ['type' => 'string', 'description' => 'What to search for in learned context.'],
+        'type' => ['type' => 'string', 'description' => 'Optional learned knowledge type (e.g., design, workflow).'],
+        'limit' => ['type' => 'integer', 'description' => 'Max results (default 5, max 20).'],
+    ],
+];
+```
+
+**`learn_source`** — Import explicit text, file, URL, or getdesign slug (requires confirmation).
+
+```php
+// Agents can call this tool with explicit confirmation
+$tool = [
+    'name' => 'learn_source',
+    'description' => 'Learn reusable knowledge from explicit text, file, URL, or getdesign design slug.',
+    'parameters' => [
+        'source' => ['type' => 'string', 'description' => 'Text, URL, file path, or getdesign slug.'],
+        'source_type' => ['type' => 'string', 'description' => 'text, file, url, or getdesign_slug.'],
+        'type' => ['type' => 'string', 'description' => 'Knowledge type: design, workflow, reply_style, api_docs, etc.'],
+        'adapter' => ['type' => 'string', 'description' => 'Optional: getdesign, crawl, etc.'],
+        'title' => ['type' => 'string', 'description' => 'Optional source title.'],
+        'index' => ['type' => 'boolean', 'description' => 'Index into vector store?'],
+    ],
+];
+// Requires explicit confirmation before importing external sources.
+```
+
+### Storage & Scope
+
+Learned knowledge is stored in two database tables:
+
+- `ai_learn_sources` — Raw source, metadata, vector store link, scope columns
+- `ai_learned_items` — Extracted sections with kind, title, content, confidence
+
+Scope columns are flexible strings (`user_id`, `tenant_id`, `workspace_id`, `session_id`), so UUID, ULID, integer, and external identifiers all work.
+
+**Scope isolation:** A learned source saved to `workspace_id='acme'` will not be returned when searching `workspace_id='other'` unless explicitly saved without that constraint. Use this to keep shared design systems at the tenant or global scope and project-specific examples at workspace scope.
+
+### Item Classification
+
+Extracted items are automatically classified by kind:
+
+- `component` — Mentions "component"
+- `example` — Mentions "example" or has "before/after"
+- `token` — Mentions color, typography, or spacing
+- `rule` — Mentions "rule," "guideline," "must," or "should"
+- `section` — Default catch-all
+
+### Design Generation Pipeline
+
+When you call `generateDesign()`:
+
+1. Retrieve scoped learned sources matching the prompt (vector similarity or SQL).
+2. Build an AI prompt that includes matched sources, instructions to preserve design tokens and layout geometry, and instructions to sanitize proprietary brand names.
+3. Call the configured AI engine (OpenAI, Anthropic, Gemini, etc.) to generate HTML or Markdown.
+4. Normalize output (add doctype, wrap HTML, strip markdown fences).
+5. Sanitize copied source brand/font terms to generic fallbacks.
+6. Optionally compose with HTML layout wrapping and media bands.
+7. Return content + match metadata for audit and debugging.
+
+The generator is generic—it takes learned context and a user prompt, and produces a design. It does not know about invoices, BMWs, dashboards, or domain logic. Those details come from the prompt and learned context.
+
+---
+
+## Model Council
+
+Run a single prompt across multiple AI models simultaneously and compare their responses side-by-side. Each model member executes independently—if one fails (provider error, bad model, network issue), the rest continue unaffected. Members run sequentially; the council's value is comprehensive comparison, not throughput.
+
+### Basic Usage
+
+Post to `POST /api/v1/agent/council` with a prompt, a list of council members (each specifying a model and optional engine), and optional parameters:
+
+```php
+// PHP client example (e.g., in a Livewire component or controller)
+$response = Http::post('http://localhost/api/v1/agent/council', [
+    'prompt' => 'Compare the pros and cons of React vs Vue for a startup.',
+    'members' => [
+        ['engine' => 'openai', 'model' => 'gpt-4o'],
+        ['engine' => 'anthropic', 'model' => 'claude-3-5-sonnet-20241022'],
+        ['engine' => 'gemini', 'model' => 'gemini-2.5-flash'],
+    ],
+    'options' => [
+        'temperature' => 0.7,
+        'max_tokens' => 500,
+    ],
+]);
+
+// Response structure:
+// {
+//   "success": true,
+//   "data": {
+//     "prompt": "Compare the pros and cons...",
+//     "members": [
+//       {
+//         "engine": "openai",
+//         "model": "gpt-4o",
+//         "success": true,
+//         "content": "React is...",
+//         "error": null,
+//         "usage": { "prompt_tokens": 40, "completion_tokens": 210 },
+//         "credits_used": 1.2,
+//         "metadata": {}
+//       },
+//       {
+//         "engine": "anthropic",
+//         "model": "claude-3-5-sonnet-20241022",
+//         "success": true,
+//         "content": "React excels at...",
+//         "error": null,
+//         "usage": { "prompt_tokens": 40, "completion_tokens": 215 },
+//         "credits_used": 0.8,
+//         "metadata": {}
+//       },
+//       // ... additional members
+//     ],
+//     "count": 3,
+//     "succeeded": 3
+//   }
+// }
+```
+
+### Members Format
+
+Each member is an object with:
+
+- **`model`** (required, string, max 255 chars) — The model identifier (e.g., `gpt-4o`, `claude-3-5-sonnet-20241022`). Empty or missing models are silently skipped.
+- **`engine`** (optional, string, max 255 chars) — The provider/engine (`openai`, `anthropic`, `gemini`, `bedrock`, etc.). Defaults to your app's default engine if omitted.
+- **`system_prompt`** (optional, string, max 4000 chars) — A custom system prompt for this member only. Falls back to the `options.system_prompt` if provided there.
+
+```php
+'members' => [
+    // Explicit engine + model
+    ['engine' => 'openai', 'model' => 'gpt-4o'],
+    
+    // Use default engine, custom system prompt
+    ['model' => 'gpt-4o-mini', 'system_prompt' => 'You are a code reviewer.'],
+    
+    // Another provider
+    ['engine' => 'anthropic', 'model' => 'claude-3-5-sonnet-20241022'],
+]
+```
+
+### Options
+
+Global defaults applied to all members (unless overridden per-member):
+
+```php
+'options' => [
+    'system_prompt' => 'You are a helpful expert.',  // Fallback for members without one
+    'temperature' => 0.8,                             // Sampling randomness (0–2)
+    'max_tokens' => 1024,                             // Output limit per model
+]
+```
+
+### Request Validation
+
+The `ModelCouncilRequest` enforces:
+
+- **`prompt`** — Required, max 8000 characters.
+- **`members`** — Required array, min 1 member, max 8 members per request.
+  - Each member's `model` is required and max 255 characters.
+  - Each member's `engine` is optional, max 255 characters.
+  - Each member's `system_prompt` is optional, max 4000 characters.
+- **`options`** — Optional object.
+  - `system_prompt` — max 4000 characters.
+  - `temperature` — numeric, 0–2.
+  - `max_tokens` — integer, 1–32000.
+- **`user_id`** — Optional identifier (max 255 chars). If not provided, defaults to the authenticated user's ID.
+
+### Behind the Scenes
+
+The endpoint delegates to `LaravelAIEngine\Services\ModelCouncilService::run()`, which:
+
+1. Iterates through each member in sequence.
+2. Constructs an `AIRequest` DTO with the prompt, engine, model, system prompt, and options.
+3. Calls `AIEngineService::generateText()` to fetch that model's response.
+4. Captures success, content, error, usage metrics, and credits consumed.
+5. **On member failure** (provider error, network timeout, exception), logs a warning but continues with the next member.
+6. Returns an array of result objects, one per member, preserving order.
+
+### Response Fields per Member
+
+Each result object contains:
+
+- **`engine`** (string) — The engine used (e.g., `openai`).
+- **`model`** (string) — The model used.
+- **`success`** (bool) — Whether the request succeeded.
+- **`content`** (string) — The model's text response (empty on failure).
+- **`error`** (string|null) — Error message if `success === false`.
+- **`usage`** (object|null) — Token counts: `{ prompt_tokens, completion_tokens }` (null on failure).
+- **`credits_used`** (float) — Credits consumed (0 on failure).
+- **`metadata`** (object) — Provider-specific metadata (finish_reason, etc.).
+
+### Resilience & Isolation
+
+If a single member fails—bad API key, unsupported model, provider outage, timeout—its result will have `success: false` and an error message. Other members' requests are not affected. The top-level response remains `success: true` as long as the council endpoint itself didn't crash (e.g., validation error).
+
+```php
+// Example partial failure:
+{
+  "success": true,
+  "data": {
+    "count": 3,
+    "succeeded": 2,  // Only 2 of 3 members succeeded
+    "members": [
+      { "success": true, "content": "React excels...", ... },
+      { "success": false, "error": "401 Unauthorized", "content": "" },
+      { "success": true, "content": "Vue is lightweight...", ... }
+    ]
+  }
+}
+```
+
+### Logging
+
+Failed council members are logged to the `ai-engine` channel at the `warning` level with context:
+
+```php
+Log::channel('ai-engine')->warning('Model council member failed', [
+    'engine' => 'anthropic',
+    'model' => 'claude-3-5-sonnet-20241022',
+    'exception' => 'API rate limit exceeded',
+    'exception_class' => 'RuntimeException',
+]);
+```
+
+### Usage in PHP/Laravel
+
+```php
+use Illuminate\Support\Facades\Http;
+
+$council = Http::post('/api/v1/agent/council', [
+    'prompt' => 'Write a haiku about Laravel.',
+    'members' => [
+        ['engine' => 'openai', 'model' => 'gpt-4o'],
+        ['engine' => 'anthropic', 'model' => 'claude-3-5-sonnet-20241022'],
+        ['engine' => 'gemini', 'model' => 'gemini-2.5-flash'],
+    ],
+    'options' => [
+        'max_tokens' => 100,
+        'temperature' => 0.9,
+    ],
+]);
+
+if ($council['success']) {
+    foreach ($council['data']['members'] as $member) {
+        echo "## {$member['model']} ({$member['engine']})\n";
+        if ($member['success']) {
+            echo $member['content'] . "\n";
+            echo "Tokens: {$member['usage']['completion_tokens']}\n";
+        } else {
+            echo "ERROR: {$member['error']}\n";
+        }
+    }
+    echo "\nSuccessful responses: {$council['data']['succeeded']} / {$council['data']['count']}\n";
+}
+```
+
+### Middleware & Authentication
+
+The council route is registered under the `api/v1/agent` prefix and uses the `agent` middleware group (configurable in `ai-engine.php`):
+
+```php
+// In routes/api.php:
+Route::post('/council', [ModelCouncilApiController::class, 'run'])
+    ->name('ai-engine.agent.api.council.run');
+```
+
+Middleware stack defaults to `['api', SetRequestLocaleMiddleware::class, StandardizeApiResponseMiddleware::class]` but can be customized via `config/ai-engine.php`:
+
+```php
+'api' => [
+    'middleware' => [
+        'append' => [],  // Add middleware to all routes
+        'groups' => [
+            'agent' => [],  // Specific to agent group
+        ],
+        'replace' => [
+            'agent' => ['api', 'auth:sanctum'],  // Override completely
+        ],
+    ],
+],
+```
+
+### Cost Estimation
+
+Because members run sequentially and each model is charged independently, the total cost is the sum of each successful member's credits:
+
+```php
+$totalCredits = array_sum(array_map(
+    fn ($r) => $r['credits_used'] ?? 0,
+    $response['data']['members']
+));
+```
+
+Use the council sparingly for real-time UX (since all members run sequentially), and reserve it for comparison workflows where latency is acceptable (e.g., batch analysis, offline reports).
+
+---
+
+## Structured Collection Flows
+
+Structured collection enables guided, multi-turn chat to gather a target JSON object field-by-field. The system asks for missing required fields in the user's language, confirms before completion, and dispatches a callback with the final payload—all while keeping JSON keys and enum values canonical.
+
+### Define a Collection
+
+Use `StructuredCollectionDefinition::make()` with a fluent builder API:
+
+```php
+use LaravelAIEngine\DTOs\StructuredCollectionDefinition;
+
+$collection = StructuredCollectionDefinition::make('lead_capture')
+    ->description('Collect lead details from chat.')
+    ->addText('name', required: true, description: 'Lead name')
+    ->addEmail('email', required: true)
+    ->addSelect('level', [
+        ['value' => 'beginner', 'labels' => ['en' => 'Beginner', 'ar' => 'مبتدئ']],
+        ['value' => 'advanced', 'labels' => ['en' => 'Advanced', 'ar' => 'متقدم']],
+    ], required: true)
+    ->addTextarea('notes')
+    ->confirmBeforeComplete()
+    ->closeOnComplete()
+    ->callbackUrl('https://app.test/api/ai/lead-callback');
+```
+
+The builder includes convenience methods for common field types:
+
+- **Text fields**: `addText()`, `addTextarea()`, `addEmail()`, `addUrl()`, `addPhone()`, `addFile()`, `addHidden()`
+- **Numbers**: `addNumber()`, `addInteger()`
+- **Dates/times**: `addDate()`, `addDateTime()`, `addTime()`
+- **Booleans**: `addBoolean()`
+- **Choices**: `addSelect()`, `addMultiSelect()`, `addRadio()`, `addCheckboxes()`
+- **Structured**: `addJson()`, `addArray()`, `addObject()`
+- **Generic**: `addField(name, type, required, description, format, enum, metadata)`
+
+All accept optional `description` and `metadata` parameters for UI hints and localization.
+
+### Field Types & Options
+
+Select-like fields (`addSelect`, `addMultiSelect`, `addRadio`, `addCheckboxes`) accept an options array. Each option can be a string or an object with `value` and optional `label` (English) or `labels` (multi-language map):
+
+```php
+->addSelect('priority', [
+    'low',
+    'medium',
+    'high',
+], required: true)
+
+->addSelect('tier', [
+    ['value' => 'free', 'label' => 'Free Plan'],
+    ['value' => 'pro', 'labels' => ['en' => 'Pro Plan', 'ar' => 'خطة احترافية']],
+], required: true)
+```
+
+The AI stores canonical values (`free`, `pro`) in the final payload; the frontend presents localized labels to the user.
+
+### Multi-Turn Collection Flow
+
+Pass the collection to `ChatService::processMessage()` via `extraOptions`:
+
+```php
+$response = app(\LaravelAIEngine\Services\ChatService::class)->processMessage(
+    message: 'اسمي أحمد ومستواي مبتدئ',
+    sessionId: 'lead-session-123',
+    userId: 'user-uuid',
+    extraOptions: [
+        'collection' => $collection->toArray(),
+    ],
+);
+```
+
+The system:
+1. **Extracts** fields from the user's message (in any language)
+2. **Asks** for missing required fields (replies in the user's detected language)
+3. **Confirms** the collected data (if `confirmBeforeComplete()` is true, which is the default)
+4. **Dispatches** a callback (event or HTTP POST) with the final payload
+5. **Closes** the session (if `closeOnComplete()` is true, which is the default)
+
+Each response includes the collection status and missing fields under `metadata['collection']`:
+
+```json
+{
+  "content": "Thank you! What is your email?",
+  "metadata": {
+    "collection": {
+      "name": "lead_capture",
+      "status": "collecting",
+      "data": {"name": "Ahmed"},
+      "missing_fields": ["email", "level"],
+      "language": "ar",
+      "fields": [
+        {
+          "name": "level",
+          "type": "string",
+          "ui": "select",
+          "required": true,
+          "options": [
+            {"value": "beginner", "label": "مبتدئ"},
+            {"value": "advanced", "label": "متقدم"}
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+### Collection Lifecycle
+
+The collection session is stored in cache (keyed by `agent_structured_collection:{sessionId}:{userId}`) for the duration configured in `ai-agent.structured_collection.ttl_seconds` (default: 3600 seconds / 1 hour). Each user message updates the state; when all required fields are present and the user confirms, the collection completes.
+
+Check if a collection is active:
+
+```php
+$service = app(\LaravelAIEngine\Services\Agent\StructuredCollectionSessionService::class);
+if ($service->isActive($sessionId, $userId)) {
+    // Collection is in progress
+}
+```
+
+### Completion Callback
+
+When the user confirms, the callback receives a JSON payload:
+
+```php
+->callbackUrl('https://app.test/api/ai/lead-callback', method: 'POST', headers: [
+    'Authorization' => 'Bearer '.config('services.ai_callback.token'),
+])
+```
+
+The callback body:
+
+```json
+{
+  "session_id": "lead-session-123",
+  "user_id": "user-uuid",
+  "status": "completed",
+  "collection": "lead_capture",
+  "data": {
+    "name": "Ahmed",
+    "email": "ahmed@example.com",
+    "level": "beginner"
+  },
+  "metadata": {
+    "language": "ar",
+    "confirmed": true,
+    "completed_at": "2026-05-18T01:30:00+03:00",
+    "definition": { /* full StructuredCollectionDefinition::toArray() */ }
+  }
+}
+```
+
+Or use event-based dispatch instead of HTTP:
+
+```php
+->callbackEvent()
+```
+
+This fires `LaravelAIEngine\Events\AgentStructuredCollectionCompleted` (which receives the same payload). Listeners in your app can then process the collected data.
+
+### Preview Rendering
+
+Enable optional form previews in the chat response:
+
+```php
+->withPreview('html')
+```
+
+Preview modes:
+- `'html'` (default): Quick chat-friendly form preview plus a component placeholder
+- `'component'`: Component metadata only (frontend renders with custom component)
+- `'schema'`: Pure schema payload (no HTML, frontend decides rendering)
+
+Configure defaults in `config/ai-agent.php`:
+
+```php
+'structured_collection' => [
+    'preview' => [
+        'enabled' => false,  // Enable by default
+        'mode' => 'component',
+        'assets' => [
+            'css' => ['/vendor/ai-engine/structured-collection.css'],
+            'js' => ['/vendor/ai-engine/structured-collection.js'],
+        ],
+    ],
+],
+```
+
+### Configuration
+
+Key settings in `config/ai-agent.php` under `'structured_collection'`:
+
+| Key | Default | Purpose |
+|-----|---------|---------|
+| `ttl_seconds` | `3600` | Session cache lifetime |
+| `max_tokens` | `900` | AI response token limit |
+| `temperature` | `0.1` | AI temperature (low = deterministic) |
+| `callback_timeout` | `10` | HTTP callback timeout in seconds |
+| `preview.enabled` | `false` | Enable preview rendering by default |
+| `preview.mode` | `component` | Default preview mode |
+| `preview.assets` | `[...]` | CSS/JS asset paths for previews |
+
+### REST API Usage
+
+Post to the chat endpoint with collection embedded:
+
+```json
+POST /api/ai/chat
+{
+  "message": "I'm Ahmed, beginner level",
+  "session_id": "lead-session-123",
+  "memory": false,
+  "actions": false,
+  "use_rag": false,
+  "collection": {
+    "name": "lead_capture",
+    "description": "Collect lead details from chat.",
+    "schema": {
+      "type": "object",
+      "required": ["name", "email", "level"],
+      "properties": {
+        "name": {"type": "string", "metadata": {"ui": "text"}},
+        "email": {"type": "string", "format": "email", "metadata": {"ui": "email"}},
+        "level": {
+          "type": "string",
+          "enum": ["beginner", "advanced"],
+          "metadata": {
+            "ui": "select",
+            "options": [
+              {"value": "beginner", "labels": {"en": "Beginner", "ar": "مبتدئ"}},
+              {"value": "advanced", "labels": {"en": "Advanced", "ar": "متقدم"}}
+            ]
+          }
+        }
+      }
+    },
+    "confirm_before_complete": true,
+    "close_on_complete": true,
+    "callback": {"type": "event"}
+  }
+}
+```
+
+The response includes `metadata.collection` with the current state, missing fields, and field presentation info (names, types, UI hints, options, descriptions).
+
+### Cancellation & Skipping
+
+If a user says "cancel" or similar intent, the session fires `user_cancelled: true`, clears the cache, and returns status `'cancelled'`. To disable confirmation or auto-close behavior:
+
+```php
+->confirmBeforeComplete(false)
+->closeOnComplete(false)
+```
+
+This keeps the session open after completion so you can extend or re-run without restarting.
+
+### Multi-Language & Localization
+
+The AI detects the user's language and replies in that language. It **never translates JSON keys or enum values**—those remain canonical. The `fields` array in the response includes locale-aware labels for select options via the `StructuredCollectionFieldPresenter`, which respects the `labels` map and falls back to humanized `value` if no label is found.
+
+---
+
+## Admin, Catalog, Diagnostics & SDK
+
+The laravel-ai-engine package provides a unified operational surface for managing AI engines, models, and agent infrastructure. This section covers four complementary domains: the admin UI for cross-tenant governance, the engine catalog for introspecting available models, the diagnostics commands for health-checking the orchestrator, and the SDK services for advanced integrations.
+
+### Admin UI
+
+The admin UI is a fully-featured dashboard for managing agent runs, provider tool approvals, policies, and the agent manifest. Enable it with:
+
+```php
+// config/ai-engine.php
+'admin_ui' => [
+    'enabled' => env('AI_ENGINE_ENABLE_ADMIN_UI', false),
+    'route_prefix' => env('AI_ENGINE_ADMIN_PREFIX', 'ai-engine/admin'),
+    'middleware' => ['web'],
+    'access' => [
+        'allowed_user_ids' => explode(',', env('AI_ENGINE_ADMIN_ALLOWED_USER_IDS', '')),
+        'allowed_emails' => explode(',', env('AI_ENGINE_ADMIN_ALLOWED_EMAILS', '')),
+        'allowed_ips' => explode(',', env('AI_ENGINE_ADMIN_ALLOWED_IPS', '')),
+        'allow_any_authenticated' => env('AI_ENGINE_ADMIN_ALLOW_ANY_AUTHENTICATED', false),
+        'allow_localhost' => env('AI_ENGINE_ADMIN_ALLOW_LOCALHOST', false),
+    ],
+],
+```
+
+Access is fail-closed: the middleware (`LaravelAIEngine\Http\Middleware\AdminAccessMiddleware`) checks authenticated user IDs/emails against an allowlist, or IP ranges if `allow_localhost` is set. Forged audit trails are prevented by reading authenticated identity only — the controller never trusts a client-supplied actor ID.
+
+Routes are registered at `/ai-engine/admin` (configurable). The dashboard surfaces:
+
+- **Agent Runs** (`/ai-engine/admin/agent-runs`): paginated list of agent runs with status filtering; detail view with steps, artifacts, and audit events. Actions include resume, retry (with custom message/reason), and cancel, all dispatched through `AgentRunRuntimeControlService`.
+- **Provider Tools** (`/ai-engine/admin/provider-tools`): runs, approvals (pending/approved/rejected), and artifacts. Approve/reject actions update the `ai_provider_tool_approvals` table and optionally queue `ContinueProviderToolRunJob` asynchronously.
+- **Policies** (`/ai-engine/admin/policies`): RAG prompt decision policy versions, creation, and activation via `RAGPromptPolicyService`.
+- **Manifest Manager** (`/ai-engine/admin/manifest`): edit agent model configs, tools, and filters; import/export as JSON; scaffold new entries via `ai:scaffold` command.
+
+Behind the scenes, three service classes handle admin operations:
+
+```php
+// Approve a provider tool (admin context)
+$service = app(AdminProviderToolOperationsService::class);
+$service->approve(
+    ['approval_key' => $approvalKey, 'reason' => 'User approved', 'continue' => true],
+    $approvalsService,
+    $continuationsService,
+    $jobs
+);
+
+// Resume or retry an agent run
+$runService = app(AdminAgentRunOperationsService::class);
+$runService->resume($runId, ['message' => 'Resume requested'], $controlService);
+
+// Create or activate a policy
+$policyService = app(AdminPolicyOperationsService::class);
+$policyService->create([
+    'policy_key' => 'decision',
+    'name' => 'V2 Fallback',
+    'status' => 'active',
+    'rollout_percentage' => 50,
+], $ragPolicyService, $policyConfig);
+```
+
+### Engine Catalog Service
+
+The `LaravelAIEngine\Services\Catalog\EngineCatalogService` introspects all configured engines and models, merging config-defined models with database records (from `ai_models` table populated by `ModelToolConfig` discovery).
+
+Three public methods expose the catalog:
+
+```php
+use LaravelAIEngine\Services\Catalog\EngineCatalogService;
+
+$catalog = app(EngineCatalogService::class);
+
+// All models, sorted by engine then model_id
+$models = $catalog->flatModels();  // [['engine' => 'openai', 'model_id' => 'gpt-4o', ...], ...]
+
+// Filter by engine
+$openaiModels = $catalog->flatModels('openai');
+
+// Engine summaries: name, configured status, default model, model count
+$engines = $catalog->engines();
+// [['engine' => 'openai', 'name' => 'OpenAI', 'configured' => true, 'model_count' => 11, ...], ...]
+
+// Full nested structure: engines with nested model arrays
+$nested = $catalog->catalog();
+```
+
+Models from config are marked `'source' => 'config'`; models from the database table are `'source' => 'database'`. Each entry includes `engine`, `provider`, `model_id`, `name`, `capabilities`, and boolean flags for streaming/vision/function-calling support.
+
+The catalog is exposed via API routes (`/api/v1/ai`):
+
+```bash
+# All models, optionally filtered by engine
+GET /api/v1/ai/models?engine=openai
+# Response: { "success": true, "data": { "models": [...], "count": 3, "engine": "openai" } }
+
+# Engine summaries
+GET /api/v1/ai/engines
+# Response: { "success": true, "data": { "engines": [...], "count": 14, "default_engine": "openai", "default_model": "gpt-4o" } }
+
+# Nested engines + models
+GET /api/v1/ai/engines-with-models
+```
+
+These routes are handled by `LaravelAIEngine\Http\Controllers\Api\EngineCatalogController`.
+
+### Diagnostics: ai:doctor & ai:manifest:doctor
+
+Two complementary commands diagnose orchestrator health:
+
+#### ai:doctor
+
+```bash
+php artisan ai:doctor          # Human-readable report
+php artisan ai:doctor --json   # JSON output
+php artisan ai:doctor --fail-on-warning  # Exit non-zero if warnings present
+```
+
+Collects orchestrator state and warns on common issues:
+
+```php
+// Behind the scenes (run via AiDoctorCommand)
+$report = [
+    'counts' => [
+        'tools' => 3,
+        'skills' => 2,
+        'rag_collections' => 1,
+        'nodes' => 0,
+    ],
+    'tools' => ['data_query', 'search_rag', 'web_search'],
+    'skills' => ['sales_skills', 'support_skills'],
+    'config' => [
+        'agent_enabled' => true,
+        'intent_understanding_mode' => 'heuristic',
+        'skills_enabled' => true,
+        'default_engine' => 'openai',
+        'orchestration_model' => 'gpt-4o-mini',
+        'vector_driver' => 'qdrant',
+    ],
+    'engines' => [  // Per-engine API key status
+        'openai' => true,
+        'anthropic' => false,
+    ],
+    'providers' => [
+        'default_engine_api_key' => true,
+        'vector_driver_resolves' => true,
+    ],
+    'warnings' => [
+        'Failover chain lists engine(s) with no API key: anthropic',
+        'No RAG collections discovered — search_rag will return nothing.',
+    ],
+];
+```
+
+Warnings include missing API keys in fallback engines, no tools/skills/nodes, missing `data_query` tool, missing RAG collections, and vector driver resolution failures. Use `--fail-on-warning` in CI pipelines to block deployments with incomplete configuration.
+
+#### ai:manifest:doctor
+
+```bash
+php artisan ai:manifest:doctor          # Check manifest integrity
+php artisan ai:manifest:doctor --json   # JSON with issue details
+```
+
+Inspects agent manifest (`app/AI/agent-manifest.php`), verifies all skills/actions/tools exist, and flags missing references:
+
+```php
+// LaravelAIEngine\Services\Agent\AgentManifestDoctor::inspect()
+$report = [
+    'ok' => true,  // No errors (warnings allowed)
+    'issues' => [
+        [
+            'severity' => 'error',
+            'code' => 'missing_tool',
+            'message' => 'Skill [create_invoice] references missing tool [invoice_processor].',
+            'context' => ['skill_id' => 'create_invoice', 'tool' => 'invoice_processor'],
+        ],
+    ],
+    'summary' => [
+        'skills' => 5,
+        'actions' => 3,
+        'tools' => 8,
+        'errors' => 1,
+        'warnings' => 0,
+    ],
+    'inventory' => [
+        'skills' => ['sales_skills', 'support_skills', 'create_invoice', ...],
+        'actions' => ['send_email', 'log_interaction', ...],
+        'tools' => ['data_query', 'search_rag', 'invoice_processor', ...],
+    ],
+    'developer_commands' => [
+        'scaffold' => ['ai:init', 'ai:make-agent', 'ai:make-tool', 'ai:make-skill', 'ai:scaffold'],
+        'diagnostics' => ['ai:manifest:doctor', 'ai:skills:discover', 'ai:skills:test', 'ai:test-orchestration'],
+        'pricing' => ['ai:pricing-audit', 'ai:pricing-simulate'],
+    ],
+];
+
+// Exit 0 if ok && no errors, else exit 1
+```
+
+### SDK Services for Advanced Integrations
+
+The SDK layer provides programmatic access to observability, file stores, vector stores, realtime sessions, and traces — all built on native Anthropic SDK primitives and compatible with `laravel/ai`.
+
+#### Trace Recording
+
+```php
+use LaravelAIEngine\Services\SDK\TraceRecorderService;
+
+$traces = app(TraceRecorderService::class);
+
+// Record a span with metadata
+$spanId = $traces->start('fetch_documents', ['query' => 'invoices']);
+// ... do work ...
+$traces->end($spanId, 'ok', ['count' => 5]);
+
+// One-shot recording
+$traces->record('validate_schema', ['schema' => 'invoice', 'valid' => true]);
+
+// Flush and export
+$allTraces = $traces->flush();
+// Each trace: ['id', 'name', 'started_at', 'ended_at', 'duration_ms', 'status', 'metadata']
+```
+
+Exporters are dispatched via `LaravelAIEngine\Services\SDK\ObservabilityExporterService`, which reads `ai-engine.observability.exporters` (array of classes implementing `LaravelAIEngine\Contracts\ObservabilityExporter`):
+
+```php
+// config/ai-engine.php
+'observability' => [
+    'exporters' => [
+        LaravelAIEngine\Services\SDK\Exporters\LogObservabilityExporter::class,
+        LaravelAIEngine\Services\SDK\Exporters\OpenTelemetryObservabilityExporter::class,
+        // Custom exporter
+        \App\AI\Exporters\DatadogExporter::class,
+    ],
+],
+```
+
+Each exporter's `export(string $type, array $payload)` is called best-effort (exceptions caught).
+
+#### File & Vector Stores
+
+```php
+use LaravelAIEngine\Services\SDK\FileStoreService;
+use LaravelAIEngine\Services\SDK\VectorStoreService;
+
+$files = app(FileStoreService::class);
+$vectors = app(VectorStoreService::class);
+
+// File store drivers for OpenAI and Anthropic
+$fileStore = $files->driver('openai');
+$upload = $fileStore->upload('/path/to/report.pdf');
+
+// Vector store drivers
+$vectorStore = $vectors->driver('openai');  // Uses OpenAI's hosted vector store
+$vs = $vectorStore->create(['name' => 'docs']);
+$vectorStore->addFiles($vs->id, [$upload['id']]);
+```
+
+Drivers live in `Services/SDK/{FileStores,VectorStores}/*Driver.php`; they wrap native SDK APIs.
+
+#### Realtime Sessions
+
+```php
+use LaravelAIEngine\Services\SDK\RealtimeSessionService;
+
+$realtime = app(RealtimeSessionService::class);
+
+// Create a WebRTC session for voice
+$session = $realtime->createSession('openai', [
+    'model' => 'gpt-4-realtime-preview-20250115',
+    'modalities' => ['audio', 'text'],
+]);
+// Response: ['session_id', 'client_secret', 'expires_at']
+
+// Realtime tool dispatching (MCP-compatible)
+$result = $realtime->dispatchTool('tool_name', ['param' => 'value']);
+```
+
+Routes: `POST /api/v1/ai/realtime/sessions`, `POST /api/v1/ai/realtime/sdp`.
+
+#### Evaluations
+
+```php
+use LaravelAIEngine\Services\SDK\EvaluationService;
+
+$evals = app(EvaluationService::class);
+
+// Structure an evaluation rubric
+$eval = $evals->rubric('answer_quality', [
+    'criteria' => ['accuracy', 'completeness', 'clarity'],
+    'scale' => 1-5,
+]);
+
+// Run evaluation
+$result = $evals->evaluate($eval, $answer, $expected);
+```
+
+### SDK Compatibility Matrix
+
+From `docs/sdk-compatibility.mdx`, the key integration points:
+
+| Feature | API | Details |
+| --- | --- | --- |
+| Provider tools | `Engine::engine()->withTools()` | Full lifecycle with approvals |
+| Structured output | `Engine::withStructuredOutput()` | Native SDK support |
+| File & vector stores | `Engine::fileStores()`, `Engine::vectorStores()` | OpenAI & Anthropic drivers |
+| Realtime | `Engine::realtime()` | WebRTC sessions, tool dispatch |
+| Traces & evals | `Engine::traces()`, `Engine::evaluations()` | Exportable, no lock-in |
+
+The escape hatch for new provider fields:
+
+```php
+$response = Engine::openai()
+    ->model('gpt-4o')
+    ->withProviderOptions(['store' => true])
+    ->withProviderOptions([
+        'reasoning_effort' => 'high',
+    ], 'openai')
+    ->generate('Analyze this invoice structure');
+```
+
+### Health & Infrastructure
+
+A dedicated health endpoint provides Kubernetes-ready liveness checks:
+
+```php
+// Enabled by default; configure via:
+'admin' => [
+    'health_endpoint_enabled' => env('AI_ENGINE_HEALTH_ENDPOINT_ENABLED', true),
+    'health_middleware' => ['web'],
+],
+```
+
+Route: `GET /ai-engine/health` (if enabled). The `AdminOperationsController::health()` method calls `InfrastructureHealthService::evaluate()` and renders a Blade template or JSON response.
+
+### Testing & Diagnostics Config
+
+Use `TestEverythingRunner` to orchestrate multi-stage diagnostic pipelines:
+
+```php
+use LaravelAIEngine\Services\Diagnostics\TestEverythingRunner;
+
+$runner = app(TestEverythingRunner::class);
+
+$results = $runner->runStages([
+    [
+        'name' => 'Check OpenAI Key',
+        'command' => 'echo $OPENAI_API_KEY',
+        'workdir' => base_path(),
+    ],
+    [
+        'name' => 'Verify Vector Driver',
+        'command' => 'php artisan ai:doctor --json',
+        'workdir' => base_path(),
+    ],
+], $stopOnFailure = false);
+
+// Results: array of stages with status (passed/failed/skipped), exit_code, duration_ms, redacted output
+```
+
+Secrets (API keys, tokens, passwords) are automatically redacted in output.
+
+---
+
+## Federation (Nodes) & Security
+
+Federation lets you scale AI across multiple Laravel applications. The optional `laravel-ai-engine-federation` package provides deterministic node routing where ownership metadata decides which app executes an operation—master node plans, child nodes execute their owned data and actions. Security is enforced through JWT-based inter-node authentication and fail-closed IDOR guards on both routing and data access.
+
+### Enable Node Federation
+
+Node federation is enabled by default but requires the `laravel-ai-engine-federation` package. Install it:
+
+```bash
+composer require laravel-ai-engine-federation
+php artisan migrate
+```
+
+Configure your deployment topology in `.env`:
+
+```env
+# Master node orchestrates routing decisions
+AI_ENGINE_NODES_ENABLED=true
+AI_ENGINE_IS_MASTER=true
+AI_ENGINE_NODE_NAME=MasterNode
+AI_ENGINE_NODE_SLUG=master
+AI_ENGINE_NODE_LABEL=master
+
+# Shared secret for all nodes (use a strong random value)
+AI_ENGINE_JWT_SECRET=your_shared_jwt_secret_min_32_chars
+AI_ENGINE_SHARED_SECRET=${AI_ENGINE_JWT_SECRET}
+
+# Child nodes point back to master
+# AI_ENGINE_IS_MASTER=false
+# AI_ENGINE_MASTER_URL=https://master.example.com
+# AI_ENGINE_NODE_NAME=AccountingNode
+# AI_ENGINE_NODE_SLUG=accounting
+# AI_ENGINE_NODE_LABEL=child
+```
+
+All nodes **must use the same `AI_ENGINE_JWT_SECRET`**. Child nodes must be reachable at their configured `url` and expose the node API contract.
+
+### Register Child Nodes on Master
+
+Use a centralized manifest file to define your node topology. Create `config/ai-engine-nodes.json`:
+
+```json
+{
+  "nodes": [
+    {
+      "name": "Accounting Service",
+      "slug": "accounting",
+      "type": "child",
+      "url": "https://accounting.example.com",
+      "capabilities": ["search", "actions", "rag"],
+      "status": "active",
+      "weight": 1
+    },
+    {
+      "name": "CRM Service",
+      "slug": "crm",
+      "type": "child",
+      "url": "https://crm.example.com",
+      "capabilities": ["search", "actions"],
+      "status": "active",
+      "weight": 1
+    }
+  ]
+}
+```
+
+Sync nodes from the manifest (with a dry-run first):
+
+```bash
+# Dry-run: show what would change
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json
+
+# Auto-fix minor issues (normalize slugs, etc.)
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --autofix
+
+# Apply changes, ping each node, prune orphaned entries
+php artisan ai:nodes-sync --file=config/ai-engine-nodes.json --apply --prune --ping --force
+```
+
+### Node API Contract
+
+Each node (master and child) exposes:
+
+- `GET /api/ai-engine/health` — public, returns `{status, ready, version, capabilities}`
+- `GET /api/ai-engine/manifest` — public, returns collections, keywords, domains owned by this node
+- `POST /api/ai-engine/search` — requires JWT/API-key auth, executes vector/RAG search
+- `POST /api/ai-engine/chat` — requires JWT/API-key auth, routes a conversation turn
+- `POST /api/ai-engine/tools/execute` — requires JWT/API-key auth, executes a tool
+
+Routes are defined in the federation package's `routes/node-api.php` and protected by `NodeAuthMiddleware`.
+
+### Node Authentication (JWT & API Keys)
+
+Node-to-node requests use JWT tokens (preferred) or API keys. The `NodeAuthMiddleware` validates tokens in this order:
+
+1. **JWT (preferred):** Extract from `Authorization: Bearer <token>` or `X-Node-Token` header. Validates signature and expiry using the shared `AI_ENGINE_JWT_SECRET`. Contains claims: `iss`, `sub` (node id), `node_slug`, `node_name`, `capabilities`, `type`, `exp`.
+
+2. **Shared secret:** If `AI_ENGINE_SHARED_SECRET` matches the `Authorization` header exactly, authenticate without JWT validation (useful for internal-only deployments).
+
+3. **API key:** Fall back to `X-API-Key` header or `?api_key` query param, validated against the node's stored key in the `ai_nodes` table.
+
+```php
+// In NodeAuthService::validateToken() - called by middleware
+$nodeData = $this->authService->validateToken($token);
+if ($nodeData) {
+    // JWT is valid; check node status in database (master only)
+    // or trust JWT claims (child nodes)
+}
+```
+
+The middleware attaches the authenticated node to `$request->attributes->set('node', $node)` so routes can enforce ownership.
+
+### Generate JWT Tokens for Child Nodes
+
+When registering a node, generate a reusable JWT for that node to use when calling the master:
+
+```php
+use LaravelAIEngine\Services\Node\NodeAuthService;
+use LaravelAIEngine\Models\AINode;
+
+$node = AINode::where('slug', 'accounting')->firstOrFail();
+$authService = app(NodeAuthService::class);
+$token = $authService->generateToken($node, expiresIn: 3600);
+
+// Child node uses this token in requests:
+// Authorization: Bearer <token>
+```
+
+TTL defaults to `ai-engine.nodes.jwt.ttl` (1 hour). JWT library is auto-detected (firebase/php-jwt or tymon/jwt-auth).
+
+### Routing Decisions: `route_to_node` Tool
+
+The agent has a built-in `route_to_node` tool when the federation package is installed. It lets the AI planner explicitly route an entire turn to a remote node that owns a specific domain:
+
+```json
+{
+  "action": "route_to_node",
+  "resource_name": "accounting",
+  "params": {
+    "node": "accounting",
+    "query": "what is my outstanding balance?"
+  }
+}
+```
+
+The tool is called only when:
+- The request clearly belongs to a known remote node (determined by AI or routing config).
+- The node is active and healthy (checked by `getActiveNodes()`).
+- The AI planner's ownership metadata indicates remote ownership.
+
+Under the hood, `RouteToNodeTool::handle()` calls `NodeSessionManager::routeToNode()`, which:
+
+1. Looks up the node by slug or name.
+2. Generates a JWT token for the call.
+3. `POST`s to the node's `/api/ai-engine/chat` endpoint.
+4. Returns the node's response or an error.
+
+Routing is deterministic—no guessing. If ownership cannot be determined, the local RAG/tools are used.
+
+### Node Configuration
+
+Core settings in `config/ai-engine.php` under `nodes`:
+
+```php
+'nodes' => [
+    // Enable/disable node federation
+    'enabled' => env('AI_ENGINE_NODES_ENABLED', true),
+
+    // Is this app a master or child?
+    'is_master' => env('AI_ENGINE_IS_MASTER', true),
+
+    // Master URL (for child nodes to call back)
+    'master_url' => env('AI_ENGINE_MASTER_URL'),
+
+    // Local node identity
+    'local' => [
+        'name' => env('AI_ENGINE_NODE_NAME', env('APP_NAME', 'Laravel')),
+        'slug' => env('AI_ENGINE_NODE_SLUG'),
+        'label' => env('AI_ENGINE_NODE_LABEL', env('AI_ENGINE_IS_MASTER') ? 'master' : 'client'),
+        'aliases' => explode(',', env('AI_ENGINE_NODE_ALIASES', '')),
+    ],
+
+    // JWT configuration
+    'jwt' => [
+        'secret' => env('AI_ENGINE_JWT_SECRET', env('APP_KEY')),
+        'library' => env('AI_ENGINE_JWT_LIBRARY', null), // auto-detect: 'firebase' or 'tymon'
+        'algorithm' => env('AI_ENGINE_JWT_ALGORITHM', 'HS256'),
+        'ttl' => env('AI_ENGINE_JWT_TTL', 3600), // 1 hour
+        'issuer' => env('AI_ENGINE_JWT_ISSUER', env('APP_URL')),
+        'audience' => env('AI_ENGINE_JWT_AUDIENCE', null),
+    ],
+
+    // Shared secret (fallback, used by all nodes)
+    'shared_secret' => env('AI_ENGINE_SHARED_SECRET', env('AI_ENGINE_JWT_SECRET', env('APP_KEY'))),
+
+    // Node capabilities advertised in health/manifest
+    'capabilities' => ['search', 'actions', 'rag'],
+
+    // Health checks & availability
+    'health_check_interval' => env('AI_ENGINE_HEALTH_CHECK_INTERVAL', 300), // seconds
+    'request_timeout' => env('AI_ENGINE_REQUEST_TIMEOUT', 30),
+    'verify_ssl' => env('AI_ENGINE_VERIFY_SSL', true),
+
+    // Circuit breaker (fail-fast on broken nodes)
+    'circuit_breaker' => [
+        'failure_threshold' => env('AI_ENGINE_CB_FAILURE_THRESHOLD', 5),
+        'success_threshold' => env('AI_ENGINE_CB_SUCCESS_THRESHOLD', 2),
+        'timeout' => env('AI_ENGINE_CB_TIMEOUT', 60),
+    ],
+
+    // Routing mode
+    'search_mode' => env('AI_ENGINE_NODE_SEARCH_MODE', 'routing'), // 'routing' or 'federated'
+
+    // Fallback on node failure
+    'routing' => [
+        'local_fallback_on_failure' => env('AI_ENGINE_ROUTE_LOCAL_FALLBACK_ON_FAILURE', false),
+        'local_fallback_notice' => env('AI_ENGINE_ROUTE_LOCAL_FALLBACK_NOTICE', 'Remote node is unavailable...'),
+    ],
+],
+```
+
+### Security Model: Ownership & IDOR Prevention
+
+Federation security rests on three pillars:
+
+#### 1. Ownership Metadata (Deterministic Routing)
+
+Each collection/model is explicitly mapped to a node in the manifest. The master checks ownership before routing:
+
+```php
+// NodeRegistryService::findNodeForCollection()
+// Returns the node that owns a collection, or null if local
+$node = app(NodeRegistryService::class)->findNodeForCollection(Invoice::class);
+if ($node) {
+    // Route to remote node
+} else {
+    // Use local RAG/tools
+}
+```
+
+No ambiguity, no AI guessing. If a collection is not registered to any node, it's assumed to be local.
+
+#### 2. JWT & Rate Limiting
+
+All inter-node calls require a valid JWT or API key:
+
+```php
+// NodeAuthMiddleware validates every protected request
+// Checks: signature, expiry, node status, rate limit
+```
+
+The `NodeAuthMiddleware` (in `routes/node-api.php`) rate-limits authenticated requests to `60 per minute` per node.
+
+#### 3. Fail-Closed IDOR Guards
+
+When retrieving data across nodes, the system enforces **user/tenant scope**:
+
+- **Agent runs** (`GET /agent-runs`, etc.) are scoped by `user_id`; cross-user access returns HTTP 403.
+- **Data queries** fail closed: a query with no scope (no `user_id`, `tenant_id`, or `workspace_id`) is blocked unless explicitly marked `public`.
+- **Vector/RAG retrieval** respects scope columns (`user_id`, `tenant_id`, `workspace_id`) during filtering.
+
+See [Security Guide](docs/security.mdx) for details on scope enforcement.
+
+### Monitoring Node Health
+
+Use the `ai:node-ping` and `ai:doctor` commands:
+
+```bash
+# Ping all nodes
+php artisan ai:node-ping --all
+
+# Check a single node
+php artisan ai:node-ping --slug=accounting
+
+# Full orchestrator diagnostics
+php artisan ai:doctor --json
+```
+
+The output shows node availability, response time, and circuit-breaker status. If a node is down, the `circuit_breaker` opens and temporarily fails fast (before timeout).
+
+### Optional: Federated Search
+
+Set `AI_ENGINE_NODE_SEARCH_MODE=federated` to search all active nodes in parallel and merge results:
+
+```env
+AI_ENGINE_NODE_SEARCH_MODE=federated
+AI_ENGINE_MERGE_STRATEGY=score  # or round_robin, node_priority, diversity, hybrid
+AI_ENGINE_MERGE_DEDUPLICATION=true
+```
+
+In routing mode (default), the planner chooses one node based on ownership. In federated mode, all relevant nodes are queried and results are ranked/merged. Federated mode is more comprehensive but slower and more complex.
+
+### Troubleshooting
+
+- **Node not found during sync:** Check the node's public `/api/ai-engine/health` endpoint is reachable and returns `{status: healthy}`.
+- **Authentication failures in logs:** Verify `AI_ENGINE_JWT_SECRET` matches on all nodes and no token is expired.
+- **Stale nodes in database:** Use `ai:node-cleanup --status=error --days=0 --apply --force` to remove nodes that have not pinged in `N` days.
+- **Circuit breaker open:** Wait `AI_ENGINE_CB_TIMEOUT` seconds or manually reset with `AINode::updateStatus($node, 'active')`.
