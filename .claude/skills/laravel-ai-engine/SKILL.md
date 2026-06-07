@@ -164,6 +164,31 @@ source-grounded guide. Everything below references real `LaravelAIEngine\…` cl
 - Optional `laravel-ai-engine-federation` package: `AINode`, `NodeAuthService`, the `route_to_node`
   tool, `ai-engine.nodes` config. Security model: fail-closed scope, IDOR protections — see `security.mdx`.
 
+## Specialized providers (search, stock images, plagiarism)
+- Non-LLM engines, invoked like any engine (`AIEngineService::generate(new AIRequest(engine: '…'))`):
+  web search `serper`/`perplexity`, stock images `pexels`/`unsplash`, image gen `midjourney`,
+  `plagiarism_check`, and LLM providers `azure`/`xai` (Grok)/`deepseek`. Keys under
+  `ai-engine.engines.<name>.api_key`; `ai:doctor` shows what's configured.
+
+## Generating characters
+- `php artisan ai:generate-character --name=… --save-as=… [--voice-id=… (ElevenLabs)]` makes a
+  reusable character reference set (FAL "Nano Banana") for later image/video prompts
+  (`character_sources`) — complements personas/sub-agents.
+
+## Frontend previews
+- Structured collection can return a package-rendered preview for chat UIs (no AI-generated
+  HTML). Publish assets: `php artisan vendor:publish --tag=ai-engine-collection-ui`. See
+  `frontend-preview.mdx`.
+
+## Field assistants
+- Single-field helper tools during collection: `validate_field`, `explain_field`,
+  `suggest_value`, `search_options`.
+
+## CLI
+- ~80 `ai:` artisan commands. Scaffolding: `ai:make-tool`/`ai:make-skill`/`ai:make-agent`,
+  `ai:generate-character`, `ai:init`. Ops/diag: `ai:doctor`, `ai:vector-*`, `ai:neo4j-*`,
+  `ai:agent-runs:*`, `ai:pricing-*`, `ai:test-*`. Run `php artisan list ai` for the full set.
+
 ## Full reference
 `docs/cookbook.mdx` — the complete, source-grounded guide to all of the above with copy-pasteable
 examples and every config flag.
