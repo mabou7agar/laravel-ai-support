@@ -57,6 +57,12 @@ class AgentToolServiceRegistrar
             if ((bool) config('ai-engine.data_query.aggregate_enabled', true) && !$registry->has('aggregate_data')) {
                 $registry->register('aggregate_data', $app->make(\LaravelAIEngine\Services\Agent\Tools\AggregateQueryTool::class));
             }
+            // Generic file intake: extract a stored upload's text and suggest the create
+            // action it implies (entity-agnostic, sandboxed). Opt-in — enable with
+            // ai-engine.file_analysis.enabled and declare keyword_suggestions.
+            if ((bool) config('ai-engine.file_analysis.enabled', false) && !$registry->has('analyze_file')) {
+                $registry->register('analyze_file', $app->make(\LaravelAIEngine\Services\Agent\Tools\AnalyzeFileTool::class));
+            }
             // Grounded knowledge-base retrieval. Without this the AiNative loop has no
             // way to reach the vector/document RAG store; it is also the tool a
             // force_rag turn is instructed to call (see AiNativePromptBuilder).

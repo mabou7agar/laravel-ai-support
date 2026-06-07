@@ -170,6 +170,33 @@ return array_replace_recursive($defaults, [
         'require_scope' => env('AI_ENGINE_DATA_QUERY_REQUIRE_SCOPE', data_get($defaults, 'data_query.require_scope', true)),
         'max_limit' => (int) env('AI_ENGINE_DATA_QUERY_MAX_LIMIT', data_get($defaults, 'data_query.max_limit', 50)),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | File Analysis (generic "upload -> extract -> suggest create X")
+    |--------------------------------------------------------------------------
+    |
+    | Powers the analyze_file agent tool (and FileAnalysisService). Entity-agnostic:
+    | a stored upload's text is extracted, then matched against keyword_suggestions
+    | (regex pattern -> any create action), so the same mechanism suggests creating an
+    | invoice, a customer, a product, etc. Sandboxed to base_path with an extension
+    | allowlist + size cap (no arbitrary file reads). Opt-in via 'enabled'.
+    |
+    */
+    'file_analysis' => [
+        'enabled' => env('AI_ENGINE_FILE_ANALYSIS', data_get($defaults, 'file_analysis.enabled', false)),
+        // Only files inside this directory may be analyzed (defeats path traversal / LFI).
+        'base_path' => env('AI_ENGINE_FILE_ANALYSIS_PATH', data_get($defaults, 'file_analysis.base_path', storage_path('app/uploads'))),
+        'allowed_extensions' => data_get($defaults, 'file_analysis.allowed_extensions', ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'csv']),
+        'max_bytes' => (int) env('AI_ENGINE_FILE_ANALYSIS_MAX_BYTES', data_get($defaults, 'file_analysis.max_bytes', 10 * 1024 * 1024)),
+        'preview_chars' => (int) data_get($defaults, 'file_analysis.preview_chars', 1500),
+        // Only suggest create actions that exist as registered tools.
+        'validate_actions' => (bool) data_get($defaults, 'file_analysis.validate_actions', true),
+        // pattern => action mapping. Generic: add one entry per entity you want detected.
+        //   ['pattern' => '/\\binvoice\\b/i', 'action_id' => 'create_invoice',
+        //    'action_label' => 'Create an invoice from this file', 'confidence' => 80],
+        'keyword_suggestions' => data_get($defaults, 'file_analysis.keyword_suggestions', []),
+    ],
     'vector' => [
         'auto_index' => env('AI_ENGINE_VECTOR_AUTO_INDEX', data_get($defaults, 'vector.auto_index', false)),
         'driver' => env('AI_ENGINE_VECTOR_DRIVER', data_get($defaults, 'vector.driver', 'qdrant')),
