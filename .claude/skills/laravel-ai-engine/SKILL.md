@@ -6,8 +6,11 @@ description: >-
   creating agent tools or skills, wiring any model/engine (OpenAI, OpenRouter, Anthropic, Gemini,
   fal, Stable Diffusion, etc.), relating records, embeddings/RAG, image or video generation,
   characters/personas & sub-agents, file intake (upload→extract→suggest→pre-fill), tool-context
-  scaling, or structured data & analytics. Triggers on files using LaravelAIEngine\ classes,
-  config/ai-agent.php, config/ai-engine.php, app/AI/Tools, or app/AI/Skills.
+  scaling, structured data & analytics, memory & conversations, streaming & realtime,
+  observability/tracing, billing/credits, graph (Neo4j) RAG, voice/TTS/transcription, provider
+  tools & MCP, multi-tenancy & scope, learning, model council, structured collection flows,
+  admin/catalog/diagnostics, or federation (nodes) & security. Triggers on files using
+  LaravelAIEngine\ classes, config/ai-agent.php, config/ai-engine.php, app/AI/Tools, or app/AI/Skills.
 ---
 
 # Building with laravel-ai-engine
@@ -105,6 +108,61 @@ source-grounded guide. Everything below references real `LaravelAIEngine\…` cl
   sum/avg/min/max/top/bottom/group_by/count-distinct with metric-aware cross-entity routing.
 - Declare models in `config/ai-engine.php` → `data_query.models` with `aggregatable`/`groupable`/
   `metric_aliases`; `'public' => true` for unscoped (catalog) models, otherwise scope is required.
+
+## Memory & conversations
+- Transcript history: `ConversationManager` / `ConversationTranscriptService`. Pluggable storage:
+  `MemoryManager` (drivers: database/redis/file/mongodb). Durable scoped facts:
+  `ConversationMemoryRepository` (+ optional semantic index). Config under `ai-agent.*memory*`
+  (e.g. `AI_AGENT_CONVERSATION_MEMORY_ENABLED`, `AI_AGENT_MEMORY_SEMANTIC_ENABLED`).
+
+## Streaming & realtime
+- Stream responses (SSE). Realtime voice/tool sessions via `Services\SDK\RealtimeSessionService`
+  + `RealtimeToolBrokerService` (route `api/v1/ai/realtime/sessions`). See `realtime-observability.mdx`.
+
+## Observability & tracing
+- `Services\SDK\TraceRecorderService`, `ObservabilityExporterService`; events
+  `AIRequestStarted`/`AIRequestCompleted`/`AIFailoverTriggered`; run-trace API.
+
+## Billing, credits & pricing
+- `CreditManager` (`hasCredits`/`deductCredits`/`calculateCredits`/`accumulate`),
+  `InsufficientCreditsException`, per-model `credit_index`. Enable with `ai-engine.credits.enabled`.
+
+## Graph & hybrid (Neo4j) RAG
+- `Services\Graph` Neo4j driver + hybrid graph/vector retrieval; models expose
+  `getSourceNode()`/`getAccessScope()`/`toGraphObject()`. Fail-closed via `graph.require_access_scope`.
+
+## Voice, TTS & transcription
+- `Services\Media\AudioService::transcribe()` / `GenerateAudioService`; TTS engines
+  (`eleven_labs`, `google_tts`, local voice). `Transcription` model is polymorphic (`morphTo`);
+  add your own `morphMany(Transcription::class, 'transcribable')` — there is no trait.
+
+## Provider tools & MCP
+- `Services\ProviderTools` (run/approval/audit services) and `Services\SDK\McpAppToolAdapter` +
+  `ProviderToolPayloadMapper`. Config under `ai-engine.provider_tools.*`.
+
+## Multi-tenancy & scope
+- `Services\Scope\AIScopeOptionsService` + the `AIScopeResolver` contract; `scope_columns`
+  (`user_id`/`workspace_id`/`tenant_id`) flow into data_query, RAG, vector, and memory. Scope is
+  fail-closed (unscoped non-`public` access is refused).
+
+## Learning & design generation
+- `Services\Learning` (`LearningService`, `LearningExtractorService`, `LearnedDesignGeneratorService`);
+  the `search_learned_context` tool; `php artisan` learning commands. See `learning.mdx`.
+
+## Model council
+- `api/v1/agent/council` (`ModelCouncilApiController::run`) — multiple models answer/compare.
+
+## Structured collection flows
+- `StructuredCollectionDefinition` + `StructuredCollectionSessionService` (multi-turn guided
+  collection: `addText`/`addEmail`/`list`, summarize, confirm). See `structured-collection.mdx`.
+
+## Admin, catalog, diagnostics & SDK
+- `Services\Catalog\EngineCatalogService` (introspect engines/models), `php artisan ai:doctor` +
+  `AgentManifestDoctor`, `Services\Admin`, `Services\SDK` (`sdk-compatibility.mdx`).
+
+## Federation (nodes) & security
+- Optional `laravel-ai-engine-federation` package: `AINode`, `NodeAuthService`, the `route_to_node`
+  tool, `ai-engine.nodes` config. Security model: fail-closed scope, IDOR protections — see `security.mdx`.
 
 ## Full reference
 `docs/cookbook.mdx` — the complete, source-grounded guide to all of the above with copy-pasteable
