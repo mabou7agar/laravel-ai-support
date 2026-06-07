@@ -286,10 +286,28 @@ class FileAnalysisService
     {
         $content = $this->extractContent($file);
         $suggestions = $this->suggestActions($content, $file->getClientOriginalName());
-        
+
         return [
             'content' => $content,
             'suggestions' => $suggestions,
+        ];
+    }
+
+    /**
+     * Extract text from a stored file PATH (not an UploadedFile) and suggest actions.
+     * Generic and entity-agnostic: suggestions come from config keyword patterns
+     * (ai-engine.file_analysis.keyword_suggestions), so "upload X -> suggest create X"
+     * works for any registered resource, not just invoices. Used by the analyze_file tool.
+     *
+     * @return array{content: string, suggestions: array<int, array<string, mixed>>}
+     */
+    public function extractAndSuggestFromPath(string $path, string $extension, string $name = ''): array
+    {
+        $content = $this->documentService->extractText($path, $extension);
+
+        return [
+            'content' => $content,
+            'suggestions' => $this->suggestActions($content, $name),
         ];
     }
 

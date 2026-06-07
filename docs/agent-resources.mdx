@@ -161,6 +161,36 @@ back to the full set, and `semantic` falls back when embeddings are unavailable.
 `skill_scoped` is the recommended first step; move to `keyword`/`semantic`/`progressive`
 only when you genuinely have a large, flat toolset.
 
+## File intake (upload → suggest create)
+
+The `analyze_file` tool turns a stored upload into a **suggested create action** — generic,
+not tied to invoices. It extracts the file's text (`DocumentService`: PDF, Word, txt,
+csv/xlsx) and matches it against configured keyword patterns, each mapping to *any* create
+action. So registering one pattern per entity makes "upload an invoice → suggest
+`create_invoice`", "upload a customer list → suggest `create_customer`", etc.
+
+```php
+// config/ai-engine.php
+'file_analysis' => [
+    'enabled'   => true,                                  // registers the analyze_file tool
+    'base_path' => storage_path('app/uploads'),           // ONLY files here may be read
+    'keyword_suggestions' => [
+        ['pattern' => '/\binvoice\b/i',  'action_id' => 'create_invoice',  'action_label' => 'Create an invoice from this file'],
+        ['pattern' => '/\bcustomer\b/i', 'action_id' => 'create_customer', 'action_label' => 'Create a customer from this file'],
+        ['pattern' => '/\bproduct\b/i',  'action_id' => 'create_product',  'action_label' => 'Add this product'],
+    ],
+],
+```
+
+Your app stores the upload (e.g. to `storage/app/uploads`), then the agent calls
+`analyze_file` with the path; it returns the extracted text plus the matched suggestions.
+
+Security: the path is **sandboxed** to `base_path` (traversal / absolute paths outside it are
+rejected — no arbitrary file reads), with an extension allowlist and a size cap. Suggestions
+are filtered to create actions that are actually registered (`validate_actions`). Images and
+LLM-driven field *pre-fill* (extracting the customer/line items to pre-populate the create
+payload) build on `FileAnalysisService::analyzeFile()` (vision) and are the next layer.
+
 ## Aggregates & analytics
 
 `data_query` answers **count / list / status-filter** questions. It returns scalar columns
